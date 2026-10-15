@@ -46,13 +46,13 @@ function hostedRecord<T>(verb: string, action: () => T): T {
   return hostedCommand(`${PLATFORM_SLUG} record ${verb}`, action)
 }
 
-export function register(program: Command): void {
-  const record = program.command('record')
+function registerIdentityCommands(record: Command): void {
   const presentation = { log }
   record
     .command('sign-up')
-    .requiredOption('--email <email>')
-    .requiredOption('--name <name>')
+    .description('create a hosted record account and sign in')
+    .requiredOption('--email <email>', 'email address for the new account')
+    .requiredOption('--name <name>', 'display name for the new account')
     .action((options) =>
       hostedCommand(`${PLATFORM_SLUG} record sign-up`, () =>
         signUpCommand(String(options.email), String(options.name), promptPassword, { log }),
@@ -60,7 +60,8 @@ export function register(program: Command): void {
     )
   record
     .command('sign-in')
-    .requiredOption('--email <email>')
+    .description('sign in to the hosted record')
+    .requiredOption('--email <email>', 'email address of the account')
     .action((options) =>
       hostedCommand(`${PLATFORM_SLUG} record sign-in`, () =>
         signInCommand(String(options.email), promptPassword, { log }),
@@ -68,13 +69,20 @@ export function register(program: Command): void {
     )
   record
     .command('whoami')
+    .description('show the signed-in hosted record identity')
     .action(() => hostedCommand(`${PLATFORM_SLUG} record whoami`, () => whoamiCommand({ log })))
   record
     .command('migrate')
+    .description('apply pending hosted record migrations')
     .action(() => hostedRecord('migrate', () => recordMigrateCommand(presentation)))
-  const publicDoc = record.command('public-doc')
+}
+
+function registerPublicDocCommands(record: Command): void {
+  const presentation = { log }
+  const publicDoc = record.command('public-doc').description('manage public document projects')
   publicDoc
     .command('designate')
+    .description('designate a project as the public document source')
     .argument('<space-slug>')
     .argument('<project-name>')
     .action((spaceSlug, projectName) =>
@@ -84,7 +92,8 @@ export function register(program: Command): void {
     )
   publicDoc
     .command('list')
-    .option('--json')
+    .description('list public document project designations')
+    .option('--json', 'write the designations as JSON')
     .action((options) =>
       hostedCommand(`${PLATFORM_SLUG} record public-doc list`, () =>
         recordPublicDocListCommand({ json: Boolean(options.json) }, presentation),
@@ -92,6 +101,7 @@ export function register(program: Command): void {
     )
   publicDoc
     .command('clear')
+    .description('clear a public document project designation')
     .argument('<space-slug>')
     .argument('<project-name>')
     .action((spaceSlug, projectName) =>
@@ -99,10 +109,18 @@ export function register(program: Command): void {
         recordPublicDocClearCommand(String(spaceSlug), String(projectName), presentation),
       ),
     )
+}
+
+export function register(program: Command): void {
+  const record = program.command('record').description('manage the hosted record and its outbox')
+  const presentation = { log }
+  registerIdentityCommands(record)
+  registerPublicDocCommands(record)
   record
     .command('audit-secrets')
-    .option('--json')
-    .option('--ids')
+    .description('scan local outbox payloads for secret material')
+    .option('--json', 'write the audit findings as JSON')
+    .option('--ids', 'include row identifiers in text output')
     .action((options) =>
       recordAuditSecretsCommand(
         { json: Boolean(options.json), ids: Boolean(options.ids) },
@@ -111,8 +129,9 @@ export function register(program: Command): void {
     )
   record
     .command('redact-synced')
-    .option('--rules <comma-list>')
-    .option('--dry-run')
+    .description('redact secret material from synchronized record payloads')
+    .option('--rules <comma-list>', 'comma-separated redaction rules to apply')
+    .option('--dry-run', 'report redactions without writing them')
     .action((options) =>
       recordRedactSyncedCommand(
         {
@@ -122,9 +141,10 @@ export function register(program: Command): void {
         presentation,
       ),
     )
-  const outbox = record.command('outbox')
+  const outbox = record.command('outbox').description('operate on orchestrator outbox rows')
   outbox
     .command('retry')
+    .description('queue an outbox row for another delivery attempt')
     .argument('<row-id>')
     .action((rowId) => {
       retryOutboxRow(Number(rowId))
@@ -132,20 +152,23 @@ export function register(program: Command): void {
     })
   outbox
     .command('retire')
+    .description('retire an outbox row after proving its dependencies')
     .argument('<row-id>')
-    .requiredOption('--reason <text>')
+    .requiredOption('--reason <text>', 'reason the outbox row is retired')
     .action((rowId, options) => {
       retireOutboxRowWithDependencyProof(Number(rowId), String(options.reason))
       log(`outbox row ${String(rowId)} retired`)
     })
-  const space = record.command('space')
+  const space = record.command('space').description('manage hosted record spaces')
   space
     .command('list')
+    .description('list spaces available to the signed-in account')
     .action(() => hostedRecord('space list', () => recordSpaceListCommand(presentation)))
   space
     .command('create')
-    .requiredOption('--name <name>')
-    .requiredOption('--slug <slug>')
+    .description('create a hosted record space')
+    .requiredOption('--name <name>', 'display name for the new space')
+    .requiredOption('--slug <slug>', 'URL slug for the new space')
     .action((options) =>
       hostedCommand(`${PLATFORM_SLUG} record space create`, () =>
         recordSpaceCreateCommand(String(options.name), String(options.slug), presentation),
@@ -153,6 +176,7 @@ export function register(program: Command): void {
     )
   space
     .command('switch')
+    .description('select the active hosted record space')
     .argument('<slug-or-id>')
     .action((value) =>
       hostedCommand(`${PLATFORM_SLUG} record space switch`, () =>
@@ -161,7 +185,8 @@ export function register(program: Command): void {
     )
   space
     .command('invite')
-    .requiredOption('--email <email>')
+    .description('invite an email address to the active space')
+    .requiredOption('--email <email>', 'email address to invite')
     .option('--role <role>', 'member, admin, or owner', 'member')
     .action((options) =>
       hostedCommand(`${PLATFORM_SLUG} record space invite`, () =>
@@ -170,6 +195,7 @@ export function register(program: Command): void {
     )
   space
     .command('invitations')
+    .description('list invitations available to the signed-in account')
     .action(() =>
       hostedCommand(`${PLATFORM_SLUG} record space invitations`, () =>
         recordSpaceInvitationsCommand(presentation),
@@ -177,6 +203,7 @@ export function register(program: Command): void {
     )
   space
     .command('accept')
+    .description('accept an invitation to a hosted record space')
     .argument('<invitation-id>')
     .action((value) =>
       hostedCommand(`${PLATFORM_SLUG} record space accept`, () =>
@@ -185,10 +212,11 @@ export function register(program: Command): void {
     )
   space
     .command('move-project')
+    .description('move a registered project to another space')
     .argument('<project>')
-    .requiredOption('--to <slug-or-id>')
-    .option('--dry-run')
-    .option('--confirm <count>')
+    .requiredOption('--to <slug-or-id>', 'destination space slug or identifier')
+    .option('--dry-run', 'report the project records that would move')
+    .option('--confirm <count>', 'expected number of project records to move')
     .action((project, options) =>
       hostedCommand(`${PLATFORM_SLUG} record space move-project`, () =>
         recordSpaceMoveProjectCommand(
@@ -204,31 +232,41 @@ export function register(program: Command): void {
     )
   record
     .command('push-docs')
-    .option('--dry-run')
+    .description('push local documents to the hosted record')
+    .option('--dry-run', 'report document changes without pushing them')
     .action((options) =>
       hostedCommand(`${PLATFORM_SLUG} record push-docs`, () =>
         pushDocsCommand({ dryRun: Boolean(options.dryRun) }, { log }),
       ),
     )
-  record.command('publish').action(() =>
-    hostedCommand(`${PLATFORM_SLUG} record publish`, () =>
-      publishSnapshotsCommand({
-        log,
-        setExitCode: (code) => {
-          process.exitCode = code
+  record
+    .command('publish')
+    .description('publish hosted record snapshots')
+    .action(() =>
+      hostedCommand(`${PLATFORM_SLUG} record publish`, () =>
+        publishSnapshotsCommand({
+          log,
+          setExitCode: (code) => {
+            process.exitCode = code
+          },
+        }),
+      ),
+    )
+  record
+    .command('doctor')
+    .description('check hosted record configuration and access')
+    .action(() =>
+      recordDoctorCommand(
+        {
+          log,
+          exitCode: (code) => {
+            process.exitCode = code
+          },
         },
-      }),
-    ),
-  )
-  record.command('doctor').action(() =>
-    recordDoctorCommand(
-      {
-        log,
-        exitCode: (code) => {
-          process.exitCode = code
-        },
-      },
-      projects().map((project) => ({ name: project.name, space: project.settings.space ?? null })),
-    ),
-  )
+        projects().map((project) => ({
+          name: project.name,
+          space: project.settings.space ?? null,
+        })),
+      ),
+    )
 }

@@ -85,40 +85,50 @@ async function reportSubscribe(options: ReportOptions): Promise<void> {
 }
 
 export function registerReportCommands(program: Command): void {
-  const report = program.command('report').action(() => {
-    open()
-    throw new Error(`usage: ${PLATFORM_SLUG} report subscribe|subscriptions|unsubscribe|push|send`)
-  })
+  const report = program
+    .command('report')
+    .description('manage scheduled reports')
+    .action(() => {
+      open()
+      throw new Error(
+        `usage: ${PLATFORM_SLUG} report subscribe|subscriptions|unsubscribe|push|send`,
+      )
+    })
   report
     .command('subscribe')
-    .option('--scope <space|project|person>', '')
-    .option('--project <name>', '')
-    .option('--member <user-id>', '', repeat, [])
-    .option('--cadence <daily|weekly>', '')
-    .option('--hour <N>', '')
-    .option('--day <monday>', '')
-    .option('--zone <area/city>', '')
-    .option('--recipient <user-id>', '')
+    .description('create a scheduled report subscription')
+    .option('--scope <space|project|person>', 'scope covered by the report')
+    .option('--project <name>', 'project covered by a project report')
+    .option('--member <user-id>', 'member covered by a members report', repeat, [])
+    .option('--cadence <daily|weekly>', 'delivery cadence for the report')
+    .option('--hour <N>', 'local hour when the report is due')
+    .option('--day <monday>', 'weekday when a weekly report is due')
+    .option('--zone <area/city>', 'time zone used to schedule delivery')
+    .option('--recipient <user-id>', 'member who receives the report')
     .action(async (options: ReportOptions) => {
       open()
       await reportSubscribe(options)
     })
   report
     .command('subscriptions')
-    .option('--json', '')
+    .description('list report subscriptions')
+    .option('--json', 'write the subscriptions as JSON')
     .action(async (options: ReportOptions) => {
       open()
       await reportList(Boolean(options.json))
     })
-  report.command('unsubscribe <id>').action(async (id) => {
-    open()
-    const row = await hostedUnsubscribeReportSubscription(id)
-    console.log(`unsubscribed ${row.id}`)
-  })
+  report
+    .command('unsubscribe <id>')
+    .description('remove a report subscription')
+    .action(async (id) => {
+      open()
+      const row = await hostedUnsubscribeReportSubscription(id)
+      console.log(`unsubscribed ${row.id}`)
+    })
   report
     .command('send')
     .description('render and send every subscription whose period is due')
-    .option('--dry-run', '')
+    .option('--dry-run', 'render due reports without sending them')
     .action(async (options: ReportOptions) => {
       open()
       await runReportDeliveryCommand({ dryRun: Boolean(options.dryRun) })
@@ -126,7 +136,7 @@ export function registerReportCommands(program: Command): void {
   report
     .command('push')
     .description('migrate and verify send history')
-    .option('--dry-run', '')
+    .option('--dry-run', 'compare send history without writing it')
     .action(async (options: ReportOptions) => {
       open()
       await reportPush(Boolean(options.dryRun))

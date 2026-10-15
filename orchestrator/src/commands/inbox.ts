@@ -32,10 +32,11 @@ const strandedRecovery = (id: number) =>
 export function register(program: Command): void {
   program
     .command('inbox')
-    .option('--all')
-    .option('--active')
-    .option('--cwd <path>')
-    .option('--json')
+    .description('list worker and workflow questions needing rulings')
+    .option('--all', 'include questions outside your session or project')
+    .option('--active', 'include only unanswered questions on live work')
+    .option('--cwd <path>', 'scope questions to the project at this path')
+    .option('--json', 'write the question inbox as JSON')
     .allowExcessArguments(false)
     .action(async (options) => {
       await runInboxCommand(
@@ -52,9 +53,10 @@ export function register(program: Command): void {
 
   program
     .command('diff <id>')
-    .option('--quiet')
-    .option('--since-base')
-    .option('--since-read')
+    .description('show the repository changes produced by a run')
+    .option('--quiet', 'suppress the diff header')
+    .option('--since-base', 'compare the worktree with the run base')
+    .option('--since-read', 'show changes since the latest architect read')
     .allowExcessArguments(false)
     .action(async (id, options) => {
       const runId = resolveRunIdentifier(db(), id)

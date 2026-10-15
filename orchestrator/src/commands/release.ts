@@ -15,9 +15,9 @@ export function register(program: Command): void {
     .description(
       'run the registered deploy with ORCH_RELEASE_PROJECT, ORCH_RELEASE_RUNG, and ORCH_RELEASE_COMMIT set',
     )
-    .option('--rung <name>')
-    .option('--rollback <reason>')
-    .option('--json')
+    .option('--rung <name>', 'release rung to run')
+    .option('--rollback <reason>', 'reason for deploying the prior live commit')
+    .option('--json', 'write the release result as JSON')
     .allowExcessArguments(false)
     .action((project, options) => {
       if (!project)
@@ -49,8 +49,9 @@ export function register(program: Command): void {
 
   release
     .command('log <project>')
-    .option('--rung <name>')
-    .option('--json')
+    .description('list recorded releases for a project')
+    .option('--rung <name>', 'release rung to include')
+    .option('--json', 'write the release entries as JSON')
     .allowExcessArguments(false)
     .action((project, options) => {
       const rows = releaseLog(project, options.rung)

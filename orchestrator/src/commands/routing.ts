@@ -8,9 +8,10 @@ import { duration, log, optionFlags } from './support.ts'
 export function register(program: Command): void {
   program
     .command('guide')
-    .option('--job <value>')
-    .option('--prompt-bytes <value>')
-    .option('--lens <value>')
+    .description('show routing quality and turnaround guidance')
+    .option('--job <value>', 'show guidance for this job')
+    .option('--prompt-bytes <value>', 'use this prompt size for routing guidance')
+    .option('--lens <value>', 'show guidance for this review lens')
     .allowExcessArguments(false)
     .action(async (options) => {
       await ensureLocalHealth()
@@ -19,15 +20,17 @@ export function register(program: Command): void {
 
   program
     .command('stats')
-    .option('--job <value>')
+    .description('show routing scores, latency, cost, and agent duels')
+    .option('--job <value>', 'show statistics for this job')
     .allowExcessArguments(false)
     .action((options) => statsCommand(optionFlags(options), { log, dur: duration }))
 
   program
     .command('routing-backtest')
-    .option('--job <value>')
-    .option('--seed <value>')
-    .option('--json')
+    .description('replay historical routing decisions')
+    .option('--job <value>', 'replay decisions for this job')
+    .option('--seed <value>', 'reproduce the replay with this random seed')
+    .option('--json', 'write the replay as JSON')
     .allowExcessArguments(false)
     .action((options) => {
       routingBacktestCommand(optionFlags(options), { log, dur: duration })

@@ -19,6 +19,7 @@ function inputs(options: SetupOptions): string[] {
 export function register(program: Command): void {
   const setup = program
     .command('setup')
+    .description('inspect and configure this machine interactively')
     .option('--in <folder>', 'folder to inspect', collect, [])
     .allowExcessArguments(false)
     .action(async (options: SetupOptions) => {
@@ -49,13 +50,15 @@ export function register(program: Command): void {
     })
   setup
     .command('facts')
-    .requiredOption('--json')
+    .description('inspect machine setup facts')
+    .requiredOption('--json', 'write the setup facts as JSON')
     .allowExcessArguments(false)
     .action(async () => log(JSON.stringify(await gatherSetupFacts())))
   setup
     .command('plan')
+    .description('plan recommended machine setup actions')
     .option('--in <folder>', 'folder to inspect', collect, [])
-    .option('--json')
+    .option('--json', 'write the setup plan as compact JSON')
     .allowExcessArguments(false)
     .action(async (options: SetupOptions) => {
       const plan = await setupService.plan(inputs(options))
@@ -64,10 +67,11 @@ export function register(program: Command): void {
     })
   setup
     .command('apply')
+    .description('apply a machine setup plan without prompts')
     .option('--in <folder>', 'folder to inspect', collect, [])
-    .option('--yes')
-    .option('--answers <file>')
-    .option('--json')
+    .option('--yes', 'apply every recommended setup answer')
+    .option('--answers <file>', 'JSON file containing explicit setup answers')
+    .option('--json', 'write the setup result as compact JSON')
     .allowExcessArguments(false)
     .action(async (options: SetupOptions) => {
       if (Boolean(options.yes) === Boolean(options.answers)) {

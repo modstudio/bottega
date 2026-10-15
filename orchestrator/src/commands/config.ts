@@ -72,21 +72,25 @@ export const configListPresentation = (
   json: boolean,
 ) => (json ? [JSON.stringify(rows)] : rows.map((row) => `${row.scope}\t${row.key}\t${row.value}`))
 
-export function register(program: Command): void {
-  const config = program.command('config')
-  const machine = config.command('machine')
+function registerMachineCommands(config: Command): void {
+  const machine = config.command('machine').description('manage machine encryption identity')
   machine
     .command('init')
-    .option('--label <label>')
+    .description('create this machine encryption identity')
+    .option('--label <label>', 'label stored for this machine identity')
     .action(async (options) => log(await machineInit(options.label)))
-  machine.command('show').action(async () => {
-    const shown = await machineShow()
-    log(`${shown.keyId}\t${shown.publicKey}`)
-  })
+  machine
+    .command('show')
+    .description('show this machine public encryption identity')
+    .action(async () => {
+      const shown = await machineShow()
+      log(`${shown.keyId}\t${shown.publicKey}`)
+    })
   machine
     .command('trust <keyId> <publicKey>')
-    .option('--label <label>')
-    .option('--yes')
+    .description('trust a machine public key for sealed configuration')
+    .option('--label <label>', 'label stored for the trusted machine')
+    .option('--yes', 'trust the machine without interactive confirmation')
     .action(async (keyId, publicKey, options) => {
       const label = options.label ?? keyId
       if (!options.yes) {
@@ -102,27 +106,36 @@ export function register(program: Command): void {
       await machineTrust(keyId, publicKey, label)
       log(keyId)
     })
-  machine.command('revoke <keyId>').action(async (keyId) => {
-    const rows = await machineRevoke(keyId)
-    log(
-      `revoked ${keyId}; re-sealed ${rows.length} row(s)${rows.length ? `: ${rows.join(', ')}` : ''}`,
-    )
-  })
+  machine
+    .command('revoke <keyId>')
+    .description('revoke a trusted machine and reseal configuration')
+    .action(async (keyId) => {
+      const rows = await machineRevoke(keyId)
+      log(
+        `revoked ${keyId}; re-sealed ${rows.length} row(s)${rows.length ? `: ${rows.join(', ')}` : ''}`,
+      )
+    })
+}
 
+export function register(program: Command): void {
+  const config = program.command('config').description('manage scoped configuration values')
+  registerMachineCommands(config)
   config
     .command('get <key>')
-    .option('--space')
-    .option('--json')
+    .description('show one configuration value')
+    .option('--space', 'read the value from the active space scope')
+    .option('--json', 'write the configuration row as JSON')
     .action(async (key, options) => {
       const row = await getEntry(key, scope(options))
       log(configGetPresentation(row, Boolean(options.json)))
     })
   config
     .command('set <key> <value>')
-    .option('--space')
-    .option('--machine')
-    .option('--expect <rowVersion>')
-    .option('--json')
+    .description('set one configuration value')
+    .option('--space', 'write the value in the active space scope')
+    .option('--machine', 'write the value in machine configuration')
+    .option('--expect <rowVersion>', 'row version required before writing')
+    .option('--json', 'write the resulting configuration row as JSON')
     .action(async (key, value, options) => {
       const write = shipToWrite(key, value)
       assertConfigWriteAllowed(write.key, write.value)
@@ -149,17 +162,19 @@ export function register(program: Command): void {
     })
   config
     .command('list')
-    .option('--machine')
-    .option('--json')
+    .description('list configuration values')
+    .option('--machine', 'list machine configuration values')
+    .option('--json', 'write the configuration rows as JSON')
     .action(async (options) => {
       const rows = options.machine ? listMachineEntries() : await listEntries()
       for (const line of configListPresentation(rows, Boolean(options.json))) log(line)
     })
   config
     .command('delete <key>')
-    .option('--space')
-    .option('--machine')
-    .option('--expect <rowVersion>')
+    .description('delete one configuration value')
+    .option('--space', 'delete the value from the active space scope')
+    .option('--machine', 'delete the value from machine configuration')
+    .option('--expect <rowVersion>', 'row version required before deleting')
     .action(async (key, options) => {
       assertConfigWriteAllowed(key, undefined)
       if (options.machine) {
@@ -192,21 +207,26 @@ export function register(program: Command): void {
       } else await deleteEntry(key, scope(options), expected)
     })
 
-  const secret = config.command('secret')
+  const secret = config.command('secret').description('manage sealed configuration values')
   secret
     .command('set <key>')
-    .option('--space')
+    .description('set a sealed value from standard input')
+    .option('--space', 'write the value in the active space scope')
     .action(async (key, options) => {
       if (process.stdin.isTTY) throw new Error('secret value must be provided on stdin')
       const value = await Bun.stdin.text()
       await setSecret(key, value.replace(/\r?\n$/, ''), scope(options))
     })
-  secret.command('list').action(async () => {
-    for (const row of await listSecrets()) log(`${row.scope}\t${row.key}\t${row.updatedAt}`)
-  })
+  secret
+    .command('list')
+    .description('list sealed configuration keys')
+    .action(async () => {
+      for (const row of await listSecrets()) log(`${row.scope}\t${row.key}\t${row.updatedAt}`)
+    })
   secret
     .command('delete <key>')
-    .option('--space')
+    .description('delete one sealed configuration value')
+    .option('--space', 'delete the value from the active space scope')
     .action(async (key, options) => {
       await deleteSecret(key, scope(options))
     })

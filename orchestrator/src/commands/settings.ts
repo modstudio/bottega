@@ -23,11 +23,11 @@ import {
 } from '../settings/settings-machine-permissions.ts'
 import { collect, log, optionFlags } from './support.ts'
 
-export function register(program: Command): void {
-  const settings = program.command('settings')
+function registerSettingsSources(settings: Command): void {
   settings
     .command('apply')
-    .option('--check')
+    .description('apply managed settings and canon to installed harnesses')
+    .option('--check', 'report machine settings drift without writing files')
     .action(async (options) => {
       const check = Boolean(options.check)
       const results = await applyMachineSettings({ check })
@@ -38,9 +38,10 @@ export function register(program: Command): void {
     })
   settings
     .command('import')
-    .option('--user')
-    .option('--project <name>')
-    .option('--dry-run')
+    .description('import a settings file into the document store')
+    .option('--user', 'target the signed-in user settings')
+    .option('--project <name>', 'registered project whose settings are imported')
+    .option('--dry-run', 'report the import without writing a document')
     .action(async (options) => {
       await settingsImportCommand(optionFlags(options), {
         log,
@@ -52,9 +53,10 @@ export function register(program: Command): void {
     })
   settings
     .command('adopt')
-    .option('--user')
-    .option('--project <name>')
-    .option('--all')
+    .description('adopt local permission rules into canonical settings')
+    .option('--user', 'target the signed-in user settings')
+    .option('--project <name>', 'registered project whose rules are adopted')
+    .option('--all', 'adopt every local permission rule')
     .argument('[rules...]')
     .action(async (rules: string[], options) => {
       await settingsAdoptCommand(optionFlags(options), rules, {
@@ -65,11 +67,17 @@ export function register(program: Command): void {
         },
       })
     })
-  const permission = settings.command('permission')
+}
+
+export function register(program: Command): void {
+  const settings = program.command('settings').description('manage canonical Claude settings')
+  registerSettingsSources(settings)
+  const permission = settings.command('permission').description('manage canonical permission rules')
   permission
     .command('list')
-    .option('--machine')
-    .option('--json')
+    .description('list machine permission overlays')
+    .option('--machine', 'list the machine permission overlay')
+    .option('--json', 'write the permission overlay as JSON')
     .action((options) => {
       if (!options.machine) {
         throw new Error(
@@ -81,14 +89,15 @@ export function register(program: Command): void {
   for (const operation of ['add', 'remove'] as const) {
     permission
       .command(operation)
-      .option('--user')
-      .option('--project <name>')
-      .option('--machine')
-      .requiredOption('--list <name>')
-      .requiredOption('--rule <rule>')
-      .option('--expect <revision>')
-      .option('--reason <text>')
-      .option('--json')
+      .description(`${operation} a canonical or machine permission rule`)
+      .option('--user', 'target the signed-in user settings')
+      .option('--project <name>', 'registered project whose rule is edited')
+      .option('--machine', 'edit the machine permission overlay')
+      .requiredOption('--list <name>', 'permission list containing the rule')
+      .requiredOption('--rule <rule>', 'permission rule to edit')
+      .option('--expect <revision>', 'document revision required before editing')
+      .option('--reason <text>', 'reason recorded for the settings revision')
+      .option('--json', 'write the permission result as JSON')
       .action(async (options) => {
         const flags = optionFlags(options)
         if (
@@ -124,9 +133,14 @@ export function register(program: Command): void {
   for (const operation of ['drop', 'undrop'] as const) {
     permission
       .command(operation)
-      .requiredOption('--list <name>')
-      .requiredOption('--rule <rule>')
-      .option('--json')
+      .description(
+        operation === 'drop'
+          ? 'suppress a machine permission rule'
+          : 'stop suppressing a machine permission rule',
+      )
+      .requiredOption('--list <name>', 'permission list containing the rule')
+      .requiredOption('--rule <rule>', 'permission rule to edit')
+      .option('--json', 'write the permission result as JSON')
       .action((options) => {
         const flags = optionFlags(options)
         const result = editMachineSettingsPermission({
@@ -145,9 +159,10 @@ export function register(program: Command): void {
   }
   settings
     .command('restore')
-    .option('--user')
-    .option('--project <name>')
-    .option('--force')
+    .description('restore user settings from a rendered backup')
+    .option('--user', 'target the user settings file')
+    .option('--project <name>', 'project target, which restore refuses')
+    .option('--force', 'restore despite later settings writes')
     .argument('<backup>')
     .action((backup: string, options) => {
       settingsRestoreCommand(optionFlags(options), backup, {
@@ -158,12 +173,13 @@ export function register(program: Command): void {
         },
       })
     })
-  const env = settings.command('env')
+  const env = settings.command('env').description('manage settings environment values')
   env
     .command('import')
-    .option('--user')
-    .option('--project <name>')
-    .option('--dry-run')
+    .description('move user settings environment values into the secrets file')
+    .option('--user', 'target the user settings file')
+    .option('--project <name>', 'project target, which environment import refuses')
+    .option('--dry-run', 'report the import without writing files or settings')
     .action(async (options) => {
       await settingsEnvImportCommand(optionFlags(options), {
         log,
@@ -175,13 +191,19 @@ export function register(program: Command): void {
     })
   settings
     .command('render')
-    .option('--check')
-    .option('--write')
-    .option('--yes')
-    .option('--user')
-    .option('--project <name>')
-    .option('--json')
-    .option('--drop-env <key>', '', collect, [])
+    .description('compare or write canonical settings to a settings file')
+    .option('--check', 'report drift without writing the settings file')
+    .option('--write', 'write canonical settings to the settings file')
+    .option('--yes', 'confirm writing the settings file')
+    .option('--user', 'target the user settings file')
+    .option('--project <name>', 'registered project whose settings are rendered')
+    .option('--json', 'write the settings drift report as JSON')
+    .option(
+      '--drop-env <key>',
+      'environment key deliberately removed during rendering',
+      collect,
+      [],
+    )
     .action(async (options) => {
       const flags = optionFlags(options)
       if (flags.has('check') === flags.has('write')) {

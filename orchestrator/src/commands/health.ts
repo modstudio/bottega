@@ -13,21 +13,24 @@ import { log, optionFlags } from './support.ts'
 export function register(program: Command): void {
   program
     .command('blockers')
-    .option('--days <value>')
-    .option('--json')
+    .description('rank reported environment blockers by recurrence')
+    .option('--days <value>', 'number of recent days to include')
+    .option('--json', 'write the blocker report as JSON')
     .allowExcessArguments(false)
     .action((options) => blockersCommand(optionFlags(options), { log }))
 
   program
     .command('health')
-    .option('--days <value>')
-    .option('--json')
+    .description('report harness failures, costs, and false verdicts')
+    .option('--days <value>', 'number of recent days to include')
+    .option('--json', 'write the health report as JSON')
     .allowExcessArguments(false)
     .action((options) => healthCommand(optionFlags(options), { log }))
 
   program
     .command('reclassify-failures')
-    .option('--dry-run')
+    .description('classify stored quota and authentication failures from vendor errors')
+    .option('--dry-run', 'report reclassifications without writing them')
     .allowExcessArguments(false)
     .action((options) => {
       reclassifyFailuresCommand(optionFlags(options), { log })
@@ -35,7 +38,8 @@ export function register(program: Command): void {
 
   program
     .command('doctor')
-    .option('--wake')
+    .description('diagnose orchestrator installation and runtime health')
+    .option('--wake', 'wake configured local model services during diagnosis')
     .allowExcessArguments(false)
     .action(async (options) => {
       await doctorCommand(optionFlags(options), {
