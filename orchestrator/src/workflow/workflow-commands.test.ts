@@ -1,8 +1,8 @@
-import { expect, test } from 'bun:test'
+import { expect, spyOn, test } from 'bun:test'
 import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { program } from '../cli/program.ts'
+import { program, run } from '../cli/program.ts'
 import { registerWorkflowCommands } from '../commands/logic.ts'
 import { setRawArgv } from '../commands/support.ts'
 import { db, sessionId } from '../database/db.ts'
@@ -34,6 +34,19 @@ async function workflowCommand(
   setRawArgv(argv)
   await command.parseAsync(['node', 'orch', ...argv])
 }
+
+test('workflow preserves the unknown-verb refusal and exit status', async () => {
+  const errors: string[] = []
+  const error = spyOn(console, 'error').mockImplementation((value) => errors.push(String(value)))
+  try {
+    expect(await run(['workflow', 'bogus-verb'])).toBe(1)
+  } finally {
+    error.mockRestore()
+  }
+  expect(errors).toEqual([
+    `unknown: ${PLATFORM_SLUG} workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | await | rule | abandon | cursors | probe | exec | hydrate | import`,
+  ])
+})
 
 const outcomePresentation = () => {
   const stdout: string[] = []

@@ -190,14 +190,7 @@ function workflowRegistration(
   const workflow = program
     .command('workflow')
     .description('inspect and operate workflows and their cursors')
-    .action(() => {
-      throw new Error(
-        `unknown: ${PLATFORM_SLUG} workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | await | rule | abandon | cursors | probe | exec | hydrate | import`,
-      )
-    })
-  workflow
-    .command('*', { hidden: true })
-    .description('refuse an unknown workflow command')
+    .allowExcessArguments(true)
     .action(() => {
       throw new Error(
         `unknown: ${PLATFORM_SLUG} workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | await | rule | abandon | cursors | probe | exec | hydrate | import`,

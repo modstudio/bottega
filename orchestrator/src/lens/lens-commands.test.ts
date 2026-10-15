@@ -1,5 +1,7 @@
-import { expect, test } from 'bun:test'
+import { expect, spyOn, test } from 'bun:test'
 import { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { run } from '../cli/program.ts'
 import { registerLensCommands } from '../commands/lens.ts'
 
 const slots = JSON.stringify({
@@ -30,6 +32,17 @@ function setCommand(title: string, requiresExecution: boolean): string[] {
     '--json',
   ]
 }
+
+test('review lens preserves the unknown-verb refusal and exit status', async () => {
+  const errors: string[] = []
+  const error = spyOn(console, 'error').mockImplementation((value) => errors.push(String(value)))
+  try {
+    expect(await run(['lens', 'bogus'])).toBe(1)
+  } finally {
+    error.mockRestore()
+  }
+  expect(errors).toEqual([`unknown: ${PLATFORM_SLUG} review lens. Try list | show | set | profile`])
+})
 
 test('lens set adds and changes a lens including requires-execution', async () => {
   const output: string[] = []

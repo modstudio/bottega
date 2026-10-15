@@ -25,12 +25,7 @@ export function registerLensCommands(
   const lens = program
     .command('lens')
     .description('inspect and change review lenses and profiles')
-    .action(() => {
-      throw new Error(`unknown: ${PLATFORM_SLUG} review lens. Try list | show | set | profile`)
-    })
-  lens
-    .command('*', { hidden: true })
-    .description('refuse an unknown review lens command')
+    .allowExcessArguments(true)
     .action(() => {
       throw new Error(`unknown: ${PLATFORM_SLUG} review lens. Try list | show | set | profile`)
     })
