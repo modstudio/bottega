@@ -374,7 +374,7 @@ export function DocsReading({
           {fieldSource && doc.kind === 'article' && showsCode(signedIn, audience) ? (
             <EditableSourceFiles key={doc.id} doc={doc} source={fieldSource} />
           ) : showSourceFiles(signedIn, audience, doc.sourceFiles) ? (
-            <CodeSection count={doc.sourceFiles?.length ?? 0}>
+            <CodeSection key={doc.id} count={doc.sourceFiles?.length ?? 0}>
               <ul>
                 {doc.sourceFiles?.map((path) => (
                   <li key={path}>
