@@ -692,7 +692,11 @@ export async function boardClaimList(
   const c = context(inputContext)
   if (boardMode('shared', c.env) === 'local')
     return { claims: listClaims(project, all, c.env, c.clock, c.cwd).claims.map(claimResult) }
-  const hosted = await hostedClient(c).listBoardClaims(claimProject(project, c.env, c.cwd))
+  const resolvedProject = claimProject(project, c.env, c.cwd)
+  const hosted = await hostedClient(c).listBoardClaims(
+    resolvedProject,
+    projectRowByName(resolvedProject)?.recordId ?? null,
+  )
   return {
     claims: (all ? hosted.claims : hosted.claims.filter((claim) => claim.live)).map(claimResult),
   }
@@ -701,5 +705,9 @@ export async function boardClaimReleaseTask(key: string, project: string, inputC
   const c = context(inputContext)
   return boardMode('shared', c.env) === 'local'
     ? releaseTaskClaims(key, project, c.env, c.clock)
-    : hostedClient(c).releaseBoardTaskClaims({ key, project })
+    : hostedClient(c).releaseBoardTaskClaims({
+        key,
+        project,
+        projectId: projectRowByName(project)?.recordId ?? null,
+      })
 }

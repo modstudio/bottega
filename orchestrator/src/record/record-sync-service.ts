@@ -565,7 +565,7 @@ function testFlakeValues(row: Payload) {
   }
 }
 
-async function projectRecordId(
+export async function projectRecordId(
   tx: SQL,
   row: Payload,
   principal: RecordPrincipal,

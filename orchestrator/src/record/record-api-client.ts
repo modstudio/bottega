@@ -355,8 +355,15 @@ export type RecordApiClient = {
     id: string,
     input?: { holderSession?: string | null },
   ): Promise<HostedBoardClaim>
-  listBoardClaims(project: string): Promise<{ claims: HostedBoardClaim[] }>
-  releaseBoardTaskClaims(input: { project: string; key: string }): Promise<{ released: number }>
+  listBoardClaims(
+    project: string,
+    projectId?: string | null,
+  ): Promise<{ claims: HostedBoardClaim[] }>
+  releaseBoardTaskClaims(input: {
+    project: string
+    projectId?: string | null
+    key: string
+  }): Promise<{ released: number }>
   openBoardStream(signal?: AbortSignal): Promise<RecordBoardStreamOpen>
 }
 
@@ -653,6 +660,19 @@ function acceptedInvitationResponse(
   return { invitation: { organizationId: invitation.organizationId } }
 }
 
+function subjectMutationBody(
+  input: { project: string; projectId?: string | null },
+  change: Record<string, string>,
+): string {
+  return JSON.stringify({ project: input.project, projectId: input.projectId, ...change })
+}
+
+function boardClaimListPath(project: string, projectId?: string | null): string {
+  const search = new URLSearchParams({ project })
+  if (projectId) search.set('projectId', projectId)
+  return `/v1/board/claims?${search}`
+}
+
 export function recordApiClient(): RecordApiClient {
   const injected = injectedClient()
   if (injected) return injected
@@ -763,13 +783,13 @@ export function recordApiClient(): RecordApiClient {
     renameProjectSubject: (input, destination) =>
       request(`/v1/subjects/${input.id}/rename`, {
         method: 'POST',
-        body: JSON.stringify({ project: input.project, projectId: input.projectId, name: input.name }),
+        body: subjectMutationBody(input, { name: input.name }),
         ...destination,
       }),
     defineProjectSubject: (input, destination) =>
       request(`/v1/subjects/${input.id}/define`, {
         method: 'POST',
-        body: JSON.stringify({ project: input.project, projectId: input.projectId, definition: input.definition }),
+        body: subjectMutationBody(input, { definition: input.definition }),
         ...destination,
       }),
     reorderProjectSubjects: (input, destination) =>
@@ -856,8 +876,7 @@ export function recordApiClient(): RecordApiClient {
         method: 'POST',
         body: JSON.stringify(input ?? {}),
       }),
-    listBoardClaims: (project) =>
-      request(`/v1/board/claims?project=${encodeURIComponent(project)}`),
+    listBoardClaims: (project, projectId) => request(boardClaimListPath(project, projectId)),
     ...recordApiBoardWatchClient(),
   }
 }

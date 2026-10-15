@@ -53,6 +53,19 @@ const projectId = z.string().uuid().nullable().optional()
 const id = z.string().uuid()
 const name = z.string().trim().min(1)
 const definition = SubjectDefinitionSchema
+const subjectListQuery = z.object({
+  project: project.optional(),
+  projectId,
+  includeRetired: z.enum(['true', 'false']).optional(),
+  order: z.enum(['catalog', 'updated']).default('catalog'),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().positive().max(500).default(100),
+})
+const addSubjectBody = z.object({ id: id.optional(), project, projectId, name, definition })
+const renameSubjectBody = z.object({ project, projectId, name })
+const defineSubjectBody = z.object({ project, projectId, definition })
+const reorderSubjectBody = z.object({ project, projectId, ids: z.array(id) })
+const retireSubjectBody = z.object({ project, projectId })
 
 const invalidBody = (
   context: Context<Environment>,
@@ -83,16 +96,7 @@ export function registerRecordSubjectRoutes(
   app.get('/v1/subjects', async (context) => {
     const bound = active(context)
     if ('response' in bound) return bound.response
-    const query = z
-      .object({
-        project: project.optional(),
-        projectId,
-        includeRetired: z.enum(['true', 'false']).optional(),
-        order: z.enum(['catalog', 'updated']).default('catalog'),
-        cursor: z.string().optional(),
-        limit: z.coerce.number().int().positive().max(500).default(100),
-      })
-      .safeParse(context.req.query())
+    const query = subjectListQuery.safeParse(context.req.query())
     if (!query.success) return context.json({ error: 'invalid subject list query' }, 400)
     let cursor: RecordCursor | null = null
     try {
@@ -114,9 +118,7 @@ export function registerRecordSubjectRoutes(
   app.put('/v1/subjects', async (context) => {
     const bound = active(context)
     if ('response' in bound) return bound.response
-    const body = z
-      .object({ id: id.optional(), project, projectId, name, definition })
-      .safeParse(await context.req.json().catch(() => null))
+    const body = addSubjectBody.safeParse(await context.req.json().catch(() => null))
     if (!body.success) return invalidBody(context, body, 'invalid subject add')
     try {
       return context.json(await deps.addSubject({ ...bound.tenant, ...body.data }))
@@ -128,9 +130,7 @@ export function registerRecordSubjectRoutes(
     const bound = active(context)
     if ('response' in bound) return bound.response
     const parsedId = id.safeParse(context.req.param('id'))
-    const body = z
-      .object({ project, projectId, name })
-      .safeParse(await context.req.json().catch(() => null))
+    const body = renameSubjectBody.safeParse(await context.req.json().catch(() => null))
     if (!parsedId.success || !body.success)
       return context.json({ error: 'invalid subject rename' }, 400)
     try {
@@ -145,9 +145,7 @@ export function registerRecordSubjectRoutes(
     const bound = active(context)
     if ('response' in bound) return bound.response
     const parsedId = id.safeParse(context.req.param('id'))
-    const body = z
-      .object({ project, projectId, definition })
-      .safeParse(await context.req.json().catch(() => null))
+    const body = defineSubjectBody.safeParse(await context.req.json().catch(() => null))
     if (!parsedId.success) return context.json({ error: 'invalid subject definition' }, 400)
     if (!body.success) return invalidBody(context, body, 'invalid subject definition')
     try {
@@ -161,9 +159,7 @@ export function registerRecordSubjectRoutes(
   app.post('/v1/subjects/reorder', async (context) => {
     const bound = active(context)
     if ('response' in bound) return bound.response
-    const body = z
-      .object({ project, projectId, ids: z.array(id) })
-      .safeParse(await context.req.json().catch(() => null))
+    const body = reorderSubjectBody.safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid subject reorder' }, 400)
     try {
       return context.json({ items: await deps.reorderSubjects({ ...bound.tenant, ...body.data }) })
@@ -175,9 +171,7 @@ export function registerRecordSubjectRoutes(
     const bound = active(context)
     if ('response' in bound) return bound.response
     const parsedId = id.safeParse(context.req.param('id'))
-    const body = z
-      .object({ project, projectId })
-      .safeParse(await context.req.json().catch(() => null))
+    const body = retireSubjectBody.safeParse(await context.req.json().catch(() => null))
     if (!parsedId.success || !body.success)
       return context.json({ error: 'invalid subject retirement' }, 400)
     try {

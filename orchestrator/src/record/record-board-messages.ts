@@ -531,18 +531,12 @@ async function prepareHostedPost(
       `board project ${postingProject} does not match audience ${audience.kind}:${projectName}`,
       400,
     )
-  const projectId = projectName
-    ? await resolveVisibleProjectId(
-        tx,
-        projectName,
-        projectName === postingProject ? postingProjectId : null,
-      )
-    : null
-  const authorProjectId = postingProject
-    ? postingProjectId
-      ? await resolveVisibleProjectId(tx, postingProject, postingProjectId)
-      : await resolvePostingProjectId(tx, postingProject)
-    : null
+  const { projectId, authorProjectId } = await resolvePostProjects(
+    tx,
+    projectName,
+    postingProject,
+    postingProjectId,
+  )
   if (audience.kind === 'architects' && audience.value)
     await resolveVisibleProjectId(tx, audience.value)
   const derived = hostedBoardScope(audience, projectId)
@@ -561,6 +555,27 @@ async function prepareHostedPost(
     sharedSpaceReach,
     claimId: forcedScope?.claimId ?? null,
   }
+}
+
+async function resolvePostProjects(
+  tx: SQL,
+  projectName: string | null,
+  postingProject: string | undefined,
+  postingProjectId: string | null | undefined,
+): Promise<{ projectId: string | null; authorProjectId: string | null }> {
+  const projectId = projectName
+    ? await resolveVisibleProjectId(
+        tx,
+        projectName,
+        projectName === postingProject ? postingProjectId : null,
+      )
+    : null
+  if (!postingProject) return { projectId, authorProjectId: null }
+  if (projectName === postingProject) return { projectId, authorProjectId: projectId }
+  const authorProjectId = postingProjectId
+    ? await resolveVisibleProjectId(tx, postingProject, postingProjectId)
+    : await resolvePostingProjectId(tx, postingProject)
+  return { projectId, authorProjectId }
 }
 
 export async function postHostedBoardNoticeInTransaction(

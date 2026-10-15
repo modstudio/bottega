@@ -106,7 +106,14 @@ const takeClaimSchema = z
   })
   .strict()
 const holderBody = z.object({ holderSession: sessionSchema }).strict()
-const releaseTaskSchema = z.object({ project: z.string().min(1), key: z.string().min(1) }).strict()
+const releaseTaskSchema = z
+  .object({
+    project: z.string().min(1),
+    projectId: idSchema.nullable().optional(),
+    key: z.string().min(1),
+  })
+  .strict()
+const claimListSchema = z.object({ project: z.string().min(1), projectId: idSchema.optional() })
 
 export type RecordBoardDeps = {
   boardWakeSource: BoardWakeSource
@@ -148,9 +155,11 @@ export type RecordBoardDeps = {
   releaseBoardClaim(
     input: BoardTenant & { id: string; holderSession?: string | null },
   ): Promise<HostedBoardClaim>
-  listBoardClaims(input: BoardTenant & { project: string }): Promise<{ claims: HostedBoardClaim[] }>
+  listBoardClaims(
+    input: BoardTenant & { project: string; projectId?: string | null },
+  ): Promise<{ claims: HostedBoardClaim[] }>
   releaseBoardTaskClaims(
-    input: BoardTenant & { project: string; key: string },
+    input: BoardTenant & { project: string; projectId?: string | null; key: string },
   ): Promise<{ released: number }>
 }
 
@@ -421,7 +430,7 @@ export function registerRecordBoardRoutes(
   app.get('/v1/board/claims', async (context) => {
     const tenant = tenantOf(context)
     if (!tenant) return helpers.noSpace(context)
-    const query = z.object({ project: z.string().min(1) }).safeParse(context.req.query())
+    const query = claimListSchema.safeParse(context.req.query())
     if (!query.success) return context.json({ error: 'invalid board claim list query' }, 400)
     try {
       return context.json(await deps.listBoardClaims({ ...tenant, ...query.data }))

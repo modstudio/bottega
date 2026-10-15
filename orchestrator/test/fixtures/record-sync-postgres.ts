@@ -1,4 +1,5 @@
 import { SQL } from 'bun'
+import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { RECORD_ACTOR_ROLE } from '../../../shared/record/schema.ts'
 
 const MACHINE_ID = '01990000-0000-7000-8000-000000000099'
@@ -48,7 +49,7 @@ export function fakePostgres(
   onRunWrite?: (ordinal: number) => void | Promise<void>,
   project: { id: string; name: string; spaceId?: string; retiredAt?: string | null } = {
     id: PROJECT_ID,
-    name: 'bottega',
+    name: PLATFORM_NAME,
   },
 ): {
   sql: SQL

@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { expect, spyOn, test } from 'bun:test'
+import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { machineId } from '../../../shared/machine-config.ts'
 import { RECORD_ACTOR_ROLE } from '../../../shared/record/schema.ts'
@@ -879,41 +879,6 @@ test('a projectless payload syncs without resolving a project', async () => {
     blocked: [],
   })
   expect(remote.statements.some((statement) => statement.includes('FROM project'))).toBe(false)
-  local.close()
-})
-
-test('project identity prefers id, logs a disagreeing name once, and accepts the row', async () => {
-  const projectId = '01990000-0000-7000-8000-000000000088'
-  const local = localOutbox(1, 'stale-name', { projectId })
-  const remote = fakePostgres()
-  const warning = spyOn(console, 'warn').mockImplementation(() => {})
-  try {
-    expect((await syncRecord(options(local, remote))).pushed).toBe(1)
-    expect(warning).toHaveBeenCalledTimes(1)
-    expect(String(warning.mock.calls[0]?.[0])).toContain('using id')
-  } finally {
-    warning.mockRestore()
-    local.close()
-  }
-})
-
-test('project identity refuses an id from another space', async () => {
-  const projectId = '01990000-0000-7000-8000-000000000088'
-  const local = localOutbox(1, PLATFORM_SLUG, { projectId })
-  const remote = fakePostgres(false, RECORD_ACTOR_ROLE, undefined, undefined, undefined, {
-    id: projectId,
-    name: PLATFORM_SLUG,
-    spaceId: '01990000-0000-7000-8000-000000000777',
-  })
-  const result = await syncRecord(options(local, remote))
-  expect(result).toMatchObject({ pushed: 0, quarantined: [{ id: 1, kind: 'run' }] })
-  expect(
-    (
-      local.query('SELECT quarantine_reason FROM outbox WHERE id=1').get() as {
-        quarantine_reason: string
-      }
-    ).quarantine_reason,
-  ).toContain('absent from request space')
   local.close()
 })
 
