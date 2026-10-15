@@ -16,7 +16,13 @@ export const branchStoreModuleSpecs = [
   {
     name: 'project-checks-script-boundary',
     file: 'orchestrator/scripts/check-projects.ts',
-    allowed: ['bun:sqlite', 'node:url', '../src/database/migrations.ts', './branch-store.ts'],
+    allowed: [
+      'bun:sqlite',
+      'node:url',
+      '../../shared/brand.ts',
+      '../src/database/migrations.ts',
+      './branch-store.ts',
+    ],
     reason: 'Keep the project-checks runner a thin adapter over branch-store preparation.',
   },
 ] as const
