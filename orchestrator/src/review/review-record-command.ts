@@ -176,7 +176,7 @@ export function recordProjectReviewCommand(
   const review = operations.review(project, cwd, branch)
   if (!review.complete) {
     throw new Error(
-      `review triage for ${branch} is incomplete; finish every lens and finding with ${PLATFORM_SLUG} score judge`,
+      `review triage for ${branch} is incomplete; finish every lens and finding with ${PLATFORM_SLUG} score`,
     )
   }
   const findings = reviewRecordFindings(review.rows)

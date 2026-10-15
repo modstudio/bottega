@@ -10,6 +10,8 @@ function entries(calls: string[]): BinaryEntries {
   return {
     orch: call('orch'),
     hub: call('hub'),
+    orchOutbox: async () => [],
+    hubOutbox: async () => [],
     runExec: call('runExec'),
     askProxy: call('askProxy'),
     retrievalSearch: async (argv) => {
@@ -19,6 +21,64 @@ function entries(calls: string[]): BinaryEntries {
     schemaCheck: call('schemaCheck'),
   }
 }
+
+test('record outbox combines owner-qualified rows and routes qualified actions', async () => {
+  const calls: string[] = []
+  const dispatch = entries(calls)
+  dispatch.orchOutbox = async () => [{ id: 7, kind: 'score' }]
+  dispatch.hubOutbox = async () => [{ id: 'change-1', table_name: 'task' }]
+  const lines: string[] = []
+  const originalLog = console.log
+  console.log = (value) => lines.push(String(value))
+  try {
+    expect(
+      await dispatchBinary(['record', 'outbox', '--json'], PLATFORM_SLUG, dispatch, () => ''),
+    ).toBe(0)
+  } finally {
+    console.log = originalLog
+  }
+  expect(JSON.parse(lines[0]!)).toEqual([
+    { id: 'orch:7', kind: 'score', owner: 'orch' },
+    { id: 'hub:change-1', table_name: 'task', owner: 'hub' },
+  ])
+  expect(
+    await dispatchBinary(
+      ['record', 'outbox', 'retry', 'hub:change-1'],
+      PLATFORM_SLUG,
+      dispatch,
+      () => '',
+    ),
+  ).toBe(0)
+  expect(calls).toEqual(['hub outbox retry change-1'])
+})
+
+test('record outbox refuses bare ids and owner verbs that do not exist', async () => {
+  const errors: string[] = []
+  const originalError = console.error
+  console.error = (value) => errors.push(String(value))
+  try {
+    expect(
+      await dispatchBinary(
+        ['record', 'outbox', 'retry', '17'],
+        PLATFORM_SLUG,
+        entries([]),
+        () => '',
+      ),
+    ).toBe(2)
+    expect(
+      await dispatchBinary(
+        ['record', 'outbox', 'discard', 'orch:17'],
+        PLATFORM_SLUG,
+        entries([]),
+        () => '',
+      ),
+    ).toBe(2)
+  } finally {
+    console.error = originalError
+  }
+  expect(errors[0]).toContain('bottega record outbox')
+  expect(errors[1]).toBe('the orch outbox has no discard verb')
+})
 
 test('routes public and composite commands with unchanged remaining arguments', async () => {
   const calls: string[] = []

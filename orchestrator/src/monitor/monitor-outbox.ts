@@ -12,7 +12,7 @@ export function outboxQuarantineConditions(database: Database): AddressedMonitor
     since: row.quarantinedAt,
     ageMs: null,
     detail: `${row.kind} outbox row ${row.id} is quarantined: ${row.error}`,
-    action: `run ${PLATFORM_SLUG} record outbox retry ${row.id}, or retire it with an audited reason`,
+    action: `run ${PLATFORM_SLUG} record outbox retry orch:${row.id}, or retire it with an audited reason`,
     ownerSession: null,
   }))
 }
@@ -24,7 +24,7 @@ export function outboxRetiredParentConditions(database: Database): AddressedMoni
     since: null,
     ageMs: null,
     detail: `${row.kind} outbox row ${row.id} is blocked by ${row.reason ?? `retired parent ${row.parentRecordId}`}`,
-    action: `inspect the parent retirement, then run ${PLATFORM_SLUG} record outbox retire ${row.id} --reason <text> or replace the dependent row`,
+    action: `inspect the parent retirement, then run ${PLATFORM_SLUG} record outbox retire orch:${row.id} --reason <text> or replace the dependent row`,
     ownerSession: null,
   }))
 }

@@ -198,7 +198,7 @@ export function decideRecordDoctorChecks(facts: RecordDoctorFacts): RecordDoctor
       ? {
           name: 'local outbox quarantined rows',
           status: 'fail',
-          detail: `${facts.quarantinedOutboxRows.length}: ${facts.quarantinedOutboxRows.map((row) => `${row.id} ${row.kind} (${row.reason})`).join(', ')}; run \`${PLATFORM_SLUG} record outbox retry <row-id>\` or \`${PLATFORM_SLUG} record outbox retire <row-id> --reason <text>\``,
+          detail: `${facts.quarantinedOutboxRows.length}: ${facts.quarantinedOutboxRows.map((row) => `${row.id} ${row.kind} (${row.reason})`).join(', ')}; run \`${PLATFORM_SLUG} record outbox retry orch:<row-id>\` or \`${PLATFORM_SLUG} record outbox retire orch:<row-id> --reason <text>\``,
           section: 'customer',
         }
       : {

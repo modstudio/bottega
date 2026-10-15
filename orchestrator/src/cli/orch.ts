@@ -100,4 +100,14 @@ export async function main(argv: string[]): Promise<number> {
   }
 }
 
+/** Structured owner output for the product front door's composite outbox listing. */
+export async function outboxEntries(): Promise<Record<string, unknown>[]> {
+  const { registerStandardRuntime } = await import('../runtime/runtime-registration.ts')
+  registerStandardRuntime()
+  const { ensureDatabase, db } = await import('../database/db.ts')
+  ensureDatabase()
+  const { quarantinedOutboxRows } = await import('../record/outbox-quarantine.ts')
+  return quarantinedOutboxRows(db())
+}
+
 if (import.meta.main) process.exitCode = await main(process.argv.slice(2))

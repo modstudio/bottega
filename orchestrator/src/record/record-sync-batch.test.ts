@@ -58,7 +58,9 @@ test('classifies every row until a non-empty batch reaches a boundary', () => {
   expect(result.quarantine[1]!.reason).toContain(
     'serialized row is 1001 bytes and requires a 1011 byte request, exceeding the 1000 byte client request budget',
   )
-  expect(result.quarantine[1]!.reason).toContain(`${PLATFORM_SLUG} record outbox retire <row-id>`)
+  expect(result.quarantine[1]!.reason).toContain(
+    `${PLATFORM_SLUG} record outbox retire orch:<row-id>`,
+  )
   expect(result.send.map((row) => row.id)).toEqual([3])
   const classified = new Set([...result.quarantine, ...result.send].map((row) => row.id))
   expect(rows.filter((row) => !classified.has(row.id)).map((row) => row.id)).toEqual([4, 5])

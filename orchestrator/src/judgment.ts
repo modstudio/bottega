@@ -523,7 +523,7 @@ export async function judgeRun(
   }
   if (missing.length) {
     throw new Error(
-      `${PLATFORM_SLUG} score judge ${id} is missing:\n${missing.map((item) => `  ${item}`).join('\n')}`,
+      `${PLATFORM_SLUG} score ${id} is missing:\n${missing.map((item) => `  ${item}`).join('\n')}`,
     )
   }
   const note = options.note

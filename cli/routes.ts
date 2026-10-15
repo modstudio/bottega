@@ -1,4 +1,4 @@
-type RouteOwner = 'orch' | 'hub' | 'local' | 'composite'
+type RouteOwner = 'orch' | 'hub' | 'local' | 'composite' | 'outbox'
 
 export type CommandRoute = {
   command: readonly string[]
@@ -74,7 +74,6 @@ export const ROUTES = (
     route('question close', 'orch', 'question close'),
     route('question ruling', 'orch', 'ruling'),
     route('question stats', 'hub', 'rulings'),
-    route('score judge', 'orch', 'judge'),
     route('score recalibrate', 'orch', 'recalibrate'),
     route('score pending', 'orch', 'pending'),
     route('score', 'orch', 'score'),
@@ -132,7 +131,7 @@ export const ROUTES = (
     },
     route('record pull', 'hub', 'collect', 'ingest every source into the local record'),
     route('record push', 'orch', 'sync', "push this machine's orchestrator record"),
-    route('record outbox', 'orch', 'record outbox'),
+    { command: ['record', 'outbox'], owner: 'outbox' },
     route('record', 'orch', 'record'),
     route('agent show', 'orch', 'agent'),
     route('agent list', 'orch', 'agents'),

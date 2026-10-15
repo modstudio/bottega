@@ -61,7 +61,7 @@ function parsePayload(row: SyncedOutboxRow): Record<string, unknown> {
   throw new Error(
     `refusing synced outbox redaction: outbox row ${row.id} has an unreadable payload\n` +
       'invariant: Redaction never reports success for a payload it could not inspect.\n' +
-      `cleared by: repair the stored JSON or retire row ${row.id} with ${PLATFORM_SLUG} record outbox retire`,
+      `cleared by: repair the stored JSON or retire row ${row.id} with ${PLATFORM_SLUG} record outbox retire orch:${row.id}`,
   )
 }
 

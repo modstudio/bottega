@@ -520,7 +520,7 @@ test('a quarantined outbox entry is stuck, not in flight, and fails', async () =
   expect(tasks?.machineOnly).toEqual([])
   expect(report.stuck).toEqual([{ table: HOSTED_TASK_TABLE, id: inFlightId, reason: 'conflict' }])
   expect(report.ok).toBeFalse()
-  expect(formatTaskPushReport(report)).toContain('hub outbox')
+  expect(formatTaskPushReport(report)).toContain(`${PLATFORM_SLUG} record outbox`)
 })
 
 test('repair fails when the drain rejects a queued row', async () => {

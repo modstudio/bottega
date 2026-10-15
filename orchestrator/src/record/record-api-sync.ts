@@ -47,7 +47,7 @@ const syncSchema = z.object({
 })
 
 const requestRemedy = `send a batch within the hosted sync limits, then retry \`${PLATFORM_SLUG} record sync\``
-const payloadRemedy = `repair the oversized local payload or retire its row with \`${PLATFORM_SLUG} record outbox retire <row-id> --reason <text>\`, then retry \`${PLATFORM_SLUG} record sync\``
+const payloadRemedy = `repair the oversized local payload or retire its row with \`${PLATFORM_SLUG} record outbox retire orch:<row-id> --reason <text>\`, then retry \`${PLATFORM_SLUG} record sync\``
 
 export function registerRecordSyncRoute(
   app: Hono<SyncEnvironment>,

@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db } from './db.ts'
 import { drainHostedOutbox, type OutboxEntry, queueHostedChange } from './outbox.ts'
 import { HOSTED_DOCUMENT_TABLE } from './push-contract.ts'
@@ -52,10 +53,12 @@ export async function drainHostedEditOutbox(
 function reportHostedEditDelivery(result: HostedEditDelivery): void {
   if (result.kind === 'sent') console.error('hosted change sent')
   else if (result.kind === 'rejected')
-    console.error(`hosted change rejected: ${result.reason}; inspect it with \`hub outbox\``)
+    console.error(
+      `hosted change rejected: ${result.reason}; inspect it with \`${PLATFORM_SLUG} record outbox\``,
+    )
   else
     console.error(
-      `hosted change saved and queued: ${result.reason}; inspect it with \`hub outbox\``,
+      `hosted change saved and queued: ${result.reason}; inspect it with \`${PLATFORM_SLUG} record outbox\``,
     )
 }
 

@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { trackedTestResidue } from '../../test/residue.ts'
 import { db } from '../database/db.ts'
-import { resolveComparisonRunIds, scoreNote } from './judgment.ts'
+import { resolveComparisonRunIds, scoreNote, scorePathForJob } from './judgment.ts'
 
 const trackResidue = trackedTestResidue()
 
@@ -60,4 +60,9 @@ test('comparison flags refuse an unknown run UUID', () => {
       flag: (name) => (name === 'worse-than' ? '01990000-0000-7000-8000-000000000099' : undefined),
     }).flag('worse-than'),
   ).toThrow('no run has UUID')
+})
+
+test('findings jobs take the judge path and another job takes the score path', () => {
+  expect(scorePathForJob('review-lens')).toBe('judge')
+  expect(scorePathForJob('implement')).toBe('score')
 })

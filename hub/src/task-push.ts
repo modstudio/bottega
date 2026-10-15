@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db, writeTransaction } from './db.ts'
 import { rememberHostedInstall } from './install-binding.ts'
 import { drainHostedOutbox, type HostedOutboxReport, queueHostedChange } from './outbox.ts'
@@ -361,7 +362,7 @@ export function formatTaskPushReport(report: TaskPushReport): string {
   for (const row of report.stuck) {
     lines.push(`stuck ${row.table} ${row.id}${row.reason ? ` ${row.reason}` : ''}`)
   }
-  if (report.stuck.length) lines.push('hub outbox')
+  if (report.stuck.length) lines.push(`${PLATFORM_SLUG} record outbox`)
   for (const row of report.unroutable) {
     lines.push(`unroutable ${row.project} ${row.reason} ${row.table}`)
     for (const id of row.ids) lines.push(`  ${id}`)
