@@ -14,9 +14,7 @@ const OTHER = 'rename-other'
 
 function countName(table: string, column: string, value: string): number {
   return (
-    db()
-      .query(`SELECT COUNT(*) AS n FROM ${table} WHERE ${column}=?`)
-      .get(value) as { n: number }
+    db().query(`SELECT COUNT(*) AS n FROM ${table} WHERE ${column}=?`).get(value) as { n: number }
   ).n
 }
 
@@ -76,14 +74,30 @@ function seedNameMirrors(projectId: number, otherId: number): void {
     `INSERT INTO doc (record_id,scope,subject,slug,title,body,created_at,updated_at,audiences,project_id)
      VALUES (?,?,?,?,?,?,?,?,?,?)`,
   ).run(id(), 'project', OLD, 'slug', 'title', 'body', 't', 't', '["technical"]', projectId)
-  const doc = d.query(`SELECT id FROM doc WHERE subject=? AND project_id=?`).get(OLD, projectId) as {
+  const doc = d
+    .query(`SELECT id FROM doc WHERE subject=? AND project_id=?`)
+    .get(OLD, projectId) as {
     id: number
   }
   d.query(
     `INSERT INTO doc_revision
      (record_id,doc_id,scope,subject,slug,op,title,body,author,reason,at,audiences,project_id)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-  ).run(id(), doc.id, 'project', OLD, 'slug', 'create', 'title', 'body', 'a', 'r', 't', '["technical"]', projectId)
+  ).run(
+    id(),
+    doc.id,
+    'project',
+    OLD,
+    'slug',
+    'create',
+    'title',
+    'body',
+    'a',
+    'r',
+    't',
+    '["technical"]',
+    projectId,
+  )
   d.query(
     `INSERT INTO board_claim
      (record_id,project,subject_kind,subject_value,holder_kind,duration_ms,taken_at,renewed_at,lapses_at)
@@ -99,7 +113,22 @@ function seedNameMirrors(projectId: number, otherId: number): void {
      (record_id,message_source,message_id,reader_session,reader_project,delivery_point,blocked_stop,
       audience,acknowledgement_required,posted_at,session_started_at,posting_timing,concern,recorded_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-  ).run(id(), 'local', '1', 'sess', OLD, 'session-start', 0, 'architects', 0, 't', 't', 'before-session', 'concerned', 't')
+  ).run(
+    id(),
+    'local',
+    '1',
+    'sess',
+    OLD,
+    'session-start',
+    0,
+    'architects',
+    0,
+    't',
+    't',
+    'before-session',
+    'concerned',
+    't',
+  )
   d.query(
     `INSERT INTO branch_landing_record (record_id,project,branch,tip,pr_number,merged_at,recorded_at)
      VALUES (?,?,?,?,?,?,?)`,

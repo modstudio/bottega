@@ -374,8 +374,6 @@ export function assertProjectRename(currentName: string, nextName: string): { id
   return { id: current.id }
 }
 
-
-
 export type ProjectReferenceCounts = {
   run: number
   resource_claim: number

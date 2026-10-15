@@ -86,9 +86,8 @@ test('collect rewrites a name snapshot keyed by project_record_id', async () => 
     git: async () => ({ days: 0, tasks: 0 }),
   })
   expect(
-    db()
-      .query<{ project: string }, [string]>('SELECT project FROM task WHERE key=?')
-      .get('DEV-3')?.project,
+    db().query<{ project: string }, [string]>('SELECT project FROM task WHERE key=?').get('DEV-3')
+      ?.project,
   ).toBe('workshop')
 })
 
