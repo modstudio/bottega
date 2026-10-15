@@ -615,6 +615,20 @@ function docConsumeUsage(): string {
   return `${PLATFORM_SLUG} doc consume <slug> --scope S [--subject X] [--expect REVISION]`
 }
 
+async function handledWriteDocCommand(
+  sub: string,
+  argv: string[],
+  flags: DocFlags,
+  presentation: DocPresentation,
+  address: { scope: string | undefined; subject: string | null; owner: string | null },
+  ports: DocCommandPorts,
+): Promise<boolean> {
+  return (
+    (await handleSetDocCommand(sub, argv, flags, presentation, address, ports)) ||
+    (await handleReorderDocCommand(sub, flags, presentation, address))
+  )
+}
+
 export async function docCommand(
   sub: string,
   argv: string[],
@@ -630,8 +644,7 @@ export async function docCommand(
   const address = { scope, subject, owner }
   if (await handledEarlyDocCommand(sub, argv, flags, presentation)) return
   if (await handledReadOrRevisionDocCommand(sub, argv, flags, presentation, address)) return
-  if (await handleSetDocCommand(sub, argv, flags, presentation, address, ports)) return
-  if (await handleReorderDocCommand(sub, flags, presentation, address)) return
+  if (await handledWriteDocCommand(sub, argv, flags, presentation, address, ports)) return
   if (sub === 'consume') {
     const slug = argv[2]
     if (!slug || !scope) throw new Error(docConsumeUsage())

@@ -85,7 +85,7 @@ export type RecordDocUpsertInput = {
   revisionId?: string
   expectedRevision?: string
 }
-export type RecordDocOrderInput = {
+type RecordDocOrderInput = {
   scope: string
   subject: string | null
   parentId: string | null

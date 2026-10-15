@@ -8,8 +8,17 @@ import { syncRecord } from '../src/record/record-sync.ts'
 import { listRecordScores, unvoidRecordRun, voidRecordRun } from '../src/record/record-verdicts.ts'
 import { VOID_EXCLUSION_REASON } from '../src/verdict/verdict-rules.ts'
 import { createMemoryRecordApiClient, installRecordApiClient } from './fixtures/record-api.ts'
+import { proveHostedDocOrder } from './postgres-doc-order-proof.ts'
+import { proveHostedDocs as proveHostedDocsCore } from './postgres-docs-proof.ts'
 
-export { proveHostedDocs } from './postgres-docs-proof.ts'
+export async function proveHostedDocs(input: {
+  origin: string
+  token: string
+  otherToken: string
+}): Promise<void> {
+  const otherSpaceId = await proveHostedDocsCore(input)
+  await proveHostedDocOrder({ origin: input.origin, token: input.token, otherSpaceId })
+}
 
 /**
  * The machine the sync proofs upload as. A machine keeps its first owner, so

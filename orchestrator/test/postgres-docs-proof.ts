@@ -11,6 +11,7 @@ import {
   unusedBoardClientMethods,
   unusedIdentityAndSpaceClientMethods,
 } from './fixtures/record-api.ts'
+import { proveHostedCanonRefusal } from './postgres-canon-refusal-proof.ts'
 import { proveEqualTimestampDocPaging } from './postgres-doc-cursor-proof.ts'
 import { proveProjectIdentity } from './postgres-project-identity-proof.ts'
 import { proveSubjects } from './postgres-subject-cursor-proof.ts'
@@ -110,27 +111,6 @@ function liveCacheClient(origin: string, token: string): RecordApiClient {
     unvoidRun: unused,
     counts: unused,
   }
-}
-
-async function proveCanonRefusal(origin: string, headers: Record<string, string>): Promise<void> {
-  const canon = await fetch(`${origin}/v1/docs`, {
-    method: 'PUT',
-    headers,
-    body: JSON.stringify({
-      scope: 'canon',
-      subject: null,
-      slug: '.agents/rules/unlinted.md',
-      title: 'No',
-      body: 'Rule without required metadata.\n',
-      delivery: 'demand',
-      reason: 'prove canon refusal',
-      author: 'proof',
-    }),
-  })
-  expect(canon.status).toBe(400)
-  expect(await canon.json()).toMatchObject({
-    error: expect.stringContaining('refusing canon write'),
-  })
 }
 
 type CanonProofAddress = { kind: 'user' } | { kind: 'project'; subject: string }
@@ -619,88 +599,11 @@ async function proveRequestedProjectSpace(
   ).toBe('0')
 }
 
-async function proveDocumentOrder(
-  origin: string,
-  headers: Record<string, string>,
-  otherSpaceId: string,
-): Promise<void> {
-  const proof = newRecordId()
-  const create = async (
-    slug: string,
-    title: string,
-    parentRecordId: string | null,
-    position: number,
-    requestHeaders: Record<string, string> = headers,
-  ) => {
-    const response = await fetch(`${origin}/v1/docs`, {
-      method: 'PUT',
-      headers: requestHeaders,
-      body: JSON.stringify({
-        scope: 'machine',
-        subject: null,
-        slug: `${slug}-${proof}`,
-        title,
-        body: 'document order proof',
-        delivery: 'inject',
-        parentRecordId,
-        position,
-        reason: 'prove hosted document order',
-        author: 'proof',
-      }),
-    })
-    expect(response.status).toBe(200)
-    return (await response.json()) as { id: string }
-  }
-  const parent = await create('order-parent', 'Order parent', null, 0)
-  const first = await create('order-first', 'First', parent.id, 0)
-  const second = await create('order-second', 'Second', parent.id, 1)
-  const third = await create('order-third', 'Third', parent.id, 2)
-  const otherHeaders = { ...headers, 'x-record-space': otherSpaceId }
-  const other = await create('order-other-space', 'Other space', null, 41, otherHeaders)
-  const read = async (id: string, requestHeaders: Record<string, string> = headers) => {
-    const response = await fetch(`${origin}/v1/docs/${id}`, { headers: requestHeaders })
-    expect(response.status).toBe(200)
-    return (await response.json()) as { id: string; position: number }
-  }
-  const positions = async () =>
-    Promise.all([first.id, second.id, third.id].map(async (id) => (await read(id)).position))
-  const orderedIds = [third.id, first.id, second.id]
-  const reordered = await fetch(`${origin}/v1/docs/order`, {
-    method: 'PUT',
-    headers,
-    body: JSON.stringify({
-      scope: 'machine',
-      subject: null,
-      parentId: parent.id,
-      orderedIds,
-    }),
-  })
-  expect(reordered.status).toBe(200)
-  expect(await reordered.json()).toEqual({ orderedIds })
-  expect(await positions()).toEqual([1, 2, 0])
-
-  const beforeRefusal = await positions()
-  const refused = await fetch(`${origin}/v1/docs/order`, {
-    method: 'PUT',
-    headers,
-    body: JSON.stringify({
-      scope: 'machine',
-      subject: null,
-      parentId: parent.id,
-      orderedIds: orderedIds.slice(0, 2),
-    }),
-  })
-  expect(refused.status).toBe(400)
-  expect(await refused.json()).toMatchObject({ error: expect.stringContaining('missing ids') })
-  expect(await positions()).toEqual(beforeRefusal)
-  expect((await read(other.id, otherHeaders)).position).toBe(41)
-}
-
 export async function proveHostedDocs(input: {
   origin: string
   token: string
   otherToken: string
-}): Promise<void> {
+}): Promise<string> {
   const headers = {
     Authorization: `Bearer ${input.token}`,
     'content-type': 'application/json',
@@ -752,7 +655,6 @@ export async function proveHostedDocs(input: {
   const created = (await put.json()) as { id: string; revisionId: string }
   expect(created.id).toBeString()
   expect(created.revisionId).toBeString()
-  await proveDocumentOrder(input.origin, headers, identity.personalSpaceId)
   await proveDocumentStatus(input.origin, headers, memberSpaceId)
   await proveStringShapedSourceFileMutations(input.origin, headers, memberSpaceId)
   const updated = await fetch(`${input.origin}/v1/docs`, {
@@ -934,7 +836,7 @@ export async function proveHostedDocs(input: {
     }),
   })
   expect(inject.status).toBe(400)
-  await proveCanonRefusal(input.origin, headers)
+  await proveHostedCanonRefusal(input.origin, headers)
   await selectSpace(identity.personalSpaceId)
   await proveCanonImports(input.origin, headers)
 
@@ -966,6 +868,7 @@ export async function proveHostedDocs(input: {
   await proveCachePull(input.origin, input.token, headers)
   await proveEqualTimestampDocPaging(input.origin, headers)
   await proveDocImport(input.origin, headers)
+  return memberSpaceId
 }
 
 function importBody(input: {
