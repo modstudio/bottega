@@ -330,7 +330,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   let gateStartedAtMs: number | null = null
   let excludedGateMsAtTimeout = 0
   let rearmWallDeadline = () => {}
-
   try {
     if (repoJob) {
       if (!worktree) throw new Error(`repository run ${claim.id} has no worktree to measure`)
