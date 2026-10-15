@@ -448,6 +448,12 @@ export async function collectOnce(
   since: string,
   only?: string,
   guard: LeaseGuard = UNGUARDED_LEASE,
+  dependencies: {
+    git?: typeof ingestGit
+    runs?: typeof ingestRuns
+    transcripts?: typeof ingestTranscripts
+    trackers?: typeof ingestTrackers
+  } = {},
 ) {
   const selected = (source: string) => !only || only === source
   const results = [] as CollectLegResult[]
@@ -457,19 +463,21 @@ export async function collectOnce(
   previous = 'project identity'
   if (selected('git')) {
     guard.assertHeld(previous)
-    results.push(await settleLeg('git', () => ingestGit(since.slice(0, 10))))
+    results.push(await settleLeg('git', () => (dependencies.git ?? ingestGit)(since.slice(0, 10))))
     previous = 'git'
     guard.assertHeld(previous)
   }
   if (selected('runs')) {
     guard.assertHeld(previous)
-    results.push(await settleLeg('runs', () => ingestRuns(since)))
+    results.push(await settleLeg('runs', () => (dependencies.runs ?? ingestRuns)(since)))
     previous = 'runs'
     guard.assertHeld(previous)
   }
   if (selected('transcripts')) {
     guard.assertHeld(previous)
-    results.push(await settleLeg('transcripts', () => ingestTranscripts(since)))
+    results.push(
+      await settleLeg('transcripts', () => (dependencies.transcripts ?? ingestTranscripts)(since)),
+    )
     previous = 'transcripts'
     guard.assertHeld(previous)
   }
@@ -477,7 +485,7 @@ export async function collectOnce(
     guard.assertHeld(previous)
     results.push(
       await settleLeg('tasks', async () => {
-        const trackerResults = await ingestTrackers()
+        const trackerResults = await (dependencies.trackers ?? ingestTrackers)()
         for (const result of trackerResults) {
           const note = result.skipped
             ? `skipped: ${result.skipped}`

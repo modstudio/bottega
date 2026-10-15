@@ -275,12 +275,20 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
       const note = (await tx`SELECT id FROM hub_note WHERE id=${row.note_id}::uuid
         AND space_id=${identity.spaceId}::uuid AND deleted_at IS NULL`) as Array<{ id: string }>
       if (!note.length) throw new Error(DELETED_ON_HOSTED_RECORD_REASON)
+      const projectId = await storedHubProjectId(tx, identity.spaceId, {
+        projectId: row.projectId,
+        projectName: row.project_name,
+      })
       const existing = (await tx`SELECT * FROM hub_note_acknowledgement
         WHERE space_id=${identity.spaceId}::uuid AND note_id=${row.note_id}::uuid
-        AND session_id=${row.session_id} FOR UPDATE`) as PushedNoteAcknowledgement[]
+        AND session_id=${row.session_id} FOR UPDATE`) as Array<
+        PushedNoteAcknowledgement & { project_id: string | null }
+      >
       const old = existing[0]
       const decision = decideNoteAcknowledgementUpsert(old ?? null, row)
-      if (decision.kind === 'duplicate')
+      const storedProjectId = old?.project_id == null ? null : String(old.project_id)
+      const sameProject = storedProjectId === projectId && old?.project_name === row.project_name
+      if (decision.kind === 'duplicate' && sameProject)
         return {
           id: input.id,
           status: 'duplicate',
@@ -290,12 +298,12 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
       const values = decision.kind === 'patch' ? decision.values : row
       await tx`INSERT INTO hub_note_acknowledgement
         (id,space_id,project_name,project_id,note_id,session_id,acknowledged_at,sightings,created_at,updated_at,deleted_at)
-        VALUES (${adoptedId}::uuid,${identity.spaceId}::uuid,${row.project_name},
-        ${await storedHubProjectId(tx, identity.spaceId, { projectId: row.projectId, projectName: row.project_name })}::uuid,
+        VALUES (${adoptedId}::uuid,${identity.spaceId}::uuid,${row.project_name},${projectId}::uuid,
         ${row.note_id}::uuid,
         ${row.session_id},${values.acknowledged_at!}::timestamptz,${values.sightings!},
         ${row.created_at}::timestamptz,${values.updated_at ?? row.updated_at}::timestamptz,NULL)
         ON CONFLICT(space_id,note_id,session_id) DO UPDATE SET
+        project_name=excluded.project_name,project_id=excluded.project_id,
         acknowledged_at=excluded.acknowledged_at,sightings=excluded.sightings,
         updated_at=excluded.updated_at,deleted_at=NULL`
       return { id: input.id, status: 'applied', ...(adoptedId !== input.id ? { adoptedId } : {}) }

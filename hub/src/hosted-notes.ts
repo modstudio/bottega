@@ -415,11 +415,12 @@ export async function mirrorHostedNotes(
       await tx`INSERT INTO hub_note_acknowledgement
       (id,space_id,project_name,project_id,note_id,session_id,acknowledged_at,sightings,created_at,updated_at,deleted_at)
       VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},
-       ${await storedHubProjectId(tx, identity.spaceId, { projectName: row.project_name })}::uuid,
+       ${await storedHubProjectId(tx, identity.spaceId, { projectId: row.projectId, projectName: row.project_name })}::uuid,
        ${row.note_id}::uuid,
        ${row.session_id},${row.acknowledged_at}::timestamptz,${row.sightings},${row.created_at}::timestamptz,
        ${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)
-      ON CONFLICT(space_id,note_id,session_id) DO UPDATE SET acknowledged_at=excluded.acknowledged_at,
+      ON CONFLICT(space_id,note_id,session_id) DO UPDATE SET project_name=excluded.project_name,
+       project_id=excluded.project_id,acknowledged_at=excluded.acknowledged_at,
        sightings=excluded.sightings,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at`
     for (const item of body.raiseProjects ?? []) {
       const project = rows<{ id: string }>(

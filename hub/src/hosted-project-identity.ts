@@ -45,5 +45,8 @@ export async function storedHubProjectId(
 ): Promise<string | null> {
   if (!input.projectId && !input.projectName) return null
   const resolved = await resolveHubRecordProjectIdentity(tx, { ...input, spaceId })
-  return resolved.status === 'found' ? resolved.project.id : null
+  if (resolved.status === 'found') return resolved.project.id
+  if (input.projectId)
+    throw new Error(`record project ${input.projectId} is absent from request space ${spaceId}`)
+  return null
 }

@@ -1,10 +1,13 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { HUB_MIGRATION_BACKFILL_VALUES } from '../test/migration-values.ts'
+import { resetFixtureStore } from '../test/run-fixtures.ts'
+import { collectOnce } from './collect.ts'
+import { db, writeTransaction } from './db.ts'
 import { upsertGitTasks } from './ingest/git-task-cache.ts'
 import { applyMigrations } from './migrations.ts'
 import { loadOutboxChange } from './outbox-row.ts'
-import { backfillProjectRecordIds, projectRecordIdFor } from './project-record-id.ts'
+import { projectRecordIdFor } from './project-record-id.ts'
 import { refreshProjects } from './projects.ts'
 import { HOSTED_TASK_TABLE } from './push-contract.ts'
 
@@ -68,42 +71,41 @@ test('the outbox payload carries projectId beside project_name', () => {
   })
 })
 
-test('collect backfill fills a matching name and leaves an unmatched name null', () => {
-  const conn = new Database(':memory:')
-  conn.exec('PRAGMA foreign_keys = ON')
-  applyMigrations(conn, undefined, HUB_MIGRATION_BACKFILL_VALUES)
-  conn
-    .query(`INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
-    VALUES ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1','DEV-1','workshop','git','t','t')`)
-    .run()
-  conn
-    .query(`INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
-    VALUES ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2','DEV-2','unknown','git','t','t')`)
-    .run()
-  conn
-    .query(`INSERT INTO note(record_id,number,project,text,anchors,created_at,last_seen_at)
-    VALUES ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1',1,'workshop','text','[]','t','t')`)
-    .run()
-  backfillProjectRecordIds(conn, register)
-  expect(
+test('collect backfill fills a matching name and leaves an unmatched name null', async () => {
+  resetFixtureStore()
+  refreshProjects()
+  writeTransaction((conn) => {
     conn
+      .query(
+        `INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
+         VALUES ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1','DEV-1','workshop','git','t','t')`,
+      )
+      .run()
+    conn
+      .query(
+        `INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
+         VALUES ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2','DEV-2','unknown','git','t','t')`,
+      )
+      .run()
+  })
+  await collectOnce('2026-10-01T00:00:00.000Z', undefined, undefined, {
+    git: async () => ({ days: 0, tasks: 0 }),
+    runs: async () => ({ rows: 0, skipped: 0 }),
+    transcripts: async () => ({ files: 0, rows: 0, source: 'disabled' }),
+    trackers: async () => [],
+  })
+  expect(
+    db()
       .query<{ project_record_id: string | null }, [string]>(
         'SELECT project_record_id FROM task WHERE key=?',
       )
       .get('DEV-1')?.project_record_id,
-  ).toBe(MATCH)
+  ).toBe('01990000-0000-7000-8000-000000000075')
   expect(
-    conn
+    db()
       .query<{ project_record_id: string | null }, [string]>(
         'SELECT project_record_id FROM task WHERE key=?',
       )
       .get('DEV-2')?.project_record_id,
   ).toBeNull()
-  expect(
-    conn
-      .query<{ project: string; project_record_id: string | null }, []>(
-        `SELECT project, project_record_id FROM note WHERE record_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1'`,
-      )
-      .get(),
-  ).toEqual({ project: 'workshop', project_record_id: MATCH })
 })

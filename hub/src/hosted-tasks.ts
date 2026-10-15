@@ -438,9 +438,9 @@ export async function mirrorTaskRow(
       next_document_number=GREATEST(next_document_number,${row.next_document_number})
       WHERE id=${targetId}::uuid AND space_id=${identity.spaceId}::uuid AND
         (${row.source}='local' OR (source <> 'local' AND (${row.source} <> 'git' OR source='git'))) AND
-        (ROW(project_name,key,project,title,status,status_category,parent_key,parent_id,body,assignee,
+        (ROW(project_name,project_id,key,project,title,status,status_category,parent_key,parent_id,body,assignee,
           opened_at,closed_at,source,updated_at,deleted_at) IS DISTINCT FROM
-         ROW(${row.project_name},${row.key},${row.project},${row.title},${row.status},${row.status_category},
+         ROW(${row.project_name},${projectId}::uuid,${row.key},${row.project},${row.title},${row.status},${row.status_category},
           ${row.parent_key},${parentId}::uuid,${row.body},${row.assignee},${row.opened_at}::timestamptz,
           ${row.closed_at}::timestamptz,${row.source},${row.updated_at}::timestamptz,
           ${row.deleted_at}::timestamptz) OR next_document_number < ${row.next_document_number})
@@ -465,10 +465,10 @@ export async function mirrorTaskRow(
     ON CONFLICT (space_id,key) DO UPDATE SET project_name=excluded.project_name,project_id=excluded.project_id,project=excluded.project,title=excluded.title,status=excluded.status,status_category=excluded.status_category,parent_key=excluded.parent_key,parent_id=excluded.parent_id,body=excluded.body,assignee=excluded.assignee,opened_at=excluded.opened_at,closed_at=excluded.closed_at,source=excluded.source,first_seen=LEAST(hub_task.first_seen,excluded.first_seen),last_seen=excluded.last_seen,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at,next_document_number=GREATEST(hub_task.next_document_number,excluded.next_document_number)
     WHERE (hub_task.id=excluded.id OR ${mayAdopt}) AND
       (excluded.source='local' OR (hub_task.source <> 'local' AND (excluded.source <> 'git' OR hub_task.source='git'))) AND
-      (ROW(hub_task.project_name,hub_task.project,hub_task.title,hub_task.status,
+      (ROW(hub_task.project_name,hub_task.project_id,hub_task.project,hub_task.title,hub_task.status,
         hub_task.status_category,hub_task.parent_key,hub_task.parent_id,hub_task.body,hub_task.assignee,
         hub_task.opened_at,hub_task.closed_at,hub_task.source,hub_task.updated_at,hub_task.deleted_at)
-       IS DISTINCT FROM ROW(excluded.project_name,excluded.project,excluded.title,excluded.status,
+       IS DISTINCT FROM ROW(excluded.project_name,excluded.project_id,excluded.project,excluded.title,excluded.status,
         excluded.status_category,excluded.parent_key,excluded.parent_id,excluded.body,excluded.assignee,
         excluded.opened_at,excluded.closed_at,excluded.source,excluded.updated_at,excluded.deleted_at)
        OR hub_task.next_document_number < excluded.next_document_number)
