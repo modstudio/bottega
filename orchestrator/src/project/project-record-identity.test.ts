@@ -8,7 +8,7 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { projectCommand } from './project-commands.ts'
-import { projectByName, upsertProject } from './projects.ts'
+import { projectByName, projectRowByName, retireProject, upsertProject } from './projects.ts'
 
 async function runProject(
   args: string[],
@@ -72,6 +72,27 @@ test('fill-record-ids stores hosted identities and proposes a minted id for miss
   expect(projectByName('identity-missing')?.recordId).toBe(proposed.get('identity-missing'))
   expect(output).toContain(`filled identity-hosted  ${hostedId}  hosted`)
   expect(output).toContain('filled identity-missing')
+})
+
+test('fill-record-ids mints a local identity without upserting a missing retired project', async () => {
+  upsertProject({ name: 'identity-retired-missing', path: '/w/identity-retired-missing' })
+  expect(retireProject('identity-retired-missing')).toBe('retired')
+  const upserted: string[] = []
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    listProjects: async () => [],
+    upsertProject: async (input) => {
+      upserted.push(input.name)
+      return { id: input.id ?? newRecordId(), name: input.name }
+    },
+  })
+
+  const output = await runProject(['project', 'fill-record-ids'])
+
+  const recordId = projectRowByName('identity-retired-missing')?.recordId
+  expect(recordId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+  expect(upserted).not.toContain('identity-retired-missing')
+  expect(output).toContain(`filled identity-retired-missing  ${recordId}  local`)
 })
 
 test('project list JSON publishes nullable record_id beside the local id', async () => {

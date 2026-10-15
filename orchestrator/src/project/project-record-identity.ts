@@ -10,7 +10,7 @@ import { projects, storeProjectRecordId } from './projects.ts'
 export type FilledProjectRecordId = {
   name: string
   recordId: string
-  source: 'hosted' | 'created'
+  source: 'hosted' | 'created' | 'local'
 }
 
 /** Fill only missing identities; existing local identities are never name-matched again. */
@@ -29,26 +29,35 @@ export async function fillProjectRecordIds(): Promise<FilledProjectRecordId[]> {
     const hosted = (await client.listProjects(destination)).find(
       (candidate) => candidate.name === project.name,
     )
-    const proposedId = hosted?.id ?? newRecordId()
-    const result = hosted
-      ? hosted
-      : await client.upsertProject(
-          {
-            id: proposedId,
-            name: project.name,
-            path: project.path,
-            stack: project.stack,
-            canon: project.canon,
-            settings: project.settings,
-            retiredAt: project.retiredAt,
-          },
-          destination,
-        )
-    storeProjectRecordId(project.name, result.id)
+    let recordId: string
+    let source: FilledProjectRecordId['source']
+    if (hosted) {
+      recordId = hosted.id
+      source = 'hosted'
+    } else if (project.retiredAt) {
+      recordId = newRecordId()
+      source = 'local'
+    } else {
+      const result = await client.upsertProject(
+        {
+          id: newRecordId(),
+          name: project.name,
+          path: project.path,
+          stack: project.stack,
+          canon: project.canon,
+          settings: project.settings,
+          retiredAt: project.retiredAt,
+        },
+        destination,
+      )
+      recordId = result.id
+      source = 'created'
+    }
+    storeProjectRecordId(project.name, recordId)
     filled.push({
       name: project.name,
-      recordId: result.id,
-      source: hosted ? 'hosted' : 'created',
+      recordId,
+      source,
     })
   }
   return filled
