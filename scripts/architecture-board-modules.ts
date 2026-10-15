@@ -15,6 +15,7 @@ export const boardModules: BoardModule[] = [
   module('orchestrator/src/board/board-adoption.ts', [
     '../../../shared/brand.ts',
     'bun:sqlite',
+    '../../../shared/record-id.ts',
     '../../../shared/record/schema.ts',
     '../database/db.ts',
     '../record/machine-identity.ts',
@@ -71,6 +72,7 @@ export const boardModules: BoardModule[] = [
   module('orchestrator/src/board/board-push-policy.ts', ['../../../shared/board-purpose.ts']),
   module('orchestrator/src/board/board-push-service.ts', [
     'bun:sqlite',
+    '../../../shared/record-id.ts',
     '../database/db.ts',
     './board-delivery.ts',
     './board-hosted-cache.ts',
@@ -84,6 +86,7 @@ export const boardModules: BoardModule[] = [
   module('orchestrator/src/board/board-reach.ts', [
     'bun:sqlite',
     '../../../shared/board-purpose.ts',
+    '../../../shared/record-id.ts',
     '../database/db.ts',
     '../project/projects.ts',
     '../record/record-board-contract.ts',
@@ -160,6 +163,7 @@ export const boardModules: BoardModule[] = [
     'node:os',
     '../../../shared/board-duration.ts',
     '../../../shared/board-purpose.ts',
+    '../../../shared/record-id.ts',
     '../caller-classification.ts',
     '../database/db.ts',
     '../project/projects.ts',
@@ -175,6 +179,7 @@ export const boardModules: BoardModule[] = [
     'bun:sqlite',
     'node:os',
     '../../../shared/board-purpose.ts',
+    '../../../shared/record-id.ts',
     '../caller-classification.ts',
     '../database/db.ts',
     '../project/projects.ts',
@@ -187,6 +192,7 @@ export const boardModules: BoardModule[] = [
   ]),
   module('orchestrator/src/board/board-claim-service.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/record-id.ts',
     '../database/db.ts',
     '../project/projects.ts',
     './board-claim-policy.ts',
@@ -201,6 +207,7 @@ export const boardModules: BoardModule[] = [
   ]),
   module('orchestrator/src/board/board-thread-service.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/record-id.ts',
     '../../../shared/secret-shaped.ts',
     '../database/db.ts',
     '../project/projects.ts',
@@ -211,6 +218,7 @@ export const boardModules: BoardModule[] = [
   ]),
   module('orchestrator/src/board/board-suggestions.ts', [
     '../../../shared/board-duration.ts',
+    '../../../shared/record-id.ts',
     '../../../shared/secret-shaped.ts',
     '../database/db.ts',
     './board-policy.ts',

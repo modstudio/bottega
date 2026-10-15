@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import {
   applyMigrations,
   canonicalSchemaHash,
@@ -54,7 +55,7 @@ test('board identity migration fills ids, copies adopted hosted ids, and preserv
         VALUES (1,'operator',1,'2026-10-13',NULL);
       INSERT INTO board_claim
         (id,project,subject_kind,subject_value,holder_kind,duration_ms,taken_at,renewed_at,lapses_at)
-        VALUES (3,'bottega','task','DEV-1214','operator',1000,'2026-10-13','2026-10-13','2026-10-14');
+        VALUES (3,'${PLATFORM_NAME}','task','DEV-1214','operator',1000,'2026-10-13','2026-10-13','2026-10-14');
       INSERT INTO board_hosted_adoption_ledger
         (local_kind,local_id,hosted_id,state,refusal,created_at,updated_at)
         VALUES ('notice',1,'${HOSTED_ID}','uploaded',NULL,'2026-10-13','2026-10-13');
@@ -65,7 +66,7 @@ test('board identity migration fills ids, copies adopted hosted ids, and preserv
         (message_source,message_id,reader_session,reader_project,delivery_point,blocked_stop,
          audience,acknowledgement_required,posted_at,session_started_at,posting_timing,concern,
          recorded_at)
-        VALUES ('local','1','operator','bottega','stop',0,'operator',0,'2026-10-13','2026-10-13',
+        VALUES ('local','1','operator','${PLATFORM_NAME}','stop',0,'operator',0,'2026-10-13','2026-10-13',
                 'after-session','concerned','2026-10-13');
       INSERT INTO board_reach_recording_failure (recorded_at) VALUES ('2026-10-13');
     `)

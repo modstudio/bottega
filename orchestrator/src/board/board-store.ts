@@ -549,35 +549,20 @@ export function insertRootMessage(
       )?.current_task_key ?? null)
     : null
   const tags = [...senderTags, ...inferredBoardTags(input.body, senderTags, currentTaskKey)]
-  const inserted = database
-    .query(
-      `INSERT INTO board_message
-       (kind,purpose,author_kind,author_session,author_run_id,author_harness,author_project,audience,title,body,
-        ack_required,ack_deadline,expires_at,created_at,withdrawn_at,record_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,?)`,
-    )
-    .run(
-      kind,
-      purpose,
-      actor.kind,
-      actor.session,
-      input.suggestingRunId ?? null,
-      origin.harness,
-      origin.project,
-      audienceExpression,
-      input.title,
-      input.body,
-      ackRequired ? 1 : 0,
-      deadline,
-      expiresAt,
-      createdAt,
-      newRecordId(),
-    )
-  const id = Number(inserted.lastInsertRowid)
-  const addTag = database.query(
-    `INSERT OR IGNORE INTO board_message_tag (message_id,kind,value,origin,record_id) VALUES (?,?,?,?,?)`,
+  const id = insertRootRow(
+    kind,
+    purpose,
+    actor,
+    origin,
+    audienceExpression,
+    input,
+    ackRequired,
+    deadline,
+    expiresAt,
+    createdAt,
+    tags,
+    database,
   )
-  for (const tag of tags) addTag.run(id, tag.kind, tag.value, tag.origin, newRecordId())
   const reached = recordRecipients(
     id,
     audienceExpression,
@@ -588,6 +573,53 @@ export function insertRootMessage(
     database,
   )
   return postNoticeResult(id, false, reached)
+}
+
+function insertRootRow(
+  kind: 'notice' | 'question',
+  purpose: BoardPurpose,
+  actor: BoardActor,
+  origin: BoardOrigin,
+  audienceExpression: string,
+  input: PostNoticeInput,
+  ackRequired: boolean,
+  deadline: string | null,
+  expiresAt: string,
+  createdAt: string,
+  tags: BoardTag[],
+  database: ReturnType<typeof writableDb>,
+): number {
+  const id = Number(
+    database
+      .query(
+        `INSERT INTO board_message
+         (kind,purpose,author_kind,author_session,author_run_id,author_harness,author_project,audience,title,body,
+          ack_required,ack_deadline,expires_at,created_at,withdrawn_at,record_id)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,?)`,
+      )
+      .run(
+        kind,
+        purpose,
+        actor.kind,
+        actor.session,
+        input.suggestingRunId ?? null,
+        origin.harness,
+        origin.project,
+        audienceExpression,
+        input.title,
+        input.body,
+        ackRequired ? 1 : 0,
+        deadline,
+        expiresAt,
+        createdAt,
+        newRecordId(),
+      ).lastInsertRowid,
+  )
+  const addTag = database.query(
+    `INSERT OR IGNORE INTO board_message_tag (message_id,kind,value,origin,record_id) VALUES (?,?,?,?,?)`,
+  )
+  for (const tag of tags) addTag.run(id, tag.kind, tag.value, tag.origin, newRecordId())
+  return id
 }
 
 export function messageRows(database = db()): MessageRow[] {
