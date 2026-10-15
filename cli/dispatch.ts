@@ -34,12 +34,12 @@ async function dispatchOutbox(rest: string[], entries: BinaryEntries): Promise<n
     if (rest[0] === '--json') console.log(JSON.stringify(rows))
     else if (!rows.length) console.log('record outbox is empty')
     else {
-      for (const { id, owner: _owner, ...row } of rows)
-        console.log(`${String(id)} ${JSON.stringify(row)}`)
+      for (const { id, owner, ...row } of rows)
+        console.log(`${String(id)} ${JSON.stringify({ owner, ...row })}`)
     }
     return 0
   }
-  const [verb, qualifiedId, ...arguments_] = rest
+  const [verb, qualifiedId, ...extraArguments] = rest
   const match = qualifiedId?.match(/^(orch|hub):(.+)$/)
   if (!match) {
     console.error(
@@ -55,7 +55,7 @@ async function dispatchOutbox(rest: string[], entries: BinaryEntries): Promise<n
     return 2
   }
   const prefix = owner === 'orch' ? ['record', 'outbox'] : ['outbox']
-  return entries[owner]([...prefix, verb!, id, ...arguments_])
+  return entries[owner]([...prefix, verb!, id, ...extraArguments])
 }
 
 function topHelp(): void {

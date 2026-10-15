@@ -76,7 +76,7 @@ test('record outbox refuses bare ids and owner verbs that do not exist', async (
   } finally {
     console.error = originalError
   }
-  expect(errors[0]).toContain('bottega record outbox')
+  expect(errors[0]).toContain(`${PLATFORM_SLUG} record outbox`)
   expect(errors[1]).toBe('the orch outbox has no discard verb')
 })
 
