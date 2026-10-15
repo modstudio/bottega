@@ -78,28 +78,11 @@ const baselineFresh = () => {
 }
 
 type ApplicationObject = { type: 'table' | 'index' | 'view' | 'trigger'; name: string }
-const LATEST_MIGRATIONS = [
-  '0014_install_binding',
-  '0015_question_delivery_retired',
-  '0016_interval_ledger_destination',
-  '0017_uuid_row_identity',
-  '0018_task_document_number',
-  '0019_interval_record_id',
-  '0020_day_record_id',
-  '0021_note_uuid_identity',
-  '0022_note_project_counter',
-  '0023_hosted_change_evidence',
-  '0024_hosted_change_evidence_send_family',
-  '0025_send_pending_status',
-  '0026_outbox',
-  '0027_outbox_status_event_tasks',
-  '0028_outbox_evidence',
-  '0029_outbox_fields',
-  '0030_outbox_kept_values',
-  '0031_change_log_pull_cutover',
-  '0032_outbox_delivery_trace',
-  '0033_day_machine',
-]
+const migrationTags = () => migrationJournal().map((entry) => entry.tag)
+const tagsFrom = (tag: string) => {
+  const tags = migrationTags()
+  return tags.slice(tags.indexOf(tag))
+}
 
 const applicationObjects = (d: Database): ApplicationObject[] =>
   d
@@ -206,23 +189,7 @@ describe('hub migration journal', () => {
 
   test('a matching pre-journal store adopts 0000 and reaches the current schema', () => {
     const d = baselineFresh()
-    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual([
-      '0000_hub_baseline',
-      '0001_note',
-      '0002_note_acknowledgement',
-      '0003_record_ledger',
-      '0004_task_record_ids',
-      '0005_note_record_ids',
-      '0006_send_record_id',
-      '0007_interval_attribution',
-      '0008_task_identity',
-      '0009_task_record_identity',
-      '0010_question_delivery',
-      '0011_operator_waiting_email',
-      '0012_question_overturn',
-      '0013_workflow_questions',
-      ...LATEST_MIGRATIONS,
-    ])
+    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual(migrationTags())
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     expect(
       d.query<{ sql: string }, []>("SELECT sql FROM sqlite_master WHERE name='note'").get()?.sql,
@@ -528,9 +495,9 @@ describe('hub migration journal', () => {
   test('every migration backfill is idempotent when the current journal is applied again', () => {
     const d = migratedThrough(13)
     d.exec(`INSERT INTO setting(key,value) VALUES ('collect.hosted-tasks.cursor','cursor-1')`)
-    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual([
-      ...LATEST_MIGRATIONS,
-    ])
+    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual(
+      tagsFrom('0014_install_binding'),
+    )
     const migrated = d.serialize()
     expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual([])
     expect(d.serialize()).toEqual(migrated)
@@ -552,13 +519,9 @@ describe('hub migration journal', () => {
     d.query(`INSERT INTO setting(key,value) VALUES ('collect.runs.at',?)`).run(
       JSON.stringify(currentWatermark),
     )
-    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual([
-      '0010_question_delivery',
-      '0011_operator_waiting_email',
-      '0012_question_overturn',
-      '0013_workflow_questions',
-      ...LATEST_MIGRATIONS,
-    ])
+    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual(
+      tagsFrom('0010_question_delivery'),
+    )
     const rewound = JSON.parse(
       d.query<{ value: string }, []>("SELECT value FROM setting WHERE key='collect.runs.at'").get()!
         .value,
@@ -673,10 +636,9 @@ describe('hub migration journal', () => {
        VALUES (40,'orch:40','resume','delivered','2026-09-21',NULL)`,
     ).run()
 
-    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual([
-      '0013_workflow_questions',
-      ...LATEST_MIGRATIONS,
-    ])
+    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual(
+      tagsFrom('0013_workflow_questions'),
+    )
     expect(d.query('SELECT * FROM question_delivery').all()).toEqual([
       {
         question_id: 40,
@@ -718,14 +680,9 @@ describe('hub migration journal', () => {
       VALUES (30,'DEV-2','dangling-event','2026-01-02','active');
       UPDATE note SET project='workshop',promoted_task='DEV-2' WHERE id=(SELECT MIN(id) FROM note);
     `)
-    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual([
-      '0009_task_record_identity',
-      '0010_question_delivery',
-      '0011_operator_waiting_email',
-      '0012_question_overturn',
-      '0013_workflow_questions',
-      ...LATEST_MIGRATIONS,
-    ])
+    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual(
+      tagsFrom('0009_task_record_identity'),
+    )
     expect(
       d
         .query(
@@ -834,14 +791,9 @@ describe('hub migration journal', () => {
       VALUES ('MINT-1','workshop','local','2026-01-01','2026-01-01')
     `)
     const before = Date.now()
-    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual([
-      '0009_task_record_identity',
-      '0010_question_delivery',
-      '0011_operator_waiting_email',
-      '0012_question_overturn',
-      '0013_workflow_questions',
-      ...LATEST_MIGRATIONS,
-    ])
+    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual(
+      tagsFrom('0009_task_record_identity'),
+    )
     const after = Date.now()
     const minted = d
       .query<{ record_id: string }, []>("SELECT record_id FROM task WHERE key='MINT-1'")
@@ -905,14 +857,9 @@ describe('hub migration journal', () => {
       VALUES ('OPS-21','2026-01-01','active');
     `)
 
-    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual([
-      '0009_task_record_identity',
-      '0010_question_delivery',
-      '0011_operator_waiting_email',
-      '0012_question_overturn',
-      '0013_workflow_questions',
-      ...LATEST_MIGRATIONS,
-    ])
+    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual(
+      tagsFrom('0009_task_record_identity'),
+    )
     expect(
       d
         .query(

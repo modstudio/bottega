@@ -1,5 +1,6 @@
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { storedHubProjectId } from './hosted-project-identity.ts'
 import type { PushedDay, PushedInterval } from './push-contract.ts'
 export type EvidenceIdentity = { userId: string; spaceId: string }
 export type IntervalEvidence = PushedInterval
@@ -29,10 +30,11 @@ export function hostedDayWrite(
   return 'insert'
 }
 
-function intervalValues(row: IntervalEvidence) {
+function intervalValues(row: IntervalEvidence, projectId: string | null) {
   return {
     task_key: row.task_key,
     project_name: row.project_name,
+    project_id: projectId,
     source: row.source,
     agent: row.agent,
     job: row.job,
@@ -54,14 +56,15 @@ async function insertHostedInterval(
   identity: EvidenceIdentity,
   id: string,
   row: IntervalEvidence,
+  projectId: string | null,
 ) {
-  const value = intervalValues(row)
+  const value = intervalValues(row, projectId)
   await tx`
     INSERT INTO hub_interval
-      (id, space_id, task_key, project_name, source, agent, job, start_at, end_at,
+      (id, space_id, task_key, project_name, project_id, source, agent, job, start_at, end_at,
        claude_tokens, vendor_tokens, vendor_cost_usd, ref, via, open, session_id, user_id, updated_at)
     VALUES
-      (${id}::uuid, ${identity.spaceId}::uuid, ${value.task_key}, ${value.project_name},
+      (${id}::uuid, ${identity.spaceId}::uuid, ${value.task_key}, ${value.project_name}, ${value.project_id}::uuid,
        ${value.source}, ${value.agent}, ${value.job}, ${value.start_at}::timestamptz,
        ${value.end_at}::timestamptz, ${value.claude_tokens}, ${value.vendor_tokens},
        ${value.vendor_cost_usd}, ${value.ref}, ${value.via}, ${value.open}, ${value.session_id},
@@ -74,11 +77,12 @@ async function updateHostedInterval(
   identity: EvidenceIdentity,
   id: string,
   row: IntervalEvidence,
+  projectId: string | null,
 ) {
-  const value = intervalValues(row)
+  const value = intervalValues(row, projectId)
   await tx`
     UPDATE hub_interval SET
-      task_key=${value.task_key}, project_name=${value.project_name}, source=${value.source},
+      task_key=${value.task_key}, project_name=${value.project_name}, project_id=${value.project_id}::uuid, source=${value.source},
       agent=${value.agent}, job=${value.job},
       start_at=${value.start_at}::timestamptz, end_at=${value.end_at}::timestamptz,
       claude_tokens=${value.claude_tokens}, vendor_tokens=${value.vendor_tokens},
@@ -108,11 +112,16 @@ async function upsertOneInterval(
       status: 'duplicate',
       reason: `interval superseded by newer UUID ${tupleHolder}`,
     }
+  const projectId = await storedHubProjectId(tx, identity.spaceId, {
+    projectId: row.projectId,
+    projectName: row.project_name,
+  })
   if (write === 'update') {
     const matches = await tx`SELECT 1 FROM hub_interval
       WHERE space_id=${identity.spaceId}::uuid AND id=${row.id}::uuid
         AND task_key IS NOT DISTINCT FROM ${row.task_key}
-        AND project_name IS NOT DISTINCT FROM ${row.project_name} AND source=${row.source}
+        AND project_name IS NOT DISTINCT FROM ${row.project_name}
+        AND project_id IS NOT DISTINCT FROM ${projectId}::uuid AND source=${row.source}
         AND agent IS NOT DISTINCT FROM ${row.agent} AND job IS NOT DISTINCT FROM ${row.job}
         AND start_at=${row.start_at}::timestamptz AND end_at=${row.end_at}::timestamptz
         AND claude_tokens=${row.claude_tokens} AND vendor_tokens=${row.vendor_tokens}
@@ -121,15 +130,15 @@ async function upsertOneInterval(
         AND session_id IS NOT DISTINCT FROM ${row.session_id}
         AND user_id IS NOT DISTINCT FROM ${row.user_id}::uuid`
     if (matches.length) return { status: 'duplicate' }
-    await updateHostedInterval(tx, identity, row.id, row)
+    await updateHostedInterval(tx, identity, row.id, row, projectId)
     return { status: 'applied' }
   }
   if (write === 'replace') {
     await tx`DELETE FROM hub_interval
       WHERE space_id=${identity.spaceId}::uuid AND id=${tupleHolder!}::uuid`
-    if (byId.length) await updateHostedInterval(tx, identity, row.id, row)
-    else await insertHostedInterval(tx, identity, row.id, row)
-  } else await insertHostedInterval(tx, identity, row.id, row)
+    if (byId.length) await updateHostedInterval(tx, identity, row.id, row, projectId)
+    else await insertHostedInterval(tx, identity, row.id, row, projectId)
+  } else await insertHostedInterval(tx, identity, row.id, row, projectId)
   return {
     status: 'applied',
     ...(write === 'replace' ? { replacedId: tupleHolder! } : {}),

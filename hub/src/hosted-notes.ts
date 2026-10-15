@@ -2,6 +2,7 @@ import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
+import { storedHubProjectId } from './hosted-project-identity.ts'
 import { hostedTaskReference, taskIdFor } from './hosted-task-reference.ts'
 import {
   confirmCount,
@@ -18,6 +19,7 @@ export type HostedNote = {
   number: number
   project: string
   project_name: string
+  projectId?: string | null
   text: string
   area: string | null
   anchors: string
@@ -35,6 +37,7 @@ export type HostedAcknowledgement = {
   id: string
   note_id: string
   project_name: string
+  projectId?: string | null
   session_id: string
   acknowledged_at: string
   sightings: number
@@ -206,8 +209,8 @@ export async function createHostedNote(
       ON CONFLICT(space_id,project_id,name) DO UPDATE SET next=GREATEST(seq.next,excluded.next)`
     return rows<HostedNote>(
       await tx`INSERT INTO hub_note
-      (id,space_id,project_name,number,project,text,area,anchors,sightings,created_at,last_seen_at,updated_at)
-      VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${input.project},${number},${input.project},
+      (id,space_id,project_name,project_id,number,project,text,area,anchors,sightings,created_at,last_seen_at,updated_at)
+      VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${input.project},${project.id}::uuid,${number},${input.project},
       ${input.text},${input.area ?? null},${`[${input.anchor}]`},1,now(),now(),now()) RETURNING *,number::int number`,
     )[0]!
   })
@@ -361,16 +364,20 @@ async function mirrorOneHostedNote(tx: SQL, identity: TaskIdentity, row: HostedN
     collision.action === 'insert'
       ? rows<{ number: number; id: string }>(
           await tx`INSERT INTO hub_note
-      (id,space_id,project_name,number,project,text,area,anchors,sightings,created_at,last_seen_at,
+      (id,space_id,project_name,project_id,number,project,text,area,anchors,sightings,created_at,last_seen_at,
        stale_at,stale_reason,promoted_task,promoted_task_id,updated_at,deleted_at)
-      VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.number},${row.project},
+      VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},
+       ${await storedHubProjectId(tx, identity.spaceId, { projectId: row.projectId, projectName: row.project_name })}::uuid,
+       ${row.number},${row.project},
        ${row.text},${row.area},${row.anchors},${row.sightings},${row.created_at}::timestamptz,
        ${row.last_seen_at}::timestamptz,${row.stale_at}::timestamptz,${row.stale_reason},${row.promoted_task},${promotedTaskId}::uuid,
        ${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)
       RETURNING number::int number,id`,
         )[0]
       : rows<{ number: number; id: string }>(
-          await tx`UPDATE hub_note SET project_name=${row.project_name},project=${row.project},
+          await tx`UPDATE hub_note SET project_name=${row.project_name},
+       project_id=${await storedHubProjectId(tx, identity.spaceId, { projectId: row.projectId, projectName: row.project_name })}::uuid,
+       project=${row.project},
        text=${row.text},area=${row.area},anchors=${row.anchors},sightings=${row.sightings},
        created_at=${row.created_at}::timestamptz,last_seen_at=${row.last_seen_at}::timestamptz,
        stale_at=${row.stale_at}::timestamptz,stale_reason=${row.stale_reason},promoted_task=${row.promoted_task},
@@ -406,11 +413,14 @@ export async function mirrorHostedNotes(
     for (const row of body.notes) noteIds.push(await mirrorOneHostedNote(tx, identity, row))
     for (const row of body.acknowledgements ?? [])
       await tx`INSERT INTO hub_note_acknowledgement
-      (id,space_id,project_name,note_id,session_id,acknowledged_at,sightings,created_at,updated_at,deleted_at)
-      VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.note_id}::uuid,
+      (id,space_id,project_name,project_id,note_id,session_id,acknowledged_at,sightings,created_at,updated_at,deleted_at)
+      VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},
+       ${await storedHubProjectId(tx, identity.spaceId, { projectId: row.projectId, projectName: row.project_name })}::uuid,
+       ${row.note_id}::uuid,
        ${row.session_id},${row.acknowledged_at}::timestamptz,${row.sightings},${row.created_at}::timestamptz,
        ${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)
-      ON CONFLICT(space_id,note_id,session_id) DO UPDATE SET acknowledged_at=excluded.acknowledged_at,
+      ON CONFLICT(space_id,note_id,session_id) DO UPDATE SET project_name=excluded.project_name,
+       project_id=excluded.project_id,acknowledged_at=excluded.acknowledged_at,
        sightings=excluded.sightings,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at`
     for (const item of body.raiseProjects ?? []) {
       const project = rows<{ id: string }>(

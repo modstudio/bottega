@@ -27,6 +27,7 @@ import {
 } from './outbox.ts'
 import { HostedOutboxDrainSchedule, type PendingHostedOutbox } from './outbox-fast-cycle.ts'
 import { pruneOutboxTrace } from './outbox-trace.ts'
+import { backfillProjectRecordIds } from './project-record-id.ts'
 import { rollUpDays } from './query.ts'
 import {
   acquireStoredLease,
@@ -409,6 +410,8 @@ async function collectSlow(
   const results = [] as CollectLegResult[]
   let lastCompleted = 'tasks'
   guard?.assertHeld()
+  writeTransaction((conn) => backfillProjectRecordIds(conn))
+  guard?.assertHeld('project identity')
   results.push(await settleLeg('git', () => ingestGit(hoursAgo(24 * 7).slice(0, 10))))
   guard?.assertHeld('git')
   const due = scheduled ? trackerSchedule.due(trackerProjects()) : null
@@ -445,25 +448,36 @@ export async function collectOnce(
   since: string,
   only?: string,
   guard: LeaseGuard = UNGUARDED_LEASE,
+  dependencies: {
+    git?: typeof ingestGit
+    runs?: typeof ingestRuns
+    transcripts?: typeof ingestTranscripts
+    trackers?: typeof ingestTrackers
+  } = {},
 ) {
   const selected = (source: string) => !only || only === source
   const results = [] as CollectLegResult[]
   let previous: string | undefined
+  guard.assertHeld()
+  writeTransaction((conn) => backfillProjectRecordIds(conn))
+  previous = 'project identity'
   if (selected('git')) {
     guard.assertHeld(previous)
-    results.push(await settleLeg('git', () => ingestGit(since.slice(0, 10))))
+    results.push(await settleLeg('git', () => (dependencies.git ?? ingestGit)(since.slice(0, 10))))
     previous = 'git'
     guard.assertHeld(previous)
   }
   if (selected('runs')) {
     guard.assertHeld(previous)
-    results.push(await settleLeg('runs', () => ingestRuns(since)))
+    results.push(await settleLeg('runs', () => (dependencies.runs ?? ingestRuns)(since)))
     previous = 'runs'
     guard.assertHeld(previous)
   }
   if (selected('transcripts')) {
     guard.assertHeld(previous)
-    results.push(await settleLeg('transcripts', () => ingestTranscripts(since)))
+    results.push(
+      await settleLeg('transcripts', () => (dependencies.transcripts ?? ingestTranscripts)(since)),
+    )
     previous = 'transcripts'
     guard.assertHeld(previous)
   }
@@ -471,7 +485,7 @@ export async function collectOnce(
     guard.assertHeld(previous)
     results.push(
       await settleLeg('tasks', async () => {
-        const trackerResults = await ingestTrackers()
+        const trackerResults = await (dependencies.trackers ?? ingestTrackers)()
         for (const result of trackerResults) {
           const note = result.skipped
             ? `skipped: ${result.skipped}`

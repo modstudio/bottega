@@ -1,4 +1,5 @@
 import { db, writeTransaction } from './db.ts'
+import { projectRecordIdFor } from './project-record-id.ts'
 import { projects } from './projects.ts'
 import { taskKeyPrefix } from './task-identity.ts'
 import type { RegisteredTaskSpace } from './task-project-space.ts'
@@ -40,8 +41,11 @@ function correctIntervalProjects<T extends StoredIntervalProject>(
     const changed = corrected.filter((row, index) => row.project_name !== rows[index]!.project_name)
     if (changed.length > 0)
       writeTransaction((conn) => {
-        const update = conn.query(`UPDATE interval SET project=? WHERE record_id=?`)
-        for (const row of changed) update.run(row.project_name, row.id)
+        const update = conn.query(
+          `UPDATE interval SET project=?, project_record_id=? WHERE record_id=?`,
+        )
+        for (const row of changed)
+          update.run(row.project_name, projectRecordIdFor(row.project_name), row.id)
       })
   }
   return corrected

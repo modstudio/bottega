@@ -25,6 +25,7 @@ type OutboxPointer = {
   operation: 'upsert' | 'delete'
   routing_space_id?: string | null
   routing_project?: string | null
+  routing_project_record_id?: string | null
   fields?: string | null
 }
 
@@ -37,7 +38,7 @@ export type LoadedOutboxChange = {
 function currentInterval(conn: Database, id: string): LoadedOutboxChange | null {
   const row = conn
     .query<PushedInterval & { hosted_space_id: string | null }, [string]>(
-      `SELECT record_id id,task_key,project project_name,source,agent,job,start_at,end_at,
+      `SELECT record_id id,task_key,project project_name,project_record_id projectId,source,agent,job,start_at,end_at,
       claude_tokens,vendor_tokens,vendor_cost_usd,ref,via,open,session_id,user_id,hosted_space_id
      FROM interval WHERE record_id=?`,
     )
@@ -79,7 +80,7 @@ function currentTask(conn: Database, id: string): LoadedOutboxChange | null {
 function currentComment(conn: Database, id: string): LoadedOutboxChange | null {
   const row = conn
     .query<PushedComment, [string]>(
-      `SELECT c.record_id id,c.task_key,c.task_record_id task_id,t.project project_name,c.body,c.created_at,c.created_at updated_at,NULL deleted_at FROM task_comment c JOIN task t ON t.record_id=c.task_record_id WHERE c.record_id=?`,
+      `SELECT c.record_id id,c.task_key,c.task_record_id task_id,t.project project_name,t.project_record_id projectId,c.body,c.created_at,c.created_at updated_at,NULL deleted_at FROM task_comment c JOIN task t ON t.record_id=c.task_record_id WHERE c.record_id=?`,
     )
     .get(id)
   return row
@@ -93,7 +94,7 @@ function currentComment(conn: Database, id: string): LoadedOutboxChange | null {
 function currentDocument(conn: Database, id: string): LoadedOutboxChange | null {
   const row = conn
     .query<PushedDocument, [string]>(
-      `SELECT d.record_id id,d.number,d.task_key,d.task_record_id task_id,t.project project_name,d.role,d.title,d.body,d.version,d.created_at,d.updated_at,NULL deleted_at FROM task_document d JOIN task t ON t.record_id=d.task_record_id WHERE d.record_id=?`,
+      `SELECT d.record_id id,d.number,d.task_key,d.task_record_id task_id,t.project project_name,t.project_record_id projectId,d.role,d.title,d.body,d.version,d.created_at,d.updated_at,NULL deleted_at FROM task_document d JOIN task t ON t.record_id=d.task_record_id WHERE d.record_id=?`,
     )
     .get(id)
   return row
@@ -119,7 +120,7 @@ function currentStatusEvent(conn: Database, id: string): LoadedOutboxChange | nu
       [string]
     >(
       `SELECT e.record_id id,e.task_key,e.task_record_id task_id,e.at,e.from_status,e.to_status,
-        t.project project_name FROM task_status_event e
+        t.project project_name,t.project_record_id projectId FROM task_status_event e
        JOIN task t ON t.record_id=e.task_record_id WHERE e.record_id=?`,
     )
     .get(id)
@@ -139,7 +140,7 @@ function currentStatusEvent(conn: Database, id: string): LoadedOutboxChange | nu
 function currentNote(conn: Database, id: string): LoadedOutboxChange | null {
   const row = conn
     .query<PushedNote, [string]>(
-      `SELECT n.record_id id,n.number,n.project,n.project project_name,n.text,n.area,n.anchors,
+      `SELECT n.record_id id,n.number,n.project,n.project project_name,n.project_record_id projectId,n.text,n.area,n.anchors,
        n.sightings,n.created_at,n.last_seen_at,n.stale_at,n.stale_reason,n.promoted_task,
        n.promoted_task_record_id promoted_task_id,n.last_seen_at updated_at,NULL deleted_at
        FROM note n WHERE n.record_id=?`,
@@ -156,7 +157,7 @@ function currentNote(conn: Database, id: string): LoadedOutboxChange | null {
 function currentAcknowledgement(conn: Database, id: string): LoadedOutboxChange | null {
   const row = conn
     .query<PushedNoteAcknowledgement, [string]>(
-      `SELECT a.record_id id,n.project project_name,a.note_record_id note_id,a.session_id,
+      `SELECT a.record_id id,n.project project_name,n.project_record_id projectId,a.note_record_id note_id,a.session_id,
        a.acknowledged_at,a.sightings,a.acknowledged_at created_at,a.acknowledged_at updated_at,
        NULL deleted_at FROM note_acknowledgement a JOIN note n ON n.record_id=a.note_record_id
        WHERE a.record_id=?`,

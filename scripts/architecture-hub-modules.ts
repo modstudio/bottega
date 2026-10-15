@@ -1,5 +1,13 @@
 export const hubModuleSpecs = [
   {
+    file: 'hub/src/project-record-id.ts',
+    allowed: ['bun:sqlite', './projects.ts'],
+  },
+  {
+    file: 'hub/src/hosted-project-identity.ts',
+    allowed: ['bun', '../../shared/record-project-identity.ts'],
+  },
+  {
     file: 'hub/src/hosted-releases.ts',
     allowed: ['./record-client.ts'],
   },
@@ -83,7 +91,7 @@ export const hubModuleSpecs = [
   },
   {
     file: 'hub/src/task-identity.ts',
-    allowed: ['bun:sqlite', './db.ts', './task-adoption.ts'],
+    allowed: ['bun:sqlite', './db.ts', './project-record-id.ts', './task-adoption.ts'],
   },
   {
     file: 'hub/src/task-api.ts',

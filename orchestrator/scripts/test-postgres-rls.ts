@@ -117,6 +117,7 @@ try {
     ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};
     CREATE DATABASE recipient_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE hosted_task_id_migration OWNER ${RECORD_OWNER_ROLE};
+    CREATE DATABASE hub_project_identity_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE doc_revision_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE doc_author_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE public_role_migration OWNER ${RECORD_OWNER_ROLE};
@@ -125,6 +126,7 @@ try {
   `)
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'recipient_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'hosted_task_id_migration')
+  postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'hub_project_identity_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'doc_revision_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'doc_author_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'public_role_migration')
@@ -139,6 +141,7 @@ try {
   const authUrl = `postgres://${RECORD_AUTH_ROLE}:auth-password@127.0.0.1:${port}/postgres`
   const recipientMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/recipient_migration`
   const hostedTaskIdMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/hosted_task_id_migration`
+  const hubProjectIdentityMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/hub_project_identity_migration`
   const docRevisionMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/doc_revision_migration`
   const docRevisionMigrationSuperuserUrl = `postgres://postgres:postgres@127.0.0.1:${port}/doc_revision_migration`
   const docAuthorMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/doc_author_migration`
@@ -183,6 +186,18 @@ try {
     { ORCH_TEST_HOSTED_TASK_ID_MIGRATION_URL: hostedTaskIdMigrationUrl },
   )
   if (hostedTaskIdMigration !== 0) process.exit(hostedTaskIdMigration)
+
+  const hubProjectIdentityMigration = await run(
+    [
+      'bun',
+      'test',
+      '--timeout',
+      '30000',
+      'src/postgres/postgres-migrate-hub-project-identity.test.ts',
+    ],
+    { ORCH_TEST_HUB_PROJECT_IDENTITY_MIGRATION_URL: hubProjectIdentityMigrationUrl },
+  )
+  if (hubProjectIdentityMigration !== 0) process.exit(hubProjectIdentityMigration)
 
   const docRevisionMigration = await run(
     [

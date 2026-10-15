@@ -1,38 +1,10 @@
 // concern: record-project-identity
-/** Resolves the hosted project identity while leaving route-specific retirement policy to callers. */
+/** SQL adapter over the shared project-identity decision. */
 import type { SQL } from 'bun'
-
-export type RecordProjectFacts = {
-  id: string
-  name: string
-  spaceId: string
-  retired: boolean
-}
-
-export type RecordProjectIdentityResult =
-  | { status: 'found'; project: RecordProjectFacts; warnings: [] | ['name-mismatch'] }
-  | { status: 'missing' | 'ambiguous' | 'outside-space'; warnings: [] }
-
-export function recordProjectIdentityDecision(input: {
-  requestedId?: string | null
-  requestedName?: string | null
-  requestedSpaceId?: string | null
-  projects: RecordProjectFacts[]
-}): RecordProjectIdentityResult {
-  if (input.projects.length === 0) return { status: 'missing', warnings: [] }
-  if (input.projects.length !== 1) return { status: 'ambiguous', warnings: [] }
-  const project = input.projects[0]!
-  if (input.requestedSpaceId && project.spaceId !== input.requestedSpaceId)
-    return { status: 'outside-space', warnings: [] }
-  return {
-    status: 'found',
-    project,
-    warnings:
-      input.requestedId && input.requestedName != null && input.requestedName !== project.name
-        ? ['name-mismatch']
-        : [],
-  }
-}
+import {
+  type RecordProjectIdentityResult,
+  recordProjectIdentityDecision,
+} from '../../../shared/record-project-identity.ts'
 
 export async function resolveRecordProjectIdentity(
   tx: SQL,

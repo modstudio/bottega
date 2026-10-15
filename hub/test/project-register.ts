@@ -70,7 +70,7 @@ console.log(
     },
     {
       id: 5,
-      record_id: null,
+      record_id: '01990000-0000-7000-8000-000000000075',
       name: 'workshop',
       path: '/fixtures/repos/workshop',
       stack: null,

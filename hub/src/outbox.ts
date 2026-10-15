@@ -41,6 +41,7 @@ export type OutboxEntry = {
   quarantine_reason: string | null
   routing_space_id: string | null
   routing_project: string | null
+  routing_project_record_id: string | null
   fields: string | null
   kept_values: string | null
 }

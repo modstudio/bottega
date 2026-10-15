@@ -5,6 +5,7 @@ import { attributeRun, refreshKeyPrefixes } from '../attribute.ts'
 import { nowIso, writeTransaction } from '../db.ts'
 import { intervalOwningProject } from '../interval-project-correction.ts'
 import { readRuns, readWorkflowRulings } from '../orch.ts'
+import { projectRecordIdFor } from '../project-record-id.ts'
 import { projects } from '../projects.ts'
 import { decideCollectorReplace, type ExistingIntervalRow } from './interval-replace.ts'
 
@@ -100,14 +101,15 @@ function questionReplacer(conn: Database) {
 function upsertWorkflowQuestions(conn: Database, questions: readonly RulingListRow[]): void {
   const upsert = conn.query(
     `INSERT INTO question
-      (question_id,run_ref,root_ref,workflow_cursor_id,workflow_key,project,task_key,
+      (question_id,run_ref,root_ref,workflow_cursor_id,workflow_key,project,project_record_id,task_key,
        session_id,asked_at,answered_at,asked_via,answerer_kind,answer_channel,
        overturned_at,closed_at,close_reason)
-     VALUES (?,NULL,NULL,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     VALUES (?,NULL,NULL,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(question_id) DO UPDATE SET
        workflow_cursor_id=excluded.workflow_cursor_id,
        workflow_key=excluded.workflow_key,
        project=excluded.project,
+       project_record_id=COALESCE(excluded.project_record_id,question.project_record_id),
        task_key=excluded.task_key,
        session_id=excluded.session_id,
        asked_at=excluded.asked_at,
@@ -125,6 +127,7 @@ function upsertWorkflowQuestions(conn: Database, questions: readonly RulingListR
       question.workflow_cursor_id,
       question.workflow_key,
       question.project,
+      projectRecordIdFor(question.project),
       question.workflow_key,
       question.session_id,
       question.asked_at,
@@ -227,13 +230,13 @@ function applyOrchReplace(
   const decision = decideCollectorReplace(existing, recomputed, preservedRefs)
   const update = conn.query(
     `UPDATE interval SET end_at=?, vendor_tokens=?, vendor_cost_usd=?, task_key=?,
-       project=?, job=?, via=?, open=?, session_id=?, user_id=?
+       project=?, project_record_id=?, job=?, via=?, open=?, session_id=?, user_id=?
      WHERE record_id=?`,
   )
   const insert = conn.query(
-    `INSERT INTO interval (record_id, task_key, project, source, agent, job, start_at, end_at,
+    `INSERT INTO interval (record_id, task_key, project, project_record_id, source, agent, job, start_at, end_at,
                            claude_tokens, vendor_tokens, vendor_cost_usd, ref, via, open, session_id, user_id)
-     VALUES (?, ?, ?, 'orch', ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, 'orch', ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
   )
   const remove = conn.query(`DELETE FROM interval WHERE record_id=?`)
   for (const row of decision.updates)
@@ -243,6 +246,7 @@ function applyOrchReplace(
       row.vendor_cost_usd,
       row.task_key,
       row.project,
+      projectRecordIdFor(row.project),
       row.job,
       row.via,
       row.open,
@@ -255,6 +259,7 @@ function applyOrchReplace(
       newRecordId(),
       row.task_key,
       row.project,
+      projectRecordIdFor(row.project),
       row.agent,
       row.job,
       row.start_at,
