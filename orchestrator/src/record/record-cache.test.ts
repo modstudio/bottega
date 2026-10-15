@@ -30,6 +30,7 @@ function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
     getDoc: async () => ({}),
     listRevisions: async () => [],
     upsertDoc: async () => ({ id: newRecordId(), revisionId: newRecordId() }),
+    reorderDocs: async ({ orderedIds }) => ({ orderedIds }),
     applySettingsPermission: async () => ({
       revision: newRecordId(),
       permissions: { allow: [], ask: [], deny: [] },

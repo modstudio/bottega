@@ -39,6 +39,7 @@ import { exportDocFiles, importDocFiles } from './doc-files.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
 import { storedDocLintRefusal } from './doc-lint-adapter.ts'
 import { listDocMetadata, listDocs } from './doc-list.ts'
+import { type DocOrderInput, docOrderRefusal } from './doc-order.ts'
 import {
   type Doc,
   type DocRevision,
@@ -54,6 +55,12 @@ import {
   validDocSubjects,
 } from './doc-subjects.ts'
 import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
+import {
+  commitLocalDocOrder,
+  hostedDocOrder,
+  localDocOrderParent,
+  localDocOrderRows,
+} from './local-doc-order.ts'
 import { localDocumentLifecycle } from './local-doc-status.ts'
 import {
   assertLocalDocRemovalAllowed,
@@ -101,6 +108,30 @@ import {
 import { resolvedDocWriteIdentity } from './doc-write-identity.ts'
 
 export type { DocWriteContext } from './doc-article-fields.ts'
+
+export async function reorderLocalDocs(input: DocOrderInput): Promise<{ orderedIds: string[] }> {
+  return applyRecordWriteAuthority({
+    local: () => commitLocalDocOrder(input),
+    hosted: async () => {
+      const siblings = localDocOrderRows(input)
+      const refusal = docOrderRefusal(
+        siblings.map((row) => String(row.id)),
+        input.orderedIds,
+      )
+      if (refusal) throw new Error(refusal)
+      const client = await hostedDocClient(input.scope, input.subject)
+      await client.reorderDocs(
+        hostedDocOrder(
+          input,
+          siblings,
+          localDocOrderParent(input.parentId),
+          `run ${PLATFORM_SLUG} record push-docs before reordering documents`,
+        ),
+      )
+      return commitLocalDocOrder(input)
+    },
+  })
+}
 
 function assertInjectSize(input: {
   scope: string

@@ -85,6 +85,12 @@ export type RecordDocUpsertInput = {
   revisionId?: string
   expectedRevision?: string
 }
+export type RecordDocOrderInput = {
+  scope: string
+  subject: string | null
+  parentId: string | null
+  orderedIds: string[]
+}
 type RecordDocWriteResult = RecordDocWriteResponse<{ id: string; revisionId: string }>
 type RecordDocImportResult = RecordDocWriteResponse<{ id: string; revisionIds: string[] }>
 
@@ -228,6 +234,10 @@ export type RecordApiClient = {
     input: RecordDocUpsertInput,
     destination?: RecordRequestDestination,
   ): Promise<RecordDocWriteResult>
+  reorderDocs(
+    input: RecordDocOrderInput,
+    destination?: RecordRequestDestination,
+  ): Promise<{ orderedIds: string[] }>
   applySettingsPermission(
     input: Omit<RecordSettingsPermissionInput, 'url' | 'userId' | 'spaceId' | 'spaceIds'>,
     destination?: RecordRequestDestination,
@@ -675,6 +685,24 @@ function boardClaimListPath(project: string, projectId?: string | null): string 
   return `/v1/board/claims?${search}`
 }
 
+async function listDocRevisionsRequest(
+  id: string,
+  destination?: RecordRequestDestination,
+): Promise<Record<string, unknown>[]> {
+  const body = await request<{ items?: Record<string, unknown>[] }>(
+    `/v1/docs/${id}/revisions`,
+    destination,
+  )
+  return Array.isArray(body) ? body : (body.items ?? [])
+}
+
+const reorderDocsRequest: RecordApiClient['reorderDocs'] = (input, destination) =>
+  request('/v1/docs/reorder', {
+    method: 'POST',
+    body: JSON.stringify(input),
+    ...destination,
+  })
+
 export function recordApiClient(): RecordApiClient {
   const injected = injectedClient()
   if (injected) return injected
@@ -706,15 +734,10 @@ export function recordApiClient(): RecordApiClient {
       return request(`/v1/docs${suffix ? `?${suffix}` : ''}`, destination)
     },
     getDoc: (id, destination) => request(`/v1/docs/${id}`, destination),
-    listRevisions: async (id, destination) => {
-      const body = await request<{ items?: Record<string, unknown>[] }>(
-        `/v1/docs/${id}/revisions`,
-        destination,
-      )
-      return Array.isArray(body) ? body : (body.items ?? [])
-    },
+    listRevisions: listDocRevisionsRequest,
     upsertDoc: (input, destination) =>
       request('/v1/docs', { method: 'PUT', body: JSON.stringify(input), ...destination }).then(ids),
+    reorderDocs: reorderDocsRequest,
     applySettingsPermission: (input, destination) =>
       request('/v1/settings/permission', {
         method: 'POST',

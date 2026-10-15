@@ -37,6 +37,7 @@ import {
   listOpenResumes,
   readDocRevision,
   removeDoc,
+  reorderLocalDocs,
   restoreDoc,
   setDoc,
   setDocStatus,
@@ -44,7 +45,6 @@ import {
   storedDocWarnings,
   validateDocAddressFilter,
 } from './docs.ts'
-import { reorderLocalDocs } from './local-doc-order.ts'
 
 const DOC_KEYWORD_LIST_LIMIT = 50
 
@@ -574,33 +574,33 @@ function handledRevisionDocCommand(
   return true
 }
 
-function handledReadOrRevisionDocCommand(
+async function handledReadOrRevisionDocCommand(
   sub: string,
   argv: string[],
   flags: DocFlags,
   presentation: DocPresentation,
   address: { scope: string | undefined; subject: string | null; owner: string | null },
-): boolean {
+): Promise<boolean> {
+  if (await handledReorderDocCommand(sub, flags, presentation, address)) return true
   return (
-    handledReorderDocCommand(sub, flags, presentation, address) ||
     handledReadDocCommand(sub, argv, flags, presentation, address) ||
     handledRevisionDocCommand(sub, argv, flags, presentation, address.owner)
   )
 }
 
-function handledReorderDocCommand(
+async function handledReorderDocCommand(
   sub: string,
   flags: DocFlags,
   presentation: DocPresentation,
   address: { scope: string | undefined; subject: string | null },
-): boolean {
+): Promise<boolean> {
   if (sub !== 'reorder') return false
   if (!address.scope)
     throw new Error(
       `${PLATFORM_SLUG} doc reorder --scope S [--subject X] [--parent-id ID] --id ID...`,
     )
   const orderedIds = flags.values?.('id') ?? []
-  const result = reorderLocalDocs({
+  const result = await reorderLocalDocs({
     scope: address.scope,
     subject: address.subject,
     parentId: flags.flag('parent-id') ?? null,
@@ -628,11 +628,10 @@ export async function docCommand(
   const scope = userAddressScope(has('user'), flag('scope'))
   const subject = has('user') ? null : (flag('subject') ?? null)
   const owner = has('user') ? await signedInDocOwner() : null
+  const address = { scope, subject, owner }
   if (await handledEarlyDocCommand(sub, argv, flags, presentation)) return
-  if (handledReadOrRevisionDocCommand(sub, argv, flags, presentation, { scope, subject, owner }))
-    return
-  if (await handleSetDocCommand(sub, argv, flags, presentation, { scope, subject, owner }, ports))
-    return
+  if (await handledReadOrRevisionDocCommand(sub, argv, flags, presentation, address)) return
+  if (await handleSetDocCommand(sub, argv, flags, presentation, address, ports)) return
   if (sub === 'consume') {
     const slug = argv[2]
     if (!slug || !scope) throw new Error(docConsumeUsage())

@@ -1,7 +1,9 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
-import { reorderLocalDocs } from './local-doc-order.ts'
+import { reorderLocalDocs } from './docs.ts'
+import { hostedDocOrder } from './local-doc-order.ts'
 
 test('reorder refuses an id list that is not the complete current sibling set', async () => {
   const parent = await setDoc({
@@ -34,14 +36,14 @@ test('reorder refuses an id list that is not the complete current sibling set', 
     audiences: ['technical'],
   })
 
-  expect(() =>
+  await expect(
     reorderLocalDocs({
       scope: 'global',
       subject: null,
       parentId: String(parent.id),
       orderedIds: [String(first.id)],
     }),
-  ).toThrow('missing ids')
+  ).rejects.toThrow('missing ids')
 })
 
 test('reorder changes only live positions', async () => {
@@ -85,7 +87,7 @@ test('reorder changes only live positions', async () => {
     )
     .get(first.id, second.id)!.count
 
-  reorderLocalDocs({
+  await reorderLocalDocs({
     scope: 'global',
     subject: null,
     parentId: String(parent.id),
@@ -112,4 +114,42 @@ test('reorder changes only live positions', async () => {
       )
       .get(first.id, second.id)!.count,
   ).toBe(revisionsBefore)
+})
+
+test('hosted order translates local ids and names a document without a record id', () => {
+  const input = {
+    scope: 'global',
+    subject: null,
+    parentId: '10',
+    orderedIds: ['12', '11'],
+  }
+  const parent = { id: 10, slug: 'parent', record_id: 'record-parent' }
+  expect(
+    hostedDocOrder(
+      input,
+      [
+        { id: 11, slug: 'first', record_id: 'record-first' },
+        { id: 12, slug: 'second', record_id: 'record-second' },
+      ],
+      parent,
+      `run ${PLATFORM_SLUG} record push-docs before reordering documents`,
+    ),
+  ).toEqual({
+    ...input,
+    parentId: 'record-parent',
+    orderedIds: ['record-second', 'record-first'],
+  })
+  expect(() =>
+    hostedDocOrder(
+      input,
+      [
+        { id: 11, slug: 'first', record_id: null },
+        { id: 12, slug: 'second', record_id: 'record-second' },
+      ],
+      parent,
+      `run ${PLATFORM_SLUG} record push-docs before reordering documents`,
+    ),
+  ).toThrow(
+    `document "first" has no hosted record id; cleared by: run ${PLATFORM_SLUG} record push-docs`,
+  )
 })

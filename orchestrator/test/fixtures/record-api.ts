@@ -381,6 +381,9 @@ export function createMemoryRecordApiClient(): RecordApiClient {
       revisions.set(id, list)
       return { id, revisionId }
     },
+    async reorderDocs(input) {
+      return { orderedIds: input.orderedIds }
+    },
     async importDoc(input: RecordDocImportInput) {
       const atAddress = [...docs.values()].filter(
         (doc) =>
