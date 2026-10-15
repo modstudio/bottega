@@ -6,7 +6,7 @@ import {
   recordProjectIdentityDecision,
 } from '../../shared/record-project-identity.ts'
 
-export async function resolveHubRecordProjectIdentity(
+async function resolveHubRecordProjectIdentity(
   tx: SQL,
   input: {
     projectId?: string | null

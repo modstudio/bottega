@@ -45,7 +45,7 @@ function correctIntervalProjects<T extends StoredIntervalProject>(
           `UPDATE interval SET project=?, project_record_id=? WHERE record_id=?`,
         )
         for (const row of changed)
-          update.run(row.project_name, projectRecordIdFor(row.project_name, registered), row.id)
+          update.run(row.project_name, projectRecordIdFor(row.project_name), row.id)
       })
   }
   return corrected

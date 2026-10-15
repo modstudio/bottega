@@ -5,7 +5,7 @@ import { projects } from './projects.ts'
 
 export type ProjectRecordIdSource = {
   name: string
-  record_id: string | null
+  record_id?: string | null
 }
 
 export function projectRecordIdFor(
@@ -30,7 +30,9 @@ export function backfillProjectRecordIds(
   conn: Database,
   registered: readonly ProjectRecordIdSource[] = projects(),
 ): void {
-  const named = registered.filter((project) => project.record_id)
+  const named = registered.flatMap((project) =>
+    project.record_id ? [{ name: project.name, record_id: project.record_id }] : [],
+  )
   if (!named.length) return
   for (const { table, column } of PROJECT_RECORD_ID_TABLES) {
     const update = conn.query(

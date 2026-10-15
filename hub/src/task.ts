@@ -40,7 +40,7 @@ export type TaskRow = {
   external_id: string | null
   key: string
   project: string
-  project_record_id: string | null
+  project_record_id?: string | null
   title: string | null
   status: string | null
   status_category: StatusCategory | null
