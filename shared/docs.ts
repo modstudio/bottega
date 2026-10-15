@@ -50,7 +50,7 @@ export const DOC_STATUSES = ['draft', 'current', 'superseded', 'archived'] as co
 export type DocStatus = (typeof DOC_STATUSES)[number]
 export const DOC_KINDS = ['working', 'article'] as const
 export type DocKind = (typeof DOC_KINDS)[number]
-export const DOC_FORMS = ['feature', 'how-to', 'rule', 'model', 'overview'] as const
+export const DOC_FORMS = ['feature', 'how-to', 'rule', 'model', 'overview', 'reference'] as const
 export type DocForm = (typeof DOC_FORMS)[number]
 export type DocArticleSubject = { id: string; name: string }
 

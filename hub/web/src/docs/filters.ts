@@ -13,6 +13,7 @@ export const DOC_FORM_LABELS: Record<DocForm, string> = {
   rule: 'Rule',
   model: 'Model',
   overview: 'Overview',
+  reference: 'Reference',
 }
 
 export const DOC_STATUS_LABELS: Record<DocStatus, string> = {

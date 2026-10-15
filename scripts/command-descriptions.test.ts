@@ -195,3 +195,29 @@ test('a stale baseline entry fails with the regenerate command', () => {
     `${PLATFORM_SLUG} run show: stale baseline entry; run bun scripts/check-command-descriptions.ts --write-baseline`,
   ])
 })
+
+test('an empty default is no default, while a declared value is kept', () => {
+  const commandPrograms = programs()
+  commandPrograms.orch
+    .command('show')
+    .description('show one run')
+    .option(
+      '--id <value>',
+      'include this run',
+      (value: string, all: string[]) => [...all, value],
+      [],
+    )
+    .option('--label <text>', 'label the run', '')
+    .option('--limit <value>', 'limit the rows', '20')
+  const routes = [
+    { command: ['run', 'show'], owner: 'orch', argv: ['show'] },
+  ] satisfies CommandRoute[]
+  const command = documentationInventory(groups, routes, commandPrograms).commands.find(
+    (entry) => entry.spelling === `${PLATFORM_SLUG} run show`,
+  )
+  expect(command!.options.slice(0, 3).map((option) => option.default)).toEqual([
+    null,
+    null,
+    { kind: 'literal', text: '20' },
+  ])
+})

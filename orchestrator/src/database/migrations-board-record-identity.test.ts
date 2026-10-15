@@ -93,6 +93,7 @@ test('board identity migration fills ids, copies adopted hosted ids, and preserv
     expect(applyMigrations(database)).toEqual([
       '0111_board_record_identity',
       '0112_project_record_identity',
+      '0113_doc_form_reference',
     ])
     for (const table of TABLES) {
       expect(database.query(`SELECT count(*) AS count FROM ${table}`).get(), table).toEqual({
