@@ -16,6 +16,12 @@ import { REFERENCE_GENERATOR } from '../doc/doc-generator.ts'
 
 /** The reference publisher marker as the HTTP edge accepts it. */
 export const docGeneratorSchema = z.literal(REFERENCE_GENERATOR).optional()
+export const docWriteContextSchema = z.object({
+  reason: z.string().trim().min(1),
+  author: z.string().trim().min(1),
+  expectedRevision: z.string().uuid().optional(),
+  generator: docGeneratorSchema,
+})
 const isoSchema = z.string().datetime({ offset: true })
 const deliverySchema = z.enum(['inject', 'demand'])
 const revisionOpSchema = z.enum([

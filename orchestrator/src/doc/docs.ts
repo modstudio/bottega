@@ -55,6 +55,12 @@ import {
   getDocStore,
 } from './doc-read-store.ts'
 import {
+  assertLocalReferenceRestore,
+  assertLocalReferenceWrite,
+  assertLocalStoredReferenceWrite,
+  skipsProseLint,
+} from './doc-reference-write.ts'
+import {
   docSubjects,
   validateDocSubject,
   validateHistoricDocAddress,
@@ -97,8 +103,6 @@ import {
   docWriteProjectName,
   forcedDocDelivery,
   globalCanonWriteTargets,
-  isReferenceGeneratorWrite,
-  referenceWriteRefusal,
   refuseArticleDelivery,
   refuseCanonWrite,
   refuseOversizedInject,
@@ -334,34 +338,9 @@ export {
 } from './doc-lint-adapter.ts'
 
 function assertDocLint(input: DocWriteInput, prior: Doc | null): void {
-  assertReferenceDocWrite(input, prior)
-  // Generated reference pages are checked by the reference drift check, not prose lint.
-  if (
-    isReferenceGeneratorWrite({
-      storedForm: prior?.form,
-      requestedForm: input.form,
-      generator: input.generator,
-    })
-  )
-    return
+  assertLocalReferenceWrite(prior, input)
+  if (skipsProseLint(prior, input)) return
   const refusal = storedDocLintRefusal(input, prior, input.canonTree)
-  if (refusal) throw new Error(refusal)
-}
-
-function assertReferenceDocWrite(input: DocWriteInput, prior: Doc | null): void {
-  const refusal = referenceWriteRefusal({
-    storedForm: prior?.form,
-    requestedForm: input.form,
-    generator: input.generator,
-  })
-  if (refusal) throw new Error(refusal)
-}
-
-function assertReferenceRestoreAllowed(current: Doc | null, revision: DocRevision): void {
-  const refusal = referenceWriteRefusal({
-    storedForm: current?.form,
-    requestedForm: revision.form,
-  })
   if (refusal) throw new Error(refusal)
 }
 
@@ -374,7 +353,7 @@ function referenceRestoreState(
 ): [string | null, Doc | null] {
   const expectedCurrent = currentDocRevision(scope, subject, slug, owner)
   const current = getDoc(scope, subject, slug, owner)
-  assertReferenceRestoreAllowed(current, revision)
+  assertLocalReferenceRestore(current, revision)
   return [expectedCurrent, current]
 }
 
@@ -605,11 +584,7 @@ export async function removeDoc(
   const identity = resolvedDocWriteIdentity(context)
   const doc = getDoc(scope, subject, slug, owner)
   if (!doc) return false
-  const referenceRefusal = referenceWriteRefusal({
-    storedForm: doc.form,
-    generator: context.generator,
-  })
-  if (referenceRefusal) throw new Error(referenceRefusal)
+  assertLocalStoredReferenceWrite(doc, context.generator)
   assertLocalRevisionWrite(
     { scope, expectedRevision: context.expectedRevision },
     doc.revision,
@@ -688,8 +663,7 @@ export async function consumeDoc(
   const identity = resolvedDocWriteIdentity(context)
   const doc = getDoc(scope, subject, slug)
   if (!doc) throw new Error(`no ${scope} doc "${slug}"`)
-  const referenceRefusal = referenceWriteRefusal({ storedForm: doc.form })
-  if (referenceRefusal) throw new Error(referenceRefusal)
+  assertLocalStoredReferenceWrite(doc)
   const consumedAt = nowIso()
   let patched: { body: string; alreadyConsumed: boolean }
   try {

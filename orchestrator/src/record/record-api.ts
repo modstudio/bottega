@@ -13,7 +13,7 @@ import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { registerRecordAccessRoutes, registerRecordCors } from './record-api-access.ts'
 import type { RecordBoardDeps } from './record-api-board.ts'
 import {
-  docGeneratorSchema,
+  docWriteContextSchema,
   recordCanonImportSchema,
   recordDocImportSchema,
   recordDocUpsertSchema,
@@ -275,12 +275,6 @@ const wrapSchema = z.object({
   senderKeyId: keyIdSchema,
   enc: base64urlSchema,
   ciphertext: base64urlSchema,
-})
-const docWriteContextSchema = z.object({
-  reason: z.string().trim().min(1),
-  author: z.string().trim().min(1),
-  expectedRevision: z.string().uuid().optional(),
-  generator: docGeneratorSchema,
 })
 const activeSpaceRemedy = `run \`${PLATFORM_SLUG} record space switch <slug>\` to select an active space`
 

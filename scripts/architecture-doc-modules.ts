@@ -27,6 +27,10 @@ export const docModules: DocModule[] = [
     './doc-generator.ts',
   ]),
   module('orchestrator/src/doc/doc-generator.ts', []),
+  module('orchestrator/src/doc/doc-reference-write.ts', [
+    './doc-generator.ts',
+    './doc-write-allowed.ts',
+  ]),
   module('orchestrator/src/doc/doc-resume-frontmatter.ts', []),
   module('orchestrator/src/doc/doc-article-fields.ts', [
     '../../../shared/brand.ts',
