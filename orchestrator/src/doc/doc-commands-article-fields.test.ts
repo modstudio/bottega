@@ -10,32 +10,39 @@ import { docCommand } from './doc-commands.ts'
 import { selectDocWriteTree } from './doc-write-tree.ts'
 
 async function command(args: string[], stdin = '') {
-  const program = new Command().exitOverride()
+  const program = new Command().enablePositionalOptions().exitOverride()
   register(program)
   const registered = program.commands.find((candidate) => candidate.name() === 'doc')!
-  const parsed = registered.parseOptions(args.slice(1))
-  const flags = optionFlags(registered.opts())
   const out: string[] = []
   const err: string[] = []
   let code = 0
-  try {
-    await docCommand(
-      parsed.operands[0] ?? 'list',
-      ['doc', ...parsed.operands],
-      flags,
-      {
-        log: (...parts: unknown[]) => out.push(parts.join(' ')),
-        error: (...parts: unknown[]) => err.push(parts.join(' ')),
-        write: (value: string) => out.push(value),
-        stdinText: async () => stdin,
-        stdinIsTTY: false,
-        cwd: () => process.cwd(),
-        exitCode: (value: number) => {
-          code = value
+  for (const subcommand of registered.commands) {
+    subcommand.action(async (...values: unknown[]) => {
+      const command = values.pop() as Command
+      const operands = values
+        .flatMap((value) => (Array.isArray(value) ? value : [value]))
+        .filter((value): value is string => typeof value === 'string')
+      await docCommand(
+        subcommand.name(),
+        ['doc', subcommand.name(), ...operands],
+        optionFlags(command.opts()),
+        {
+          log: (...parts: unknown[]) => out.push(parts.join(' ')),
+          error: (...parts: unknown[]) => err.push(parts.join(' ')),
+          write: (value: string) => out.push(value),
+          stdinText: async () => stdin,
+          stdinIsTTY: false,
+          cwd: () => process.cwd(),
+          exitCode: (value: number) => {
+            code = value
+          },
         },
-      },
-      { selectDocWriteTree, collectCanonLintInput },
-    )
+        { selectDocWriteTree, collectCanonLintInput },
+      )
+    })
+  }
+  try {
+    await program.parseAsync(['node', 'orch', ...args])
   } catch (error) {
     code = 1
     err.push((error as Error).message)
