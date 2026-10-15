@@ -191,7 +191,8 @@ export function mainStackExecInProgress(
     const execIds = (result.stdout?.toString() ?? '')
       .trim()
       .split('\n')
-      .map((line) => JSON.parse(line))
+      // A container that has never had an exec reports `null`, not `[]`.
+      .map((line) => JSON.parse(line) ?? [])
     if (execIds.length !== ids.length || execIds.some((entry) => !Array.isArray(entry))) {
       return { value: 'unknown', reason: `${command.join(' ')} failed: unparseable output` }
     }

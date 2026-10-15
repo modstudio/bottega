@@ -64,6 +64,8 @@ test.each([
   { name: 'empty exec lists', inspect: '[]\n[]', expected: false },
   { name: 'one non-empty exec list', inspect: '["exec-1"]', expected: true },
   { name: 'mixed container exec lists', inspect: '[]\n["exec-2"]\n[]', expected: true },
+  { name: 'containers that never had an exec', inspect: 'null\nnull', expected: false },
+  { name: 'a null list beside an active exec', inspect: 'null\n["exec-3"]', expected: true },
 ])('main stack command observation parses $name', (fixture) => {
   const ids = fixture.inspect.split('\n').map((_, index) => `container-${index + 1}`)
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) =>
