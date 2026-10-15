@@ -11,6 +11,7 @@ import {
   effectiveMcpRequest,
   mcpAttachRefusal,
   mcpRequestFromStored,
+  parseRequestedMcp,
   preflightMcp,
 } from './mcp-preflight.ts'
 
@@ -22,6 +23,40 @@ const fixtureFile = (name: string) => {
 }
 afterEach(() => {
   for (const path of fixtureFiles.splice(0)) rmSync(path, { force: true })
+})
+
+describe('parseRequestedMcp', () => {
+  const refusal = '--mcp received "always"; accepted values are require and prefer'
+
+  test('omitted --mcp is absent', () => {
+    expect(parseRequestedMcp(['do', 'implement', 'prompt'])).toBeUndefined()
+  })
+
+  test.each([
+    [['--mcp'], 'require'],
+    [['prompt', '--mcp'], 'require'],
+    [['--mcp', '--follow'], 'require'],
+    [['--mcp', 'prefer'], 'prefer'],
+    [['--mcp=prefer'], 'prefer'],
+    [['--mcp', 'require'], 'require'],
+    [['--mcp=require'], 'require'],
+  ] as const)('%j resolves to %s', (flags, mode) => {
+    expect(parseRequestedMcp(['do', 'implement', ...flags])).toBe(mode)
+  })
+
+  test('refuses an unknown mode, naming the value and accepted modes', () => {
+    expect(() => parseRequestedMcp(['do', 'implement', '--mcp', 'always'])).toThrow(refusal)
+    expect(() => parseRequestedMcp(['do', 'implement', '--mcp=always'])).toThrow(refusal)
+  })
+
+  test('refuses --mcp supplied more than once', () => {
+    expect(() => parseRequestedMcp(['--mcp', '--mcp=prefer'])).toThrow(
+      '--mcp may be supplied only once',
+    )
+    expect(() => parseRequestedMcp(['--mcp=require', '--mcp', 'prefer'])).toThrow(
+      '--mcp may be supplied only once',
+    )
+  })
 })
 
 describe('effectiveMcpRequest', () => {

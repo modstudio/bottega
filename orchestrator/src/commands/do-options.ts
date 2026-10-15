@@ -127,7 +127,7 @@ export const ORCH_DO_OPTIONS = [
     flags: '--mcp [mode]',
     name: 'mcp',
     value: 'optional',
-    description: 'require MCP servers, or prefer them with --mcp=prefer',
+    description: 'require MCP servers, or prefer them with prefer',
   },
 ] as const
 

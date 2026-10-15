@@ -20,7 +20,7 @@ import { contractConflicts } from '../contract/contract.ts'
 import { nowIso, sessionId } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
-import { effectiveMcpRequest, type McpRequest, requiredMcpServer } from '../mcp/mcp-preflight.ts'
+import { effectiveMcpRequest, parseRequestedMcp, requiredMcpServer } from '../mcp/mcp-preflight.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
 import { implicitReviewWarning } from '../review/review-target.ts'
 import {
@@ -205,13 +205,6 @@ async function routeConstraints(
   return { avoid, distinctModels: await Promise.all(ids.map(modelForDistinct)) }
 }
 
-function requestedMcp(argv: string[]): McpRequest | undefined {
-  const values = argv.filter((arg) => arg === '--mcp' || arg.startsWith('--mcp='))
-  if (values.length > 1) throw new Error('--mcp may be supplied only once')
-  if (!values.length) return undefined
-  return values[0] === '--mcp=prefer' ? 'prefer' : 'require'
-}
-
 function warnCallerDrift(
   cwd: string,
   baseRef: string | undefined,
@@ -364,7 +357,7 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       transport,
       transportExplicit: explicit,
       ...(await routeConstraints(argv, flag('agent'))),
-      mcp: requestedMcp(argv),
+      mcp: parseRequestedMcp(argv),
     }
   }
   const detach = async (jobName: string, text: string, spec: DetachSpec) => {
