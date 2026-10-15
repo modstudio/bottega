@@ -1,6 +1,7 @@
 // concern: release-outbox
 /** Knows how local release ledger rows become hosted-record mutations. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { nowIso } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
@@ -41,7 +42,7 @@ export function enqueueReleaseRecord(database: Database, releaseId: number): voi
   const pending = database
     .query<{ id: number }, [string]>(
       `SELECT id FROM outbox
-       WHERE kind='release' AND record_id=? AND synced_at IS NULL
+       WHERE kind='release' AND row_id=? AND synced_at IS NULL
          AND quarantined_at IS NULL AND retired_at IS NULL
        ORDER BY id LIMIT 1`,
     )
@@ -53,15 +54,17 @@ export function enqueueReleaseRecord(database: Database, releaseId: number): voi
     return
   }
   database
-    .query("INSERT INTO outbox (kind,record_id,payload,created_at) VALUES ('release',?,?,?)")
-    .run(row.record_id, payload, at)
+    .query(
+      "INSERT INTO outbox (record_id,kind,row_id,payload,created_at) VALUES (?,'release',?,?,?)",
+    )
+    .run(newRecordId(), row.record_id, payload, at)
 }
 
 export function backfillReleaseRecords(database: Database): { enqueued: number } {
   const releases = database
     .query<{ id: number }, []>(
       `SELECT id FROM release_ledger WHERE NOT EXISTS (
-         SELECT 1 FROM outbox WHERE kind='release' AND record_id=release_ledger.record_id
+         SELECT 1 FROM outbox WHERE kind='release' AND row_id=release_ledger.record_id
        ) ORDER BY id`,
     )
     .all()

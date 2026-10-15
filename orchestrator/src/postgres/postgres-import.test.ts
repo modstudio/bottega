@@ -462,7 +462,7 @@ realPostgres('project import against copied live SQLite data', () => {
       .query<{ count: number }, [string, string]>(
         `SELECT count(*) AS count FROM run r
          WHERE r.status <> 'running' AND r.job NOT IN (?,?)
-           AND NOT EXISTS (SELECT 1 FROM outbox o WHERE o.kind='run' AND o.record_id=r.record_id)`,
+           AND NOT EXISTS (SELECT 1 FROM outbox o WHERE o.kind='run' AND o.row_id=r.record_id)`,
       )
       .get(HOOK_TREE_JOB, LANDING_TREE_JOB)!.count
     expect(missingOutbox).toBe(0)

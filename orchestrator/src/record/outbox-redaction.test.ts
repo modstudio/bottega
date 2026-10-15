@@ -46,8 +46,7 @@ function seeded(): { database: Database; urlUserinfo: string; base64: string } {
     .run(STAMP, planted.urlUserinfo, planted.base64)
   database
     .query(
-      `INSERT INTO outbox (kind,record_id,payload,created_at,synced_at)
-       VALUES ('run','record-42',?,?,?)`,
+      `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,synced_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),'run','record-42',?,?,?)`,
     )
     .run(runPayload(planted.urlUserinfo, planted.base64), STAMP, STAMP)
   return { database, ...planted }
@@ -70,7 +69,7 @@ test('redaction re-enqueues only chosen-rule leaves, audits paths, and leaves lo
   })
   const rows = database
     .query<{ record_id: string; payload: string; synced_at: string | null }, []>(
-      'SELECT record_id,payload,synced_at FROM outbox ORDER BY id',
+      'SELECT row_id AS record_id,payload,synced_at FROM outbox ORDER BY id',
     )
     .all()
   expect(rows).toHaveLength(2)
@@ -86,7 +85,9 @@ test('redaction re-enqueues only chosen-rule leaves, audits paths, and leaves lo
   })
   expect(
     database
-      .query('SELECT kind,record_id,rules,withheld_paths,actor_session FROM outbox_redaction_audit')
+      .query(
+        'SELECT kind,row_id AS record_id,rules,withheld_paths,actor_session FROM outbox_redaction_audit',
+      )
       .get(),
   ).toEqual({
     kind: 'run',
@@ -138,8 +139,7 @@ test('a newer active row is skipped and reported without leaking planted text', 
   const { database, urlUserinfo } = seeded()
   database
     .query(
-      `INSERT INTO outbox (kind,record_id,payload,created_at)
-       VALUES ('run','record-42',?,?)`,
+      `INSERT INTO outbox (record_id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),'run','record-42',?,?)`,
     )
     .run(runPayload('a newer clean value', 'ordinary label'), NEXT_STAMP)
   const result = redactSyncedOutbox(
@@ -166,11 +166,11 @@ test('newer-row eligibility lookup uses the record history index', () => {
     .query<{ detail: string }, []>(
       `EXPLAIN QUERY PLAN
        SELECT id FROM outbox candidate
-        WHERE kind='run' AND record_id='record-42' AND id=1 AND synced_at IS NOT NULL
+        WHERE kind='run' AND row_id='record-42' AND id=1 AND synced_at IS NOT NULL
           AND NOT EXISTS (
             SELECT 1 FROM outbox newer
              WHERE newer.kind=candidate.kind
-               AND newer.record_id=candidate.record_id
+               AND newer.row_id=candidate.row_id
                AND newer.id>candidate.id
                AND (newer.synced_at IS NOT NULL OR newer.retired_at IS NULL)
           )`,
@@ -178,7 +178,7 @@ test('newer-row eligibility lookup uses the record history index', () => {
     .all()
 
   expect(plan.map((row) => row.detail)).toContainEqual(
-    expect.stringContaining('SEARCH newer USING INDEX outbox_record_history'),
+    expect.stringContaining('SEARCH newer USING INDEX outbox_row_history'),
   )
   database.close()
 })

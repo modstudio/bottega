@@ -30,7 +30,7 @@ function seedFinding(name: string, completed = true): FindingSeed {
     )
     .get(finding.id)!
   const remintedRecordId = `reminted-${name}-${finding.id}`
-  db().query('UPDATE review_finding SET record_id=? WHERE id=?').run(remintedRecordId, finding.id)
+  db().query('UPDATE review_finding SET row_id=? WHERE id=?').run(remintedRecordId, finding.id)
   if (completed) {
     db()
       .query('UPDATE review SET completed_at=? WHERE id=?')
@@ -57,8 +57,7 @@ function appendSource(seed: FindingSeed, overrides: Record<string, unknown> = {}
   return Number(
     db()
       .query<{ id: number }, [string, string, string]>(
-        `INSERT INTO outbox (kind,record_id,payload,created_at)
-         VALUES ('review_finding',?,?,?) RETURNING id`,
+        `INSERT INTO outbox (record_id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),'review_finding',?,?,?) RETURNING id`,
       )
       .get(seed.originalRecordId, JSON.stringify(payload), '2026-09-22T00:00:00.000Z')!.id,
   )
@@ -84,9 +83,7 @@ function seedReview(name: string, findings: number): FindingSeed[] {
         )
         .get(finding.id)!
       const remintedRecordId = `reminted-${name}-${finding.id}`
-      db()
-        .query('UPDATE review_finding SET record_id=? WHERE id=?')
-        .run(remintedRecordId, finding.id)
+      db().query('UPDATE review_finding SET row_id=? WHERE id=?').run(remintedRecordId, finding.id)
       return {
         findingId: finding.id,
         reviewId,
@@ -145,7 +142,9 @@ test('skips null-only, mismatched, open, missing, and hosted-diverged findings',
   const diverged = seedFinding('restore-triage-diverged')
   appendSource(diverged)
   db()
-    .query("INSERT INTO outbox (kind,record_id,payload,created_at) VALUES ('run',?,?,?)")
+    .query(
+      "INSERT INTO outbox (record_id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),'run',?,?,?)",
+    )
     .run(diverged.remintedRecordId, '{}', '2026-09-23T00:00:00.000Z')
 
   const report = restoreReviewTriage(db(), { dryRun: false })
@@ -207,7 +206,7 @@ test('snapshots and restores every finding identity before amending siblings', (
   for (const seed of seeds) {
     const latest = db()
       .query<{ record_id: string; payload: string }, [number]>(
-        `SELECT record_id,payload FROM outbox WHERE kind='review_finding'
+        `SELECT row_id AS record_id,payload FROM outbox WHERE kind='review_finding'
             AND json_valid(payload) AND json_extract(payload,'$.localId')=?
             ORDER BY id DESC LIMIT 1`,
       )
@@ -220,7 +219,7 @@ test('snapshots and restores every finding identity before amending siblings', (
     expect(
       db()
         .query<{ count: number }, [string]>(
-          "SELECT COUNT(*) AS count FROM outbox WHERE kind='review_finding' AND record_id=?",
+          "SELECT COUNT(*) AS count FROM outbox WHERE kind='review_finding' AND row_id=?",
         )
         .get(seed.remintedRecordId)!.count,
     ).toBe(0)

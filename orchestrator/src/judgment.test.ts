@@ -820,7 +820,7 @@ describe('voided output evidence', () => {
     const payload = db()
       .query<{ payload: string }, [number]>(
         `SELECT payload FROM outbox
-         WHERE record_id=(SELECT record_id FROM run WHERE id=?) ORDER BY id DESC`,
+WHERE row_id=(SELECT record_id FROM run WHERE id=?) ORDER BY id DESC`,
       )
       .get(root)
     expect(JSON.parse(payload!.payload)).toMatchObject({
@@ -899,7 +899,7 @@ describe('voided output evidence', () => {
     const outbox = db()
       .query<{ kind: string; payload: string }, [number]>(
         `SELECT kind,payload FROM outbox
-          WHERE record_id=(SELECT record_id FROM run WHERE id=?) ORDER BY id`,
+WHERE row_id=(SELECT record_id FROM run WHERE id=?) ORDER BY id`,
       )
       .all(id)
     expect(outbox.map((row) => row.kind)).toEqual(['score', 'run'])
@@ -931,7 +931,7 @@ describe('voided output evidence', () => {
     expect(
       db()
         .query<{ n: number }, [number]>(
-          'SELECT COUNT(*) n FROM outbox WHERE record_id=(SELECT record_id FROM run WHERE id=?)',
+          'SELECT COUNT(*) n FROM outbox WHERE row_id=(SELECT record_id FROM run WHERE id=?)',
         )
         .get(id),
     ).toEqual({ n: 0 })

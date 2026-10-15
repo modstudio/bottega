@@ -34,12 +34,12 @@ function localOutbox(
 ): Database {
   const local = new Database(':memory:')
   local.exec(`CREATE TABLE outbox (
-    id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, payload TEXT NOT NULL,
+    id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, row_id TEXT NOT NULL, payload TEXT NOT NULL,
     created_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, synced_at TEXT,
     quarantined_at TEXT, quarantine_reason TEXT, retired_at TEXT, retirement_reason TEXT
   );
   CREATE TABLE outbox_quarantine_audit (
-    id INTEGER PRIMARY KEY, outbox_id INTEGER NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL,
+    id INTEGER PRIMARY KEY, outbox_id INTEGER NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL, row_id TEXT NOT NULL,
     error TEXT, attempts INTEGER NOT NULL, disposition TEXT NOT NULL, actor_session TEXT,
     at TEXT NOT NULL, reason TEXT
   ); CREATE TABLE record_install_binding (id INTEGER PRIMARY KEY, bound_at TEXT NOT NULL)`)
@@ -69,7 +69,9 @@ function localOutbox(
       ...overrides,
     })
     local
-      .query("INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (?,'run',?,?,?)")
+      .query(
+        "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),?,'run',?,?,?)",
+      )
       .run(id, values.id ?? null, JSON.stringify(values), STAMP)
   }
   return local
@@ -78,12 +80,12 @@ function localOutbox(
 function localTriageSnapshotOutbox(mutate: (payload: Record<string, unknown>) => void): Database {
   const local = new Database(':memory:')
   local.exec(`CREATE TABLE outbox (
-    id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, payload TEXT NOT NULL,
+    id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, row_id TEXT NOT NULL, payload TEXT NOT NULL,
     created_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, synced_at TEXT,
     quarantined_at TEXT, quarantine_reason TEXT, retired_at TEXT, retirement_reason TEXT
   );
   CREATE TABLE outbox_quarantine_audit (
-    id INTEGER PRIMARY KEY, outbox_id INTEGER NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL,
+    id INTEGER PRIMARY KEY, outbox_id INTEGER NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL, row_id TEXT NOT NULL,
     error TEXT, attempts INTEGER NOT NULL, disposition TEXT NOT NULL, actor_session TEXT,
     at TEXT NOT NULL, reason TEXT
   ); CREATE TABLE record_install_binding (id INTEGER PRIMARY KEY, bound_at TEXT NOT NULL)`)
@@ -114,7 +116,7 @@ function localTriageSnapshotOutbox(mutate: (payload: Record<string, unknown>) =>
   mutate(payload)
   local
     .query(
-      "INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (1,'landing_triage_snapshot',?,?,?)",
+      "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),1,'landing_triage_snapshot',?,?,?)",
     )
     .run(RECORD_ID, JSON.stringify(payload), STAMP)
   return local
@@ -123,12 +125,12 @@ function localTriageSnapshotOutbox(mutate: (payload: Record<string, unknown>) =>
 function localLandingOverrideOutbox(mutate: (payload: Record<string, unknown>) => void): Database {
   const local = new Database(':memory:')
   local.exec(`CREATE TABLE outbox (
-    id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, payload TEXT NOT NULL,
+    id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, row_id TEXT NOT NULL, payload TEXT NOT NULL,
     created_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, synced_at TEXT,
     quarantined_at TEXT, quarantine_reason TEXT, retired_at TEXT, retirement_reason TEXT
   );
   CREATE TABLE outbox_quarantine_audit (
-    id INTEGER PRIMARY KEY, outbox_id INTEGER NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL,
+    id INTEGER PRIMARY KEY, outbox_id INTEGER NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL, row_id TEXT NOT NULL,
     error TEXT, attempts INTEGER NOT NULL, disposition TEXT NOT NULL, actor_session TEXT,
     at TEXT NOT NULL, reason TEXT
   ); CREATE TABLE record_install_binding (id INTEGER PRIMARY KEY, bound_at TEXT NOT NULL)`)
@@ -155,7 +157,7 @@ function localLandingOverrideOutbox(mutate: (payload: Record<string, unknown>) =
   mutate(payload)
   local
     .query(
-      "INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (1,'landing_override',?,?,?)",
+      "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),1,'landing_override',?,?,?)",
     )
     .run(RECORD_ID, JSON.stringify(payload), STAMP)
   return local
@@ -723,7 +725,7 @@ test('a quarantined parent defers its graph until retry delivers the parent', as
 test('a quarantined run defers its continuation and retry until the parent syncs', async () => {
   const local = localOutbox(3)
   const parent = local
-    .query<{ record_id: string }, []>('SELECT record_id FROM outbox WHERE id=1')
+    .query<{ record_id: string }, []>('SELECT row_id AS record_id FROM outbox WHERE id=1')
     .get()!
   const updatePayload = (id: number, references: Record<string, string>) => {
     const row = local
@@ -835,15 +837,13 @@ test('a synced parent lets its child flow after a later re-enqueue is retired', 
   const local = localOutbox(3)
   const parent = local
     .query<{ record_id: string; payload: string }, []>(
-      'SELECT record_id,payload FROM outbox WHERE id=1',
+      'SELECT row_id AS record_id,payload FROM outbox WHERE id=1',
     )
     .get()!
   const child = local.query<{ payload: string }, []>('SELECT payload FROM outbox WHERE id=3').get()!
   local.query('UPDATE outbox SET synced_at=? WHERE id=1').run(STAMP)
   local
-    .query(
-      `UPDATE outbox SET record_id=?,retired_at=?,retirement_reason='later snapshot' WHERE id=2`,
-    )
+    .query(`UPDATE outbox SET row_id=?,retired_at=?,retirement_reason='later snapshot' WHERE id=2`)
     .run(parent.record_id, STAMP)
   local.query('UPDATE outbox SET payload=? WHERE id=3').run(
     JSON.stringify({

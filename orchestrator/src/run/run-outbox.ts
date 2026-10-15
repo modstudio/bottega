@@ -1,6 +1,7 @@
 // concern: run-outbox
 /** Knows how a terminal local run becomes an ordered hosted-record mutation. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
@@ -128,10 +129,10 @@ export function enqueueRunRecord(
   )
   database
     .query(
-      `INSERT INTO outbox (kind, record_id, payload, created_at)
-       VALUES ('run', ?, ?, ?)`,
+      `INSERT INTO outbox (record_id, kind, row_id, payload, created_at)
+       VALUES (?, 'run', ?, ?, ?)`,
     )
-    .run(row.record_id, payload, finishedAt)
+    .run(newRecordId(), row.record_id, payload, finishedAt)
 }
 
 export function backfillRunRecords(database: Database, machineId: string): RunRecordBackfillResult {
@@ -142,7 +143,7 @@ export function backfillRunRecords(database: Database, machineId: string): RunRe
           WHERE r.status IN ('ok', 'failed', 'stale', 'stopped', 'asking')
             AND r.job NOT IN (?,?)
             AND NOT EXISTS (
-              SELECT 1 FROM outbox WHERE kind='run' AND record_id=r.record_id
+              SELECT 1 FROM outbox WHERE kind='run' AND row_id=r.record_id
             )
           ORDER BY r.id`,
     )

@@ -771,6 +771,13 @@
       "when": 1791961600000,
       "tag": "0109_remaining_store_record_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "6",
+      "when": 1791968800000,
+      "tag": "0110_outbox_record_identity",
+      "breakpoints": true
     }
   ]
 }

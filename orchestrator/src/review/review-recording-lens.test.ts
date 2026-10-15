@@ -52,7 +52,7 @@ describe('review discipline', () => {
       db()
         .query<{ kind: string; count: number }, []>(
           `SELECT kind, count(*) AS count FROM outbox
-           WHERE record_id=(SELECT record_id FROM review WHERE id=${review})
+WHERE row_id=(SELECT record_id FROM review WHERE id=${review})
               OR record_id IN (SELECT record_id FROM review_lens WHERE review_id=${review})
               OR record_id IN (SELECT record_id FROM review_finding WHERE review_id=${review})
            GROUP BY kind ORDER BY kind`,

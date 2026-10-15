@@ -266,7 +266,7 @@ export function localQuestionCountForSpace(
        LEFT JOIN workflow_cursor cursor ON cursor.id=q.workflow_cursor_id
       WHERE q.run_id IS NULL OR EXISTS (
         SELECT 1 FROM outbox o
-         WHERE o.kind='run' AND o.record_id=r.record_id AND o.synced_at IS NOT NULL
+         WHERE o.kind='run' AND o.row_id=r.record_id AND o.synced_at IS NOT NULL
       )`,
     )
     .all()

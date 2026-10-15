@@ -9,11 +9,11 @@ export async function exerciseQuarantinedRedactionSync<T>(
   sync: () => Promise<T>,
 ): Promise<{ planted: string; redaction: ReturnType<typeof redactSyncedOutbox>; syncResult: T }> {
   local.exec(`CREATE TABLE outbox_redaction_audit (
-    id INTEGER PRIMARY KEY, outbox_id INTEGER NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL,
+    id INTEGER PRIMARY KEY, outbox_id INTEGER NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL, row_id TEXT NOT NULL,
     rules TEXT NOT NULL, withheld_paths TEXT NOT NULL, actor_session TEXT, at TEXT NOT NULL
   );
-  CREATE INDEX outbox_latest_synced_record
-    ON outbox(kind, record_id, id DESC) WHERE synced_at IS NOT NULL`)
+  CREATE INDEX outbox_latest_synced_row
+    ON outbox(kind, row_id, id DESC) WHERE synced_at IS NOT NULL`)
   const planted = ['https://fixture-user', ':fixture-pass@', 'example.test'].join('')
   const row = local.query<{ payload: string }, []>('SELECT payload FROM outbox WHERE id=1').get()!
   const newer = JSON.parse(row.payload) as Record<string, unknown>
@@ -25,9 +25,7 @@ export async function exerciseQuarantinedRedactionSync<T>(
   newer.updatedAt = '2026-09-15T01:02:00.000Z'
   local
     .query(
-      `INSERT INTO outbox
-       (id,kind,record_id,payload,created_at,quarantined_at,quarantine_reason)
-       VALUES (2,'run',?,?,?,'2026-09-15T01:03:00.000Z','remote refusal')`,
+      `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at,quarantined_at,quarantine_reason) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),2,'run',?,?,?,'2026-09-15T01:03:00.000Z','remote refusal')`,
     )
     .run(String(newer.id), JSON.stringify(newer), '2026-09-15T01:02:00.000Z')
   const redaction = redactSyncedOutbox(

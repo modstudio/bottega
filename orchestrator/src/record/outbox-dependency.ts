@@ -52,7 +52,7 @@ function lensRun(
   if (normalized) return { runId: normalized.record_id, unreadable: false }
   const row = database
     .query<{ payload: string }, [string]>(
-      `SELECT payload FROM outbox WHERE kind='review_lens' AND record_id=? ORDER BY id DESC LIMIT 1`,
+      `SELECT payload FROM outbox WHERE kind='review_lens' AND row_id=? ORDER BY id DESC LIMIT 1`,
     )
     .get(lensRecordId)
   if (!row) return { runId: null, unreadable: false }
@@ -76,7 +76,7 @@ function outboxParentRecordIds(row: OutboxRow, payload: Payload, database: Datab
     case 'review':
       return [
         ...hostedParents,
-        ...reviewRunIds(database, row.record_id).map((recordId) => ({ kind: 'run', recordId })),
+        ...reviewRunIds(database, row.row_id).map((recordId) => ({ kind: 'run', recordId })),
       ]
     case 'review_finding': {
       const lensId = nullableString(payload.reviewLensId)
@@ -101,7 +101,7 @@ function outboxParentRecordIds(row: OutboxRow, payload: Payload, database: Datab
 export function blockedByRetiredParentRows(database: Database): BlockedOutboxRow[] {
   const rows = database
     .query<OutboxRow, []>(
-      `SELECT id,kind,record_id,payload FROM outbox
+      `SELECT id,kind,row_id,payload FROM outbox
        WHERE synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL ORDER BY id`,
     )
     .all()
@@ -134,7 +134,7 @@ function outboxDependencyState(
     const rows = database
       .query<ParentState, [string, string]>(
         `SELECT synced_at,quarantined_at,retired_at FROM outbox
-         WHERE kind=? AND record_id=? ORDER BY id DESC`,
+         WHERE kind=? AND row_id=? ORDER BY id DESC`,
       )
       .all(kind, parentRecordId)
     const latest = rows[0]
@@ -182,7 +182,7 @@ export function outboxRowBlockedByRetiredParent(
 ): BlockedOutboxRow | null {
   const row = database
     .query<OutboxRow, [number]>(
-      `SELECT id,kind,record_id,payload FROM outbox WHERE id=?
+      `SELECT id,kind,row_id,payload FROM outbox WHERE id=?
        AND synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL`,
     )
     .get(rowId)

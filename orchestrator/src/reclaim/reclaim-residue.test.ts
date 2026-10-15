@@ -47,7 +47,7 @@ describe('guarded residue reclaim', () => {
     })
     expect(
       db()
-        .query('SELECT kind FROM outbox WHERE record_id=(SELECT record_id FROM run WHERE id=?)')
+        .query('SELECT kind FROM outbox WHERE row_id=(SELECT record_id FROM run WHERE id=?)')
         .get(runId),
     ).toEqual({
       kind: 'run',

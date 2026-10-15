@@ -1,6 +1,7 @@
 // concern: review-outbox
 /** Knows how local reviews become ordered hosted-record mutations. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { nowIso } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
@@ -21,8 +22,8 @@ const enqueue = (
   at: string,
 ) => {
   database
-    .query('INSERT INTO outbox (kind, record_id, payload, created_at) VALUES (?,?,?,?)')
-    .run(kind, recordId, stringifyOutboxPayload(kind, value), at)
+    .query('INSERT INTO outbox (record_id, kind, row_id, payload, created_at) VALUES (?,?,?,?,?)')
+    .run(newRecordId(), kind, recordId, stringifyOutboxPayload(kind, value), at)
 }
 
 export function enqueueReview(database: Database, reviewId: number): void {
@@ -207,14 +208,14 @@ export function backfillReviewRecords(database: Database): ReviewRecordBackfillR
   const reviews = database
     .query<{ id: number }, []>(
       `SELECT id FROM review WHERE NOT EXISTS
-       (SELECT 1 FROM outbox WHERE kind='review' AND record_id=review.record_id) ORDER BY id`,
+       (SELECT 1 FROM outbox WHERE kind='review' AND row_id=review.record_id) ORDER BY id`,
     )
     .all()
   for (const row of reviews) enqueueReview(database, row.id)
   const reads = database
     .query<{ id: number }, []>(
       `SELECT id FROM review_read WHERE NOT EXISTS
-     (SELECT 1 FROM outbox WHERE kind='review_read' AND record_id=review_read.record_id) ORDER BY id`,
+     (SELECT 1 FROM outbox WHERE kind='review_read' AND row_id=review_read.record_id) ORDER BY id`,
     )
     .all()
   for (const row of reads) enqueueReviewRead(database, row.id)

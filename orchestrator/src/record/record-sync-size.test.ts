@@ -17,17 +17,17 @@ function localOutbox(
 ): Database {
   const local = new Database(':memory:')
   local.exec(`CREATE TABLE outbox (
-    id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, payload TEXT NOT NULL,
+    id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, row_id TEXT NOT NULL, payload TEXT NOT NULL,
     created_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, synced_at TEXT,
     quarantined_at TEXT, quarantine_reason TEXT, retired_at TEXT, retirement_reason TEXT
   );
   CREATE TABLE outbox_quarantine_audit (
-    id INTEGER PRIMARY KEY, outbox_id INTEGER NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL,
+    id INTEGER PRIMARY KEY, outbox_id INTEGER NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL, row_id TEXT NOT NULL,
     error TEXT, attempts INTEGER NOT NULL, disposition TEXT NOT NULL, actor_session TEXT,
     at TEXT NOT NULL, reason TEXT
   ); CREATE TABLE record_install_binding (id INTEGER PRIMARY KEY, bound_at TEXT NOT NULL)`)
   const insert = local.query(
-    'INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (?,?,?,?,?)',
+    "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),?,?,?,?,?)",
   )
   for (const row of rows)
     insert.run(row.id, row.kind ?? 'run', row.recordId ?? `record-${row.id}`, row.payload, STAMP)

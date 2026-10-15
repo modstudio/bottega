@@ -79,7 +79,9 @@ function localOutbox(payload: Record<string, unknown>): Database {
   const local = new Database(':memory:')
   applyMigrations(local)
   local
-    .query("INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (1,'run',?,?,?)")
+    .query(
+      "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),1,'run',?,?,?)",
+    )
     .run(String(payload.id), JSON.stringify(payload), String(payload.createdAt))
   return local
 }
@@ -252,9 +254,8 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       applyMigrations(local)
       local
         .query(
-          `INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES
-           (1,'run',?,?,?),
-           (2,'score',?,?,?)`,
+          `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),1,'run',?,?,?),
+           ('01990000-0000-7000-8000-000000000002',2,'score',?,?,?)`,
         )
         .run(
           String(inputRows.run.id),
@@ -534,7 +535,7 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       updatedAt: at,
     })
     const insert =
-      "INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (?,'test_flake',?,?,?)"
+      "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),?,'test_flake',?,?,?)"
     const sync = async (rowId: number) => {
       const local = new Database(':memory:')
       applyMigrations(local)
@@ -609,9 +610,8 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
     applyMigrations(local)
     local
       .query(
-        `INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES
-         (1,'review_read',?,?,?),
-         (2,'landing_triage_snapshot',?,?,?)`,
+        `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),1,'review_read',?,?,?),
+         ('01990000-0000-7000-8000-000000000002',2,'landing_triage_snapshot',?,?,?)`,
       )
       .run(readId, JSON.stringify(reviewRead), at, snapshotId, JSON.stringify(snapshot), at)
     try {

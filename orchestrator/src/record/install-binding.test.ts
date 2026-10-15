@@ -57,8 +57,7 @@ test('the binding migration backfills only from successful hosted-record evidenc
   const syncedOutbox = migratedBinding((database) => {
     database
       .query(
-        `INSERT INTO outbox(kind,record_id,payload,created_at,attempts,synced_at)
-         VALUES ('run','record-1','{}','2026-10-05',1,'2026-10-05')`,
+        `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,attempts,synced_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),'run','record-1','{}','2026-10-05',1,'2026-10-05')`,
       )
       .run()
   })
@@ -84,8 +83,7 @@ test('the binding migration backfills only from successful hosted-record evidenc
     migratedBinding((database) => {
       database
         .query(
-          `INSERT INTO outbox(kind,record_id,payload,created_at,attempts)
-           VALUES ('run','record-3','{}','2026-10-05',2)`,
+          `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,attempts) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),'run','record-3','{}','2026-10-05',2)`,
         )
         .run()
     }),

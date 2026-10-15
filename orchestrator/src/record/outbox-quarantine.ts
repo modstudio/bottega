@@ -2,6 +2,7 @@
 /** Owns local quarantine state and its append-only operator audit. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 export type QuarantinedOutboxRow = {
   id: number
@@ -15,7 +16,7 @@ export type QuarantinedOutboxRow = {
 type OutboxIdentity = {
   id: number
   kind: string
-  record_id: string
+  row_id: string
   attempts: number
   quarantine_reason: string | null
   quarantined_at: string | null
@@ -25,7 +26,7 @@ type OutboxIdentity = {
 function outboxRow(database: Database, rowId: number): OutboxIdentity {
   const row = database
     .query<OutboxIdentity, [number]>(
-      `SELECT id,kind,record_id,attempts,quarantine_reason,quarantined_at,retired_at
+      `SELECT id,kind,row_id,attempts,quarantine_reason,quarantined_at,retired_at
          FROM outbox WHERE id=?`,
     )
     .get(rowId)
@@ -64,13 +65,14 @@ function audit(
   database
     .query(
       `INSERT INTO outbox_quarantine_audit
-       (outbox_id,kind,record_id,error,attempts,disposition,actor_session,at,reason)
-       VALUES (?,?,?,?,?,?,?,?,?)`,
+       (record_id,outbox_id,kind,row_id,error,attempts,disposition,actor_session,at,reason)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
+      newRecordId(),
       row.id,
       row.kind,
-      row.record_id,
+      row.row_id,
       error,
       row.attempts,
       disposition,
@@ -165,21 +167,21 @@ export function quarantinedOutboxRows(database: Database = db()): QuarantinedOut
       {
         id: number
         kind: string
-        record_id: string
+        row_id: string
         quarantine_reason: string
         attempts: number
         quarantined_at: string
       },
       []
     >(
-      `SELECT id,kind,record_id,quarantine_reason,attempts,quarantined_at
+      `SELECT id,kind,row_id,quarantine_reason,attempts,quarantined_at
          FROM outbox WHERE quarantined_at IS NOT NULL AND retired_at IS NULL ORDER BY id`,
     )
     .all()
     .map((row) => ({
       id: row.id,
       kind: row.kind,
-      recordId: row.record_id,
+      recordId: row.row_id,
       error: row.quarantine_reason,
       attempts: row.attempts,
       quarantinedAt: row.quarantined_at,

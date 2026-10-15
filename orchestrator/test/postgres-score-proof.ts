@@ -58,7 +58,9 @@ export async function proveProjectSpaceRecordSync(input: {
       updatedAt: '2026-09-17T01:00:00.000Z',
     })
     local
-      .query("INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (?,'run',?,?,?)")
+      .query(
+        "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),?,'run',?,?,?)",
+      )
       .run(index + 1, ids[index]!, JSON.stringify(run), String(run.createdAt))
   }
   expect(
@@ -124,7 +126,9 @@ export async function proveScoreRecordSync(input: {
     updatedAt: '2026-09-15T01:01:00.000Z',
   })
   local
-    .query("INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (1,'run',?,?,?)")
+    .query(
+      "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),1,'run',?,?,?)",
+    )
     .run(recordId, JSON.stringify(run), String(run.createdAt))
   const sync = () =>
     syncRecord({
@@ -150,7 +154,9 @@ export async function proveScoreRecordSync(input: {
     updatedAt: '2026-09-15T01:02:00.000Z',
   })
   local
-    .query("INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (2,'score',?,?,?)")
+    .query(
+      "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),2,'score',?,?,?)",
+    )
     .run(recordId, JSON.stringify(score), String(score.scoredAt))
   expect(await sync()).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
   const select = (spaceId: string, expression: string) =>
@@ -166,7 +172,9 @@ export async function proveScoreRecordSync(input: {
   const unscoredId = newRecordId()
   Object.assign(run, { id: unscoredId, localId: 100 })
   local
-    .query("INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (3,'run',?,?,?)")
+    .query(
+      "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),3,'run',?,?,?)",
+    )
     .run(unscoredId, JSON.stringify(run), String(run.createdAt))
   expect(await sync()).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
   const tenant = { url: input.actorUrl, userId: input.userId, spaceId: input.spaceId }
@@ -256,7 +264,9 @@ export async function proveScoreRecordSync(input: {
     updatedAt: '2026-09-15T01:03:00.000Z',
   })
   local
-    .query("INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (4,'score',?,?,?)")
+    .query(
+      "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),4,'score',?,?,?)",
+    )
     .run(recordId, JSON.stringify(score), String(score.scoredAt))
   expect(await sync()).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
   const rescoredRead = select(input.spaceId, "delivery || '|' || quality || '|' || note")

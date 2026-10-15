@@ -62,9 +62,8 @@ test('one sync pushes a review read before its dependent triage snapshot', async
   })
   local
     .query(
-      `INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES
-       (1,'review_read',?,?,?),
-       (2,'landing_triage_snapshot',?,?,?)`,
+      `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),1,'review_read',?,?,?),
+       ('01990000-0000-7000-8000-000000000002',2,'landing_triage_snapshot',?,?,?)`,
     )
     .run(READ_ID, JSON.stringify(read), STAMP, SNAPSHOT_ID, JSON.stringify(snapshot), STAMP)
   const batches: string[][] = []
@@ -132,7 +131,9 @@ function insertOutboxRow(
   payload: Record<string, unknown>,
 ): void {
   local
-    .query('INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (?,?,?,?,?)')
+    .query(
+      "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),?,?,?,?,?)",
+    )
     .run(id, kind, recordId, JSON.stringify(payload), STAMP)
 }
 

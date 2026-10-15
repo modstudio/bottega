@@ -34,7 +34,7 @@ test('review backfill enqueues the graph once and is idempotent', () => {
   })
   const records = database
     .query<{ kind: string; record_id: string }, []>(
-      'SELECT kind, record_id FROM outbox ORDER BY id',
+      'SELECT kind, row_id AS record_id FROM outbox ORDER BY id',
     )
     .all()
   expect(records.map((row) => row.kind)).toEqual(['review', 'review_lens', 'review_finding'])
