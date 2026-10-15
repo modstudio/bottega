@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
@@ -156,9 +157,14 @@ test('a hosted acknowledgement immediately clears delivery from verified or unve
   db()
     .query(
       `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude-code','architect','test','bottega','/tmp',NULL,?,?)`,
+       VALUES (?,'claude-code','architect','test',?,'/tmp',NULL,?,?)`,
     )
-    .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
+    .run(
+      session,
+      PLATFORM_SLUG,
+      new Date(clock - 1_000).toISOString(),
+      new Date(clock).toISOString(),
+    )
   const setMeta = db().query(
     'INSERT INTO schema_meta(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
   )
@@ -178,7 +184,7 @@ test('a hosted acknowledgement immediately clears delivery from verified or unve
       kind: 'architect',
       session: 'posting-session',
       harness: 'claude-code',
-      project: 'bottega',
+      project: PLATFORM_SLUG,
       projectStored: true,
       runId: null,
     },
@@ -246,7 +252,7 @@ test('hosted status never counts the notice author as unacknowledged', async () 
       kind: 'architect',
       session: 'posting-session',
       harness: 'claude-code',
-      project: 'bottega',
+      project: PLATFORM_SLUG,
       projectStored: true,
       runId: null,
     },
