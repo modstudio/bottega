@@ -17,6 +17,14 @@ export const docModules: DocModule[] = [
     './doc-order.ts',
     './doc-write-guard.ts',
   ]),
+  module('orchestrator/src/doc/reference-publish.ts', [
+    'node:fs',
+    'node:path',
+    '../../../shared/brand.ts',
+    '../../../shared/git.ts',
+    './doc-write-allowed.ts',
+    './docs.ts',
+  ]),
   module('orchestrator/src/doc/doc-resume-frontmatter.ts', []),
   module('orchestrator/src/doc/doc-article-fields.ts', [
     '../../../shared/brand.ts',

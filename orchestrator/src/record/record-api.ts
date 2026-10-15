@@ -87,6 +87,13 @@ type ApiEnvironment = {
   Variables: { identity: RecordIdentity; destinationSpaceId?: string }
 }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
+type RecordDocMutationInput = {
+  id: string
+  reason: string
+  author: string
+  expectedRevision?: string
+  generator?: 'reference-publish'
+}
 type Deps = RecordSubjectRouteDeps & RecordReleaseRouteDeps & RecordSyncRouteDeps & RecordApiDeps
 type RecordApiDeps = RecordInvitationRouteDeps & {
   recordUrl: string
@@ -149,17 +156,9 @@ type RecordApiDeps = RecordInvitationRouteDeps & {
   reorderDocs(input: Tenant & RecordDocOrderInput): Promise<{ orderedIds: string[] }>
   importDoc(input: Tenant & RecordDocImportInput): Promise<{ id: string; revisionIds: string[] }>
   importCanon(input: Tenant & RecordCanonImportInput): Promise<RecordCanonImportResult>
-  deleteDoc(
-    input: Tenant & {
-      id: string
-      reason: string
-      author: string
-      expectedRevision?: string
-      generator?: 'reference-publish'
-    },
-  ): Promise<{ id: string; revisionId: string }>
+  deleteDoc(input: Tenant & RecordDocMutationInput): Promise<{ id: string; revisionId: string }>
   consumeDoc(
-    input: Tenant & { id: string; reason: string; author: string; expectedRevision?: string },
+    input: Tenant & RecordDocMutationInput,
   ): Promise<{ id: string; revisionId: string; alreadyConsumed: boolean }>
   restoreDoc(
     input: Tenant & {

@@ -45,7 +45,7 @@ test('reference publishing is the only write path and is idempotent and removing
         form: 'reference',
         reason: 'hand write',
       }),
-    ).rejects.toThrow('bottega doc reference publish')
+    ).rejects.toThrow(`${PLATFORM_SLUG} doc reference publish`)
 
     await expect(
       setDoc({
@@ -85,7 +85,7 @@ test('reference publishing is the only write path and is idempotent and removing
         body: `${existing.body}\nhand edit`,
         reason: 'hand write',
       }),
-    ).rejects.toThrow('bottega doc reference publish')
+    ).rejects.toThrow(`${PLATFORM_SLUG} doc reference publish`)
     await expect(
       setDoc({
         scope: existing.scope,
@@ -100,12 +100,12 @@ test('reference publishing is the only write path and is idempotent and removing
     const revision = listDocRevisions('project', PLATFORM_SLUG, existing.slug).at(-1)!
     await expect(
       consumeDoc('project', PLATFORM_SLUG, existing.slug, { reason: 'hand consume' }),
-    ).rejects.toThrow('bottega doc reference publish')
+    ).rejects.toThrow(`${PLATFORM_SLUG} doc reference publish`)
     await expect(
       restoreDoc('project', PLATFORM_SLUG, existing.slug, revision.id, {
         reason: 'hand restore',
       }),
-    ).rejects.toThrow('bottega doc reference publish')
+    ).rejects.toThrow(`${PLATFORM_SLUG} doc reference publish`)
     await expect(
       importDoc({
         scope: 'project',
@@ -116,7 +116,7 @@ test('reference publishing is the only write path and is idempotent and removing
         delivery: 'demand',
         reason: 'hand import',
       }),
-    ).rejects.toThrow('bottega doc reference publish')
+    ).rejects.toThrow(`${PLATFORM_SLUG} doc reference publish`)
 
     writeFileSync(join(root, indexFile), '# Command reference\n\nIndex.\n')
     expect(await publishReferenceDocs(root, [indexFile])).toContainEqual({

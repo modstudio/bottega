@@ -16,9 +16,7 @@ import {
   type DocGenerator,
   type DocRevisionOp,
   docWriteProjectName,
-  isReferenceGeneratorWrite,
   recordDocLintRefusal,
-  referenceWriteRefusal,
   refuseArticleDelivery,
   refuseDocWrite,
   refuseMismatchedDocProject,
@@ -52,6 +50,12 @@ import {
   recordDocRevisionIdentityRefusal,
 } from './record-doc-mapping.ts'
 import { type RecordDocOrder, reorderRecordDocRows } from './record-doc-order.ts'
+import {
+  assertHostedReferenceImportAllowed,
+  assertHostedReferenceLintAllowed,
+  assertHostedReferenceUpsertAllowed,
+  assertHostedStoredReferenceWriteAllowed,
+} from './record-doc-reference-write.ts'
 import { insertRecordDocRevision } from './record-doc-revision-write.ts'
 import {
   storedDocAudiences,
@@ -178,13 +182,7 @@ export async function upsertRecordDoc(
         AND deleted_at IS NULL
       FOR UPDATE
     `
-    assertWrite(
-      referenceWriteRefusal({
-        storedForm: existing[0]?.form == null ? null : String(existing[0].form),
-        requestedForm: input.form,
-        generator: input.generator,
-      }),
-    )
+    assertHostedReferenceUpsertAllowed(existing[0], input)
     assertRevisionWrite({
       expectedRevision: input.expectedRevision,
       current: existing[0]?.latest_revision_id,
@@ -221,28 +219,7 @@ export async function upsertRecordDoc(
       )
     }
     assertWrite(refuseArticleDelivery({ ...input, delivery, kind }))
-    // Generated reference pages are checked by the reference drift check, not prose lint.
-    if (
-      !isReferenceGeneratorWrite({
-        storedForm: existing[0]?.form == null ? null : String(existing[0].form),
-        requestedForm: input.form,
-        generator: input.generator,
-      })
-    )
-      assertWrite(
-        recordDocLintRefusal(
-          { ...input, kind },
-          existing[0]
-            ? {
-                scope: String(existing[0].scope),
-                subject: existing[0].subject == null ? null : String(existing[0].subject),
-                slug: String(existing[0].slug),
-                body: String(existing[0].body),
-                kind: (existing[0].kind == null ? 'working' : String(existing[0].kind)) as DocKind,
-              }
-            : undefined,
-        ),
-      )
+    assertHostedReferenceLintAllowed(existing[0], input, kind)
     const resolvedProject = await resolvedDocProjectId(tx, input.spaceId, input)
     const articleFields = await resolveHostedArticleFields(
       tx,
@@ -585,12 +562,7 @@ export async function deleteRecordDoc(
     `
     if (!rows[0]) throw new RecordDocError('doc not found', 404)
     const doc = rows[0] as Record<string, unknown>
-    assertWrite(
-      referenceWriteRefusal({
-        storedForm: doc.form == null ? null : String(doc.form),
-        generator: input.generator,
-      }),
-    )
+    assertHostedReferenceUpsertAllowed(doc, input)
     assertRevisionWrite({
       expectedRevision: input.expectedRevision,
       current: doc.latest_revision_id,
@@ -669,11 +641,7 @@ export async function consumeRecordDoc(
     `
     if (!rows[0]) throw new RecordDocError('doc not found', 404)
     const doc = rows[0] as Record<string, unknown>
-    assertWrite(
-      referenceWriteRefusal({
-        storedForm: doc.form == null ? null : String(doc.form),
-      }),
-    )
+    assertHostedStoredReferenceWriteAllowed(doc)
     assertRevisionWrite({
       expectedRevision: input.expectedRevision,
       current: doc.latest_revision_id,
@@ -739,11 +707,7 @@ export async function restoreRecordDoc(
       FOR UPDATE
     `
     if (!existing[0]) throw new RecordDocError('doc not found', 404)
-    assertWrite(
-      referenceWriteRefusal({
-        storedForm: existing[0].form == null ? null : String(existing[0].form),
-      }),
-    )
+    assertHostedStoredReferenceWriteAllowed(existing[0])
     assertRevisionWrite({
       expectedRevision: input.expectedRevision,
       current: existing[0].latest_revision_id,
@@ -936,12 +900,7 @@ export async function importRecordDoc(
   assertImportedRevisions(importedDoc, revisions)
   return tenant(input, async (tx) => {
     const existing = await existingDocAtAddress(tx, input.spaceId, importedDoc)
-    assertWrite(
-      referenceWriteRefusal({
-        storedForm: existing?.form == null ? null : String(existing.form),
-        requestedForm: importedDoc.form,
-      }),
-    )
+    assertHostedReferenceImportAllowed(existing, importedDoc.form)
     assertRevisionWrite({
       expectedRevision: input.expectedRevision,
       current: existing?.latest_revision_id,

@@ -347,6 +347,23 @@ function assertDocLint(input: DocWriteInput, prior: Doc | null): void {
   if (refusal) throw new Error(refusal)
 }
 
+function assertReferenceDocWrite(input: DocWriteInput, prior: Doc | null): void {
+  const refusal = referenceWriteRefusal({
+    storedForm: prior?.form,
+    requestedForm: input.form,
+    generator: input.generator,
+  })
+  if (refusal) throw new Error(refusal)
+}
+
+function assertReferenceRestoreAllowed(current: Doc | null, revision: DocRevision): void {
+  const refusal = referenceWriteRefusal({
+    storedForm: current?.form,
+    requestedForm: revision.form,
+  })
+  if (refusal) throw new Error(refusal)
+}
+
 async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promise<Doc> {
   writableDb()
   const ownedAddress =
@@ -357,12 +374,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
   const identity = resolvedDocWriteIdentity(input)
   const owner = input.owner ?? null
   const prior = getDoc(input.scope, input.subject, input.slug, owner)
-  const referenceRefusal = referenceWriteRefusal({
-    storedForm: prior?.form,
-    requestedForm: input.form,
-    generator: input.generator,
-  })
-  if (referenceRefusal) throw new Error(referenceRefusal)
+  assertReferenceDocWrite(input, prior)
   assertLocalRevisionWrite(input, prior?.revision ?? null, prior === null)
   const delivery = forcedDocDelivery(input.scope) ?? input.delivery ?? prior?.delivery ?? 'inject'
   const kind = input.kind ?? prior?.kind ?? 'working'
@@ -877,11 +889,7 @@ export async function restoreDoc(
   }
   const expectedCurrent = currentDocRevision(scope, subject, slug, owner)
   const current = getDoc(scope, subject, slug, owner)
-  const referenceRefusal = referenceWriteRefusal({
-    storedForm: current?.form,
-    requestedForm: revision.form,
-  })
-  if (referenceRefusal) throw new Error(referenceRefusal)
+  assertReferenceRestoreAllowed(current, revision)
   assertLocalRevisionWrite(
     { scope, expectedRevision: context.expectedRevision },
     expectedCurrent,

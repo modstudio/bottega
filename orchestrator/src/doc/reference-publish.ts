@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { scrubbedGitEnv } from '../../../shared/git.ts'
 import { REFERENCE_GENERATOR } from './doc-write-allowed.ts'
 import { getDoc, listDocs, removeDoc, setDoc } from './docs.ts'
 
@@ -17,9 +18,10 @@ function title(body: string, file: string): string {
   return heading
 }
 
-export function trackedReferenceFiles(root: string): string[] {
+function trackedReferenceFiles(root: string): string[] {
   const result = Bun.spawnSync(['git', 'ls-files', 'docs/reference/*.md'], {
     cwd: root,
+    env: scrubbedGitEnv(),
     stdout: 'pipe',
     stderr: 'pipe',
   })
@@ -27,6 +29,23 @@ export function trackedReferenceFiles(root: string): string[] {
     throw new Error(`could not read tracked reference pages: ${result.stderr.toString().trim()}`)
   }
   return result.stdout.toString().trim().split('\n').filter(Boolean)
+}
+
+function orderedReferenceFiles(files: string[], indexFile: string, indexBody: string): string[] {
+  const byName = new Map(files.map((file) => [basename(file), file]))
+  const groupFiles = [...indexBody.matchAll(/\]\(\.\/([^/)]+\.md)\)/g)].map((match) => match[1]!)
+  const ordered = [
+    indexFile,
+    ...groupFiles.map((name) => {
+      const file = byName.get(name)
+      if (!file) throw new Error(`${indexFile}: linked reference page ${name} is not tracked`)
+      return file
+    }),
+  ]
+  if (new Set(ordered).size !== files.length) {
+    throw new Error(`${indexFile}: every tracked group page must appear exactly once in the index`)
+  }
+  return ordered
 }
 
 export async function publishReferenceDocs(
@@ -43,19 +62,7 @@ export async function publishReferenceDocs(
     )
   }
   const indexBody = readFileSync(join(root, indexFile), 'utf8')
-  const byName = new Map(files.map((file) => [basename(file), file]))
-  const groupFiles = [...indexBody.matchAll(/\]\(\.\/([^/)]+\.md)\)/g)].map((match) => match[1]!)
-  const ordered = [
-    indexFile,
-    ...groupFiles.map((name) => {
-      const file = byName.get(name)
-      if (!file) throw new Error(`${indexFile}: linked reference page ${name} is not tracked`)
-      return file
-    }),
-  ]
-  if (new Set(ordered).size !== files.length) {
-    throw new Error(`${indexFile}: every tracked group page must appear exactly once in the index`)
-  }
+  const ordered = orderedReferenceFiles(files, indexFile, indexBody)
   const results: ReferencePublishResult[] = []
   for (const [position, file] of ordered.entries()) {
     const body = readFileSync(join(root, file), 'utf8')
