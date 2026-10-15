@@ -25,6 +25,7 @@ const values = (input: unknown[]) =>
   input
     .flatMap((value) => (Array.isArray(value) ? value : [value]))
     .filter((value): value is string => typeof value === 'string')
+const actionCommand = (input: unknown[]): Command => input.at(-1) as Command
 
 async function runSubject(verb: string, args: string[], command: Command): Promise<void> {
   await subjectCommand(verb, ['subject', verb, ...args], optionFlags(command.opts()), { log })
@@ -34,13 +35,18 @@ export function register(program: Command): void {
   const family = program
     .command('subject')
     .description('manage the subject vocabulary for projects')
-    .action((command) => runSubject('list', [], command))
+    .allowExcessArguments(true)
+    .action((...input: unknown[]) => {
+      const command = actionCommand(input)
+      const [verb = 'list', ...args] = command.args
+      return runSubject(verb, args, command)
+    })
   for (const [syntax, description, options] of specs) {
     const verb = syntax.split(' ')[0]!
     const command = family.command(syntax).description(description)
     for (const [flags, optionDescription] of options) command.option(flags, optionDescription)
     command.action((...args: unknown[]) =>
-      runSubject(verb, values(args.slice(0, -1)), args.at(-1) as Command),
+      runSubject(verb, values(args.slice(0, -1)), actionCommand(args)),
     )
   }
 }

@@ -111,6 +111,7 @@ const values = (input: unknown[]) =>
   input
     .flatMap((value) => (Array.isArray(value) ? value : [value]))
     .filter((value): value is string => typeof value === 'string')
+const actionCommand = (input: unknown[]): Command => input.at(-1) as Command
 const json = [o('--json')]
 const address = [o('--scope <value>'), o('--subject <value>'), o('--user')]
 const revision = [o('--reason <value>'), o('--author <value>'), o('--expect <revision>')]
@@ -245,13 +246,17 @@ const docSpecs: readonly Spec[] = [
 
 function registerDoc(program: Command): void {
   const family = options(
-    program.command('doc').description('manage operator documents'),
+    program.command('doc').description('manage operator documents').allowExcessArguments(true),
     docSpecs[0]![2],
-  ).action((command) => runDoc('list', [], command))
+  ).action((...input: unknown[]) => {
+    const command = actionCommand(input)
+    const [verb = 'list', ...args] = command.args
+    return runDoc(verb, args, command)
+  })
   for (const [syntax, description, opts] of docSpecs) {
     const verb = syntax.split(' ')[0]!
     options(family.command(syntax).description(description), opts).action((...args: unknown[]) =>
-      runDoc(verb, values(args.slice(0, -1)), args.at(-1) as Command),
+      runDoc(verb, values(args.slice(0, -1)), actionCommand(args)),
     )
   }
 }
@@ -350,10 +355,14 @@ function registerCanon(program: Command): void {
   const family = program
     .command('canon')
     .description('inspect, validate, and hydrate canon')
-    .action((command) => runCanon('', command))
+    .allowExcessArguments(true)
+    .action((...input: unknown[]) => {
+      const command = actionCommand(input)
+      return runCanon(command.args[0] ?? '', command)
+    })
   for (const [syntax, description, opts] of canonSpecs)
-    options(family.command(syntax).description(description), opts).action((command) =>
-      runCanon(syntax, command),
+    options(family.command(syntax).description(description), opts).action((...input: unknown[]) =>
+      runCanon(syntax, actionCommand(input)),
     )
 }
 
@@ -407,7 +416,11 @@ function registerPort(program: Command): void {
   const family = program
     .command('port')
     .description('manage porting provenance and doctrine')
-    .action((command) => runPort([], [], command))
+    .allowExcessArguments(true)
+    .action((...input: unknown[]) => {
+      const command = actionCommand(input)
+      return runPort(command.args.slice(0, 2), command.args.slice(2), command)
+    })
   const parents = new Map<string, Command>()
   for (const name of ['baseline', 'skip', 'ref', 'doctrine'])
     parents.set(
@@ -415,7 +428,11 @@ function registerPort(program: Command): void {
       family
         .command(name)
         .description(`manage port ${name} records`)
-        .action((command) => runPort([name], [], command)),
+        .allowExcessArguments(true)
+        .action((...input: unknown[]) => {
+          const command = actionCommand(input)
+          return runPort([name, ...command.args.slice(0, 1)], command.args.slice(1), command)
+        }),
     )
   for (const [syntax, description, opts] of portSpecs) {
     const parts = syntax.split(' '),
@@ -424,7 +441,7 @@ function registerPort(program: Command): void {
     const leaf = parent ? parts.slice(1).join(' ') : syntax,
       path = parent ? [parts[0]!, parts[1]!] : [parts[0]!]
     options(owner.command(leaf).description(description), opts).action((...args: unknown[]) =>
-      runPort(path, values(args.slice(0, -1)), args.at(-1) as Command),
+      runPort(path, values(args.slice(0, -1)), actionCommand(args)),
     )
   }
 }
@@ -488,13 +505,20 @@ async function runProject(verb: string, args: string[], command: Command): Promi
 
 function registerProject(program: Command): void {
   const family = options(
-    program.command('project').description('manage the project register'),
+    program
+      .command('project')
+      .description('manage the project register')
+      .allowExcessArguments(true),
     projectSpecs[0]![2],
-  ).action((command) => runProject('list', [], command))
+  ).action((...input: unknown[]) => {
+    const command = actionCommand(input)
+    const [verb = 'list', ...args] = command.args
+    return runProject(verb, args, command)
+  })
   for (const [syntax, description, opts] of projectSpecs) {
     const verb = syntax.split(' ')[0]!
     options(family.command(syntax).description(description), opts).action((...args: unknown[]) =>
-      runProject(verb, values(args.slice(0, -1)), args.at(-1) as Command),
+      runProject(verb, values(args.slice(0, -1)), actionCommand(args)),
     )
   }
 }
