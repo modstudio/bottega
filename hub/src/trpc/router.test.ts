@@ -210,6 +210,7 @@ describe('project.list', () => {
     expect(rows).toHaveLength(9)
     expect(rows[0]).toEqual({
       id: 1,
+      record_id: null,
       name: 'alpha',
       path: '/fixtures/repos/alpha',
       stack: null,
@@ -675,6 +676,7 @@ describe('doc router', () => {
 describe('project writes', () => {
   const row: RegisteredProject = {
     id: 10,
+    record_id: null,
     name: 'new-project',
     path: '/tmp/new-project',
     stack: 'bun',

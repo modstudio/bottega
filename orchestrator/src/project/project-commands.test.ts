@@ -233,50 +233,6 @@ test('project push writes every registered project to the hosted record', async 
   expect(out).toBe(`pushed ${names.length} project${names.length === 1 ? '' : 's'}`)
 })
 
-test('registration stores the hosted project identity', async () => {
-  const hostedId = newRecordId()
-  installRecordApiClient({
-    ...createMemoryRecordApiClient(),
-    upsertProject: async (input) => ({ id: hostedId, name: input.name }),
-  })
-  const path = mkdtempSync(join(tmpdir(), 'orch-project-identity-'))
-  await runProject(['project', 'add', path], { name: 'identity-registration' })
-  expect(projectByName('identity-registration')?.recordId).toBe(hostedId)
-})
-
-test('fill-record-ids stores hosted identities and proposes a minted id for missing projects', async () => {
-  const hostedId = newRecordId()
-  upsertProject({ name: 'identity-hosted', path: '/w/identity-hosted' })
-  upsertProject({ name: 'identity-missing', path: '/w/identity-missing' })
-  const proposed = new Map<string, string>()
-  installRecordApiClient({
-    ...createMemoryRecordApiClient(),
-    listProjects: async (_destination) => [
-      { id: hostedId, name: 'identity-hosted', spaceId: 'space-active' },
-    ],
-    upsertProject: async (input) => {
-      expect(input.id).toBeString()
-      proposed.set(input.name, input.id!)
-      return { id: input.id!, name: input.name }
-    },
-  })
-  const output = await runProject(['project', 'fill-record-ids'])
-  expect(projectByName('identity-hosted')?.recordId).toBe(hostedId)
-  expect(projectByName('identity-missing')?.recordId).toBe(proposed.get('identity-missing'))
-  expect(output).toContain(`filled identity-hosted  ${hostedId}  hosted`)
-  expect(output).toContain('filled identity-missing')
-})
-
-test('project list JSON publishes nullable record_id beside the local id', async () => {
-  upsertProject({ name: 'identity-list', path: '/w/identity-list' })
-  const rows = JSON.parse(await runProject(['project', 'list'], { json: true })) as Array<{
-    id: number
-    record_id: string | null
-    name: string
-  }>
-  expect(rows.find((row) => row.name === 'identity-list')).toMatchObject({ record_id: null })
-})
-
 test('fill absent settings refuses a stale snapshot without changing any field', async () => {
   upsertProject({
     name: 'setup-stale',

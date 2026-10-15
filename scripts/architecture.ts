@@ -496,6 +496,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/project/project-hosted-write.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/record-id.ts',
     '../../../shared/record-space-membership.ts',
     '../record/record-api-client.ts',
     '../record/record-project-destination.ts',
@@ -503,10 +504,19 @@ export const modules: ArchitectureModule[] = [
     '../record/record-write-authority.ts',
     './project-settings.ts',
   ]),
+  module('orchestrator/src/project/project-record-identity.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/record-id.ts',
+    '../record/record-api-client.ts',
+    '../record/record-project-destination-client.ts',
+    '../record/record-write-authority.ts',
+    './projects.ts',
+  ]),
   module('orchestrator/src/database/project-register-store.ts', [
     'bun:sqlite',
     'node:fs',
     'node:path',
+    '../../../shared/record-id.ts',
     '../../../shared/state-directory.ts',
     '../project/project-settings.ts',
   ]),

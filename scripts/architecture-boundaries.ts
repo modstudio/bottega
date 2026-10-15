@@ -612,6 +612,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../database/db.ts',
       '../lens/lenses.ts',
       './project-hosted-write.ts',
+      './project-record-identity.ts',
       './projects.ts',
       '../worktree/worktree-lifecycle.ts',
       '../worktree/worktree-template.ts',
