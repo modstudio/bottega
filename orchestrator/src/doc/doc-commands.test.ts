@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
+import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { consumeDoc, removeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
+import { register as registerReviewCommand } from '../commands/review.ts'
 import { db } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { createDocsMcpServer } from '../mcp/mcp.ts'
@@ -17,7 +19,6 @@ import {
   type PortPair,
 } from '../porting/porting.ts'
 import { upsertProject } from '../project/projects.ts'
-import { reviewCommand } from '../review/review-commands.ts'
 import {
   docCommand,
   formatDocSearchRefresh,
@@ -104,7 +105,11 @@ async function command(args: string[], stdin = '') {
         collectCanonLintInput,
       })
     else if (args[0] === 'port') await portCommand(args[1], args[2], args, flags, presentation)
-    else if (args[0] === 'review') await reviewCommand(args[1], args, flags, presentation)
+    else if (args[0] === 'review') {
+      const program = new Command().exitOverride()
+      registerReviewCommand(program, presentation)
+      await program.parseAsync(['node', 'orch', ...args])
+    }
   } catch (error) {
     code = 1
     err.push((error as Error).message)

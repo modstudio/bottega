@@ -7,7 +7,24 @@ import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { clearConfinement } from '../confinement/confinement-ruling.ts'
 import { db } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
-import { dispatchReviewCommand } from '../review/review-command-dispatcher.ts'
+import {
+  calibrationReviewCommand,
+  completeReviewCommand,
+  coverageAuditReviewCommand,
+  listReviewCommand,
+  pinsReviewCommand,
+  recordReviewCommand,
+  showReviewCommand,
+  tierReviewCommand,
+  triageReviewCommand,
+  yieldReviewCommand,
+} from '../review/review-commands.ts'
+import { amendReviewFindingCommand } from '../review/review-finding-amend-command.ts'
+import { restoreReviewFindingsCommand } from '../review/review-finding-restore.ts'
+import { recordArchitectReadCommand } from '../review/review-read.ts'
+import { recordProjectReviewCommand } from '../review/review-record-command.ts'
+import { reviewBudgetCommand } from '../review/review-round-budget.ts'
+import { restoreReviewTriageCommand } from '../review/review-triage-restore.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import {
   formatConfinementReport,
@@ -44,41 +61,237 @@ function confinementReportCommand(flags: CliFlags): void {
   for (const line of formatConfinementReport(rows, flags.has('json'))) log(line)
 }
 
-export function register(program: Command): void {
-  program
-    .command('review [args...]')
-    .option('--project <value>')
-    .option('--since <value>')
-    .option('--task <value>')
-    .option('--key <value>')
-    .option('--lens <value>')
-    .option('--agent <value>')
-    .option('--category <value>')
-    .option('--severity <value>')
-    .option('--reason <value>')
-    .option('--cwd <value>')
-    .option('--sha <value>')
-    .option('--note <value>')
-    .option('--open')
-    .option('--complete')
-    .option('--json')
-    .option('--dry-run')
-    .option('--prune')
-    .option('--write')
-    .option('--confirm-restore')
-    .option('--confirm-live-store <path>')
-    .action(async (args, options) => {
-      const argv = ['review', ...args]
-      await dispatchReviewCommand(argv[1], argv, optionFlags(options), {
-        log,
-        usage: (): never => {
-          throw new Error(`${PLATFORM_SLUG} review --help`)
-        },
-      })
-    })
+const reviewPresentation = {
+  log,
+}
 
+function reviewArgv(command: Command): string[] {
+  return ['review', command.name(), ...command.args]
+}
+
+function reviewFlags(command: Command): CliFlags {
+  return optionFlags(command.opts())
+}
+
+type ReviewPresentation = typeof reviewPresentation
+type ReviewHandler = (
+  argv: string[],
+  flags: CliFlags,
+  presentation: ReviewPresentation,
+) => void | Promise<void>
+type ReviewRunner = (command: Command, handler: ReviewHandler) => void | Promise<void>
+
+function runReviewCommand(
+  command: Command,
+  handler: ReviewHandler,
+  presentation = reviewPresentation,
+): void | Promise<void> {
+  const flags = reviewFlags(command)
+  return handler(reviewArgv(command), flags, presentation)
+}
+
+function registerReviewQueries(review: Command, run: ReviewRunner): void {
+  review
+    .command('list')
+    .description('list recorded reviews and their triage state')
+    .allowExcessArguments(true)
+    .option('--project <value>', 'include only reviews for this project')
+    .option('--since <value>', 'include reviews recorded at or after this ISO datetime')
+    .option('--open', 'include only incomplete reviews')
+    .option('--complete', 'include only completed reviews')
+    .option('--json', 'write the review rows as JSON')
+    .action((_options, command) =>
+      run(command, (_argv, flags, output) => listReviewCommand(flags, output)),
+    )
+
+  review
+    .command('show')
+    .description('show one review with its lenses, grading, and findings')
+    .allowExcessArguments(true)
+    .argument('[id]', 'local review id')
+    .option('--json', 'write the review as JSON')
+    .action((_id, _options, command) => run(command, showReviewCommand))
+
+  review
+    .command('yield')
+    .description('report the measured yield of completed review evidence')
+    .allowExcessArguments(true)
+    .option('--project <value>', 'include only evidence for this project')
+    .option('--since <value>', 'include evidence recorded at or after this ISO datetime')
+    .option('--task <value>', 'include only evidence attributed to this task')
+    .option('--key <value>', 'alias for --task')
+    .option('--lens <value>', 'include only evidence from this lens')
+    .option('--agent <value>', 'include only evidence from this agent')
+    .option('--json', 'write the yield report as JSON')
+    .action((_options, command) =>
+      run(command, (_argv, flags, output) => yieldReviewCommand(flags, output)),
+    )
+
+  review
+    .command('tier')
+    .description('classify review tier and round budget for a branch, run, or range')
+    .allowExcessArguments(true)
+    .argument('[target]', 'branch, run id, or from..to range')
+    .option('--cwd <value>', 'resolve the target from this project checkout')
+    .option('--json', 'write the classification as JSON')
+    .action((_target, _options, command) => run(command, tierReviewCommand))
+
+  review
+    .command('coverage-audit')
+    .description('audit completed reviews whose evidence covered trunk')
+    .allowExcessArguments(true)
+    .option('--json', 'write the audit as JSON')
+    .action((_options, command) =>
+      run(command, (_argv, flags, output) => coverageAuditReviewCommand(flags, output)),
+    )
+}
+
+function registerReviewEvidence(review: Command, run: ReviewRunner): void {
+  review
+    .command('record')
+    .description('record one review from one or more completed lens runs')
+    .allowExcessArguments(true)
+    .argument('[run-id...]', 'run ids containing review-contract output')
+    .action((_runIds, _options, command) => run(command, recordReviewCommand))
+
+  review
+    .command('triage')
+    .description('set the disposition of one finding on an incomplete review')
+    .allowExcessArguments(true)
+    .argument('[review-id]', 'local review id')
+    .argument('[finding]', 'finding ordinal')
+    .argument('[disposition]', 'accepted, modified, rejected, or skipped')
+    .option('--category <value>', 'record the rejection category')
+    .option('--severity <value>', 'record the triaged severity')
+    .action((_reviewId, _finding, _disposition, _options, command) =>
+      run(command, triageReviewCommand),
+    )
+
+  review
+    .command('complete')
+    .description('mark a fully triaged review complete')
+    .allowExcessArguments(true)
+    .argument('[review-id]', 'local review id')
+    .action((_reviewId, _options, command) => run(command, completeReviewCommand))
+
+  review
+    .command('pins')
+    .description('list or prune the refs that pin reviewed commits')
+    .allowExcessArguments(true)
+    .option('--prune', 'delete pins whose reviews are landed or superseded')
+    .action((_options, command) =>
+      run(command, (_argv, flags, output) => pinsReviewCommand(flags, output)),
+    )
+
+  review
+    .command('calibration')
+    .description('show reviewer precision and grading distributions')
+    .allowExcessArguments(true)
+    .argument('[lens]', 'lens id for one calibration cell')
+    .argument('[agent]', 'agent name for one calibration cell')
+    .argument('[model]', 'model name for one calibration cell')
+    .option('--json', 'write calibration evidence as JSON')
+    .action((_lens, _agent, _model, _options, command) => run(command, calibrationReviewCommand))
+}
+
+function registerReviewOperations(review: Command, run: ReviewRunner): void {
+  review
+    .command('read')
+    .description("record the branch owner's architectural read of the current change")
+    .allowExcessArguments(true)
+    .option('--cwd <value>', 'measure the change in this checkout')
+    .option('--sha <value>', 'record this branch tip instead of HEAD')
+    .option('--note <value>', 'one-line account of the architectural read')
+    .action((_options, command) =>
+      run(command, (argv, flags, output) => recordArchitectReadCommand(argv, flags, output)),
+    )
+
+  review
+    .command('budget')
+    .description('report branches whose eligible review rounds exceed their tier ceiling')
+    .allowExcessArguments(true)
+    .option('--since <value>', 'include reviews at or after this ISO date')
+    .option('--json', 'write the budget report as JSON')
+    .action((_options, command) =>
+      run(command, (argv, flags, output) => reviewBudgetCommand(argv, flags, output)),
+    )
+
+  review
+    .command('project-record')
+    .description("run the project's declared review-record command")
+    .allowExcessArguments(true)
+    .argument('[branch]', 'reviewed branch')
+    .option('--cwd <value>', 'project worktree in which to run the record command')
+    .option('--reason <value>', 'one-line reason for the review record')
+    .action((branch, _options, command) =>
+      run(command, (_argv, flags, output) => {
+        if (command.args.length !== 1) {
+          throw new Error(
+            `${PLATFORM_SLUG} review project-record <branch> --cwd <tree> --reason "<one line>"`,
+          )
+        }
+        recordProjectReviewCommand(branch, flags.flag('cwd'), flags.flag('reason'), output)
+      }),
+    )
+
+  review
+    .command('amend')
+    .description('amend the disposition of a finding on a completed review')
+    .allowExcessArguments(true)
+    .argument('[review-id]', 'local review id')
+    .argument('[finding]', 'finding ordinal')
+    .argument('[disposition]', 'accepted, modified, rejected, or skipped')
+    .option('--category <value>', 'record the amended rejection category')
+    .option('--severity <value>', 'record the amended triaged severity')
+    .option('--reason <value>', 'explain why the completed finding is amended')
+    .action((_reviewId, _finding, _disposition, _options, command) =>
+      run(command, (argv, flags, output) => amendReviewFindingCommand(argv, flags, output)),
+    )
+}
+
+function registerReviewRestore(
+  review: Command,
+  run: ReviewRunner,
+  presentation: ReviewPresentation,
+): void {
+  review
+    .command('restore-findings')
+    .description('report or restore missing review findings from structured outbox rows')
+    .allowExcessArguments(true)
+    .option('--json', 'write the restore report as JSON')
+    .option('--write', 'apply the reported finding restores')
+    .option('--confirm-restore', 'confirm that finding rows may be restored')
+    .option('--confirm-live-store <path>', 'confirm the exact live store path to restore')
+    .action((_options, command) =>
+      run(command, (argv, flags, output) => {
+        if (argv.length !== 2) {
+          throw new Error(
+            `${PLATFORM_SLUG} review restore-findings [--json] [--write --confirm-restore] ` +
+              '[--confirm-live-store <path>]',
+          )
+        }
+        restoreReviewFindingsCommand(flags, output)
+      }),
+    )
+
+  review
+    .command('restore-triage')
+    .description('restore missing triage on completed-review findings from outbox rows')
+    .allowExcessArguments(true)
+    .option('--dry-run', 'report triage that would be restored without writing')
+    .option('--json', 'write the restore report as JSON')
+    .action((_options, command) => {
+      const argv = reviewArgv(command)
+      if (argv.length !== 2)
+        throw new Error(`${PLATFORM_SLUG} review restore-triage [--dry-run] [--json]`)
+      restoreReviewTriageCommand(reviewFlags(command), presentation)
+    })
+}
+
+function registerConfinement(program: Command): void {
   const confinement = program
     .command('confinement')
+    .description('inspect or clear review-run confinement findings')
     .enablePositionalOptions()
     .allowExcessArguments(false)
     .action(() => {
@@ -87,9 +300,10 @@ export function register(program: Command): void {
 
   confinement
     .command('clear [run-id]')
-    .option('--writer <value>')
-    .option('--note <value>')
-    .option('--tip <value>')
+    .description('clear one confinement finding with an architect ruling')
+    .option('--writer <value>', 'name the writer whose change was inspected')
+    .option('--note <value>', 'record the confinement ruling')
+    .option('--tip <value>', 'record the current branch tip')
     .allowExcessArguments(false)
     .action((runId: string | undefined, options) => {
       const flags = optionFlags(options)
@@ -102,12 +316,34 @@ export function register(program: Command): void {
 
   confinement
     .command('report')
-    .option('--agent <value>')
-    .option('--job <value>')
-    .option('--mcp [value]')
-    .option('--json')
+    .description('report the sandbox inputs for eligible review agents')
+    .option('--agent <value>', 'include only this agent')
+    .option('--job <value>', 'report a reading, writing, or named job')
+    .option('--mcp [value]', 'filter by whether MCP access is enabled')
+    .option('--json', 'write the report as JSON')
     .allowExcessArguments(false)
     .action((options) => {
       confinementReportCommand(optionFlags(options))
     })
+}
+
+export function register(program: Command, presentation = reviewPresentation): void {
+  const run: ReviewRunner = (command, handler) => runReviewCommand(command, handler, presentation)
+  const review = program
+    .command('review')
+    .description('inspect, record, triage, and maintain review evidence')
+    .allowExcessArguments(true)
+    .allowUnknownOption(true)
+    .action(() => {
+      const sub = review.args[0]
+      throw new Error(
+        `unknown: ${PLATFORM_SLUG} review${sub ? ` ${sub}` : ''}. Try tier | record | project-record | triage | complete | calibration | restore-findings | restore-triage`,
+      )
+    })
+
+  registerReviewQueries(review, run)
+  registerReviewEvidence(review, run)
+  registerReviewOperations(review, run)
+  registerReviewRestore(review, run, presentation)
+  registerConfinement(program)
 }

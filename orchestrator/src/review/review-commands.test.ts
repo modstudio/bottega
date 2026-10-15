@@ -1,17 +1,166 @@
 import { expect, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
+import { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { reviewReply } from '../../test/fixtures/replies.ts'
+import { addRun, dir } from '../../test/fixtures/store.ts'
+import { register as registerReviewCommand } from '../commands/review.ts'
 import { db } from '../database/db.ts'
 import { setProfile } from '../lens/lenses.ts'
 import { upsertProject } from '../project/projects.ts'
-import { reviewCommand } from './review-commands.ts'
 import { serializePathSet } from './review-group.ts'
+import { completeReview, recordReview, triageFinding } from './review-triage.ts'
 
 // Deterministic identities produced by importRebasedHistory.
 const FIXTURE_BASE = '43942e40f9cf710824da11cd689c453b33cac3d2'
 const FIXTURE_WRITER_HEAD = 'afc52b0ea3040a2b0c4a2f75a17bb90821be29c0'
+
+async function runReview(argv: string[], output: string[]): Promise<void> {
+  const program = new Command().exitOverride()
+  registerReviewCommand(program, {
+    log: (...values) => output.push(values.join(' ')),
+  })
+  await program.parseAsync(['node', 'orch', ...argv])
+}
+
+test('unknown review verb with options keeps the review-family refusal', async () => {
+  const output: string[] = []
+
+  await expect(runReview(['review', 'bogus', '--json'], output)).rejects.toThrow(
+    `unknown: ${PLATFORM_SLUG} review bogus. Try tier | record | project-record | triage | complete | calibration | restore-findings | restore-triage`,
+  )
+})
+
+test('review record runs through Commander and records the lens output', async () => {
+  const output: string[] = []
+  const outputPath = join(dir, `review-command-record-${crypto.randomUUID()}.json`)
+  try {
+    const runId = addRun({ agent: 'codex', job: 'review-lens', lens: 'correctness' })
+    writeFileSync(outputPath, JSON.stringify(reviewReply(1, 'high')))
+    db().query('UPDATE run SET output_path=? WHERE id=?').run(outputPath, runId)
+
+    await runReview(['review', 'record', String(runId)], output)
+
+    expect(output).toEqual([expect.stringMatching(/^recorded review \d+$/)])
+    expect(
+      db()
+        .query<{ count: number }, [number]>(
+          'SELECT COUNT(*) AS count FROM review_lens WHERE run_id=?',
+        )
+        .get(runId),
+    ).toEqual({ count: 1 })
+  } finally {
+    rmSync(outputPath, { force: true })
+  }
+})
+
+test('review triage runs through Commander and updates the finding', async () => {
+  const output: string[] = []
+  const runId = addRun({ agent: 'codex', job: 'review-lens', lens: 'correctness' })
+  const reviewId = recordReview(runId, reviewReply(1, 'high'), db())
+
+  await runReview(
+    ['review', 'triage', String(reviewId), '1', 'accepted', '--severity', 'medium'],
+    output,
+  )
+
+  expect(output).toEqual([`triaged review ${reviewId} finding 1: accepted`])
+  expect(
+    db()
+      .query<{ disposition: string | null; triaged_severity: string | null }, [number]>(
+        'SELECT disposition,triaged_severity FROM review_finding WHERE review_id=?',
+      )
+      .get(reviewId),
+  ).toEqual({ disposition: 'accepted', triaged_severity: 'medium' })
+})
+
+test('review complete runs through Commander and completes a triaged review', async () => {
+  const output: string[] = []
+  const runId = addRun({ agent: 'codex', job: 'review-lens', lens: 'correctness' })
+  const reviewId = recordReview(runId, reviewReply(1, 'high'), db())
+  triageFinding(reviewId, 1, 'accepted', undefined, 'high')
+
+  await runReview(['review', 'complete', String(reviewId)], output)
+
+  expect(output).toEqual([`completed review ${reviewId}`])
+  expect(
+    db()
+      .query<{ completed_at: string | null }, [number]>(
+        'SELECT completed_at FROM review WHERE id=?',
+      )
+      .get(reviewId)?.completed_at,
+  ).not.toBeNull()
+})
+
+test('review amend runs through Commander and records the completed-review amendment', async () => {
+  const output: string[] = []
+  const runId = addRun({ agent: 'codex', job: 'review-lens', lens: 'correctness' })
+  const reviewId = recordReview(runId, reviewReply(1, 'high'), db())
+  triageFinding(reviewId, 1, 'accepted', undefined, 'high')
+  completeReview(reviewId)
+
+  await runReview(
+    [
+      'review',
+      'amend',
+      String(reviewId),
+      '1',
+      'modified',
+      '--severity',
+      'medium',
+      '--reason',
+      'architect correction',
+    ],
+    output,
+  )
+
+  expect(output).toEqual([`amended review ${reviewId} finding 1: modified`])
+  expect(
+    db()
+      .query<{ disposition: string; triaged_severity: string }, [number]>(
+        'SELECT disposition,triaged_severity FROM review_finding WHERE review_id=?',
+      )
+      .get(reviewId),
+  ).toEqual({ disposition: 'modified', triaged_severity: 'medium' })
+})
+
+test('review project-record runs through Commander to the handler refusal', async () => {
+  const output: string[] = []
+  const unregistered = mkdtempSync(join(tmpdir(), 'orch-review-project-record-'))
+  try {
+    await expect(
+      runReview(
+        [
+          'review',
+          'project-record',
+          'DEV-fixture',
+          '--cwd',
+          unregistered,
+          '--reason',
+          'record fixture review',
+        ],
+        output,
+      ),
+    ).rejects.toThrow(
+      `cannot resolve a project for ${unregistered}; pass a registered project worktree`,
+    )
+  } finally {
+    rmSync(unregistered, { recursive: true, force: true })
+  }
+})
+
+test('review restore-findings runs through Commander in report-only mode', async () => {
+  const output: string[] = []
+
+  await runReview(['review', 'restore-findings'], output)
+
+  expect(output).toHaveLength(1)
+  expect(output[0]).toContain('mode: report-only')
+  expect(output[0]).toContain('rows restored: 0')
+})
 
 function git(repo: string, ...args: string[]): string {
   const result = Bun.spawnSync(['git', ...args], {
@@ -111,19 +260,9 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
       )
       .run(review.id, run.id)
 
-    await reviewCommand(
-      'tier',
-      ['review', 'tier', 'DEV-992-fixture'],
-      {
-        has: () => false,
-        flag: (name) => (name === 'cwd' ? relative(process.cwd(), repo) : undefined),
-      },
-      {
-        log: (...values) => output.push(values.join(' ')),
-        usage: () => {
-          throw new Error('unexpected usage')
-        },
-      },
+    await runReview(
+      ['review', 'tier', 'DEV-992-fixture', '--cwd', relative(process.cwd(), repo)],
+      output,
     )
 
     expect(output).toContain('tier 0')
@@ -172,17 +311,7 @@ test('review tier reports stack and generic profile sources resolved for its pro
       .get(FIXTURE_BASE, FIXTURE_WRITER_HEAD, FIXTURE_WRITER_HEAD)!
     const output: string[] = []
 
-    await reviewCommand(
-      'tier',
-      ['review', 'tier', String(run.id)],
-      { has: () => false, flag: () => undefined },
-      {
-        log: (...values) => output.push(values.join(' ')),
-        usage: () => {
-          throw new Error('unexpected usage')
-        },
-      },
-    )
+    await runReview(['review', 'tier', String(run.id)], output)
 
     expect(output).toContain('lens correctness  framework=stack')
     expect(output).toContain('lens craft  framework=generic')

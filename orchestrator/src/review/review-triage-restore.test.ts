@@ -1,6 +1,5 @@
 import { expect, test } from 'bun:test'
 import { Command } from 'commander'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
@@ -301,7 +300,7 @@ test('review command dispatches restore-triage with --dry-run in process', async
   expect(db().query('SELECT * FROM review_finding WHERE id=?').get(seed.findingId)).toEqual(before)
 })
 
-test('review command rejects --dry-run for other verbs before they write', async () => {
+test('review command rejects --dry-run as an unknown option for other verbs before they write', async () => {
   const seed = seedFinding('restore-triage-command-reject-dry-run', false)
   const before = db().query('SELECT * FROM review_finding WHERE id=?').get(seed.findingId)
   const program = new Command().exitOverride()
@@ -318,7 +317,7 @@ test('review command rejects --dry-run for other verbs before they write', async
       'accepted',
       '--dry-run',
     ]),
-  ).rejects.toThrow(`--dry-run is only valid for ${PLATFORM_SLUG} review restore-triage`)
+  ).rejects.toThrow("error: unknown option '--dry-run'")
 
   expect(db().query('SELECT * FROM review_finding WHERE id=?').get(seed.findingId)).toEqual(before)
 })
