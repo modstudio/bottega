@@ -175,8 +175,8 @@ export type GateResult = {
   timedOut: boolean
   elapsedMs: number
   outputTail: string
-  outputPath: string
-  artifactPath: string
+  outputPath?: string
+  artifactPath?: string
 }
 
 export function shapeGateResult(input: {
@@ -184,8 +184,8 @@ export function shapeGateResult(input: {
   timedOut: boolean
   elapsedMs: number
   output: string
-  outputPath: string
-  artifactPath: string
+  outputPath?: string
+  artifactPath?: string
 }): GateResult {
   return {
     exitCode: input.exitCode,
@@ -202,8 +202,12 @@ export function formatGateResult(result: GateResult): string {
     `Gate exit code: ${result.exitCode}`,
     `Timed out: ${result.timedOut}`,
     `Elapsed: ${result.elapsedMs}ms`,
-    `Full output now: ${result.outputPath}`,
-    `This log moves to the run artifacts at close: ${result.artifactPath}`,
+    ...(result.outputPath && result.artifactPath
+      ? [
+          `Full output now: ${result.outputPath}`,
+          `This log moves to the run artifacts at close: ${result.artifactPath}`,
+        ]
+      : ['No gate log was created.']),
     'Combined output tail:',
     result.outputTail || '(no output)',
   ].join('\n')

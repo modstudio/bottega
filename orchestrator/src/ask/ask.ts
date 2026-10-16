@@ -280,6 +280,14 @@ function waitForGatePoll(ms: number, signal: AbortSignal, wait: (ms: number) => 
   })
 }
 
+function gateResultLogPaths(runId: number, executionId: number, artifactPath: string | null) {
+  if (!artifactPath) return {}
+  return {
+    outputPath: `${runScratchDir(runId)}/gate-${executionId}.log`,
+    artifactPath,
+  }
+}
+
 async function waitForGateExecution(
   runId: number,
   requested: Exclude<RequestedGate, { message: string }>,
@@ -333,8 +341,7 @@ async function waitForGateExecution(
           timedOut: row.timed_out === 1,
           elapsedMs: row.elapsed_ms!,
           output: row.output_tail ?? '',
-          outputPath: `${runScratchDir(runId)}/gate-${id}.log`,
-          artifactPath: row.output_artifact ?? '(no artifact recorded)',
+          ...gateResultLogPaths(runId, id, row.output_artifact),
         }),
       )
       return requested.introduction ? `${requested.introduction}\n${result}` : result

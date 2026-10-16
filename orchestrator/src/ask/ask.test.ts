@@ -13,6 +13,7 @@ import { postNotice } from '../board/board-service.ts'
 import { db } from '../database/db.ts'
 import { readEventLog, runEventsPath } from '../events.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
+import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { ask, createAskMcpServer } from './ask.ts'
 import { observeAskTransport } from './ask-lifecycle.ts'
 
@@ -341,6 +342,64 @@ describe('the live ask channel always answers', () => {
           }
         ).n,
       ).toBe(1)
+    } finally {
+      await connection.close()
+    }
+  })
+
+  test('run_gate reports no evidence paths when an occupied log prevented log creation', async () => {
+    const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const project = db()
+      .query(`INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?) RETURNING id`)
+      .get(
+        'gate-occupied-log-fixture',
+        '/fixture',
+        'bun',
+        JSON.stringify({ gate: 'bun run check' }),
+      ) as {
+      id: number
+    }
+    db().query('UPDATE run SET project_id=? WHERE id=?').run(project.id, run)
+    let nowMs = Date.now()
+    const connection = await askClient(run, '', undefined, {
+      fileWorkerNote: async () => ({
+        noteRecordId: '01990000-0000-7000-8000-000000000001',
+        noteLabel: 'workshop#1',
+        candidateNotes: [],
+      }),
+      gate: {
+        waitMs: 2,
+        now: () => nowMs,
+        wait: async () => {
+          nowMs += 1
+          db()
+            .query(
+              `UPDATE gate_execution
+                  SET finished_at=?,exit_code=-1,timed_out=0,elapsed_ms=1,
+                      output_tail=?,output_artifact=NULL
+                WHERE run_id=?`,
+            )
+            .run(
+              new Date(nowMs).toISOString(),
+              'gate broker failed: gate log path is occupied; gate did not run\n',
+              run,
+            )
+        },
+      },
+    })
+    try {
+      const result = await connection.client.callTool({ name: 'run_gate', arguments: {} })
+      expect(result.isError).toBeUndefined()
+      const output = resultText(result)
+      expect(output).toContain('No gate log was created.')
+      expect(output).toContain('gate log path is occupied')
+      expect(output).not.toContain('Full output now:')
+      expect(output).not.toContain('moves to the run artifacts')
+      const execution = db().query('SELECT id FROM gate_execution WHERE run_id=?').get(run) as {
+        id: number
+      }
+      expect(output).not.toContain(`${runScratchDir(run)}/gate-${execution.id}.log`)
+      expect(output).not.toContain(`${runArtifactsDir(run)}/gate-${execution.id}.log`)
     } finally {
       await connection.close()
     }
