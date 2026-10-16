@@ -20,11 +20,12 @@ import {
   type PullRequestCheck,
 } from './merge-decision.ts'
 import {
-  decideMergeQueueAction,
   interpretMergeQueue,
   MERGE_QUEUE_WAIT_MS,
   type MergeQueueObservation,
+  type MergeQueueWaitState,
   mergeQueueEnqueueFailureRemedy,
+  stepMergeQueueWait,
 } from './merge-queue-decision.ts'
 import { enqueuePullRequest, githubMergeQueueState } from './merge-queue-forge.ts'
 import {
@@ -316,34 +317,23 @@ function waitForQueuedMerge(
   adapter: PullRequestMergeAdapter,
 ): string {
   const deadline = adapter.now() + MERGE_QUEUE_WAIT_MS
-  let enqueueSubmitted = false
-  let activeEntryObserved = false
-  let dequeueObservedAt: number | null = null
+  let waitState: MergeQueueWaitState = {
+    enqueueSubmitted: false,
+    activeEntryObserved: false,
+    dequeueObservedAt: null,
+  }
   while (true) {
     const state = interpretMergeQueue(adapter.queueState(cwd, pullRequest.nodeId))
     const now = adapter.now()
-    if (state.state === 'queued') {
-      activeEntryObserved = true
-      dequeueObservedAt = null
-    } else if (state.state === 'dequeued' && activeEntryObserved && dequeueObservedAt === null) {
-      dequeueObservedAt = now
-    }
-    const action = decideMergeQueueAction(
-      pullRequest.number,
-      state,
-      enqueueSubmitted,
-      activeEntryObserved,
-      dequeueObservedAt,
-      now,
-      deadline,
-    )
+    const step = stepMergeQueueWait(pullRequest.number, waitState, state, now, deadline)
+    waitState = step.state
+    const action = step.action
     if (action.action === 'complete') return action.mergeCommit
     if (action.action === 'refuse') {
       throw new Error(`refusing merge: ${action.refusal}; cleared by: ${action.remedy}`)
     }
     if (action.action === 'enqueue') {
       enqueueForMergeQueue(pullRequest, cwd, adapter)
-      enqueueSubmitted = true
       continue
     }
     adapter.wait(action.delay)

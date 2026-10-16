@@ -70,9 +70,9 @@ export function githubMergeQueueState(cwd: string, nodeId: string): MergeQueueOb
 }
 
 export function enqueuePullRequest(cwd: string, number: number, headCommit: string): void {
-  successful(cwd, enqueuePullRequestArguments(number, headCommit), 'merge-queue enqueue')
-}
-
-export function enqueuePullRequestArguments(number: number, headCommit: string): string[] {
-  return ['gh', 'pr', 'merge', String(number), '--auto', '--match-head-commit', headCommit]
+  successful(
+    cwd,
+    ['gh', 'pr', 'merge', String(number), '--auto', '--match-head-commit', headCommit],
+    'merge-queue enqueue',
+  )
 }
