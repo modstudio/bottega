@@ -8,6 +8,8 @@ const known = [
   `${PLATFORM_SLUG} doc`,
   `${PLATFORM_SLUG} doc canon`,
   `${PLATFORM_SLUG} doc canon hydrate`,
+  `${PLATFORM_SLUG} score`,
+  `${PLATFORM_SLUG} score pending`,
 ]
 
 describe('customer guide command mentions', () => {
@@ -48,6 +50,7 @@ describe('customer guide command mentions', () => {
       [{ mention: `${PLATFORM_SLUG} task missing` }],
     ],
     ['all-capitals placeholder', `\`${PLATFORM_SLUG} task show RUN_ID\``, []],
+    ['numeric argument after a group', `\`${PLATFORM_SLUG} score 42 full right\``, []],
     ['heading containing a known command', `# Run \`${PLATFORM_SLUG} task show\``, []],
     ['table cell containing a known command', `| command | \`${PLATFORM_SLUG} task show\` |`, []],
     ['retired orch mention', '`orch doc get guide`', [{ mention: 'orch doc get guide' }]],
