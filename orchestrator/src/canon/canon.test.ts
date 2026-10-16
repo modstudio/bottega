@@ -456,6 +456,9 @@ describe('schema coexistence', () => {
     const starship = (
       d.query("SELECT record_id AS id FROM project WHERE name='starship'").get() as { id: number }
     ).id
+    const alephbeis = (
+      d.query("SELECT record_id AS id FROM project WHERE name='alephbeis'").get() as { id: number }
+    ).id
     const insertRun = (repo: string, projectId: number) =>
       (
         d
@@ -480,7 +483,7 @@ describe('schema coexistence', () => {
         .get() as { id: number }
     ).id
     const mixedA = insertRun('starship', starship)
-    const mixedB = insertRun('alephbeis', starship)
+    const mixedB = insertRun('alephbeis', alephbeis)
     const aliasA = insertRun(PLATFORM_SLUG, platformId)
     const aliasB = insertRun('devbox', platformId)
     const lens = (reviewId: number, runId: number, name: string) => {
@@ -528,8 +531,8 @@ describe('schema coexistence', () => {
       `INSERT INTO run (started_at, agent, job, repo, prompt_sha, prompt_bytes, prompt_head, status)
        VALUES ('t', 'a', 'implement', 'widget', 'sha', 1, 'h', 'ok')`,
     ).run()
-    expect(d.query('SELECT project_record_id FROM run').get()).toEqual({ project_record_id: null })
-    const before = applyMigrationsBefore(d, '0115_project_record_identity_contract')
+    expect(d.query('SELECT project_id FROM run').get()).toEqual({ project_id: null })
+    const before = applyMigrationsBefore(d, '0115_project_identity_contract')
     d.query('UPDATE project SET record_id=? WHERE name=?').run(newRecordId(), 'widget')
     const after = applyMigrations(d)
     expect([...before, ...after]).toEqual(

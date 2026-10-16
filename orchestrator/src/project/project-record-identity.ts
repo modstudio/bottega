@@ -119,7 +119,16 @@ async function hostedProjectIdentity(
 
 /** Fill only missing identities; existing local identities are never name-matched again. */
 export async function fillProjectRecordIds(database?: Database): Promise<FilledProjectRecordId[]> {
-  const rows = (database ?? (await import('../database/db.ts')).writableDb())
+  const store = database ?? (await import('../database/db.ts')).writableDb()
+  const hasIntegerId = (
+    store.query("SELECT COUNT(*) AS n FROM pragma_table_info('project') WHERE name='id'").get() as {
+      n: number
+    }
+  ).n
+  // The UUID-keyed project table makes a missing identity structurally impossible.
+  if (hasIntegerId === 0) return []
+
+  const rows = store
     .query(
       `SELECT id,record_id,name,path,stack,canon,settings,retired_at
        FROM project WHERE record_id IS NULL ORDER BY name`,

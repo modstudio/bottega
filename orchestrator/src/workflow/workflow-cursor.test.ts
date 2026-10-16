@@ -111,9 +111,19 @@ function installEvidence(
   const taskKey = key || 'DEV-822'
   d.query(
     `INSERT OR IGNORE INTO branch_landing_record
-      (record_id,project,branch,tip,pr_number,merge_commit,merged_at,recorded_at)
-     VALUES (?,?,?,?,?,?,?,?)`,
-  ).run(newRecordId(), project, `${taskKey}-work`, 'abc', 1, 'def', '2026-09-01', '2026-09-01')
+      (record_id,project,project_record_id,branch,tip,pr_number,merge_commit,merged_at,recorded_at)
+     VALUES (?,?,(SELECT record_id FROM project WHERE name=?),?,?,?,?,?,?)`,
+  ).run(
+    newRecordId(),
+    project,
+    project,
+    `${taskKey}-work`,
+    'abc',
+    1,
+    'def',
+    '2026-09-01',
+    '2026-09-01',
+  )
   const ruling = d
     .query<{ id: number }, (string | number | null)[]>(
       `INSERT INTO question

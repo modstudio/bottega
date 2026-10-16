@@ -62,14 +62,18 @@ test('only the root run session owns architect reads for its branch', () => {
 test('the latest architect read is selected for one project branch', () => {
   const d = new Database(':memory:')
   applyMigrations(d)
+  const projectRecordId = newRecordId()
+  d.query(
+    `INSERT INTO project (record_id,name,path,canon,settings) VALUES (?,'fixture','/fixture',1,'{}')`,
+  ).run(projectRecordId)
   d.query(
     `INSERT INTO review_read
-      (record_id,project,branch,tip,patch_id,path_set,tier,note,recorded_at)
+      (record_id,project,project_record_id,branch,tip,patch_id,path_set,tier,note,recorded_at)
      VALUES
-      ('read-1','fixture','DEV-1257-work','older','patch-1','[]',1,'older note','2026-10-11T12:00:00.000Z'),
-      ('read-2','fixture','DEV-1257-work','newer','patch-2','[]',1,'newer note','2026-10-12T12:00:00.000Z'),
-      ('read-3','fixture','DEV-other','other','patch-3','[]',1,'other note','2026-10-13T12:00:00.000Z')`,
-  ).run()
+      ('read-1','fixture',?,'DEV-1257-work','older','patch-1','[]',1,'older note','2026-10-11T12:00:00.000Z'),
+      ('read-2','fixture',?,'DEV-1257-work','newer','patch-2','[]',1,'newer note','2026-10-12T12:00:00.000Z'),
+      ('read-3','fixture',?,'DEV-other','other','patch-3','[]',1,'other note','2026-10-13T12:00:00.000Z')`,
+  ).run(projectRecordId, projectRecordId, projectRecordId)
 
   expect(latestArchitectRead(d, 'fixture', 'DEV-1257-work')).toEqual({
     tip: 'newer',

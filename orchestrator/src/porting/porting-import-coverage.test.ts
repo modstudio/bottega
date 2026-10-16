@@ -75,7 +75,7 @@ describe('port importer', () => {
     ]
     const syntheticRegister = projectNames.map((name, index) => ({
       id: index + 1,
-      recordId: '01990000-0000-7000-8000-000000001214',
+      recordId: `01990000-0000-7000-8000-${String(1214 + index).padStart(12, '0')}`,
       name,
       path: `/fixture/${index}`,
       stack: null,

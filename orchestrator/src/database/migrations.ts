@@ -485,8 +485,7 @@ function compatibleBackfillEntries(d: Database, entries: JournalEntry[]): Journa
   if (projectHasIntegerId > 0)
     return entries.filter((entry) => !BACKFILL_SCHEMA_BOUNDARIES.has(entry.tag))
   return entries.filter(
-    (entry) =>
-      !BACKFILL_SCHEMA_BOUNDARIES.has(entry.tag) && !INTEGER_PROJECT_BACKFILLS.has(entry.tag),
+    (entry) => !INTEGER_PROJECT_BACKFILLS.has(entry.tag),
   )
 }
 
