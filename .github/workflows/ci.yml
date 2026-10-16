@@ -9,6 +9,7 @@ on:
 
 env:
   ORCHESTRATOR_SHARD_COUNT: 4
+  SUITE_COMMAND: bun run check:suite --
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -60,7 +61,7 @@ jobs:
       - name: Test shard
         env:
           CI: "1"
-        run: bun scripts/check.ts --suite --only=orchestrator --shard=${{ matrix.shard }}/${ORCHESTRATOR_SHARD_COUNT}
+        run: $SUITE_COMMAND --only=orchestrator --shard=${{ matrix.shard }}/${ORCHESTRATOR_SHARD_COUNT}
 
   hub:
     runs-on: ubuntu-latest
@@ -75,7 +76,7 @@ jobs:
       - name: Test
         env:
           CI: "1"
-        run: bun scripts/check.ts --suite --only=hub
+        run: $SUITE_COMMAND --only=hub
 
   hub-web:
     runs-on: ubuntu-latest
@@ -90,7 +91,7 @@ jobs:
       - name: Test and build
         env:
           CI: "1"
-        run: bun scripts/check.ts --suite --only=hub/web
+        run: $SUITE_COMMAND --only=hub/web
 
   hub-deploy-site:
     runs-on: ubuntu-latest
@@ -105,7 +106,7 @@ jobs:
       - name: Test
         env:
           CI: "1"
-        run: bun scripts/check.ts --suite --only=hub/deploy/site
+        run: $SUITE_COMMAND --only=hub/deploy/site
 
   retrieval:
     runs-on: ubuntu-latest
@@ -120,7 +121,7 @@ jobs:
       - name: Test
         env:
           CI: "1"
-        run: bun scripts/check.ts --suite --only=retrieval
+        run: $SUITE_COMMAND --only=retrieval
 
   ci:
     if: always()

@@ -40,7 +40,7 @@ export function groupFocusedTestPaths(paths: readonly string[]): FocusedTestGrou
   return [...groups].map(([directory, groupedPaths]) => ({ directory, paths: groupedPaths }))
 }
 
-export async function runFocusedTests(paths: readonly string[]): Promise<number> {
+async function runFocusedTests(paths: readonly string[]): Promise<number> {
   let failed = false
   for (const group of groupFocusedTestPaths(paths)) {
     const child = Bun.spawn(['bun', 'test', ...group.paths], {

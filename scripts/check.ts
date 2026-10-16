@@ -3,24 +3,22 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CHECK_EXECUTION_FILE_ENV, type CheckExecutionRecord } from '../shared/check-execution'
-import {
-  type CheckArguments,
-  type CheckLegName,
-  parseCheckArguments,
-  runsRootSuiteTests,
-  selectedCheckLegs,
-} from './check-mode'
-import { decideGateOutcome, type GateStepResult } from './check-outcome'
+import { decideGateOutcome, type GateStepResult } from './check-outcome.ts'
 import {
   attributeCommandCpu,
+  type CheckArguments,
+  type CheckLegName,
   type CommandCpuSample,
   decideRuntimeBudget,
   HUNG_SUITE_TIMEOUT_MS,
+  parseCheckArguments,
+  runsRootSuiteTests,
   SUITE_CPU_BUDGET_MS,
   SUITE_RUNTIME_BUDGET_MS,
+  selectedCheckLegs,
 } from './check-runtime'
 import { resolveLandingBase } from './landing-base'
-import { readRemainingReport } from './remaining-report'
+import { readRemainingReport } from './remaining-report.ts'
 
 type Command = { cwd: string; argv: string[] }
 type Leg = { name: CheckLegName; typecheck: Command; suite: Command[] }
@@ -329,7 +327,6 @@ const rootTests = [
   // not providing.
   'bun',
   'test',
-  './scripts/check-mode.test.ts',
   './scripts/check-machine-state.test.ts',
   './scripts/check-runtime.test.ts',
   './scripts/check-outcome.test.ts',

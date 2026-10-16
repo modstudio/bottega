@@ -44,6 +44,7 @@
         "scripts/{build-binary,build-release-artifacts,publish-release,read-hosted-migrate-url,smoke-binary,smoke-release}.ts!",
         "scripts/check.ts!",
         "scripts/check-*.ts!",
+        "scripts/test-focused.ts!",
         "scripts/test-preload.ts!",
         "scripts/**/*.test.ts",
         "shared/**/*.test.ts",
@@ -70,6 +71,7 @@
         // Spawned by path from src/run/run-dispatch.ts as the detached worker entry.
         "src/run/exec.ts!",
         "src/check/check-strict-schema.ts!",
+        "test/run-gate.ts!",
         "src/**/*.test.ts",
         "scripts/acp-parity.ts!",
         "scripts/**/*.test.ts",
