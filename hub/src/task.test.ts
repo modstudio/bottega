@@ -240,7 +240,7 @@ describe('hosted-authoritative existing-row edits', () => {
         .query(`INSERT INTO setting(key,value) VALUES ('hosted-outbox.lease',?)`)
         .run(JSON.stringify({ holder: 'outbox:collector', until: Date.now() + 60_000 })),
     )
-    let sends = 0
+    const requests: string[] = []
     const messages: unknown[] = []
     const log = spyOn(console, 'error').mockImplementation((message) => messages.push(message))
     try {
@@ -252,7 +252,7 @@ describe('hosted-authoritative existing-row edits', () => {
           hosted: {
             ...hosted,
             fetch: async (...args) => {
-              sends++
+              requests.push(new URL(args[0]).pathname)
               return hosted.fetch(...args)
             },
           },
@@ -261,7 +261,7 @@ describe('hosted-authoritative existing-row edits', () => {
     } finally {
       log.mockRestore()
     }
-    expect(sends).toBe(0)
+    expect(requests).toEqual(['/v1/tasks/identity'])
     expect(messages).toEqual([
       `hosted change saved and queued: another process is draining; the collector fast cycle will send it; inspect it with \`${PLATFORM_SLUG} record outbox\``,
     ])

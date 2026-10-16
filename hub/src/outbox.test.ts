@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { observeTrackerTask } from './ingest/trackers.ts'
@@ -6,6 +7,7 @@ import {
   discardHostedOutboxEntryCommand,
   drainHostedOutbox,
   hostedOutboxDoctorLines,
+  hostedOutboxLines,
   listHostedOutbox,
   mergeQueuedHostedChange,
   queueHostedChange,
@@ -453,8 +455,8 @@ describe('hosted outbox', () => {
     ])
   })
 
-  test('an unroutable entry waits without attempts and delivers when routing resolves', async () => {
-    const eventId = queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
+  test('an unroutable entry records its wait without attempts and clears it when routing resolves', async () => {
+    queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
     let registered: (typeof project)[] = []
     const waiting = await drainHostedOutbox({
       identity: async () => identity,
@@ -466,7 +468,7 @@ describe('hosted outbox', () => {
     expect(waiting.waitingOnRouting).toEqual({ 'unregistered-project': 1 })
     expect(listHostedOutbox()[0]).toMatchObject({
       attempts: 0,
-      last_error: null,
+      last_error: `waiting on routing: project "fixture" is not registered; register it with ${PLATFORM_SLUG} project add <path>, or, if it is not a real project, note that such rows cannot be retired yet`,
     })
     expect(
       await hostedOutboxDoctorLines({
@@ -479,10 +481,28 @@ describe('hosted outbox', () => {
     const delivered = await drainHostedOutbox({
       identity: async () => identity,
       registered: () => registered,
-      push: async () => [{ id: eventId, status: 'applied' }],
+      push: async () => {
+        throw new Error('offline after routing resolved')
+      },
     })
-    expect(delivered.sent).toBe(1)
-    expect(listHostedOutbox()).toHaveLength(0)
+    expect(delivered.sent).toBe(0)
+    expect(listHostedOutbox()[0]).toMatchObject({ attempts: 0, last_error: null })
+  })
+
+  test('listing summarizes each blocked project with its count and oldest row', async () => {
+    queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
+    queueTransition('FIX-2', '2026-10-11T12:01:00.000Z')
+    await drainHostedOutbox({
+      identity: async () => identity,
+      registered: () => [],
+      push: async () => {
+        throw new Error('must not push without routing')
+      },
+    })
+    const lines = hostedOutboxLines()
+    expect(lines[0]).toContain('project="fixture" rows=2 oldest=2026-10-11T12:00:00.000Z')
+    expect(lines[0]).toContain(`register it with ${PLATFORM_SLUG} project add <path>`)
+    expect(lines.slice(1)).toHaveLength(2)
   })
 
   test('drops an obsolete upsert whose current row is gone', async () => {
