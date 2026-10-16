@@ -216,8 +216,8 @@ test('ordinary sync pushes an asking run before its live question', async () => 
   )
   for (const statement of writes.filter((sql) => /insert into "(?:run|question)"/i.test(sql))) {
     const [, columns, values] = statement.match(/insert into [^(]+\(([^)]+)\) values \(([^)]+)\)/i)!
-    const localIdIndex = columns.split(', ').indexOf('"local_id"')
-    expect(values.split(', ')[localIdIndex]).toBe('default')
+    const localIdIndex = columns!.split(', ').indexOf('"local_id"')
+    expect(values!.split(', ')[localIdIndex]).toBe('default')
     expect(statement.slice(statement.indexOf('do update set'))).not.toMatch(/local_id/i)
   }
   local.close()
