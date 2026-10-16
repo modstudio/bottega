@@ -45,8 +45,12 @@
         "scripts/{build-binary,build-release-artifacts,publish-release,read-hosted-migrate-url,smoke-binary,smoke-release}.ts!",
         "scripts/check.ts!",
         "scripts/check-*.ts!",
+        "scripts/test-focused.ts!",
         "!scripts/**/*.fixtures.ts",
         "!scripts/**/*.test.ts",
+        "!scripts/check-outcome.ts",
+        "!scripts/check-plan.ts",
+        "!scripts/remaining-report.ts",
         "!scripts/check-runtime.ts",
         "scripts/generate-recipe-schema.ts!",
         "scripts/reference.ts!",
@@ -80,6 +84,7 @@
         // Spawned by path from src/run/run-dispatch.ts as the detached worker entry.
         "src/run/exec.ts!",
         "src/check/check-strict-schema.ts!",
+        "test/run-gate.ts!",
         // Launched by path from src/sandbox/sandbox.ts for Grok's MCP configuration.
         "src/ask/ask-proxy.ts!",
         "scripts/acp-parity.ts!",
