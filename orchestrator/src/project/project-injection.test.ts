@@ -33,6 +33,32 @@ const signals: SignalsSettings = {
 }
 
 describe('project workflow injection', () => {
+  test.each([
+    [
+      'a review state and review-record command',
+      { in_review: 'review' },
+      'bun run review:log --findings {findings}',
+      { state: 'in_review', floor: 'recorded-artifact' },
+    ],
+    [
+      'a review state without a review-record command',
+      { in_review: 'review' },
+      undefined,
+      { state: 'in_review', floor: 'tracker-transition' },
+    ],
+    ['no review state', { todo: 'open' }, undefined, { state: 'none', floor: 'recorded-artifact' }],
+  ] as const)('resolves the in-review stage for %s', (_shape, states, record, expected) => {
+    const tracker = resolveInjection(
+      {
+        name: 'fixture',
+        stack: 'node',
+        settings: { tracker: { protocol: 'cursor-mcp', states }, review: { lenses: [], record } },
+      },
+      ['tracker'],
+    ).tracker
+    expect(tracker.inReview).toEqual(expected)
+  })
+
   test('validates generated-reference settings at the register edge', () => {
     expect(
       validateProjectSettings({

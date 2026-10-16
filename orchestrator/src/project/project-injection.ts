@@ -265,6 +265,7 @@ function resolvedReviewStages(
   projectName: string,
   tracker: TrackerSettings,
   protocol: TrackerProtocol,
+  review: ReviewSettings | undefined,
 ) {
   const reviewStates = Object.entries(tracker.states ?? {}).flatMap(([raw, category]) =>
     category === 'review' ? [raw] : [],
@@ -280,7 +281,16 @@ function resolvedReviewStages(
   const active = tracker.reviewStages?.active ?? reviewStates[0]
   const stage = (state: string | undefined): ResolvedReviewStage =>
     state ? { state, floor: 'tracker-transition' } : { state: 'none', floor: 'recorded-artifact' }
-  return { waitingReview: stage(waiting), inReview: stage(active) }
+  return { waitingReview: stage(waiting), inReview: resolvedInReviewStage(active, review) }
+}
+
+/** Decide whether entering review is recorded now or by the project's post-review command. */
+function resolvedInReviewStage(
+  state: string | undefined,
+  review: ReviewSettings | undefined,
+): ResolvedReviewStage {
+  if (!state) return { state: 'none', floor: 'recorded-artifact' }
+  return { state, floor: review?.record ? 'recorded-artifact' : 'tracker-transition' }
 }
 
 function resolvedTracker(
@@ -304,7 +314,12 @@ function resolvedTracker(
       return raw ? [[category, raw]] : protocol === 'hub' ? [[category, category]] : []
     }),
   ) as ResolvedTracker['states']
-  const reviewStages = resolvedReviewStages(project.name, tracker, protocol)
+  const reviewStages = resolvedReviewStages(
+    project.name,
+    tracker,
+    protocol,
+    project.settings.review,
+  )
   if (reviewStages.inReview.state !== 'none') states.review = reviewStages.inReview.state
   return {
     kind: tracker.kind ?? protocol,
