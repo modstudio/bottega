@@ -129,7 +129,6 @@
     "release_ledger.project_id:reference",
     "release_ledger:primary-key",
     "resource_claim.project_id:reference",
-    "resource_claim.allocation_key:reference",
     "resource_claim.root_run_id:reference",
     "resource_claim.run_id:reference",
     "resource_claim:primary-key",
@@ -150,7 +149,6 @@
     "run.launch_key:reference",
     "run.project_id:reference",
     "run.retry_of:reference",
-    "run.review_ref:reference",
     "run:primary-key",
     "run_carried_ruling.question_id:reference",
     "run_carried_ruling.run_id:reference",
@@ -253,7 +251,6 @@
     "secret_dek_wrap.recipient_key_id:reference",
     "secret_dek_wrap.sender_key_id:reference",
     "secret_dek_wrap:primary-key",
-    "run.review_ref:reference",
     "run.task_key:reference",
     "seq:primary-key"
   ]

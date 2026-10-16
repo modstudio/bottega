@@ -263,9 +263,7 @@ const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
     'presence.current_task_key',
     'question.workflow_key',
     'question.filed_ref',
-    'resource_claim.allocation_key',
     'run.launch_key',
-    'run.review_ref',
     'worker_note_request.candidate_ids',
     'workflow_cursor.workflow_key',
     'workflow_cursor.instance_id',
@@ -305,7 +303,6 @@ const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
     'question.workflow_cursor_id',
     'question.filed_ref',
     'run.task_key',
-    'run.review_ref',
     'secret_dek_wrap.recipient_key_id',
     'secret_dek_wrap.sender_key_id',
   ]),
@@ -353,6 +350,10 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'monitor_condition.issue_key',
     'run.vendor_session',
   ]),
+  ...manifest('orchestrator', 'filesystem path or ref issued by the filesystem or Git', [
+    'resource_claim.allocation_key',
+  ]),
+  ...manifest('orchestrator', 'review ref issued by Git', ['run.review_ref']),
   ...manifest('orchestrator', "identifier issued by Git's patch-id system", [
     'landing_override.patch_id',
     'landing_review_carry.patch_id',
@@ -394,6 +395,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'review.patch_id',
     'review_read.patch_id',
   ]),
+  ...manifest('hosted', 'review ref issued by Git', ['run.review_ref']),
   ...manifest('hosted', 'identifier issued by the authentication provider', [
     'account.account_id',
     'account.provider_id',
