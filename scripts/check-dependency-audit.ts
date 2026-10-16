@@ -3,11 +3,27 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const DEPENDENCY_AUDIT_TIMEOUT_MS = 10_000
+const DEPENDENCY_AUDIT_OUTPUT_LIMIT = 500
+
+const BUN_AUDIT_OFFLINE_ERROR_PATTERNS = [
+  '/-/npm/v1/security/advisories/bulk - DNSResolveFailed',
+  '/-/npm/v1/security/advisories/bulk - FailedToOpenSocket',
+] as const
 
 const BASELINE_PATH = fileURLToPath(new URL('./quality/dependency-audit.json', import.meta.url))
 const REGENERATE_COMMAND = 'bun scripts/check-dependency-audit.ts --write-baseline'
 
 export type DependencyAdvisory = { id: number; package: string }
+
+export type DependencyAuditClassification =
+  | { kind: 'result'; advisories: DependencyAdvisory[] }
+  | { kind: 'unavailable'; detail: string }
+  | { kind: 'failure'; detail: string }
+
+type AuditCommandResult =
+  | { kind: 'completed'; exitCode: number; stdout: string; stderr: string }
+  | { kind: 'start-failure'; error: unknown }
+  | { kind: 'timeout' }
 
 export function compareDependencyAudit(
   current: readonly DependencyAdvisory[],
@@ -50,6 +66,37 @@ function parseAdvisories(value: unknown): DependencyAdvisory[] {
   return sorted(advisories)
 }
 
+function outputExcerpt(stdout: string, stderr: string): string {
+  const output = [stdout.trim(), stderr.trim()].filter(Boolean).join('\n')
+  if (!output) return '[no output]'
+  return output.slice(0, DEPENDENCY_AUDIT_OUTPUT_LIMIT)
+}
+
+export function classifyDependencyAudit(
+  exitCode: number,
+  stdout: string,
+  stderr: string,
+): DependencyAuditClassification {
+  const offlinePattern = BUN_AUDIT_OFFLINE_ERROR_PATTERNS.find((pattern) =>
+    stderr.includes(pattern),
+  )
+  if (offlinePattern) {
+    return {
+      kind: 'unavailable',
+      detail: `bun audit could not reach the advisory service: ${stderr.trim()}`,
+    }
+  }
+
+  const received = `bun audit exited ${exitCode}; output: ${outputExcerpt(stdout, stderr)}`
+  if (exitCode !== 0 && exitCode !== 1) return { kind: 'failure', detail: received }
+
+  try {
+    return { kind: 'result', advisories: parseAdvisories(JSON.parse(stdout)) }
+  } catch {
+    return { kind: 'failure', detail: received }
+  }
+}
+
 function readBaseline(): DependencyAdvisory[] {
   const value: unknown = JSON.parse(readFileSync(BASELINE_PATH, 'utf8'))
   if (!Array.isArray(value)) throw new Error(`${BASELINE_PATH}: expected a JSON array`)
@@ -71,7 +118,7 @@ function readBaseline(): DependencyAdvisory[] {
   )
 }
 
-async function audit(): Promise<DependencyAdvisory[] | undefined> {
+async function runAuditCommand(): Promise<AuditCommandResult> {
   let child: Bun.Subprocess<'ignore', 'pipe', 'pipe'>
   try {
     child = Bun.spawn(['bun', 'audit', '--json'], {
@@ -81,8 +128,7 @@ async function audit(): Promise<DependencyAdvisory[] | undefined> {
       stderr: 'pipe',
     })
   } catch (error) {
-    console.warn(`dependency audit unavailable: could not start bun audit: ${String(error)}`)
-    return undefined
+    return { kind: 'start-failure', error }
   }
 
   let timedOut = false
@@ -98,26 +144,29 @@ async function audit(): Promise<DependencyAdvisory[] | undefined> {
   clearTimeout(timeout)
 
   if (timedOut) {
-    console.warn(
-      `dependency audit unavailable: bun audit exceeded ${DEPENDENCY_AUDIT_TIMEOUT_MS}ms and was killed`,
-    )
-    return undefined
+    return { kind: 'timeout' }
   }
 
-  try {
-    const advisories = parseAdvisories(JSON.parse(stdout))
-    if (exitCode !== 0 && exitCode !== 1) {
-      console.warn(
-        `dependency audit unavailable: bun audit exited ${exitCode}${stderr.trim() ? `: ${stderr.trim()}` : ''}`,
-      )
-      return undefined
+  return { kind: 'completed', exitCode, stdout, stderr }
+}
+
+export async function audit(
+  run: () => Promise<AuditCommandResult> = runAuditCommand,
+): Promise<DependencyAuditClassification> {
+  const outcome = await run()
+  if (outcome.kind === 'timeout') {
+    return {
+      kind: 'unavailable',
+      detail: `bun audit exceeded ${DEPENDENCY_AUDIT_TIMEOUT_MS}ms and was killed`,
     }
-    return advisories
-  } catch (error) {
-    const detail = stderr.trim() || (error instanceof Error ? error.message : String(error))
-    console.warn(`dependency audit unavailable: bun audit did not return advisories: ${detail}`)
-    return undefined
   }
+  if (outcome.kind === 'start-failure') {
+    return {
+      kind: 'unavailable',
+      detail: `could not start bun audit: ${String(outcome.error)}`,
+    }
+  }
+  return classifyDependencyAudit(outcome.exitCode, outcome.stdout, outcome.stderr)
 }
 
 async function main() {
@@ -128,8 +177,15 @@ async function main() {
   ) {
     throw new Error('usage: bun scripts/check-dependency-audit.ts [--write-baseline]')
   }
-  const advisories = await audit()
-  if (!advisories) return
+  const classification = await audit()
+  if (classification.kind === 'unavailable') {
+    console.warn(`dependency audit unavailable: ${classification.detail}`)
+    return
+  }
+  if (classification.kind === 'failure') {
+    throw new Error(`dependency audit failed: ${classification.detail}`)
+  }
+  const { advisories } = classification
 
   if (cliArguments[0] === '--write-baseline') {
     writeFileSync(BASELINE_PATH, `${JSON.stringify(advisories, null, 2)}\n`)
