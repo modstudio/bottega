@@ -34,7 +34,7 @@ type StoreManifests = {
   infrastructure: Map<string, string>
 }
 
-const REFERENCE_NAME = /(?:^parent_|_id$|_ids$)/
+const REFERENCE_NAME = /(?:^parent_|_(?:id|ids|ref|key|session)$)/
 
 export function classifyKeyInventory(
   store: KeyStore,
@@ -128,10 +128,20 @@ function classifyKeyColumn(
   if (externalIdentifier) seen.externalIdentifiers.add(address)
   const explicitReference = manifests.references.has(address)
   if (explicitReference) seen.references.add(address)
+  const shapedReference =
+    (column.type === 'integer' || column.type === 'text') && REFERENCE_NAME.test(column.name)
+  if (
+    !column.foreignKey &&
+    (column.type === 'integer' || column.type === 'text') &&
+    shapedReference &&
+    !uuid &&
+    !externalIdentifier &&
+    !explicitReference &&
+    !manifests.values.has(address)
+  )
+    throw new Error(`${store} reference-shaped column ${address} is not classified`)
   const reference =
-    column.foreignKey ||
-    (!externalIdentifier && REFERENCE_NAME.test(column.name)) ||
-    explicitReference
+    column.foreignKey || (!externalIdentifier && shapedReference) || explicitReference
   if (column.type === 'integer')
     classifyIntegerColumn(store, address, column, reference, manifests.values, seen.values)
   return reference && !uuid ? [`${address}:reference`] : []
@@ -249,10 +259,11 @@ function validateInfrastructure(
 export function assertShrinkingKeyBaseline(
   store: KeyStore,
   findings: readonly string[],
-  baseline: readonly string[],
+  candidateBaseline: readonly string[],
+  baseBaseline: readonly string[] | null,
 ): void {
   const actual = new Set(findings)
-  const expected = new Set(baseline)
+  const expected = new Set(candidateBaseline)
   const added = [...actual].filter((finding) => !expected.has(finding)).sort()
   const stale = [...expected].filter((finding) => !actual.has(finding)).sort()
   if (added.length)
@@ -261,6 +272,14 @@ export function assertShrinkingKeyBaseline(
     throw new Error(
       `${store} identity baseline entries disappeared; remove them: ${stale.join(', ')}`,
     )
+  if (baseBaseline) {
+    const base = new Set(baseBaseline)
+    const baselineGrowth = [...expected].filter((finding) => !base.has(finding)).sort()
+    if (baselineGrowth.length)
+      throw new Error(
+        `${store} identity baseline may only shrink; candidate added: ${baselineGrowth.join(', ')}`,
+      )
+  }
 }
 
 export function readSqliteKeyTables(database: Database): KeyTable[] {
