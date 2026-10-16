@@ -1,6 +1,3 @@
-import { Link } from '@tanstack/react-router'
-import { ArrowUpRight, ChevronDown, Copy, Pencil, Plus, Trash2 } from 'lucide-react'
-import { type ReactNode, useState } from 'react'
 import { Badge, type Tone } from '@bottega/hub-ui/badge'
 import { Button, IconButton } from '@bottega/hub-ui/button'
 import { Checkbox } from '@bottega/hub-ui/checkbox'
@@ -18,6 +15,9 @@ import { Spinner } from '@bottega/hub-ui/spinner'
 import { Switch } from '@bottega/hub-ui/switch'
 import { toast } from '@bottega/hub-ui/toast'
 import { Tooltip } from '@bottega/hub-ui/tooltip'
+import { Link } from '@tanstack/react-router'
+import { ArrowUpRight, ChevronDown, Copy, Pencil, Plus, Trash2 } from 'lucide-react'
+import { type ReactNode, useState } from 'react'
 import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 
 const tones: Tone[] = ['neutral', 'success', 'warning', 'error', 'info', 'progress']

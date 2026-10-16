@@ -50,9 +50,7 @@ for (const relativePath of new Glob('hub/*/package.json').scanSync({ cwd: ROOT }
     violations.push(`${relativePath}: ${packageJson.name} is missing from hubWorkspaceDependencies`)
     continue
   }
-  const allowed = new Set<string>(
-    hubWorkspaceDependencies[packageJson.name] ?? [],
-  )
+  const allowed = new Set<string>(hubWorkspaceDependencies[packageJson.name] ?? [])
   for (const field of dependencyFields) {
     const dependencies = packageJson[field as keyof PackageJson]
     if (!dependencies || typeof dependencies !== 'object') continue

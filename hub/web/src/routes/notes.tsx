@@ -1,8 +1,3 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
-import { createFileRoute } from '@tanstack/react-router'
-import { useState } from 'react'
-import { isHostedMode } from '@/lib/hub-mode'
-import { queryClient, trpc } from '@/trpc/client'
 import { Badge } from '@bottega/hub-ui/badge'
 import { Button } from '@bottega/hub-ui/button'
 import { Checkbox } from '@bottega/hub-ui/checkbox'
@@ -17,6 +12,11 @@ import {
   TableRow,
 } from '@bottega/hub-ui/table'
 import { toast } from '@bottega/hub-ui/toast'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { createFileRoute } from '@tanstack/react-router'
+import { useState } from 'react'
+import { isHostedMode } from '@/lib/hub-mode'
+import { queryClient, trpc } from '@/trpc/client'
 
 import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 export const Route = createFileRoute('/notes')({ component: NotesPage })

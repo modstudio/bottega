@@ -1,3 +1,10 @@
+import {
+  AppShell,
+  type NavItem,
+  type NavSection,
+  type RenderLink,
+} from '@bottega/hub-ui/shell/app-shell'
+import { UserMenu } from '@bottega/hub-ui/shell/user-menu'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   createRootRoute,
@@ -26,13 +33,6 @@ import { recordSpaces } from '@/lib/record-spaces'
 import { useWindowState } from '@/lib/window'
 import { SiteFrame } from '@/site/chrome'
 import { queryClient, trpc } from '@/trpc/client'
-import {
-  AppShell,
-  type NavItem,
-  type NavSection,
-  type RenderLink,
-} from '@bottega/hub-ui/shell/app-shell'
-import { UserMenu } from '@bottega/hub-ui/shell/user-menu'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 
 const THEME_KEY = 'hub:theme'

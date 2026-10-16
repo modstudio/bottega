@@ -1,3 +1,4 @@
+import { classes } from '@bottega/hub-ui/text/classes'
 import {
   type CollisionDetection,
   closestCenter,
@@ -15,7 +16,6 @@ import {
 } from '@dnd-kit/sortable'
 import { ChevronDown, ChevronRight, GripVertical } from 'lucide-react'
 import { type MutableRefObject, useEffect, useRef } from 'react'
-import { classes } from '@bottega/hub-ui/text/classes'
 import { siblingKey, treePath } from './tree.ts'
 import type { DocsTreeGroup, DocsTreeItem, TreeNode } from './types.ts'
 

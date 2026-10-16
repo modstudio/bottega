@@ -1,8 +1,8 @@
-import { useState } from 'react'
-import { requestPasswordReset, resetPassword } from '@/lib/hosted-auth'
 import { Button } from '@bottega/hub-ui/button'
 import { Input } from '@bottega/hub-ui/field/input'
 import { PageHeader } from '@bottega/hub-ui/page-header'
+import { useState } from 'react'
+import { requestPasswordReset, resetPassword } from '@/lib/hosted-auth'
 
 const confirmation = 'If an account exists for that email, a password reset link has been sent.'
 

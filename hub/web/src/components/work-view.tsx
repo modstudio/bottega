@@ -1,3 +1,21 @@
+import { Badge } from '@bottega/hub-ui/badge'
+import { LiveDot } from '@bottega/hub-ui/badge/live-dot'
+import { TextButton } from '@bottega/hub-ui/button'
+import { Docked } from '@bottega/hub-ui/companion'
+import { EmptyState } from '@bottega/hub-ui/empty-state'
+import { Input } from '@bottega/hub-ui/field/input'
+import { Identifier } from '@bottega/hub-ui/identifier'
+import { PageHeader } from '@bottega/hub-ui/page-header'
+import { Segmented } from '@bottega/hub-ui/segmented'
+import { StatRow, StatTile } from '@bottega/hub-ui/stat'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@bottega/hub-ui/table'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import {
@@ -29,24 +47,6 @@ import { waitingByRun } from '@/lib/operator-waiting'
 import { taskStatusLook } from '@/lib/task-status'
 import { setWorkCounts, useWindowState } from '@/lib/window'
 import { type BoardResponse, type FlightResponse, trpc } from '@/trpc/client'
-import { Badge } from '@bottega/hub-ui/badge'
-import { LiveDot } from '@bottega/hub-ui/badge/live-dot'
-import { TextButton } from '@bottega/hub-ui/button'
-import { Docked } from '@bottega/hub-ui/companion'
-import { EmptyState } from '@bottega/hub-ui/empty-state'
-import { Input } from '@bottega/hub-ui/field/input'
-import { Identifier } from '@bottega/hub-ui/identifier'
-import { PageHeader } from '@bottega/hub-ui/page-header'
-import { Segmented } from '@bottega/hub-ui/segmented'
-import { StatRow, StatTile } from '@bottega/hub-ui/stat'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@bottega/hub-ui/table'
 
 type WorkName = 'flight' | 'done'
 type TaskData = FlightResponse['data']

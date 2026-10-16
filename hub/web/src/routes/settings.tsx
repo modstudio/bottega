@@ -1,10 +1,3 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
-import { createFileRoute } from '@tanstack/react-router'
-import { useState } from 'react'
-import { hourOfDayLabel, sendTimestamp } from '@/lib/format'
-import { isHostedMode } from '@/lib/hub-mode'
-import { DEFAULT_ZONE, TIME_ZONES, WEEKDAYS, type Weekday } from '@/lib/report-arrival'
-import { queryClient, type RecordSettingsResponse, trpc } from '@/trpc/client'
 import { Badge } from '@bottega/hub-ui/badge'
 import { Button } from '@bottega/hub-ui/button'
 import { Checkbox } from '@bottega/hub-ui/checkbox'
@@ -21,6 +14,13 @@ import {
   TableHeader,
   TableRow,
 } from '@bottega/hub-ui/table'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { createFileRoute } from '@tanstack/react-router'
+import { useState } from 'react'
+import { hourOfDayLabel, sendTimestamp } from '@/lib/format'
+import { isHostedMode } from '@/lib/hub-mode'
+import { DEFAULT_ZONE, TIME_ZONES, WEEKDAYS, type Weekday } from '@/lib/report-arrival'
+import { queryClient, type RecordSettingsResponse, trpc } from '@/trpc/client'
 
 type Settings = RecordSettingsResponse
 type Subscription = Settings['subscriptions'][number]

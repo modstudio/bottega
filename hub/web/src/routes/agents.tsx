@@ -1,3 +1,6 @@
+import { Companion } from '@bottega/hub-ui/companion'
+import { DisplayRow } from '@bottega/hub-ui/form-layout'
+import { PageHeader } from '@bottega/hub-ui/page-header'
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
@@ -5,9 +8,6 @@ import { Collection, type CollectionColumn } from '@/components/collection'
 import { SnapshotEmpty, SnapshotHeader } from '@/components/hosted-snapshot'
 import { isHostedMode } from '@/lib/hub-mode'
 import { type AgentRow, trpc } from '@/trpc/client'
-import { Companion } from '@bottega/hub-ui/companion'
-import { DisplayRow } from '@bottega/hub-ui/form-layout'
-import { PageHeader } from '@bottega/hub-ui/page-header'
 
 export const Route = createFileRoute('/agents')({
   validateSearch: (search: Record<string, unknown>) => ({

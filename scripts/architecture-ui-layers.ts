@@ -5,7 +5,7 @@
  * `primitives` are single controls; `overlays` open above the page; `patterns`
  * compose controls into one reusable piece; `layout` arranges a screen.
  */
-export const uiLayers: { name: string; folders: string[] }[] = [
+const uiLayers: { name: string; folders: string[] }[] = [
   { name: 'behavior', folders: ['state', 'dom', 'text'] },
   {
     name: 'primitives',
@@ -44,7 +44,7 @@ export const uiLayers: { name: string; folders: string[] }[] = [
   { name: 'layout', folders: ['shell', 'table-card', 'toolbar-band', 'companion'] },
 ]
 
-export const uiFolders = (folders: string[]) => `^hub/ui/src/(?:${folders.join('|')})/`
+const uiFolders = (folders: string[]) => `^hub/ui/src/(?:${folders.join('|')})/`
 
 type UiArchitectureRule = {
   name: string

@@ -1,11 +1,3 @@
-import { useQuery } from '@tanstack/react-query'
-import type { inferRouterOutputs } from '@trpc/server'
-import { useEffect } from 'react'
-import { responseSubtitle, WindowControl } from '@/components/design-system'
-import { compactTokens, duration } from '@/lib/format'
-import { isHostedMode } from '@/lib/hub-mode'
-import { setWorkCounts, useWindowState } from '@/lib/window'
-import { trpc } from '@/trpc/client'
 import { Badge } from '@bottega/hub-ui/badge'
 import { PageHeader, SectionTitle } from '@bottega/hub-ui/page-header'
 import { StatRow, StatTile } from '@bottega/hub-ui/stat'
@@ -17,6 +9,14 @@ import {
   TableHeader,
   TableRow,
 } from '@bottega/hub-ui/table'
+import { useQuery } from '@tanstack/react-query'
+import type { inferRouterOutputs } from '@trpc/server'
+import { useEffect } from 'react'
+import { responseSubtitle, WindowControl } from '@/components/design-system'
+import { compactTokens, duration } from '@/lib/format'
+import { isHostedMode } from '@/lib/hub-mode'
+import { setWorkCounts, useWindowState } from '@/lib/window'
+import { trpc } from '@/trpc/client'
 import type { AppRouter } from '../../../src/trpc/router.ts'
 
 type Outputs = inferRouterOutputs<AppRouter>['insight']

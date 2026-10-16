@@ -1,10 +1,10 @@
-import { type ReactNode, type Ref, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@bottega/hub-ui/button'
 import { Kbd } from '@bottega/hub-ui/kbd'
 import { Select } from '@bottega/hub-ui/listbox/select'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { Popover } from '@bottega/hub-ui/popover'
 import { classes } from '@bottega/hub-ui/text/classes'
+import { type ReactNode, type Ref, useEffect, useMemo, useRef, useState } from 'react'
 import { DocsFacts } from './facts.tsx'
 import { FilterPanel } from './filter-panel.tsx'
 import {

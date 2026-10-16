@@ -1,8 +1,3 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { useState } from 'react'
-import { Collection } from '@/components/collection'
-import { DesignCatalog } from '@/components/design-catalog'
-import { ProjectMark, SourceMark } from '@/components/design-system'
 import { Badge } from '@bottega/hub-ui/badge'
 import { LiveDot } from '@bottega/hub-ui/badge/live-dot'
 import { Button } from '@bottega/hub-ui/button'
@@ -25,6 +20,11 @@ import {
   TableRow,
 } from '@bottega/hub-ui/table'
 import { Tabs } from '@bottega/hub-ui/tabs'
+import { createFileRoute } from '@tanstack/react-router'
+import { useState } from 'react'
+import { Collection } from '@/components/collection'
+import { DesignCatalog } from '@/components/design-catalog'
+import { ProjectMark, SourceMark } from '@/components/design-system'
 
 /**
  * A project's color comes from its register settings, so the catalogue needs a

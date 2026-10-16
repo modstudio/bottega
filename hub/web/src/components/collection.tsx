@@ -1,4 +1,3 @@
-import { type ReactNode, useState } from 'react'
 import { EmptyState } from '@bottega/hub-ui/empty-state'
 import { Input } from '@bottega/hub-ui/field/input'
 import { PAGE_SIZES, type PageSize, Pagination } from '@bottega/hub-ui/pagination'
@@ -12,6 +11,7 @@ import {
   TableRow,
 } from '@bottega/hub-ui/table'
 import { TableCard } from '@bottega/hub-ui/table-card'
+import { type ReactNode, useState } from 'react'
 
 /** A list the server pages: rows arrive as one page and `total` counts every match. */
 export type ServerPaging = {

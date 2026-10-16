@@ -95,7 +95,7 @@ for (const rel of new Glob('**/*.{ts,tsx,js,mjs,json,py,sh}').scanSync({ cwd: RO
     if (!NAME.test(line)) return
     // A workspace import names the package protocol declared in package.json; source cannot
     // interpolate an imported brand constant into a module specifier.
-    if (/^import .* from ['"]@bottega\/hub-ui\//.test(line.trim())) return
+    if (/from ['"]@bottega\/hub-ui\//.test(line.trim())) return
     // A comment is prose: see the header. `*` covers block-comment
     // continuation lines, which is how most of these are written.
     const t = line.trim()
