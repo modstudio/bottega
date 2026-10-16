@@ -11,6 +11,7 @@ import {
 import {
   type DocAudience,
   type DocAudiences,
+  type DocForm,
   type DocKind,
   type DocStatus,
   effectiveDocSummary,
@@ -38,6 +39,7 @@ export type PublicRecordDoc = {
   summarySource: 'written' | 'derived'
   featured?: boolean
   kind: DocKind
+  form?: DocForm | null
 }
 
 export type PublicRecordDocTreeItem = Omit<PublicRecordDoc, 'body'>
@@ -89,6 +91,7 @@ export function publicRecordDocRow(row: Record<string, unknown>): PublicRecordDo
     ...effectiveDocSummary(row.summary == null ? null : String(row.summary), body),
     featured: row.featured == null ? false : Boolean(row.featured),
     kind: String(row.kind) as DocKind,
+    form: row.form == null ? null : (String(row.form) as DocForm),
   }
 }
 
@@ -140,7 +143,7 @@ export async function listPublicRecordDocs(input: {
 }): Promise<PublicRecordDocTreeItem[]> {
   return publicRead(input.url, async (tx) => {
     const rows = await tx`
-      SELECT id, slug, title, body, summary, featured, parent_id, position, updated_at, scope, subject, audiences, kind
+      SELECT id, slug, title, body, summary, featured, parent_id, position, updated_at, scope, subject, audiences, kind, form
       FROM doc
       WHERE kind = 'article'
       ORDER BY position, title, id
@@ -158,7 +161,7 @@ export async function getPublicRecordDoc(input: {
 }): Promise<PublicRecordDoc | null> {
   return publicRead(input.url, async (tx) => {
     const rows = await tx`
-      SELECT id, slug, title, body, summary, featured, parent_id, position, updated_at, scope, subject, audiences, kind
+      SELECT id, slug, title, body, summary, featured, parent_id, position, updated_at, scope, subject, audiences, kind, form
       FROM doc
       WHERE id=${input.id}::uuid AND kind = 'article'
     `

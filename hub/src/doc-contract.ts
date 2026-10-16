@@ -57,6 +57,7 @@ export const DocTreeItemSchema = z.object({
   featured: z.boolean().optional(),
   status: z.enum(DOC_STATUSES).optional(),
   kind: z.enum(DOC_KINDS),
+  form: z.enum(DOC_FORMS).nullable().optional(),
   replacementSlug: z.string().nullable().optional(),
 })
 

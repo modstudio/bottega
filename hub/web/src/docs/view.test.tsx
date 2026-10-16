@@ -1,5 +1,11 @@
 import { expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRouter,
+  RouterProvider,
+} from '@tanstack/react-router'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { EMPTY_FILTERS } from './filters.ts'
 import type { DocsTreeItem } from './types.ts'
@@ -75,9 +81,9 @@ const items: DocsTreeItem[] = [
   },
 ]
 
-function render(partial: Partial<Parameters<typeof DocsView>[0]> = {}) {
+function view(partial: Partial<Parameters<typeof DocsView>[0]> = {}) {
   const queryClient = new QueryClient()
-  return renderToStaticMarkup(
+  return (
     <QueryClientProvider client={queryClient}>
       <DocsView
         sourceLabel="Local store"
@@ -114,8 +120,22 @@ function render(partial: Partial<Parameters<typeof DocsView>[0]> = {}) {
         framed={false}
         {...partial}
       />
-    </QueryClientProvider>,
+    </QueryClientProvider>
   )
+}
+
+function render(partial: Partial<Parameters<typeof DocsView>[0]> = {}) {
+  return renderToStaticMarkup(view(partial))
+}
+
+async function renderWithRouter(partial: Partial<Parameters<typeof DocsView>[0]>) {
+  const root = createRootRoute({ component: () => view(partial) })
+  const router = createRouter({
+    routeTree: root,
+    history: createMemoryHistory({ initialEntries: ['/'] }),
+  })
+  await router.load()
+  return renderToStaticMarkup(<RouterProvider router={router} />)
 }
 
 test('the docs page shows one tree with audience in the filter control', () => {
@@ -202,6 +222,36 @@ test('a leading title heading in the body is not rendered again', () => {
   })
   expect(html).toContain('Every piece of work carries a key.')
   expect(html).not.toContain('<h1>Your first run</h1>')
+})
+
+test('an articles fence renders the selected document children as the standard table', async () => {
+  const child = {
+    ...items[1]!,
+    form: 'how-to' as const,
+    summary: 'Start the first run.',
+    summarySource: 'written' as const,
+  }
+  const grandchild: DocsTreeItem = {
+    ...child,
+    id: '2c',
+    slug: 'next-step',
+    title: 'Next step',
+    parentId: child.id,
+    summary: 'Continue the run.',
+  }
+  const html = await renderWithRouter({
+    items: [items[0]!, child, grandchild],
+    project: 'atlas',
+    selectedId: '1',
+    doc: { ...items[0]!, body: '## Articles\n\n```articles\n```\n' },
+  })
+  expect(html).toContain('<th>Kind</th><th>Article</th><th>What it covers</th>')
+  expect(html).toContain('<strong>Your first run</strong>')
+  expect(html).toContain('↳ <a')
+  expect(html).toContain('Next step</a>')
+  expect(html).toContain('How-to')
+  expect(html).toContain('Start the first run.')
+  expect(html).toContain('Continue the run.')
 })
 
 test('a directly opened document is shown independently of navigation filters', () => {

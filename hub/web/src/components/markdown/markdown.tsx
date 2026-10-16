@@ -1,4 +1,13 @@
-import { isValidElement, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  createContext,
+  isValidElement,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkDirective from 'remark-directive'
 import remarkGfm from 'remark-gfm'
@@ -14,6 +23,10 @@ const HIGHLIGHT_OPTIONS: { detect: boolean; plainText: string[] } = {
   detect: false,
   plainText: ['mermaid'],
 }
+
+export const MarkdownFenceRenderers = createContext<{
+  articleList?: () => ReactNode
+}>({})
 
 function DocTable({ children }: { children?: ReactNode }) {
   return (
@@ -69,6 +82,7 @@ function DocPre({
   node?: unknown
   onHighlightNeeded: () => void
 }) {
+  const renderers = useContext(MarkdownFenceRenderers)
   const child = Array.isArray(children) ? children[0] : children
   const use = fenceUse(nodeLanguage(child))
   useEffect(() => {
@@ -77,6 +91,7 @@ function DocPre({
   if (use === 'diagram' && isValidElement(child)) {
     return <MermaidSlot source={nodeText((child.props as { children?: ReactNode }).children)} />
   }
+  if (use === 'article-list') return renderers.articleList?.() ?? null
   return <pre {...props}>{children}</pre>
 }
 
