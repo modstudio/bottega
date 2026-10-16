@@ -3,7 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
@@ -669,6 +669,7 @@ function resolveArtifact(
     requireDoc(`--artifact doc:${ref.id}`, ref.id, identity, d)
     return { ref: raw, exists: true }
   }
+  if (ref.kind === 'pull-request') return { ref: ref.url, exists: true }
   if (ref.kind === 'probe' || ref.kind === 'exec') {
     const row = d
       .query<
@@ -699,6 +700,32 @@ function resolveArtifact(
     }
   }
   return resolveTaskArtifact(ref, raw, identity, ports)
+}
+
+function pullRequestEvidence(
+  url: string,
+  identity: CursorIdentity,
+  d: Database,
+  ports: FloorEvidencePorts,
+): NonNullable<ValidatedEvidence['pullRequest']> {
+  const project = projectByName(identity.project, d)
+  if (!project) throw new Error(`project ${identity.project} is not registered`)
+  const trunk = project.settings.trunk?.trim()
+  if (!identity.branch || !trunk)
+    throw new Error(
+      `--artifact ${url} cannot be checked because this cursor has no branch or its project has no trunk`,
+    )
+  const fallback = productionFloorPorts().viewPullRequest!
+  const view = invokeFloorEvidencePort(ports, 'viewPullRequest', fallback, identity.project, url)
+  if (!view.url || !view.headRefName || !view.baseRefName)
+    throw new Error(`--artifact ${url} did not resolve to a pull request with a head and base`)
+  if (view.url.replace(/\/$/, '') !== url.replace(/\/$/, ''))
+    throw new Error(`--artifact ${url} resolved as ${view.url}, not the supplied pull-request link`)
+  return {
+    url: view.url,
+    headMatches: view.headRefName === identity.branch,
+    baseMatches: view.baseRefName === trunk,
+  }
 }
 
 function gatherTask(
@@ -789,7 +816,7 @@ function gatherSatisfy(id: number, cursorId: number, d: Database): ValidatedEvid
 function gatheredCommandEvidence(
   kind: 'probe' | 'exec',
   id: number,
-  row: { exit_code: number; session_id: string | null; created_at: string },
+  row: { command: string; exit_code: number; session_id: string | null; created_at: string },
   identity: CursorIdentity,
   cursorId: number,
   d: Database,
@@ -803,8 +830,23 @@ function gatheredCommandEvidence(
       sessionMatches: session.sessionMatches,
       sessionAdoptedCursor: session.sessionAdoptedCursor,
       createdAfterStepActivation: row.created_at >= identity.stepActivatedAt,
+      pullRequestCreate: isPullRequestCreateCommand(row.command),
     },
   }
+}
+
+function isPullRequestCreateCommand(raw: string): boolean {
+  let value: unknown
+  try {
+    value = JSON.parse(raw)
+  } catch {
+    return false
+  }
+  if (!Array.isArray(value) || !value.every((part) => typeof part === 'string')) return false
+  const command = value as string[]
+  return (
+    basename(command[0] ?? '') === PLATFORM_SLUG && command[1] === 'pr' && command[2] === 'create'
+  )
 }
 
 function offeredArtifactRunEvidence(
@@ -879,11 +921,19 @@ export function gatherValidatedEvidence(input: {
       resolveCheckout,
     )
     Object.assign(gathered, offeredArtifactRunEvidence(parsed, d))
+    if (parsed.kind === 'pull-request')
+      gathered.pullRequest = pullRequestEvidence(parsed.url, input.identity, d, ports)
     if (parsed.kind === 'probe' || parsed.kind === 'exec') {
       const row = d
-        .query<{ exit_code: number; session_id: string | null; created_at: string }, [number]>(
-          'SELECT exit_code,session_id,created_at FROM probe WHERE id=?',
-        )
+        .query<
+          {
+            command: string
+            exit_code: number
+            session_id: string | null
+            created_at: string
+          },
+          [number]
+        >('SELECT command,exit_code,session_id,created_at FROM probe WHERE id=?')
         .get(parsed.id)!
       Object.assign(
         gathered,

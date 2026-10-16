@@ -20,6 +20,8 @@ const ruling: Floor = {
 }
 const commandExit: Floor = { ...ruling, kind: 'command-exit' }
 const artifact: Floor = { ...ruling, kind: 'recorded-artifact' }
+const pullRequestExit: Floor = { ...commandExit, commandEvidence: 'pull-request' }
+const pullRequestArtifact: Floor = { ...artifact, commandEvidence: 'pull-request' }
 const tracker: Floor = {
   ...ruling,
   kind: 'tracker-transition',
@@ -344,6 +346,53 @@ test('a recorded artifact satisfies that floor', () => {
     action: 'allow',
     refs: [{ flag: '--artifact', value: 'probe:3' }],
   })
+})
+
+test('pull-request evidence rejects generic artifacts and unrelated successful commands', () => {
+  for (const evidence of [presentArtifact, passingExec, passingRun, passingProbe, passingGate])
+    expect(
+      decide({
+        floors: [pullRequestExit, pullRequestArtifact],
+        evidence,
+      }).action,
+    ).toBe('refuse')
+})
+
+test('pull-request evidence accepts pr-create or a link with the cursor head and base', () => {
+  expect(
+    decide({
+      floors: [pullRequestExit, pullRequestArtifact],
+      evidence: {
+        exec: { ...passingExec.exec!, pullRequestCreate: true },
+      },
+    }).action,
+  ).toBe('allow')
+  expect(
+    decide({
+      floors: [pullRequestExit, pullRequestArtifact],
+      evidence: {
+        artifact: { ref: 'https://github.com/acme/app/pull/7', exists: true },
+        pullRequest: {
+          url: 'https://github.com/acme/app/pull/7',
+          headMatches: true,
+          baseMatches: true,
+        },
+      },
+    }).action,
+  ).toBe('allow')
+  expect(
+    decide({
+      floors: [pullRequestExit, pullRequestArtifact],
+      evidence: {
+        artifact: { ref: 'https://github.com/acme/app/pull/7', exists: true },
+        pullRequest: {
+          url: 'https://github.com/acme/app/pull/7',
+          headMatches: true,
+          baseMatches: false,
+        },
+      },
+    }).action,
+  ).toBe('refuse')
 })
 
 test('tracker-transition accepts a raw status match', () => {
@@ -744,6 +793,10 @@ test('parseArtifactRef accepts each recorded-artifact form', () => {
   expect(parseArtifactRef('doc:3')).toEqual({ kind: 'doc', id: 3 })
   expect(parseArtifactRef('run:8')).toEqual({ kind: 'run', id: 8 })
   expect(parseArtifactRef('attached-text:14')).toEqual({ kind: 'attached-text', id: 14 })
+  expect(parseArtifactRef('https://github.com/acme/app/pull/15')).toEqual({
+    kind: 'pull-request',
+    url: 'https://github.com/acme/app/pull/15',
+  })
   expect(parseArtifactRef('8')).toEqual({ kind: 'id', id: 8 })
   expect(parseArtifactRef('nope')).toMatchObject({ error: expect.stringContaining('--artifact') })
 })
@@ -763,6 +816,16 @@ test('catalogueFloors marks deferrable kinds and pull-request tracker floors', (
   expect(catalogueFloors(['command-exit'], [], 'done', false, false, 'gate')[0]).toMatchObject({
     commandEvidence: 'gate',
   })
+  expect(
+    catalogueFloors(
+      ['command-exit', 'recorded-artifact'],
+      [],
+      'done',
+      false,
+      false,
+      'pull-request',
+    ),
+  ).toEqual([pullRequestExit, pullRequestArtifact])
 })
 
 test('catalogueFloors refuses an unknown kind', () => {

@@ -10,7 +10,13 @@ type CheckoutResolution = {
   headIsTrunkTipOrAncestor?: boolean
 }
 
-type PullRequestMergeView = { state: string; mergedAt: string | null }
+type PullRequestView = {
+  state: string
+  mergedAt: string | null
+  headRefName?: string
+  baseRefName?: string
+  url?: string
+}
 
 type HubTaskRead = {
   key: string
@@ -28,7 +34,7 @@ export type FloorEvidencePorts = {
     headCommit: string | null,
     expectedBranch: string | null,
   ) => CheckoutResolution
-  viewPullRequest?: (project: string, number: number) => PullRequestMergeView
+  viewPullRequest?: (project: string, reference: number | string) => PullRequestView
   resolveTreeCommit?: (worktree: string) => string | null
 }
 

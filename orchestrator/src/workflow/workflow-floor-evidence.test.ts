@@ -131,7 +131,7 @@ const database = () => {
     'fixture',
     '/fixture',
     'bun',
-    '{}',
+    '{"trunk":"main"}',
   )
   d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
     'other',
@@ -578,11 +578,43 @@ test('exec evidence is branch-bound and carries its exit code', () => {
   ).run()
   expect(gather(d, { artifact: 'exec:2' })).toMatchObject({
     artifact: { ref: 'exec:2', exists: true },
-    exec: { id: 2, exitCode: 0 },
+    exec: { id: 2, exitCode: 0, pullRequestCreate: false },
   })
   expect(() => gather(d, { artifact: 'probe:2' })).toThrow(
     '--artifact probe:2 is recorded as exec:2',
   )
+
+  d.query(
+    `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind)
+     VALUES ('${newRecordId()}',?,'/fixture/work','abc',0,'','2026-09-01','exec')`,
+  ).run(JSON.stringify([PLATFORM_SLUG, 'pr', 'create']))
+  expect(gather(d, { artifact: 'exec:3' }).exec).toMatchObject({
+    id: 3,
+    pullRequestCreate: true,
+  })
+})
+
+test('pull-request artifacts resolve and match the cursor branch and project trunk', () => {
+  const d = database()
+  const url = 'https://github.com/acme/app/pull/15'
+  expect(
+    gather(
+      d,
+      { artifact: url },
+      {
+        viewPullRequest: () => ({
+          state: 'OPEN',
+          mergedAt: null,
+          headRefName: 'DEV-977-work',
+          baseRefName: 'main',
+          url,
+        }),
+      },
+    ),
+  ).toMatchObject({
+    artifact: { ref: url, exists: true },
+    pullRequest: { url, headMatches: true, baseMatches: true },
+  })
 })
 
 test("exec evidence recognizes only a cursor's recorded adopting session", () => {

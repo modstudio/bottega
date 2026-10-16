@@ -14,7 +14,7 @@ export const floorKinds = [
 ] as const
 export type FloorKind = (typeof floorKinds)[number]
 export type EnforcementMode = 'note-only' | 'floors'
-export type CommandEvidence = 'gate'
+export type CommandEvidence = 'gate' | 'pull-request'
 
 export const floorGuidance = {
   ruling: `call \`await_workflow_ruling\` (or \`${PLATFORM_SLUG} workflow await\`), answer it with \`rule_workflow\`, then pass \`--ruling <the returned question id>\`; where you rule the step yourself, pass \`self_ruling\` with \`self_ruling_basis\` (or \`--self-ruling <text>\` with \`--basis <text>\`) on the closing call`,
@@ -56,6 +56,7 @@ export type ArtifactRef =
   | { kind: 'doc'; id: number }
   | { kind: 'run'; id: number }
   | { kind: 'attached-text'; id: number }
+  | { kind: 'pull-request'; url: string }
   | { kind: 'id'; id: number }
 
 type ValidatedSatisfy =
@@ -100,8 +101,14 @@ export type ValidatedEvidence = {
     sessionMatches: boolean
     sessionAdoptedCursor: boolean
     createdAfterStepActivation: boolean
+    pullRequestCreate?: boolean
   }
   artifact?: { ref: string; exists: boolean }
+  pullRequest?: {
+    url: string
+    headMatches: boolean
+    baseMatches: boolean
+  }
   task?: {
     key: string
     status: string | null
@@ -167,9 +174,11 @@ export function parseArtifactRef(value: string): ArtifactRef | { error: string }
   if (run) return { kind: 'run', id: Number(run[1]) }
   const attachedText = /^attached-text:(\d+)$/i.exec(trimmed)
   if (attachedText) return { kind: 'attached-text', id: Number(attachedText[1]) }
+  if (/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+\/?$/i.test(trimmed))
+    return { kind: 'pull-request', url: trimmed }
   if (/^\d+$/.test(trimmed)) return { kind: 'id', id: Number(trimmed) }
   return {
-    error: `--artifact ${trimmed} is not a doc id, task:<KEY>, task:<KEY>#comment:<id>, run id, probe:<id>, exec:<id>, or attached-text:<id>`,
+    error: `--artifact ${trimmed} is not a doc id, task:<KEY>, task:<KEY>#comment:<id>, run id, probe:<id>, exec:<id>, attached-text:<id>, or GitHub pull-request link`,
   }
 }
 
@@ -198,7 +207,7 @@ export function catalogueFloors(
       expectedStatus: status,
       requirePullRequest: kind === 'tracker-transition' && requirePullRequest,
       operatorRuling: kind === 'ruling' && operatorRuling,
-      ...(kind === 'command-exit' && commandEvidence ? { commandEvidence } : {}),
+      ...(commandEvidence ? { commandEvidence } : {}),
     }))
   })
 }
@@ -254,8 +263,10 @@ function commandExitMet(floor: Floor, evidence: ValidatedEvidence): boolean {
   const execOk = Boolean(
     evidence.exec?.exitCode === floor.expectedExitCode &&
       (evidence.exec.sessionMatches || evidence.exec.sessionAdoptedCursor) &&
-      evidence.exec.createdAfterStepActivation,
+      evidence.exec.createdAfterStepActivation &&
+      (floor.commandEvidence !== 'pull-request' || evidence.exec.pullRequestCreate),
   )
+  if (floor.commandEvidence === 'pull-request') return execOk
   return gateOk || runOk || probeOk || execOk
 }
 
@@ -301,7 +312,10 @@ function taskMet(floor: Floor, evidence: ValidatedEvidence): boolean {
 function floorIsMet(floor: Floor, evidence: ValidatedEvidence): boolean {
   if (floor.kind === 'ruling') return rulingMet(floor, evidence)
   if (floor.kind === 'command-exit') return commandExitMet(floor, evidence)
-  if (floor.kind === 'recorded-artifact') return evidence.artifact?.exists === true
+  if (floor.kind === 'recorded-artifact')
+    return floor.commandEvidence === 'pull-request'
+      ? Boolean(evidence.pullRequest?.headMatches && evidence.pullRequest.baseMatches)
+      : evidence.artifact?.exists === true
   if (floor.kind === 'tracker-transition') return taskMet(floor, evidence)
   throw new Error(`unknown floor kind "${String(floor.kind)}"`)
 }
@@ -323,6 +337,15 @@ function trackerUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string 
     : ` reading back as ${floor.expectedStatus}${pullRequest}`
 }
 
+function pullRequestUnmetMessage(floor: Floor): string | null {
+  if (floor.commandEvidence !== 'pull-request') return null
+  if (floor.kind === 'command-exit')
+    return `floor command-exit is unmet: pass --artifact exec:<id> from a successful \`${PLATFORM_SLUG} pr create\` command recorded for this step`
+  if (floor.kind === 'recorded-artifact')
+    return 'floor recorded-artifact is unmet: pass --artifact <pull-request link> whose head and base match this cursor'
+  return null
+}
+
 function floorUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string {
   if (floor.kind === 'ruling' && floor.operatorRuling)
     return `floor ruling is unmet: no operator answer on this step; record the question with \`${PLATFORM_SLUG} workflow await\`; the operator answers it`
@@ -330,6 +353,8 @@ function floorUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string {
     const commit = evidence.tree?.commit ?? '<current tree commit>'
     return `floor command-exit is unmet: no passing gate record for ${evidence.tree?.project ?? 'this project'} commit ${commit}; run \`${PLATFORM_SLUG} gate run\` in the tree at commit ${commit}, then pass \`--gate <gate execution id>\``
   }
+  const pullRequest = pullRequestUnmetMessage(floor)
+  if (pullRequest) return pullRequest
   const existing =
     `floor ${floor.kind} is unmet; pass ${flagForFloor(floor.kind)}` +
     (floor.kind === 'command-exit'

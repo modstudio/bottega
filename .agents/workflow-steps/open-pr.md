@@ -4,6 +4,7 @@ stage: ship
 floor:
   - command-exit
   - recorded-artifact
+commandEvidence: pull-request
 job: null
 autonomy: ask
 needs:
