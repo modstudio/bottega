@@ -84,6 +84,7 @@ const descriptions: Record<string, string> = {
   replace: 'replace conflicting imported values',
   name: 'set the project or profile name',
   stack: 'set the project stack',
+  space: 'select a record space by id or slug',
   settings: 'set project settings from JSON',
   path: 'set the project checkout path',
   axis: 'select a routing profile axis',
@@ -459,6 +460,7 @@ const projectSpecs: readonly Spec[] = [
     [
       o('--name <value>'),
       o('--stack <value>'),
+      o('--space <value>'),
       o('--settings <value>'),
       o('--no-canon'),
       o('--allow-incomplete'),

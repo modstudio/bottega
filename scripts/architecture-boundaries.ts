@@ -619,6 +619,7 @@ export const importBoundaries: ImportBoundary[] = [
       'node:fs',
       '../database/db.ts',
       '../lens/lenses.ts',
+      './project-add-record.ts',
       './project-hosted-write.ts',
       './project-record-identity.ts',
       './project-rename.ts',

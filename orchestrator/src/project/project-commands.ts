@@ -10,6 +10,7 @@ import { tryWriteContention, writeTransaction } from '../database/db.ts'
 import { listLenses, selectProjectProfile } from '../lens/lenses.ts'
 import { lifecycleForm } from '../worktree/worktree-lifecycle.ts'
 import { migrateCreate } from '../worktree/worktree-template.ts'
+import { projectAddDecision } from './project-add-record.ts'
 import { hostedProjectDestination, refuseHostedProjectSpaceChange } from './project-hosted-write.ts'
 import { fillProjectRecordIds } from './project-record-identity.ts'
 import { persistLocalProjectSet } from './project-rename.ts'
@@ -134,12 +135,14 @@ export type AddProjectInput = {
   canon: boolean
   settings: ProjectSettings
   allowIncomplete: boolean
+  stackWasRequested?: boolean
+  selectedSpace?: string
 }
 
 export async function addProject(
   input: AddProjectInput,
   requireMembership: (space: string) => Promise<unknown>,
-): Promise<{ project: Project; wasRetired: boolean }> {
+): Promise<{ project: Project; wasRetired: boolean; adoptedSpace?: string }> {
   if (!existsSync(input.path)) throw new Error(`no such directory: ${input.path}`)
   const malformed = validateProjectSettings(input.settings, input.path, {
     validateKeyPrefixes: Object.hasOwn(input.settings, 'keyPrefixes'),
@@ -149,25 +152,45 @@ export async function addProject(
   })
   if (malformed.length) throw new Error(malformed.join('\n'))
   await validateDeclaredSpace(input.settings, requireMembership)
+  const decision = await projectAddDecision({
+    name: input.name,
+    requestedStack: input.stack,
+    stackWasRequested: input.stackWasRequested === true,
+    requestedSettings: input.settings,
+    selectedSpace: input.selectedSpace,
+  })
+  if (decision.kind === 'refuse') throw new Error(decision.reason)
   const candidate = {
     id: 0,
-    recordId: newRecordId(),
+    recordId: decision.kind === 'adopt' ? decision.recordId : newRecordId(),
     name: input.name,
     path: input.path,
-    stack: input.stack,
+    stack: decision.kind === 'adopt' ? decision.stack : input.stack,
     canon: input.canon,
     retiredAt: null,
-    settings: input.settings,
+    settings: decision.settings,
   }
+  const adoptedMalformed = validateProjectSettings(candidate.settings, input.path, {
+    validateKeyPrefixes: Object.hasOwn(candidate.settings, 'keyPrefixes'),
+    currentProjectName: input.name,
+    register: projects(),
+    enabledLensIds: enabledLensIds(),
+  })
+  if (adoptedMalformed.length) throw new Error(adoptedMalformed.join('\n'))
   const incomplete = incompleteWorktreeProblems(candidate)
   if (incomplete.length && !input.allowIncomplete) throw new Error(incomplete.join('\n'))
   assertRegisterBranches(candidate)
   const wasRetired = Boolean(retiredProjectByName(input.name))
-  const recordId = await writeHostedProject(candidate)
+  const recordId =
+    decision.kind === 'adopt' ? decision.recordId : await writeHostedProject(candidate)
   upsertProject({ ...candidate, recordId })
   const project = projectByName(input.name)
   if (!project) throw new Error(`project ${input.name} was not registered`)
-  return { project, wasRetired }
+  return {
+    project,
+    wasRetired,
+    ...(decision.kind === 'adopt' ? { adoptedSpace: decision.space } : {}),
+  }
 }
 
 async function addProjectCommand(
@@ -191,7 +214,7 @@ async function addProjectCommand(
       throw new Error(`--settings must be JSON: ${e}`)
     }
   }
-  const { project, wasRetired } = await addProject(
+  const { project, wasRetired, adoptedSpace } = await addProject(
     {
       path,
       name,
@@ -199,6 +222,8 @@ async function addProjectCommand(
       canon: !has('no-canon'),
       settings,
       allowIncomplete: has('allow-incomplete'),
+      stackWasRequested: has('stack'),
+      selectedSpace: flag('space'),
     },
     requireMembership,
   )
@@ -206,7 +231,9 @@ async function addProjectCommand(
     presentation.log(JSON.stringify(listedProjectJson(project)))
     return
   }
-  if (wasRetired) {
+  if (adoptedSpace) {
+    presentation.log(`adopted ${name} from record space ${adoptedSpace}  ${path}`)
+  } else if (wasRetired) {
     presentation.log(`un-retired ${name}`)
   } else {
     presentation.log(

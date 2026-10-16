@@ -3,19 +3,20 @@
 import { SQL } from 'bun'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
-import { type HostedProjectColumns, hostedProjectColumns } from './record-project-columns.ts'
+import {
+  type HostedProjectColumns,
+  hostedProjectColumns,
+  hostedProjectSettings,
+} from './record-project-columns.ts'
 
 export type RecordProject = {
   id: string
   spaceId: string
   spaceName: string
   name: string
-  keyPrefixes: string[]
   stack: string | null
-  managedContext: boolean
-  landingBranch: string | null
-  color: string | null
-  colorDark: string | null
+  canon: boolean
+  settings: Record<string, unknown>
   retiredAt: string | null
 }
 
@@ -192,23 +193,47 @@ export async function listRecordProjects(
   input: { url: string } & TenantPrincipal,
 ): Promise<RecordProject[]> {
   return tenant(input, async (tx) => {
-    const rows =
-      await tx`SELECT p.id, p.space_id, s.name AS space_name, p.name, p.key_prefixes, p.stack,
-        p.managed_context, p.landing_branch, p.color, p.color_dark, p.retired_at
+    const rows = await tx`SELECT p.*, s.name AS space_name
         FROM project p JOIN space s ON s.id=p.space_id ORDER BY s.name,p.name`
-    return rows.map((row: Record<string, unknown>) => ({
-      id: String(row.id),
-      spaceId: String(row.space_id),
-      spaceName: String(row.space_name),
-      name: String(row.name),
-      keyPrefixes: row.key_prefixes as string[],
-      stack: row.stack == null ? null : String(row.stack),
-      managedContext: row.managed_context === true,
-      landingBranch: row.landing_branch == null ? null : String(row.landing_branch),
-      color: row.color == null ? null : String(row.color),
-      colorDark: row.color_dark == null ? null : String(row.color_dark),
-      retiredAt: row.retired_at == null ? null : new Date(String(row.retired_at)).toISOString(),
-    }))
+    return rows.map((row: Record<string, unknown>) => {
+      const columns: HostedProjectColumns = {
+        keyPrefixes: row.key_prefixes as string[],
+        managedContext: row.managed_context === true,
+        landingBranch: row.landing_branch == null ? null : String(row.landing_branch),
+        productionBranch: row.production_branch == null ? null : String(row.production_branch),
+        gate: row.gate == null ? null : String(row.gate),
+        focusedTests: row.focused_tests as HostedProjectColumns['focusedTests'],
+        requireCleanMain: row.require_clean_main !== false,
+        color: row.color == null ? null : String(row.color),
+        colorDark: row.color_dark == null ? null : String(row.color_dark),
+        envPrefix: row.env_prefix == null ? null : String(row.env_prefix),
+        mcpServer: row.mcp_server == null ? null : String(row.mcp_server),
+        workerMcpServers: row.worker_mcp_servers as string[] | null,
+        secretPaths: row.secret_paths as string[] | null,
+        mcpProbeTool: row.mcp_probe_tool == null ? null : String(row.mcp_probe_tool),
+        mcpReaderTools: row.mcp_reader_tools as HostedProjectColumns['mcpReaderTools'],
+        docs: row.docs as HostedProjectColumns['docs'],
+        reference: row.reference as HostedProjectColumns['reference'],
+        signals: row.signals as HostedProjectColumns['signals'],
+        review: row.review as HostedProjectColumns['review'],
+        testSubstance: row.test_substance as HostedProjectColumns['testSubstance'],
+        mechanicalChecks: row.mechanical_checks as HostedProjectColumns['mechanicalChecks'],
+        release: row.release as HostedProjectColumns['release'],
+        states: row.states as HostedProjectColumns['states'],
+        tracker: row.tracker as HostedProjectColumns['tracker'],
+        worktree: row.worktree as HostedProjectColumns['worktree'],
+      }
+      return {
+        id: String(row.id),
+        spaceId: String(row.space_id),
+        spaceName: String(row.space_name),
+        name: String(row.name),
+        stack: row.stack == null ? null : String(row.stack),
+        canon: row.canon === true,
+        settings: hostedProjectSettings(columns),
+        retiredAt: row.retired_at == null ? null : new Date(String(row.retired_at)).toISOString(),
+      }
+    })
   })
 }
 

@@ -12,6 +12,18 @@ const module = (file: string, allowed: string[]): ProjectModule => ({
 })
 
 export const projectModules: ProjectModule[] = [
+  module('orchestrator/src/project/project-add-decision.ts', [
+    '../../../shared/brand.ts',
+    '../record/record-project-columns.ts',
+    './project-settings.ts',
+  ]),
+  module('orchestrator/src/project/project-add-record.ts', [
+    '../../../shared/record-space-membership.ts',
+    '../record/record-api-client.ts',
+    '../record/record-write-authority.ts',
+    './project-add-decision.ts',
+    './project-settings.ts',
+  ]),
   module('orchestrator/src/project/project-lock.ts', [
     '../../../shared/brand.ts',
     '../database/db.ts',

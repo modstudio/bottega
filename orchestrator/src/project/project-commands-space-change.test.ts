@@ -78,7 +78,18 @@ test('project set attributes an existing hosted row to its own space slug', asyn
     whoami: async () => identity,
     listProjects: async (destination) => {
       listed.push(destination?.destinationSpaceId ?? '')
-      return [{ id: newRecordId(), name: 'space-move', spaceId: 'space-active' }]
+      return [
+        {
+          id: newRecordId(),
+          name: 'space-move',
+          spaceId: 'space-active',
+          spaceName: 'Active Team',
+          stack: null,
+          canon: true,
+          settings: {},
+          retiredAt: null,
+        },
+      ]
     },
   })
   await expect(
@@ -121,7 +132,16 @@ test('fill-absent refuses a hosted row elsewhere before writing hosted or local 
     ...createMemoryRecordApiClient(),
     whoami: async () => identity,
     listProjects: async () => [
-      { id: newRecordId(), name: 'fill-space-move', spaceId: 'space-active' },
+      {
+        id: newRecordId(),
+        name: 'fill-space-move',
+        spaceId: 'space-active',
+        spaceName: 'Active Team',
+        stack: null,
+        canon: true,
+        settings: {},
+        retiredAt: null,
+      },
     ],
     upsertProject: async (input) => {
       writes += 1

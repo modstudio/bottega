@@ -85,9 +85,18 @@ export type ProjectIdentityClient = {
     },
     destination?: RecordRequestDestination,
   ): Promise<{ id: string; name: string }>
-  listProjects(
-    destination?: RecordRequestDestination,
-  ): Promise<Array<{ id: string; name: string; spaceId: string }>>
+  listProjects(destination?: RecordRequestDestination): Promise<
+    Array<{
+      id: string
+      name: string
+      spaceId: string
+      spaceName: string
+      stack: string | null
+      canon: boolean
+      settings: Record<string, unknown>
+      retiredAt: string | null
+    }>
+  >
   retireProject(id: string, destination?: RecordRequestDestination): Promise<{ name: string }>
 }
 
@@ -118,7 +127,10 @@ export function projectIdentityClient(request: RecordClientRequest): ProjectIden
         ...destination,
       }),
     listProjects: (destination) =>
-      request<Array<{ id: string; name: string; spaceId: string }>>('/v1/projects', destination),
+      request<Awaited<ReturnType<ProjectIdentityClient['listProjects']>>>(
+        '/v1/projects',
+        destination,
+      ),
     retireProject: (id, destination) =>
       request<{ name: string }>(`/v1/projects/${encodeURIComponent(id)}/retire`, {
         method: 'POST',
