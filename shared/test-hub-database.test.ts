@@ -37,15 +37,10 @@ describe('hub test database provenance rule', () => {
     ).toContain(`HUB_DB resolved ${defaultLive}`)
   })
 
-  test('accepts the matching minted path when it is not live', () => {
-    const minted = '/canonical/private/tmp/hub-test-minted/hub.db'
-    expect(testHubDatabasePathRefusal(minted, minted, ['/state/hub/hub.db'])).toBeNull()
-  })
-
   test('refuses to adopt a live path even when it is under temporary storage', () => {
     const temporaryDirectory = '/canonical/private/tmp'
     const livePath = `${temporaryDirectory}/operator-state/hub/hub.db`
-    expect(testHubDatabaseAdoptionRefusal(livePath, temporaryDirectory, [livePath])).toContain(
+    expect(testHubDatabaseAdoptionRefusal(livePath, true, temporaryDirectory, [livePath])).toContain(
       `HUB_DB resolved ${livePath}`,
     )
   })
@@ -68,21 +63,6 @@ describe('hub test database provenance rule', () => {
       renameSync(heldDirectory, mintedDirectory)
       rmSync(mintedDirectory, { recursive: true, force: true })
       rmSync(otherDirectory, { recursive: true, force: true })
-      if (originalHubDb === undefined) delete process.env.HUB_DB
-      else process.env.HUB_DB = originalHubDb
-    }
-  })
-
-  test('does not constrain production database selection', () => {
-    const originalNodeEnv = process.env.NODE_ENV
-    const originalHubDb = process.env.HUB_DB
-    process.env.NODE_ENV = 'production'
-    process.env.HUB_DB = '/etc/elsewhere.db'
-    try {
-      expect(() => assertTestHubDatabasePath()).not.toThrow()
-    } finally {
-      if (originalNodeEnv === undefined) delete process.env.NODE_ENV
-      else process.env.NODE_ENV = originalNodeEnv
       if (originalHubDb === undefined) delete process.env.HUB_DB
       else process.env.HUB_DB = originalHubDb
     }

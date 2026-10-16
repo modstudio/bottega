@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync } from 'node:fs'
+import { existsSync, mkdtempSync, realpathSync } from 'node:fs'
 import { tmpdir, userInfo } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { resolveStatePaths, type StateEnvironment } from './state-directory.ts'
@@ -52,12 +52,14 @@ export function testHubDatabasePathRefusal(
 /** Decide whether a caller-created store is safe to adopt as test-owned state. */
 export function testHubDatabaseAdoptionRefusal(
   adoptedPath: string | null,
+  adoptedExists: boolean,
   temporaryDirectory: string,
   livePaths: readonly string[],
 ): string | null {
   const offset = adoptedPath === null ? null : relative(temporaryDirectory, adoptedPath)
   if (
     adoptedPath !== null &&
+    adoptedExists &&
     offset &&
     offset !== '..' &&
     !offset.startsWith(`..${sep}`) &&
@@ -67,7 +69,7 @@ export function testHubDatabaseAdoptionRefusal(
     return null
   }
   return (
-    `test process refuses hub database adoption: HUB_DB resolved ${adoptedPath ?? '<unset>'}; temporary directory is ${temporaryDirectory}\n` +
+    `test process refuses hub database adoption: HUB_DB resolved ${adoptedPath ?? '<unset>'}${adoptedPath !== null && !adoptedExists ? ' (missing)' : ''}; temporary directory is ${temporaryDirectory}\n` +
     'invariant: A test suite never falls back to the live hub database.\n' +
     'cleared by: adopt only a caller-created hub store under the operating system temporary directory'
   )
@@ -94,7 +96,12 @@ export function adoptTestHubDatabase(configuredPath: string | undefined): void {
   const livePaths = liveHubDatabasePaths(environmentAtAdoption)
   const temporaryDirectory = canonicalPath(tmpdir())
   const database = configuredPath ? canonicalPath(configuredPath) : null
-  const refusal = testHubDatabaseAdoptionRefusal(database, temporaryDirectory, livePaths)
+  const refusal = testHubDatabaseAdoptionRefusal(
+    database,
+    database !== null && existsSync(database),
+    temporaryDirectory,
+    livePaths,
+  )
   if (refusal) throw new Error(refusal)
   mintedHubDatabase = {
     database: database!,
