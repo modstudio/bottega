@@ -10,6 +10,7 @@ import type { ReadonlyProvision } from '../worktree/worktree-provision.ts'
 import type { WorktreeCreate } from '../worktree/worktree-template.ts'
 import type {
   DocsSettings,
+  ReferenceSettings,
   ReleaseSettings,
   ReviewSettings,
   SignalsSettings,
@@ -164,6 +165,8 @@ export type ProjectSettings = {
   release?: ReleaseSettings
   /** Where shared workflows read and write this project's docs and canon. */
   docs?: DocsSettings
+  /** Generated repository reference and the command that publishes it after a relevant merge. */
+  reference?: ReferenceSettings
   /** Where shared workflows list and read this project's open signals. */
   signals?: SignalsSettings
   /** Catalogue lenses selected by tier and changed path for this project. */
