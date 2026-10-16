@@ -10,6 +10,145 @@ export type IdentityInventory = {
   baseline: string[]
 }
 
+export type KeyStore = 'orchestrator' | 'hub' | 'hosted'
+export type KeyColumn = {
+  table: string
+  name: string
+  type: string
+  primaryKey: boolean
+  foreignKey: boolean
+}
+export type KeyTable = { name: string; columns: KeyColumn[]; primaryKey: string[] }
+export type IntegerValue = { store: KeyStore; column: string; reason: string }
+export type InfrastructureIdentity = { store: KeyStore; table: string; reason: string }
+export type KeyInventory = { findings: string[]; values: string[]; infrastructure: string[] }
+
+const REFERENCE_NAME = /(?:_id|_ids)$/
+const IMPLICIT_REFERENCES = new Set(['run.retry_of', 'landing_triage_snapshot.review_ids'])
+
+export function classifyKeyInventory(
+  store: KeyStore,
+  tables: readonly KeyTable[],
+  values: readonly IntegerValue[],
+  infrastructure: readonly InfrastructureIdentity[],
+): KeyInventory {
+  const valueMap = new Map(
+    values.filter((entry) => entry.store === store).map((entry) => [entry.column, entry.reason]),
+  )
+  const infrastructureMap = new Map(
+    infrastructure
+      .filter((entry) => entry.store === store)
+      .map((entry) => [entry.table, entry.reason]),
+  )
+  const findings: string[] = []
+  const seenValues = new Set<string>()
+  for (const table of tables) {
+    const columns = new Map(table.columns.map((column) => [column.name, column]))
+    const primaryColumn = columns.get(table.primaryKey[0]!)
+    const uuidPrimaryKey =
+      table.primaryKey.length === 1 && isUuidColumn(primaryColumn) && !primaryColumn?.foreignKey
+    if (!uuidPrimaryKey) findings.push(`${table.name}:primary-key`)
+    for (const column of table.columns) {
+      const address = `${table.name}.${column.name}`
+      const reference =
+        column.foreignKey ||
+        (column.type === 'integer' && REFERENCE_NAME.test(column.name)) ||
+        (store === 'orchestrator' && IMPLICIT_REFERENCES.has(address))
+      if (reference && !isUuidColumn(column)) findings.push(`${address}:reference`)
+      if (column.type !== 'integer') continue
+      const reason = valueMap.get(address)
+      if (reason) {
+        if (column.primaryKey || column.foreignKey)
+          throw new Error(`${store} integer value ${address} may not be a primary or foreign key`)
+        if (reference)
+          throw new Error(`${store} integer value ${address} is shaped as a row reference`)
+        if (!reason.trim()) throw new Error(`${store} integer value ${address} needs a reason`)
+        seenValues.add(address)
+      } else if (!column.primaryKey && !reference) {
+        throw new Error(
+          `${store} integer column ${address} is not classified as a value or row identity`,
+        )
+      }
+    }
+  }
+  const tableNames = new Set(tables.map((table) => table.name))
+  for (const entry of values.filter((candidate) => candidate.store === store)) {
+    if (!seenValues.has(entry.column))
+      throw new Error(`${store} integer value ${entry.column} is stale`)
+  }
+  for (const [table, reason] of infrastructureMap) {
+    if (!reason.trim()) throw new Error(`${store} infrastructure ${table} needs a reason`)
+    if (!tableNames.has(table)) throw new Error(`${store} infrastructure ${table} is stale`)
+  }
+  return {
+    findings: [...new Set(findings)].sort(),
+    values: [...seenValues].sort(),
+    infrastructure: [...infrastructureMap.keys()].sort(),
+  }
+}
+
+function isUuidColumn(column: KeyColumn | undefined): boolean {
+  return column?.type === 'uuid'
+}
+
+export function assertShrinkingKeyBaseline(
+  store: KeyStore,
+  findings: readonly string[],
+  baseline: readonly string[],
+): void {
+  const actual = new Set(findings)
+  const expected = new Set(baseline)
+  const added = [...actual].filter((finding) => !expected.has(finding)).sort()
+  const stale = [...expected].filter((finding) => !actual.has(finding)).sort()
+  if (added.length)
+    throw new Error(`${store} identity baseline has new findings: ${added.join(', ')}`)
+  if (stale.length)
+    throw new Error(
+      `${store} identity baseline entries disappeared; remove them: ${stale.join(', ')}`,
+    )
+}
+
+export function readSqliteKeyTables(database: Database): KeyTable[] {
+  const tables = database
+    .query<{ name: string }, []>(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+    )
+    .all()
+  return tables.map(({ name }) => {
+    const columns = database
+      .query<{ name: string; type: string; pk: number }, []>(`PRAGMA table_info('${name}')`)
+      .all()
+    const foreignKeys = new Set(
+      database
+        .query<{ from: string }, []>(`PRAGMA foreign_key_list('${name}')`)
+        .all()
+        .map((foreignKey) => foreignKey.from),
+    )
+    return {
+      name,
+      primaryKey: columns
+        .filter((column) => column.pk > 0)
+        .sort((left, right) => left.pk - right.pk)
+        .map((column) => column.name),
+      columns: columns.map((column) => ({
+        table: name,
+        name: column.name,
+        type: /INT/i.test(column.type)
+          ? 'integer'
+          : column.type.toUpperCase() === 'TEXT' &&
+              (column.name === 'id' ||
+                column.name === 'record_id' ||
+                column.name.endsWith('_id') ||
+                column.name.endsWith('_record_id'))
+            ? 'uuid'
+            : column.type.toLowerCase(),
+        primaryKey: column.pk > 0,
+        foreignKey: foreignKeys.has(column.name),
+      })),
+    }
+  })
+}
+
 const CONVERTED_TABLES = [
   'agent',
   'blocker',

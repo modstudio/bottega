@@ -388,7 +388,7 @@ if (checkArguments.mode === 'static') {
     { name: 'project checks', argv: ['bun', `${root}orchestrator/scripts/check-projects.ts`] },
     {
       name: 'orchestrator identity inventory',
-      argv: ['bun', `${root}orchestrator/scripts/identity-inventory.ts`],
+      argv: ['bun', `${root}scripts/check-identity-inventory.ts`],
     },
     staticCheck('scripts/check-machine-state.ts'),
     staticCheck('scripts/check-cascade-preservation.ts'),

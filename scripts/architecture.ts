@@ -13,6 +13,7 @@ import {
 } from './architecture-cli.ts'
 import { confinementModules } from './architecture-confinement-modules.ts'
 import { coreModuleSpecs } from './architecture-core-modules.ts'
+import { databaseModules } from './architecture-database-modules.ts'
 import { docModules } from './architecture-doc-modules.ts'
 import { enforcementModules } from './architecture-enforcement-modules.ts'
 import { focusedTestModules } from './architecture-focused-test-modules.ts'
@@ -491,6 +492,7 @@ export const modules: ArchitectureModule[] = [
   module('shared/record-session.ts', ['./brand.ts', './keychain.ts']),
   ...settingsModules,
   ...recordModules,
+  ...databaseModules,
   ...reviewModuleSpecs.map((spec) =>
     module(spec.file, [
       ...spec.allowed,
@@ -504,20 +506,6 @@ export const modules: ArchitectureModule[] = [
     '../verdict/verdict-payload.ts',
   ]),
   ...projectModules,
-  module('orchestrator/src/database/project-register-store.ts', [
-    'bun:sqlite',
-    'node:fs',
-    'node:path',
-    '../../../shared/record-id.ts',
-    '../../../shared/state-directory.ts',
-    '../project/project-settings.ts',
-  ]),
-  module('orchestrator/src/database/machine-identity-store.ts', [
-    'bun:sqlite',
-    '../../../shared/config-directory.ts',
-    '../../../shared/machine-config.ts',
-  ]),
-  module('orchestrator/src/database/identity-inventory.ts', ['bun:sqlite']),
   module('orchestrator/src/resources/ref-guard.ts', [
     '../database/db.ts',
     '../../../shared/process-identity.ts',
