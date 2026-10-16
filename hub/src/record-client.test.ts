@@ -73,6 +73,27 @@ function clientWith(fetch: RecordFetch, headers: { cookie?: string; authorizatio
 }
 
 describe('record client', () => {
+  test('projects accepts the additive adoption response', async () => {
+    const response = {
+      id: '01990000-0000-7000-8000-000000000041',
+      spaceId: '01990000-0000-7000-8000-000000000042',
+      spaceName: 'Workshop',
+      name: 'alpha',
+      keyPrefixes: ['DEV'],
+      stack: 'typescript',
+      managedContext: true,
+      landingBranch: 'main',
+      color: null,
+      colorDark: null,
+      retiredAt: null,
+      canon: true,
+      settings: { keyPrefixes: ['DEV'], trunk: 'main' },
+    }
+    await expect(clientWith(async () => jsonResponse([response])).projects()).resolves.toEqual([
+      response,
+    ])
+  })
+
   test('public doc reads omit credentials and parse every public route', async () => {
     const id = '01990000-0000-7000-8000-000000000031'
     const requests: Array<{ url: string; cookie: string | null; authorization: string | null }> = []

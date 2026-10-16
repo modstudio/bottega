@@ -8,6 +8,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { builtCommitResponse } from '../../../shared/built-commit.ts'
 import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, type DocAudience } from '../../../shared/docs.ts'
 import type { RecordClientAddresses } from '../../../shared/record-client-addresses.ts'
+import type { RecordProject } from '../../../shared/record-project-contract.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
@@ -57,11 +58,7 @@ import {
   type RecordDocOrderInput,
   type RecordDocRevision,
 } from './record-docs.ts'
-import {
-  type RecordProject,
-  RecordProjectError,
-  type RecordProjectUpsertInput,
-} from './record-projects.ts'
+import { RecordProjectError, type RecordProjectUpsertInput } from './record-projects.ts'
 import type {
   PublicRecordDoc,
   PublicRecordDocTreeItem,

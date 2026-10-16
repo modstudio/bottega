@@ -3,8 +3,8 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type AddHostedProject, decideProjectAdd } from './project-add-decision.ts'
 
 const memberships = [
-  { spaceId: 'space-a', slug: 'alpha' },
-  { spaceId: 'space-b', slug: 'beta' },
+  { spaceId: 'space-a', slug: 'alpha', permission: 'write' },
+  { spaceId: 'space-b', slug: 'beta', permission: 'write' },
 ]
 
 function hosted(overrides: Partial<AddHostedProject> = {}): AddHostedProject {
@@ -13,7 +13,14 @@ function hosted(overrides: Partial<AddHostedProject> = {}): AddHostedProject {
     name: 'probe',
     spaceId: 'space-a',
     spaceName: 'Alpha',
+    keyPrefixes: ['DEV'],
     stack: 'typescript',
+    managedContext: true,
+    landingBranch: 'main',
+    color: null,
+    colorDark: null,
+    retiredAt: null,
+    canon: true,
     settings: { trunk: 'main', keyPrefixes: ['DEV'] },
     ...overrides,
   }
@@ -57,6 +64,27 @@ describe('decideProjectAdd', () => {
     if (decision.kind !== 'refuse') return
     expect(decision.reason).toContain('stack, trunk, keyPrefixes')
     expect(decision.reason).toContain(`${PLATFORM_SLUG} project set probe`)
+  })
+
+  test('refuses adoption from a server response that predates adoption fields', () => {
+    const previousShape = hosted()
+    delete previousShape.settings
+    delete previousShape.canon
+
+    expect(
+      decideProjectAdd({
+        name: 'probe',
+        requestedStack: null,
+        stackWasRequested: false,
+        requestedSettings: {},
+        hostedProjects: [previousShape],
+        memberships,
+      }),
+    ).toEqual({
+      kind: 'refuse',
+      reason:
+        'the hosted record server predates project adoption; release the record API, then retry',
+    })
   })
 
   test('refuses an ambiguous name and lists its spaces', () => {

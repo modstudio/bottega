@@ -1,6 +1,11 @@
 // concern: record-api-client
 /** Builds project-bearing record request bodies and paths without transport state. */
 
+import {
+  type RecordProject,
+  RecordProjectsSchema,
+} from '../../../shared/record-project-contract.ts'
+
 export type RecordRequestDestination = { destinationSpaceId?: string }
 export type RecordApiAuthentication = {
   token(): string | null
@@ -85,18 +90,7 @@ export type ProjectIdentityClient = {
     },
     destination?: RecordRequestDestination,
   ): Promise<{ id: string; name: string }>
-  listProjects(destination?: RecordRequestDestination): Promise<
-    Array<{
-      id: string
-      name: string
-      spaceId: string
-      spaceName: string
-      stack: string | null
-      canon: boolean
-      settings: Record<string, unknown>
-      retiredAt: string | null
-    }>
-  >
+  listProjects(destination?: RecordRequestDestination): Promise<RecordProject[]>
   retireProject(id: string, destination?: RecordRequestDestination): Promise<{ name: string }>
 }
 
@@ -127,10 +121,10 @@ export function projectIdentityClient(request: RecordClientRequest): ProjectIden
         ...destination,
       }),
     listProjects: (destination) =>
-      request<Awaited<ReturnType<ProjectIdentityClient['listProjects']>>>(
-        '/v1/projects',
-        destination,
-      ),
+      request<Awaited<ReturnType<ProjectIdentityClient['listProjects']>>>('/v1/projects', {
+        ...destination,
+        schema: (body) => RecordProjectsSchema.parse(body),
+      }),
     retireProject: (id, destination) =>
       request<{ name: string }>(`/v1/projects/${encodeURIComponent(id)}/retire`, {
         method: 'POST',

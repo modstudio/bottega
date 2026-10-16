@@ -3,22 +3,12 @@
 import { SQL } from 'bun'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import type { RecordProject } from '../../../shared/record-project-contract.ts'
 import {
   type HostedProjectColumns,
   hostedProjectColumns,
   hostedProjectSettings,
 } from './record-project-columns.ts'
-
-export type RecordProject = {
-  id: string
-  spaceId: string
-  spaceName: string
-  name: string
-  stack: string | null
-  canon: boolean
-  settings: Record<string, unknown>
-  retiredAt: string | null
-}
 
 export type RecordProjectUpsertInput = {
   id: string
@@ -228,10 +218,15 @@ export async function listRecordProjects(
         spaceId: String(row.space_id),
         spaceName: String(row.space_name),
         name: String(row.name),
+        keyPrefixes: columns.keyPrefixes,
         stack: row.stack == null ? null : String(row.stack),
+        managedContext: columns.managedContext,
+        landingBranch: columns.landingBranch,
+        color: columns.color,
+        colorDark: columns.colorDark,
+        retiredAt: row.retired_at == null ? null : new Date(String(row.retired_at)).toISOString(),
         canon: row.canon === true,
         settings: hostedProjectSettings(columns),
-        retiredAt: row.retired_at == null ? null : new Date(String(row.retired_at)).toISOString(),
       }
     })
   })
