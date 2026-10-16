@@ -286,6 +286,178 @@ function exportedFunctionAcceptsClassName(source: ts.SourceFile, statement: ts.S
   return acceptsClassName ? statement.name.text : undefined
 }
 
+function componentStoryViolations(path: string, sourceText: string) {
+  const stem = basename(path, '.tsx')
+  const storyPath = join(dirname(path), `${stem}.stories.tsx`)
+  return analyzeComponentStory(
+    sourceText,
+    existsSync(storyPath) ? readFileSync(storyPath, 'utf8') : undefined,
+    path,
+  )
+}
+
+const interactiveTags = new Set(['button', 'input', 'select', 'textarea'])
+const interactiveRoles = new Set([
+  'button',
+  'checkbox',
+  'radio',
+  'switch',
+  'tab',
+  'menuitem',
+  'option',
+  'slider',
+])
+
+function interactiveOpening(node: ts.JsxOpeningLikeElement, source: ts.SourceFile) {
+  if (interactiveTags.has(node.tagName.getText(source))) return true
+  return node.attributes.properties.some((attribute) => {
+    if (!ts.isJsxAttribute(attribute)) return false
+    const name = attribute.name.getText(source)
+    return (
+      name === 'onKeyDown' ||
+      (name === 'role' &&
+        ts.isStringLiteral(attribute.initializer) &&
+        interactiveRoles.has(attribute.initializer.text))
+    )
+  })
+}
+
+function componentMarkup(source: ts.SourceFile) {
+  let rendersMarkup = false
+  let rendersInteractiveElement = false
+  const visit = (node: ts.Node) => {
+    if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node))
+      rendersMarkup = true
+    if (
+      (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) &&
+      interactiveOpening(node, source)
+    )
+      rendersInteractiveElement = true
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return { rendersMarkup, rendersInteractiveElement }
+}
+
+function storySubjectImports(story: ts.SourceFile, stem: string) {
+  const subjectImports = new Set<string>()
+  for (const statement of story.statements) {
+    if (
+      !ts.isImportDeclaration(statement) ||
+      !ts.isStringLiteral(statement.moduleSpecifier) ||
+      statement.moduleSpecifier.text !== `./${stem}` ||
+      statement.importClause?.isTypeOnly
+    )
+      continue
+    const clause = statement.importClause
+    if (clause?.name) subjectImports.add(clause.name.text)
+    const bindings = clause?.namedBindings
+    if (bindings && ts.isNamedImports(bindings))
+      for (const element of bindings.elements)
+        if (!element.isTypeOnly) subjectImports.add(element.name.text)
+  }
+  return subjectImports
+}
+
+function containsIdentifier(node: ts.Node, identifiers: ReadonlySet<string>) {
+  let found = false
+  const visit = (child: ts.Node) => {
+    if (ts.isIdentifier(child) && identifiers.has(child.text)) found = true
+    if (!found) ts.forEachChild(child, visit)
+  }
+  visit(node)
+  return found
+}
+
+function playPositions(node: ts.Node, story: ts.SourceFile) {
+  let lastUserEvent = -1
+  let lastExpect = -1
+  const visit = (child: ts.Node) => {
+    if (ts.isCallExpression(child) && rootIdentifier(child.expression) === 'userEvent')
+      lastUserEvent = Math.max(lastUserEvent, child.getStart(story))
+    if (
+      ts.isCallExpression(child) &&
+      ts.isIdentifier(child.expression) &&
+      child.expression.text === 'expect'
+    )
+      lastExpect = Math.max(lastExpect, child.getStart(story))
+    ts.forEachChild(child, visit)
+  }
+  visit(node)
+  return { lastUserEvent, lastExpect }
+}
+
+function analyzeStory(story: ts.SourceFile, subjectImports: ReadonlySet<string>) {
+  let coversSubject = false
+  let hasPlay = false
+  let invalidPlay = false
+  const inspectStory = (node: ts.Node) => {
+    if (
+      ts.isPropertyAssignment(node) &&
+      (propertyName(node.name) === 'component' || propertyName(node.name) === 'render') &&
+      containsIdentifier(node.initializer, subjectImports)
+    )
+      coversSubject = true
+    if (ts.isPropertyAssignment(node) && propertyName(node.name) === 'play') {
+      hasPlay = true
+      const positions = playPositions(node.initializer, story)
+      if (positions.lastUserEvent < 0 || positions.lastExpect < positions.lastUserEvent)
+        invalidPlay = true
+    }
+    ts.forEachChild(node, inspectStory)
+  }
+  inspectStory(story)
+  return { coversSubject, hasPlay, invalidPlay }
+}
+
+export function analyzeComponentStory(
+  sourceText: string,
+  storyText: string | undefined,
+  componentPath: string,
+) {
+  const source = ts.createSourceFile(
+    componentPath,
+    sourceText,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  )
+  const markup = componentMarkup(source)
+  if (!markup.rendersMarkup) return []
+  const stem = basename(componentPath, '.tsx')
+  if (storyText === undefined)
+    return [
+      `${relative(ROOT, componentPath)}: markup component requires sibling ${stem}.stories.tsx`,
+    ]
+  const story = ts.createSourceFile(
+    `${stem}.stories.tsx`,
+    storyText,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  )
+  const subjectImports = storySubjectImports(story, stem)
+  if (!subjectImports.size)
+    return [
+      `${relative(ROOT, componentPath)}: sibling ${stem}.stories.tsx must value-import ./${stem}`,
+    ]
+  const analysis = analyzeStory(story, subjectImports)
+  const violations = analysis.coversSubject
+    ? []
+    : [
+        `${relative(ROOT, componentPath)}: sibling ${stem}.stories.tsx must name an imported subject as meta component or render it in a story`,
+      ]
+  if (analysis.invalidPlay)
+    violations.push(
+      `${relative(ROOT, componentPath)}: every play function must call expect after its last userEvent call`,
+    )
+  if (markup.rendersInteractiveElement && !analysis.hasPlay)
+    violations.push(
+      `${relative(ROOT, componentPath)}: interactive component requires a story with a play function`,
+    )
+  return violations
+}
+
 function componentInventory(
   styleAnalyses: ReadonlyMap<string, ReturnType<typeof analyzeStyleModule>>,
 ) {
@@ -303,8 +475,10 @@ function componentInventory(
       ts.ScriptKind.TSX,
     )
     const stem = basename(path, '.tsx')
+    if (stem.endsWith('.stories')) continue
     const stylesPath = join(dirname(path), `${stem}.styles.ts`)
     const siblingImport = `./${stem}.styles.ts`
+    violations.push(...componentStoryViolations(path, sourceText))
     const hasClassName = /\bclassName\s*=/.test(sourceText)
     if (hasClassName && !existsSync(stylesPath))
       violations.push(

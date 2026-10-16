@@ -71,11 +71,7 @@ export function UserMenu({
         ...(onSignOut ? [{ label: 'Sign out', icon: LogOut, onSelect: onSignOut }] : []),
       ]}
       trigger={
-        <button
-          type="button"
-          aria-label={`Account: ${name}`}
-          className={userMenuStyles().trigger()}
-        >
+        <button type="button" className={userMenuStyles().trigger()}>
           <span aria-hidden className={userMenuStyles().avatar()}>
             {initials(name)}
           </span>

@@ -102,7 +102,7 @@ const exportSources = new Map<string, string[]>()
 for (const path of new Glob('**/*.{ts,tsx,css}').scanSync({
   cwd: join(ROOT, HUB_UI_ROOT, 'src'),
 })) {
-  if (/\.(?:test|spec)\.[cm]?tsx?$/.test(path)) continue
+  if (/\.(?:test|spec|stories)\.[cm]?tsx?$/.test(path)) continue
   const normalized = path.split(sep).join('/')
   const subpath = exportSubpath(normalized)
   const sources = exportSources.get(subpath) ?? []

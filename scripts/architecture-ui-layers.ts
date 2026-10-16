@@ -78,6 +78,23 @@ export function uiArchitectureRules(
 ): UiArchitectureRule[] {
   return [
     {
+      name: 'hub-ui-stories-import-only-components-and-storybook',
+      severity: 'error',
+      comment:
+        'Stories import their subject through a relative path and otherwise use only Storybook packages.',
+      from: { path: '^hub/ui/src/.*\\.stories\\.tsx$' },
+      to: {
+        path: '^(?!hub/ui/src/|node_modules/.*/node_modules/(?:@storybook/|storybook/))',
+      },
+    },
+    {
+      name: 'hub-ui-stories-are-not-production-dependencies',
+      severity: 'error',
+      comment: 'Production and test modules never import Storybook stories.',
+      from: { path: '^hub/ui/', pathNot: ['^hub/ui/src/.*\\.stories\\.tsx$'] },
+      to: { path: '^hub/ui/src/.*\\.stories\\.tsx$' },
+    },
+    {
       name: 'hub-ui-is-a-leaf',
       severity: 'error',
       comment:

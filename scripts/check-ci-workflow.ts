@@ -13,6 +13,32 @@ function workflowJobNames(source: string): string[] {
     .flatMap((line) => line.match(/^ {2}([a-z][a-z0-9-]*):\s*$/)?.[1] ?? [])
 }
 
+function workflowJob(source: string, name: string): string {
+  const lines = source.split('\n')
+  const start = lines.findIndex((line) => line === `  ${name}:`)
+  if (start < 0) throw new Error(`CI workflow has no ${name} job`)
+  const end = lines.findIndex(
+    (line, index) => index > start && /^ {2}[a-z][a-z0-9-]*:\s*$/.test(line),
+  )
+  return lines.slice(start, end < 0 ? undefined : end).join('\n')
+}
+
+function aggregateNeeds(source: string): string[] {
+  const job = workflowJob(source, 'ci')
+  const inline = job.match(/^ {4}needs:\s*\[([^\]]*)\]\s*$/m)
+  if (inline)
+    return inline[1]!
+      .split(',')
+      .map((name) => name.trim())
+      .filter(Boolean)
+  const lines = job.split('\n')
+  const start = lines.findIndex((line) => line === '    needs:')
+  if (start < 0) return []
+  return lines
+    .slice(start + 1)
+    .flatMap((line) => line.match(/^ {6}-\s+([a-z][a-z0-9-]*)\s*$/)?.[1] ?? [])
+}
+
 export function expectedWorkflowJobNames(): string[] {
   return [
     'secrets',
@@ -32,6 +58,10 @@ export function checkCiWorkflow(source: string): void {
       `CI jobs do not match check plan: expected ${expected.join(', ')}; got ${actual.join(', ')}`,
     )
   }
+  if (!aggregateNeeds(source).includes('hub-ui-stories'))
+    throw new Error('CI aggregate job must need hub-ui-stories')
+  if (!workflowJob(source, 'hub-ui-stories').includes('bun run --cwd hub/ui storybook:test'))
+    throw new Error('hub-ui-stories job must run the hub-ui story-test script')
 }
 
 if (import.meta.main) {
