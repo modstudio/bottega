@@ -40,7 +40,7 @@ export async function syncCommand(
   }
   if (result.backfill) {
     presentation.log(
-      `backfill enqueued ${result.backfill.enqueued}, skipped-live ${result.backfill.skippedLive}`,
+      `backfill enqueued ${result.backfill.enqueued}, refreshed-roots ${result.backfill.refreshedRoots}, skipped-live ${result.backfill.skippedLive}`,
     )
     presentation.log(`score backfill enqueued ${result.backfill.scores}`)
     presentation.log(

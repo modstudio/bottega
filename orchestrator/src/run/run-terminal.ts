@@ -53,7 +53,7 @@ import {
   runTerminalReplyPath,
   type TerminalSnapshot,
 } from './run-artifacts.ts'
-import { resolveRootFromLastTurn } from './run-liveness.ts'
+import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
 import { checkpointRoot, claimIdentity } from './run-resume-kind.ts'
@@ -93,6 +93,7 @@ export function finalizeTerminalChain(
     status: string
     failureKind: ReturnType<typeof classify> | null
     error: string | null
+    record: [machineId: string, finishedAt: string]
   },
 ): void {
   const rootId = input.parentRunId ?? input.runId
@@ -105,7 +106,9 @@ export function finalizeTerminalChain(
       .run(input.error, input.parentRunId)
   }
   closeTerminalQuestions(database, rootId, input.status, input.failureKind)
-  if (input.parentRunId !== null) resolveRootFromLastTurn(database, input.parentRunId)
+  if (input.parentRunId !== null) {
+    rollUpRootAndEnqueue(database, input.parentRunId, null, ...input.record)
+  }
   if (
     input.status !== 'asking' &&
     input.status !== 'running' &&
@@ -120,6 +123,31 @@ type TerminalMcpRuling = {
   error: string | null
   requiredFailure: string | null
 } | null
+
+export function recordArtifactPersistenceFailure(
+  database: Database,
+  input: {
+    runId: number
+    parentRunId: number | null
+    error: string | null
+    machineId: string
+    finishedAt: string
+  },
+): void {
+  writeTransaction(() => {
+    database
+      .query(
+        `UPDATE run SET
+           error=CASE WHEN status='stopped' THEN error ELSE ? END
+         WHERE id=?`,
+      )
+      .run(input.error, input.runId)
+    enqueueRunRecord(database, input.runId, input.machineId, input.finishedAt)
+    if (input.parentRunId !== null) {
+      rollUpRootAndEnqueue(database, input.parentRunId, null, input.machineId, input.finishedAt)
+    }
+  }, database)
+}
 
 export type TerminalInput = {
   timer: ReturnType<typeof setTimeout> | null
@@ -755,6 +783,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
         status,
         failureKind,
         error,
+        record: [localMachineId, finishedAt],
       })
       // A parsed findings reply is the review event. Capture it in the same
       // terminal transaction so a successful lens cannot exist in the gap
@@ -840,15 +869,13 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       failureKind,
       persistenceError,
     }))
-    db()
-      .query(
-        `UPDATE run SET
-           error=CASE WHEN status='stopped' THEN error ELSE ? END
-         WHERE id=?`,
-      )
-      .run(error, claim.id)
-    const identity = claimIdentity(opts.resume)
-    if (identity.parent_run_id !== null) resolveRootFromLastTurn(db(), identity.parent_run_id)
+    recordArtifactPersistenceFailure(db(), {
+      runId: claim.id,
+      parentRunId: claimIdentity(opts.resume).parent_run_id,
+      error,
+      machineId: localMachineId,
+      finishedAt: nowIso(),
+    })
     teardownTerminalRunResources(db(), claim.id)
     console.error(`orch: ${error}`)
   }

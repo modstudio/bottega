@@ -5,7 +5,7 @@ import { applyMigrations } from '../database/migrations.ts'
 import { HOOK_TREE_JOB } from '../hook-tree/hook-tree.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from '../record/outbox-payload-contracts.ts'
 import { sanitizeOutboxPayload } from '../record/outbox-sanitize.ts'
-import { backfillRunRecords, buildRunRecordPayload } from './run-outbox.ts'
+import { backfillRunRecords, buildRunRecordPayload, enqueueRunRecord } from './run-outbox.ts'
 
 const RUN_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.run.columns
 
@@ -80,6 +80,7 @@ test('backfill resolves chains, enqueues finished turns once, and skips running 
 
   expect(backfillRunRecords(database, '01990000-0000-7000-8000-000000000099')).toEqual({
     enqueued: 4,
+    refreshedRoots: 0,
     skippedLive: 1,
   })
   const runs = database
@@ -107,6 +108,7 @@ test('backfill resolves chains, enqueues finished turns once, and skips running 
   expect(payloads[3]).toMatchObject({ status: 'asking' })
   expect(backfillRunRecords(database, '01990000-0000-7000-8000-000000000099')).toEqual({
     enqueued: 0,
+    refreshedRoots: 0,
     skippedLive: 1,
   })
   expect(
@@ -128,6 +130,7 @@ test('backfill leaves hook-tree rows local', () => {
 
   expect(backfillRunRecords(database, '01990000-0000-7000-8000-000000000099')).toEqual({
     enqueued: 0,
+    refreshedRoots: 0,
     skippedLive: 0,
   })
   expect(database.query('SELECT record_id FROM run').get()).toEqual({
@@ -136,5 +139,90 @@ test('backfill leaves hook-tree rows local', () => {
   expect(
     database.query<{ count: number }, []>('SELECT count(*) count FROM outbox').get()!.count,
   ).toBe(0)
+  database.close()
+})
+
+test('backfill refreshes only roots whose latest run payload disagrees', () => {
+  const database = new Database(':memory:')
+  applyMigrations(database)
+  const insert = database.query(
+    `INSERT INTO run
+       (record_id,id,started_at,last_event_at,agent,job,prompt_sha,prompt_bytes,prompt_head,
+        status,failure_kind,parent_run_id,turn)
+     VALUES (?,?,'2026-10-16T12:00:00.000Z','2026-10-16T12:01:00.000Z',
+             'codex','implement','sha',4,'head',?,?,NULL,1)`,
+  )
+  insert.run(newRecordId(), 1, 'ok', null)
+  insert.run(newRecordId(), 2, 'failed', 'capacity')
+  const machine = '01990000-0000-7000-8000-000000000099'
+  // Give both roots an existing row: root 1 is stale and root 2 agrees.
+  database.query("UPDATE run SET status='failed', failure_kind='capacity' WHERE id=1").run()
+  enqueueRunRecord(database, 1, machine, '2026-10-16T12:01:00.000Z')
+  enqueueRunRecord(database, 2, machine, '2026-10-16T12:01:00.000Z')
+  database.query("UPDATE run SET status='ok', failure_kind=NULL WHERE id=1").run()
+
+  expect(backfillRunRecords(database, machine)).toEqual({
+    enqueued: 0,
+    refreshedRoots: 1,
+    skippedLive: 0,
+  })
+  const counts = database
+    .query<{ id: number; count: number }, []>(
+      `SELECT run.id, count(outbox.id) AS count FROM run
+       JOIN outbox ON outbox.row_id=run.record_id
+       GROUP BY run.id ORDER BY run.id`,
+    )
+    .all()
+  expect(counts).toEqual([
+    { id: 1, count: 2 },
+    { id: 2, count: 1 },
+  ])
+  database.close()
+})
+
+test('backfill timestamps a refreshed root from its outcome-producing turn', () => {
+  const database = new Database(':memory:')
+  applyMigrations(database)
+  const rootRecordId = newRecordId()
+  database
+    .query(
+      `INSERT INTO run
+       (record_id,id,started_at,last_event_at,latency_ms,agent,job,prompt_sha,prompt_bytes,
+        prompt_head,status,failure_kind,parent_run_id,turn)
+       VALUES (?,1,'2026-10-16T12:00:00.000Z','2026-10-16T12:01:00.000Z',60000,
+               'codex','implement','sha',4,'root','ok',NULL,NULL,1)`,
+    )
+    .run(rootRecordId)
+  database
+    .query(
+      `INSERT INTO run
+       (record_id,id,started_at,last_event_at,latency_ms,agent,job,prompt_sha,prompt_bytes,
+        prompt_head,status,failure_kind,parent_run_id,turn)
+       VALUES (?,2,'2026-10-16T12:10:00.000Z','2026-10-16T12:15:00.000Z',300000,
+               'codex','implement','sha',4,'turn','ok',NULL,1,2)`,
+    )
+    .run(newRecordId())
+  const machine = '01990000-0000-7000-8000-000000000099'
+  enqueueRunRecord(database, 2, machine, '2026-10-16T12:15:00.000Z')
+  database.query("UPDATE run SET status='failed', failure_kind='capacity' WHERE id=1").run()
+  enqueueRunRecord(database, 1, machine, '2026-10-16T12:01:00.000Z')
+  database.query("UPDATE run SET status='ok', failure_kind=NULL WHERE id=1").run()
+
+  expect(backfillRunRecords(database, machine)).toEqual({
+    enqueued: 0,
+    refreshedRoots: 1,
+    skippedLive: 0,
+  })
+  const payload = database
+    .query<{ payload: string }, [string]>(
+      `SELECT payload FROM outbox WHERE kind='run' AND row_id=? ORDER BY id DESC LIMIT 1`,
+    )
+    .get(rootRecordId)!
+  expect(JSON.parse(payload.payload)).toMatchObject({
+    status: 'ok',
+    failureKind: null,
+    finishedAt: '2026-10-16T12:15:00.000Z',
+    updatedAt: '2026-10-16T12:15:00.000Z',
+  })
   database.close()
 })

@@ -5,6 +5,7 @@ import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
+import { chainTerminationAtForRoot } from './run-chain.ts'
 import { HOOK_TREE_JOB, LANDING_TREE_JOB } from './synthetic-lifecycle-job.ts'
 
 type LocalRun = Record<string, unknown> & {
@@ -19,6 +20,7 @@ type LocalRun = Record<string, unknown> & {
 
 export type RunRecordBackfillResult = {
   enqueued: number
+  refreshedRoots: number
   skippedLive: number
 }
 
@@ -138,22 +140,54 @@ export function enqueueRunRecord(
 }
 
 export function backfillRunRecords(database: Database, machineId: string): RunRecordBackfillResult {
-  const terminal = database
-    .query<{ id: number; finished_at: string }, [string, string]>(
-      `SELECT r.id, COALESCE(r.last_event_at, r.started_at) AS finished_at
-           FROM run r
-          WHERE r.status IN ('ok', 'failed', 'stale', 'stopped', 'asking')
-            AND r.job NOT IN (?,?)
-            AND NOT EXISTS (
-              SELECT 1 FROM outbox WHERE kind='run' AND row_id=r.record_id
-            )
-          ORDER BY r.id`,
+  const eligible = database
+    .query<
+      {
+        id: number
+        finished_at: string
+        parent_run_id: number | null
+        status: string
+        failure_kind: string | null
+        latest_payload: string | null
+      },
+      [string, string]
+    >(
+      `SELECT r.id, COALESCE(r.last_event_at, r.started_at) AS finished_at,
+              r.parent_run_id, r.status, r.failure_kind, latest.payload AS latest_payload
+         FROM run r
+         LEFT JOIN outbox latest ON latest.id = (
+           SELECT prior.id FROM outbox prior
+            WHERE prior.kind='run' AND prior.row_id=r.record_id
+            ORDER BY prior.id DESC LIMIT 1
+         )
+        WHERE r.status IN ('ok', 'failed', 'stale', 'stopped', 'asking')
+          AND r.job NOT IN (?,?)
+        ORDER BY r.id`,
     )
     .all(HOOK_TREE_JOB, LANDING_TREE_JOB)
-  for (const row of terminal) enqueueRunRecord(database, row.id, machineId, row.finished_at)
+  let enqueued = 0
+  let refreshedRoots = 0
+  for (const row of eligible) {
+    if (row.latest_payload === null) {
+      enqueueRunRecord(database, row.id, machineId, row.finished_at)
+      enqueued++
+      continue
+    }
+    if (row.parent_run_id !== null) continue
+    let latest: { status?: unknown; failureKind?: unknown }
+    try {
+      latest = JSON.parse(row.latest_payload) as typeof latest
+    } catch {
+      latest = {}
+    }
+    if (latest.status === row.status && latest.failureKind === row.failure_kind) continue
+    const chainTermination = chainTerminationAtForRoot(database, row.id) ?? row.finished_at
+    enqueueRunRecord(database, row.id, machineId, chainTermination)
+    refreshedRoots++
+  }
 
   const skippedLive = database
     .query<{ count: number }, []>(`SELECT count(*) AS count FROM run WHERE status='running'`)
     .get()!.count
-  return { enqueued: terminal.length, skippedLive }
+  return { enqueued, refreshedRoots, skippedLive }
 }

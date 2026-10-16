@@ -560,5 +560,5 @@ export function recordSessionSeen(sid: string | null = sessionId(), at = nowIso(
  * each would demand three judgments for one implementation, and would let an
  * agent reach the routing threshold by being inquisitive rather than by being
  * good. The root row carries the chain's outcome (see the roll-up in run.ts
- * and resolveRootFromLastTurn), so scoring the root scores the whole thing.
+ * and rollUpRootAndEnqueue), so scoring the root scores the whole thing.
  */

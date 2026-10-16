@@ -380,7 +380,7 @@ realPostgres('project import against copied live SQLite data', () => {
       writeFileSync(configPath, testMachineConfig)
     }
     console.log(
-      `live-copy backfill: enqueued ${backfill.enqueued}, skipped-live ${backfill.skippedLive}`,
+      `live-copy backfill: enqueued ${backfill.enqueued}, refreshed-roots ${backfill.refreshedRoots}, skipped-live ${backfill.skippedLive}`,
     )
     console.log(`live-copy score backfill: enqueued ${scoreBackfill}`)
     console.log(
