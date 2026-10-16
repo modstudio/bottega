@@ -226,7 +226,9 @@ export function claimRunNotices(
   text: string
   oneLine: string
   ackRequired: boolean
+  ackDeadline: string | null
   createdAt: string
+  expiresAt: string | null
   purpose: BoardPurpose
 }[] {
   const reader = runReader(runId, database)
@@ -241,7 +243,9 @@ export function claimRunNotices(
     .map((row) => ({
       ...render(row, true, database),
       ackRequired: row.ack_required === 1,
+      ackDeadline: row.ack_deadline,
       createdAt: row.created_at,
+      expiresAt: row.expires_at,
     }))
 }
 
@@ -260,13 +264,13 @@ export function claimRunPushNotices(
     .get(runId) as { root_id: number } | null
   if (!run)
     return {
-      ...selectPushNotices(null, []),
+      ...selectPushNotices('unbounded', [], clock),
       warning: missingReaderStartWarning(`run:${runId}`),
     }
   const reader = `run:${run.root_id}`
   const beganAt = boardReaderBeganAt(reader, database)
   return {
-    ...selectPushNotices(beganAt, claimRunNotices(runId, all, clock, database)),
+    ...selectPushNotices(beganAt, claimRunNotices(runId, all, clock, database), clock),
     warning: beganAt === null ? missingReaderStartWarning(reader) : null,
   }
 }
@@ -305,7 +309,9 @@ export function claimNotices(
   text: string
   oneLine: string
   ackRequired: boolean
+  ackDeadline: string | null
   createdAt: string
+  expiresAt: string | null
   purpose: BoardPurpose
 }[] {
   const reader = boardReader(env)
@@ -319,7 +325,9 @@ export function claimNotices(
   return rows.map((row) => ({
     ...render(row, false, database),
     ackRequired: row.ack_required === 1,
+    ackDeadline: row.ack_deadline,
     createdAt: row.created_at,
+    expiresAt: row.expires_at,
   }))
 }
 
@@ -334,9 +342,11 @@ export function claimPushNotices(
   warning: string | null
 } {
   const reader = boardReader(env)
-  const beganAt = reader === OPERATOR_READER ? null : boardReaderBeganAt(reader, database)
+  const beganAt =
+    reader === OPERATOR_READER ? ('unbounded' as const) : boardReaderBeganAt(reader, database)
+  const selected = selectPushNotices(beganAt, claimNotices(all, env, clock, database), clock)
   return {
-    ...selectPushNotices(beganAt, claimNotices(all, env, clock, database)),
+    ...selected,
     warning:
       reader !== OPERATOR_READER && beganAt === null ? missingReaderStartWarning(reader) : null,
   }

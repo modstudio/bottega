@@ -22,6 +22,7 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
       title: 'Local',
       body: 'Local body',
       ackRequired: true,
+      deadlineMs: 30_000,
       purpose: 'request',
     },
     {},
@@ -33,17 +34,19 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
       title: 'Older local',
       body: 'Do not ask this reader to acknowledge.',
       ackRequired: true,
+      deadlineMs: 30_000,
       purpose: 'request',
     },
     {},
     clock - 2_000,
   )
-  const olderStandingLocal = postNotice(
+  postNotice(
     {
       audience: 'project:push-project',
       title: 'Older standing local',
       body: 'Acknowledge this standing rule.',
       ackRequired: true,
+      deadlineMs: 30_000,
       purpose: 'standing',
     },
     {},
@@ -140,13 +143,21 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
     clock: clock + 3,
   })
   expect(pending.delivery.map((notice) => notice.id).sort()).toEqual(
-    [String(local.id), String(olderStandingLocal.id), hosted.id, olderStandingHosted.id].sort(),
+    [String(local.id), hosted.id].sort(),
   )
   expect(pending.pendingAcknowledgements.map((notice) => notice.id).sort()).toEqual(
-    [String(local.id), String(olderStandingLocal.id), hosted.id, olderStandingHosted.id].sort(),
+    [String(local.id), hosted.id].sort(),
   )
   expect(pending.delivery.map((notice) => notice.id)).not.toContain(String(olderLocal.id))
   expect(pending.pendingAcknowledgements.map((notice) => notice.id)).not.toContain(olderHosted.id)
+
+  const afterDeadline = await pendingBoardDelivery({
+    session: 'push-reader',
+    budgetMs: 0,
+    clock: clock + 30_001,
+  })
+  expect(afterDeadline.pendingAcknowledgements).toEqual([])
+  expect(afterDeadline.delivery).toEqual([])
 })
 
 test('a hosted acknowledgement immediately clears delivery from verified or unverified cache state', async () => {

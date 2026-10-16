@@ -63,7 +63,14 @@ const deliveryNotice = (notice: {
   ackRequired: boolean
   createdAt: string
   purpose?: BoardPurpose
-}): BoardDeliveryNotice => ({ ...notice, id: String(notice.id) })
+}): BoardDeliveryNotice => ({
+  id: String(notice.id),
+  text: notice.text,
+  oneLine: notice.oneLine,
+  ackRequired: notice.ackRequired,
+  createdAt: notice.createdAt,
+  purpose: notice.purpose,
+})
 
 const deliveryWarning = (...warnings: Array<string | null>): string | null => {
   const unique = [...new Set(warnings.filter((warning): warning is string => warning !== null))]

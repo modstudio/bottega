@@ -224,7 +224,7 @@ test('a message posted after the hook start but before presence is written is du
   ])
 })
 
-test('operator push is unbounded and a missing session start delivers candidates with a warning', () => {
+test('operator push is unbounded and a missing session start withholds required acknowledgement', () => {
   const { cwd, project } = postingProject()
   const clock = Date.parse('2026-10-05T11:30:00.000Z')
   const operatorNotice = postNotice(
@@ -276,6 +276,16 @@ test('operator push is unbounded and a missing session start delivers candidates
     clock + 3,
     cwd,
   )
+  const required = postNotice(
+    {
+      audience: 'session:missing-start-reader',
+      title: 'Acknowledge this',
+      body: 'Only a reader known to be running at posting may receive this.',
+      ackRequired: true,
+    },
+    {},
+    clock + 3,
+  )
   db().query('DELETE FROM presence WHERE session_id=?').run('missing-start-reader')
   const missing = claimPushNotices(
     false,
@@ -283,6 +293,7 @@ test('operator push is unbounded and a missing session start delivers candidates
     clock + 4,
   )
   expect(missing.notices.map((notice) => notice.id)).toContain(reply.id)
+  expect(missing.notices.map((notice) => notice.id)).not.toContain(required.id)
   expect(missing.warning).toContain('has no recorded start')
 })
 
