@@ -85,7 +85,6 @@ function runValues(row: Payload, projectId: string | null) {
     spaceId: String(row.spaceId),
     projectId,
     machineId: String(row.machineId),
-    localId: bigint(row.localId),
     startedByUserId: nullableString(row.startedByUserId),
     startedAt: date(row.startedAt),
     finishedAt: nullableDate(row.finishedAt),
@@ -338,11 +337,8 @@ async function pushRun(
 
 function reviewValues(row: Payload, projectId: string | null) {
   return {
-    id: String(row.id),
-    spaceId: String(row.spaceId),
+    ...commonReviewRecordValues(row),
     projectId,
-    machineId: String(row.machineId),
-    localId: bigint(row.localId),
     recordedAt: date(row.recordedAt),
     completedAt: nullableDate(row.completedAt),
     tier: nullableNumber(row.tier),
@@ -355,9 +351,6 @@ function reviewValues(row: Payload, projectId: string | null) {
     commitMessage: nullableString(row.commitMessage),
     outdatedAt: nullableDate(row.outdatedAt),
     outdatedReason: nullableString(row.outdatedReason),
-    withheldFields: jsonString(row.withheldFields),
-    createdAt: date(row.createdAt),
-    updatedAt: date(row.updatedAt),
   }
 }
 
@@ -370,7 +363,6 @@ function questionValues(row: Payload, projectId: string | null) {
     workflowCursorId: nullableBigint(row.workflowCursorId),
     projectId,
     machineId: String(row.machineId),
-    localId: bigint(row.localId),
     revision: Number(row.revision),
     askedAt: date(row.askedAt),
     question: String(row.question),
@@ -462,7 +454,6 @@ const landingCommonValues = (row: Payload) => ({
   id: String(row.id),
   spaceId: String(row.spaceId),
   machineId: String(row.machineId),
-  localId: bigint(row.localId),
   createdAt: date(row.createdAt),
   updatedAt: date(row.updatedAt),
 })
@@ -663,7 +654,7 @@ const recordKinds = {
       postgres: SQL,
       row: Payload,
       principal: RecordPrincipal,
-      projectIds?: ProjectResolutionCache,
+      _projectIds?: ProjectResolutionCache,
     ) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
