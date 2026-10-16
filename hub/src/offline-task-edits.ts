@@ -12,6 +12,33 @@ export type HostedEditDelivery =
   | { kind: 'queued'; reason: string }
   | { kind: 'rejected'; reason: string }
 
+function classifyHostedEditDelivery(
+  remaining: OutboxEntry[],
+  report: Awaited<ReturnType<typeof drainHostedOutbox>>,
+): HostedEditDelivery {
+  const waitingOnRouting = remaining.find((entry) =>
+    entry.last_error?.startsWith('waiting on routing:'),
+  )
+  const refused = remaining.find(
+    (entry) => entry.last_error && !entry.last_error.startsWith('waiting on routing:'),
+  )
+  if (refused) return { kind: 'rejected', reason: refused.last_error! }
+  if (!remaining.length && report.hostedReachable && !report.skippedCapability)
+    return { kind: 'sent' }
+  if (waitingOnRouting) return { kind: 'queued', reason: waitingOnRouting.last_error! }
+  if (report.lockAcquired === false)
+    return {
+      kind: 'queued',
+      reason: 'another process is draining; the collector fast cycle will send it',
+    }
+  return {
+    kind: 'queued',
+    reason: report.skippedCapability
+      ? 'the hosted session is absent or cannot push these rows'
+      : 'the hosted hub could not be reached',
+  }
+}
+
 export async function drainHostedEditOutbox(
   queuedAt: string,
   options?: HostedTaskWriteOptions,
@@ -25,20 +52,7 @@ export async function drainHostedEditOutbox(
     const remaining = db()
       .query<OutboxEntry, [string]>(`SELECT * FROM hosted_outbox WHERE queued_at=?`)
       .all(queuedAt)
-    const refused = remaining.find((entry) => entry.last_error)
-    const result: HostedEditDelivery = refused
-      ? { kind: 'rejected', reason: refused.last_error! }
-      : remaining.length || !report.hostedReachable || report.skippedCapability
-        ? {
-            kind: 'queued',
-            reason:
-              report.lockAcquired === false
-                ? 'another process is draining; the collector fast cycle will send it'
-                : report.skippedCapability
-                  ? 'the hosted session is absent or cannot push these rows'
-                  : 'the hosted hub could not be reached',
-          }
-        : { kind: 'sent' }
+    const result = classifyHostedEditDelivery(remaining, report)
     reportHostedEditDelivery(result)
     return result
   } catch (error) {

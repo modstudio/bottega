@@ -9,6 +9,7 @@ export type BinaryEntries = {
   hub(argv: string[]): Promise<number>
   orchOutbox(): Promise<Record<string, unknown>[]>
   hubOutbox(): Promise<Record<string, unknown>[]>
+  hubOutboxSummaryLines(): Promise<string[]>
   runExec(argv: string[]): Promise<number>
   askProxy(argv: string[]): Promise<number>
   retrievalSearch(argv: string[]): Promise<void>
@@ -34,6 +35,7 @@ async function dispatchOutbox(rest: string[], entries: BinaryEntries): Promise<n
     if (rest[0] === '--json') console.log(JSON.stringify(rows))
     else if (!rows.length) console.log('record outbox is empty')
     else {
+      for (const line of await entries.hubOutboxSummaryLines()) console.log(line)
       for (const { id, owner, ...row } of rows)
         console.log(`${String(id)} ${JSON.stringify({ owner, ...row })}`)
     }

@@ -12,6 +12,7 @@ function entries(calls: string[]): BinaryEntries {
     hub: call('hub'),
     orchOutbox: async () => [],
     hubOutbox: async () => [],
+    hubOutboxSummaryLines: async () => [],
     runExec: call('runExec'),
     askProxy: call('askProxy'),
     retrievalSearch: async (argv) => {
@@ -27,6 +28,7 @@ test('record outbox combines owner-qualified rows and routes qualified actions',
   const dispatch = entries(calls)
   dispatch.orchOutbox = async () => [{ id: 7, kind: 'score' }]
   dispatch.hubOutbox = async () => [{ id: 'change-1', table_name: 'task' }]
+  dispatch.hubOutboxSummaryLines = async () => ['hub summary']
   const lines: string[] = []
   const originalLog = console.log
   console.log = (value) => lines.push(String(value))
@@ -34,13 +36,16 @@ test('record outbox combines owner-qualified rows and routes qualified actions',
     expect(
       await dispatchBinary(['record', 'outbox', '--json'], PLATFORM_SLUG, dispatch, () => ''),
     ).toBe(0)
+    expect(JSON.parse(lines[0]!)).toEqual([
+      { id: 'orch:7', kind: 'score', owner: 'orch' },
+      { id: 'hub:change-1', table_name: 'task', owner: 'hub' },
+    ])
+    lines.length = 0
+    expect(await dispatchBinary(['record', 'outbox'], PLATFORM_SLUG, dispatch, () => '')).toBe(0)
+    expect(lines[0]).toBe('hub summary')
   } finally {
     console.log = originalLog
   }
-  expect(JSON.parse(lines[0]!)).toEqual([
-    { id: 'orch:7', kind: 'score', owner: 'orch' },
-    { id: 'hub:change-1', table_name: 'task', owner: 'hub' },
-  ])
   expect(
     await dispatchBinary(
       ['record', 'outbox', 'retry', 'hub:change-1'],

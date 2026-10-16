@@ -402,6 +402,39 @@ function recordRoutingWaits(
       (report.waitingOnRouting[selected.reason] ?? 0) + selected.rows.length
 }
 
+function routingWaitMessage(project: string, reason: string): string {
+  if (reason === 'unregistered-project')
+    return (
+      `waiting on routing: project "${project}" is not registered; register it with ` +
+      `${PLATFORM_SLUG} project add <path>, or, if it is not a real project, see DEV-1354 ` +
+      '(unroutable rows cannot be retired yet)'
+    )
+  return `waiting on routing: project "${project}" was refused: ${reason}`
+}
+
+function reconcileRoutingErrors(routed: ReturnType<typeof routeOutboxRows>): void {
+  writeTransaction((conn) => {
+    for (const [project, refusal] of routed.refusals) {
+      const reason = routingWaitMessage(project, refusal.reason)
+      for (const { entry } of refusal.rows)
+        conn
+          .query(
+            `UPDATE hosted_outbox SET last_error=?
+             WHERE id=? AND generation=? AND last_error IS NOT ?`,
+          )
+          .run(reason, entry.id, entry.generation, reason)
+    }
+    for (const rows of routed.destinations.values())
+      for (const { entry } of rows)
+        conn
+          .query(
+            `UPDATE hosted_outbox SET last_error=NULL
+             WHERE id=? AND generation=? AND last_error LIKE 'waiting on routing:%'`,
+          )
+          .run(entry.id, entry.generation)
+  })
+}
+
 function recordBatchOutcomes(
   batch: PreparedOutboxRow[],
   outcomes: HostedPushOutcome[],
@@ -686,6 +719,7 @@ async function drainHostedOutboxHeld(
   rows = rows.filter((row) => accepted.has(row.change.table))
   if (!rows.length) return report
   const partitioned = routeOutboxRows(rows, (dependencies.registered ?? projects)(), identity)
+  reconcileRoutingErrors(partitioned)
   recordRoutingWaits(partitioned.refusals, report)
   const hostedReachable = (await removeMovedIntervals(
     partitioned.destinations,
@@ -837,9 +871,32 @@ export function hostedOutboxLines(json = false): string[] {
   const rows = listHostedOutbox()
   if (json) return [JSON.stringify(rows)]
   if (!rows.length) return ['hosted outbox is empty']
-  return rows.map(
-    (row) =>
-      `${row.id} ${row.table_name} ${row.row_id} ${row.operation} attempts=${row.attempts} ` +
-      `${row.quarantined_at ? `quarantined=${row.quarantine_reason}` : `queued=${row.queued_at}`}`,
-  )
+  return [
+    ...hostedOutboxSummaryLines(rows),
+    ...rows.map(
+      (row) =>
+        `${row.id} ${row.table_name} ${row.row_id} ${row.operation} attempts=${row.attempts} ` +
+        `${row.quarantined_at ? `quarantined=${row.quarantine_reason}` : `queued=${row.queued_at}`}`,
+    ),
+  ]
+}
+
+export function hostedOutboxSummaryLines(rows = listHostedOutbox()): string[] {
+  const blocked = new Map<string, { count: number; oldest: string; remedy: string }>()
+  for (const row of rows) {
+    const project = /^waiting on routing: project "([^"]+)"/.exec(row.last_error ?? '')?.[1]
+    if (!project) continue
+    const current = blocked.get(project)
+    blocked.set(project, {
+      count: (current?.count ?? 0) + 1,
+      oldest: current && current.oldest < row.queued_at ? current.oldest : row.queued_at,
+      remedy: row.last_error!,
+    })
+  }
+  return [...blocked.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(
+      ([project, summary]) =>
+        `hub outbox blocked: project="${project}" rows=${summary.count} oldest=${summary.oldest}; ${summary.remedy}`,
+    )
 }
