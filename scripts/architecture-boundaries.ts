@@ -10,7 +10,6 @@ import {
   recordReadBoundariesBeforePublish,
   recordSchemaBoundaries,
 } from './architecture-record-boundaries.ts'
-import { recordIdentityBoundary } from './architecture-record-identity-boundary.ts'
 import { recordSettingsBoundarySpecs } from './architecture-record-settings-boundaries.ts'
 import { reviewBoundarySpecs } from './architecture-review-boundaries.ts'
 import { runLifecycleBoundarySpecs } from './architecture-run-lifecycle-boundaries.ts'
@@ -52,7 +51,6 @@ const boundary = (
 // Each row lists every import its file may use; anything else fails check-architecture.
 // Widen a row deliberately, with its reason still true, rather than routing around it.
 export const importBoundaries: ImportBoundary[] = [
-  recordIdentityBoundary,
   ...runRetryModuleSpecs.map((spec) =>
     boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
   ),

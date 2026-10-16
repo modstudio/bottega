@@ -10,7 +10,7 @@
     "test:gate": "bun test/run-gate.ts",
     "test:postgres": "bun scripts/test-postgres-rls.ts",
     "test:postgres:falsify": "bun scripts/test-postgres-rls.ts --falsify",
-    "identity:inventory": "bun scripts/identity-inventory.ts",
+    "identity:inventory": "bun ../scripts/check-identity-inventory.ts",
     "import:postgres:projects": "bun scripts/import-postgres-projects.ts",
     "test": "bun test src"
   },

@@ -22,6 +22,4 @@ export const databaseModules: ArchitectureModule[] = [
     '../../../shared/config-directory.ts',
     '../../../shared/machine-config.ts',
   ]),
-  module('orchestrator/src/database/identity-inventory.ts', ['bun:sqlite']),
-  module('orchestrator/src/database/identity-key-manifest.ts', ['./identity-inventory.ts']),
 ]
