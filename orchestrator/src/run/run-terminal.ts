@@ -53,13 +53,12 @@ import {
   runTerminalReplyPath,
   type TerminalSnapshot,
 } from './run-artifacts.ts'
-import { rollUpRootAndEnqueue } from './run-liveness.ts'
+import { recordArtifactPersistenceFailure, rollUpRootAndEnqueue } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
 import { checkpointRoot, claimIdentity } from './run-resume-kind.ts'
 import { type BlockerRow, blockersToRecord } from './run-terminal-blockers.ts'
 import { terminalTurnChanged } from './run-terminal-change.ts'
-import { recordArtifactPersistenceFailure } from './run-terminal-outbox.ts'
 import { applyConfinementPrecedence, applyVendorTermination } from './run-terminal-precedence.ts'
 import {
   applyPrematureFinalFailure,
@@ -94,8 +93,7 @@ export function finalizeTerminalChain(
     status: string
     failureKind: ReturnType<typeof classify> | null
     error: string | null
-    machineId: string
-    finishedAt: string
+    record: [machineId: string, finishedAt: string]
   },
 ): void {
   const rootId = input.parentRunId ?? input.runId
@@ -109,7 +107,7 @@ export function finalizeTerminalChain(
   }
   closeTerminalQuestions(database, rootId, input.status, input.failureKind)
   if (input.parentRunId !== null) {
-    rollUpRootAndEnqueue(database, input.parentRunId, input.machineId, input.finishedAt)
+    rollUpRootAndEnqueue(database, input.parentRunId, ...input.record)
   }
   if (
     input.status !== 'asking' &&
@@ -760,8 +758,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
         status,
         failureKind,
         error,
-        machineId: localMachineId,
-        finishedAt,
+        record: [localMachineId, finishedAt],
       })
       // A parsed findings reply is the review event. Capture it in the same
       // terminal transaction so a successful lens cannot exist in the gap
@@ -847,10 +844,9 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       failureKind,
       persistenceError,
     }))
-    const identity = claimIdentity(opts.resume)
     recordArtifactPersistenceFailure(db(), {
       runId: claim.id,
-      parentRunId: identity.parent_run_id,
+      parentRunId: claimIdentity(opts.resume).parent_run_id,
       error,
       machineId: localMachineId,
       finishedAt,

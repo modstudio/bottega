@@ -35,8 +35,7 @@ test('an ok child refreshes the failed root run record with the chain outcome', 
     status: 'ok',
     failureKind: null,
     error: null,
-    machineId: machine,
-    finishedAt: '2026-10-16T12:01:00.000Z',
+    record: [machine, '2026-10-16T12:01:00.000Z'],
   })
 
   const latest = db()
@@ -71,8 +70,7 @@ test('a failed non-failover child closes its question before the root inherits f
     status: 'failed',
     failureKind: 'interrupted',
     error: 'worker interrupted',
-    machineId: '01990000-0000-7000-8000-000000000099',
-    finishedAt: '2026-10-16T12:01:00.000Z',
+    record: ['01990000-0000-7000-8000-000000000099', '2026-10-16T12:01:00.000Z'],
   })
 
   expect(db().query('SELECT status,failure_kind FROM run WHERE id=?').get(root)).toEqual({
