@@ -2,15 +2,15 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { pgTable, text, uuid } from 'drizzle-orm/pg-core'
 import { applyMigrations } from '../orchestrator/src/database/migrations.ts'
-import { KEY_MANIFESTS } from './identity-key-manifest.ts'
 import {
   assertShrinkingKeyBaseline,
   classifyKeyInventory,
   hostedKeyTablesFromModules,
-  readSqliteKeyTables,
   type KeyManifests,
   type KeyTable,
+  readSqliteKeyTables,
 } from './identity-inventory.ts'
+import { KEY_MANIFESTS } from './identity-key-manifest.ts'
 
 const EMPTY: KeyManifests = { values: [], references: [], uuids: [], infrastructure: [] }
 const column = (
@@ -95,6 +95,17 @@ test('real natural and undeclared references remain measured', () => {
   const database = new Database(':memory:')
   try {
     applyMigrations(database)
+    database
+      .query(
+        `INSERT INTO lens
+         (id,title,question,excludes,slots,version,enabled,requires_execution,record_id)
+         VALUES ('architecture','Architecture','Question','[]','[]',1,1,0,
+                 '01990000-0000-7000-8000-000000001214')`,
+      )
+      .run()
+    expect(database.query("SELECT id FROM lens WHERE id='architecture'").get()).toEqual({
+      id: 'architecture',
+    })
     const inventory = classifyKeyInventory(
       'orchestrator',
       readSqliteKeyTables(database),

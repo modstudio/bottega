@@ -1,12 +1,12 @@
+import type { Database } from 'bun:sqlite'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import type { Database } from 'bun:sqlite'
 import { is } from 'drizzle-orm'
 import { type AnyPgTable, getTableConfig, PgTable } from 'drizzle-orm/pg-core'
 import drizzleConfig from '../shared/record/drizzle.config.ts'
 
 export type KeyStore = 'orchestrator' | 'hub' | 'hosted'
-export type KeyColumn = {
+type KeyColumn = {
   table: string
   name: string
   type: string
@@ -152,30 +152,41 @@ function validateKeyManifests(
   },
 ): void {
   const columns = new Map(
-    tables.flatMap((table) => table.columns.map((column) => [`${table.name}.${column.name}`, column] as const)),
+    tables.flatMap((table) =>
+      table.columns.map((column) => [`${table.name}.${column.name}`, column] as const),
+    ),
   )
   const overlap = [...manifests.values.keys()].filter((column) => manifests.references.has(column))
   if (overlap.length)
     throw new Error(`${store} value/reference manifests overlap: ${overlap.join(', ')}`)
-  for (const [kind, entries] of [
-    ['integer value', manifests.values],
-    ['undeclared reference', manifests.references],
-    ['UUID column', manifests.uuids],
-  ] as const) {
-    for (const [column, reason] of entries) {
-      if (!reason.trim()) throw new Error(`${store} ${kind} ${column} needs a reason`)
-      if (
-        !seen[
-          kind === 'integer value'
-            ? 'values'
-            : kind === 'undeclared reference'
-              ? 'references'
-              : 'uuids'
-        ].has(column)
-      )
-        throw new Error(`${store} ${kind} ${column} is stale`)
-    }
+  validateManifestEntries(store, 'integer value', manifests.values, seen.values)
+  validateManifestEntries(store, 'undeclared reference', manifests.references, seen.references)
+  validateManifestEntries(store, 'UUID column', manifests.uuids, seen.uuids)
+  validateManifestShapes(store, columns, manifests)
+  validateInfrastructure(
+    store,
+    new Set(tables.map((table) => table.name)),
+    manifests.infrastructure,
+  )
+}
+
+function validateManifestEntries(
+  store: KeyStore,
+  kind: string,
+  entries: ReadonlyMap<string, string>,
+  seen: ReadonlySet<string>,
+): void {
+  for (const [column, reason] of entries) {
+    if (!reason.trim()) throw new Error(`${store} ${kind} ${column} needs a reason`)
+    if (!seen.has(column)) throw new Error(`${store} ${kind} ${column} is stale`)
   }
+}
+
+function validateManifestShapes(
+  store: KeyStore,
+  columns: ReadonlyMap<string, KeyColumn>,
+  manifests: StoreManifests,
+): void {
   for (const column of manifests.uuids.keys()) {
     if (columns.get(column)?.type !== 'text')
       throw new Error(`${store} UUID column ${column} must be stored as TEXT`)
@@ -184,8 +195,14 @@ function validateKeyManifests(
     if (columns.get(column)?.foreignKey)
       throw new Error(`${store} undeclared reference ${column} is already a declared foreign key`)
   }
-  const tableNames = new Set(tables.map((table) => table.name))
-  for (const [table, reason] of manifests.infrastructure) {
+}
+
+function validateInfrastructure(
+  store: KeyStore,
+  tableNames: ReadonlySet<string>,
+  infrastructure: ReadonlyMap<string, string>,
+): void {
+  for (const [table, reason] of infrastructure) {
     if (!reason.trim()) throw new Error(`${store} infrastructure ${table} needs a reason`)
     if (!tableNames.has(table)) throw new Error(`${store} infrastructure ${table} is stale`)
   }

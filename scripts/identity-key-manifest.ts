@@ -8,7 +8,7 @@ import type {
 const manifest = (store: KeyStore, reason: string, columns: readonly string[]): ManifestColumn[] =>
   columns.map((column) => ({ store, column, reason }))
 
-export const INTEGER_VALUES: readonly ManifestColumn[] = [
+const INTEGER_VALUES: readonly ManifestColumn[] = [
   ...manifest('orchestrator', 'boolean flag', [
     'agent.enabled',
     'board_message.ack_required',
@@ -222,7 +222,7 @@ export const INTEGER_VALUES: readonly ManifestColumn[] = [
   ]),
 ]
 
-export const INFRASTRUCTURE_IDENTITIES: readonly InfrastructureIdentity[] = [
+const INFRASTRUCTURE_IDENTITIES: readonly InfrastructureIdentity[] = [
   { store: 'orchestrator', table: 'orch_migrations', reason: 'migration journal bookkeeping' },
   { store: 'orchestrator', table: 'orch_schema_lock', reason: 'schema migration lock' },
   { store: 'orchestrator', table: 'record_install_binding', reason: 'singleton install binding' },
@@ -236,7 +236,7 @@ export const INFRASTRUCTURE_IDENTITIES: readonly InfrastructureIdentity[] = [
   { store: 'hub', table: 'install_binding', reason: 'singleton install binding' },
 ]
 
-export const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
+const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
   ...manifest('orchestrator', 'stored integer selects another row', [
     'landing_triage_snapshot.review_ids',
     'review_finding_amendment.finding_ordinal',
@@ -248,7 +248,7 @@ export const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
   ...manifest('orchestrator', 'known undeclared row reference', ['run.retry_of']),
 ]
 
-export const UUID_COLUMNS: readonly ManifestColumn[] = [
+const UUID_COLUMNS: readonly ManifestColumn[] = [
   ...manifest('orchestrator', 'owned or referenced UUID', [
     'agent.record_id',
     'blocker.record_id',

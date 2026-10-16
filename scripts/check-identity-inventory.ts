@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { Database } from 'bun:sqlite'
 import { applyMigrations as applyHubMigrations } from '../hub/src/migrations.ts'
+import { applyMigrations as applyOrchestratorMigrations } from '../orchestrator/src/database/migrations.ts'
 import {
   assertShrinkingKeyBaseline,
   classifyKeyInventory,
@@ -9,7 +10,6 @@ import {
 } from './identity-inventory.ts'
 import baseline from './identity-key-baseline.json'
 import { KEY_MANIFESTS } from './identity-key-manifest.ts'
-import { applyMigrations as applyOrchestratorMigrations } from '../orchestrator/src/database/migrations.ts'
 
 const orchestrator = new Database(':memory:')
 const hub = new Database(':memory:')
