@@ -4,10 +4,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import type { AdmissionDecision } from './admission-decision.ts'
-import {
-  MERGE_QUEUE_WAIT_MS,
-  type MergeQueueObservation,
-} from './merge-queue-decision.ts'
+import { MERGE_QUEUE_WAIT_MS, type MergeQueueObservation } from './merge-queue-decision.ts'
 import type { PullRequestChange } from './pr-admission.ts'
 import {
   mergePullRequest,
