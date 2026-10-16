@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { articleListRows } from './article-list.tsx'
+import { articleListRows } from './article-list.ts'
 import { docsVisibleByStatus } from './model.ts'
 import { treeForAudience } from './tree.ts'
 import type { DocsTreeItem } from './types.ts'
