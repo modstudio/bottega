@@ -67,16 +67,53 @@ function namedRow(row: Record<string, unknown> | undefined): HostedProjectNameRo
 async function renameHostedDocSubjects(
   tx: SQL,
   spaceId: string,
+  projectId: string,
   from: string,
   to: string,
 ): Promise<void> {
+  const projectScopes = tx.array(['project', 'resume', 'canon', 'settings'], 'text')
   await tx`
     UPDATE doc SET subject=${to}, updated_at=now()
     WHERE space_id=${spaceId}::uuid AND subject=${from}
+      AND (project_id=${projectId}::uuid OR (project_id IS NULL AND scope=ANY(${projectScopes})))
   `
   await tx`
     UPDATE doc_revision SET subject=${to}
     WHERE space_id=${spaceId}::uuid AND subject=${from}
+      AND (project_id=${projectId}::uuid OR (project_id IS NULL AND scope=ANY(${projectScopes})))
+  `
+}
+
+const HUB_PROJECT_NAME_TABLES = [
+  'hub_task',
+  'hub_task_comment',
+  'hub_task_document',
+  'hub_task_status_event',
+  'hub_note',
+  'hub_note_acknowledgement',
+  'hub_report_subscription',
+  'hub_report_subscription_project',
+  'hub_interval',
+] as const
+
+async function renameHostedHubProjectNames(
+  tx: SQL,
+  input: { spaceId: string; projectId: string; from: string; to: string },
+): Promise<void> {
+  for (const table of HUB_PROJECT_NAME_TABLES) {
+    await tx`UPDATE ${tx.unsafe(table)} SET project_name=${input.to}
+      WHERE project_id=${input.projectId}::uuid
+         OR (project_id IS NULL AND space_id=${input.spaceId}::uuid AND project_name=${input.from})`
+  }
+  await tx`
+    UPDATE hub_task SET project=${input.to}
+    WHERE project_id=${input.projectId}::uuid
+       OR (project_id IS NULL AND space_id=${input.spaceId}::uuid AND project=${input.from})
+  `
+  await tx`
+    UPDATE hub_note SET project=${input.to}
+    WHERE project_id=${input.projectId}::uuid
+       OR (project_id IS NULL AND space_id=${input.spaceId}::uuid AND project=${input.from})
   `
 }
 
@@ -220,9 +257,13 @@ export async function upsertRecordProject(
     }
     if (plan.kind === 'rename') {
       await tx`UPDATE project SET name=${plan.to} WHERE id=${plan.id}::uuid`
-    }
-    if (currentName !== nextName) {
-      await renameHostedDocSubjects(tx, input.spaceId, currentName, nextName)
+      await renameHostedHubProjectNames(tx, {
+        spaceId: input.spaceId,
+        projectId: plan.id,
+        from: plan.from,
+        to: plan.to,
+      })
+      await renameHostedDocSubjects(tx, input.spaceId, plan.id, currentName, nextName)
     }
     const id = await upsertHostedProjectRow(tx, {
       spaceId: input.spaceId,

@@ -26,13 +26,11 @@ const PROJECT_RECORD_ID_TABLES = [
 ] as const
 
 /** Fill NULL project_record_id values from the register by name. Unmatched names stay null. */
-export function backfillProjectRecordIds(
+function backfillProjectRecordIds(
   conn: Database,
   registered: readonly ProjectRecordIdSource[] = projects(),
 ): void {
-  const named = registered.flatMap((project) =>
-    project.record_id ? [{ name: project.name, record_id: project.record_id }] : [],
-  )
+  const named = namedRegisterProjects(registered)
   if (!named.length) return
   for (const { table, column } of PROJECT_RECORD_ID_TABLES) {
     const update = conn.query(
@@ -45,4 +43,38 @@ export function backfillProjectRecordIds(
      WHERE routing_project=? AND routing_project_record_id IS NULL`,
   )
   for (const project of named) outbox.run(project.record_id, project.name)
+}
+
+/** Rewrite name snapshots that already carry the project's hosted id. */
+function syncProjectNamesFromRegister(
+  conn: Database,
+  registered: readonly ProjectRecordIdSource[] = projects(),
+): void {
+  const named = namedRegisterProjects(registered)
+  if (!named.length) return
+  for (const { table, column } of PROJECT_RECORD_ID_TABLES) {
+    const update = conn.query(`UPDATE "${table}" SET "${column}"=? WHERE project_record_id=?`)
+    for (const project of named) update.run(project.name, project.record_id)
+  }
+  const outbox = conn.query(
+    `UPDATE hosted_outbox SET routing_project=? WHERE routing_project_record_id=?`,
+  )
+  for (const project of named) outbox.run(project.name, project.record_id)
+}
+
+/** One collect-cycle identity pass: fill missing ids, then names follow the register. */
+export function applyProjectRegisterNames(
+  conn: Database,
+  registered: readonly ProjectRecordIdSource[] = projects(),
+): void {
+  backfillProjectRecordIds(conn, registered)
+  syncProjectNamesFromRegister(conn, registered)
+}
+
+function namedRegisterProjects(
+  registered: readonly ProjectRecordIdSource[],
+): Array<{ name: string; record_id: string }> {
+  return registered.flatMap((project) =>
+    project.record_id ? [{ name: project.name, record_id: project.record_id }] : [],
+  )
 }

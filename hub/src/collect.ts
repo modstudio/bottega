@@ -27,7 +27,7 @@ import {
 } from './outbox.ts'
 import { HostedOutboxDrainSchedule, type PendingHostedOutbox } from './outbox-fast-cycle.ts'
 import { pruneOutboxTrace } from './outbox-trace.ts'
-import { backfillProjectRecordIds } from './project-record-id.ts'
+import { applyProjectRegisterNames } from './project-record-id.ts'
 import { rollUpDays } from './query.ts'
 import {
   acquireStoredLease,
@@ -410,7 +410,7 @@ async function collectSlow(
   const results = [] as CollectLegResult[]
   let lastCompleted = 'tasks'
   guard?.assertHeld()
-  writeTransaction((conn) => backfillProjectRecordIds(conn))
+  writeTransaction((conn) => applyProjectRegisterNames(conn))
   guard?.assertHeld('project identity')
   results.push(await settleLeg('git', () => ingestGit(hoursAgo(24 * 7).slice(0, 10))))
   guard?.assertHeld('git')
@@ -459,7 +459,7 @@ export async function collectOnce(
   const results = [] as CollectLegResult[]
   let previous: string | undefined
   guard.assertHeld()
-  writeTransaction((conn) => backfillProjectRecordIds(conn))
+  writeTransaction((conn) => applyProjectRegisterNames(conn))
   previous = 'project identity'
   if (selected('git')) {
     guard.assertHeld(previous)

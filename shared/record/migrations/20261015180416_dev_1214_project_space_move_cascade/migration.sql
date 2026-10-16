@@ -1,0 +1,2 @@
+ALTER TABLE "doc" DROP CONSTRAINT "doc_article_subject_same_project_fk", ADD CONSTRAINT "doc_article_subject_same_project_fk" FOREIGN KEY ("space_id","project_id","article_subject_id") REFERENCES "subject"("space_id","project_id","id") ON UPDATE CASCADE;--> statement-breakpoint
+ALTER TABLE "public_doc_space" DROP CONSTRAINT "public_doc_space_space_id_project_id_project_space_id_id_fk", ADD CONSTRAINT "public_doc_space_space_id_project_id_project_space_id_id_fk" FOREIGN KEY ("space_id","project_id") REFERENCES "project"("space_id","id") ON UPDATE CASCADE;
