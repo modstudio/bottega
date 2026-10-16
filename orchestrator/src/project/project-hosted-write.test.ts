@@ -86,12 +86,12 @@ test('fresh stores add, fill, retire, and unretire locally without a hosted call
   expect(hosted).toEqual([])
 })
 
-test('a bound store refuses before adding a local row and names record doctor', async () => {
+test('a bound store refuses before adding a local row and names record use', async () => {
   rememberHostedRecord()
   const path = mkdtempSync(join(tmpdir(), 'orch-bound-project-'))
   await expect(runProject(['project', 'add', path], { name: 'bound-refusal' })).rejects.toThrow(
     new RegExp(
-      `bound to a hosted record[\\s\\S]*ORCH_RECORD_API_URL[\\s\\S]*${PLATFORM_SLUG} record doctor`,
+      `bound to a hosted record[\\s\\S]*ORCH_RECORD_API_URL[\\s\\S]*${PLATFORM_SLUG} record use`,
     ),
   )
   expect(projectByName('bound-refusal')).toBeNull()
