@@ -644,13 +644,19 @@ function reviewLensProblems(
 ): string[] {
   if (!review || !Array.isArray(review.lenses) || enabledLensIds === undefined) return []
   const enabled = new Set(enabledLensIds)
-  return review.lenses.flatMap((entry, index) =>
+  const problems = review.lenses.flatMap((entry, index) =>
     entry && typeof entry === 'object' && typeof entry.lens === 'string' && !enabled.has(entry.lens)
       ? [
           `review.lenses.${index}.lens: unknown or disabled lens "${entry.lens}"; choose an enabled lens from ${PLATFORM_SLUG} review lens list`,
         ]
       : [],
   )
+  if (review.secondOpinion && !enabled.has(review.secondOpinion.lens)) {
+    problems.push(
+      `review.secondOpinion.lens: unknown or disabled lens "${review.secondOpinion.lens}"; choose an enabled lens from ${PLATFORM_SLUG} review lens list`,
+    )
+  }
+  return problems
 }
 
 function readerToolServerProblems(server: string, names: unknown): string[] {

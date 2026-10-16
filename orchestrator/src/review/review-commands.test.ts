@@ -294,7 +294,10 @@ test('review tier reports stack and generic profile sources resolved for its pro
       stack: 'bun',
       settings: {
         trunk: 'main',
-        review: { lenses: [{ lens: 'correctness' }, { lens: 'craft' }] },
+        review: {
+          lenses: [{ lens: 'correctness' }, { lens: 'craft' }],
+          secondOpinion: { lens: 'correctness' },
+        },
       },
     })
     setProfile({
@@ -321,6 +324,9 @@ test('review tier reports stack and generic profile sources resolved for its pro
 
     expect(output).toContain('lens correctness  framework=stack')
     expect(output).toContain('lens craft  framework=generic')
+    expect(output).toContain(
+      'second opinion correctness: dispatch this lens a second time on a different model with --distinct-from <the first run of correctness on this tip>',
+    )
     expect(output).toContain('rounds 0/3')
     expect(output).toContain('current change would start a new round')
   } finally {

@@ -8,7 +8,7 @@ autonomy: auto
 needs:
   - tracker
 ---
-From the main checkout's `bottega`, run `bottega review tier {{branch}}`. Dispatch every lens it lists, one run per lens. A lens already recorded on this branch tip, such as the blast-radius lens a defect fix has already run, satisfies that listed lens, so dispatch only the lenses still needed and never run the same lens twice on the same tip. At tier zero dispatch none.
+From the main checkout's `bottega`, run `bottega review tier {{branch}}`. Dispatch every lens it lists, one run per lens. A lens already recorded on this branch tip, such as the blast-radius lens a defect fix has already run, satisfies that listed lens, so dispatch only the lenses still needed and never run the same lens twice on the same tip. A second opinion listed by `bottega review tier` is the one exception: run it after the first opinion of that lens, pass `--distinct-from <first-run>` naming that run, and count both results toward the review. At tier zero dispatch none.
 
 Dispatch each lens with `bottega run start review-lens --review {{branch}} --key {{key}} --lens <id> "Review {{key}}: the change on {{branch}} against its task."`. When `facts.tracker.protocol` is `workspace-mcp`, add `--mcp` and require the lens prompt to read the task with `{{tracker.actions.get}}` and every linked task document through the MCP server named by `facts.tracker.server` in the composition. Never exceed the tier's review-round ceiling. When the ceiling is reached, stop and ask the operator instead of starting another round.
 

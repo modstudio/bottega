@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { applicableReviewLenses } from './review-applicability.ts'
+import { applicableReview, applicableReviewLenses } from './review-applicability.ts'
 
 describe('applicable review lenses', () => {
   const review = {
@@ -34,5 +34,29 @@ describe('applicable review lenses', () => {
     expect(
       applicableReviewLenses(3, ['orchestrator/src/review/review-tier.ts'], undefined),
     ).toEqual(['correctness', 'craft', 'safety'])
+  })
+
+  test('selects a declared second opinion at its minimum tier', () => {
+    expect(applicableReview(3, ['orchestrator/src/review/review-tier.ts'], review)).toEqual({
+      lenses: ['correctness', 'craft'],
+    })
+    expect(
+      applicableReview(2, ['orchestrator/src/review/review-tier.ts'], {
+        ...review,
+        secondOpinion: { lens: 'craft', minTier: 3 },
+      }),
+    ).toEqual({ lenses: ['correctness', 'craft'] })
+    expect(
+      applicableReview(3, ['orchestrator/src/review/review-tier.ts'], {
+        ...review,
+        secondOpinion: { lens: 'craft' },
+      }),
+    ).toEqual({ lenses: ['correctness', 'craft'], secondOpinion: 'craft' })
+    expect(
+      applicableReview(3, ['orchestrator/src/review/review-tier.ts'], {
+        lenses: [{ lens: 'correctness' }],
+        secondOpinion: { lens: 'safety' },
+      }),
+    ).toEqual({ lenses: ['correctness', 'safety'], secondOpinion: 'safety' })
   })
 })
