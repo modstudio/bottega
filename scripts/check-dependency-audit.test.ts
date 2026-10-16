@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  audit,
+  classifyAuditOutcome,
   classifyDependencyAudit,
   compareDependencyAudit,
   type DependencyAdvisory,
@@ -58,8 +58,15 @@ describe('dependency audit command result', () => {
     })
   })
 
-  test('a timeout is unavailable', async () => {
-    expect(await audit(async () => ({ kind: 'timeout' }))).toEqual({
+  test('unparseable output with an accepted exit fails instead of reading as unavailable', () => {
+    expect(classifyDependencyAudit(1, 'not json', '')).toEqual({
+      kind: 'failure',
+      detail: 'bun audit exited 1; output: not json',
+    })
+  })
+
+  test('a timeout is unavailable', () => {
+    expect(classifyAuditOutcome({ kind: 'timeout' })).toEqual({
       kind: 'unavailable',
       detail: 'bun audit exceeded 10000ms and was killed',
     })

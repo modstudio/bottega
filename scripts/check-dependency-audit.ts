@@ -150,10 +150,7 @@ async function runAuditCommand(): Promise<AuditCommandResult> {
   return { kind: 'completed', exitCode, stdout, stderr }
 }
 
-export async function audit(
-  run: () => Promise<AuditCommandResult> = runAuditCommand,
-): Promise<DependencyAuditClassification> {
-  const outcome = await run()
+export function classifyAuditOutcome(outcome: AuditCommandResult): DependencyAuditClassification {
   if (outcome.kind === 'timeout') {
     return {
       kind: 'unavailable',
@@ -167,6 +164,10 @@ export async function audit(
     }
   }
   return classifyDependencyAudit(outcome.exitCode, outcome.stdout, outcome.stderr)
+}
+
+async function audit(): Promise<DependencyAuditClassification> {
+  return classifyAuditOutcome(await runAuditCommand())
 }
 
 async function main() {
