@@ -381,6 +381,20 @@ export type ProjectReferenceCounts = {
   doc: number
   doc_revision: number
   review: number
+  board_claim: number
+  branch_landing_record: number
+  presence: number
+  worker_note_request: number
+  workflow_cursor: number
+  main_stack_activity: number
+  port_pair_source: number
+  port_pair_target: number
+  port_ref: number
+  port_ref_source: number
+  port_ref_target: number
+  project_lens_profile: number
+  release_ledger: number
+  subject: number
 }
 
 const REFERENCE_LABELS: { key: keyof ProjectReferenceCounts; label: string }[] = [
@@ -395,6 +409,20 @@ const REFERENCE_LABELS: { key: keyof ProjectReferenceCounts; label: string }[] =
   { key: 'doc', label: 'doc' },
   { key: 'doc_revision', label: 'doc_revision' },
   { key: 'review', label: 'review' },
+  { key: 'board_claim', label: 'board_claim' },
+  { key: 'branch_landing_record', label: 'branch_landing_record' },
+  { key: 'presence', label: 'presence' },
+  { key: 'worker_note_request', label: 'worker_note_request' },
+  { key: 'workflow_cursor', label: 'workflow_cursor' },
+  { key: 'main_stack_activity', label: 'main_stack_activity' },
+  { key: 'port_pair_source', label: 'port_pair source' },
+  { key: 'port_pair_target', label: 'port_pair target' },
+  { key: 'port_ref', label: 'port_ref' },
+  { key: 'port_ref_source', label: 'port_ref_source source' },
+  { key: 'port_ref_target', label: 'port_ref_source target' },
+  { key: 'project_lens_profile', label: 'project_lens_profile' },
+  { key: 'release_ledger', label: 'release_ledger' },
+  { key: 'subject', label: 'subject' },
 ]
 
 /** Two anchored lines, or null when the row may be deleted. */
@@ -431,6 +459,30 @@ function projectReferenceCounts(projectId: string): ProjectReferenceCounts {
     doc: count('doc'),
     doc_revision: count('doc_revision'),
     review: count('review'),
+    board_claim: count('board_claim'),
+    branch_landing_record: count('branch_landing_record'),
+    presence: count('presence'),
+    worker_note_request: count('worker_note_request'),
+    workflow_cursor: count('workflow_cursor'),
+    main_stack_activity: count('main_stack_activity'),
+    port_pair_source: (
+      db().query('SELECT COUNT(*) AS n FROM port_pair WHERE source_project_record_id=?').get(projectId) as { n: number }
+    ).n,
+    port_pair_target: (
+      db().query('SELECT COUNT(*) AS n FROM port_pair WHERE target_project_record_id=?').get(projectId) as { n: number }
+    ).n,
+    port_ref: (
+      db().query('SELECT COUNT(*) AS n FROM port_ref WHERE target_project_record_id=?').get(projectId) as { n: number }
+    ).n,
+    port_ref_source: (
+      db().query('SELECT COUNT(*) AS n FROM port_ref_source WHERE source_project_record_id=?').get(projectId) as { n: number }
+    ).n,
+    port_ref_target: (
+      db().query('SELECT COUNT(*) AS n FROM port_ref_source WHERE target_project_record_id=?').get(projectId) as { n: number }
+    ).n,
+    project_lens_profile: count('project_lens_profile'),
+    release_ledger: count('release_ledger'),
+    subject: count('subject'),
   }
 }
 

@@ -189,7 +189,7 @@ describe('record doctor decisions', () => {
       .run()
     const addRun = database.query(
       `INSERT INTO run
-       (id,record_id,project_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       (id,record_id,project_record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
        VALUES (?,?,?,'2026-09-25','codex','implement','sha',3,'ask','asking')`,
     )
     addRun.run(1, '01990000-0000-7000-8000-000000000001', 1)

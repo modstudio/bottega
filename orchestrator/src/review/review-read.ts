@@ -33,7 +33,7 @@ export function latestArchitectRead(database: Database, project: string, branch:
   const row = database
     .query<{ tip: string; note: string; recorded_at: string }, [string, string]>(
       `SELECT tip,note,recorded_at FROM review_read
-       WHERE project=? AND branch=?
+       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND branch=?
        ORDER BY recorded_at DESC,id DESC LIMIT 1`,
     )
     .get(project, branch)

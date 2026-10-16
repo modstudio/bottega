@@ -35,7 +35,8 @@ export function landingTreeReleaseHold(input: {
       db()
         .query(
           `SELECT 1 FROM landing
-           WHERE project=? AND branch=? AND status IN ('queued','running') LIMIT 1`,
+           WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+             AND branch=? AND status IN ('queued','running') LIMIT 1`,
         )
         .get(project, input.branch),
   )

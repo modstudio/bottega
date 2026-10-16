@@ -238,7 +238,9 @@ function latestActivity(
   const sessionCutoff = new Date(nowMs - SESSION_LIVE_MS).toISOString()
   const liveSession = Boolean(
     database
-      .query("SELECT 1 FROM presence WHERE role='architect' AND project=? AND last_seen>=? LIMIT 1")
+      .query(
+        "SELECT 1 FROM presence WHERE role='architect' AND project_record_id=(SELECT record_id FROM project WHERE name=?) AND last_seen>=? LIMIT 1",
+      )
       .get(project.name, sessionCutoff),
   )
   const ensured = database

@@ -212,7 +212,7 @@ function recordedLandingCommit(project: string, branch: string | null, d: Databa
     d
       .query<{ merge_commit: string | null }, [string, string]>(
         `SELECT merge_commit FROM branch_landing_record
-          WHERE project=? AND branch=?
+          WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND branch=?
           ORDER BY merged_at DESC, pr_number DESC LIMIT 1`,
       )
       .get(project, branch)?.merge_commit ?? null

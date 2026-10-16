@@ -18,7 +18,7 @@ export function branchForTaskKey(
     .query<{ branch: string }, [string, string, string, string]>(
       `SELECT blr.branch AS branch
          FROM branch_landing_record blr
-        WHERE blr.project=?
+        WHERE blr.project_record_id=(SELECT record_id FROM project WHERE name=?)
           AND (
             blr.branch=?
             OR blr.branch LIKE ?
@@ -37,7 +37,7 @@ export function branchForTaskKey(
     .query<{ branch: string }, [string, string, string]>(
       `SELECT branch
          FROM landing_triage_snapshot
-        WHERE project=?
+        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
           AND (branch=? OR branch LIKE ?)
           AND pr_number IS NOT NULL
         ORDER BY at DESC, id DESC
@@ -57,7 +57,7 @@ export function pullRequestNumberForBranch(
     .query<{ pr_number: number }, [string, string]>(
       `SELECT pr_number
          FROM branch_landing_record
-        WHERE project=? AND branch=?
+        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND branch=?
         ORDER BY merged_at DESC, pr_number DESC
         LIMIT 1`,
     )
@@ -67,7 +67,7 @@ export function pullRequestNumberForBranch(
     .query<{ pr_number: number }, [string, string]>(
       `SELECT pr_number
          FROM landing_triage_snapshot
-        WHERE project=? AND branch=? AND pr_number IS NOT NULL
+        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND branch=? AND pr_number IS NOT NULL
         ORDER BY at DESC, id DESC
         LIMIT 1`,
     )

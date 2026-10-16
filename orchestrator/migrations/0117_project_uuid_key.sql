@@ -1,18 +1,146 @@
-ALTER TABLE board_claim ADD COLUMN project_record_id TEXT REFERENCES project(record_id) ON DELETE RESTRICT;
-UPDATE board_claim SET project_record_id=(SELECT record_id FROM project WHERE name=board_claim.project);
-CREATE INDEX board_claim_project_record_id ON board_claim(project_record_id);
-ALTER TABLE presence ADD COLUMN project_record_id TEXT REFERENCES project(record_id) ON DELETE CASCADE;
-UPDATE presence SET project_record_id=(SELECT record_id FROM project WHERE name=presence.project);
+CREATE TABLE board_claim_project_uuid (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project TEXT NOT NULL,
+  project_record_id TEXT NOT NULL REFERENCES project(record_id) ON DELETE RESTRICT,
+  subject_kind TEXT NOT NULL CHECK (subject_kind IN ('task','path','resource')),
+  subject_value TEXT NOT NULL,
+  holder_kind TEXT NOT NULL CHECK (holder_kind IN ('operator','architect')),
+  holder_session TEXT,
+  note TEXT,
+  run_id INTEGER REFERENCES run(id),
+  duration_ms INTEGER NOT NULL,
+  taken_at TEXT NOT NULL,
+  renewed_at TEXT NOT NULL,
+  lapses_at TEXT NOT NULL,
+  closed_at TEXT,
+  close_reason TEXT CHECK (close_reason IN ('released','lapsed','run-ended','task-closed','taken-over')),
+  superseded_by_claim_id INTEGER REFERENCES board_claim_project_uuid(id),
+  record_id TEXT NOT NULL,
+  CHECK ((holder_kind = 'operator' AND holder_session IS NULL) OR
+         (holder_kind = 'architect' AND holder_session IS NOT NULL)),
+  CHECK ((closed_at IS NULL AND close_reason IS NULL) OR
+         (closed_at IS NOT NULL AND close_reason IS NOT NULL))
+);
+INSERT INTO board_claim_project_uuid
+SELECT id,project,(SELECT record_id FROM project WHERE name=board_claim.project),
+       subject_kind,subject_value,holder_kind,holder_session,note,run_id,duration_ms,
+       taken_at,renewed_at,lapses_at,closed_at,close_reason,superseded_by_claim_id,record_id
+FROM board_claim;
+DROP TABLE board_claim;
+ALTER TABLE board_claim_project_uuid RENAME TO board_claim;
+CREATE INDEX board_claim_project_subject
+  ON board_claim(project_record_id,subject_kind,subject_value,closed_at);
+CREATE UNIQUE INDEX board_claim_record_id_unique ON board_claim(record_id);
+CREATE INDEX board_claim_run ON board_claim(run_id,closed_at);
+CREATE INDEX board_claim_superseded ON board_claim(superseded_by_claim_id);
+--> statement-breakpoint
+CREATE TABLE presence_project_uuid (
+  session_id TEXT PRIMARY KEY CHECK (session_id <> 'operator'),
+  harness TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role = 'architect'),
+  machine TEXT NOT NULL,
+  project TEXT NOT NULL,
+  project_record_id TEXT NOT NULL REFERENCES project(record_id) ON DELETE RESTRICT,
+  cwd TEXT NOT NULL,
+  current_task_key TEXT,
+  last_seen TEXT NOT NULL,
+  first_seen TEXT
+);
+INSERT INTO presence_project_uuid
+SELECT session_id,harness,role,machine,project,
+       (SELECT record_id FROM project WHERE name=presence.project),cwd,current_task_key,last_seen,first_seen
+FROM presence;
+DROP TABLE presence;
+ALTER TABLE presence_project_uuid RENAME TO presence;
+CREATE INDEX presence_last_seen ON presence(last_seen);
 CREATE INDEX presence_project_record_id ON presence(project_record_id);
-ALTER TABLE worker_note_request ADD COLUMN project_record_id TEXT REFERENCES project(record_id) ON DELETE RESTRICT;
-UPDATE worker_note_request SET project_record_id=(SELECT record_id FROM project WHERE name=worker_note_request.project);
+--> statement-breakpoint
+CREATE TABLE worker_note_request_project_uuid (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id INTEGER NOT NULL REFERENCES run(id) ON DELETE CASCADE,
+  text TEXT NOT NULL CHECK (length(text) BETWEEN 1 AND 1000 AND instr(text, char(10)) = 0 AND instr(text, char(13)) = 0),
+  file TEXT CHECK (file IS NULL OR length(file) BETWEEN 1 AND 1000),
+  same_as TEXT CHECK (same_as IS NULL OR length(same_as) BETWEEN 1 AND 1000),
+  requested_at TEXT NOT NULL, claimed_at TEXT, finished_at TEXT,
+  status TEXT NOT NULL CHECK (status IN ('requested','filed','refused')),
+  note_record_id TEXT, note_label TEXT,
+  candidate_ids TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(candidate_ids)),
+  candidate_labels TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(candidate_labels)),
+  refusal_class TEXT CHECK (refusal_class IN ('anchor-refused','filing-refused','supervisor-closed')),
+  detail TEXT, project TEXT,
+  project_record_id TEXT REFERENCES project(record_id) ON DELETE RESTRICT,
+  record_id TEXT NOT NULL,
+  CHECK ((status = 'requested' AND finished_at IS NULL AND note_record_id IS NULL AND note_label IS NULL AND refusal_class IS NULL) OR
+         (status = 'filed' AND finished_at IS NOT NULL AND note_label IS NOT NULL AND refusal_class IS NULL) OR
+         (status = 'refused' AND finished_at IS NOT NULL AND note_record_id IS NULL AND note_label IS NULL AND refusal_class IS NOT NULL))
+);
+INSERT INTO worker_note_request_project_uuid
+SELECT id,run_id,text,file,same_as,requested_at,claimed_at,finished_at,status,note_record_id,note_label,
+       candidate_ids,candidate_labels,refusal_class,detail,project,
+       (SELECT record_id FROM project WHERE name=worker_note_request.project),record_id
+FROM worker_note_request;
+DROP TABLE worker_note_request;
+ALTER TABLE worker_note_request_project_uuid RENAME TO worker_note_request;
+CREATE INDEX worker_note_request_pending ON worker_note_request(run_id,status,claimed_at,id);
+CREATE UNIQUE INDEX worker_note_request_record_id_unique ON worker_note_request(record_id);
 CREATE INDEX worker_note_request_project_record_id ON worker_note_request(project_record_id);
-ALTER TABLE workflow_cursor ADD COLUMN project_record_id TEXT REFERENCES project(record_id) ON DELETE RESTRICT;
-UPDATE workflow_cursor SET project_record_id=(SELECT record_id FROM project WHERE name=workflow_cursor.project);
-CREATE INDEX workflow_cursor_project_record_id ON workflow_cursor(project_record_id);
-ALTER TABLE branch_landing_record ADD COLUMN project_record_id TEXT REFERENCES project(record_id) ON DELETE RESTRICT;
-UPDATE branch_landing_record SET project_record_id=(SELECT record_id FROM project WHERE name=branch_landing_record.project);
-CREATE INDEX branch_landing_record_project_record_id ON branch_landing_record(project_record_id);
+--> statement-breakpoint
+CREATE TABLE workflow_cursor_project_uuid (
+  id INTEGER PRIMARY KEY,
+  project TEXT NOT NULL,
+  project_record_id TEXT NOT NULL REFERENCES project(record_id) ON DELETE RESTRICT,
+  workflow_slug TEXT NOT NULL,
+  mode_slug TEXT NOT NULL,
+  workflow_key TEXT NOT NULL DEFAULT '',
+  instance_id TEXT NOT NULL,
+  session_id TEXT,
+  workflow_version INTEGER NOT NULL,
+  catalogue_version INTEGER NOT NULL,
+  args TEXT NOT NULL,
+  ordinal INTEGER NOT NULL DEFAULT 0 CHECK (ordinal >= 0),
+  step_slug TEXT NOT NULL DEFAULT '',
+  state TEXT NOT NULL DEFAULT 'running' CHECK (state IN ('running','awaiting-ruling','done','abandoned')),
+  closed TEXT NOT NULL DEFAULT '[]',
+  question TEXT,
+  total_steps INTEGER NOT NULL CHECK (total_steps > 0),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  autonomy TEXT,
+  enforcement TEXT NOT NULL DEFAULT 'note-only' CHECK (enforcement IN ('note-only','floors')),
+  record_id TEXT NOT NULL,
+  UNIQUE (project_record_id,workflow_slug,mode_slug,workflow_key,instance_id)
+);
+INSERT INTO workflow_cursor_project_uuid
+SELECT id,project,(SELECT record_id FROM project WHERE name=workflow_cursor.project),
+       workflow_slug,mode_slug,workflow_key,instance_id,session_id,workflow_version,catalogue_version,
+       args,ordinal,step_slug,state,closed,question,total_steps,created_at,updated_at,autonomy,enforcement,record_id
+FROM workflow_cursor;
+DROP TABLE workflow_cursor;
+ALTER TABLE workflow_cursor_project_uuid RENAME TO workflow_cursor;
+CREATE INDEX workflow_cursor_open_session ON workflow_cursor(session_id,project_record_id,state);
+CREATE UNIQUE INDEX workflow_cursor_record_id_unique ON workflow_cursor(record_id);
+--> statement-breakpoint
+CREATE TABLE branch_landing_record_project_uuid (
+  project TEXT NOT NULL,
+  project_record_id TEXT NOT NULL REFERENCES project(record_id) ON DELETE RESTRICT,
+  branch TEXT NOT NULL,
+  tip TEXT NOT NULL,
+  pr_number INTEGER NOT NULL CHECK (pr_number > 0),
+  merge_commit TEXT,
+  merged_at TEXT NOT NULL,
+  recording_session TEXT,
+  recorded_at TEXT NOT NULL,
+  record_id TEXT NOT NULL,
+  PRIMARY KEY (project,branch),
+  UNIQUE (project_record_id,branch)
+);
+INSERT INTO branch_landing_record_project_uuid
+SELECT project,(SELECT record_id FROM project WHERE name=branch_landing_record.project),branch,tip,
+       pr_number,merge_commit,merged_at,recording_session,recorded_at,record_id
+FROM branch_landing_record;
+DROP TABLE branch_landing_record;
+ALTER TABLE branch_landing_record_project_uuid RENAME TO branch_landing_record;
+CREATE UNIQUE INDEX branch_landing_record_record_id_unique ON branch_landing_record(record_id);
 --> statement-breakpoint
 CREATE TABLE "run_project_uuid" (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

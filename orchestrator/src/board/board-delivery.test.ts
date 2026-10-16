@@ -91,8 +91,8 @@ test('board read and read --claim deliver hosted beside local once and retain a 
   }
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES ('delivery-reader','claude','architect','machine','delivery-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES ('delivery-reader','claude','architect','machine','delivery-project',(SELECT record_id FROM project WHERE name='delivery-project'),'/tmp',NULL,?,?)`,
     )
     .run('2026-10-05T11:00:00.000Z', new Date().toISOString())
   const localClaim = postNotice(
@@ -178,8 +178,8 @@ test('a spent refresh budget still surfaces the failed-refresh warning', async (
   }
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES ('delivery-reader','claude','architect','machine','delivery-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES ('delivery-reader','claude','architect','machine','delivery-project',(SELECT record_id FROM project WHERE name='delivery-project'),'/tmp',NULL,?,?)`,
     )
     .run('2026-10-05T11:00:00.000Z', new Date().toISOString())
   const hostedClaim = hosted('session:delivery-reader')
@@ -218,8 +218,8 @@ test('session start renders information and standing as one line but a request i
   const session = 'purpose-start-reader'
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude','architect','machine','delivery-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude','architect','machine','delivery-project',(SELECT record_id FROM project WHERE name='delivery-project'),'/tmp',NULL,?,?)`,
     )
     .run(session, new Date(clock - 1).toISOString(), new Date(clock).toISOString())
   const posts = [

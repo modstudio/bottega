@@ -106,7 +106,7 @@ describe('tracked recipe execution', () => {
       database
         .query(
           `INSERT INTO run
-           (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
+           (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id,turn)
            VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'compose ownership','running',?,1)`,
         )
         .run(nowIso(), projectId).lastInsertRowid,
@@ -201,7 +201,7 @@ describe('tracked recipe execution', () => {
     database
       .query(
         `INSERT INTO resource_claim
-         (record_id, root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+         (record_id, root_run_id,run_id,project_record_id,kind,allocation_key,state,claimed_at)
          VALUES ('${newRecordId()}', ?,?,?,'worktree','/unrelated','claimed',?)`,
       )
       .run(unrelatedRunId, unrelatedRunId, projectId, nowIso())
@@ -502,7 +502,7 @@ describe('tracked recipe execution', () => {
       database
         .query(
           `INSERT INTO run
-           (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
+           (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id,turn)
            VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'shared claims','running',?,1)`,
         )
         .run(nowIso(), projectId).lastInsertRowid,
@@ -578,7 +578,7 @@ describe('tracked recipe execution', () => {
       database
         .query(
           `INSERT INTO run
-           (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn,recipe_snapshot)
+           (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id,turn,recipe_snapshot)
            VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'root','asking',?,1,?)`,
         )
         .run(
@@ -595,7 +595,7 @@ describe('tracked recipe execution', () => {
       database
         .query(
           `INSERT INTO run
-           (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn,parent_run_id)
+           (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id,turn,parent_run_id)
            VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'resume','running',?,2,?)`,
         )
         .run(nowIso(), projectId, rootId).lastInsertRowid,
@@ -621,7 +621,7 @@ describe('tracked recipe execution', () => {
       database
         .query(
           `INSERT INTO run
-           (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
+           (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id,turn)
            VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'tracked databases','running',?,1)`,
         )
         .run(nowIso(), projectId).lastInsertRowid,
@@ -780,14 +780,14 @@ describe('tracked recipe execution', () => {
     )
     const insertRun = database.query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
+       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id,turn)
        VALUES (?,?,'codex','implement','sha',1,'database teardown','running',?,1)`,
     )
     const successfulRun = Number(insertRun.run(newRecordId(), nowIso(), projectId).lastInsertRowid)
     const failedRun = Number(insertRun.run(newRecordId(), nowIso(), projectId).lastInsertRowid)
     const insertClaim = database.query(
       `INSERT INTO resource_claim
-       (record_id, root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+       (record_id, root_run_id,run_id,project_record_id,kind,allocation_key,state,claimed_at)
        VALUES (?, ?,?,?,'database',?,'claimed',?)`,
     )
     insertClaim.run(

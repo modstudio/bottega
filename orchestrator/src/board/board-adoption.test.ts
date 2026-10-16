@@ -28,11 +28,12 @@ function presence(session = 'reader', lastSeen = NOW) {
   db()
     .query(
       `INSERT INTO presence
-       (session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude','architect','machine',?,'/tmp',NULL,?,?)`,
+       (session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude','architect','machine',?,(SELECT record_id FROM project WHERE name=?),'/tmp',NULL,?,?)`,
     )
     .run(
       session,
+      PLATFORM_SLUG,
       PLATFORM_SLUG,
       new Date(lastSeen - 1_000).toISOString(),
       new Date(lastSeen).toISOString(),

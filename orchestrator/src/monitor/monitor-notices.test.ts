@@ -34,8 +34,8 @@ test('heartbeat delivery emits ordinary hosted beside local once with a failed-r
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_CACHE_OWNER_KEY, userId)
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude','architect','machine','monitor-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude','architect','machine','monitor-project',(SELECT record_id FROM project WHERE name='monitor-project'),'/tmp',NULL,?,?)`,
     )
     .run(session, '2026-10-05T11:00:00.000Z', new Date().toISOString())
   const local = postNotice(
@@ -134,8 +134,8 @@ test('session-start monitor skips hosted refresh while the heartbeat monitor ref
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude','architect','machine','monitor-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude','architect','machine','monitor-project',(SELECT record_id FROM project WHERE name='monitor-project'),'/tmp',NULL,?,?)`,
     )
     .run(session, '2026-10-05T11:00:00.000Z', new Date().toISOString())
   let changesCalls = 0
@@ -157,8 +157,8 @@ test('an unadopted mixed condition and local-board acknowledgement succeeds with
   db().query('DELETE FROM schema_meta WHERE key=?').run(BOARD_HOSTED_ADOPTED_KEY)
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude','architect','machine','monitor-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude','architect','machine','monitor-project',(SELECT record_id FROM project WHERE name='monitor-project'),'/tmp',NULL,?,?)`,
     )
     .run(session, '2026-10-05T11:00:00.000Z', new Date().toISOString())
   const invocation = (

@@ -243,8 +243,8 @@ test('reading a thread stamps its printed root and replies while acknowledgement
   const session = 'thread-reader'
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude-code','architect','test','push-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude-code','architect','test','push-project',(SELECT record_id FROM project WHERE name='push-project'),'/tmp',NULL,?,?)`,
     )
     .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
   const question = askQuestion(

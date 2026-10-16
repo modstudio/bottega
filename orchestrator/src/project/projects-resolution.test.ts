@@ -36,6 +36,20 @@ const none: ProjectReferenceCounts = {
   doc: 0,
   doc_revision: 0,
   review: 0,
+      board_claim: 0,
+      branch_landing_record: 0,
+      presence: 0,
+      worker_note_request: 0,
+      workflow_cursor: 0,
+      main_stack_activity: 0,
+      port_pair_source: 0,
+      port_pair_target: 0,
+      port_ref: 0,
+      port_ref_source: 0,
+      port_ref_target: 0,
+      project_lens_profile: 0,
+      release_ledger: 0,
+      subject: 0,
 }
 
 let projectDirectory: string | null = null

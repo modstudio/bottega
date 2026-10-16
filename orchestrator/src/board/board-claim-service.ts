@@ -201,7 +201,9 @@ function conflictingClaims(context: TakeTransaction): {
   foreignLive: ClaimRow[]
 } {
   const candidates = context.database
-    .query('SELECT * FROM board_claim WHERE project=? AND closed_at IS NULL ORDER BY id')
+    .query(
+      'SELECT * FROM board_claim WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND closed_at IS NULL ORDER BY id',
+    )
     .all(context.project) as ClaimRow[]
   const overlaps = candidates.filter((row) =>
     claimSubjectsConflict(context.subject, {
@@ -290,11 +292,12 @@ function insertTakenClaim(conflicts: ClaimRow[], context: TakeTransaction): Take
   const inserted = context.database
     .query(
       `INSERT INTO board_claim
-       (project,subject_kind,subject_value,holder_kind,holder_session,note,run_id,duration_ms,
+       (project,project_record_id,subject_kind,subject_value,holder_kind,holder_session,note,run_id,duration_ms,
         taken_at,renewed_at,lapses_at,closed_at,close_reason,superseded_by_claim_id,record_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,NULL,?)`,
+       VALUES (?,(SELECT record_id FROM project WHERE name=?),?,?,?,?,?,?,?,?,?,?,NULL,NULL,NULL,?)`,
     )
     .run(
+      context.project,
       context.project,
       context.subject.kind,
       context.subject.value,
@@ -424,7 +427,9 @@ export function listClaims(
 ): { claims: ClaimView[] } {
   const name = claimProject(project, env, cwd)
   const rows = db()
-    .query('SELECT * FROM board_claim WHERE project=? ORDER BY id')
+    .query(
+      'SELECT * FROM board_claim WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) ORDER BY id',
+    )
     .all(name) as ClaimRow[]
   const claims = rows.map((row) => view(row, clock)).filter((row) => all || row.live)
   return { claims }
@@ -443,7 +448,7 @@ export function releaseTaskClaims(
   return writeTransaction(() => {
     const rows = database
       .query(
-        "SELECT * FROM board_claim WHERE project=? AND subject_kind='task' AND subject_value=? AND closed_at IS NULL",
+        "SELECT * FROM board_claim WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND subject_kind='task' AND subject_value=? AND closed_at IS NULL",
       )
       .all(project, key) as ClaimRow[]
     const ids = rows.filter((row) => rowLive(row, clock, database)).map((row) => row.id)

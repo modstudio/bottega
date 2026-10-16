@@ -24,12 +24,12 @@ function putCanon(
   status: 'draft' | 'current' = 'current',
 ): void {
   const projectId = subject
-    ? (db().query('SELECT id FROM project WHERE name=?').get(subject) as { id: number }).id
+    ? (db().query('SELECT record_id FROM project WHERE name=?').get(subject) as { id: number }).id
     : null
   const id = (
     db()
       .query(
-        `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, audiences, status, created_at, updated_at, record_id)
+        `INSERT INTO doc (scope, subject, project_record_id, slug, title, body, delivery, audiences, status, created_at, updated_at, record_id)
          VALUES ('canon', ?, ?, ?, ?, ?, 'demand', '["technical"]', ?, ?, ?, ?) RETURNING id`,
       )
       .get(subject, projectId, slug, slug, body, status, AT, AT, newRecordId()) as { id: number }
@@ -37,7 +37,7 @@ function putCanon(
   db()
     .query(
       `INSERT INTO doc_revision
-       (doc_id, scope, subject, project_id, slug, op, title, body, delivery, audiences, status, author, reason, at, record_id)
+       (doc_id, scope, subject, project_record_id, slug, op, title, body, delivery, audiences, status, author, reason, at, record_id)
        VALUES (?, 'canon', ?, ?, ?, 'create', ?, ?, 'demand', '["technical"]', ?, 'test', 'test write', ?, ?)`,
     )
     .run(id, subject, projectId, slug, slug, body, status, AT, newRecordId())
@@ -75,7 +75,7 @@ describe('worker pack canon', () => {
       settings: { trunk: 'main' },
     })
     const projectId = (
-      db().query('SELECT id FROM project WHERE name=?').get(PLATFORM_SLUG) as { id: number }
+      db().query('SELECT record_id FROM project WHERE name=?').get(PLATFORM_SLUG) as { id: number }
     ).id
     const docs = JSON.stringify([
       {
@@ -89,7 +89,7 @@ describe('worker pack canon', () => {
     ])
     const insert = db().query(
       `INSERT INTO canon_pack
-       (record_id,job,project,project_id,sha256,bytes,doc_count,doc_revisions,compiled_at,findings)
+       (record_id,job,project,project_record_id,sha256,bytes,doc_count,doc_revisions,compiled_at,findings)
        VALUES (?,?,?,?,?,?,?,?,?,0)`,
     )
     insert.run(newRecordId(), 'review-lens', null, null, 'global', 1, 1, docs, AT)

@@ -27,10 +27,10 @@ function ensurePostingProject() {
 function addArchitect(session: string, project: string, clock: number) {
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
-       VALUES (?,'claude-code','architect','test',?,?,NULL,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+       VALUES (?,'claude-code','architect','test',?,(SELECT record_id FROM project WHERE name=?),?,NULL,?)`,
     )
-    .run(session, project, cwd, new Date(clock).toISOString())
+    .run(session, project, project, cwd, new Date(clock).toISOString())
 }
 
 const architect = (session: string) => ({ CLAUDE_CODE_SESSION_ID: session })

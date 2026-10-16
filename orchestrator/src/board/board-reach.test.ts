@@ -193,8 +193,8 @@ test('rendering identifies a removed message by id alone', async () => {
   const session = 'removed-message-reader'
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-     VALUES (?,'claude-code','architect','test','alpha','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+     VALUES (?,'claude-code','architect','test','alpha',(SELECT record_id FROM project WHERE name='alpha'),'/tmp',NULL,?,?)`,
     )
     .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
   const posted = postNotice(
@@ -254,8 +254,8 @@ test('a reach recording failure does not prevent delivery stamping', async () =>
   const session = 'recording-failure-reader'
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude-code','architect','test','reach-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude-code','architect','test','reach-project',(SELECT record_id FROM project WHERE name='reach-project'),'/tmp',NULL,?,?)`,
     )
     .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
   const posted = postNotice(
@@ -289,8 +289,8 @@ test('delivery records its point and the reader project in the reach window', as
   const session = 'recorded-reach-reader'
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude-code','architect','test','reach-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude-code','architect','test','reach-project',(SELECT record_id FROM project WHERE name='reach-project'),'/tmp',NULL,?,?)`,
     )
     .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
   const posted = postNotice(
@@ -334,8 +334,8 @@ test('an emission retry records once while a later reminder records twice', asyn
   const session = 'emission-reader'
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-     VALUES (?,'claude-code','architect','test','alpha','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+     VALUES (?,'claude-code','architect','test','alpha',(SELECT record_id FROM project WHERE name='alpha'),'/tmp',NULL,?,?)`,
     )
     .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
   const posted = postNotice(

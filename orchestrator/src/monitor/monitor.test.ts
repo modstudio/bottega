@@ -36,8 +36,10 @@ function insertRun4177PackRows(): string {
     settings: { trunk: 'main' },
   })
   const projectId = (
-    db().query('SELECT id FROM project WHERE name=?').get(PLATFORM_SLUG) as { id: number }
-  ).id
+    db().query('SELECT record_id FROM project WHERE name=?').get(PLATFORM_SLUG) as {
+      record_id: string
+    }
+  ).record_id
   const docs = JSON.stringify([
     {
       revisionId: 4177,
@@ -50,7 +52,7 @@ function insertRun4177PackRows(): string {
   ])
   const insert = db().query(
     `INSERT INTO canon_pack
-     (record_id,job,project,project_id,sha256,bytes,doc_count,doc_revisions,compiled_at,findings)
+     (record_id,job,project,project_record_id,sha256,bytes,doc_count,doc_revisions,compiled_at,findings)
      VALUES (?,?,?,?,?,?,?,?,?,0)`,
   )
   insert.run(

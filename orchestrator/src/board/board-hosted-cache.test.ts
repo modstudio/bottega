@@ -150,8 +150,8 @@ test('refresh records an unreachable service without throwing and exposes verifi
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-     VALUES ('cache-reader','claude','architect','machine','cache-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+     VALUES ('cache-reader','claude','architect','machine','cache-project',(SELECT record_id FROM project WHERE name='cache-project'),'/tmp',NULL,?,?)`,
     )
     .run(createdAt, createdAt)
   const cached = message()
@@ -197,8 +197,8 @@ test('routing narrows own-user audiences and withholds questions from worker cha
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-     VALUES ('cache-reader','claude','architect','machine','cache-project','/tmp','DEV-968',?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+     VALUES ('cache-reader','claude','architect','machine','cache-project',(SELECT record_id FROM project WHERE name='cache-project'),'/tmp','DEV-968',?,?)`,
     )
     .run(createdAt, '2026-10-05T12:01:00.000Z')
   const own = message({ audience: 'architects' })
@@ -249,8 +249,8 @@ test('reader routing covers local audiences, context, hosted run ids, nobody her
     .run(BOARD_CACHE_OWNER_KEY, userId)
   database
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES ('cache-reader','claude','architect','machine','cache-project','/tmp','DEV-968',?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES ('cache-reader','claude','architect','machine','cache-project',(SELECT record_id FROM project WHERE name='cache-project'),'/tmp','DEV-968',?,?)`,
     )
     .run('2026-10-05T11:00:00.000Z', '2026-10-05T12:01:00.000Z')
   database
@@ -340,10 +340,10 @@ test('cache refresh distinguishes legacy architects rows from a hidden stored pr
     .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
     .run(BOARD_HOSTED_ADOPTED_KEY, '1')
   const addPresence = database.query(
-    `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-     VALUES (?,'claude','architect','machine',?,'/tmp',NULL,?,?)`,
+    `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+     VALUES (?,'claude','architect','machine',?,(SELECT record_id FROM project WHERE name=?),'/tmp',NULL,?,?)`,
   )
-  addPresence.run('cache-reader', 'cache-project', createdAt, createdAt)
+  addPresence.run('cache-reader', 'cache-project', 'cache-project', createdAt, createdAt)
   addPresence.run('cache-reader-other', 'other-project', createdAt, createdAt)
   const recordResponse = (authorProjectId: string | null, revision: string) =>
     hostedBoardMessageView(
@@ -413,8 +413,8 @@ test('a local delivery stamp suppresses a repeat and its failed hosted write ret
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-     VALUES ('cache-reader','claude','architect','machine','cache-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+     VALUES ('cache-reader','claude','architect','machine','cache-project',(SELECT record_id FROM project WHERE name='cache-project'),'/tmp',NULL,?,?)`,
     )
     .run('2026-10-05T11:00:00.000Z', createdAt)
   const cached = message()
@@ -934,9 +934,9 @@ test('audienceAtPosting uses session first_seen and chain-root start time in bot
   const database = db()
   database
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES ('early-session','claude','architect','machine','cache-project','/tmp',NULL,?,?),
-              ('late-session','claude','architect','machine','cache-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES ('early-session','claude','architect','machine','cache-project',(SELECT record_id FROM project WHERE name='cache-project'),'/tmp',NULL,?,?),
+              ('late-session','claude','architect','machine','cache-project',(SELECT record_id FROM project WHERE name='cache-project'),'/tmp',NULL,?,?)`,
     )
     .run(
       '2026-10-05T11:00:00.000Z',
@@ -973,8 +973,8 @@ test('hosted push selection withholds every older message and keeps newer messag
   const beganAt = '2026-10-05T12:00:00.000Z'
   database
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES ('cache-reader','claude','architect','machine','cache-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES ('cache-reader','claude','architect','machine','cache-project',(SELECT record_id FROM project WHERE name='cache-project'),'/tmp',NULL,?,?)`,
     )
     .run(beganAt, beganAt)
   const setMeta = database.query(

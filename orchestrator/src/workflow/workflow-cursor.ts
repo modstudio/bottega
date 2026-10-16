@@ -173,15 +173,16 @@ function insertCursor(
     : undefined
   d.query(
     `INSERT INTO workflow_cursor
-      (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+      (record_id,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
        workflow_version,catalogue_version,args,autonomy,ordinal,step_slug,state,closed,question,
        total_steps,created_at,updated_at,enforcement)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,0,?,'running','[]',NULL,?,?,?,'floors')
-     ON CONFLICT(project,workflow_slug,mode_slug,workflow_key,instance_id) DO UPDATE SET
+     VALUES (?,?,(SELECT record_id FROM project WHERE name=?),?,?,?,?,?,?,?,?,?,0,?,'running','[]',NULL,?,?,?,'floors')
+     ON CONFLICT(project_record_id,workflow_slug,mode_slug,workflow_key,instance_id) DO UPDATE SET
        session_id=COALESCE(excluded.session_id,workflow_cursor.session_id),
        updated_at=excluded.updated_at`,
   ).run(
     newRecordId(),
+    composition.project,
     composition.project,
     composition.workflow.slug,
     composition.mode!.slug,
@@ -1001,7 +1002,7 @@ export function listWorkflowCursors(
   const clauses = [`state NOT IN ('done','abandoned')`]
   const values: string[] = []
   if (project) {
-    clauses.push('project=?')
+    clauses.push('project_record_id=(SELECT record_id FROM project WHERE name=?)')
     values.push(project)
   }
   if (options.session) {
