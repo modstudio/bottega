@@ -8,11 +8,11 @@ import { hostedProjectColors } from '@/components/hosted-projects'
 import { useDetailPanel } from '@/lib/detail-panel'
 import { runEasternTime } from '@/lib/format'
 import { trpc } from '@/trpc/client'
-import { Badge } from '@/ui/badge/badge'
-import { Button } from '@/ui/button/button'
-import { Companion } from '@/ui/companion/companion'
-import { DisplayRow, FieldSection } from '@/ui/form-layout/form-layout'
-import { PageHeader } from '@/ui/page-header/page-header'
+import { Badge } from '@bottega/hub-ui/badge'
+import { Button } from '@bottega/hub-ui/button'
+import { Companion } from '@bottega/hub-ui/companion'
+import { DisplayRow, FieldSection } from '@bottega/hub-ui/form-layout'
+import { PageHeader } from '@bottega/hub-ui/page-header'
 
 type HostedReview = {
   id: string

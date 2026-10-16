@@ -2,8 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, Navigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { isHostedMode } from '@/lib/hub-mode'
-import { Button } from '@/ui/button/button'
-import { PageHeader } from '@/ui/page-header/page-header'
+import { Button } from '@bottega/hub-ui/button'
+import { PageHeader } from '@bottega/hub-ui/page-header'
 
 export const Route = createFileRoute('/unsubscribe/$spaceId/$token')({
   component: UnsubscribeRoute,

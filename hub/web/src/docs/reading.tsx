@@ -10,8 +10,8 @@ import {
   useState,
 } from 'react'
 import { Markdown, MarkdownFenceRenderers } from '@/components/markdown/markdown'
-import { Button } from '@/ui/button/button'
-import { classes } from '@/ui/text/classes'
+import { Button } from '@bottega/hub-ui/button'
+import { classes } from '@bottega/hub-ui/text/classes'
 import { articleListRows } from './article-list.ts'
 import { ArticleList } from './article-list.tsx'
 import { readingBody, viewedPaneTitle } from './body.ts'

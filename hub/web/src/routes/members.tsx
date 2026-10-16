@@ -13,11 +13,18 @@ import {
   updateOrganizationMemberRole,
 } from '@/lib/hosted-organization'
 import { isHostedMode } from '@/lib/hub-mode'
-import { Button } from '@/ui/button/button'
-import { Input } from '@/ui/field/input'
-import { Select } from '@/ui/listbox/select'
-import { PageHeader, SectionTitle } from '@/ui/page-header/page-header'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
+import { Button } from '@bottega/hub-ui/button'
+import { Input } from '@bottega/hub-ui/field/input'
+import { Select } from '@bottega/hub-ui/listbox/select'
+import { PageHeader, SectionTitle } from '@bottega/hub-ui/page-header'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@bottega/hub-ui/table'
 
 export const Route = createFileRoute('/members')({ component: MembersRoute })
 const roles: OrganizationRole[] = ['owner', 'admin', 'member']

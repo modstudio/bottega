@@ -21,12 +21,13 @@ type ArchitectureCruiseRequest = {
   entries: readonly string[]
   extraArgs?: string[]
   stdout?: 'pipe' | 'inherit'
+  config?: ReturnType<typeof dependencyCruiserConfig>
 }
 
 export async function runArchitectureCruise(request: ArchitectureCruiseRequest) {
   const generatedDirectory = mkdtempSync(join(tmpdir(), 'architecture-'))
   const generatedConfig = join(generatedDirectory, 'dependency-cruiser.json')
-  writeFileSync(generatedConfig, JSON.stringify(dependencyCruiserConfig()))
+  writeFileSync(generatedConfig, JSON.stringify(request.config ?? dependencyCruiserConfig()))
   try {
     const stdout = request.stdout ?? 'inherit'
     const child = Bun.spawn(

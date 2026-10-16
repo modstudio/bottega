@@ -3,21 +3,28 @@ import { useState } from 'react'
 import { Collection } from '@/components/collection'
 import { DesignCatalog } from '@/components/design-catalog'
 import { ProjectMark, SourceMark } from '@/components/design-system'
-import { Badge } from '@/ui/badge/badge'
-import { LiveDot } from '@/ui/badge/live-dot'
-import { Button } from '@/ui/button/button'
-import { Companion } from '@/ui/companion/companion'
-import { EmptyState } from '@/ui/empty-state/empty-state'
-import { Input } from '@/ui/field/input'
-import { Copyable, DisplayRow, FieldSection, SettingBlock } from '@/ui/form-layout/form-layout'
-import { Identifier } from '@/ui/identifier/identifier'
-import { Select } from '@/ui/listbox/select'
-import { PageHeader, SectionTitle } from '@/ui/page-header/page-header'
-import { Segmented } from '@/ui/segmented/segmented'
-import { Sheet } from '@/ui/sheet/sheet'
-import { StatRow, StatTile } from '@/ui/stat/stat'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
-import { Tabs } from '@/ui/tabs/tabs'
+import { Badge } from '@bottega/hub-ui/badge'
+import { LiveDot } from '@bottega/hub-ui/badge/live-dot'
+import { Button } from '@bottega/hub-ui/button'
+import { Companion } from '@bottega/hub-ui/companion'
+import { EmptyState } from '@bottega/hub-ui/empty-state'
+import { Input } from '@bottega/hub-ui/field/input'
+import { Copyable, DisplayRow, FieldSection, SettingBlock } from '@bottega/hub-ui/form-layout'
+import { Identifier } from '@bottega/hub-ui/identifier'
+import { Select } from '@bottega/hub-ui/listbox/select'
+import { PageHeader, SectionTitle } from '@bottega/hub-ui/page-header'
+import { Segmented } from '@bottega/hub-ui/segmented'
+import { Sheet } from '@bottega/hub-ui/sheet'
+import { StatRow, StatTile } from '@bottega/hub-ui/stat'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@bottega/hub-ui/table'
+import { Tabs } from '@bottega/hub-ui/tabs'
 
 /**
  * A project's color comes from its register settings, so the catalogue needs a

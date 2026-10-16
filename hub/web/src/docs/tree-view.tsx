@@ -15,7 +15,7 @@ import {
 } from '@dnd-kit/sortable'
 import { ChevronDown, ChevronRight, GripVertical } from 'lucide-react'
 import { type MutableRefObject, useEffect, useRef } from 'react'
-import { classes } from '@/ui/text/classes'
+import { classes } from '@bottega/hub-ui/text/classes'
 import { siblingKey, treePath } from './tree.ts'
 import type { DocsTreeGroup, DocsTreeItem, TreeNode } from './types.ts'
 

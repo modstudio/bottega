@@ -6,7 +6,7 @@ import {
   identityQueryEnabled,
   RailFooterIdentity,
 } from '@/routes/__root'
-import { spaceMenuItems } from '@/ui/shell/user-menu'
+import { spaceMenuItems } from '@bottega/hub-ui/shell/user-menu'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 
 test('the public origin never enables the root identity query', () => {

@@ -1,7 +1,7 @@
 import { useMutation } from '@tanstack/react-query'
 import { useCallback, useMemo, useState } from 'react'
 import { queryClient, trpc } from '@/trpc/client'
-import { toast } from '@/ui/toast/toast.tsx'
+import { toast } from '@bottega/hub-ui/toast'
 import type { DocScope } from '../../../../shared/docs.ts'
 import { canEditDoc } from './edit-permission.ts'
 import { orderedIdsAfterDrag, siblingKey } from './tree.ts'

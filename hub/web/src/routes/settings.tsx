@@ -5,15 +5,22 @@ import { hourOfDayLabel, sendTimestamp } from '@/lib/format'
 import { isHostedMode } from '@/lib/hub-mode'
 import { DEFAULT_ZONE, TIME_ZONES, WEEKDAYS, type Weekday } from '@/lib/report-arrival'
 import { queryClient, type RecordSettingsResponse, trpc } from '@/trpc/client'
-import { Badge } from '@/ui/badge/badge'
-import { Button } from '@/ui/button/button'
-import { Checkbox } from '@/ui/checkbox/checkbox'
-import { Dialog } from '@/ui/dialog/dialog'
-import { EmptyState } from '@/ui/empty-state/empty-state'
-import { Input } from '@/ui/field/input'
-import { Select } from '@/ui/listbox/select'
-import { PageHeader, SectionTitle } from '@/ui/page-header/page-header'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
+import { Badge } from '@bottega/hub-ui/badge'
+import { Button } from '@bottega/hub-ui/button'
+import { Checkbox } from '@bottega/hub-ui/checkbox'
+import { Dialog } from '@bottega/hub-ui/dialog'
+import { EmptyState } from '@bottega/hub-ui/empty-state'
+import { Input } from '@bottega/hub-ui/field/input'
+import { Select } from '@bottega/hub-ui/listbox/select'
+import { PageHeader, SectionTitle } from '@bottega/hub-ui/page-header'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@bottega/hub-ui/table'
 
 type Settings = RecordSettingsResponse
 type Subscription = Settings['subscriptions'][number]

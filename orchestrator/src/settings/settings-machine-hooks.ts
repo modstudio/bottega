@@ -24,6 +24,7 @@ const SCRIPT_FILES = [
   'board-ack-guard.py',
   'session-brief.py',
   'test-substance-guard.py',
+  'hub-import-guard.py',
 ] as const
 
 type ScriptFile = (typeof SCRIPT_FILES)[number]
@@ -57,6 +58,11 @@ const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
     event: 'PreToolUse',
     matcher: 'Write|Edit|MultiEdit',
     script: 'test-substance-guard.py',
+  },
+  {
+    event: 'PreToolUse',
+    matcher: 'Write|Edit|MultiEdit',
+    script: 'hub-import-guard.py',
   },
   { event: 'SubagentStart', matcher: '*', script: 'block-agent.py' },
   {

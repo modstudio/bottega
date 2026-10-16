@@ -5,9 +5,9 @@ import { Collection, type CollectionColumn } from '@/components/collection'
 import { relativeTime } from '@/lib/format'
 import { type WaitingInboxEntry, waitingInboxEntries } from '@/lib/operator-waiting'
 import { trpc } from '@/trpc/client'
-import { Badge } from '@/ui/badge/badge'
-import { Identifier } from '@/ui/identifier/identifier'
-import { PageHeader } from '@/ui/page-header/page-header'
+import { Badge } from '@bottega/hub-ui/badge'
+import { Identifier } from '@bottega/hub-ui/identifier'
+import { PageHeader } from '@bottega/hub-ui/page-header'
 
 export const Route = createFileRoute('/inbox')({ component: InboxPage })
 

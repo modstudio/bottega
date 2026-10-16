@@ -12,10 +12,10 @@ import {
   type WindowHours,
 } from '@/lib/window'
 import { trpc } from '@/trpc/client'
-import { Button } from '@/ui/button/button'
-import { Select, type SelectOption } from '@/ui/listbox/select'
-import { ProjectName } from '@/ui/project-mark/project-mark'
-import { Segmented } from '@/ui/segmented/segmented'
+import { Button } from '@bottega/hub-ui/button'
+import { Select, type SelectOption } from '@bottega/hub-ui/listbox/select'
+import { ProjectName } from '@bottega/hub-ui/project-mark'
+import { Segmented } from '@bottega/hub-ui/segmented'
 
 function Filter({
   kind,

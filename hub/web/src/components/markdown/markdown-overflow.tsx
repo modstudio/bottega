@@ -1,7 +1,7 @@
 import { Maximize2 } from 'lucide-react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
-import { Button } from '@/ui/button/button'
-import { Dialog } from '@/ui/dialog/dialog'
+import { Button } from '@bottega/hub-ui/button'
+import { Dialog } from '@bottega/hub-ui/dialog'
 
 /**
  * Content that scrolls inside the reading measure. When it is wider than the

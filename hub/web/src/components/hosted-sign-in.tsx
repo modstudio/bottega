@@ -1,9 +1,9 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { signInWithEmail } from '@/lib/hosted-auth'
-import { Button } from '@/ui/button/button'
-import { Input } from '@/ui/field/input'
-import { PageHeader } from '@/ui/page-header/page-header'
+import { Button } from '@bottega/hub-ui/button'
+import { Input } from '@bottega/hub-ui/field/input'
+import { PageHeader } from '@bottega/hub-ui/page-header'
 
 export function HostedSignIn({ passwordChanged = false }: { passwordChanged?: boolean }) {
   const navigate = useNavigate()

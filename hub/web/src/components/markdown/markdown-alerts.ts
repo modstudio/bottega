@@ -4,7 +4,7 @@ import {
   type IOptions,
   rehypeGithubAlerts,
 } from 'rehype-github-alerts'
-import type { Tone } from '@/ui/badge/badge'
+import type { Tone } from '@bottega/hub-ui/badge'
 
 const ALERTS = {
   NOTE: { tone: 'info', title: 'Note' },

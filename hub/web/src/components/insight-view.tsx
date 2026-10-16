@@ -6,10 +6,17 @@ import { compactTokens, duration } from '@/lib/format'
 import { isHostedMode } from '@/lib/hub-mode'
 import { setWorkCounts, useWindowState } from '@/lib/window'
 import { trpc } from '@/trpc/client'
-import { Badge } from '@/ui/badge/badge'
-import { PageHeader, SectionTitle } from '@/ui/page-header/page-header'
-import { StatRow, StatTile } from '@/ui/stat/stat'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
+import { Badge } from '@bottega/hub-ui/badge'
+import { PageHeader, SectionTitle } from '@bottega/hub-ui/page-header'
+import { StatRow, StatTile } from '@bottega/hub-ui/stat'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@bottega/hub-ui/table'
 import type { AppRouter } from '../../../src/trpc/router.ts'
 
 type Outputs = inferRouterOutputs<AppRouter>['insight']

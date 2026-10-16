@@ -8,6 +8,7 @@
     "cli",
     "hub",
     "hub/deploy/site",
+    "hub/ui",
     "hub/web",
     "retrieval"
   ],

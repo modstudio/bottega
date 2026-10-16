@@ -5,7 +5,7 @@ import { createTRPCOptionsProxy } from '@trpc/tanstack-react-query'
 import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 import type { AppRouter, HostedRouter } from '../../../src/trpc/router.ts'
 import { hostedOrigin, isHostedMode, unauthorizedLeadsToSignIn } from '../lib/hub-mode.ts'
-import { toast } from '../ui/toast/toast.tsx'
+import { toast } from '@bottega/hub-ui/toast'
 import { fetchWithHubCredentials } from './transport.ts'
 
 const LOCAL_LOGIN_MESSAGE = `Your local session expired. Run \`${PLATFORM_SLUG} dashboard login\` to sign in again.`

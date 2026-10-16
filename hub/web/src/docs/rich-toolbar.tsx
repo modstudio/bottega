@@ -16,10 +16,10 @@ import {
   Trash2,
 } from 'lucide-react'
 import { type FormEvent, useEffect, useState } from 'react'
-import { IconButton } from '@/ui/button/button'
-import { Input } from '@/ui/field/input'
-import { Select } from '@/ui/listbox/select'
-import { Popover } from '@/ui/popover/popover'
+import { IconButton } from '@bottega/hub-ui/button'
+import { Input } from '@bottega/hub-ui/field/input'
+import { Select } from '@bottega/hub-ui/listbox/select'
+import { Popover } from '@bottega/hub-ui/popover'
 
 const BLOCKS = [
   { value: 'paragraph', label: 'Paragraph' },

@@ -1,6 +1,6 @@
 /**
  * The hub dashboard's component layers, lowest first. A folder under
- * `hub/web/src/ui/` belongs to exactly one layer and may import only its own
+ * `hub/ui/src/` belongs to exactly one layer and may import only its own
  * layer or a lower one. `behavior` holds hooks and pure helpers with no markup;
  * `primitives` are single controls; `overlays` open above the page; `patterns`
  * compose controls into one reusable piece; `layout` arranges a screen.
@@ -44,4 +44,4 @@ export const uiLayers: { name: string; folders: string[] }[] = [
   { name: 'layout', folders: ['shell', 'table-card', 'toolbar-band', 'companion'] },
 ]
 
-export const uiFolders = (folders: string[]) => `^hub/web/src/ui/(?:${folders.join('|')})/`
+export const uiFolders = (folders: string[]) => `^hub/ui/src/(?:${folders.join('|')})/`

@@ -17,6 +17,7 @@ import { docModules } from './architecture-doc-modules.ts'
 import { enforcementModules } from './architecture-enforcement-modules.ts'
 import { focusedTestModules } from './architecture-focused-test-modules.ts'
 import { gateModules } from './architecture-gate-modules.ts'
+import { HUB_UI_PACKAGE, HUB_UI_ROOT } from './architecture-hub-packages.ts'
 import { hubModuleSpecs } from './architecture-hub-modules.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
 import { metricModules } from './architecture-metric-modules.ts'
@@ -757,7 +758,7 @@ const allowedCycles: ArchitectureCycle[] = [
 export const exactArchitecturePath = (path: string) =>
   `^${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`
 
-function architectureDependencyPath(target: string) {
+export function architectureDependencyPath(target: string) {
   if (target.startsWith('node:')) return exactArchitecturePath(target.slice('node:'.length))
   if (target === 'bun') return '(^|/)node_modules/\\.bun/[^/]+/node_modules/@types/bun/'
   if (target.includes(':')) return exactArchitecturePath(target)
@@ -796,6 +797,7 @@ type ArchitectureRule = {
     pathNot?: string[]
     dependencyTypes?: string[]
     dependencyTypesNot?: string[]
+    couldNotResolve?: boolean
     circular?: boolean
     reachable?: boolean
   }
@@ -841,7 +843,7 @@ export function architectureRules() {
       from: { path: `^${hubWebRouterException.from}/` },
       to: {
         path: '^hub/(?!web/)',
-        pathNot: [exactArchitecturePath(hubWebRouterException.to)],
+        pathNot: [exactArchitecturePath(hubWebRouterException.to), '^hub/ui/src/'],
       },
     },
     {
@@ -885,30 +887,56 @@ export function architectureRules() {
       })),
     ),
     {
-      name: 'hub-web-ui-is-a-leaf',
+      name: 'hub-ui-is-a-leaf',
       severity: 'error',
       comment:
-        'The component library knows nothing of the app: ui/ imports only ui/, React and icons, through relative paths.',
-      from: { path: '^hub/web/src/ui/' },
-      to: { path: '^(?:hub/web/src/(?!ui/)|@/)' },
+        'The component library knows nothing of data, routing or hub mode and imports its own modules through relative paths.',
+      from: { path: `^${HUB_UI_ROOT}/` },
+      to: {
+        path: [
+          '^hub/(?:web|src)/',
+          '^@/(?:trpc|lib/hub-mode)',
+          '^@tanstack/(?:react-query|react-router)$',
+          '^@trpc/',
+          architectureDependencyPath('@tanstack/react-query'),
+          architectureDependencyPath('@tanstack/react-router'),
+          architectureDependencyPath('@trpc/client'),
+          architectureDependencyPath('@trpc/server'),
+          architectureDependencyPath('@trpc/tanstack-react-query'),
+        ].join('|'),
+      },
     },
     {
-      name: 'hub-web-ui-folder-has-a-layer',
+      name: 'hub-ui-folder-has-a-layer',
       severity: 'error',
       comment: 'Every ui/ folder is declared in uiLayers in architecture-ui-layers.ts.',
       from: {
-        path: '^hub/web/src/ui/',
+        path: '^hub/ui/src/',
         pathNot: uiFolders(uiLayers.flatMap((layer) => layer.folders)),
       },
       to: {},
     },
     ...uiLayers.slice(0, -1).map((layer, index) => ({
-      name: `hub-web-ui-${layer.name}-imports-no-higher-layer`,
+      name: `hub-ui-${layer.name}-imports-no-higher-layer`,
       severity: 'error' as const,
       comment: `A ${layer.name} folder may import only its own or a lower ui layer.`,
       from: { path: uiFolders(layer.folders) },
       to: { path: uiFolders(uiLayers.slice(index + 1).flatMap((higher) => higher.folders)) },
     })),
+    {
+      name: 'hub-ui-source-imports-use-package-exports',
+      severity: 'error',
+      comment: 'Code outside hub-ui imports it through package exports, never source paths.',
+      from: { path: '^(?!hub/ui/)' },
+      to: { path: '^hub/ui/src/', dependencyTypes: ['local'] },
+    },
+    {
+      name: 'hub-ui-package-imports-resolve-declared-exports',
+      severity: 'error',
+      comment: 'Every hub-ui package import names a declared export subpath.',
+      from: { path: '^(?!hub/ui/)' },
+      to: { path: `^${HUB_UI_PACKAGE}/`, couldNotResolve: true },
+    },
     hubWebViewDataRule,
     {
       name: 'import-cli-boundary',
@@ -1005,6 +1033,10 @@ export function dependencyCruiserConfig() {
     options: {
       tsConfig: { fileName: join(import.meta.dir, '..', 'orchestrator/tsconfig.json') },
       tsPreCompilationDeps: true,
+      enhancedResolveOptions: {
+        exportsFields: ['exports'],
+        conditionNames: ['import', 'require', 'node', 'default', 'types'],
+      },
       doNotFollow: { path: 'node_modules' },
       exclude: { path: '^hub/web/src/routeTree\\.gen\\.ts$' },
     },

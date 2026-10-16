@@ -3,8 +3,8 @@ import { FolderGit2 } from 'lucide-react'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { type ProjectColors, ProjectMark } from '@/components/design-system'
 import { type HostedProjectRow as HostedProject, trpc } from '@/trpc/client'
-import { Badge } from '@/ui/badge/badge'
-import { PageHeader } from '@/ui/page-header/page-header'
+import { Badge } from '@bottega/hub-ui/badge'
+import { PageHeader } from '@bottega/hub-ui/page-header'
 
 export function hostedProjectColors(projects: HostedProject[]): ProjectColors {
   const colors: ProjectColors = {}

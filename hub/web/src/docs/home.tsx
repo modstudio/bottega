@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Badge } from '@/ui/badge/badge'
-import { Kbd } from '@/ui/kbd/kbd'
+import { Badge } from '@bottega/hub-ui/badge'
+import { Kbd } from '@bottega/hub-ui/kbd'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 import { SearchDialog } from './search.tsx'
 import { buildDocTree } from './tree.ts'
