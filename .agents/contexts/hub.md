@@ -27,23 +27,24 @@ can hide matching rows behind another project's traffic.
 # Design system
 
 Build screens from `@bottega/hub-ui`, and leave no control wearing the browser's own
-appearance. In the workspace package table, `@bottega/hub-ui` depends on no workspace
-package and `@bottega/hub-web` may depend on `@bottega/hub-ui`; across packages, import
-only declared export subpaths. `scripts/check-hub-packages.ts` enforces the table and
-`scripts/check-architecture.ts` enforces imports. Every non-test source file in
-`hub/ui/src` has exactly one derived export-map entry, enforced by
-`scripts/check-hub-packages.ts`.
+appearance. A hub package depends only on the workspace packages its entry in
+`hubWorkspaceDependencies` allows, and code outside a package imports it only through a
+declared export subpath. Every non-test source file in `hub/ui/src` has exactly one export
+entry, derived from its path. `scripts/check-hub-packages.ts` enforces the dependency table
+and the export map; `scripts/check-architecture.ts` enforces imports, and
+`orchestrator/hooks/hub-import-guard.py` refuses a violating import when the file is
+written.
 
 The UI package knows nothing of data access, routing or the hub mode, and its internal
-imports stay relative; `scripts/check-architecture.ts` enforces both this boundary and the
+imports stay relative; `scripts/check-architecture.ts` enforces this boundary and the
 layers declared in `scripts/architecture-ui-layers.ts`. UI source filenames are
-kebab-case and use named exports without barrels or export-all declarations; `biome check`
-enforces these naming and export rules. `hub/web/lint/layout-only-classname.grit` refuses
-appearance classes passed to UI components: change a component's look through a variant
-it owns and pass it margin, size and placement only. Browser behavior, such as the dialog
-element, the popover attribute and anchor positioning, is used beneath our own styling;
-no component library is added, and a component's keyboard behavior follows its WAI-ARIA
-APG pattern.
+kebab-case and use named exports without barrels or export-all declarations; the
+`hub/ui` override in `biome.jsonc` enforces these rules. `hub/web/lint/layout-only-classname.grit`
+refuses appearance classes passed to UI components: change a component's look through a
+variant it owns and pass it margin, size and placement only. Browser behavior, such as the
+dialog element, the popover attribute and anchor positioning, is used beneath our own
+styling; no component library is added, and a component's keyboard behavior follows its
+WAI-ARIA APG pattern.
 
 Presentation that knows no domain belongs in `hub/ui`, while a component that knows what a
 project, run or tracker is belongs beside the screens using it. `ProjectName` renders a
