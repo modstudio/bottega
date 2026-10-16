@@ -40,9 +40,9 @@ describe('hub test database provenance rule', () => {
   test('refuses to adopt a live path even when it is under temporary storage', () => {
     const temporaryDirectory = '/canonical/private/tmp'
     const livePath = `${temporaryDirectory}/operator-state/hub/hub.db`
-    expect(testHubDatabaseAdoptionRefusal(livePath, true, temporaryDirectory, [livePath])).toContain(
-      `HUB_DB resolved ${livePath}`,
-    )
+    expect(
+      testHubDatabaseAdoptionRefusal(livePath, true, temporaryDirectory, [livePath]),
+    ).toContain(`HUB_DB resolved ${livePath}`)
   })
 
   test('canonicalizes a symlinked ancestor before checking minted identity', () => {
