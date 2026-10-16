@@ -402,7 +402,7 @@ function recordRoutingWaits(
       (report.waitingOnRouting[selected.reason] ?? 0) + selected.rows.length
 }
 
-export const ROUTING_WAIT_PREFIX = 'waiting on routing:'
+const ROUTING_WAIT_PREFIX = 'waiting on routing:'
 
 export type HostedRoutingWait = { project: string; message: string }
 
@@ -437,13 +437,15 @@ function reconcileRoutingErrors(routed: ReturnType<typeof routeOutboxRows>): voi
           .run(reason, entry.id, entry.generation, reason)
     }
     for (const rows of routed.destinations.values())
-      for (const { entry } of rows)
+      for (const { entry } of rows) {
+        if (!parseHostedRoutingWait(entry.last_error)) continue
         conn
           .query(
             `UPDATE hosted_outbox SET last_error=NULL
-             WHERE id=? AND generation=? AND last_error LIKE ?`,
+             WHERE id=? AND generation=? AND last_error=?`,
           )
-          .run(entry.id, entry.generation, `${ROUTING_WAIT_PREFIX}%`)
+          .run(entry.id, entry.generation, entry.last_error)
+      }
   })
 }
 
