@@ -813,6 +813,13 @@
       "when": 1792004800000,
       "tag": "0115_project_identity_contract",
       "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "6",
+      "when": 1792012000000,
+      "tag": "0116_release_project_identity",
+      "breakpoints": true
     }
   ]
 }

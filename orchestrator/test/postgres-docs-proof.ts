@@ -113,7 +113,7 @@ function liveCacheClient(origin: string, token: string): RecordApiClient {
   }
 }
 
-type CanonProofAddress = { kind: 'user' } | { kind: 'project'; subject: string }
+type CanonProofAddress = { kind: 'user' } | { kind: 'project'; subject: string; projectId: string }
 type CanonBatch = {
   rows: Array<{ slug: string; id: string; revisionId: string }>
   deletions: Array<{ slug: string; id: string; revisionId: string }>
@@ -193,11 +193,13 @@ async function proveCanonImportAddress(
 }
 
 async function proveCanonImports(origin: string, headers: Record<string, string>): Promise<void> {
+  const projectId = newRecordId()
   const subject = `canon-proof-${newRecordId()}`
   const project = await fetch(`${origin}/v1/projects`, {
     method: 'PUT',
     headers,
     body: JSON.stringify({
+      id: projectId,
       name: subject,
       path: `/tmp/${subject}`,
       stack: null,
@@ -207,7 +209,7 @@ async function proveCanonImports(origin: string, headers: Record<string, string>
     }),
   })
   expect(project.status).toBe(200)
-  await proveCanonImportAddress(origin, headers, { kind: 'project', subject })
+  await proveCanonImportAddress(origin, headers, { kind: 'project', subject, projectId })
   await proveCanonImportAddress(origin, headers, { kind: 'user' })
 }
 
@@ -246,6 +248,7 @@ async function proveDocumentStatus(
         status,
         replacementSlug,
         projectName,
+        projectId,
         reason: `prove ${status} document visibility`,
         author: 'proof',
       }),
@@ -402,6 +405,7 @@ async function proveStringShapedSourceFileMutations(
         kind: 'article',
         sourceFiles: [`src/${slug}.ts`],
         projectName,
+        projectId,
         reason: 'source-file mutation proof',
         author: 'proof',
       }),
@@ -491,10 +495,12 @@ async function proveRequestedProjectSpace(
   await proveProjectIdentity(origin, headers)
 
   const activeProjectName = `active-project-${newRecordId()}`
+  const activeProjectId = newRecordId()
   const activeProject = await fetch(`${origin}/v1/projects`, {
     method: 'PUT',
     headers,
     body: JSON.stringify({
+      id: activeProjectId,
       name: activeProjectName,
       path: `/tmp/${activeProjectName}`,
       stack: null,
@@ -515,6 +521,7 @@ async function proveRequestedProjectSpace(
       body: 'must not cross a destination header',
       delivery: 'demand',
       projectName: activeProjectName,
+      projectId: activeProjectId,
       reason: 'prove destination read isolation',
       author: 'proof',
     }),
@@ -523,11 +530,13 @@ async function proveRequestedProjectSpace(
   const activeDocumentId = String(((await activeDocument.json()) as { id: string }).id)
 
   const projectName = `routed-project-${newRecordId()}`
+  const projectId = newRecordId()
   const destinationHeaders = { ...headers, 'x-record-space': destinationSpaceId }
   const project = await fetch(`${origin}/v1/projects`, {
     method: 'PUT',
     headers: destinationHeaders,
     body: JSON.stringify({
+      id: projectId,
       name: projectName,
       path: `/tmp/${projectName}`,
       stack: null,
@@ -548,6 +557,7 @@ async function proveRequestedProjectSpace(
       body: 'two-space proof',
       delivery: 'demand',
       projectName,
+      projectId,
       reason: 'prove project destination',
       author: 'proof',
     }),
@@ -574,14 +584,16 @@ async function proveRequestedProjectSpace(
     ).split('\n'),
   ).toEqual(['0', '0', '1', '1'])
 
-  await proveSubjects(origin, destinationHeaders, projectName)
+  await proveSubjects(origin, destinationHeaders, projectName, projectId)
 
   const refusedName = `refused-project-${newRecordId()}`
+  const refusedId = newRecordId()
   const refusedSpace = newRecordId()
   const refused = await fetch(`${origin}/v1/projects`, {
     method: 'PUT',
     headers: { ...headers, 'x-record-space': refusedSpace },
     body: JSON.stringify({
+      id: refusedId,
       name: refusedName,
       path: `/tmp/${refusedName}`,
       stack: null,

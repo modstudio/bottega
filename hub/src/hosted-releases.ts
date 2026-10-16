@@ -4,11 +4,11 @@ import type { RecordClient } from './record-client.ts'
 
 export async function hostedProjectReleases(
   client: RecordClient,
-  input: { project: string; limit?: number; cursor?: string },
+  input: { projectId: string; limit?: number; cursor?: string },
 ) {
   const [history, latest] = await Promise.all([
     client.releases(input),
-    client.latestReleases(input.project),
+    client.latestReleases(input.projectId),
   ])
   return { history, latest }
 }

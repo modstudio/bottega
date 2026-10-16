@@ -22,11 +22,12 @@ export function startReleaseLedgerEntry(
     const row = database
       .query<{ id: number }, (string | number | null)[]>(
         `INSERT INTO release_ledger
-       (record_id,project,rung,candidate_commit,live_commit_before,rollback,rollback_reason,actor,session_id,started_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+       (record_id,project,project_id,rung,candidate_commit,live_commit_before,rollback,rollback_reason,actor,session_id,started_at)
+       VALUES (?,?,(SELECT id FROM project WHERE name=?),?,?,?,?,?,?,?,?) RETURNING id`,
       )
       .get(
         newRecordId(),
+        input.project,
         input.project,
         input.rung,
         input.candidate,

@@ -76,7 +76,6 @@ function OperatorEmailSettings() {
 
 function initialDraft(
   row: Subscription | undefined,
-  spaceProjects: Settings['spaceProjects'],
   isPersonalSpace: boolean,
   spaceId: string,
 ): Draft {
@@ -85,10 +84,7 @@ function initialDraft(
       isPersonalSpace &&
       row.projects.some((project) => project.space_id !== spaceId),
   )
-  const legacyProjectId =
-    row?.scope_kind === 'project'
-      ? spaceProjects.find((project) => project.name === row.project_name)?.id
-      : undefined
+  const legacyProjectId = row?.scope_kind === 'project' ? row.project_id : undefined
   return {
     scope:
       row?.scope_kind === 'project'
@@ -264,9 +260,7 @@ function SubscriptionDialog({
   canManageEmails: boolean
   onClose: () => void
 }) {
-  const [draft, setDraft] = useState<Draft>(() =>
-    initialDraft(row, spaceProjects, isPersonalSpace, spaceId),
-  )
+  const [draft, setDraft] = useState<Draft>(() => initialDraft(row, isPersonalSpace, spaceId))
   const [email, setEmail] = useState('')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [testMessage, setTestMessage] = useState('')

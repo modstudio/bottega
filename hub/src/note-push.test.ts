@@ -9,11 +9,31 @@ test('note push sends each space only that space projects notes', async () => {
   const at = '2026-10-09T12:00:00.000Z'
   writeTransaction((conn) => {
     const insert = conn.query(`INSERT INTO note
-      (record_id,number,project,text,anchors,sightings,created_at,last_seen_at)
-      VALUES (?,?,?,?,'[]',1,?,?)`)
-    insert.run('01990000-0000-7000-8000-000000000501', 1, 'workshop', 'active note', at, at)
-    insert.run('01990000-0000-7000-8000-000000000502', 1, 'gamma', 'gamma note', at, at)
-    conn.query(`INSERT INTO note_counter(project,next) VALUES ('workshop',2),('gamma',2)`).run()
+      (record_id,number,project,project_record_id,text,anchors,sightings,created_at,last_seen_at)
+      VALUES (?,?,?,?,?,'[]',1,?,?)`)
+    insert.run(
+      '01990000-0000-7000-8000-000000000501',
+      1,
+      'workshop',
+      '01990000-0000-7000-8000-000000000075',
+      'active note',
+      at,
+      at,
+    )
+    insert.run(
+      '01990000-0000-7000-8000-000000000502',
+      1,
+      'gamma',
+      '01990000-0000-7000-8000-000000001103',
+      'gamma note',
+      at,
+      at,
+    )
+    conn
+      .query(`INSERT INTO note_counter(project,project_record_id,next) VALUES
+        ('workshop','01990000-0000-7000-8000-000000000075',2),
+        ('gamma','01990000-0000-7000-8000-000000001103',2)`)
+      .run()
   })
   const mirrors: Array<{ space: string | null; projects: string[] }> = []
   const fetch = async (input: string, init?: RequestInit) => {
@@ -48,7 +68,10 @@ test('note push sends each space only that space projects notes', async () => {
 
 test('note push sends a project counter when the project has no notes', async () => {
   writeTransaction((conn) => {
-    conn.query(`INSERT INTO note_counter(project,next) VALUES ('gamma',7)`).run()
+    conn
+      .query(`INSERT INTO note_counter(project,project_record_id,next)
+        VALUES ('gamma','01990000-0000-7000-8000-000000001103',7)`)
+      .run()
   })
   const raises: Array<{ space: string | null; counters: unknown[] }> = []
   const fetch = async (input: string, init?: RequestInit) => {
@@ -77,5 +100,16 @@ test('note push sends a project counter when the project has no notes', async ()
   await expect(
     pushNotes({ baseUrl: 'https://hub.example.test', token: 'session', fetch }),
   ).resolves.toMatchObject({ local: { note: 0 }, match: true })
-  expect(raises).toEqual([{ space: 'space-gamma', counters: [{ project: 'gamma', next: 7 }] }])
+  expect(raises).toEqual([
+    {
+      space: 'space-gamma',
+      counters: [
+        {
+          project: 'gamma',
+          projectId: '01990000-0000-7000-8000-000000001103',
+          next: 7,
+        },
+      ],
+    },
+  ])
 })

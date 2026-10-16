@@ -660,7 +660,7 @@ export async function boardClaimTake(input: TakeClaimInput, inputContext?: Conte
   const row = await hostedClient(c).takeBoardClaim({
     id: newRecordId(),
     project: claimProject(input.project, c.env, c.cwd),
-    projectId: projectRowByName(claimProject(input.project, c.env, c.cwd))?.recordId ?? null,
+    projectId: projectRowByName(claimProject(input.project, c.env, c.cwd))!.recordId,
     subject: input.subject,
     durationMs: input.durationMs ?? BOARD_CLAIM_DEFAULT_MS,
     runId: hostedClaimRunId(input.runId, c.env),

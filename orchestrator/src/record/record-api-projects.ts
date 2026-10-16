@@ -14,9 +14,8 @@ type Tenant = {
 }
 
 const projectUpsertSchema = z.object({
-  id: z.string().uuid().optional(),
+  id: z.string().uuid(),
   name: z.string().trim().min(1),
-  previousName: z.string().trim().min(1).optional(),
   path: z.string().min(1),
   stack: z.string().nullable(),
   canon: z.boolean(),
@@ -29,7 +28,7 @@ export function registerRecordProjectRoutes(
   deps: {
     readProjects(input: Tenant): Promise<RecordProject[]>
     upsertProject(input: Tenant & RecordProjectUpsertInput): Promise<{ id: string; name: string }>
-    retireProject(input: Tenant & { name: string }): Promise<{ name: string }>
+    retireProject(input: Tenant & { id: string }): Promise<{ name: string }>
   },
   helpers: {
     scope(context: Context<ApiEnvironment>): Tenant | null
@@ -52,13 +51,13 @@ export function registerRecordProjectRoutes(
       return helpers.writeError(context, error)
     }
   })
-  app.post('/v1/projects/:name/retire', async (context) => {
+  app.post('/v1/projects/:id/retire', async (context) => {
     const tenant = helpers.scope(context)
     if (!tenant) return helpers.noSpace(context)
-    const name = z.string().trim().min(1).safeParse(context.req.param('name'))
-    if (!name.success) return context.json({ error: 'project name is required' }, 400)
+    const id = z.string().uuid().safeParse(context.req.param('id'))
+    if (!id.success) return context.json({ error: 'project id is required' }, 400)
     try {
-      return context.json(await deps.retireProject({ ...tenant, name: name.data }))
+      return context.json(await deps.retireProject({ ...tenant, id: id.data }))
     } catch (error) {
       return helpers.writeError(context, error)
     }

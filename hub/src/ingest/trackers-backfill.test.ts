@@ -63,8 +63,12 @@ test('tracker backfill never queues or overwrites a local row with a missing upd
   const userId = '01990000-0000-7000-8000-000000001290'
   const spaceId = '01990000-0000-7000-8000-000000001291'
   const taskId = '01990000-0000-7000-8000-000000001292'
+  const projectId = '01990000-0000-7000-8000-000000001101'
   const database = await createHostedRecordFixture({ spaceId, userId })
   try {
+    await database.exec(`RESET ROLE;
+      INSERT INTO project(id,space_id,name,created_at) VALUES ('${projectId}','${spaceId}','alpha',now());
+      SET ROLE record_actor;`)
     await database.transaction(async (transaction) => {
       const sql = pgliteSql(transaction as unknown as PGlite)
       sql.unsafe = (async (statement: string) =>
@@ -80,6 +84,7 @@ test('tracker backfill never queues or overwrites a local row with a missing upd
             key: taskKey,
             project: 'alpha',
             project_name: 'alpha',
+            projectId,
             title: 'Newer hosted title',
             status: 'review',
             status_category: 'review',
@@ -104,13 +109,14 @@ test('tracker backfill never queues or overwrites a local row with a missing upd
       conn
         .query(
           `INSERT INTO task
-           (record_id,key,project,title,status,status_category,body,source,first_seen,last_seen,updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,NULL)`,
+           (record_id,key,project,project_record_id,title,status,status_category,body,source,first_seen,last_seen,updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL)`,
         )
         .run(
           taskId,
           taskKey,
           'alpha',
+          projectId,
           'Stale local title',
           'open',
           'open',
@@ -122,13 +128,14 @@ test('tracker backfill never queues or overwrites a local row with a missing upd
       conn
         .query(
           `INSERT INTO interval
-           (record_id,task_key,project,source,start_at,end_at,ref)
-           VALUES (?,?,?,'orch',?,?,?)`,
+           (record_id,task_key,project,project_record_id,source,start_at,end_at,ref)
+           VALUES (?,?,?,?,'orch',?,?,?)`,
         )
         .run(
           '01990000-0000-7000-8000-000000001293',
           taskKey,
           'alpha',
+          projectId,
           '2026-10-10T00:00:00.000Z',
           '2026-10-10T01:00:00.000Z',
           'run:991',

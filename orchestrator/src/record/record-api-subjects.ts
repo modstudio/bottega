@@ -49,13 +49,13 @@ export type RecordSubjectRouteDeps = {
 }
 
 const project = z.string().trim().min(1)
-const projectId = z.string().uuid().nullable().optional()
+const projectId = z.string().uuid()
 const id = z.string().uuid()
 const name = z.string().trim().min(1)
 const definition = SubjectDefinitionSchema
 const subjectListQuery = z.object({
   project: project.optional(),
-  projectId,
+  projectId: projectId.optional(),
   includeRetired: z.enum(['true', 'false']).optional(),
   order: z.enum(['catalog', 'updated']).default('catalog'),
   cursor: z.string().optional(),

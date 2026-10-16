@@ -245,7 +245,6 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
       '../../../shared/record/schema.ts',
       '../../../shared/record/tenant.ts',
       './record-project-columns.ts',
-      './record-project-write.ts',
     ],
     'Keep hosted project record access isolated from other production modules.',
   ),
@@ -325,6 +324,7 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
     [
       'bun',
       '../../../shared/board-purpose.ts',
+      '../../../shared/record-project-identity.ts',
       '../../../shared/secret-shaped.ts',
       '../board/board-policy.ts',
       '../board/board-tags.ts',

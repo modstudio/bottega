@@ -439,7 +439,7 @@ async function uploadClaim(
   const uploaded = await client.takeBoardClaim({
     id: hostedId,
     project: row.project,
-    projectId: projectRowByName(row.project, database)?.recordId ?? null,
+    projectId: projectRowByName(row.project, database)!.recordId,
     subject: `${row.subject_kind}:${row.subject_value}`,
     durationMs: remaining,
     runId: runRecordId(row.run_id, database),

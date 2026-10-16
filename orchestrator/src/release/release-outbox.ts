@@ -14,7 +14,7 @@ export function enqueueReleaseRecord(database: Database, releaseId: number): voi
   const row = database
     .query<ReleaseRow, [number]>(
       `SELECT release_ledger.*, project.record_id AS project_record_id
-       FROM release_ledger LEFT JOIN project ON project.name=release_ledger.project
+       FROM release_ledger LEFT JOIN project ON project.id=release_ledger.project_id
        WHERE release_ledger.id=?`,
     )
     .get(releaseId)

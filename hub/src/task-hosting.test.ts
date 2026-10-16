@@ -160,6 +160,7 @@ describe('hosted-only task safety', () => {
     await expect(
       createHostedTaskInTransaction(transaction([]), identity, {
         project: 'missing',
+        projectId: 'project-missing',
         title: 'Missing',
       }),
     ).rejects.toThrow(
@@ -169,7 +170,7 @@ describe('hosted-only task safety', () => {
       createHostedTaskInTransaction(
         transaction([{ id: 'project-1', key_prefixes: [] }]),
         identity,
-        { project: 'present', title: 'No prefix' },
+        { project: 'present', projectId: 'project-1', title: 'No prefix' },
       ),
     ).rejects.toThrow("project 'present' has no key prefix")
   })

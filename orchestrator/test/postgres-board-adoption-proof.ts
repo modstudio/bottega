@@ -10,6 +10,7 @@ type ProofInput = {
   token(): string
   userId(): string
   project: string
+  projectId: string
   expiresAt: string
   caseSession(label: string): string
   succeeds(user: string, password: string, source: string): string
@@ -60,6 +61,9 @@ function adoptionClient(input: ProofInput): RecordApiClient {
 
 function seedLocalBoard(input: ProofInput) {
   const local = db()
+  local
+    .query(`INSERT OR IGNORE INTO project (record_id,name,path,settings) VALUES (?,?,?,?)`)
+    .run(input.projectId, input.project, `/fixtures/${input.project}`, '{}')
   const created = '2026-10-05T10:00:00.000Z'
   const notice = local
     .query(
@@ -174,9 +178,12 @@ export function registerBoardAdoptionProof(input: ProofInput): void {
       headers: headers(input.token()),
     })
     const claimsRead = (await (
-      await fetch(`${input.origin()}/v1/board/claims?project=${input.project}`, {
-        headers: headers(input.token()),
-      })
+      await fetch(
+        `${input.origin()}/v1/board/claims?project=${input.project}&projectId=${input.projectId}`,
+        {
+          headers: headers(input.token()),
+        },
+      )
     ).json()) as { claims: Array<{ id: string; subject: { value: string } }> }
     expect(noticeRead.status).toBe(200)
     expect(((await noticeRead.json()) as { root: { id: string } }).root.id).toBe(notice.record_id)

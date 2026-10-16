@@ -50,6 +50,12 @@ function receipt(messageId: number, reader: string) {
 }
 
 function claim(runId: number | null = null) {
+  db()
+    .query(
+      `INSERT OR IGNORE INTO project(record_id,name,path,canon,settings)
+       VALUES (?,?,'/tmp/${PLATFORM_SLUG}',1,'{}')`,
+    )
+    .run('01990000-0000-7000-8000-000000000088', PLATFORM_SLUG)
   return db()
     .query(
       `INSERT INTO board_claim

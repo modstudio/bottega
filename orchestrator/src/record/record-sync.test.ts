@@ -8,6 +8,7 @@ import {
   localOutbox,
   MACHINE_ID,
   options,
+  PROJECT_ID,
   RECORD_ID,
   STAMP,
 } from '../../test/fixtures/record-sync.ts'
@@ -46,6 +47,7 @@ function localTriageSnapshotOutbox(mutate: (payload: Record<string, unknown>) =>
     id: RECORD_ID,
     spaceId: '01990000-0000-7000-8000-000000000001',
     projectName: PLATFORM_SLUG,
+    projectId: PROJECT_ID,
     machineId: MACHINE_ID,
     localId: 42,
     branch: 'DEV-977-old-shape',
@@ -91,6 +93,7 @@ function localLandingOverrideOutbox(mutate: (payload: Record<string, unknown>) =
     id: RECORD_ID,
     spaceId: '01990000-0000-7000-8000-000000000001',
     projectName: PLATFORM_SLUG,
+    projectId: PROJECT_ID,
     machineId: MACHINE_ID,
     localId: 42,
     branch: 'DEV-977-old-shape',
@@ -376,22 +379,6 @@ test.each([
   expect(
     remote.statements.some((sql) => sql.toLowerCase().includes('insert into "run_score"')),
   ).toBe(false)
-  local.close()
-})
-
-test('an old-shape run payload without projectId or withheldFields still syncs by name', async () => {
-  const local = localOutbox(1)
-  const row = local.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!
-  const payload = JSON.parse(row.payload) as Record<string, unknown>
-  delete payload.withheldFields
-  delete payload.projectId
-  local.query('UPDATE outbox SET payload=?').run(JSON.stringify(payload))
-  const remote = fakePostgres()
-  expect(await syncRecord(options(local, remote))).toMatchObject({
-    pushed: 1,
-    failed: 0,
-  })
-  expect(remote.parameters.flat()).toContain(null)
   local.close()
 })
 

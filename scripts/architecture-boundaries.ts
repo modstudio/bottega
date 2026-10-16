@@ -687,12 +687,6 @@ export const importBoundaries: ImportBoundary[] = [
   ),
   ...recordSettingsBoundarySpecs,
   boundary(
-    'record-project-write-boundary',
-    'orchestrator/src/record/record-project-write.ts',
-    [],
-    'Keep the hosted project rename decision pure and independent of SQL, HTTP, and stores.',
-  ),
-  boundary(
     'record-api-client-boundary',
     'orchestrator/src/record/record-api-client.ts',
     [

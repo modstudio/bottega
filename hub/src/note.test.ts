@@ -24,6 +24,7 @@ import {
   resolveNoteReference,
   staleNotes,
 } from './note.ts'
+import { projectRecordIdFor } from './project-record-id.ts'
 
 const scratch = mkdtempSync(join(tmpdir(), 'hub-note-'))
 beforeAll(resetFixtureStore)
@@ -117,6 +118,7 @@ const acknowledge = (id: number, session: string) =>
 describe('suggestion notes', () => {
   test('a named target project routes independently from the filing anchor', async () => {
     const requestedSpaces: Array<string | null> = []
+    const writes: Record<string, unknown>[] = []
     const targetHosted = {
       baseUrl: 'https://hub.example.test',
       token: 'test',
@@ -134,6 +136,7 @@ describe('suggestion notes', () => {
           })
         requestedSpaces.push(new Headers(init?.headers).get('x-record-space'))
         const body = JSON.parse(String(init?.body))
+        writes.push(body)
         return Response.json({
           id: crypto.randomUUID(),
           number: 1,
@@ -163,6 +166,9 @@ describe('suggestion notes', () => {
       { hosted: targetHosted },
     )
     expect(requestedSpaces).toEqual(['space-gamma'])
+    expect(writes).toEqual([
+      expect.objectContaining({ project: 'gamma', projectId: projectRecordIdFor('gamma') }),
+    ])
     expect(result.note.project).toBe('gamma')
     expect(result.note.anchors[0]?.project).toBe('workshop')
     expect(result.note.anchors[0]?.cwd).toBe('/fixtures/repos/workshop')

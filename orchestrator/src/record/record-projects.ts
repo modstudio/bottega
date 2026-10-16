@@ -2,10 +2,8 @@
 /** Owns tenant-bound hosted project reads and writes. Must not know local cache, CLI, or HTTP. */
 import { SQL } from 'bun'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
-import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { type HostedProjectColumns, hostedProjectColumns } from './record-project-columns.ts'
-import { decideHostedProjectWrite, type HostedProjectNameRow } from './record-project-write.ts'
 
 export type RecordProject = {
   id: string
@@ -22,9 +20,8 @@ export type RecordProject = {
 }
 
 export type RecordProjectUpsertInput = {
-  id?: string
+  id: string
   name: string
-  previousName?: string
   path: string
   stack: string | null
   canon: boolean
@@ -51,16 +48,6 @@ async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<
     })
   } finally {
     await client.close()
-  }
-}
-
-function namedRow(row: Record<string, unknown> | undefined): HostedProjectNameRow | null {
-  if (!row) return null
-  return {
-    id: String(row.id),
-    name: String(row.name),
-    retiredAt: row.retired_at == null ? null : new Date(String(row.retired_at)).toISOString(),
-    checkoutPath: row.checkout_path == null ? null : String(row.checkout_path),
   }
 }
 
@@ -132,10 +119,10 @@ export async function upsertHostedProjectRow(
     canon: boolean
     retiredAt: string | null
     columns: HostedProjectColumns
-    id?: string
+    id: string
   },
 ): Promise<string> {
-  const id = input.id ?? newRecordId()
+  const id = input.id
   const columns = input.columns
   const rows = await tx`
     INSERT INTO project (
@@ -165,7 +152,8 @@ export async function upsertHostedProjectRow(
       ${input.retiredAt},
       now()
     )
-    ON CONFLICT (space_id, name) DO UPDATE SET
+    ON CONFLICT (id) DO UPDATE SET
+      name = EXCLUDED.name,
       key_prefixes = EXCLUDED.key_prefixes,
       checkout_path = EXCLUDED.checkout_path,
       stack = EXCLUDED.stack,
@@ -227,68 +215,68 @@ export async function listRecordProjects(
 export async function upsertRecordProject(
   input: Tenant & RecordProjectUpsertInput,
 ): Promise<{ id: string; name: string }> {
-  return tenant(input, async (tx) => {
-    const currentName = input.previousName ?? input.name
-    const nextName = input.name
-    const currentRows = await tx`
-      SELECT id, name, retired_at, checkout_path FROM project
-      WHERE space_id=${input.spaceId}::uuid AND name=${currentName}
+  try {
+    return await tenant(input, async (tx) => {
+      const nextName = input.name
+      const currentRows = await tx`
+      SELECT id, name FROM project
+      WHERE id=${input.id}::uuid
     `
-    const nextRows =
-      currentName === nextName
-        ? currentRows
-        : await tx`
-          SELECT id, name, retired_at, checkout_path FROM project
-          WHERE space_id=${input.spaceId}::uuid AND name=${nextName}
-        `
-    const plan = decideHostedProjectWrite({
-      currentName,
-      nextName,
-      path: input.path,
-      current: namedRow(currentRows[0] as Record<string, unknown> | undefined),
-      next: namedRow(nextRows[0] as Record<string, unknown> | undefined),
-    })
-    if (plan.kind === 'refuse') throw new RecordProjectError(plan.message, 409)
-    let columns: HostedProjectColumns
-    try {
-      columns = hostedProjectColumns(input.settings, nextName)
-    } catch (error) {
-      throw new RecordProjectError(error instanceof Error ? error.message : String(error), 400)
-    }
-    if (plan.kind === 'rename') {
-      await tx`UPDATE project SET name=${plan.to} WHERE id=${plan.id}::uuid`
-      await renameHostedHubProjectNames(tx, {
+      const currentName = currentRows[0]?.name == null ? null : String(currentRows[0].name)
+      let columns: HostedProjectColumns
+      try {
+        columns = hostedProjectColumns(input.settings, nextName)
+      } catch (error) {
+        throw new RecordProjectError(error instanceof Error ? error.message : String(error), 400)
+      }
+      if (currentName !== null && currentName !== nextName) {
+        await tx`UPDATE project SET name=${nextName} WHERE id=${input.id}::uuid`
+        await renameHostedHubProjectNames(tx, {
+          spaceId: input.spaceId,
+          projectId: input.id,
+          from: currentName,
+          to: nextName,
+        })
+        await renameHostedDocSubjects(tx, input.spaceId, input.id, currentName, nextName)
+      }
+      const id = await upsertHostedProjectRow(tx, {
         spaceId: input.spaceId,
-        projectId: plan.id,
-        from: plan.from,
-        to: plan.to,
+        id: input.id,
+        name: nextName,
+        path: input.path,
+        stack: input.stack,
+        canon: input.canon,
+        retiredAt: input.retiredAt,
+        columns,
       })
-      await renameHostedDocSubjects(tx, input.spaceId, plan.id, currentName, nextName)
-    }
-    const id = await upsertHostedProjectRow(tx, {
-      spaceId: input.spaceId,
-      id: input.id,
-      name: nextName,
-      path: input.path,
-      stack: input.stack,
-      canon: input.canon,
-      retiredAt: input.retiredAt,
-      columns,
+      return { id, name: nextName }
     })
-    return { id, name: nextName }
-  })
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error.message.includes('project_space_name_uq') ||
+        error.message.includes('project_space_id_name_unique') ||
+        error.message.includes('duplicate key value violates unique constraint'))
+    ) {
+      throw new RecordProjectError(
+        `hosted project name "${input.name}" already exists in the request space`,
+        409,
+      )
+    }
+    throw error
+  }
 }
 
 export async function retireRecordProject(
-  input: Tenant & { name: string },
+  input: Tenant & { id: string },
 ): Promise<{ name: string }> {
   return tenant(input, async (tx) => {
     const rows = await tx`
       UPDATE project SET retired_at = now()
-      WHERE space_id=${input.spaceId}::uuid AND name=${input.name}
+      WHERE space_id=${input.spaceId}::uuid AND id=${input.id}::uuid
       RETURNING name
     `
-    if (!rows.length) throw new RecordProjectError(`hosted project "${input.name}" not found`, 404)
+    if (!rows.length) throw new RecordProjectError(`hosted project ${input.id} not found`, 404)
     return { name: String(rows[0]!.name) }
   })
 }

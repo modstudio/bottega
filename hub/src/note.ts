@@ -36,7 +36,7 @@ import { drainHostedEditOutbox } from './offline-task-edits.ts'
 import { dispatchNoteCurator, readRunsById } from './orch.ts'
 import { queueHostedChange } from './outbox.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
-import { projects } from './projects.ts'
+import { projects, type RegisteredProject } from './projects.ts'
 import { HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE, HOSTED_NOTE_TABLE } from './push-contract.ts'
 import { createLocalTaskInTransaction, duplicateCandidates, type TaskRow } from './task.ts'
 import { applyHostedTask } from './task-cache.ts'
@@ -154,9 +154,11 @@ function decode(row: Omit<NoteRow, 'anchors' | 'label'> & { anchors: string }): 
   }
 }
 
-function registeredProject(name: string): void {
-  if (!projects().some((candidate) => candidate.name === name))
+function registeredProject(name: string): RegisteredProject {
+  const project = projects().find((candidate) => candidate.name === name)
+  if (!project)
     throw new Error(`project '${name}' is not registered; run \`${PLATFORM_SLUG} project list\``)
+  return project
 }
 
 function writeMode(
@@ -544,7 +546,7 @@ export async function createNote(
   if (input.sameAs && input.forceNew) throw new Error('--same-as and --new are mutually exclusive')
   const anchor = identifiedAnchor(input.anchor ?? deriveNoteAnchor(text, input.cwd))
   const targetProject = input.project ?? anchor.project
-  registeredProject(targetProject)
+  const registered = registeredProject(targetProject)
   const candidates = noteCandidates(text, targetProject)
   const mode = writeMode(targetProject, options.hosted)
   if (input.sameAs) {
@@ -612,6 +614,7 @@ export async function createNote(
   const hosted = await hostedCreateNote(
     {
       project: targetProject,
+      projectId: registered.record_id,
       text,
       area: input.area?.trim() || null,
       anchor: JSON.stringify(anchor),

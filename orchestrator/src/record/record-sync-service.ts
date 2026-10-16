@@ -29,7 +29,6 @@ import { OutboxRowError, outboxErrorDetail, outboxFailureDisposition } from './o
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { evidenceReferences, type MachineEvidenceTable } from './record-evidence-references.ts'
-import { resolveRecordProjectIdentity } from './record-project-identity.ts'
 import { pushReleaseRecord } from './record-release-sync.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues } from './record-review-values.ts'
@@ -48,6 +47,7 @@ import {
 } from './record-sync-decision.ts'
 import { ownedEvidenceLookup } from './record-sync-evidence-lookup.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
+import { type ProjectResolutionCache, projectRecordId } from './record-sync-project-identity.ts'
 import { pushScore } from './score-sync.ts'
 
 function payload(source: string, kind: keyof typeof recordKinds): Payload {
@@ -293,10 +293,15 @@ async function applyHostedUnvoid(
   `
 }
 
-async function pushRun(postgres: SQL, row: Payload, principal: RecordPrincipal): Promise<void> {
+async function pushRun(
+  postgres: SQL,
+  row: Payload,
+  principal: RecordPrincipal,
+  projectIds?: ProjectResolutionCache,
+): Promise<void> {
   await postgres.begin(async (tx) => {
     await bindPrincipal(tx, principal)
-    const projectId = await projectRecordId(tx, row, principal)
+    const projectId = await projectRecordId(tx, row, principal, projectIds)
     const values = runValues(row, projectId)
     const existingOwned = await existingEvidenceOwned(
       tx,
@@ -566,30 +571,6 @@ function testFlakeValues(row: Payload) {
   }
 }
 
-async function projectRecordId(
-  tx: SQL,
-  row: Payload,
-  principal: RecordPrincipal,
-): Promise<string | null> {
-  const requestedId = nullableString(row.projectId)
-  const projectName = nullableString(row.projectName)
-  if (requestedId === null && projectName === null) return null
-  const resolved = await resolveRecordProjectIdentity(tx, {
-    projectId: requestedId,
-    projectName,
-    spaceId: principal.spaceId,
-  })
-  if (resolved.status !== 'found') {
-    throw new OutboxRowError(
-      requestedId
-        ? `record project ${requestedId} is absent from request space ${principal.spaceId}`
-        : `record project is absent: ${projectName}`,
-      'row-validation',
-    )
-  }
-  return resolved.project.id
-}
-
 const recordKinds = {
   run: {
     ...OUTBOX_PAYLOAD_CONTRACTS.run,
@@ -605,10 +586,15 @@ const recordKinds = {
   },
   question: {
     ...OUTBOX_PAYLOAD_CONTRACTS.question,
-    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
+    push: async (
+      postgres: SQL,
+      row: Payload,
+      principal: RecordPrincipal,
+      projectIds?: ProjectResolutionCache,
+    ) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
-        const values = questionValues(row, await projectRecordId(tx, row, principal))
+        const values = questionValues(row, await projectRecordId(tx, row, principal, projectIds))
         const existingOwned = await existingEvidenceOwned(
           tx,
           'question',
@@ -648,10 +634,15 @@ const recordKinds = {
   },
   review: {
     ...OUTBOX_PAYLOAD_CONTRACTS.review,
-    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
+    push: async (
+      postgres: SQL,
+      row: Payload,
+      principal: RecordPrincipal,
+      projectIds?: ProjectResolutionCache,
+    ) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
-        const values = reviewValues(row, await projectRecordId(tx, row, principal))
+        const values = reviewValues(row, await projectRecordId(tx, row, principal, projectIds))
         await existingEvidenceOwned(tx, 'review', values.id, values.machineId, principal)
         const { id: _id, createdAt: _createdAt, ...updates } = values
         const written = await drizzle({ client: tx })
@@ -668,7 +659,12 @@ const recordKinds = {
   },
   review_lens: {
     ...OUTBOX_PAYLOAD_CONTRACTS.review_lens,
-    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
+    push: async (
+      postgres: SQL,
+      row: Payload,
+      principal: RecordPrincipal,
+      projectIds?: ProjectResolutionCache,
+    ) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
         const values = reviewLensValues(row)
@@ -708,12 +704,17 @@ const recordKinds = {
   },
   review_read: {
     ...OUTBOX_PAYLOAD_CONTRACTS.review_read,
-    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
+    push: async (
+      postgres: SQL,
+      row: Payload,
+      principal: RecordPrincipal,
+      projectIds?: ProjectResolutionCache,
+    ) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
         const values = reviewReadRecordValues(
           row,
-          await projectRecordId(tx, row, principal),
+          await projectRecordId(tx, row, principal, projectIds),
           commonReviewRecordValues(row),
         )
         await existingEvidenceOwned(tx, 'review_read', values.id, values.machineId, principal)
@@ -732,15 +733,32 @@ const recordKinds = {
   },
   release: {
     ...OUTBOX_PAYLOAD_CONTRACTS.release,
-    push: (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
-      pushReleaseRecord(postgres, row, principal, projectRecordId, evidenceCollision),
+    push: (
+      postgres: SQL,
+      row: Payload,
+      principal: RecordPrincipal,
+      projectIds?: ProjectResolutionCache,
+    ) =>
+      pushReleaseRecord(
+        postgres,
+        row,
+        principal,
+        (tx, releaseRow, releasePrincipal) =>
+          projectRecordId(tx, releaseRow, releasePrincipal, projectIds),
+        evidenceCollision,
+      ),
   },
   landing: {
     ...OUTBOX_PAYLOAD_CONTRACTS.landing,
-    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
+    push: async (
+      postgres: SQL,
+      row: Payload,
+      principal: RecordPrincipal,
+      projectIds?: ProjectResolutionCache,
+    ) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
-        const values = landingValues(row, await projectRecordId(tx, row, principal))
+        const values = landingValues(row, await projectRecordId(tx, row, principal, projectIds))
         await existingEvidenceOwned(tx, 'landing', values.id, values.machineId, principal)
         const { id: _id, createdAt: _createdAt, ...updates } = values
         const written = await drizzle({ client: tx })
@@ -757,10 +775,18 @@ const recordKinds = {
   },
   landing_override: {
     ...OUTBOX_PAYLOAD_CONTRACTS.landing_override,
-    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
+    push: async (
+      postgres: SQL,
+      row: Payload,
+      principal: RecordPrincipal,
+      projectIds?: ProjectResolutionCache,
+    ) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
-        const values = landingOverrideValues(row, await projectRecordId(tx, row, principal))
+        const values = landingOverrideValues(
+          row,
+          await projectRecordId(tx, row, principal, projectIds),
+        )
         await existingEvidenceOwned(tx, 'landing_override', values.id, values.machineId, principal)
         const { id: _id, createdAt: _createdAt, ...updates } = values
         const written = await drizzle({ client: tx })
@@ -777,10 +803,18 @@ const recordKinds = {
   },
   landing_review_carry: {
     ...OUTBOX_PAYLOAD_CONTRACTS.landing_review_carry,
-    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
+    push: async (
+      postgres: SQL,
+      row: Payload,
+      principal: RecordPrincipal,
+      projectIds?: ProjectResolutionCache,
+    ) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
-        const values = landingReviewCarryValues(row, await projectRecordId(tx, row, principal))
+        const values = landingReviewCarryValues(
+          row,
+          await projectRecordId(tx, row, principal, projectIds),
+        )
         await existingEvidenceOwned(
           tx,
           'landing_review_carry',
@@ -803,10 +837,18 @@ const recordKinds = {
   },
   landing_triage_snapshot: {
     ...OUTBOX_PAYLOAD_CONTRACTS.landing_triage_snapshot,
-    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
+    push: async (
+      postgres: SQL,
+      row: Payload,
+      principal: RecordPrincipal,
+      projectIds?: ProjectResolutionCache,
+    ) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
-        const values = landingTriageSnapshotValues(row, await projectRecordId(tx, row, principal))
+        const values = landingTriageSnapshotValues(
+          row,
+          await projectRecordId(tx, row, principal, projectIds),
+        )
         await existingEvidenceOwned(
           tx,
           'landing_triage_snapshot',
@@ -872,7 +914,12 @@ const recordKinds = {
   {
     columns: readonly string[]
     laterAdded: Readonly<Record<string, unknown>>
-    push: (postgres: SQL, row: Payload, principal: RecordPrincipal) => Promise<unknown>
+    push: (
+      postgres: SQL,
+      row: Payload,
+      principal: RecordPrincipal,
+      projectIds?: ProjectResolutionCache,
+    ) => Promise<unknown>
   }
 >
 
@@ -881,6 +928,7 @@ async function pushHostedRow(input: {
   row: RecordSyncRequest['rows'][number]
   identity: RecordIdentity
   machineId: string
+  projectIds: ProjectResolutionCache
 }): Promise<RecordSyncRowResult> {
   const { postgres, row, identity } = input
   try {
@@ -919,7 +967,7 @@ async function pushHostedRow(input: {
       machineId: input.machineId,
       principal: rowPrincipal,
     })
-    await recordKinds[kind].push(postgres, record, rowPrincipal)
+    await recordKinds[kind].push(postgres, record, rowPrincipal, input.projectIds)
     return { id: row.id, status: 'synced' }
   } catch (error) {
     const detail = outboxErrorDetail(error)
@@ -945,6 +993,7 @@ export async function syncHostedRecord(input: {
       spaceId: activeSpaceId,
     })
     const results: RecordSyncRowResult[] = []
+    const projectIds: ProjectResolutionCache = new Map()
     for (const row of input.request.rows) {
       results.push(
         await pushHostedRow({
@@ -952,6 +1001,7 @@ export async function syncHostedRecord(input: {
           row,
           identity: input.identity,
           machineId: input.request.machine.id,
+          projectIds,
         }),
       )
     }

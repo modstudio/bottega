@@ -36,6 +36,13 @@ export const recordModules: RecordModule[] = [
     'bun',
     '../../../shared/record-project-identity.ts',
   ]),
+  module('orchestrator/src/record/record-sync-project-identity.ts', [
+    'bun',
+    '../../../shared/record-project-identity.ts',
+    './outbox-failure.ts',
+    './record-project-identity.ts',
+    './record-sync-contract.ts',
+  ]),
   module('orchestrator/src/record/record-api-sync.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-remedies.ts',
@@ -71,11 +78,11 @@ export const recordModules: RecordModule[] = [
     './record-release-sync.ts',
     './record-review-read.ts',
     './record-review-values.ts',
-    './record-project-identity.ts',
     './record-sync-contract.ts',
     './record-sync-decision.ts',
     './record-sync-evidence-lookup.ts',
     './record-sync-principal.ts',
+    './record-sync-project-identity.ts',
     './score-sync.ts',
   ]),
   module('orchestrator/src/record/record-sync-evidence-lookup.ts', []),
@@ -88,6 +95,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-pending-invitations.ts', ['bun']),
   module('orchestrator/src/record/record-doc-article-fields.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/record-project-identity.ts',
     'bun',
     '../../../shared/docs.ts',
     '../../../shared/record/schema.ts',
@@ -114,6 +122,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-subjects.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/record-project-identity.ts',
     'bun',
     '../../../shared/record/schema.ts',
     '../../../shared/record/tenant.ts',
@@ -372,6 +381,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-board-messages.ts', [
     'bun',
     '../../../shared/board-purpose.ts',
+    '../../../shared/record-project-identity.ts',
     '../../../shared/secret-shaped.ts',
     '../board/board-policy.ts',
     '../board/board-tags.ts',

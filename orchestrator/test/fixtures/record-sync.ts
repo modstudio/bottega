@@ -9,6 +9,7 @@ import type { fakePostgres } from './record-sync-postgres.ts'
 const RUN_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.run.columns
 
 export const RECORD_ID = '01990000-0000-7000-8000-000000000042'
+export const PROJECT_ID = '01990000-0000-7000-8000-000000000088'
 export const MACHINE_ID = machineId()
 export const STAMP = '2026-09-15T01:01:00.000Z'
 
@@ -34,6 +35,7 @@ export function localOutbox(
       id: `${RECORD_ID.slice(0, -1)}${id}`,
       spaceId: '01990000-0000-7000-8000-000000000001',
       projectName,
+      projectId: projectName === null ? null : PROJECT_ID,
       machineId: MACHINE_ID,
       localId: id,
       startedAt: STAMP,

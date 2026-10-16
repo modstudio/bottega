@@ -25,7 +25,6 @@ export async function writeProjectToHostedRecord(
   p: {
     recordId?: string | null
     name: string
-    previousName?: string
     path: string
     stack?: string | null
     canon?: boolean
@@ -34,17 +33,17 @@ export async function writeProjectToHostedRecord(
   },
   destinationSpaceId?: string,
 ): Promise<string> {
+  const recordId = p.recordId ?? newRecordId()
   return applyRecordWriteAuthority({
-    local: () => p.recordId ?? newRecordId(),
+    local: () => recordId,
     hosted: async () => {
       const client = recordApiClient()
       const destination =
         destinationSpaceId ?? (await requireProjectRecordDestination(p.name, p.settings, client))
       const result = await client.upsertProject(
         {
-          id: p.recordId ?? undefined,
+          id: recordId,
           name: p.name,
-          previousName: p.previousName,
           path: p.path.replace(/\/$/, ''),
           stack: p.stack ?? null,
           canon: Boolean(p.canon),
@@ -59,15 +58,19 @@ export async function writeProjectToHostedRecord(
 }
 
 export async function retireProjectInHostedRecord(
-  name: string,
+  project: { name: string; recordId: string },
   settings: ProjectSettings | StoredProjectSettings,
 ): Promise<void> {
   await applyRecordWriteAuthority({
     local: () => undefined,
     hosted: async () => {
       const client = recordApiClient()
-      const destinationSpaceId = await requireProjectRecordDestination(name, settings, client)
-      return client.retireProject(name, { destinationSpaceId })
+      const destinationSpaceId = await requireProjectRecordDestination(
+        project.name,
+        settings,
+        client,
+      )
+      return client.retireProject(project.recordId, { destinationSpaceId })
     },
   })
 }

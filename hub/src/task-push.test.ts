@@ -32,6 +32,8 @@ const hostedOnly = '01990000-0000-7000-8000-000000008514'
 const inFlightId = '01990000-0000-7000-8000-000000008515'
 const noteId = '01990000-0000-7000-8000-000000008517'
 const acknowledgementId = '01990000-0000-7000-8000-000000008518'
+const projectA = '01990000-0000-7000-8000-000000008519'
+const projectB = '01990000-0000-7000-8000-000000008520'
 const pageIds = [
   '01990000-0000-7000-8000-000000008521',
   '01990000-0000-7000-8000-000000008522',
@@ -89,13 +91,14 @@ const listIds: typeof import('./task-client.ts').hostedIdentitySet = async (
 }
 
 function insertMachineTask(id: string, key: string, project: string) {
+  const projectId = project === 'workshop' ? projectA : projectB
   writeTransaction((conn) => {
     conn
       .query(
-        `INSERT INTO task(record_id,key,project,title,status,status_category,source,first_seen,last_seen)
-         VALUES (?,?,?,?, 'open','open','local',?,?)`,
+        `INSERT INTO task(record_id,key,project,project_record_id,title,status,status_category,source,first_seen,last_seen)
+         VALUES (?,?,?,?,?, 'open','open','local',?,?)`,
       )
-      .run(id, key, project, key, at, at)
+      .run(id, key, project, projectId, key, at, at)
   })
 }
 
@@ -105,6 +108,7 @@ function hostedTaskRow(id: string, key: string, project: string) {
     key,
     project,
     project_name: project,
+    projectId: project === 'workshop' ? projectA : projectB,
     title: key,
     status: 'open' as const,
     status_category: 'open' as const,
@@ -131,6 +135,9 @@ beforeAll(async () => {
     VALUES ('${spaceB}','Push B','push-b',now());
     INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
     VALUES ('01990000-0000-7000-8000-000000008503','${spaceB}','${userId}','member','write',now());
+    INSERT INTO project(id,space_id,name,created_at) VALUES
+      ('${projectA}','${spaceA}','workshop',now()),
+      ('${projectB}','${spaceB}','other',now());
     SET ROLE ${RECORD_ACTOR_ROLE};
   `)
 })
@@ -169,10 +176,10 @@ function insertMachineNote(id: string) {
     conn
       .query(
         `INSERT INTO note
-          (record_id,number,project,text,anchors,sightings,created_at,last_seen_at)
-         VALUES (?,1,'workshop','note','[]',1,?,?)`,
+          (record_id,number,project,project_record_id,text,anchors,sightings,created_at,last_seen_at)
+         VALUES (?,1,'workshop',?,'note','[]',1,?,?)`,
       )
-      .run(id, at, at)
+      .run(id, projectA, at, at)
   })
 }
 
@@ -191,19 +198,19 @@ function insertMachineAcknowledgement(id: string, selectedNoteId = noteId) {
 async function insertHostedNote(id: string) {
   await database.query(
     `INSERT INTO hub_note
-      (id,space_id,project_name,number,project,text,anchors,sightings,created_at,last_seen_at,
+      (id,space_id,project_name,project_id,number,project,text,anchors,sightings,created_at,last_seen_at,
        updated_at)
-     VALUES ($1,$2,'workshop',1,'workshop','note','[]',1,$3,$3,$3)`,
-    [id, spaceA, at],
+     VALUES ($1,$2,'workshop',$3,1,'workshop','note','[]',1,$4,$4,$4)`,
+    [id, spaceA, projectA, at],
   )
 }
 
 async function insertHostedAcknowledgement(id: string, selectedNoteId = noteId) {
   await database.query(
     `INSERT INTO hub_note_acknowledgement
-      (id,space_id,project_name,note_id,session_id,acknowledged_at,sightings,created_at,updated_at)
-     VALUES ($1,$2,'workshop',$3,'session',$4,1,$4,$4)`,
-    [id, spaceA, selectedNoteId, at],
+      (id,space_id,project_name,project_id,note_id,session_id,acknowledged_at,sightings,created_at,updated_at)
+     VALUES ($1,$2,'workshop',$3,$4,'session',$5,1,$5,$5)`,
+    [id, spaceA, projectA, selectedNoteId, at],
   )
 }
 
@@ -433,6 +440,7 @@ const intervalRow = (id: string): PushedInterval => ({
   id,
   task_key: null,
   project_name: 'workshop',
+  projectId: projectA,
   source: 'orch',
   agent: null,
   job: null,

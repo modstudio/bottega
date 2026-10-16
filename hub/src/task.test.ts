@@ -5,6 +5,7 @@ import { db, writeTransaction } from './db.ts'
 import { DUPLICATE_TITLE_FIXTURE } from './duplicate-matcher.fixture.ts'
 import { writeTrackerCache } from './ingest/trackers.ts'
 import { persistInstallBinding } from './install-binding.ts'
+import { projectRecordIdFor } from './project-record-id.ts'
 import {
   closeTask,
   commentTask,
@@ -297,12 +298,26 @@ describe('local task tracker', () => {
   })
 
   test('a hub-protocol project still mints through hub', async () => {
+    let write: Record<string, unknown> | null = null
     const task = await createTask(
       { project: 'workshop', title: `Hub-owned ${crypto.randomUUID()}` },
-      { hosted },
+      {
+        hosted: {
+          ...hosted,
+          fetch: async (input, init) => {
+            if (new URL(input).pathname === '/v1/tasks' && init?.body)
+              write = JSON.parse(String(init.body)) as Record<string, unknown>
+            return hosted.fetch(input, init)
+          },
+        },
+      },
     )
     expect(task.key).toMatch(/^DEV-\d+$/)
     expect(task.source).toBe('local')
+    expect(write).toMatchObject({
+      project: 'workshop',
+      projectId: projectRecordIdFor('workshop'),
+    })
   })
 
   test('issues above the highest existing number for the project prefix', async () => {

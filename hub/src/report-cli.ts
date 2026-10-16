@@ -1,6 +1,7 @@
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { requireDatabase } from './db.ts'
+import { projects } from './projects.ts'
 import {
   hostedCreateReportSubscription,
   hostedListReportSubscriptions,
@@ -62,8 +63,12 @@ async function reportList(json: boolean): Promise<void> {
 
 function subscribeScope(options: ReportOptions) {
   if (options.scope === 'space') return { kind: 'space' as const }
-  if (options.scope === 'project')
-    return { kind: 'project' as const, project: options.project ?? '' }
+  if (options.scope === 'project') {
+    const name = options.project ?? ''
+    const project = projects().find((candidate) => candidate.name === name)
+    if (!project) throw new Error(`project '${name}' is not registered`)
+    return { kind: 'project' as const, project: name, projectId: project.record_id }
+  }
   if (options.scope === 'members')
     return { kind: 'members' as const, userIds: options.member ?? [] }
   throw new Error(

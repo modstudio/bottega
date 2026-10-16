@@ -179,7 +179,11 @@ export const recordCanonImportSchema = canonImportBodySchema
   .extend({
     address: z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('user') }),
-      z.object({ kind: z.literal('project'), subject: z.string().trim().min(1) }),
+      z.object({
+        kind: z.literal('project'),
+        subject: z.string().trim().min(1),
+        projectId: z.string().uuid(),
+      }),
     ]),
   })
   .superRefine((input, context) => {

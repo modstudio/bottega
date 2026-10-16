@@ -13,14 +13,17 @@ const member = '01990000-0000-7000-8000-000000000702'
 const outsider = '01990000-0000-7000-8000-000000000799'
 const crossProject = '01990000-0000-7000-8000-000000000798'
 const ownProject = '01990000-0000-7000-8000-000000000797'
-const facts = { projectNames: ['workshop'], memberUserIds: [caller.userId, member] }
+const facts = {
+  memberUserIds: [caller.userId, member],
+  ownSpaceProjects: [{ id: ownProject, name: 'workshop' }],
+}
 const daily = { cadence: 'daily', hour: 8, zone: 'America/New_York' }
 
 describe('report subscriptions', () => {
   test('a project in the caller space is created; a project in another space is refused', () => {
     const created = planReportSubscription(
       caller,
-      { scope: { kind: 'project', project: 'workshop' }, ...daily },
+      { scope: { kind: 'project', project: 'workshop', projectId: ownProject }, ...daily },
       facts,
     )
     expect(created.scope_kind).toBe('project')
@@ -30,7 +33,10 @@ describe('report subscriptions', () => {
     expect(() =>
       planReportSubscription(
         caller,
-        { scope: { kind: 'project', project: 'other-space-project' }, ...daily },
+        {
+          scope: { kind: 'project', project: 'other-space-project', projectId: outsider },
+          ...daily,
+        },
         facts,
       ),
     ).toThrow('project other-space-project is not in this space')

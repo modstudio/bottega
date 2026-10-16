@@ -78,17 +78,27 @@ export function registerPublicDocProofs(input: {
       ownerUrl,
       spaceSlug: 'space-a',
       projectName: 'alpha',
+      projectId: publicProjectId,
     }
 
     await expect(
       designatePublicDocProject({ ...target, spaceSlug: 'missing-space' }),
     ).rejects.toThrow('not a member of record space')
     await expect(
-      designatePublicDocProject({ ...target, projectName: 'missing-project' }),
+      designatePublicDocProject({
+        ...target,
+        projectName: 'missing-project',
+        projectId: '01990000-0000-7000-8000-000000000399',
+      }),
     ).rejects.toThrow('does not exist in space')
     expect(input.admin('SELECT count(*) FROM public_doc_space;')).toBe('0')
 
-    const privateTarget = { ...target, spaceSlug: 'space-b', projectName: 'beta' }
+    const privateTarget = {
+      ...target,
+      spaceSlug: 'space-b',
+      projectName: 'beta',
+      projectId: privateProjectId,
+    }
     await expect(designatePublicDocProject(privateTarget)).rejects.toThrow(
       'not a member of record space',
     )

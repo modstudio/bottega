@@ -26,6 +26,7 @@ import { deleteTaskDocument, updateTaskDocument } from './task-document.ts'
 const spaceId = '01990000-0000-7000-8000-000000001250'
 const taskId = '01990000-0000-7000-8000-000000001251'
 const userId = '01990000-0000-7000-8000-000000001249'
+const projectId = '01990000-0000-7000-8000-000000000075'
 const identity = { userId, spaceId }
 let database: PGlite
 
@@ -34,6 +35,7 @@ const row = (id: string, at: string, task = taskId): PushedStatusEvent => ({
   task_key: task === taskId ? 'DEV-1' : 'DEV-404',
   task_id: task,
   project_name: 'workshop',
+  projectId,
   at,
   from_status: 'open',
   to_status: 'active',
@@ -47,6 +49,7 @@ const taskRow = (id: string, key: string, source: PushedTask['source'] = 'git'):
   key,
   project: 'workshop',
   project_name: 'workshop',
+  projectId,
   title: source === 'git' ? null : key,
   status: source === 'git' ? null : 'active',
   status_category: source === 'git' ? null : 'active',
@@ -69,6 +72,7 @@ const intervalRow = (id: string, startAt = '2026-10-12T16:54:46.612Z'): PushedIn
   id,
   task_key: 'DEV-1240',
   project_name: 'workshop',
+  projectId,
   source: 'orch',
   agent: 'codex',
   job: 'writing',
@@ -108,6 +112,7 @@ beforeAll(async () => {
         key: 'DEV-1',
         project: 'workshop',
         project_name: 'workshop',
+        projectId,
         title: 'First',
         status: 'active',
         status_category: 'active',
@@ -517,7 +522,11 @@ test('real policies reject a push into a space without write membership', async 
     ])
   })
   expect(outcomes).toEqual([
-    { id: eventId, status: 'rejected', reason: expect.stringContaining('row-level security') },
+    {
+      id: eventId,
+      status: 'rejected',
+      reason: expect.stringContaining('absent from request space'),
+    },
   ])
   expect(
     (await database.query(`SELECT 1 FROM hub_task_status_event WHERE id=$1`, [eventId])).rows,
@@ -624,10 +633,10 @@ test('offline commands later drain through the real outbox into hosted task rows
     conn
       .query(
         `INSERT INTO task
-        (record_id,key,project,title,status,status_category,source,first_seen,last_seen,updated_at)
-        VALUES (?,'GAM-320','gamma','Before','open','open','local',?,?,?)`,
+        (record_id,key,project,project_record_id,title,status,status_category,source,first_seen,last_seen,updated_at)
+        VALUES (?,'GAM-320','gamma',?,'Before','open','open','local',?,?,?)`,
       )
-      .run(machineTaskId, at, at, at)
+      .run(machineTaskId, projectId, at, at, at)
     conn
       .query(
         `INSERT INTO task_document
