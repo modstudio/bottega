@@ -23,10 +23,40 @@ export const DockedLayout: StoryObj<typeof meta> = {
     </Docked>
   ),
 }
+function Controlled(args: StoryObj<typeof meta>['args']) {
+  const close = () => {
+    document.querySelector<HTMLElement>('[data-companion-story]')?.setAttribute('hidden', '')
+    document.querySelector<HTMLElement>('[data-companion-closed]')?.removeAttribute('hidden')
+  }
+  return (
+    <>
+      <div data-companion-story="">
+        <Companion {...(args as Parameters<typeof Companion>[0])} onClose={close} />
+      </div>
+      <p data-companion-closed="" hidden>
+        Panel closed
+      </p>
+    </>
+  )
+}
 export const Keyboard: StoryObj<typeof meta> = {
+  render: Controlled,
   play: async ({ canvasElement }) => {
-    const panel = within(canvasElement).getByRole('complementary')
+    const canvas = within(canvasElement)
+    const panel = canvas.getByRole('complementary')
     await expect(panel).toHaveFocus()
-    await userEvent.keyboard('{Escape}')
+    const resize = canvas.getByRole('button', { name: 'Resize panel, 420 pixels wide' })
+    resize.focus()
+    await userEvent.keyboard('{ArrowLeft}')
+    await expect(
+      canvas.getByRole('button', { name: 'Resize panel, 480 pixels wide' }),
+    ).toHaveFocus()
+    const resizedPanel = canvas.getByRole('complementary')
+    resizedPanel.focus()
+    await expect(resizedPanel).toHaveFocus()
+    resizedPanel.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await userEvent.tab()
+    await expect(canvas.queryByRole('complementary')).not.toBeInTheDocument()
+    await expect(canvas.getByText('Panel closed')).toBeVisible()
   },
 }

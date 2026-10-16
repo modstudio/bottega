@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { expect, userEvent, within } from 'storybook/test'
 import { Copyable, DisplayRow, FieldSection, SettingBlock } from './form-layout'
 
 const meta: Meta = { title: 'Patterns/FormLayout', component: FieldSection } satisfies Meta<
@@ -21,4 +22,11 @@ export const Settings: StoryObj<typeof meta> = {
 }
 export const CompactCopy: StoryObj<typeof meta> = {
   render: () => <Copyable value="df33f44514" compact />,
+  play: async ({ canvasElement }) => {
+    const copy = within(canvasElement).getByRole('button', { name: 'Copy value' })
+    const user = userEvent.setup()
+    copy.focus()
+    await user.keyboard('{Enter}')
+    await expect(navigator.clipboard.readText()).resolves.toBe('df33f44514')
+  },
 }

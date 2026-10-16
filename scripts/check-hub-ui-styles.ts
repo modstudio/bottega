@@ -309,9 +309,35 @@ export function analyzeComponentStory(
     ts.ScriptKind.TSX,
   )
   let rendersMarkup = false
+  let rendersInteractiveElement = false
+  const interactiveTags = new Set(['button', 'input', 'select', 'textarea'])
+  const interactiveRoles = new Set([
+    'button',
+    'checkbox',
+    'radio',
+    'switch',
+    'tab',
+    'menuitem',
+    'option',
+    'slider',
+  ])
   const visit = (node: ts.Node) => {
     if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node))
       rendersMarkup = true
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+      if (interactiveTags.has(node.tagName.getText(source))) rendersInteractiveElement = true
+      for (const attribute of node.attributes.properties) {
+        if (!ts.isJsxAttribute(attribute)) continue
+        const name = attribute.name.getText(source)
+        if (name === 'onKeyDown') rendersInteractiveElement = true
+        if (
+          name === 'role' &&
+          ts.isStringLiteral(attribute.initializer) &&
+          interactiveRoles.has(attribute.initializer.text)
+        )
+          rendersInteractiveElement = true
+      }
+    }
     ts.forEachChild(node, visit)
   }
   visit(source)
@@ -328,15 +354,78 @@ export function analyzeComponentStory(
     true,
     ts.ScriptKind.TSX,
   )
-  const importsSubject = story.statements.some(
-    (statement) =>
-      ts.isImportDeclaration(statement) &&
-      ts.isStringLiteral(statement.moduleSpecifier) &&
-      statement.moduleSpecifier.text === `./${stem}`,
-  )
-  return importsSubject
-    ? []
-    : [`${relative(ROOT, componentPath)}: sibling ${stem}.stories.tsx must import ./${stem}`]
+  const subjectImports = new Set<string>()
+  for (const statement of story.statements) {
+    if (
+      !ts.isImportDeclaration(statement) ||
+      !ts.isStringLiteral(statement.moduleSpecifier) ||
+      statement.moduleSpecifier.text !== `./${stem}` ||
+      statement.importClause?.isTypeOnly
+    )
+      continue
+    const clause = statement.importClause
+    if (clause?.name) subjectImports.add(clause.name.text)
+    const bindings = clause?.namedBindings
+    if (bindings && ts.isNamedImports(bindings))
+      for (const element of bindings.elements)
+        if (!element.isTypeOnly) subjectImports.add(element.name.text)
+  }
+  if (!subjectImports.size)
+    return [
+      `${relative(ROOT, componentPath)}: sibling ${stem}.stories.tsx must value-import ./${stem}`,
+    ]
+  let coversSubject = false
+  let hasPlay = false
+  const playViolations: string[] = []
+  const containsSubject = (node: ts.Node) => {
+    let found = false
+    const inspect = (child: ts.Node) => {
+      if (ts.isIdentifier(child) && subjectImports.has(child.text)) found = true
+      if (!found) ts.forEachChild(child, inspect)
+    }
+    inspect(node)
+    return found
+  }
+  const inspectStory = (node: ts.Node) => {
+    if (
+      ts.isPropertyAssignment(node) &&
+      (propertyName(node.name) === 'component' || propertyName(node.name) === 'render') &&
+      containsSubject(node.initializer)
+    )
+      coversSubject = true
+    if (ts.isPropertyAssignment(node) && propertyName(node.name) === 'play') {
+      hasPlay = true
+      let lastUserEvent = -1
+      let lastExpect = -1
+      const inspectPlay = (child: ts.Node) => {
+        if (ts.isCallExpression(child)) {
+          if (rootIdentifier(child.expression) === 'userEvent')
+            lastUserEvent = Math.max(lastUserEvent, child.getStart(story))
+          if (ts.isIdentifier(child.expression) && child.expression.text === 'expect')
+            lastExpect = Math.max(lastExpect, child.getStart(story))
+        }
+        ts.forEachChild(child, inspectPlay)
+      }
+      inspectPlay(node.initializer)
+      if (lastUserEvent < 0 || lastExpect < lastUserEvent)
+        playViolations.push(
+          `${relative(ROOT, componentPath)}: every play function must call expect after its last userEvent call`,
+        )
+    }
+    ts.forEachChild(node, inspectStory)
+  }
+  inspectStory(story)
+  const violations = coversSubject
+    ? playViolations
+    : [
+        `${relative(ROOT, componentPath)}: sibling ${stem}.stories.tsx must name an imported subject as meta component or render it in a story`,
+        ...playViolations,
+      ]
+  if (rendersInteractiveElement && !hasPlay)
+    violations.push(
+      `${relative(ROOT, componentPath)}: interactive component requires a story with a play function`,
+    )
+  return violations
 }
 
 function componentInventory(

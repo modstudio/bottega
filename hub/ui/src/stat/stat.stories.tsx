@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { expect, userEvent, within } from 'storybook/test'
 import { StatRow, StatTile } from './stat'
 
 const meta: Meta = { title: 'Patterns/Stat', component: StatTile }
@@ -19,4 +20,12 @@ export const States: StoryObj<typeof meta> = {
       />
     </StatRow>
   ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const codex = canvas.getByRole('button', { name: 'Codex: $12.40' })
+    const claude = canvas.getByRole('button', { name: 'Claude: $8.10' })
+    codex.focus()
+    await userEvent.keyboard('{Tab}{Enter}')
+    await expect(claude).toHaveAttribute('aria-pressed', 'true')
+  },
 }

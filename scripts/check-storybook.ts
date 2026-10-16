@@ -20,13 +20,28 @@ function property(object: ts.ObjectLiteralExpression, name: string) {
   )
 }
 
-function nestedTestValue(object: ts.ObjectLiteralExpression) {
+function a11yConfiguration(object: ts.ObjectLiteralExpression) {
   const parameters = property(object, 'parameters')?.initializer
   if (!parameters || !ts.isObjectLiteralExpression(parameters)) return undefined
   const a11y = property(parameters, 'a11y')?.initializer
   if (!a11y || !ts.isObjectLiteralExpression(a11y)) return undefined
-  const test = property(a11y, 'test')?.initializer
+  return a11y
+}
+
+function nestedTestValue(object: ts.ObjectLiteralExpression) {
+  const a11y = a11yConfiguration(object)
+  const test = a11y && property(a11y, 'test')?.initializer
   return test && ts.isStringLiteral(test) ? test : undefined
+}
+
+function unwrapObject(expression: ts.Expression): ts.ObjectLiteralExpression | undefined {
+  if (ts.isObjectLiteralExpression(expression)) return expression
+  if (
+    ts.isParenthesizedExpression(expression) ||
+    ts.isAsExpression(expression) ||
+    ts.isSatisfiesExpression(expression)
+  )
+    return unwrapObject(expression.expression)
 }
 
 export function analyzePreview(sourceText: string) {
@@ -37,15 +52,22 @@ export function analyzePreview(sourceText: string) {
     true,
     ts.ScriptKind.TSX,
   )
-  for (const statement of source.statements) {
-    if (!ts.isVariableStatement(statement)) continue
-    for (const declaration of statement.declarationList.declarations) {
-      if (declaration.initializer && ts.isObjectLiteralExpression(declaration.initializer)) {
-        const test = nestedTestValue(declaration.initializer)
-        if (test?.text === 'error') return []
-      }
-    }
-  }
+  const declarations = new Map<string, ts.Expression>()
+  for (const statement of source.statements)
+    if (ts.isVariableStatement(statement))
+      for (const declaration of statement.declarationList.declarations)
+        if (ts.isIdentifier(declaration.name) && declaration.initializer)
+          declarations.set(declaration.name.text, declaration.initializer)
+  const exported = source.statements.find(
+    (statement): statement is ts.ExportAssignment => ts.isExportAssignment(statement),
+  )
+  const expression = exported?.expression
+  const preview = expression
+    ? unwrapObject(
+        ts.isIdentifier(expression) ? (declarations.get(expression.text) ?? expression) : expression,
+      )
+    : undefined
+  if (preview && nestedTestValue(preview)?.text === 'error') return []
   return ["hub/ui/.storybook/preview.tsx: global parameters.a11y.test must be 'error'"]
 }
 
@@ -62,16 +84,21 @@ export function analyzeStoryTodos(sourceText: string, path: string) {
   const lines = sourceText.split('\n')
   const visit = (node: ts.Node) => {
     if (ts.isObjectLiteralExpression(node)) {
-      const test = nestedTestValue(node)
-      if (test?.text === 'todo') {
+      const a11y = a11yConfiguration(node)
+      const test = a11y && property(a11y, 'test')?.initializer
+      const disable = a11y && property(a11y, 'disable')?.initializer
+      const exception =
+        (test && (!ts.isStringLiteral(test) || test.text !== 'error') ? test : undefined) ??
+        (disable?.kind === ts.SyntaxKind.TrueKeyword ? disable : undefined)
+      if (exception) {
         count += 1
-        const line = source.getLineAndCharacterOfPosition(test.getStart(source)).line
+        const line = source.getLineAndCharacterOfPosition(exception.getStart(source)).line
         const hasReason = [lines[line], lines[line - 1]].some((value) =>
           /\/\/\s*a11y todo:\s*\S.+$/i.test(value ?? ''),
         )
         if (!hasReason)
           violations.push(
-            `${path}:${line + 1}: a11y 'todo' requires an "a11y todo: reason" comment on this or the previous line`,
+            `${path}:${line + 1}: a11y exception requires an "a11y todo: reason" comment on this or the previous line`,
           )
       }
     }

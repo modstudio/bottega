@@ -41,6 +41,6 @@ export const Keyboard: StoryObj<typeof meta> = {
     const radios = canvas.getAllByRole('radio')
     radios[0]?.focus()
     await userEvent.keyboard('{ArrowDown}')
-    await expect(canvas.getByText('thorough')).toBeVisible()
+    await expect(canvas.getByText('thorough', { selector: 'output' })).toBeVisible()
   },
 }

@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { expect, userEvent, within } from 'storybook/test'
 import { Input } from './input'
 
 const meta: Meta = { title: 'Primitives/Input', component: Input }
@@ -11,6 +12,12 @@ export const Sizes: StoryObj<typeof meta> = {
       ))}
     </>
   ),
+  play: async ({ canvasElement }) => {
+    const input = within(canvasElement).getByRole('textbox', { name: 'md input' })
+    input.focus()
+    await userEvent.keyboard('gate')
+    await expect(input).toHaveValue('gate')
+  },
 }
 export const States: StoryObj<typeof meta> = {
   render: () => (
