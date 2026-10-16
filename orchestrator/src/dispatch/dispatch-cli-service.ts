@@ -20,11 +20,13 @@ import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { contractConflicts } from '../contract/contract.ts'
 import { nowIso, sessionId } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
-import { branchOf } from '../git/git-environment.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
 import { effectiveMcpRequest, parseRequestedMcp, requiredMcpServer } from '../mcp/mcp-preflight.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
-import { reviewFindingMemoryRows } from '../review/rejected-finding-memory.ts'
+import {
+  reviewFindingMemoryRows,
+  type ReviewFindingMemory,
+} from '../review/rejected-finding-memory.ts'
 import { implicitReviewWarning } from '../review/review-target.ts'
 import {
   REVIEW_COVERAGE,
@@ -60,8 +62,8 @@ type Presentation = {
   cwd(): string
 }
 
-function earlierReviewRejections(project: string, cwd: string) {
-  return { project, branch: branchOf(cwd), rows: reviewFindingMemoryRows(project) }
+function earlierReviewRejections(project: string, branch: string | null): ReviewFindingMemory {
+  return { project, branch, rows: reviewFindingMemoryRows(project) }
 }
 
 function recordRunWarning(runId: number, warning: string): void {

@@ -4,6 +4,8 @@
  * and any supplied extra context. Must not know the store, CLI, or jobs.
  */
 
+import type { ReviewFindingMemory } from '../review/rejected-finding-memory.ts'
+
 type ReviewLensDefinition = {
   question: string
   excludes: string
@@ -12,21 +14,6 @@ type ReviewLensDefinition = {
 type MechanicallyEnforcedCheck = {
   title: string
   tool: string
-}
-
-export type EarlierReviewFindingRow = {
-  project: string
-  branch: string | null
-  reviewId: number
-  completedAt: string | null
-  ordinal: number
-  disposition: string | null
-  location: string
-  evidence: string
-  rejectionCategory: string | null
-  triageReason: string | null
-  lens: string
-  reviewedCommit: string | null
 }
 
 export const MAX_EARLIER_ROUND_REJECTIONS = 20
@@ -46,11 +33,7 @@ function oneLine(value: string): string {
 }
 
 /** Select and render rejection memory using only supplied review rows. */
-export function renderEarlierRoundRejections(input: {
-  project: string
-  branch: string | null
-  rows: readonly EarlierReviewFindingRow[]
-}): string {
+export function renderEarlierRoundRejections(input: ReviewFindingMemory): string {
   if (!input.branch) return ''
   const selected = input.rows
     .filter(
@@ -87,11 +70,7 @@ export function renderEarlierRoundRejections(input: {
 export function reviewLensPrompt(input: {
   lens: ReviewLensDefinition | null
   mechanicallyEnforced: readonly MechanicallyEnforcedCheck[]
-  earlierRejections: {
-    project: string
-    branch: string | null
-    rows: readonly EarlierReviewFindingRow[]
-  }
+  earlierRejections: ReviewFindingMemory
   supplied: string
 }): string {
   const extra = input.supplied.trim()

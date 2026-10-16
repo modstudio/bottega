@@ -3,26 +3,30 @@
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 
-export type RejectedFindingMemoryRow = {
+export type ReviewFindingMemory = {
   project: string
   branch: string | null
-  reviewId: number
-  completedAt: string | null
-  ordinal: number
-  disposition: string | null
-  location: string
-  evidence: string
-  rejectionCategory: string | null
-  triageReason: string | null
-  lens: string
-  reviewedCommit: string | null
+  rows: readonly {
+    project: string
+    branch: string | null
+    reviewId: number
+    completedAt: string | null
+    ordinal: number
+    disposition: string | null
+    location: string
+    evidence: string
+    rejectionCategory: string | null
+    triageReason: string | null
+    lens: string
+    reviewedCommit: string | null
+  }[]
 }
 
 /** Review findings for one project; branch, completion, disposition, and bounds are decided purely. */
 export function reviewFindingMemoryRows(
   project: string,
   database: Database = db(),
-): RejectedFindingMemoryRow[] {
+): ReviewFindingMemory['rows'] {
   return database
     .query<
       {
@@ -43,7 +47,7 @@ export function reviewFindingMemoryRows(
     >(
       `SELECT run.repo project,run.branch,r.id review_id,r.completed_at,rf.ordinal,
               rf.disposition,rf.location,rf.evidence,rf.rejection_category,rl.lens,
-              COALESCE(rl.reviewed_tree,run.head_commit) reviewed_commit,
+              run.head_commit reviewed_commit,
               (SELECT amendment.reason FROM review_finding_amendment amendment
                 WHERE amendment.review_id=rf.review_id
                   AND amendment.finding_ordinal=rf.ordinal

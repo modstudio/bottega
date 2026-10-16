@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import type { ReviewFindingMemory } from '../review/rejected-finding-memory.ts'
 import {
-  type EarlierReviewFindingRow,
   MAX_EARLIER_ROUND_REJECTIONS,
   renderEarlierRoundRejections,
   reviewLensPrompt,
@@ -77,7 +77,9 @@ describe('reviewLensPrompt', () => {
   })
 })
 
-function finding(overrides: Partial<EarlierReviewFindingRow> = {}): EarlierReviewFindingRow {
+type MemoryRow = ReviewFindingMemory['rows'][number]
+
+function finding(overrides: Partial<MemoryRow> = {}): MemoryRow {
   return {
     project: 'fixture',
     branch: 'DEV-1373',

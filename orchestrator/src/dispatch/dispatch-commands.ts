@@ -6,6 +6,7 @@ import {
   mechanicallyEnforcedChecks,
   resolveMechanicalChecks,
 } from '../enforcement/enforcement-resolution.ts'
+import { branchOf } from '../git/git-environment.ts'
 import { isReaderJob, job, reclaimsTreeByDefault, resolveJobTimeoutMs } from '../jobs/jobs.ts'
 import { resolveLens } from '../lens/lenses.ts'
 import type { McpRequest } from '../mcp/mcp-preflight.ts'
@@ -18,7 +19,9 @@ import {
   retiredProjectAt,
   retiredProjectByName,
   retiredProjectRefusal,
+  resolveBranchRef,
 } from '../project/projects.ts'
+import type { ReviewFindingMemory } from '../review/rejected-finding-memory.ts'
 import type { DetachSpec } from '../route/failover.ts'
 import { keepTreeExemptionFromOption } from '../worktree/keep-tree-hold.ts'
 import { preflight, resolvedFindingsLens } from './dispatch-preflight.ts'
@@ -108,11 +111,11 @@ async function composedLensPrompt(
   project: Project | null,
   requested: ReturnType<typeof job>,
   lens: string | undefined,
-  cwd: string,
+  branch: string | null,
 ): Promise<string> {
   const earlier =
     requested.findings && project
-      ? presentation.earlierReviewRejections(project.name, cwd)
+      ? presentation.earlierReviewRejections(project.name, branch)
       : { project: project?.name ?? '', branch: null, rows: [] }
   return lensPromptFor(project, requested.findings, lens, await presentation.readPrompt(), earlier)
 }
@@ -163,12 +166,8 @@ type DispatchPresentation = {
   recordRunWarning(runId: number, warning: string): void
   earlierReviewRejections(
     project: string,
-    cwd: string,
-  ): {
-    project: string
-    branch: string | null
-    rows: readonly import('./review-lens-prompt.ts').EarlierReviewFindingRow[]
-  }
+    branch: string | null,
+  ): ReviewFindingMemory
   detach(jobName: string, prompt: string, spec: DetachSpec): Promise<number>
   follow(id: number, quiet: boolean): Promise<unknown>
 }
@@ -181,6 +180,14 @@ export function resolveDispatchBase(
 ): string {
   const resolved = resolve(cwd, base)
   return isWorktreeRelative(base) ? resolved : base
+}
+
+/** Choose the branch whose earlier review rulings belong in this dispatch. */
+export function reviewMemoryBranch(
+  callerBranch: string | null,
+  explicitReviewBranch: string | null,
+): string | null {
+  return explicitReviewBranch ?? callerBranch
 }
 
 function taskBranchBypassWarningKey(
@@ -454,7 +461,17 @@ export async function dispatchCommand(
         '  pass --carry to send it with the run.',
     )
   }
-  const prompt = await composedLensPrompt(presentation, dispatchProject, requested, lens, callerCwd)
+  const reviewBranch = reviewMemoryBranch(
+    branchOf(callerCwd),
+    reviewRef ? resolveBranchRef(reviewRef).branch : null,
+  )
+  const prompt = await composedLensPrompt(
+    presentation,
+    dispatchProject,
+    requested,
+    lens,
+    reviewBranch,
+  )
   const keepTree = keepTreeExemptionFromOption(
     has('keep-tree'),
     flag('keep-tree'),
