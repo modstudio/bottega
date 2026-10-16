@@ -17,6 +17,7 @@ export const tableRowStyles = variant({
       true: 'cursor-pointer outline-none hover:bg-control-hover focus-visible:bg-control-hover focus-visible:shadow-[inset_2px_0_0_var(--focus-color)]',
     },
   },
+  compoundVariants: [{ selected: true, nested: true, class: 'bg-surface-sunken' }],
 })
 
 export const tableHeadStyles = variant({

@@ -19,7 +19,7 @@ export const selectStyles = variant({
       md: { trigger: 'h-control-md px-3' },
     },
     active: { true: { option: 'bg-control-hover' } },
-    disabled: { true: { option: 'cursor-not-allowed text-text-disabled' } },
+    disabled: { true: { option: 'text-text-disabled' } },
     selected: { true: { check: 'opacity-100' }, false: { check: 'opacity-0' } },
   },
   defaultVariants: { size: 'md' },
