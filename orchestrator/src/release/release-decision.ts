@@ -9,6 +9,7 @@ const RELEASE_ENVIRONMENT_NAMES = [
   'ORCH_RELEASE_PROJECT',
   'ORCH_RELEASE_RUNG',
   'ORCH_RELEASE_COMMIT',
+  'ORCH_RELEASE_ROLLBACK',
 ] as const
 
 /** Keep release identity out of every child process except the registered deploy command. */
@@ -26,12 +27,14 @@ export function releaseCommandEnvironment(
   project: string,
   rung: string,
   candidate: string,
+  rollback: boolean,
 ): Record<string, string> {
-  return {
+  const environment = {
     [RELEASE_ENVIRONMENT_NAMES[0]]: project,
     [RELEASE_ENVIRONMENT_NAMES[1]]: rung,
     [RELEASE_ENVIRONMENT_NAMES[2]]: candidate,
   }
+  return rollback ? { ...environment, [RELEASE_ENVIRONMENT_NAMES[3]]: '1' } : environment
 }
 
 /** Withhold captured release text as a unit so secrets cannot straddle a later tail boundary. */
@@ -117,6 +120,12 @@ export function forwardReleaseDecision(facts: {
   rollbackReason?: string
 }): ForwardDecision {
   if (facts.live === null) return { ok: true, rollback: false, reason: null, baseline: true }
+  if (facts.liveIsAncestor === null) {
+    return {
+      ok: false,
+      message: `cannot determine whether live commit ${facts.live} is an ancestor of ${facts.candidate}; fetch ${facts.live} into the registered checkout, then retry`,
+    }
+  }
   if (facts.liveIsAncestor === true)
     return { ok: true, rollback: false, reason: null, baseline: false }
   const reason = facts.rollbackReason?.trim()

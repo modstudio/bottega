@@ -112,6 +112,14 @@ function shell(
   return run(['/bin/sh', '-lc', command], cwd, extraEnvironment)
 }
 
+function releaseAncestry(live: string | null, candidate: string, cwd: string): boolean | null {
+  if (live === null) return null
+  const exitCode = run(['git', 'merge-base', '--is-ancestor', live, candidate], cwd).exitCode
+  if (exitCode === 0) return true
+  if (exitCode === 1) return false
+  return null
+}
+
 function capturedReleaseText(text: string): string {
   return releaseCapturedText(text, containsSecretShaped(text))
 }
@@ -206,11 +214,7 @@ export function releaseProject(
       const live = selected.live
         ? releaseLiveCommit(selected.live, project.path, 'pre-deploy live', selected.name)
         : newestSuccessfulReleasedCommit(projectName, selected.name)
-      const contained =
-        live === null
-          ? null
-          : run(['git', 'merge-base', '--is-ancestor', live, checkout.head], project.path)
-              .exitCode === 0
+      const contained = releaseAncestry(live, checkout.head, project.path)
       const forward = forwardReleaseDecision({
         candidate: checkout.head,
         live,
@@ -229,7 +233,7 @@ export function releaseProject(
       const deployed = shell(
         deploy,
         project.path,
-        releaseCommandEnvironment(projectName, selected.name, checkout.head),
+        releaseCommandEnvironment(projectName, selected.name, checkout.head, forward.rollback),
       )
       let after: string | null = null
       let matches: boolean | null = null

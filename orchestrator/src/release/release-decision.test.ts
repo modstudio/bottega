@@ -14,10 +14,16 @@ import {
 } from './release-decision.ts'
 
 test('identifies the release to its deploy command', () => {
-  expect(releaseCommandEnvironment('project-name', 'hosted-api', 'abc123')).toEqual({
+  expect(releaseCommandEnvironment('project-name', 'hosted-api', 'abc123', false)).toEqual({
     ORCH_RELEASE_PROJECT: 'project-name',
     ORCH_RELEASE_RUNG: 'hosted-api',
     ORCH_RELEASE_COMMIT: 'abc123',
+  })
+  expect(releaseCommandEnvironment('project-name', 'hosted-api', 'abc123', true)).toEqual({
+    ORCH_RELEASE_PROJECT: 'project-name',
+    ORCH_RELEASE_RUNG: 'hosted-api',
+    ORCH_RELEASE_COMMIT: 'abc123',
+    ORCH_RELEASE_ROLLBACK: '1',
   })
 })
 
@@ -26,11 +32,15 @@ test('release variables reach only the deploy environment', () => {
     ORCH_RELEASE_PROJECT: 'stale-project',
     ORCH_RELEASE_RUNG: 'stale-rung',
     ORCH_RELEASE_COMMIT: 'stale-commit',
+    ORCH_RELEASE_ROLLBACK: '1',
     UNRELATED: 'kept',
   }
   expect(releaseProcessEnvironment(stale)).toEqual({ UNRELATED: 'kept' })
   expect(
-    releaseProcessEnvironment(stale, releaseCommandEnvironment('project-name', 'rung', 'commit')),
+    releaseProcessEnvironment(
+      stale,
+      releaseCommandEnvironment('project-name', 'rung', 'commit', false),
+    ),
   ).toEqual({
     UNRELATED: 'kept',
     ORCH_RELEASE_PROJECT: 'project-name',
@@ -107,6 +117,27 @@ describe('forward-only release', () => {
       rollback: false,
       reason: null,
       baseline: true,
+    }))
+  test('refuses unknown ancestry without a rollback reason', () =>
+    expect(
+      forwardReleaseDecision({ candidate: 'new', live: 'unknown', liveIsAncestor: null }),
+    ).toEqual({
+      ok: false,
+      message:
+        'cannot determine whether live commit unknown is an ancestor of new; fetch unknown into the registered checkout, then retry',
+    }))
+  test('refuses unknown ancestry with a rollback reason', () =>
+    expect(
+      forwardReleaseDecision({
+        candidate: 'new',
+        live: 'unknown',
+        liveIsAncestor: null,
+        rollbackReason: 'incident',
+      }),
+    ).toEqual({
+      ok: false,
+      message:
+        'cannot determine whether live commit unknown is an ancestor of new; fetch unknown into the registered checkout, then retry',
     }))
 })
 
