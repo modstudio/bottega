@@ -1,9 +1,10 @@
 #!/usr/bin/env bun
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Glob } from 'bun'
-import { format, type ICruiseResult } from 'dependency-cruiser'
+import type { ICruiseResult } from 'dependency-cruiser'
 import { CONCERNS } from '../shared/brand.ts'
 import { architectureRules, modules } from './architecture.ts'
 import { ARCHITECTURE_CRUISE_ROOTS, runArchitectureCruise } from './architecture-cruise.ts'
@@ -95,8 +96,10 @@ const currentBaselineFiles = new Set(
   current.filter(({ rule }) => rule.name === HUB_WEB_DATA_ACCESS_RULE).map(({ from }) => from),
 )
 const staleBaselineFiles = baseline.filter((file) => !currentBaselineFiles.has(file))
-const remainingViolations = current.filter(
-  ({ from, rule }) => rule.name !== HUB_WEB_DATA_ACCESS_RULE || !baselineFiles.has(from),
+const remainingErrorViolations = current.filter(
+  ({ from, rule }) =>
+    rule.severity === 'error' &&
+    (rule.name !== HUB_WEB_DATA_ACCESS_RULE || !baselineFiles.has(from)),
 )
 
 for (const file of staleBaselineFiles) {
@@ -105,22 +108,23 @@ for (const file of staleBaselineFiles) {
   )
 }
 
-for (const module of result.modules) {
-  if (!baselineFiles.has(module.source)) continue
-  for (const dependency of module.dependencies) {
-    const remainingRules = dependency.rules?.filter(({ name }) => name !== HUB_WEB_DATA_ACCESS_RULE)
-    if (!remainingRules || remainingRules.length === dependency.rules?.length) continue
-    dependency.rules = remainingRules
-    dependency.valid = remainingRules.length === 0
+if (staleBaselineFiles.length || remainingErrorViolations.length) {
+  const generatedDirectory = mkdtempSync(join(tmpdir(), 'architecture-known-violations-'))
+  const generatedBaseline = join(generatedDirectory, 'known-violations.json')
+  const knownViolations = current.filter(
+    ({ from, rule }) => rule.name === HUB_WEB_DATA_ACCESS_RULE && baselineFiles.has(from),
+  )
+  try {
+    writeFileSync(generatedBaseline, JSON.stringify(knownViolations, null, 2))
+    await runArchitectureCruise({
+      entries: ARCHITECTURE_CRUISE_ROOTS,
+      extraArgs: ['--output-type', 'err-long', '--ignore-known', generatedBaseline],
+    })
+  } finally {
+    rmSync(generatedDirectory, { recursive: true, force: true })
   }
+  process.exit(1)
 }
-
-const formatted = await format(result, { outputType: 'err-long' })
-if (remainingViolations.length > 0) {
-  process.stdout.write(String(formatted.output))
-}
-
-if (staleBaselineFiles.length || formatted.exitCode > 0) process.exit(1)
 
 console.log(
   `check-architecture: ok (${modules.length} manifest modules, depcruise ${((performance.now() - startedAt) / 1000).toFixed(2)}s)`,
