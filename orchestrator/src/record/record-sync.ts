@@ -92,6 +92,15 @@ function outboxProjectName(kind: string, record: Payload | null, local: Database
         .get(String(record.id))?.name ?? null
     )
   }
+  if (kind === 'contention' && record) {
+    return (
+      local
+        .query<{ name: string }, [string]>(
+          'SELECT project.name FROM run JOIN project ON project.id=run.project_id WHERE run.record_id=?',
+        )
+        .get(String(record.runId))?.name ?? null
+    )
+  }
   if ((kind === 'review_lens' || kind === 'review_finding') && record) {
     return (
       local

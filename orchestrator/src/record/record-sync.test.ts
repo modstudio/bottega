@@ -964,6 +964,46 @@ test('declared project spaces override the active space while an unset project f
   local.close()
 })
 
+test("a contention row binds its run project's declared space", async () => {
+  const local = new Database(':memory:')
+  applyMigrations(local)
+  const declaredSpace = '01990000-0000-7000-8000-000000000003'
+  local
+    .query(
+      `INSERT INTO project (record_id,name,path,settings)
+       VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'declared','/declared',?)`,
+    )
+    .run(JSON.stringify({ space: 'team' }))
+  local
+    .query(
+      `INSERT INTO run
+       (id,record_id,project_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       VALUES (42,?,1,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','ok')`,
+    )
+    .run(RECORD_ID)
+  local
+    .query(
+      `INSERT INTO contention
+       (id,record_id,at,resource_kind,resource_key,event_kind,run_id)
+       VALUES (1,'01990000-0000-7000-8000-000000000077',?,'lock','resource','wait',42)`,
+    )
+    .run(STAMP)
+  enqueueContention(local, 1, STAMP)
+  const remote = fakePostgres()
+  const memberships = [
+    { spaceId: declaredSpace, slug: 'team', permission: 'write' },
+    ...options(local, remote).memberships,
+  ]
+
+  expect(await syncRecord(options(local, remote, memberships))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+  })
+  expect(remote.transactionSpaceIds.at(-1)).toBe(declaredSpace)
+  expect(remote.transactionSpaceIds.at(-1)).not.toBe(options(local, remote).principal.spaceId)
+  local.close()
+})
+
 test('two declared projects bind their own spaces in separate transactions', async () => {
   const local = localOutbox(2, 'alpha')
   const second = JSON.parse(
