@@ -23,7 +23,7 @@ export function startReleaseLedgerEntry(
       .query<{ id: number }, (string | number | null)[]>(
         `INSERT INTO release_ledger
        (record_id,project,project_record_id,rung,candidate_commit,live_commit_before,rollback,rollback_reason,actor,session_id,started_at)
-       VALUES (?,?,(SELECT id FROM project WHERE name=?),?,?,?,?,?,?,?,?) RETURNING id`,
+       VALUES (?,?,(SELECT record_id FROM project WHERE name=?),?,?,?,?,?,?,?,?) RETURNING id`,
       )
       .get(
         newRecordId(),

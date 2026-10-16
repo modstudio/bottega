@@ -39,11 +39,12 @@ the cause`,
       environment: 'alephbeis full seed, FORCE_COLOR=1',
     })
     const project = {
-      id: 1,
+      recordId: '01990000-0000-7000-8000-000000001214',
       name: 'alephbeis',
       path: '/x',
       stack: null,
       canon: true,
+      retiredAt: null,
       settings: { worktree: { seeds: ['none', 'minimal', 'full'] } },
     } as Project
     expect(seedFromReport(project, issue.environment)).toBe('full')

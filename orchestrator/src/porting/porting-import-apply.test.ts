@@ -15,7 +15,7 @@ import { applyImport, ImportRefusalError, planImport, sourceCoverage } from './p
 
 const listPairs = () =>
   db()
-    .query('SELECT id,source_project_id,target_project_id,created_at FROM port_pair ORDER BY id')
+    .query('SELECT id,source_project_record_id,target_project_record_id,created_at FROM port_pair ORDER BY id')
     .all() as PortPair[]
 
 describe('port importer', () => {
@@ -188,10 +188,10 @@ describe('port importer', () => {
     expect(
       plan.refs
         .find((ref) => ref.taskKey === 'ALP-1')
-        ?.sources.map((source) => source.source_project_id),
+        ?.sources.map((source) => source.source_project_record_id),
     ).toEqual([
-      projects().find((p) => p.name === 'alpha-invented')!.id,
-      projects().find((p) => p.name === 'beta-invented')!.id,
+      projects().find((p) => p.name === 'alpha-invented')!.recordId,
+      projects().find((p) => p.name === 'beta-invented')!.recordId,
     ])
     expect(plan.refs.find((ref) => ref.taskKey === 'ALP-2')?.sources[0]?.note).toBe(
       ' (concept); new mechanism',
@@ -332,7 +332,7 @@ describe('port importer', () => {
     const priorPair = listPairs()
     const priorBaseline = baselineForPair(priorPair[0]!.id)
     const priorSkips = listSkips(priorPair[0]!.id)
-    const targetProjectId = priorPair[0]!.target_project_id
+    const targetProjectId = priorPair[0]!.target_project_record_id
     const priorRef = ledgerRef(targetProjectId, 'BET-7')
     const priorDoc = getDoc('global', null, 'port-category-map')
     const replacement = planImport(fixture(), projects())

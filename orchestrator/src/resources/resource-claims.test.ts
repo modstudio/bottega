@@ -221,30 +221,21 @@ describe('resource claim decisions', () => {
 
   test('project indexes are stable per root and reusable after release', () => {
     const database = db()
-    const projectOne = Number(
-      database
-        .query(
-          "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'one','/one',1)",
-        )
-        .run().lastInsertRowid,
+    const insertProject = database.query<{ record_id: string }, [string, string]>(
+      "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,1) RETURNING record_id",
     )
-    const projectTwo = Number(
-      database
-        .query(
-          "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'two','/two',1)",
-        )
-        .run().lastInsertRowid,
-    )
+    const projectOne = insertProject.get('one', '/one')!.record_id
+    const projectTwo = insertProject.get('two', '/two')!.record_id
     const insertRun = database.query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
+       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id,turn)
        VALUES (?,?,'codex','implement','sha',1,'index allocation','running',?,1)`,
     )
     const first = Number(insertRun.run(newRecordId(), nowIso(), projectOne).lastInsertRowid)
     const second = Number(insertRun.run(newRecordId(), nowIso(), projectOne).lastInsertRowid)
     const otherProject = Number(insertRun.run(newRecordId(), nowIso(), projectTwo).lastInsertRowid)
     const third = Number(insertRun.run(newRecordId(), nowIso(), projectOne).lastInsertRowid)
-    const claim = (rootRunId: number, projectId: number) =>
+    const claim = (rootRunId: number, projectId: string) =>
       writeTransaction(
         () =>
           claimIndex(database, {
@@ -268,16 +259,14 @@ describe('resource claim decisions', () => {
 
   test('string claims reuse by root and name and refuse another root holding the value', () => {
     const database = db()
-    const projectId = Number(
-      database
-        .query(
-          "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'strings','/strings',1)",
-        )
-        .run().lastInsertRowid,
-    )
+    const projectId = database
+      .query<{ record_id: string }, []>(
+        "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'strings','/strings',1) RETURNING record_id",
+      )
+      .get()!.record_id
     const insertRun = database.query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
+       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id,turn)
        VALUES (?,?,'codex','implement','sha',1,'string allocation','running',?,1)`,
     )
     const first = Number(insertRun.run(newRecordId(), nowIso(), projectId).lastInsertRowid)
@@ -305,16 +294,14 @@ describe('resource claim decisions', () => {
 
   test('database claims reuse by root and name and collide only within an engine', () => {
     const database = db()
-    const projectId = Number(
-      database
-        .query(
-          "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'databases','/databases',1)",
-        )
-        .run().lastInsertRowid,
-    )
+    const projectId = database
+      .query<{ record_id: string }, []>(
+        "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'databases','/databases',1) RETURNING record_id",
+      )
+      .get()!.record_id
     const insertRun = database.query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
+       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id,turn)
        VALUES (?,?,'codex','implement','sha',1,'database allocation','running',?,1)`,
     )
     const first = Number(insertRun.run(newRecordId(), nowIso(), projectId).lastInsertRowid)

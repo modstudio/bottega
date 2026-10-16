@@ -9,13 +9,13 @@ const repositoryPath = fileURLToPath(new URL('../../..', import.meta.url)).repla
 
 test('a passing gate belongs to the exact project', () => {
   const candidates = [
-    { id: 3, projectId: 2, cwd: null },
+    { id: 3, projectId: 'project-2', cwd: null },
     { id: 2, projectId: null, cwd: '/projects/fixture/worktree' },
-    { id: 1, projectId: 1, cwd: null },
+    { id: 1, projectId: 'project-1', cwd: null },
   ]
-  expect(selectPassingGateId(candidates, 1, () => 1)).toBe(2)
-  expect(selectPassingGateId(candidates, 1, () => 2)).toBe(1)
-  expect(selectPassingGateId(candidates, 4, () => 2)).toBeNull()
+  expect(selectPassingGateId(candidates, 'project-1', () => 'project-1')).toBe(2)
+  expect(selectPassingGateId(candidates, 'project-1', () => 'project-2')).toBe(1)
+  expect(selectPassingGateId(candidates, 'project-4', () => 'project-2')).toBeNull()
 })
 
 test('the hook result is one line for either outcome', () => {

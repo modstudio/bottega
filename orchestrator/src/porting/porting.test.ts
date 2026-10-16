@@ -20,7 +20,7 @@ import {
 
 const listPairs = () =>
   db()
-    .query('SELECT id,source_project_id,target_project_id,created_at FROM port_pair ORDER BY id')
+    .query('SELECT id,source_project_record_id,target_project_record_id,created_at FROM port_pair ORDER BY id')
     .all() as PortPair[]
 
 describe('porting data model', () => {
@@ -38,8 +38,8 @@ describe('porting data model', () => {
       settings: { keyPrefixes: ['TGT'] },
     })
     const [source, target] = projects().sort((a, b) => a.name.localeCompare(b.name))
-    const pair = addPair(source!.id, target!.id, '2026-09-01T00:00:00.000Z')
-    expect(addPair(source!.id, target!.id).id).toBe(pair.id)
+    const pair = addPair(source!.recordId, target!.recordId, '2026-09-01T00:00:00.000Z')
+    expect(addPair(source!.recordId, target!.recordId).id).toBe(pair.id)
     expect(listPairs()).toEqual([pair])
     expect(baselineForPair(pair.id)).toEqual({
       pair_id: pair.id,
@@ -93,48 +93,48 @@ describe('porting data model', () => {
     const byName = Object.fromEntries(projects().map((project) => [project.name, project]))
     const ref = setLedgerRef({
       taskKey: 'TGT-42',
-      targetProjectId: byName['target-invented']!.id,
+      targetProjectId: byName['target-invented']!.recordId,
       note: 'adapt this natively',
       createdAt: '2026-09-03T00:00:00.000Z',
       sources: [
         {
-          source_project_id: byName['source-one-invented']!.id,
+          source_project_record_id: byName['source-one-invented']!.recordId,
           commits: ['aaa'],
           paths: ['src/a.ts'],
           note: 'first source',
         },
         {
-          source_project_id: byName['source-two-invented']!.id,
+          source_project_record_id: byName['source-two-invented']!.recordId,
           commits: ['bbb', 'ccc'],
           paths: ['src/b.ts'],
           note: 'second source',
         },
       ],
     })
-    expect(ref.target_project_id).toBe(byName['target-invented']!.id)
+    expect(ref.target_project_record_id).toBe(byName['target-invented']!.recordId)
     setLedgerRef({
       taskKey: 'TGT-42',
-      targetProjectId: byName['other-target-invented']!.id,
+      targetProjectId: byName['other-target-invented']!.recordId,
       note: 'same label, other project',
       sources: [ref.sources[0]!],
     })
-    expect(ledgerRef(byName['target-invented']!.id, 'TGT-42')!.sources).toEqual([
+    expect(ledgerRef(byName['target-invented']!.recordId, 'TGT-42')!.sources).toEqual([
       {
-        source_project_id: byName['source-one-invented']!.id,
+        source_project_record_id: byName['source-one-invented']!.recordId,
         commits: ['aaa'],
         paths: ['src/a.ts'],
         note: 'first source',
       },
       {
-        source_project_id: byName['source-two-invented']!.id,
+        source_project_record_id: byName['source-two-invented']!.recordId,
         commits: ['bbb', 'ccc'],
         paths: ['src/b.ts'],
         note: 'second source',
       },
     ])
-    expect(ledgerRef(byName['other-target-invented']!.id, 'TGT-42')).toMatchObject({
+    expect(ledgerRef(byName['other-target-invented']!.recordId, 'TGT-42')).toMatchObject({
       note: 'same label, other project',
-      target_project_id: byName['other-target-invented']!.id,
+      target_project_record_id: byName['other-target-invented']!.recordId,
     })
     expect(listLedgerRefs(true)).toHaveLength(2)
   })
@@ -154,22 +154,22 @@ describe('porting data model', () => {
     const source = projects().find((project) => project.name === 'source-invented')!
     setLedgerRef({
       taskKey: 'TGT-42',
-      targetProjectId: projects().find((project) => project.name === 'target-invented')!.id,
+      targetProjectId: projects().find((project) => project.name === 'target-invented')!.recordId,
       note: 'provenance',
       sources: [
-        { source_project_id: source.id, commits: ['abc'], paths: ['src/a.ts'], note: 'source' },
+        { source_project_record_id: source.recordId, commits: ['abc'], paths: ['src/a.ts'], note: 'source' },
       ],
     })
     expect(listLedgerRefs()).toHaveLength(1)
     const target = projects().find((project) => project.name === 'target-invented')!
-    expect(resolveLedgerRef(target.id, 'TGT-42', '2026-09-04T00:00:00.000Z')).toMatchObject({
+    expect(resolveLedgerRef(target.recordId, 'TGT-42', '2026-09-04T00:00:00.000Z')).toMatchObject({
       task_key: 'TGT-42',
       resolved_at: '2026-09-04T00:00:00.000Z',
       sources: [{ commits: ['abc'], paths: ['src/a.ts'] }],
     })
     expect(listLedgerRefs()).toEqual([])
     expect(listLedgerRefs(true)).toHaveLength(1)
-    expect(resolveLedgerRef(target.id, 'TGT-42', 'later')?.resolved_at).toBe(
+    expect(resolveLedgerRef(target.recordId, 'TGT-42', 'later')?.resolved_at).toBe(
       '2026-09-04T00:00:00.000Z',
     )
   })

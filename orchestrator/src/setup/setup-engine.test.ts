@@ -96,7 +96,6 @@ function repository(overrides: Partial<RepositoryFacts> = {}): RepositoryFacts {
 
 function registered(settings: Project['settings'], overrides: Partial<Project> = {}): Project {
   return {
-    id: 1,
     recordId: '01990000-0000-7000-8000-000000001214',
     name: 'alpha-project',
     path: '/repos/alpha-project',

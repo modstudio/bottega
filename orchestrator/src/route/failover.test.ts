@@ -125,7 +125,7 @@ test('the detached spec mapping forwards every field to run', () => {
         tip: 'abc123',
         commitCount: 1,
         mergeBase: 'def456',
-        projectId: 1,
+        projectId: 'project-1',
         projectName: 'project',
         nominatingRuns: [{ id: 11, sessionId: 'session-a' }],
         trunk: 'main',

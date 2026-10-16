@@ -186,16 +186,14 @@ describe('tracked recipe execution', () => {
     )
 
     const database = db()
-    const projectId = Number(
-      database
-        .query(
-          "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'required-provision',?,1)",
-        )
-        .run(repoRoot).lastInsertRowid,
-    )
+    const projectId = database
+      .query<{ record_id: string }, [string]>(
+        "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'required-provision',?,1) RETURNING record_id",
+      )
+      .get(repoRoot)!.record_id
     const insertRun = database.query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
+       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id,turn)
        VALUES (?,?,'codex','implement','sha',1,'required provision','running',?,1)`,
     )
     const runId = Number(insertRun.run(newRecordId(), nowIso(), projectId).lastInsertRowid)
