@@ -155,6 +155,20 @@ test('scratch entries replace collisions without removing other existing artifac
   expect(readFileSync(join(runArtifactsDir(id), 'evidence.txt'), 'utf8')).toBe('preserved\n')
   expect(existsSync(runScratchDir(id))).toBe(false)
 })
+test('scratch directories merge recursively with existing artifact directories', () => {
+  const id = addRun({ agent: 'codex', job: 'understand' })
+  const evidence = join(runArtifactsDir(id), 'evidence')
+  mkdirSync(evidence, { recursive: true })
+  writeFileSync(join(evidence, 'before.txt'), 'before\n')
+  mkdirSync(join(runScratchDir(id), 'evidence'), { recursive: true })
+  writeFileSync(join(runScratchDir(id), 'evidence', 'after.txt'), 'after\n')
+
+  persistRunArtifacts(id, null, null, null)
+
+  expect(readFileSync(join(evidence, 'before.txt'), 'utf8')).toBe('before\n')
+  expect(readFileSync(join(evidence, 'after.txt'), 'utf8')).toBe('after\n')
+  expect(existsSync(runScratchDir(id))).toBe(false)
+})
 test('a listed directory is copied recursively without following its symlinks', () => {
   const id = addRun({ agent: 'codex', job: 'understand' })
   const outside = mkdtempSync(join(tmpdir(), 'orch-artifact-directory-'))
@@ -171,6 +185,23 @@ test('a listed directory is copied recursively without following its symlinks', 
   } finally {
     rmSync(outside, { recursive: true, force: true })
   }
+})
+test('a listed symlink to a directory is materialized before its source is reclaimed', () => {
+  const id = addRun({ agent: 'codex', job: 'understand' })
+  const outside = mkdtempSync(join(tmpdir(), 'orch-linked-artifact-directory-'))
+  const source = join(outside, 'source')
+  const linked = join(outside, 'linked-evidence')
+  mkdirSync(source)
+  writeFileSync(join(source, 'result.txt'), 'durable\n')
+  symlinkSync(source, linked)
+
+  persistRunArtifacts(id, [linked], null, null)
+  rmSync(outside, { recursive: true, force: true })
+
+  const copied = join(runArtifactsDir(id), 'linked-evidence')
+  expect(lstatSync(copied).isDirectory()).toBe(true)
+  expect(lstatSync(copied).isSymbolicLink()).toBe(false)
+  expect(readFileSync(join(copied, 'result.txt'), 'utf8')).toBe('durable\n')
 })
 test('all named artifacts are attempted before copy failures are reported together', () => {
   const id = addRun({ agent: 'codex', job: 'diagnose' })

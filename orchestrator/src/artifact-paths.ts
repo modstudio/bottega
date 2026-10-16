@@ -13,8 +13,34 @@ export function runArtifactsDir(id: number, runsDir: string): string {
   return join(runsDir, String(id), 'artifacts')
 }
 
-function isPathAtOrBelow(path: string, directory: string): boolean {
+export function isPathAtOrBelow(path: string, directory: string): boolean {
   return path === directory || path.startsWith(`${directory}/`)
+}
+
+export type NamedArtifactPlan = {
+  source: string
+  destination: string
+  alreadyInPlace: boolean
+}
+
+export function namedArtifactPlan(
+  id: number,
+  runsDir: string,
+  entry: string,
+  worktreePath: string | null,
+): NamedArtifactPlan {
+  const scratch = runScratchDir(id, runsDir)
+  const artifacts = runArtifactsDir(id, runsDir)
+  const listedSource = entry.startsWith('/')
+    ? entry
+    : worktreePath
+      ? join(worktreePath, entry)
+      : entry
+  const source = isPathAtOrBelow(listedSource, scratch)
+    ? join(artifacts, relative(scratch, listedSource))
+    : listedSource
+  const destination = isPathAtOrBelow(source, artifacts) ? source : join(artifacts, basename(entry))
+  return { source, destination, alreadyInPlace: isPathAtOrBelow(source, artifacts) }
 }
 
 export function persistedRunArtifactPath(
@@ -23,11 +49,7 @@ export function persistedRunArtifactPath(
   entry: string,
   worktreePath: string | null,
 ): string {
-  const scratch = runScratchDir(id, runsDir)
-  const artifacts = runArtifactsDir(id, runsDir)
-  const source = entry.startsWith('/') ? entry : worktreePath ? join(worktreePath, entry) : entry
-  if (isPathAtOrBelow(source, scratch)) return join(artifacts, relative(scratch, source))
-  return isPathAtOrBelow(source, artifacts) ? source : join(artifacts, basename(entry))
+  return namedArtifactPlan(id, runsDir, entry, worktreePath).destination
 }
 
 function jsonStringEnd(text: string, start: number): number {

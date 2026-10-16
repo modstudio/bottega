@@ -8,19 +8,21 @@ import {
   copyFileSync,
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { join, relative } from 'node:path'
+import { join } from 'node:path'
 import {
   runArtifactsDir as artifactDirectory,
-  persistedRunArtifactPath,
+  namedArtifactPlan,
   runScratchDir as scratchDirectory,
 } from '../artifact-paths.ts'
 import { resolveRunsDirectory } from '../database/database-location.ts'
@@ -258,6 +260,22 @@ export function readDispatchState(id: number): DispatchState {
   }
 }
 
+function mergeScratchEntry(source: string, destination: string): void {
+  if (
+    existsSync(destination) &&
+    lstatSync(source).isDirectory() &&
+    lstatSync(destination).isDirectory()
+  ) {
+    for (const entry of readdirSync(source)) {
+      mergeScratchEntry(join(source, entry), join(destination, entry))
+    }
+    rmSync(source, { recursive: true })
+    return
+  }
+  rmSync(destination, { recursive: true, force: true })
+  renameSync(source, destination)
+}
+
 function moveScratchArtifacts(scratch: string, artifacts: string): void {
   if (!existsSync(scratch)) {
     mkdirSync(artifacts, { recursive: true })
@@ -268,41 +286,36 @@ function moveScratchArtifacts(scratch: string, artifacts: string): void {
     return
   }
   for (const entry of readdirSync(scratch)) {
-    const destination = join(artifacts, entry)
-    rmSync(destination, { recursive: true, force: true })
-    renameSync(join(scratch, entry), destination)
+    mergeScratchEntry(join(scratch, entry), join(artifacts, entry))
   }
   rmSync(scratch, { recursive: true })
-}
-
-function isAtOrBelow(path: string, directory: string): boolean {
-  return path === directory || path.startsWith(`${directory}/`)
 }
 
 function persistNamedArtifact(
   id: number,
   named: string,
   worktreePath: string | null,
-  scratch: string,
-  artifacts: string,
 ): string | null {
-  const source = named.startsWith('/') ? named : worktreePath ? join(worktreePath, named) : named
-  const destination = persistedRunArtifactPath(id, RUNS_DIR, named, worktreePath)
-  const from = isAtOrBelow(source, scratch) ? join(artifacts, relative(scratch, source)) : source
-  if (isAtOrBelow(from, artifacts) && existsSync(from)) return null
+  const plan = namedArtifactPlan(id, RUNS_DIR, named, worktreePath)
+  if (plan.alreadyInPlace) return null
   try {
-    if (!existsSync(from)) throw new Error('source does not exist')
-    const sourceStat = statSync(from)
+    if (!existsSync(plan.source)) throw new Error('source does not exist')
+    const source = lstatSync(plan.source).isSymbolicLink() ? realpathSync(plan.source) : plan.source
+    const sourceStat = statSync(source)
     if (sourceStat.isDirectory()) {
-      cpSync(from, destination, { recursive: true, verbatimSymlinks: true, dereference: false })
+      cpSync(source, plan.destination, {
+        recursive: true,
+        verbatimSymlinks: true,
+        dereference: false,
+      })
     } else if (sourceStat.isFile()) {
-      if (from !== destination) copyFileSync(from, destination)
+      if (source !== plan.destination) copyFileSync(source, plan.destination)
     } else {
       throw new Error('source is not a file or directory')
     }
     return null
   } catch (error) {
-    return `could not copy named file ${source} to ${destination}: ${error instanceof Error ? error.message : String(error)}`
+    return `could not copy named file ${plan.source} to ${plan.destination}: ${error instanceof Error ? error.message : String(error)}`
   }
 }
 
@@ -319,7 +332,7 @@ export function persistRunArtifacts(
   if (changes?.diff) writeFileSync(join(artifacts, 'worktree.diff'), changes.diff)
   const failures: string[] = []
   for (const named of filesWritten ?? []) {
-    const failure = persistNamedArtifact(id, named, worktree?.path ?? null, scratch, artifacts)
+    const failure = persistNamedArtifact(id, named, worktree?.path ?? null)
     if (failure) failures.push(failure)
   }
   if (failures.length > 0) throw new Error(failures.join('\n'))
