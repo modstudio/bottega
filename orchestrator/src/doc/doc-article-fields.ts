@@ -14,7 +14,11 @@ import type { CanonRow } from '../canon/canon-hydrate.ts'
 import { resolveSubject } from '../subject/subjects.ts'
 import type { DocGenerator } from './doc-generator.ts'
 import type { Doc, DocRevision } from './doc-read-store.ts'
-import { articleFieldRefusal, type CanonWriteTree } from './doc-write-allowed.ts'
+import {
+  articleFieldRefusal,
+  type CanonWriteTree,
+  refuseArticleDelivery,
+} from './doc-write-allowed.ts'
 
 export type DocWriteContext = {
   author?: string
@@ -153,6 +157,22 @@ export function hostedArticleWriteFields(
       : {}),
     ...(input.summary !== undefined ? { summary: fields.summary } : {}),
   }
+}
+
+export function hostedDocWriteFields(
+  input: DocWriteInput,
+  fields: ReturnType<typeof resolveLocalDocArticleFields>,
+) {
+  return { ...hostedArticleWriteFields(input, fields), generator: input.generator }
+}
+
+export function assertLocalArticleDelivery(
+  input: DocWriteInput,
+  delivery: 'inject' | 'demand',
+  kind: DocKind,
+): void {
+  const refusal = refuseArticleDelivery({ ...input, delivery, kind })
+  if (refusal) throw new Error(refusal)
 }
 
 export function localRevisionArticleFields(revision: DocRevision) {

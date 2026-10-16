@@ -63,6 +63,7 @@ export type HostedArticleResponse = {
   sourceFiles?: string[]
   checkedAgainstCommit?: string | null
   summary?: string | null
+  writeWarnings?: string[]
 }
 
 export async function hostedArticleProjectId(
@@ -253,4 +254,11 @@ export function hostedArticleResponse(fields: Fields, names: Map<string, string>
     checkedAgainstCommit: fields.checkedAgainstCommit,
     summary: fields.summary,
   }
+}
+
+export function hostedArticleResponseFromRows(fields: Fields, rows: Row[]) {
+  return hostedArticleResponse(
+    fields,
+    new Map(rows.map((row) => [String(row.id), String(row.name)])),
+  )
 }

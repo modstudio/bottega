@@ -11,6 +11,7 @@ import {
   DOC_SCOPE_SUBJECT_KIND,
   DOC_SCOPES,
   type DocAudience,
+  type DocAudiences,
   type DocScope,
   type DocStatus,
 } from '../../../shared/docs.ts'
@@ -28,13 +29,16 @@ import { recordDocArticleCompatibilityRefusal } from '../record/record-doc-trans
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
 import {
+  assertLocalArticleDelivery,
   type DocWriteContext,
   type DocWriteInput,
   hostedArticleWriteFields,
+  hostedDocWriteFields,
   localRevisionArticleFields,
   localRevisionArticleReferences,
   resolveLocalDocArticleFields,
 } from './doc-article-fields.ts'
+import { assertDocBodyCommands } from './doc-command-check.ts'
 import { exportDocFiles, importDocFiles } from './doc-files.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
 import { storedDocLintRefusal } from './doc-lint-adapter.ts'
@@ -86,6 +90,13 @@ import {
   executeLocalDocSet,
 } from './local-doc-write.ts'
 
+function assertLocalRestoreCommands(revision: DocRevision, audiences: DocAudiences): void {
+  assertDocBodyCommands(
+    { body: revision.body },
+    { kind: revision.kind, form: revision.form, audiences },
+  )
+}
+
 export type { Doc, DocRevision, DocRevisionMetadata }
 
 import { parseResumeFrontmatter, resumeAge, resumeFrontmatter } from './doc-resume-frontmatter.ts'
@@ -103,7 +114,6 @@ import {
   docWriteProjectName,
   forcedDocDelivery,
   globalCanonWriteTargets,
-  refuseArticleDelivery,
   refuseCanonWrite,
   refuseOversizedInject,
   refuseOwnedDocAddress,
@@ -358,14 +368,10 @@ function referenceRestoreState(
   return [expectedCurrent, current]
 }
 
-function hostedDocWriteFields(
+async function setDocWithOp(
   input: DocWriteInput,
-  fields: ReturnType<typeof resolveLocalDocArticleFields>,
-) {
-  return { ...hostedArticleWriteFields(input, fields), generator: input.generator }
-}
-
-async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promise<Doc> {
+  requestedOp?: 'import',
+): Promise<Doc & { writeWarnings?: string[] }> {
   writableDb()
   const ownedAddress =
     refuseOwnedDocAddress(input.scope, input.subject, input.owner) ??
@@ -381,13 +387,12 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
   const projectName = docWriteProjectName(input.scope, input.subject)
   const articleFields = resolveLocalDocArticleFields(input, prior, kind, projectName)
   const tree = localDocTreeFields(input, prior)
-  assertDocSections(input.body, tree.audiences)
+  assertDocBodyCommands(input, { kind, form: articleFields.form, audiences: tree.audiences })
   const lifecycle = localDocumentLifecycle(input, prior)
-  const articleDelivery = refuseArticleDelivery({ ...input, delivery, kind })
-  if (articleDelivery) throw new Error(articleDelivery)
+  assertLocalArticleDelivery(input, delivery, kind)
   assertDocWriteAllowed({ ...input, delivery })
   assertDocLint(input, prior)
-  return applyRecordWriteAuthority({
+  const written = await applyRecordWriteAuthority({
     local: () =>
       executeLocalDocSet({
         ...input,
@@ -451,9 +456,10 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
       })
     },
   })
+  return written
 }
 
-export async function setDoc(input: DocWriteInput): Promise<Doc> {
+export async function setDoc(input: DocWriteInput): Promise<Doc & { writeWarnings?: string[] }> {
   assertWorkerDocStoreWriteAllowed('setDoc')
   if (input.scope === 'resume') {
     const frontmatter = resumeFrontmatter(input.body)
@@ -923,7 +929,7 @@ export async function restoreDoc(
     },
     current,
   )
-  assertDocSections(revision.body, tree.audiences)
+  assertLocalRestoreCommands(revision, tree.audiences)
   return applyRecordWriteAuthority({
     // A removed local document has no live row retaining its document UUID. Restore mints a
     // new document UUID while its revision history remains continuous by address.
