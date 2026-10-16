@@ -28,10 +28,14 @@ export const MarkdownFenceRenderers = createContext<{
   articleList?: () => ReactNode
 }>({})
 
-function DocTable({ children }: { children?: ReactNode }) {
+/**
+ * A reading table. By default it takes its content's width and scrolls when that is wider than
+ * the column; with `fit` it takes the column's width and wraps its cells instead.
+ */
+export function DocTable({ fit = false, children }: { fit?: boolean; children?: ReactNode }) {
   return (
     <DocOverflow expandLabel="Expand table" title="Table">
-      <table>{children}</table>
+      <table data-fit={fit ? '' : undefined}>{children}</table>
     </DocOverflow>
   )
 }

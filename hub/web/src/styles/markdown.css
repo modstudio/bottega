@@ -297,6 +297,14 @@
   min-width: 7rem;
   max-width: 24rem;
 }
+/* A fitted table takes the column's width and wraps its cells; it scrolls only if it still cannot fit. */
+.markdown table[data-fit] {
+  width: 100%;
+}
+.markdown table[data-fit] td,
+.markdown table[data-fit] th {
+  max-width: none;
+}
 /* Opened at the window's width: no measure, and the content's own scroll only if it still needs one. */
 .markdown.doc-overflow-full {
   max-width: none;
