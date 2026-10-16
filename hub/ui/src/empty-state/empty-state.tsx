@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { emptyStateStyles } from './empty-state.styles.ts'
 
 /** What belongs here, when nothing does yet, and how to get some. */
 export function EmptyState({
@@ -11,10 +12,10 @@ export function EmptyState({
   action?: ReactNode
 }) {
   return (
-    <div className="flex flex-col items-center gap-1 px-6 py-10 text-center">
-      <div className="font-medium">{title}</div>
-      {hint ? <div className="max-w-md text-sm text-text-muted">{hint}</div> : null}
-      {action ? <div className="mt-3">{action}</div> : null}
+    <div className={emptyStateStyles().slot1()}>
+      <div className={emptyStateStyles().slot2()}>{title}</div>
+      {hint ? <div className={emptyStateStyles().slot3()}>{hint}</div> : null}
+      {action ? <div className={emptyStateStyles().slot4()}>{action}</div> : null}
     </div>
   )
 }

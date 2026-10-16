@@ -2,6 +2,7 @@ import { type ComponentProps, useRef, useState } from 'react'
 import { Input } from '../field/input'
 import { Popover } from '../popover/popover'
 import { moveIndex } from '../state/list-navigation'
+import { searchSelectStyles } from './search-select.styles.ts'
 
 /** How many matches the list shows before asking for a narrower search. */
 const SEARCH_LIMIT = 50
@@ -63,7 +64,7 @@ export function SearchSelect({
       }}
       trigger={trigger}
     >
-      <div className="grid w-72 max-w-full gap-2">
+      <div className={searchSelectStyles().slot1()}>
         <Input
           ref={input}
           size="sm"
@@ -91,7 +92,7 @@ export function SearchSelect({
             }
           }}
         />
-        <div role="listbox" aria-label={label} className="-mx-1 max-h-72 overflow-y-auto">
+        <div role="listbox" aria-label={label} className={searchSelectStyles().slot2()}>
           {shown.map((option, index) => (
             <button
               type="button"
@@ -102,17 +103,15 @@ export function SearchSelect({
               title={option.label}
               onMouseEnter={() => setActive(index)}
               onClick={() => choose(option)}
-              className="block w-full cursor-pointer truncate rounded-sm px-2 py-1.5 text-left text-md text-text-secondary aria-selected:font-medium aria-selected:text-text-primary data-active:bg-control-hover"
+              className={searchSelectStyles().slot3()}
             >
               {option.label}
             </button>
           ))}
           {none ? (
-            <p className="m-0 px-2 py-1.5 text-md text-text-muted">No match</p>
+            <p className={searchSelectStyles().slot4()}>No match</p>
           ) : more > 0 ? (
-            <p className="m-0 px-2 py-1.5 text-sm text-text-muted">
-              {more} more; narrow the search
-            </p>
+            <p className={searchSelectStyles().slot5()}>{more} more; narrow the search</p>
           ) : null}
         </div>
       </div>

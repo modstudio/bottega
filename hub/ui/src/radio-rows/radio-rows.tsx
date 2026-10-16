@@ -1,19 +1,11 @@
 import { useId } from 'react'
-import { classes } from '../text/classes'
+import { radioIndicatorStyles, radioRowsStyles } from './radio-rows.styles.ts'
 
 type RadioOption = { value: string; label: string; recommended?: boolean }
 
 /** The disc RadioRows and other radio rows share. */
 export function RadioIndicator({ selected }: { selected: boolean }) {
-  return (
-    <span
-      aria-hidden
-      className={classes(
-        'mt-0.5 size-4 shrink-0 rounded-full border-4',
-        selected ? 'border-accent-fill bg-surface-page' : 'border-border-strong bg-surface-page',
-      )}
-    />
-  )
+  return <span aria-hidden className={radioIndicatorStyles({ selected })} />
 }
 
 /** A radio group for long choices, with selection following focus per the APG pattern. */
@@ -30,23 +22,15 @@ export function RadioRows({
 }) {
   const id = useId()
   return (
-    <fieldset className="m-0 border-0 p-0">
-      <legend className="mb-2 font-medium text-sm">{label}</legend>
-      <div className="space-y-2">
+    <fieldset className={radioRowsStyles().slot1()}>
+      <legend className={radioRowsStyles().slot2()}>{label}</legend>
+      <div className={radioRowsStyles().slot3()}>
         {options.map((option) => {
           const selected = option.value === value
           return (
-            <label
-              key={option.value}
-              className={classes(
-                'flex w-full cursor-pointer items-start gap-3 border p-3 text-left transition-colors hover:bg-control-hover has-focus-visible:outline-2 has-focus-visible:outline-accent-fill has-focus-visible:outline-offset-2',
-                selected
-                  ? 'border-accent-fill bg-surface-page text-text-primary'
-                  : 'border-border-default bg-surface-sunken text-text-secondary',
-              )}
-            >
+            <label key={option.value} className={radioRowsStyles({ selected }).option()}>
               <input
-                className="sr-only"
+                className={radioRowsStyles().slot4()}
                 type="radio"
                 name={id}
                 value={option.value}
@@ -54,12 +38,10 @@ export function RadioRows({
                 onChange={() => onChange(option.value)}
               />
               <RadioIndicator selected={selected} />
-              <span className="min-w-0 flex-1">
+              <span className={radioRowsStyles().slot5()}>
                 {option.label}
                 {option.recommended ? (
-                  <span className="ml-2 whitespace-nowrap text-accent-text text-sm">
-                    recommended
-                  </span>
+                  <span className={radioRowsStyles().slot6()}>recommended</span>
                 ) : null}
               </span>
             </label>

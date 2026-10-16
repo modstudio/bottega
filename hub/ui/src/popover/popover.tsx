@@ -7,8 +7,8 @@ import {
   useState,
 } from 'react'
 import { useAnchor } from '../dom/use-anchor'
-import { classes } from '../text/classes'
-import { type Align, panelClasses, placementClasses, type Side } from './placement'
+import type { Align, Side } from './placement'
+import { popoverStyles } from './popover.styles.ts'
 
 type TriggerProps = {
   popoverTarget?: string
@@ -60,7 +60,7 @@ export function Popover({
           setOpen(next)
           onOpenChange?.(next)
         }}
-        className={classes(placementClasses(side, align), panelClasses, 'max-w-sm p-3')}
+        className={popoverStyles(side, align)()}
       >
         {children}
       </div>

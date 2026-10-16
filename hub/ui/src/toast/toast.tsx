@@ -2,6 +2,7 @@ import { X } from 'lucide-react'
 import { useLayoutEffect, useRef, useSyncExternalStore } from 'react'
 import { Badge, type Tone } from '../badge/badge'
 import { IconButton } from '../button/button'
+import { toastStyles } from './toast.styles.ts'
 
 type Kind = Extract<Tone, 'success' | 'error' | 'info'>
 type ToastItem = { id: number; kind: Kind; message: string }
@@ -73,26 +74,26 @@ export function Toaster() {
   const latest = current.at(-1)
   return (
     <>
-      <div aria-live="polite" className="sr-only">
+      <div aria-live="polite" className={toastStyles().slot1()}>
         {latest ? `${kindLabel[latest.kind]}: ${latest.message}` : ''}
       </div>
       <section
         ref={region}
         popover="manual"
         aria-label="Notifications"
-        className="[inset:auto] right-4 bottom-4 flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2 bg-transparent"
+        className={toastStyles().slot2()}
       >
-        <ol className="m-0 flex list-none flex-col gap-2 p-0">
+        <ol className={toastStyles().slot3()}>
           {current.map((item) => (
             <li
               key={item.id}
               data-tone={item.kind}
               onPointerEnter={() => window.clearTimeout(timers.get(item.id))}
               onPointerLeave={() => schedule(item.id)}
-              className="flex items-start gap-3 border border-status-border bg-surface-overlay p-3 shadow-overlay transition-[opacity,translate] duration-(--duration-base) starting:translate-y-2 starting:opacity-0"
+              className={toastStyles().slot4()}
             >
               <Badge tone={item.kind}>{kindLabel[item.kind]}</Badge>
-              <p className="m-0 min-w-0 flex-1 pt-px">{item.message}</p>
+              <p className={toastStyles().slot5()}>{item.message}</p>
               <IconButton size="sm" label="Dismiss" onClick={() => dismiss(item.id)}>
                 <X />
               </IconButton>

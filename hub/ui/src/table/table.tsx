@@ -1,5 +1,5 @@
 import type { HTMLAttributes, TdHTMLAttributes, ThHTMLAttributes } from 'react'
-import { classes } from '../text/classes'
+import { tableCellStyles, tableHeadStyles, tableRowStyles, tableStyles } from './table.styles.ts'
 
 type CellLook = {
   /** Right-aligned figures in tabular numerals, never wrapped. */
@@ -12,26 +12,19 @@ type CellLook = {
   className?: string
 }
 
-const cellLook = ({ numeric, nowrap, muted }: CellLook) =>
-  classes(
-    numeric && 'whitespace-nowrap text-right tabular-nums',
-    nowrap && 'whitespace-nowrap',
-    muted && 'text-text-muted',
-  )
-
 export function Table({
   className,
   ...props
 }: Omit<HTMLAttributes<HTMLTableElement>, 'className'> & { className?: string }) {
-  return <table {...props} className={classes('w-full border-collapse text-base', className)} />
+  return <table {...props} className={tableStyles().table({ class: className })} />
 }
 
 export function TableHeader(props: Omit<HTMLAttributes<HTMLTableSectionElement>, 'className'>) {
-  return <thead {...props} className="sticky top-0 z-(--z-sticky) bg-surface-page" />
+  return <thead {...props} className={tableStyles().slot1()} />
 }
 
 export function TableBody(props: Omit<HTMLAttributes<HTMLTableSectionElement>, 'className'>) {
-  return <tbody {...props} className="[&>tr:last-child]:border-b-0" />
+  return <tbody {...props} className={tableStyles().slot2()} />
 }
 
 export function TableRow({
@@ -51,13 +44,7 @@ export function TableRow({
     <tr
       {...props}
       aria-current={selected || undefined}
-      className={classes(
-        'h-row border-border-subtle border-b',
-        selected && 'bg-surface-sunken shadow-[inset_2px_0_0_var(--accent-fill)]',
-        nested && 'bg-surface-raised text-text-secondary',
-        interactive &&
-          'cursor-pointer outline-none hover:bg-control-hover focus-visible:bg-control-hover focus-visible:shadow-[inset_2px_0_0_var(--focus-color)]',
-      )}
+      className={tableRowStyles({ selected, nested, interactive })}
     />
   )
 }
@@ -69,16 +56,7 @@ export function TableHead({
   className,
   ...props
 }: Omit<ThHTMLAttributes<HTMLTableCellElement>, 'className'> & CellLook) {
-  return (
-    <th
-      {...props}
-      className={classes(
-        'h-10 border-border-default border-b px-3 text-left align-middle font-normal text-sm text-text-muted',
-        cellLook({ numeric, nowrap, muted }),
-        className,
-      )}
-    />
-  )
+  return <th {...props} className={tableHeadStyles({ numeric, nowrap, muted, class: className })} />
 }
 
 export function TableCell({
@@ -88,10 +66,5 @@ export function TableCell({
   className,
   ...props
 }: Omit<TdHTMLAttributes<HTMLTableCellElement>, 'className'> & CellLook) {
-  return (
-    <td
-      {...props}
-      className={classes('px-3 py-2 align-middle', cellLook({ numeric, nowrap, muted }), className)}
-    />
-  )
+  return <td {...props} className={tableCellStyles({ numeric, nowrap, muted, class: className })} />
 }

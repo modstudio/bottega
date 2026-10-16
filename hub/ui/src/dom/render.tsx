@@ -1,5 +1,5 @@
 import { cloneElement, type ReactElement, type ReactNode } from 'react'
-import { classes } from '../text/classes'
+import { renderStyles } from './render.styles.ts'
 
 type Renderable = { className?: string; children?: ReactNode }
 
@@ -17,7 +17,7 @@ export function renderAs<P extends Renderable>(
   return cloneElement(render, {
     ...own,
     ...render.props,
-    className: classes(own.className, render.props.className),
+    className: renderStyles({ class: [own.className, render.props.className] }),
     children: own.children,
   })
 }

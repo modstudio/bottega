@@ -10,7 +10,7 @@ import { IconButton } from '../button/button'
 import { PHONE_QUERY, useMediaQuery } from '../dom/use-media-query'
 import { useStoredState } from '../dom/use-stored-state'
 import { useDockedPanel } from '../shell/app-shell'
-import { classes } from '../text/classes'
+import { companionStyles } from './companion.styles.ts'
 
 const WIDTHS = ['360', '420', '480', '560', '640'] as const
 type Width = (typeof WIDTHS)[number]
@@ -78,12 +78,7 @@ export function Companion({
         if (event.key === 'Escape' && !event.defaultPrevented) onClose()
       }}
       style={phone ? undefined : { width: `${width}px` }}
-      className={classes(
-        'flex flex-col bg-surface-page outline-none',
-        phone
-          ? 'fixed inset-0 z-(--z-sheet)'
-          : 'relative sticky top-[calc(var(--topbar-h)+1rem)] max-h-[calc(100dvh-var(--topbar-h)-2rem)] shrink-0 self-start border border-border-default',
-      )}
+      className={companionStyles({ phone }).root()}
     >
       {phone ? null : (
         <button
@@ -103,25 +98,23 @@ export function Companion({
             event.preventDefault()
             setWidth(next)
           }}
-          className="absolute inset-y-0 -left-1 w-2 cursor-col-resize hover:bg-control-hover focus-visible:bg-control-hover"
+          className={companionStyles().slot1()}
         />
       )}
-      <header className="flex min-h-14 shrink-0 items-start gap-3 border-border-default border-b px-4 py-3">
-        <div className="min-w-0 flex-1">
-          <h2 id={titleId} className="truncate font-semibold text-lg">
+      <header className={companionStyles().slot2()}>
+        <div className={companionStyles().slot3()}>
+          <h2 id={titleId} className={companionStyles().slot4()}>
             {title}
           </h2>
-          {subtitle ? <div className="mt-0.5 text-sm text-text-secondary">{subtitle}</div> : null}
+          {subtitle ? <div className={companionStyles().slot5()}>{subtitle}</div> : null}
         </div>
-        {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
+        {actions ? <div className={companionStyles().slot6()}>{actions}</div> : null}
         <IconButton size="sm" label="Close panel" onClick={onClose}>
           <X />
         </IconButton>
       </header>
-      <div className="@container/panel min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
-      {footer ? (
-        <footer className="shrink-0 border-border-default border-t p-4">{footer}</footer>
-      ) : null}
+      <div className={companionStyles().slot7()}>{children}</div>
+      {footer ? <footer className={companionStyles().slot8()}>{footer}</footer> : null}
     </aside>
   )
 }
@@ -129,8 +122,8 @@ export function Companion({
 /** A page without a TableCard docks its companion here, beside its content. */
 export function Docked({ panel, children }: { panel?: ReactNode; children: ReactNode }) {
   return (
-    <div className="flex min-w-0 items-start gap-4">
-      <div className="min-w-0 flex-1">{children}</div>
+    <div className={companionStyles().slot9()}>
+      <div className={companionStyles().slot10()}>{children}</div>
       {panel}
     </div>
   )

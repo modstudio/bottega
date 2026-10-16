@@ -1,6 +1,5 @@
 import type { Ref, TextareaHTMLAttributes } from 'react'
-import { classes } from '../text/classes'
-import { controlClasses } from './control'
+import { textareaStyles } from './textarea.styles.ts'
 
 type TextareaProps = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'className'> & {
   ref?: Ref<HTMLTextAreaElement>
@@ -20,16 +19,6 @@ export function Textarea({
   ...props
 }: TextareaProps) {
   return (
-    <textarea
-      {...props}
-      rows={rows}
-      className={classes(
-        controlClasses,
-        'field-sizing-content min-h-20 w-full resize-none px-3 py-2',
-        code && 'font-mono text-sm',
-        bare && 'border-transparent hover:border-transparent focus-visible:border-transparent',
-        className,
-      )}
-    />
+    <textarea {...props} rows={rows} className={textareaStyles({ code, bare, class: className })} />
   )
 }

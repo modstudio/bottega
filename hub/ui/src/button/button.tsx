@@ -1,6 +1,6 @@
 import type { ButtonHTMLAttributes, ReactElement, Ref } from 'react'
 import { renderAs } from '../dom/render'
-import { classes } from '../text/classes'
+import { buttonStyles, iconButtonStyles, textButtonStyles } from './button.styles.ts'
 
 const variants = {
   primary: 'bg-accent-fill text-accent-on-fill hover:bg-accent-fill-hover',
@@ -16,17 +16,8 @@ const sizes = {
   lg: 'h-control-lg gap-2 px-5 text-md [&_svg]:size-4',
 } as const
 
-const iconSizes = {
-  sm: 'size-(--control-h-sm) [&_svg]:size-3.5',
-  md: 'size-(--control-h-md) [&_svg]:size-4',
-  lg: 'size-(--control-h-lg) [&_svg]:size-5',
-} as const
-
 type ButtonVariant = keyof typeof variants
 type ButtonSize = keyof typeof sizes
-
-const base =
-  'inline-flex shrink-0 select-none items-center justify-center whitespace-nowrap font-medium transition-colors duration-(--duration-fast) disabled:pointer-events-none disabled:opacity-50 [&_svg]:shrink-0'
 
 type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'> & {
   ref?: Ref<HTMLButtonElement>
@@ -52,7 +43,7 @@ export function Button({
       {...props}
       type={render ? undefined : type}
       data-tone={variant === 'danger' ? 'error' : undefined}
-      className={classes(base, variants[variant], sizes[size], className)}
+      className={buttonStyles({ variant, size, class: className })}
     />,
   )
 }
@@ -81,7 +72,7 @@ export function IconButton({
       aria-label={label}
       title={label}
       data-tone={variant === 'danger' ? 'error' : undefined}
-      className={classes(base, variants[variant], iconSizes[size], className)}
+      className={iconButtonStyles({ variant, size, class: className })}
     />,
   )
 }
@@ -100,14 +91,5 @@ export function TextButton({
   /** Layout only: margin and placement. */
   className?: string
 }) {
-  return (
-    <button
-      {...props}
-      type={type}
-      className={classes(
-        'cursor-pointer underline decoration-border-strong underline-offset-2 hover:decoration-current disabled:pointer-events-none disabled:opacity-50',
-        className,
-      )}
-    />
-  )
+  return <button {...props} type={type} className={textButtonStyles({ class: className })} />
 }

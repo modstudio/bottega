@@ -1,7 +1,7 @@
 import { X } from 'lucide-react'
 import { type ReactNode, useId, useLayoutEffect, useRef } from 'react'
 import { IconButton } from '../button/button'
-import { classes } from '../text/classes'
+import { dialogStyles } from './dialog.styles.ts'
 
 const sizes = {
   sm: 'w-[min(24rem,calc(100vw-2rem))]',
@@ -62,26 +62,20 @@ export function Dialog({
         // The backdrop belongs to the dialog element; its content fills the box.
         if (event.target === event.currentTarget) onOpenChange(false)
       }}
-      className={classes(
-        sizes[size],
-        chromeless ? 'fixed inset-x-0 mx-auto' : 'fixed inset-0 m-auto max-h-[calc(100dvh-2rem)]',
-        'border border-border-default bg-surface-overlay text-text-primary shadow-overlay backdrop:bg-scrim',
-        'transition-[opacity,scale] duration-(--duration-base) starting:scale-98 starting:opacity-0',
-        className,
-      )}
+      className={dialogStyles({ size, chromeless }).root({ class: className })}
     >
-      <div className="flex max-h-[inherit] flex-col">
+      <div className={dialogStyles().slot1()}>
         {chromeless ? (
           children
         ) : (
           <>
-            <header className="flex items-start gap-3 px-5 pt-5 pb-3">
-              <div className="min-w-0 flex-1">
-                <h2 id={titleId} className="font-semibold text-lg">
+            <header className={dialogStyles().slot2()}>
+              <div className={dialogStyles().slot3()}>
+                <h2 id={titleId} className={dialogStyles().slot4()}>
                   {title}
                 </h2>
                 {description ? (
-                  <div id={descriptionId} className="mt-1 text-text-secondary">
+                  <div id={descriptionId} className={dialogStyles().slot5()}>
                     {description}
                   </div>
                 ) : null}
@@ -90,12 +84,8 @@ export function Dialog({
                 <X />
               </IconButton>
             </header>
-            {children ? <div className="min-h-0 overflow-y-auto px-5 pb-4">{children}</div> : null}
-            {footer ? (
-              <footer className="flex justify-end gap-2 border-border-default border-t px-5 py-3">
-                {footer}
-              </footer>
-            ) : null}
+            {children ? <div className={dialogStyles().slot6()}>{children}</div> : null}
+            {footer ? <footer className={dialogStyles().slot7()}>{footer}</footer> : null}
           </>
         )}
       </div>

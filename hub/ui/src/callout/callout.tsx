@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import type { Tone } from '../badge/badge'
+import { calloutStyles } from './callout.styles.ts'
 
 /**
  * A labeled note region. Tone selects the status role through `data-tone`;
@@ -15,13 +16,9 @@ export function Callout({
   children?: ReactNode
 }) {
   return (
-    <aside
-      role="note"
-      data-tone={tone}
-      className="border border-status-border bg-status-surface px-4 py-3"
-    >
-      <div className="font-medium text-sm text-status-text">{title}</div>
-      <div className="text-sm text-text-secondary">{children}</div>
+    <aside role="note" data-tone={tone} className={calloutStyles().slot1()}>
+      <div className={calloutStyles().slot2()}>{title}</div>
+      <div className={calloutStyles().slot3()}>{children}</div>
     </aside>
   )
 }

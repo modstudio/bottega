@@ -1,6 +1,5 @@
 import type { InputHTMLAttributes, Ref } from 'react'
-import { classes } from '../text/classes'
-import { controlClasses } from './control'
+import { inputStyles } from './input.styles.ts'
 
 const sizes = {
   sm: 'h-control-sm px-2 text-sm',
@@ -17,11 +16,5 @@ type InputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'className' | 'siz
 }
 
 export function Input({ size = 'md', className, type = 'text', ...props }: InputProps) {
-  return (
-    <input
-      {...props}
-      type={type}
-      className={classes(controlClasses, 'w-full', sizes[size], className)}
-    />
-  )
+  return <input {...props} type={type} className={inputStyles({ size, class: className })} />
 }

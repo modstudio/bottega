@@ -1,4 +1,4 @@
-import { classes } from '../text/classes'
+import { separatorStyles } from './separator.styles.ts'
 
 /** A hairline between groups. Decorative unless `label` names what it separates. */
 export function Separator({
@@ -11,11 +11,7 @@ export function Separator({
   return (
     <hr
       aria-orientation={orientation}
-      className={classes(
-        'm-0 shrink-0 border-0 bg-border-default',
-        orientation === 'horizontal' ? 'h-px w-full' : 'h-auto w-px self-stretch',
-        className,
-      )}
+      className={separatorStyles({ orientation, class: className })}
     />
   )
 }

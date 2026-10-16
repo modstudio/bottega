@@ -1,6 +1,7 @@
 import { X } from 'lucide-react'
 import { type PointerEvent, type ReactNode, useEffect, useRef, useState } from 'react'
 import { IconButton } from '../button/button'
+import { bottomSheetStyles } from './bottom-sheet.styles.ts'
 
 /** Sheet heights as percentages of the viewport. */
 const OPEN_HEIGHT = 75
@@ -51,13 +52,13 @@ export function BottomSheet({
         if (event.target === event.currentTarget) onClose()
       }}
       style={{ height: `${height}dvh` }}
-      className={`fixed inset-x-0 top-auto bottom-0 max-h-none w-full max-w-none border-border-default border-t bg-surface-overlay text-text-primary shadow-overlay backdrop:bg-scrim starting:translate-y-full ${dragging ? '' : 'transition-[translate,height] duration-(--duration-base)'}`}
+      className={bottomSheetStyles({ dragging }).root()}
     >
-      <div className="flex h-full flex-col">
+      <div className={bottomSheetStyles().slot1()}>
         <button
           type="button"
           aria-label="Resize sheet"
-          className="flex h-5 shrink-0 cursor-row-resize touch-none items-center justify-center"
+          className={bottomSheetStyles().slot2()}
           onPointerDown={(event) => {
             event.currentTarget.setPointerCapture(event.pointerId)
             setDragging(true)
@@ -68,17 +69,15 @@ export function BottomSheet({
           onPointerUp={release}
           onPointerCancel={release}
         >
-          <span aria-hidden className="h-1 w-10 rounded-full bg-border-strong" />
+          <span aria-hidden className={bottomSheetStyles().slot3()} />
         </button>
-        <header className="flex h-11 shrink-0 items-center justify-between border-border-subtle border-b px-4">
-          <h2 className="font-semibold text-md">{title}</h2>
+        <header className={bottomSheetStyles().slot4()}>
+          <h2 className={bottomSheetStyles().slot5()}>{title}</h2>
           <IconButton size="sm" label="Close" onClick={onClose}>
             <X />
           </IconButton>
         </header>
-        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4 [&_button[role=combobox]]:w-full">
-          {children}
-        </div>
+        <div className={bottomSheetStyles().slot6()}>{children}</div>
       </div>
     </dialog>
   )

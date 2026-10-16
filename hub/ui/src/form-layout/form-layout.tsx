@@ -1,8 +1,8 @@
 import { Copy } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { IconButton } from '../button/button'
-import { classes } from '../text/classes'
 import { toast } from '../toast/toast'
+import { formLayoutStyles } from './form-layout.styles.ts'
 
 /** A titled group of related settings or facts. */
 export function FieldSection({
@@ -15,10 +15,10 @@ export function FieldSection({
   children: ReactNode
 }) {
   return (
-    <section className="flex flex-col gap-4 border-border-subtle border-t pt-5 first:border-t-0 first:pt-0">
+    <section className={formLayoutStyles().slot1()}>
       <div>
-        <h2 className="font-semibold text-md">{title}</h2>
-        {description ? <p className="mt-1 text-sm text-text-secondary">{description}</p> : null}
+        <h2 className={formLayoutStyles().slot2()}>{title}</h2>
+        {description ? <p className={formLayoutStyles().slot3()}>{description}</p> : null}
       </div>
       {children}
     </section>
@@ -41,10 +41,10 @@ export function SettingBlock({
   cli?: string
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="font-medium text-sm text-text-secondary">{label}</div>
+    <div className={formLayoutStyles().slot4()}>
+      <div className={formLayoutStyles().slot5()}>{label}</div>
       <div>{control}</div>
-      {hint ? <div className="text-sm text-text-muted">{hint}</div> : null}
+      {hint ? <div className={formLayoutStyles().slot6()}>{hint}</div> : null}
       {cli ? <Copyable value={cli} compact /> : null}
     </div>
   )
@@ -53,10 +53,10 @@ export function SettingBlock({
 /** A fact that is read, not edited: label beside value when there is room. */
 export function DisplayRow({ label, value }: { label: ReactNode; value: ReactNode }) {
   return (
-    <div className="@container/row border-border-subtle border-b py-2.5 last:border-b-0">
-      <div className="grid gap-1 @md/row:grid-cols-[9rem_minmax(0,1fr)] @md/row:gap-4">
-        <div className="text-sm text-text-muted">{label}</div>
-        <div className="min-w-0 break-words">{value ?? '-'}</div>
+    <div className={formLayoutStyles().slot7()}>
+      <div className={formLayoutStyles().slot8()}>
+        <div className={formLayoutStyles().slot9()}>{label}</div>
+        <div className={formLayoutStyles().slot10()}>{value ?? '-'}</div>
       </div>
     </div>
   )
@@ -69,10 +69,8 @@ export function Copyable({ value, compact = false }: { value: string; compact?: 
     toast.success('Copied')
   }
   return (
-    <div
-      className={classes('flex min-w-0 items-center gap-2', compact && 'text-sm text-text-muted')}
-    >
-      <code className="min-w-0 flex-1 break-all font-mono">{value}</code>
+    <div className={formLayoutStyles({ compact }).copyable()}>
+      <code className={formLayoutStyles().slot11()}>{value}</code>
       <IconButton size="sm" label="Copy value" onClick={copy}>
         <Copy />
       </IconButton>
