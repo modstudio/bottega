@@ -15,6 +15,7 @@
   "type": "module",
   "scripts": {
     "check": "bun scripts/check.ts",
+    "check:suite": "bun scripts/check.ts --suite",
     "release:build": "bun scripts/build-release.ts",
     "release:binary": "bun scripts/build-binary.ts",
     "release:artifacts": "bun scripts/build-release-artifacts.ts",

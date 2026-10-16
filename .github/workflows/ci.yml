@@ -1,50 +1,134 @@
-# The remote gate. It runs the same `bun run check` the local gate runs, on
-# every pull request and every push to main, so a green here is the same
-# evidence as a green on the operator's machine. The local gate proves a
-# commit; this run admits it.
 name: ci
 
 on:
-  # Every change runs the gate. A path filter would admit whatever it failed to
-  # name — a shell installer, a launchd template, a deploy script — on the local
-  # gate alone, and running nothing proves nothing.
   pull_request:
   push:
     branches: [main]
+  merge_group:
   workflow_dispatch:
+
+env:
+  ORCHESTRATOR_SHARD_COUNT: 4
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   secrets:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - name: Scan secrets
         run: docker run --rm -v "$GITHUB_WORKSPACE:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 git /repo --config /repo/.gitleaks.toml --redact --exit-code 1 --verbose
 
-  check:
+  static:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
-          # The timing ratchet and the canon checks read trunk history.
           fetch-depth: 0
-
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.14
-
+          bun-version: 1.4.3
       - name: Install
         run: bun install --silent
+      - name: Static checks
+        run: bun run check
 
-      # One command, the same one the local gate runs: typechecks, every
-      # suite, the web build, and the boundary, ceiling, timing, spawn,
-      # fixture, brand and canon checks. CI=1 makes timing growth fatal here,
-      # where it is informational locally.
-      - name: Check
+  orchestrator:
+    name: orchestrator (${{ matrix.shard }}/${{ strategy.job-total }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - name: Install
+        run: bun install --silent
+      - name: Test shard
         env:
           CI: "1"
-        run: bun run check
+        run: bun scripts/check.ts --suite --only=orchestrator --shard=${{ matrix.shard }}/${ORCHESTRATOR_SHARD_COUNT}
+
+  hub:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - name: Install
+        run: bun install --silent
+      - name: Test
+        env:
+          CI: "1"
+        run: bun scripts/check.ts --suite --only=hub
+
+  hub-web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - name: Install
+        run: bun install --silent
+      - name: Test and build
+        env:
+          CI: "1"
+        run: bun scripts/check.ts --suite --only=hub/web
+
+  hub-deploy-site:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - name: Install
+        run: bun install --silent
+      - name: Test
+        env:
+          CI: "1"
+        run: bun scripts/check.ts --suite --only=hub/deploy/site
+
+  retrieval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - name: Install
+        run: bun install --silent
+      - name: Test
+        env:
+          CI: "1"
+        run: bun scripts/check.ts --suite --only=retrieval
+
+  ci:
+    if: always()
+    needs: [secrets, static, orchestrator, hub, hub-web, hub-deploy-site, retrieval]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every CI job
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: jq -e 'all(.[]; .result == "success")' <<<"$RESULTS"
