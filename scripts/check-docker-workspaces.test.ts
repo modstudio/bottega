@@ -26,15 +26,13 @@ function inputs(overrides: Partial<DockerWorkspaceInputs> = {}): DockerWorkspace
 }
 
 describe('docker workspace decision', () => {
-  test('accepts manifests present in every install-stage image and the allowlist', () => {
-    expect(decideDockerWorkspaces(inputs())).toEqual([])
-  })
-
   test('refuses a Dockerfile missing one workspace before install', () => {
-    const text = completeDockerfile.replace(
-      'COPY nested/beta/package.json nested/beta/package.json\n',
-      '',
-    )
+    const text = completeDockerfile
+      .replace('COPY nested/beta/package.json nested/beta/package.json\n', '')
+      .replace(
+        'RUN bun install --frozen-lockfile\n',
+        'RUN bun install --frozen-lockfile\nCOPY nested/beta/package.json nested/beta/package.json\n',
+      )
     expect(
       decideDockerWorkspaces(inputs({ dockerfiles: [{ path: 'deploy/Dockerfile', text }] })),
     ).toEqual([
@@ -50,13 +48,16 @@ describe('docker workspace decision', () => {
     ).toEqual(['.dockerignore: missing workspace nested/beta; add: !nested/beta/package.json'])
   })
 
-  test('ignores a Dockerfile that runs no bun install', () => {
+  test('refuses a later stage missing a workspace copied only in the first stage', () => {
+    const text = `${completeDockerfile}
+FROM oven/bun
+COPY alpha/package.json alpha/package.json
+RUN bun install --frozen-lockfile
+`
     expect(
-      decideDockerWorkspaces(
-        inputs({
-          dockerfiles: [{ path: 'deploy/backup/Dockerfile', text: 'FROM postgres\n' }],
-        }),
-      ),
-    ).toEqual([])
+      decideDockerWorkspaces(inputs({ dockerfiles: [{ path: 'deploy/Dockerfile', text }] })),
+    ).toEqual([
+      'deploy/Dockerfile:11: missing workspace nested/beta; add before bun install: COPY nested/beta/package.json nested/beta/package.json',
+    ])
   })
 })

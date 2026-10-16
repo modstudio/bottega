@@ -12,20 +12,26 @@ export type DockerWorkspaceInputs = {
   dockerignore: string
 }
 
-type DockerInstruction = { keyword: string; body: string }
+type DockerInstruction = { keyword: string; body: string; line: number }
 
 function dockerInstructions(text: string): DockerInstruction[] {
   const instructions: DockerInstruction[] = []
   let pending = ''
-  for (const line of text.split(/\r?\n/)) {
+  let instructionLine = 0
+  for (const [index, line] of text.split(/\r?\n/).entries()) {
     const trimmed = line.trim()
     if (!pending && (!trimmed || trimmed.startsWith('#'))) continue
+    if (!pending) instructionLine = index + 1
     const continued = trimmed.endsWith('\\')
     pending += `${pending ? ' ' : ''}${continued ? trimmed.slice(0, -1).trimEnd() : trimmed}`
     if (continued) continue
     const instruction = pending.match(/^([a-z]+)\s+(.+)$/i)
     if (instruction) {
-      instructions.push({ keyword: instruction[1]!.toUpperCase(), body: instruction[2]! })
+      instructions.push({
+        keyword: instruction[1]!.toUpperCase(),
+        body: instruction[2]!,
+        line: instructionLine,
+      })
     }
     pending = ''
   }
@@ -47,19 +53,19 @@ function copySources(body: string): string[] {
   return withoutFlags.split(/\s+/).slice(0, -1)
 }
 
-function copiedSourcesBeforeInstall(text: string): Set<string> | undefined {
-  const instructions = dockerInstructions(text)
-  const install = instructions.findIndex(
-    (instruction) => instruction.keyword === 'RUN' && /\bbun\s+install\b/.test(instruction.body),
-  )
-  if (install === -1) return undefined
-
-  const sources = new Set<string>()
-  for (const instruction of instructions.slice(0, install)) {
-    if (instruction.keyword !== 'COPY') continue
-    for (const source of copySources(instruction.body)) sources.add(source)
+function copiedSourcesAtInstalls(text: string): { line: number; sources: Set<string> }[] {
+  const installs: { line: number; sources: Set<string> }[] = []
+  let sources = new Set<string>()
+  for (const instruction of dockerInstructions(text)) {
+    if (instruction.keyword === 'FROM') {
+      sources = new Set()
+    } else if (instruction.keyword === 'COPY') {
+      for (const source of copySources(instruction.body)) sources.add(source)
+    } else if (instruction.keyword === 'RUN' && /\bbun\s+install\b/.test(instruction.body)) {
+      installs.push({ line: instruction.line, sources: new Set(sources) })
+    }
   }
-  return sources
+  return installs
 }
 
 function reIncludedPaths(text: string): Set<string> {
@@ -72,21 +78,29 @@ function reIncludedPaths(text: string): Set<string> {
   )
 }
 
-/** Decide whether install-stage manifests stay complete when the workspace list changes. */
-export function decideDockerWorkspaces(inputs: DockerWorkspaceInputs): string[] {
+function dockerfileFindings(dockerfile: DockerfileText, workspaces: string[]): string[] {
   const findings: string[] = []
-  for (const dockerfile of inputs.dockerfiles) {
-    const copied = copiedSourcesBeforeInstall(dockerfile.text)
-    if (!copied) continue
-    for (const workspace of inputs.workspaces) {
+  const installs = copiedSourcesAtInstalls(dockerfile.text)
+  for (const install of installs) {
+    for (const workspace of workspaces) {
       const manifest = `${workspace}/package.json`
-      if (!copied.has(manifest)) {
+      if (!install.sources.has(manifest)) {
+        const location =
+          installs.length > 1 ? `${dockerfile.path}:${install.line}` : dockerfile.path
         findings.push(
-          `${dockerfile.path}: missing workspace ${workspace}; add before bun install: COPY ${manifest} ${manifest}`,
+          `${location}: missing workspace ${workspace}; add before bun install: COPY ${manifest} ${manifest}`,
         )
       }
     }
   }
+  return findings
+}
+
+/** Decide whether install-stage manifests stay complete when the workspace list changes. */
+export function decideDockerWorkspaces(inputs: DockerWorkspaceInputs): string[] {
+  const findings = inputs.dockerfiles.flatMap((dockerfile) =>
+    dockerfileFindings(dockerfile, inputs.workspaces),
+  )
 
   const included = reIncludedPaths(inputs.dockerignore)
   for (const workspace of inputs.workspaces) {
