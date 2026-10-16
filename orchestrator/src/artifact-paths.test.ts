@@ -1,11 +1,42 @@
 import { expect, test } from 'bun:test'
 import { join } from 'node:path'
 import {
+  isPathAtOrBelow,
+  namedArtifactPlan,
   persistedRunArtifactPath,
   rewriteScratchDirPaths,
   runArtifactsDir,
   runScratchDir,
 } from './artifact-paths.ts'
+
+test('path containment accepts only the directory itself and slash descendants', () => {
+  expect(isPathAtOrBelow('/runs/42/artifacts', '/runs/42/artifacts')).toBe(true)
+  expect(isPathAtOrBelow('/runs/42/artifacts/report.md', '/runs/42/artifacts')).toBe(true)
+  expect(isPathAtOrBelow('/runs/42/artifacts-old/report.md', '/runs/42/artifacts')).toBe(false)
+})
+
+test('named artifact plans resolve sources, destinations, and already-persisted entries', () => {
+  const runs = join('/tmp', 'orch-runs')
+  const scratch = runScratchDir(42, runs)
+  const artifacts = runArtifactsDir(42, runs)
+  const worktree = join('/tmp', 'orch-tree')
+
+  expect(namedArtifactPlan(42, runs, join(scratch, 'nested', 'table.json'), worktree)).toEqual({
+    source: join(artifacts, 'nested', 'table.json'),
+    destination: join(artifacts, 'nested', 'table.json'),
+    alreadyInPlace: true,
+  })
+  expect(namedArtifactPlan(42, runs, join(artifacts, 'report.md'), worktree)).toEqual({
+    source: join(artifacts, 'report.md'),
+    destination: join(artifacts, 'report.md'),
+    alreadyInPlace: true,
+  })
+  expect(namedArtifactPlan(42, runs, 'reports/findings.json', worktree)).toEqual({
+    source: join(worktree, 'reports', 'findings.json'),
+    destination: join(artifacts, 'findings.json'),
+    alreadyInPlace: false,
+  })
+})
 
 test('persisted artifact paths follow the scratch rename and named-file copies', () => {
   const runs = join('/tmp', 'orch-runs')
@@ -19,6 +50,9 @@ test('persisted artifact paths follow the scratch rename and named-file copies',
   expect(persistedRunArtifactPath(42, runs, join(scratch, 'nested', 'table.json'), worktree)).toBe(
     join(artifacts, 'nested', 'table.json'),
   )
+  expect(
+    persistedRunArtifactPath(42, runs, join(artifacts, 'nested', 'table.json'), worktree),
+  ).toBe(join(artifacts, 'nested', 'table.json'))
   expect(persistedRunArtifactPath(42, runs, '/tmp/elsewhere/evidence.json', worktree)).toBe(
     join(artifacts, 'evidence.json'),
   )
