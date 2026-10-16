@@ -25,5 +25,4 @@ describe('workflow project facts', () => {
 
     expect(facts).toEqual({ reference })
   })
-
 })
