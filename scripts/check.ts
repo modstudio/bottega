@@ -313,6 +313,7 @@ const rootTests = [
   './scripts/check-outcome.test.ts',
   './scripts/check-gitleaks-plan.test.ts',
   './scripts/check-cascade-preservation.test.ts',
+  './scripts/identity-inventory.test.ts',
   './scripts/check-outbox-payload-contracts.test.ts',
   './scripts/postgres-migration-rls.test.ts',
   './scripts/check-test-placement.test.ts',
@@ -388,7 +389,7 @@ if (checkArguments.mode === 'static') {
     { name: 'project checks', argv: ['bun', `${root}orchestrator/scripts/check-projects.ts`] },
     {
       name: 'orchestrator identity inventory',
-      argv: ['bun', `${root}orchestrator/scripts/identity-inventory.ts`],
+      argv: ['bun', `${root}scripts/check-identity-inventory.ts`, qualityMode],
     },
     staticCheck('scripts/check-machine-state.ts'),
     staticCheck('scripts/check-cascade-preservation.ts'),
