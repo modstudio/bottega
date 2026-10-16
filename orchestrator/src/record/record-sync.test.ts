@@ -1,10 +1,16 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { machineId } from '../../../shared/machine-config.ts'
 import { RECORD_ACTOR_ROLE } from '../../../shared/record/schema.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { exerciseQuarantinedRedactionSync } from '../../test/fixtures/outbox-redaction.ts'
+import {
+  localOutbox,
+  MACHINE_ID,
+  options,
+  RECORD_ID,
+  STAMP,
+} from '../../test/fixtures/record-sync.ts'
 import { fakePostgres, serverError } from '../../test/fixtures/record-sync-postgres.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
@@ -16,66 +22,10 @@ import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { retireOutboxRow, retryOutboxRow } from './outbox-quarantine.ts'
 import { WITHHELD_SECRET_SHAPED } from './outbox-sanitize.ts'
 import { syncRecord } from './record-sync.ts'
-import { syncHostedRecord } from './record-sync-service.ts'
 
-const RUN_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.run.columns
 const LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.landing_override.columns
 const LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS =
   OUTBOX_PAYLOAD_CONTRACTS.landing_triage_snapshot.columns
-
-const RECORD_ID = '01990000-0000-7000-8000-000000000042'
-const MACHINE_ID = machineId()
-const STAMP = '2026-09-15T01:01:00.000Z'
-
-function localOutbox(
-  count: number,
-  projectName: string | null = PLATFORM_SLUG,
-  overrides: Record<string, unknown> = {},
-): Database {
-  const local = new Database(':memory:')
-  local.exec(`CREATE TABLE outbox (
-    id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, row_id TEXT NOT NULL, payload TEXT NOT NULL,
-    created_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, synced_at TEXT,
-    quarantined_at TEXT, quarantine_reason TEXT, retired_at TEXT, retirement_reason TEXT
-  );
-  CREATE TABLE outbox_quarantine_audit (
-    id INTEGER PRIMARY KEY, outbox_id INTEGER NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL, row_id TEXT NOT NULL,
-    error TEXT, attempts INTEGER NOT NULL, disposition TEXT NOT NULL, actor_session TEXT,
-    at TEXT NOT NULL, reason TEXT
-  ); CREATE TABLE record_install_binding (id INTEGER PRIMARY KEY, bound_at TEXT NOT NULL)`)
-  for (let id = 1; id <= count; id++) {
-    const values = Object.fromEntries(RUN_RECORD_PAYLOAD_COLUMNS.map((column) => [column, null]))
-    Object.assign(values, {
-      id: `${RECORD_ID.slice(0, -1)}${id}`,
-      spaceId: '01990000-0000-7000-8000-000000000001',
-      projectName,
-      machineId: MACHINE_ID,
-      localId: id,
-      startedAt: STAMP,
-      finishedAt: STAMP,
-      agent: 'codex',
-      job: 'probe',
-      promptSha: 'prompt',
-      promptBytes: 6,
-      promptHead: 'prompt',
-      probe: true,
-      status: 'ok',
-      turn: 1,
-      noFailover: false,
-      automaticFailover: false,
-      workPreserved: false,
-      createdAt: STAMP,
-      updatedAt: STAMP,
-      ...overrides,
-    })
-    local
-      .query(
-        "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,?,'run',?,?,?)",
-      )
-      .run(newRecordId(), id, values.id ?? null, JSON.stringify(values), STAMP)
-  }
-  return local
-}
 
 function localTriageSnapshotOutbox(mutate: (payload: Record<string, unknown>) => void): Database {
   const local = new Database(':memory:')
@@ -183,55 +133,6 @@ function localScoreOutbox(): Database {
   enqueueScoreRecord(local, 42, MACHINE_ID)
   return local
 }
-
-const options = (
-  local: Database,
-  remote: ReturnType<typeof fakePostgres>,
-  memberships = [
-    {
-      spaceId: '01990000-0000-7000-8000-000000000001',
-      slug: 'platform',
-      permission: 'write',
-    },
-  ],
-) => ({
-  local,
-  now: () => STAMP,
-  identity: { id: MACHINE_ID, name: 'test-machine' },
-  principal: {
-    userId: '01990000-0000-7000-8000-000000000002',
-    spaceId: '01990000-0000-7000-8000-000000000001',
-  },
-  memberships,
-  client: {
-    whoami: async () => ({
-      user: { id: '01990000-0000-7000-8000-000000000002' },
-      activeSpaceId: '01990000-0000-7000-8000-000000000001',
-      personalSpaceId: '01990000-0000-7000-8000-000000000001',
-      memberships: memberships.map((membership) => ({
-        space_id: membership.spaceId,
-        slug: membership.slug,
-        permission: membership.permission,
-      })),
-    }),
-    sync: (request: Parameters<typeof syncHostedRecord>[0]['request']) =>
-      syncHostedRecord({
-        url: 'postgres://record.test/database',
-        identity: {
-          user: { id: '01990000-0000-7000-8000-000000000002' },
-          activeSpaceId: '01990000-0000-7000-8000-000000000001',
-          personalSpaceId: '01990000-0000-7000-8000-000000000001',
-          memberships: memberships.map((membership) => ({
-            space_id: membership.spaceId,
-            slug: membership.slug,
-            permission: membership.permission,
-          })),
-        },
-        request,
-        postgres: remote.sql,
-      }),
-  },
-})
 
 test('sync upserts once and a second pass has no run mutation', async () => {
   const local = localOutbox(1)
@@ -930,161 +831,5 @@ test('every populated JSONB run value is bound as one JSON string', async () => 
   })
   const bound = remote.parameters.flat()
   for (const value of Object.values(jsonValues)) expect(bound).toContain(JSON.stringify(value))
-  local.close()
-})
-
-test('declared project spaces override the active space while an unset project falls back', async () => {
-  const local = localOutbox(2, 'declared')
-  const second = JSON.parse(
-    local.query<{ payload: string }, []>('SELECT payload FROM outbox WHERE id=2').get()!.payload,
-  ) as Record<string, unknown>
-  second.projectName = 'fallback'
-  local.query('UPDATE outbox SET payload=? WHERE id=2').run(JSON.stringify(second))
-  const remote = fakePostgres()
-  const declaredSpace = '01990000-0000-7000-8000-000000000003'
-  const memberships = [
-    { spaceId: declaredSpace, slug: 'team', permission: 'write' },
-    ...options(local, remote).memberships,
-  ]
-  expect(
-    await syncRecord({
-      ...options(local, remote, memberships),
-      projectSpaces: { declared: 'team' },
-    }),
-  ).toEqual({
-    pushed: 2,
-    failed: 0,
-    pending: 0,
-    configured: true,
-    quarantined: [],
-    blocked: [],
-  })
-  expect(remote.transactionSpaceIds).toContain(declaredSpace)
-  expect(remote.transactionSpaceIds).toContain(options(local, remote).principal.spaceId)
-  local.close()
-})
-
-test("a contention row binds its run project's declared space", async () => {
-  const local = new Database(':memory:')
-  applyMigrations(local)
-  const declaredSpace = '01990000-0000-7000-8000-000000000003'
-  local
-    .query(
-      `INSERT INTO project (record_id,name,path,settings)
-       VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'declared','/declared',?)`,
-    )
-    .run(JSON.stringify({ space: 'team' }))
-  local
-    .query(
-      `INSERT INTO run
-       (id,record_id,project_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-       VALUES (42,?,1,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','ok')`,
-    )
-    .run(RECORD_ID)
-  local
-    .query(
-      `INSERT INTO contention
-       (id,record_id,at,resource_kind,resource_key,event_kind,run_id)
-       VALUES (1,'01990000-0000-7000-8000-000000000077',?,'lock','resource','wait',42)`,
-    )
-    .run(STAMP)
-  enqueueContention(local, 1, STAMP)
-  const remote = fakePostgres()
-  const memberships = [
-    { spaceId: declaredSpace, slug: 'team', permission: 'write' },
-    ...options(local, remote).memberships,
-  ]
-
-  expect(await syncRecord(options(local, remote, memberships))).toMatchObject({
-    pushed: 1,
-    failed: 0,
-  })
-  expect(remote.transactionSpaceIds.at(-1)).toBe(declaredSpace)
-  expect(remote.transactionSpaceIds.at(-1)).not.toBe(options(local, remote).principal.spaceId)
-  local.close()
-})
-
-test('two declared projects bind their own spaces in separate transactions', async () => {
-  const local = localOutbox(2, 'alpha')
-  const second = JSON.parse(
-    local.query<{ payload: string }, []>('SELECT payload FROM outbox WHERE id=2').get()!.payload,
-  ) as Record<string, unknown>
-  second.projectName = 'beta'
-  local.query('UPDATE outbox SET payload=? WHERE id=2').run(JSON.stringify(second))
-  const remote = fakePostgres()
-  const alpha = '01990000-0000-7000-8000-000000000003'
-  const beta = '01990000-0000-7000-8000-000000000004'
-  const memberships = [
-    { spaceId: alpha, slug: 'alpha', permission: 'write' },
-    { spaceId: beta, slug: 'beta', permission: 'write' },
-    ...options(local, remote).memberships,
-  ]
-  expect(
-    await syncRecord({
-      ...options(local, remote, memberships),
-      projectSpaces: { alpha: 'alpha', beta: 'beta' },
-    }),
-  ).toMatchObject({ pushed: 2, failed: 0 })
-  expect(remote.transactionSpaceIds.filter((id) => id === alpha)).toHaveLength(1)
-  expect(remote.transactionSpaceIds.filter((id) => id === beta)).toHaveLength(1)
-  local.close()
-})
-
-test('a read-only destination is deferred per row and retried after permission changes', async () => {
-  // Production break watched: classify the read-only refusal as row-fatal and quarantine it.
-  const local = localOutbox(2, 'read-only-project')
-  const second = JSON.parse(
-    local.query<{ payload: string }, []>('SELECT payload FROM outbox WHERE id=2').get()!.payload,
-  ) as Record<string, unknown>
-  second.projectName = 'write-project'
-  local.query('UPDATE outbox SET payload=? WHERE id=2').run(JSON.stringify(second))
-  const remote = fakePostgres()
-  const readOnlySpace = '01990000-0000-7000-8000-000000000003'
-  const baseMemberships = options(local, remote).memberships
-  const projectSpaces = {
-    'read-only-project': 'read-only-space',
-    'write-project': 'platform',
-  }
-
-  expect(
-    await syncRecord({
-      ...options(local, remote, [
-        { spaceId: readOnlySpace, slug: 'read-only-space', permission: 'read' },
-        ...baseMemberships,
-      ]),
-      projectSpaces,
-    }),
-  ).toMatchObject({
-    pushed: 1,
-    failed: 0,
-    pending: 1,
-    quarantined: [],
-    readOnlyDeferred: [{ spaceId: readOnlySpace, rows: 1 }],
-  })
-  expect(
-    local
-      .query<{ attempts: number; last_error: string; quarantined_at: string | null }, []>(
-        'SELECT attempts,last_error,quarantined_at FROM outbox WHERE id=1',
-      )
-      .get(),
-  ).toEqual({
-    attempts: 1,
-    last_error: expect.stringContaining(`record space ${readOnlySpace} membership is read-only`),
-    quarantined_at: null,
-  })
-
-  expect(
-    await syncRecord({
-      ...options(local, remote, [
-        {
-          spaceId: readOnlySpace,
-          slug: 'read-only-space',
-          permission: 'write',
-        },
-        ...baseMemberships,
-      ]),
-      projectSpaces,
-    }),
-  ).toMatchObject({ pushed: 1, failed: 0, pending: 0, quarantined: [] })
   local.close()
 })
