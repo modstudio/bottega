@@ -432,7 +432,11 @@ describe('record API', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        address: { kind: 'project', subject: 'alpha' },
+        address: {
+          kind: 'project',
+          subject: 'alpha',
+          projectId: '01990000-0000-7000-8000-000000000001',
+        },
         rows: [{ slug: 'AGENTS.md', title: 'AGENTS.md', body: 'Rule.' }],
         expectedRevisions: {},
         reason: 'test',
@@ -442,7 +446,13 @@ describe('record API', () => {
     })
     expect(response.status).toBe(200)
     expect(calls).toEqual([
-      expect.objectContaining({ address: { kind: 'project', subject: 'alpha' } }),
+      expect.objectContaining({
+        address: {
+          kind: 'project',
+          subject: 'alpha',
+          projectId: '01990000-0000-7000-8000-000000000001',
+        },
+      }),
     ])
     expect(calls[0]).not.toHaveProperty('bootstrap')
   })
@@ -919,8 +929,8 @@ describe('record API presentation routes', () => {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
+        id,
         name: 'beta',
-        previousName: 'alpha',
         path: '/w/beta',
         stack: null,
         canon: true,
@@ -934,17 +944,17 @@ describe('record API presentation routes', () => {
     })
   })
 
-  test('retires a project by name', async () => {
+  test('retires a project by id', async () => {
     const calls: string[] = []
     const app = appWith(identity, {
-      retireProject: async (input: { name: string }) => {
-        calls.push(input.name)
-        return { id, name: input.name }
+      retireProject: async (input: { id: string }) => {
+        calls.push(input.id)
+        return { name: 'probe' }
       },
     })
-    const response = await app.request('/v1/projects/probe/retire', { method: 'POST' })
+    const response = await app.request(`/v1/projects/${id}/retire`, { method: 'POST' })
     expect(response.status).toBe(200)
-    expect(calls).toEqual(['probe'])
+    expect(calls).toEqual([id])
   })
 
   test('CORS allows configured origins with credentials and omits headers otherwise', async () => {

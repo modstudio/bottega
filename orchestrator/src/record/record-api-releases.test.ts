@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { identity } from '../../test/fixtures/record-api.ts'
 import { recordApi } from './record-api.ts'
-import { RecordReleaseSpaceRequiredError } from './record-release-reading.ts'
 
 function appWith(session: typeof identity | null, overrides: Record<string, unknown> = {}) {
   const deps = {
@@ -42,81 +41,38 @@ const second = {
 }
 
 describe('record release API', () => {
+  const projectId = '01990000-0000-7000-8000-000000001214'
   test('returns every release field newest first and pages with the release cursor', async () => {
-    const calls: Array<{ project: string; before: { at: string; id: string } | null }> = []
+    const calls: Array<{ projectId: string; before: { at: string; id: string } | null }> = []
     const app = appWith(identity, {
       readReleases: async (input: {
-        project: string
+        projectId: string
         before: { at: string; id: string } | null
       }) => {
-        calls.push({ project: input.project, before: input.before })
+        calls.push({ projectId: input.projectId, before: input.before })
         return input.before ? [second] : [first, second]
       },
     })
-    const page = await app.request('/v1/releases?project=project-one&limit=1')
+    const page = await app.request(`/v1/releases?projectId=${projectId}&limit=1`)
     expect(page.status).toBe(200)
     const body = (await page.json()) as { items: unknown[]; nextCursor: string }
     expect(body.items).toEqual([first])
     expect(body.nextCursor).toBeString()
     const next = await app.request(
-      `/v1/releases?project=project-one&limit=1&before=${encodeURIComponent(body.nextCursor)}`,
+      `/v1/releases?projectId=${projectId}&limit=1&before=${encodeURIComponent(body.nextCursor)}`,
     )
     expect(await next.json()).toEqual({ items: [second], nextCursor: null })
     expect(calls).toEqual([
-      { project: 'project-one', before: null },
-      { project: 'project-one', before: { at: first.startedAt, id: first.id } },
+      { projectId, before: null },
+      { projectId, before: { at: first.startedAt, id: first.id } },
     ])
   })
 
   test('returns not found when the tenant-bound reader cannot see the project', async () => {
     const app = appWith(identity, { readReleases: async () => null })
-    const response = await app.request('/v1/releases?project=unknown')
+    const response = await app.request(`/v1/releases?projectId=${projectId}`)
     expect(response.status).toBe(404)
     expect(await response.json()).toEqual({ error: 'project not found' })
-  })
-
-  test('refuses an ambiguous visible project and returns no releases', async () => {
-    let latestRead = false
-    const app = appWith(
-      {
-        ...identity,
-        memberships: [
-          identity.memberships[0]!,
-          {
-            space_id: 'space-b',
-            name: 'Space B',
-            slug: 'space-b',
-            role: 'member',
-            permission: 'read',
-          },
-        ],
-      },
-      {
-        readReleases: async () => {
-          throw new RecordReleaseSpaceRequiredError(
-            'project exists in more than one record space; select a space',
-          )
-        },
-        readLatestReleases: async () => {
-          latestRead = true
-          throw new RecordReleaseSpaceRequiredError(
-            'project exists in more than one record space; select a space',
-          )
-        },
-      },
-    )
-    for (const path of [
-      '/v1/releases?project=project-one',
-      '/v1/releases/latest?project=project-one',
-    ]) {
-      const response = await app.request(path)
-      expect(response.status).toBe(409)
-      expect(await response.json()).toEqual({
-        error: 'project exists in more than one record space; select a space',
-        remedy: 'send x-record-space to select the record space',
-      })
-    }
-    expect(latestRead).toBe(true)
   })
 
   test('a requested space resolves releases within that space', async () => {
@@ -142,7 +98,7 @@ describe('record release API', () => {
         },
       },
     )
-    const response = await app.request('/v1/releases?project=project-one', {
+    const response = await app.request(`/v1/releases?projectId=${projectId}`, {
       headers: { 'x-record-space': 'space-b' },
     })
     expect(response.status).toBe(200)
@@ -153,10 +109,10 @@ describe('record release API', () => {
   test('returns the latest release reading and refuses a missing session', async () => {
     const latest = [{ rung: 'production', lastGood: first, latestAttempt: null }]
     const app = appWith(identity, { readLatestReleases: async () => latest })
-    expect(await (await app.request('/v1/releases/latest?project=project-one')).json()).toEqual({
+    expect(await (await app.request(`/v1/releases/latest?projectId=${projectId}`)).json()).toEqual({
       items: latest,
     })
-    const refused = await appWith(null).request('/v1/releases?project=project-one')
+    const refused = await appWith(null).request(`/v1/releases?projectId=${projectId}`)
     expect(refused.status).toBe(401)
     expect(await refused.json()).toMatchObject({ error: 'record authentication required' })
   })

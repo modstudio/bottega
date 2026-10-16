@@ -37,7 +37,9 @@ export async function proveProjectSpaceRecordSync(input: {
   machineId: string
   userId: string
   firstSpaceId: string
+  firstProjectId: string
   secondSpaceId: string
+  secondProjectId: string
   asSpace: (user: string, password: string, spaceId: string, statement: string) => PsqlResult
 }): Promise<string[]> {
   const local = new Database(':memory:')
@@ -49,6 +51,7 @@ export async function proveProjectSpaceRecordSync(input: {
       id: ids[index],
       spaceId: input.firstSpaceId,
       projectName,
+      projectId: [input.firstProjectId, input.secondProjectId][index],
       machineId: input.machineId,
       localId: 150 + index,
       startedAt: '2026-09-17T01:00:00.000Z',
@@ -105,6 +108,7 @@ export async function proveScoreRecordSync(input: {
   spaceId: string
   otherSpaceId: string
   projectName: string
+  projectId: string
   projectSpace: string
   asSpace: (user: string, password: string, spaceId: string, statement: string) => PsqlResult
 }): Promise<{ actorRead: PsqlResult; otherSpaceRead: PsqlResult; rescoredRead: PsqlResult }> {
@@ -116,6 +120,7 @@ export async function proveScoreRecordSync(input: {
     id: recordId,
     spaceId: input.spaceId,
     projectName: input.projectName,
+    projectId: input.projectId,
     machineId: input.machineId,
     localId: 99,
     startedAt: '2026-09-15T01:00:00.000Z',
@@ -152,6 +157,7 @@ export async function proveScoreRecordSync(input: {
     id: recordId,
     spaceId: input.spaceId,
     projectName: input.projectName,
+    projectId: input.projectId,
     machineId: input.machineId,
     localId: 99,
     delivery: 'full',

@@ -79,11 +79,14 @@ export async function recordPublicDocDesignateCommand(
   projectName: string,
   presentation: Presentation,
 ): Promise<void> {
+  const project = projectByName(projectName)
+  if (!project) throw new Error(`no project "${projectName}"`)
   const result = await designatePublicDocProject({
     actorUrl: recordUrl(),
     ownerUrl: recordOwnerUrl(),
     spaceSlug,
     projectName,
+    projectId: project.recordId,
   })
   presentation.log(
     result.changed
@@ -122,11 +125,14 @@ export async function recordPublicDocClearCommand(
   projectName: string,
   presentation: Presentation,
 ): Promise<void> {
+  const project = projectByName(projectName)
+  if (!project) throw new Error(`no project "${projectName}"`)
   const result = await clearPublicDocProject({
     actorUrl: recordUrl(),
     ownerUrl: recordOwnerUrl(),
     spaceSlug,
     projectName,
+    projectId: project.recordId,
   })
   presentation.log(`cleared ${spaceSlug}\t${projectName}\t${result.spaceId}\t${result.projectId}`)
 }

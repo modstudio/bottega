@@ -75,7 +75,7 @@ export async function loadHostedMeasureRows(
       SELECT t.id AS task_id, e.task_key, t.project, p.id AS project_id, e.at, e.to_status
       FROM hub_task_status_event e
       JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_status_event', 'e')}
-      LEFT JOIN project p ON p.space_id=t.space_id AND p.name=t.project AND p.retired_at IS NULL
+      LEFT JOIN project p ON p.id=t.project_id AND p.retired_at IS NULL
       WHERE e.deleted_at IS NULL AND t.deleted_at IS NULL
         AND e.at >= ${window.from}::timestamptz AND e.at < ${window.to}::timestamptz
         AND e.to_status='done'`,
@@ -87,7 +87,7 @@ export async function loadHostedMeasureRows(
         i.vendor_tokens, i.vendor_cost_usd
       FROM hub_interval i
       LEFT JOIN hub_task t ON t.space_id=i.space_id AND t.key=i.task_key AND t.deleted_at IS NULL
-      LEFT JOIN project p ON p.space_id=i.space_id AND p.name=COALESCE(t.project,i.project_name) AND p.retired_at IS NULL
+      LEFT JOIN project p ON p.id=COALESCE(t.project_id,i.project_id) AND p.retired_at IS NULL
       WHERE i.start_at < ${window.to}::timestamptz AND i.end_at >= ${window.from}::timestamptz`,
     )
     const earlier = shippedIds.length
@@ -97,7 +97,7 @@ export async function loadHostedMeasureRows(
             i.vendor_tokens, i.vendor_cost_usd
           FROM hub_interval i
           JOIN hub_task t ON t.space_id=i.space_id AND t.key=i.task_key AND t.deleted_at IS NULL
-          LEFT JOIN project p ON p.space_id=i.space_id AND p.name=COALESCE(t.project,i.project_name) AND p.retired_at IS NULL
+          LEFT JOIN project p ON p.id=COALESCE(t.project_id,i.project_id) AND p.retired_at IS NULL
           WHERE t.id IN ${tx(shippedIds)} AND i.start_at < ${window.from}::timestamptz`,
         )
       : []

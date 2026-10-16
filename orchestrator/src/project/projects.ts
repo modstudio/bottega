@@ -320,7 +320,6 @@ export async function writeHostedProject(
   p: {
     recordId?: string | null
     name: string
-    previousName?: string
     path: string
     stack?: string | null
     canon?: boolean
@@ -456,7 +455,7 @@ export async function removeWrittenProject(name: string): Promise<boolean> {
   if (!project) return false
   const refusal = projectRemovalRefusal(name, projectReferenceCounts(project.id))
   if (refusal) throw new Error(refusal.join('\n'))
-  await retireProjectInHostedRecord(name, project.settings)
+  await retireProjectInHostedRecord(project, project.settings)
   return removeProject(name)
 }
 
@@ -472,7 +471,7 @@ export function retireProject(name: string): 'retired' | 'already-retired' {
 export async function retireWrittenProject(name: string): Promise<'retired' | 'already-retired'> {
   const project = projectRowByName(name)
   if (!project) throw new Error(`no project "${name}"`)
-  await retireProjectInHostedRecord(name, project.settings)
+  await retireProjectInHostedRecord(project, project.settings)
   return retireProject(name)
 }
 
@@ -489,6 +488,7 @@ export async function unretireWrittenProject(name: string): Promise<boolean> {
   const project = projectRowByName(name)
   if (!project) throw new Error(`no project "${name}"`)
   await writeHostedProject({
+    recordId: project.recordId,
     name: project.name,
     path: project.path,
     stack: project.stack,

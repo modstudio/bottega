@@ -170,7 +170,7 @@ export type RecordDocImportInput = {
 }
 
 export type RecordCanonImportInput = {
-  address: { kind: 'user' } | { kind: 'project'; subject: string }
+  address: { kind: 'user' } | { kind: 'project'; subject: string; projectId: string }
   rows: Array<{ slug: string; title: string; body: string }>
   expectedRevisions: Record<string, string>
   reason: string

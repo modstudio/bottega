@@ -189,6 +189,7 @@ export const hubModuleSpecs = [
       '../../shared/brand.ts',
       'commander',
       './db.ts',
+      './projects.ts',
       './report-client.ts',
       './report-delivery-cli.ts',
       './report-push.ts',

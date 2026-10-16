@@ -1,5 +1,8 @@
 // concern: record-project-identity
 /** Resolves the hosted project identity while leaving route-specific retirement policy to callers. */
+import { PLATFORM_SLUG } from './brand.ts'
+
+export const MISSING_PROJECT_ID_REMEDY = `run \`${PLATFORM_SLUG} machine migrate\` to fill local project UUIDs`
 
 export type RecordProjectFacts = {
   id: string

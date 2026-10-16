@@ -36,6 +36,7 @@ function renderSettings(recipients = [member]) {
       {
         id: '01990000-0000-7000-8000-000000000768',
         scope_kind: 'project' as const,
+        project_id: '01990000-0000-7000-8000-000000000767',
         project_name: 'workshop',
         members: [],
         projects: [],

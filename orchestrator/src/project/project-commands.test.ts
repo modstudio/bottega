@@ -175,11 +175,11 @@ test('rename writes hosted once and updates the local name and release ledger', 
        VALUES (?,'once-src','production','candidate-sha',0,'operator','2026-10-12T00:00:00.000Z')`,
     )
     .run(newRecordId())
-  const hosted: Array<{ name: string; previousName?: string }> = []
+  const hosted: Array<{ name: string }> = []
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     upsertProject: async (input) => {
-      hosted.push({ name: input.name, previousName: input.previousName })
+      hosted.push({ name: input.name })
       return { id: input.id!, name: input.name }
     },
     renameSubject: async () => {
@@ -189,7 +189,7 @@ test('rename writes hosted once and updates the local name and release ledger', 
   expect(await runProject(['project', 'set', 'once-src'], { name: 'once-dst' })).toBe(
     'updated once-dst',
   )
-  expect(hosted).toEqual([{ name: 'once-dst', previousName: 'once-src' }])
+  expect(hosted).toEqual([{ name: 'once-dst' }])
   expect(readRecordInstallBinding().bound).toBe(true)
   expect(projectByName('once-src')).toBeNull()
   expect(projectByName('once-dst')?.path).toBe('/w/once-src')

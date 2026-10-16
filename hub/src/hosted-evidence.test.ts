@@ -62,6 +62,7 @@ const spaceId = '01990000-0000-7000-8000-000000001400'
 const userId = '01990000-0000-7000-8000-000000001401'
 const dayId = '01990000-0000-7000-8000-000000001402'
 const intervalId = '01990000-0000-7000-8000-000000001403'
+const projectId = '01990000-0000-7000-8000-000000001405'
 const DAY_TOKENS = 8_338_668_790
 const INTERVAL_TOKENS = 2_207_932_949
 
@@ -120,6 +121,8 @@ test('hosted evidence accepts token totals above the 32-bit range', async () => 
     RESET ROLE;
     INSERT INTO space (id,name,slug,created_at)
     VALUES ('${spaceId}','Token width','token-width',now());
+    INSERT INTO project (id,space_id,name,created_at)
+    VALUES ('${projectId}','${spaceId}','workshop',now());
     INSERT INTO "user" (id,email,name,created_at)
     VALUES ('${userId}','tokens@example.test','Token reader',now());
     INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
@@ -143,6 +146,7 @@ test('hosted evidence accepts token totals above the 32-bit range', async () => 
       id: intervalId,
       task_key: 'DEV-1240',
       project_name: 'workshop',
+      projectId,
       source: 'claude',
       agent: null,
       job: null,

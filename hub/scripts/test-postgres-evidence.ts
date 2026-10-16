@@ -65,6 +65,7 @@ const SPACE_A = '01990000-0000-7000-8000-00000000065a'
 const SPACE_B = '01990000-0000-7000-8000-00000000065b'
 const SPACE_C = '01990000-0000-7000-8000-00000000066b'
 const PROJECT_A = '01990000-0000-7000-8000-00000000065c'
+const PROJECT_A_OTHER = '01990000-0000-7000-8000-00000000068c'
 const PROJECT_B = '01990000-0000-7000-8000-00000000066c'
 const PROJECT_MOVE = '01990000-0000-7000-8000-00000000067c'
 const MACHINE = '01990000-0000-7000-8000-00000000067d'
@@ -72,6 +73,7 @@ const interval: IntervalEvidence = {
   id: '01990000-0000-7000-8000-000000000690',
   task_key: 'DEV-655',
   project_name: PLATFORM_SLUG,
+  projectId: PROJECT_A,
   source: 'orch',
   agent: 'codex',
   job: 'implementation',
@@ -160,6 +162,7 @@ try {
     (${SPACE_C}::uuid,'Evidence C','evidence-c',now())`
   await admin`INSERT INTO project(id,space_id,name,key_prefixes,created_at)
     VALUES (${PROJECT_A}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},ARRAY['DEV'],now()),
+      (${PROJECT_A_OTHER}::uuid,${SPACE_A}::uuid,'other-project',ARRAY['OTHER'],now()),
       (${PROJECT_B}::uuid,${SPACE_B}::uuid,${PLATFORM_SLUG},ARRAY['DEV'],now()),
       (${PROJECT_MOVE}::uuid,${SPACE_B}::uuid,'move-proof',ARRAY['MOVE'],now())`
   await admin`INSERT INTO membership(id,space_id,user_id,role,permission,created_at)
@@ -406,6 +409,7 @@ try {
       key: 'DEV-700',
       project: PLATFORM_SLUG,
       project_name: PLATFORM_SLUG,
+      projectId: PROJECT_A,
       title: 'Mirror fixture',
       status: 'open',
       status_category: 'open',
@@ -430,6 +434,7 @@ try {
     ])
     const created = await createHostedTask(actorUrl, identity, {
       project: PLATFORM_SLUG,
+      projectId: PROJECT_A,
       title: 'Allocated fixture',
     })
     if (created.key !== 'DEV-701') throw new Error(`task allocation returned ${created.key}`)
@@ -462,6 +467,7 @@ try {
             task_key: created.key,
             task_id: created.id,
             project_name: created.project_name,
+            projectId: PROJECT_A,
             at: closedAt,
             from_status: created.status,
             to_status: 'done',
@@ -620,6 +626,7 @@ try {
           number: 800,
           project: PLATFORM_SLUG,
           project_name: PLATFORM_SLUG,
+          projectId: PROJECT_A,
           text: 'Existing note',
           area: null,
           anchors: '[]',
@@ -633,10 +640,11 @@ try {
           deleted_at: null,
         },
       ],
-      raiseProjects: [{ project: PLATFORM_SLUG, next: 2 }],
+      raiseProjects: [{ project: PLATFORM_SLUG, projectId: PROJECT_A, next: 2 }],
     })
     const allocatedNote = await createHostedNote(actorUrl, identity, {
       project: PLATFORM_SLUG,
+      projectId: PROJECT_A,
       text: 'Allocated note',
       anchor: JSON.stringify({
         cwd: '/tmp',
@@ -651,6 +659,26 @@ try {
     if (!allocatedNote) throw new Error('allocated note was missing after creation')
     if (allocatedNote.number !== 801)
       throw new Error(`note allocation returned ${allocatedNote.number}`)
+    const allocatedBeforeMismatch = await getHostedNote(actorUrl, identity, allocatedNote.id)
+    let crossProjectSameAsRefused = false
+    try {
+      await createHostedNote(actorUrl, identity, {
+        project: 'other-project',
+        projectId: PROJECT_A_OTHER,
+        text: 'Must not change the original note',
+        anchor: JSON.stringify({ project: 'other-project' }),
+        sameAs: allocatedNote.id,
+      })
+    } catch (error) {
+      crossProjectSameAsRefused = String((error as Error).message).includes(
+        'belongs to another project',
+      )
+    }
+    if (!crossProjectSameAsRefused)
+      throw new Error('sameAs accepted a note owned by another project id')
+    const allocatedAfterMismatch = await getHostedNote(actorUrl, identity, allocatedNote.id)
+    if (allocatedAfterMismatch?.sightings !== allocatedBeforeMismatch?.sightings)
+      throw new Error('a refused cross-project sameAs changed the note')
     await admin`CREATE OR REPLACE FUNCTION fail_hub_task_insert() RETURNS trigger LANGUAGE plpgsql AS
       'BEGIN RAISE EXCEPTION ''forced task insert failure''; END'`
     await admin`CREATE TRIGGER fail_hub_task_insert BEFORE INSERT ON hub_task
@@ -678,6 +706,7 @@ try {
           number: 802,
           project: PLATFORM_SLUG,
           project_name: PLATFORM_SLUG,
+          projectId: PROJECT_A,
           text: 'Re-sighted note',
           area: null,
           anchors: '[]',
@@ -1076,8 +1105,52 @@ try {
     )
       throw new Error('updating a subscription to member-only recipients kept an email row')
     await unsubscribeHostedReportSubscription(actorUrl, identity, emailSubscription.id)
+    await admin`UPDATE project SET name='renamed-project' WHERE id=${PROJECT_A}::uuid`
+    await admin`UPDATE project SET name=${PLATFORM_SLUG} WHERE id=${PROJECT_A_OTHER}::uuid`
+    const renamedProjectTask = await createHostedTask(actorUrl, identity, {
+      project: PLATFORM_SLUG,
+      projectId: PROJECT_A,
+      title: 'Identity survives rename',
+    })
+    const renamedTaskIdentity = await admin`SELECT project_id::text project_id FROM hub_task
+      WHERE id=${renamedProjectTask.id}::uuid`
+    if (renamedTaskIdentity[0]?.project_id !== PROJECT_A)
+      throw new Error('task creation resolved the stale name instead of the sent id')
+    const renamedProjectSubscription = await createHostedReportSubscription(actorUrl, identity, {
+      scope: { kind: 'project', project: PLATFORM_SLUG, projectId: PROJECT_A },
+      cadence: 'daily',
+      hour: 8,
+      zone: 'America/New_York',
+      recipientUserIds: [USER],
+    })
+    if (
+      renamedProjectSubscription.project_id !== PROJECT_A ||
+      renamedProjectSubscription.project_name !== 'renamed-project'
+    )
+      throw new Error('project report creation resolved the stale name instead of the sent id')
+    const renamedProjectUpdate = await updateHostedReportSubscription(
+      actorUrl,
+      identity,
+      renamedProjectSubscription.id,
+      {
+        scope: { kind: 'project', project: PLATFORM_SLUG, projectId: PROJECT_A },
+        cadence: 'daily',
+        hour: 9,
+        zone: 'America/New_York',
+        recipientUserIds: [USER],
+        enabled: true,
+      },
+    )
+    if (
+      renamedProjectUpdate.project_id !== PROJECT_A ||
+      renamedProjectUpdate.project_name !== 'renamed-project'
+    )
+      throw new Error('project report update resolved the stale name instead of the sent id')
+    await unsubscribeHostedReportSubscription(actorUrl, identity, renamedProjectSubscription.id)
+    await admin`UPDATE project SET name='other-project' WHERE id=${PROJECT_A_OTHER}::uuid`
+    await admin`UPDATE project SET name=${PLATFORM_SLUG} WHERE id=${PROJECT_A}::uuid`
     const subscription = await createHostedReportSubscription(actorUrl, identity, {
-      scope: { kind: 'project', project: PLATFORM_SLUG },
+      scope: { kind: 'project', project: PLATFORM_SLUG, projectId: PROJECT_A },
       cadence: 'weekly',
       hour: 8,
       weekday: 'monday',
@@ -1104,7 +1177,7 @@ try {
       (${newRecordId()}::uuid,${SPACE_A}::uuid,${historicalSend[0]!.id}::uuid,
        ${SECOND_USER}::uuid,'Hub Second','hub-second@example.test',now())`
     await updateHostedReportSubscription(actorUrl, identity, subscription.id, {
-      scope: { kind: 'project', project: PLATFORM_SLUG },
+      scope: { kind: 'project', project: PLATFORM_SLUG, projectId: PROJECT_A },
       cadence: 'weekly',
       hour: 8,
       weekday: 'monday',
@@ -1241,6 +1314,7 @@ try {
         id: '01990000-0000-7000-8000-000000000692',
         task_key: 'DEV-758',
         project_name: PLATFORM_SLUG,
+        projectId: PROJECT_A,
         source: 'orch',
         agent: 'grok',
         job: 'implement',
@@ -1259,6 +1333,7 @@ try {
         id: '01990000-0000-7000-8000-000000000693',
         task_key: 'DEV-758',
         project_name: PLATFORM_SLUG,
+        projectId: PROJECT_A,
         source: 'orch',
         agent: 'codex',
         job: 'implement',
@@ -1277,6 +1352,7 @@ try {
         id: '01990000-0000-7000-8000-000000000694',
         task_key: 'DEV-758',
         project_name: PLATFORM_SLUG,
+        projectId: PROJECT_A,
         source: 'claude',
         agent: null,
         job: null,
@@ -1295,6 +1371,7 @@ try {
         id: '01990000-0000-7000-8000-000000000695',
         task_key: null,
         project_name: PLATFORM_SLUG,
+        projectId: PROJECT_A,
         source: 'claude',
         agent: null,
         job: null,
@@ -1321,6 +1398,7 @@ try {
           key: 'DEV-758',
           project: PLATFORM_SLUG,
           project_name: PLATFORM_SLUG,
+          projectId: PROJECT_A,
           title: 'Measures',
           status: 'done',
           status_category: 'done',

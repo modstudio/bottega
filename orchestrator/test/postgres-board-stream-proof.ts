@@ -17,9 +17,12 @@ async function waitFor(probe: () => boolean, milliseconds = 2_000): Promise<bool
 async function postVisibleNotice(input: {
   postNotice(body: Record<string, unknown>): Promise<Response>
   project: string
+  projectId: string
 }): Promise<string> {
   const response = await input.postNotice(
-    notice(newRecordId(), `project:${input.project}`, 'board-api-stream'),
+    notice(newRecordId(), `project:${input.project}`, 'board-api-stream', {
+      projectId: input.projectId,
+    }),
   )
   expect(response.status).toBe(200)
   return String(((await response.json()) as { revision: string }).revision)
@@ -37,6 +40,7 @@ export function registerBoardStreamProof(input: {
   streamUserHomeSpaceId: () => string
   postNotice(body: Record<string, unknown>): Promise<Response>
   project: string
+  projectId: string
   admin(statement: string): string
 }): void {
   test('board notification waits for commit and the production stream follows current membership', async () => {

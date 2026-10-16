@@ -7,19 +7,18 @@ import {
   type LatestRecordRelease,
   latestRecordReleases,
   type RecordRelease,
-  RecordReleaseSpaceRequiredError,
 } from './record-release-reading.ts'
 
 type ReleaseListInput = TenantPrincipal & {
   url: string
-  project: string
+  projectId: string
   limit: number
   before: RecordCursor | null
 }
 
 type ReleaseLatestInput = TenantPrincipal & {
   url: string
-  project: string
+  projectId: string
 }
 
 const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
@@ -59,25 +58,16 @@ async function tenant<T>(
   }
 }
 
-async function projectId(tx: SQL, project: string): Promise<string | null> {
-  const rows = await tx`SELECT id FROM project WHERE name=${project} ORDER BY id LIMIT 2`
-  if (rows.length > 1)
-    throw new RecordReleaseSpaceRequiredError(
-      'project exists in more than one record space; select a space',
-    )
-  return rows[0] ? String(rows[0].id) : null
-}
-
 export async function listRecordReleases(input: ReleaseListInput): Promise<RecordRelease[] | null> {
   return tenant(input, async (tx) => {
-    const id = await projectId(tx, input.project)
-    if (!id) return null
+    const project = await tx`SELECT id FROM project WHERE id=${input.projectId}::uuid`
+    if (!project[0]) return null
     const rows = await tx`
       SELECT id, rung, candidate_commit, live_commit_before, live_commit_after, rollback,
         rollback_reason, actor, session_id, started_at, finished_at, exit_code,
         live_matches_candidate, warning
       FROM release
-      WHERE project_id=${id}::uuid
+      WHERE project_id=${input.projectId}::uuid
         AND (${input.before?.at ?? null}::timestamptz IS NULL OR (started_at, id) < (${input.before?.at ?? null}::timestamptz, ${input.before?.id ?? null}::uuid))
       ORDER BY started_at DESC, id DESC LIMIT ${input.limit + 1}
     `
@@ -89,15 +79,15 @@ export async function readLatestRecordReleases(
   input: ReleaseLatestInput,
 ): Promise<LatestRecordRelease[] | null> {
   return tenant(input, async (tx) => {
-    const id = await projectId(tx, input.project)
-    if (!id) return null
+    const project = await tx`SELECT id FROM project WHERE id=${input.projectId}::uuid`
+    if (!project[0]) return null
     const rows = await tx`
       WITH latest AS (
-        SELECT DISTINCT ON (rung) * FROM release WHERE project_id=${id}::uuid
+        SELECT DISTINCT ON (rung) * FROM release WHERE project_id=${input.projectId}::uuid
         ORDER BY rung, started_at DESC, id DESC
       ), successful AS (
         SELECT DISTINCT ON (rung) * FROM release
-        WHERE project_id=${id}::uuid AND finished_at IS NOT NULL AND exit_code=0
+        WHERE project_id=${input.projectId}::uuid AND finished_at IS NOT NULL AND exit_code=0
         ORDER BY rung, started_at DESC, id DESC
       )
       SELECT * FROM latest UNION SELECT * FROM successful

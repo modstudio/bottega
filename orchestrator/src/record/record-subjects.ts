@@ -4,6 +4,7 @@ import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { MISSING_PROJECT_ID_REMEDY } from '../../../shared/record-project-identity.ts'
 import {
   SubjectDefinitionSchema,
   type SubjectOutput,
@@ -64,6 +65,11 @@ async function projectId(
   project: string,
   requestedId?: string | null,
 ): Promise<string> {
+  if (!requestedId)
+    throw new RecordSubjectError(
+      `project-scoped subject write is missing projectId; ${MISSING_PROJECT_ID_REMEDY}`,
+      400,
+    )
   const resolved = await resolveRecordProjectIdentity(tx, {
     projectId: requestedId,
     projectName: project,

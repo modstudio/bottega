@@ -169,6 +169,7 @@ type PlannedBatchRow =
 type PreparedOutboxRow = {
   row: OutboxRow
   parsed: Payload | null
+  payload: string
   payloadBytes: number
 }
 
@@ -205,7 +206,7 @@ function planBatchRow(
     request: {
       id: row.id,
       kind: row.kind,
-      payload: row.payload,
+      payload: candidate.payload,
       spaceHint: membership?.spaceId ?? declared,
     },
   }
@@ -223,12 +224,71 @@ function preparePendingRows(local: Database): Set<PreparedOutboxRow> {
       const [rightPhase, rightId] = outboxOrder(right.kind, right.id)
       return leftPhase - rightPhase || leftId - rightId
     })
-    .map((row) => ({
-      row,
-      parsed: parsedPayload(row.payload),
-      payloadBytes: utf8Bytes(row.payload),
-    }))
+    .map((row) => {
+      const parsed = parsedPayload(row.payload)
+      const payload = payloadWithProjectIdentity(local, row, parsed)
+      return {
+        row,
+        parsed: parsedPayload(payload),
+        payload,
+        payloadBytes: utf8Bytes(payload),
+      }
+    })
   return new Set(rows)
+}
+
+function sourceProjectRecordId(local: Database, row: OutboxRow): string | null | undefined {
+  const queries: Partial<Record<string, string>> = {
+    run: `SELECT project.record_id FROM run
+      LEFT JOIN project ON project.id=run.project_id WHERE run.record_id=?`,
+    score: `SELECT project.record_id FROM run
+      LEFT JOIN project ON project.id=run.project_id WHERE run.record_id=?`,
+    question: `SELECT project.record_id FROM question
+      LEFT JOIN run ON run.id=question.run_id
+      LEFT JOIN project ON project.id=run.project_id WHERE question.record_id=?`,
+    review: `SELECT project.record_id FROM review
+      LEFT JOIN project ON project.id=review.project_id WHERE review.record_id=?`,
+    review_lens: `SELECT project.record_id FROM review_lens
+      JOIN review ON review.id=review_lens.review_id
+      LEFT JOIN project ON project.id=review.project_id WHERE review_lens.record_id=?`,
+    review_finding: `SELECT project.record_id FROM review_finding
+      JOIN review ON review.id=review_finding.review_id
+      LEFT JOIN project ON project.id=review.project_id WHERE review_finding.record_id=?`,
+    review_read: `SELECT project.record_id FROM review_read
+      LEFT JOIN project ON project.id=review_read.project_id WHERE review_read.record_id=?`,
+    landing: `SELECT project.record_id FROM landing
+      LEFT JOIN project ON project.id=landing.project_id WHERE landing.record_id=?`,
+    landing_override: `SELECT project.record_id FROM landing_override
+      LEFT JOIN project ON project.id=landing_override.project_id
+      WHERE landing_override.record_id=?`,
+    landing_review_carry: `SELECT project.record_id FROM landing_review_carry
+      LEFT JOIN project ON project.id=landing_review_carry.project_id
+      WHERE landing_review_carry.record_id=?`,
+    landing_triage_snapshot: `SELECT project.record_id FROM landing_triage_snapshot
+      LEFT JOIN project ON project.id=landing_triage_snapshot.project_id
+      WHERE landing_triage_snapshot.record_id=?`,
+  }
+  const query = queries[row.kind]
+  if (!query) return undefined
+  return (
+    local.query<{ record_id: string | null }, [string]>(query).get(row.row_id)?.record_id ?? null
+  )
+}
+
+function payloadWithProjectIdentity(
+  local: Database,
+  row: OutboxRow,
+  parsed: Payload | null,
+): string {
+  if (!parsed || Object.hasOwn(parsed, 'projectId') || !Object.hasOwn(parsed, 'projectName'))
+    return row.payload
+  const projectId = sourceProjectRecordId(local, row)
+  if (projectId === undefined) return row.payload
+  return JSON.stringify({
+    ...parsed,
+    projectId,
+    ...(projectId ? {} : { projectName: null }),
+  })
 }
 
 function quarantineOversizedRow(input: {
@@ -469,15 +529,22 @@ function applyBatchResults(input: {
       markOutboxRowSynced(input.local, input.localRows.get(row.id)!, input.now())
       pushed++
     } else if (result.status === 'quarantined') {
-      quarantineOutboxRow(input.local, row.id, row.payload, result.reason, input.now())
+      quarantineOutboxRow(
+        input.local,
+        row.id,
+        input.localRows.get(row.id)!.payload,
+        result.reason,
+        input.now(),
+      )
       failed++
     } else {
+      const source = input.localRows.get(row.id)!
       input.local
         .query(
           `UPDATE outbox SET attempts=attempts+1,last_error=? WHERE id=? AND payload=?
            AND synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL`,
         )
-        .run(result.reason, row.id, row.payload)
+        .run(result.reason, row.id, source.payload)
       input.readOnlyDeferred.set(
         result.spaceId,
         (input.readOnlyDeferred.get(result.spaceId) ?? 0) + 1,

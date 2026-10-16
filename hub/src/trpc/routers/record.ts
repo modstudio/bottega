@@ -147,7 +147,13 @@ const subscriptionCadenceInput = z
   .strict()
 const subscriptionScope = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('space') }).strict(),
-  z.object({ kind: z.literal('project'), project: z.string().min(1).max(64) }).strict(),
+  z
+    .object({
+      kind: z.literal('project'),
+      project: z.string().min(1).max(64),
+      projectId: uuid,
+    })
+    .strict(),
   z.object({ kind: z.literal('members'), userIds: z.array(uuid).min(1) }).strict(),
   z.object({ kind: z.literal('projects'), projectIds: z.array(uuid).min(1) }).strict(),
 ])
@@ -292,7 +298,7 @@ export const recordRouter = t.router({
     .input(z.object({ id: uuid }))
     .query(({ ctx, input }) => recordClient(ctx).review(input.id)),
   projectReleases: t.procedure
-    .input(z.object({ project: z.string().min(1), limit, cursor: z.string().optional() }))
+    .input(z.object({ projectId: uuid, limit, cursor: z.string().optional() }))
     .query(({ ctx, input }) => hostedProjectReleases(recordClient(ctx), input)),
   projects: t.procedure.query(({ ctx }) => recordClient(ctx).projects()),
   snapshots: t.procedure.query(({ ctx }) => recordClient(ctx).snapshots()),

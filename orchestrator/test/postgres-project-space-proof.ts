@@ -14,7 +14,9 @@ export function registerProjectSpaceProofs(input: {
   machineId: string
   userId: () => string
   firstSpaceId: string
+  firstProjectId: string
   secondSpaceId: string
+  secondProjectId: string
   otherRunId: string
   token: (user?: 'a' | 'b') => string
   setToken(token: string): void
@@ -52,7 +54,9 @@ export function registerProjectSpaceProofs(input: {
       machineId: SYNC_PROOF_MACHINE,
       userId: input.userId(),
       firstSpaceId: input.firstSpaceId,
+      firstProjectId: input.firstProjectId,
       secondSpaceId: input.secondSpaceId,
+      secondProjectId: input.secondProjectId,
       asSpace: input.asSpace,
     })
     expect(ids).toHaveLength(2)
@@ -89,6 +93,7 @@ export function registerProjectSpaceProofs(input: {
     },
     writeSpaceId: input.firstSpaceId,
     writeProjectName: 'alpha',
+    writeProjectId: input.firstProjectId,
     token: input.token,
     otherToken: () => input.token('b'),
     setToken: input.setToken,
@@ -367,10 +372,10 @@ export function registerProjectSpaceProofs(input: {
       )
       expect(inserted.code, inserted.stderr).toBe(0)
       await upsertRecordProject({
+        id: project,
         url: input.actorUrl,
         userId: input.userId(),
         spaceId: space,
-        previousName: 'rename-proof',
         name: 'renamed-proof',
         path: '/w/renamed-proof',
         stack: null,

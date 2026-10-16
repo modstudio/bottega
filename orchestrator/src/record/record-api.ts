@@ -124,7 +124,7 @@ type RecordApiDeps = RecordInvitationRouteDeps & {
   readReview(input: Tenant & { id: string }): Promise<Record<string, unknown> | null>
   readProjects(input: Tenant): Promise<RecordProject[]>
   upsertProject(input: Tenant & RecordProjectUpsertInput): Promise<{ id: string; name: string }>
-  retireProject(input: Tenant & { name: string }): Promise<{ name: string }>
+  retireProject(input: Tenant & { id: string }): Promise<{ name: string }>
   listDocs(input: Tenant & RecordDocListInput): Promise<RecordDoc[]>
   listPublicDocs(input: { url: string }): Promise<PublicRecordDocTreeItem[]>
   readPublicDoc(input: { url: string; id: string }): Promise<PublicRecordDoc | null>

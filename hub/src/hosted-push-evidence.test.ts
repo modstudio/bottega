@@ -22,6 +22,7 @@ import { rollUpDays } from './query.ts'
 const spaceId = '01990000-0000-7000-8000-000000008301'
 const userId = '01990000-0000-7000-8000-000000008302'
 const intervalId = '01990000-0000-7000-8000-000000008303'
+const projectId = '01990000-0000-7000-8000-000000008305'
 const dayId = '01990000-0000-7000-8000-000000008304'
 const secondMachineId = '01990000-0000-7000-8000-000000008320'
 const foreignUserId = '01990000-0000-7000-8000-000000008321'
@@ -33,6 +34,7 @@ const interval: PushedInterval = {
   id: intervalId,
   task_key: null,
   project_name: 'workshop',
+  projectId,
   source: 'orch',
   agent: null,
   job: null,
@@ -79,6 +81,8 @@ beforeAll(async () => {
   database = await createHostedRecordFixture({ spaceId, userId })
   await database.exec(`
     RESET ROLE;
+    INSERT INTO project (id,space_id,name,created_at)
+    VALUES ('${projectId}','${spaceId}','workshop',now());
     INSERT INTO "user" (id,email,name,created_at)
     VALUES ('${foreignUserId}','foreign@example.test','Foreign',now());
     INSERT INTO machine (id,user_id,name,registered_at,last_seen) VALUES

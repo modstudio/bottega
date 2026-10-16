@@ -13,6 +13,7 @@ type Input = {
   userId: string
   writeSpaceId: string
   writeProjectName: string
+  writeProjectId: string
   token(): string
   otherToken(): string
   setToken(token: string): void
@@ -21,6 +22,7 @@ type Input = {
 
 // A machine may hold one run per local id, so every proof row takes its own.
 let nextLocalId = 7000
+let defaultProjectId = ''
 
 const runPayload = (input: {
   id: string
@@ -35,6 +37,7 @@ const runPayload = (input: {
   )
   Object.assign(row, {
     ...input,
+    projectId: input.projectId ?? defaultProjectId,
     localId: nextLocalId++,
     startedAt: '2026-10-13T01:00:00.000Z',
     agent: 'codex',
@@ -65,6 +68,7 @@ const scorePayload = (input: {
   )
   Object.assign(row, {
     ...input,
+    projectId: defaultProjectId,
     localId: nextLocalId++,
     delivery: 'full',
     quality: 'right',
@@ -104,6 +108,7 @@ async function withoutDirectRecordCredentials<T>(operation: () => Promise<T>): P
 }
 
 export function registerHostedSyncAuthorizationProofs(input: Input): void {
+  defaultProjectId = input.writeProjectId
   beforeEach(() => {
     installRecordApiClient(null)
     input.setToken(input.token())
@@ -125,6 +130,7 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
         id,
         machineId: input.machineId,
         projectName: deniedProjectName,
+        projectId: deniedProjectId,
         spaceId: input.writeSpaceId,
       }),
     )
@@ -194,6 +200,7 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
         id,
         machineId: input.machineId,
         projectName: readProjectName,
+        projectId: readProjectId,
         spaceId: input.writeSpaceId,
       }),
     )
@@ -238,6 +245,7 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       id,
       machineId: input.machineId,
       projectName: input.writeProjectName,
+      projectId: input.writeProjectId,
       spaceId: newRecordId(),
       startedByUserId: otherUserId,
     })
@@ -603,6 +611,7 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       id: readId,
       spaceId: input.writeSpaceId,
       projectName: input.writeProjectName,
+      projectId: input.writeProjectId,
       machineId: input.machineId,
       localId: nextLocalId++,
       branch: 'DEV-1307-proof',
@@ -623,6 +632,7 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       id: snapshotId,
       spaceId: input.writeSpaceId,
       projectName: input.writeProjectName,
+      projectId: input.writeProjectId,
       machineId: input.machineId,
       localId: nextLocalId++,
       branch: 'DEV-1307-proof',

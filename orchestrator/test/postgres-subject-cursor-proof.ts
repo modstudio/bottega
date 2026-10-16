@@ -13,12 +13,13 @@ export async function proveSubjects(
   origin: string,
   headers: Record<string, string>,
   project: string,
+  projectId: string,
 ): Promise<void> {
   const add = async (name: string, definition: string) => {
     const response = await fetch(`${origin}/v1/subjects`, {
       method: 'PUT',
       headers,
-      body: JSON.stringify({ project, name, definition }),
+      body: JSON.stringify({ project, projectId, name, definition }),
     })
     expect(response.status).toBe(200)
     return (await response.json()) as ProofSubject
@@ -29,7 +30,7 @@ export async function proveSubjects(
   const third = await add('Third', 'The third subject.')
   const list = async (query = '') => {
     const response = await fetch(
-      `${origin}/v1/subjects?project=${encodeURIComponent(project)}${query}`,
+      `${origin}/v1/subjects?project=${encodeURIComponent(project)}&projectId=${projectId}${query}`,
       { headers },
     )
     expect(response.status).toBe(200)
@@ -44,7 +45,7 @@ export async function proveSubjects(
   const renamed = await fetch(`${origin}/v1/subjects/${second.id}/rename`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ project, name: 'Renamed' }),
+    body: JSON.stringify({ project, projectId, name: 'Renamed' }),
   })
   expect(renamed.status).toBe(200)
   expect((await renamed.json()) as ProofSubject).toMatchObject({ id: second.id, name: 'Renamed' })
@@ -52,7 +53,7 @@ export async function proveSubjects(
   const defined = await fetch(`${origin}/v1/subjects/${third.id}/define`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ project, definition: '\tThe updated third subject.\r' }),
+    body: JSON.stringify({ project, projectId, definition: '\tThe updated third subject.\r' }),
   })
   expect(defined.status).toBe(200)
   expect((await defined.json()) as ProofSubject).toMatchObject({
@@ -63,7 +64,7 @@ export async function proveSubjects(
   const multiline = await fetch(`${origin}/v1/subjects/${third.id}/define`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ project, definition: 'First line\nSecond line' }),
+    body: JSON.stringify({ project, projectId, definition: 'First line\nSecond line' }),
   })
   expect(multiline.status).toBe(400)
   expect(await multiline.json()).toEqual({
@@ -73,14 +74,14 @@ export async function proveSubjects(
   const duplicate = await fetch(`${origin}/v1/subjects`, {
     method: 'PUT',
     headers,
-    body: JSON.stringify({ project, name: 'First', definition: 'Duplicate live name.' }),
+    body: JSON.stringify({ project, projectId, name: 'First', definition: 'Duplicate live name.' }),
   })
   expect(duplicate.status).toBe(409)
 
   const reordered = await fetch(`${origin}/v1/subjects/reorder`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ project, ids: [third.id, first.id, second.id] }),
+    body: JSON.stringify({ project, projectId, ids: [third.id, first.id, second.id] }),
   })
   expect(reordered.status).toBe(200)
   expect(((await reordered.json()) as { items: ProofSubject[] }).items.map(({ id }) => id)).toEqual(
@@ -90,7 +91,7 @@ export async function proveSubjects(
   const retired = await fetch(`${origin}/v1/subjects/${first.id}/retire`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ project }),
+    body: JSON.stringify({ project, projectId }),
   })
   expect(retired.status).toBe(200)
   expect((await retired.json()) as ProofSubject).toMatchObject({ id: first.id, state: 'retired' })

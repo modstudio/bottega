@@ -75,9 +75,8 @@ export type RecordBoardWatchMethod = 'releaseBoardTaskClaims' | 'openBoardStream
 export type ProjectIdentityClient = {
   upsertProject(
     input: {
-      id?: string
+      id: string
       name: string
-      previousName?: string
       path: string
       stack: string | null
       canon: boolean
@@ -89,7 +88,7 @@ export type ProjectIdentityClient = {
   listProjects(
     destination?: RecordRequestDestination,
   ): Promise<Array<{ id: string; name: string; spaceId: string }>>
-  retireProject(name: string, destination?: RecordRequestDestination): Promise<{ name: string }>
+  retireProject(id: string, destination?: RecordRequestDestination): Promise<{ name: string }>
 }
 
 type RecordClientRequest = <T>(
@@ -120,8 +119,8 @@ export function projectIdentityClient(request: RecordClientRequest): ProjectIden
       }),
     listProjects: (destination) =>
       request<Array<{ id: string; name: string; spaceId: string }>>('/v1/projects', destination),
-    retireProject: (name, destination) =>
-      request<{ name: string }>(`/v1/projects/${encodeURIComponent(name)}/retire`, {
+    retireProject: (id, destination) =>
+      request<{ name: string }>(`/v1/projects/${encodeURIComponent(id)}/retire`, {
         method: 'POST',
         ...destination,
       }),

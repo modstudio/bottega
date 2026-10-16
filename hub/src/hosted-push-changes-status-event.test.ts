@@ -25,6 +25,7 @@ import type { HostedTaskIdentity } from './task-client.ts'
 const spaceId = '01990000-0000-7000-8000-000000001400'
 const taskId = '01990000-0000-7000-8000-000000001401'
 const userId = '01990000-0000-7000-8000-000000001399'
+const projectId = '01990000-0000-7000-8000-000000001498'
 const identity = { userId, spaceId }
 let database: PGlite
 
@@ -33,6 +34,7 @@ const taskRow = (): PushedTask => ({
   key: 'DEV-1',
   project: 'workshop',
   project_name: 'workshop',
+  projectId,
   title: 'First',
   status: 'active',
   status_category: 'active',
@@ -60,6 +62,7 @@ const eventRow = (
   task_key: 'DEV-1',
   task_id: taskId,
   project_name: 'workshop',
+  projectId,
   at,
   from_status: 'open',
   to_status: 'active',
@@ -105,10 +108,10 @@ function insertTaskAndEvent(
   const localTaskId = options.taskId ?? taskId
   conn
     .query(
-      `INSERT INTO task (record_id,key,project,title,status,status_category,source,first_seen,last_seen)
-       VALUES (?,'DEV-1','workshop','First','active','active','mcp',?,?)`,
+      `INSERT INTO task (record_id,key,project,project_record_id,title,status,status_category,source,first_seen,last_seen)
+       VALUES (?,'DEV-1','workshop',?,'First','active','active','mcp',?,?)`,
     )
-    .run(localTaskId, at, at)
+    .run(localTaskId, projectId, at, at)
   if (options.queueTask) queueHostedChange(conn, HOSTED_TASK_TABLE, localTaskId, 'upsert', at)
   conn
     .query(
@@ -211,6 +214,8 @@ async function pullStatusEvent(row: PushedStatusEvent) {
 
 beforeAll(async () => {
   database = await createHostedRecordFixture({ spaceId, userId })
+  await database.exec(`INSERT INTO project(id,space_id,name,created_at)
+    VALUES ('${projectId}','${spaceId}','workshop',now())`)
   await apply([{ table: 'hub_task', id: taskId, op: 'upsert', row: taskRow() }])
 })
 

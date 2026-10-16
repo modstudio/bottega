@@ -25,8 +25,10 @@ function senderStore(row: LocalOutboxRow): Database {
     error TEXT, attempts INTEGER NOT NULL, disposition TEXT NOT NULL, actor_session TEXT,
     at TEXT NOT NULL, reason TEXT
   ); CREATE TABLE record_install_binding (id INTEGER PRIMARY KEY, bound_at TEXT NOT NULL);
-  CREATE TABLE project (name TEXT PRIMARY KEY, settings TEXT NOT NULL);`)
-  database.query("INSERT INTO project VALUES (?,'{}')").run(PLATFORM_SLUG)
+  CREATE TABLE project (name TEXT PRIMARY KEY, record_id TEXT NOT NULL, settings TEXT NOT NULL);`)
+  database
+    .query("INSERT INTO project VALUES (?,'01990000-0000-7000-8000-000000000088','{}')")
+    .run(PLATFORM_SLUG)
   database
     .query(
       "INSERT INTO outbox (record_id,kind,row_id,payload,created_at) VALUES (?,'release',?,?,?)",
@@ -38,6 +40,11 @@ function senderStore(row: LocalOutboxRow): Database {
 test('release sender upserts the finished state by record id in the project space', async () => {
   const source = new Database(':memory:')
   applyMigrations(source)
+  source
+    .query(
+      `INSERT INTO project(record_id,name,path,canon,settings) VALUES (? ,?,'/tmp/${PLATFORM_SLUG}',1,'{}')`,
+    )
+    .run('01990000-0000-7000-8000-000000000088', PLATFORM_SLUG)
   const releaseId = startReleaseLedgerEntry(source, {
     project: PLATFORM_SLUG,
     rung: 'production',

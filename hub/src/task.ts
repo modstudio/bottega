@@ -390,6 +390,7 @@ export async function createTask(
   const hosted = await hostedCreateTask(
     {
       project: input.project,
+      projectId: project.record_id,
       title: input.title,
       status: category,
       parent,

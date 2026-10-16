@@ -239,7 +239,7 @@ export type HostedBoardReceiptInput = {
 export type HostedBoardTakeClaimInput = {
   id: string
   project: string
-  projectId?: string | null
+  projectId: string
   subject: string
   durationMs?: number
   runId?: string | null

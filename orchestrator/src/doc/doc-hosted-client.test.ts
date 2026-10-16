@@ -114,7 +114,11 @@ test('a project-addressed document client binds every call to the declared space
     revisions: [],
   })
   await client.importCanon({
-    address: { kind: 'project', subject: 'routed-docs' },
+    address: {
+      kind: 'project',
+      subject: 'routed-docs',
+      projectId: '01990000-0000-7000-8000-000000000001',
+    },
     rows: [],
     expectedRevisions: {},
     reason: 'test',

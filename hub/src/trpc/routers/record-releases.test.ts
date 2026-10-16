@@ -36,6 +36,7 @@ function caller(fetch: RecordFetch) {
 }
 
 describe('hosted project releases procedure', () => {
+  const projectId = '01990000-0000-7000-8000-000000001214'
   test('returns the record client history and latest readings together', async () => {
     const urls: string[] = []
     const api = caller(async (input) => {
@@ -48,14 +49,14 @@ describe('hosted project releases procedure', () => {
       }
       return Response.json({ items: [release], nextCursor: 'next-page' })
     })
-    expect(await api.projectReleases({ project: 'project-one', limit: 10 })).toEqual({
+    expect(await api.projectReleases({ projectId, limit: 10 })).toEqual({
       history: { items: [release], nextCursor: 'next-page' },
       latest: { items: [{ rung: 'production', lastGood: release, latestAttempt: null }] },
     })
     expect(urls.sort()).toEqual(
       [
-        'https://record.example.test/v1/releases?project=project-one&limit=10',
-        'https://record.example.test/v1/releases/latest?project=project-one',
+        `https://record.example.test/v1/releases?projectId=${projectId}&limit=10`,
+        `https://record.example.test/v1/releases/latest?projectId=${projectId}`,
       ].sort(),
     )
   })
@@ -70,7 +71,7 @@ describe('hosted project releases procedure', () => {
         { status: 401 },
       ),
     )
-    await expect(api.projectReleases({ project: 'project-one' })).rejects.toMatchObject({
+    await expect(api.projectReleases({ projectId })).rejects.toMatchObject({
       code: 'UNAUTHORIZED',
       message: `run \`${PLATFORM_SLUG} record login\``,
     })

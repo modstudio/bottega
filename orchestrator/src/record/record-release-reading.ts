@@ -23,8 +23,6 @@ export type LatestRecordRelease = {
   latestAttempt: RecordRelease | null
 }
 
-export class RecordReleaseSpaceRequiredError extends Error {}
-
 function newest(first: RecordRelease, second: RecordRelease): RecordRelease {
   const byStartedAt = first.startedAt.localeCompare(second.startedAt)
   if (byStartedAt !== 0) return byStartedAt > 0 ? first : second

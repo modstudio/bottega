@@ -207,7 +207,7 @@ type RecordReviewListInput = {
   cursor?: string
 }
 
-type RecordReleaseListInput = RecordReviewListInput & { project: string }
+type RecordReleaseListInput = RecordReviewListInput & { projectId: string }
 
 const jobSchema = z.object({
   name: z.string(),
@@ -645,14 +645,14 @@ export function createRecordClient(options: RecordClientOptions) {
       request(
         options,
         query('/v1/releases', {
-          project: input.project,
+          projectId: input.projectId,
           limit: input.limit,
           before: input.cursor,
         }),
         releaseListSchema,
       ),
-    latestReleases: (project: string) =>
-      request(options, query('/v1/releases/latest', { project }), latestReleaseListSchema),
+    latestReleases: (projectId: string) =>
+      request(options, query('/v1/releases/latest', { projectId }), latestReleaseListSchema),
     projects: () => request(options, '/v1/projects', z.array(projectSchema)),
     snapshots: () => request(options, '/v1/snapshots', snapshotsSchema),
     boardList: (input: { kind?: 'notice' | 'question'; open?: boolean; includeEnded?: boolean }) =>

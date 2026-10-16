@@ -423,13 +423,7 @@ async function persistSetProject(
   destinationSpaceId?: string,
 ): Promise<void> {
   const renamed = nextName === currentName ? null : assertProjectRename(currentName, nextName)
-  const recordId = await writeHostedProject(
-    {
-      ...candidate,
-      previousName: renamed ? currentName : undefined,
-    },
-    destinationSpaceId,
-  )
+  const recordId = await writeHostedProject(candidate, destinationSpaceId)
   const nextTrunk = typeof candidate.settings.trunk === 'string' ? candidate.settings.trunk : null
   persistLocalProjectSet(renamed, currentName, nextName, { ...candidate, recordId })
   if (previousTrunk === nextTrunk) return
