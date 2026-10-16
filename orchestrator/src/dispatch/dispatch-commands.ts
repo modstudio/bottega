@@ -191,8 +191,16 @@ export function reviewMemoryBranch(
   return explicitReviewBranch ?? callerBranch
 }
 
+// Memory is advisory: a review target this cannot name as a branch (a run with no branch, an
+// unknown id) falls back to the caller's branch, and the dispatch's own target resolution
+// reports anything actually wrong with the target.
 function explicitReviewBranch(reviewRef: string | undefined): string | null {
-  return reviewRef ? resolveBranchRef(reviewRef).branch : null
+  if (!reviewRef) return null
+  try {
+    return resolveBranchRef(reviewRef).branch
+  } catch {
+    return null
+  }
 }
 
 function taskBranchBypassWarningKey(
