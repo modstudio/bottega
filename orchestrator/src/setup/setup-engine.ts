@@ -213,6 +213,12 @@ export function deriveKeyPrefix(name: string, occupied: ReadonlySet<string>): st
 
 function machineNotices(machine: SetupFacts): SetupNotice[] {
   const notices: SetupNotice[] = []
+  if (!machine.recordApiUrl) {
+    notices.push({
+      message: 'hosted record address is not configured',
+      fix: `${PLATFORM_SLUG} record use <address>`,
+    })
+  }
   if (!machine.git.path) notices.push({ message: 'git is missing', fix: 'install git' })
   if (!machine.gh.path) notices.push({ message: 'gh is missing', fix: 'install gh' })
   else if (!machine.gh.loggedIn)

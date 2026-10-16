@@ -3,6 +3,7 @@
 // concern: hosted-report-delivery-cli
 
 import { pruneHostedChanges } from './change-pruning.ts'
+import { resolveHostedUrl } from './hosted-url.ts'
 import { runReportDeliveryPass } from './report-delivery.ts'
 import { hostedDeliveryRepository, sesReportMailClient } from './report-delivery-hosted.ts'
 
@@ -61,7 +62,7 @@ export async function runReportDeliveryCommand(
         repository: hostedDeliveryRepository(databaseUrl),
         mail: sesReportMailClient(environment),
         dryRun: input.dryRun,
-        hostedOrigin: environment.HUB_HOSTED_URL,
+        hostedOrigin: resolveHostedUrl(environment),
         print: console.log,
       }),
     print: console.log,

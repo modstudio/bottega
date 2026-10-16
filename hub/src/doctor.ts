@@ -1,4 +1,5 @@
 import { DB_PATH, db } from './db.ts'
+import { resolveHostedUrl } from './hosted-url.ts'
 import { formatProjectWriteModes } from './hosted-write-mode.ts'
 import { readInstallBinding } from './install-binding.ts'
 import { canonicalSchemaHash, expectedSchemaHash, schemaVersionLabel } from './migrations.ts'
@@ -15,7 +16,7 @@ export async function hubDoctorLines(): Promise<string[]> {
     `schema version ${schemaVersionLabel(db())}`,
     ...formatTaskIdentityDoctor(taskIdentityDoctor()),
     ...formatServiceRevisionDoctor(),
-    ...formatProjectWriteModes(projects(), readInstallBinding(), process.env.HUB_HOSTED_URL),
+    ...formatProjectWriteModes(projects(), readInstallBinding(), resolveHostedUrl()),
     ...outbox,
   ]
 }

@@ -129,7 +129,7 @@ describe('scoped operator docs', () => {
         delivery: 'demand',
         reason: 'prove refusal',
       }),
-    ).rejects.toThrow(new RegExp(`bound to a hosted record[\\s\\S]*${PLATFORM_SLUG} record doctor`))
+    ).rejects.toThrow(new RegExp(`bound to a hosted record[\\s\\S]*${PLATFORM_SLUG} record use`))
     expect(getDoc('global', null, 'bound-refusal')).toBeNull()
   })
 

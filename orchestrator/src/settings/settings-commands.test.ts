@@ -121,7 +121,7 @@ describe('settings import', () => {
 
     await expect(
       settingsImportCommand(presentation().flags({ user: true }), presentation().port(root)),
-    ).rejects.toThrow(new RegExp(`bound to a hosted record[\\s\\S]*${PLATFORM_SLUG} record doctor`))
+    ).rejects.toThrow(new RegExp(`bound to a hosted record[\\s\\S]*${PLATFORM_SLUG} record use`))
 
     expect(keychainCalls).toBe(0)
     expect(apiCalls).toEqual([])

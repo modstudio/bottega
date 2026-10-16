@@ -12,6 +12,13 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 })
 
 export const recordModules: RecordModule[] = [
+  module('orchestrator/src/record/record-use.ts', [
+    'node:fs',
+    'node:path',
+    '../../../shared/brand.ts',
+    '../../../shared/config-directory.ts',
+    '../../../shared/record-client-addresses.ts',
+  ]),
   module('orchestrator/src/record/record-api-client-paths.ts', []),
   module('orchestrator/src/record/record-doc-command-check.ts', [
     '../doc/doc-command-check.ts',
@@ -308,7 +315,11 @@ export const recordModules: RecordModule[] = [
     './record-session.ts',
   ]),
   module('orchestrator/src/record/record-invitation.ts', []),
-  module('orchestrator/src/record/record-api-access.ts', ['hono', 'hono/cors']),
+  module('orchestrator/src/record/record-api-access.ts', [
+    'hono',
+    'hono/cors',
+    '../../../shared/record-client-addresses.ts',
+  ]),
   module('orchestrator/src/record/record-api-public-docs.ts', [
     'hono',
     'hono/bun',

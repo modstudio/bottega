@@ -30,6 +30,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       'zod',
       '../../../shared/built-commit.ts',
       '../../../shared/docs.ts',
+      '../../../shared/record-client-addresses.ts',
       '../verdict/verdict-payload.ts',
       '../verdict/verdict-rules.ts',
       './record-config.ts',

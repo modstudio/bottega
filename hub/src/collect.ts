@@ -7,6 +7,7 @@ import {
   pullHostedSendChanges,
   pullHostedTaskChanges,
 } from './hosted-change-cache.ts'
+import { resolveHostedUrl } from './hosted-url.ts'
 import { ingestGit } from './ingest/git.ts'
 import { ingestRuns } from './ingest/runs.ts'
 import {
@@ -427,7 +428,7 @@ async function collectSlow(
   guard?.assertHeld('tasks')
   stamp('collect.slow.at')
   pruneOutboxTrace()
-  if (process.env.HUB_HOSTED_URL) {
+  if (resolveHostedUrl()) {
     guard?.assertHeld('tasks')
     const hostedResults = await hostedCollectLegs(
       guard,
@@ -501,7 +502,7 @@ export async function collectOnce(
     previous = 'tasks'
     guard.assertHeld(previous)
   }
-  if (!only && process.env.HUB_HOSTED_URL) {
+  if (!only && resolveHostedUrl()) {
     guard.assertHeld(previous)
     const hostedResults = await hostedCollectLegs(guard)
     results.push(...hostedResults)
@@ -544,7 +545,7 @@ export function watch(
     renewEveryMs?: number
   } = {},
 ) {
-  const outboxSchedule = process.env.HUB_HOSTED_URL
+  const outboxSchedule = resolveHostedUrl()
     ? new HostedOutboxDrainSchedule(
         dependencies.outbox ?? (() => drainHostedOutbox({ processKind: 'collector' })),
         dependencies.outboxClock ?? nowIso,

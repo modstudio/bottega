@@ -8,7 +8,7 @@ import { readRecordInstallBinding, rememberHostedRecord } from './install-bindin
 import { decideRecordWrite, type RecordWriteDecision } from './record-write-decision.ts'
 export const BOUND_RECORD_WRITE_REFUSAL =
   'this install is bound to a hosted record, but ORCH_RECORD_API_URL is not set in this environment\n' +
-  `cleared by: ${PLATFORM_SLUG} record doctor`
+  `cleared by: ${PLATFORM_SLUG} record use <address>`
 
 export function currentRecordWriteDecision(database?: Database): RecordWriteDecision {
   return decideRecordWrite({
@@ -34,7 +34,7 @@ export function requireHostedRecord(command: string): void {
   if (decision === 'refused') throw new Error(BOUND_RECORD_WRITE_REFUSAL)
   if (decision === 'local-authoritative') {
     throw new Error(
-      `no hosted record is configured for this install; set ORCH_RECORD_API_URL before running \`${command}\``,
+      `no hosted record is configured for this install; run \`${PLATFORM_SLUG} record use <address>\` before running \`${command}\``,
     )
   }
 }

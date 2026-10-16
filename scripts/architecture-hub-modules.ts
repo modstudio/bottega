@@ -1,5 +1,9 @@
 export const hubModuleSpecs = [
   {
+    file: 'hub/src/hosted-url.ts',
+    allowed: ['../../shared/env-values.ts'],
+  },
+  {
     file: 'hub/src/project-record-id.ts',
     allowed: ['bun:sqlite', './projects.ts'],
   },
@@ -239,6 +243,7 @@ export const hubModuleSpecs = [
     file: 'hub/src/task-write-destination.ts',
     allowed: [
       './hosted-write-mode.ts',
+      './hosted-url.ts',
       './install-binding.ts',
       './projects.ts',
       './task-client.ts',

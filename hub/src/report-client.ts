@@ -7,9 +7,11 @@ import type {
   ReportSubscriptionWriteInput,
 } from './hosted-reports.ts'
 import { HOSTED_SEND_PAGE_SIZE } from './hosted-reports.ts'
+import { resolveHostedUrl } from './hosted-url.ts'
+import { MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
 
 const TEST_REFUSAL = `${PLATFORM_SLUG} report client refuses a real hosted URL unless a stub is injected in tests`
-const REMEDY = `Set HUB_HOSTED_URL and run \`${PLATFORM_SLUG} record doctor\`.`
+const REMEDY = MISSING_HOSTED_URL_REMEDY
 type ReportFetch = (input: string, init?: RequestInit) => Promise<Response>
 export type ReportClientOptions = {
   baseUrl?: string
@@ -23,7 +25,7 @@ async function request<T>(
   body?: unknown,
   options: ReportClientOptions = {},
 ): Promise<T> {
-  const baseUrl = options.baseUrl ?? process.env.HUB_HOSTED_URL
+  const baseUrl = options.baseUrl ?? resolveHostedUrl()
   if (!baseUrl) throw new Error(`hosted hub is not configured. ${REMEDY}`)
   if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
   const token = options.token ?? readRecordSessionToken()

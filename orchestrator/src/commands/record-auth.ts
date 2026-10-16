@@ -3,6 +3,7 @@
 import { createInterface } from 'node:readline/promises'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { isHttpAddress } from '../../../shared/record-client-addresses.ts'
 import { projects } from '../project/projects.ts'
 import { retireOutboxRowWithDependencyProof } from '../record/outbox-operator.ts'
 import { retryOutboxRow } from '../record/outbox-quarantine.ts'
@@ -25,8 +26,21 @@ import {
 } from '../record/record-command.ts'
 import { publishSnapshotsCommand } from '../record/record-publish.ts'
 import { pushDocsCommand } from '../record/record-push-docs.ts'
+import { useHostedRecord } from '../record/record-use.ts'
 import { requireHostedRecord } from '../record/record-write-authority.ts'
 import { log } from './support.ts'
+
+const presentation = { log }
+
+export function httpAddress(value: string): string {
+  if (!isHttpAddress(value)) throw new Error('address must be an http or https URL')
+  const url = new URL(value)
+  if (url.username || url.password)
+    throw new Error('address must not contain credentials; remove them')
+  if (url.search) throw new Error('address must not contain a query; remove it')
+  if (url.hash) throw new Error('address must not contain a fragment; remove it')
+  return value
+}
 
 async function promptPassword(): Promise<string> {
   const terminal = createInterface({ input: process.stdin, output: process.stderr })
@@ -44,6 +58,14 @@ function hostedCommand<T>(command: string, action: () => T): T {
 
 function hostedRecord<T>(verb: string, action: () => T): T {
   return hostedCommand(`${PLATFORM_SLUG} record ${verb}`, action)
+}
+
+function registerUseCommand(record: Command): void {
+  record
+    .command('use')
+    .description('bind this machine to a hosted record')
+    .argument('<address>', 'public record API address', httpAddress)
+    .action((address) => useHostedRecord(String(address), { log, warn: console.warn }))
 }
 
 function registerIdentityCommands(record: Command): void {
@@ -113,7 +135,7 @@ function registerPublicDocCommands(record: Command): void {
 
 export function register(program: Command): void {
   const record = program.command('record').description('manage the hosted record and its outbox')
-  const presentation = { log }
+  registerUseCommand(record)
   registerIdentityCommands(record)
   registerPublicDocCommands(record)
   record

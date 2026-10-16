@@ -59,7 +59,14 @@ function idleBoardDeps(): RecordBoardDeps {
 }
 
 export function idleRecordApiDeps() {
-  return { ...idleIdentityAndSpaceDeps(), ...idleBoardDeps() }
+  return {
+    clientAddresses: {
+      recordApiUrl: 'https://api.example.test',
+      hubHostedUrl: 'https://app.example.test',
+    },
+    ...idleIdentityAndSpaceDeps(),
+    ...idleBoardDeps(),
+  }
 }
 
 const subject = {

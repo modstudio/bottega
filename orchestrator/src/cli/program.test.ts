@@ -23,6 +23,7 @@ test('the outer CLI classifies every informational invocation without consulting
   }
   expect(isHelpShapedInvocation(['jobs'])).toBeFalse()
   expect(isStoreFreeInvocation(['setup', 'facts', '--json'])).toBeTrue()
+  expect(isStoreFreeInvocation(['record', 'use', 'https://api.example.test'])).toBeTrue()
   expect(isStoreFreeInvocation(['setup'])).toBeFalse()
   expect(isStoreFreeInvocation(['release', 'check', 'v0.2.0'])).toBeTrue()
 })
