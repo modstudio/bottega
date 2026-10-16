@@ -4,6 +4,7 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { PLATFORM_COMMANDS } from '../../../shared/command-spellings.ts'
 import { assertDocSections } from '../../../shared/doc-sections.ts'
+import type { DocAudiences } from '../../../shared/docs.ts'
 import { type UnknownCommandMention, unknownCommandMentions } from './doc-command-mentions.ts'
 
 export type CustomerGuideCommandCheck = {
@@ -69,14 +70,14 @@ function assertCustomerGuideCommands(
 
 function assertDocCommands(
   input: { body: string; loadKnownCommands?: () => readonly string[] },
-  fields: Omit<CustomerGuideCommandInput, 'body'>,
+  fields: Omit<CustomerGuideCommandInput, 'body' | 'audiences'> & { audiences: DocAudiences },
 ): string | null {
   return assertCustomerGuideCommands({ body: input.body, ...fields }, input.loadKnownCommands)
 }
 
 export function assertDocBodyCommands(
   input: { body: string; loadKnownCommands?: () => readonly string[] },
-  fields: Omit<CustomerGuideCommandInput, 'body'>,
+  fields: Omit<CustomerGuideCommandInput, 'body' | 'audiences'> & { audiences: DocAudiences },
 ): string | null {
   assertDocSections(input.body, fields.audiences)
   return assertDocCommands(input, fields)
