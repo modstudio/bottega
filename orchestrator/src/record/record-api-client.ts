@@ -1,6 +1,7 @@
 // concern: record-api-client
 /** HTTP client for the record API. Must not know SQL or local table shape. */
 
+import type { Database } from 'bun:sqlite'
 import type {
   DocAudience,
   DocAudiences,
@@ -555,11 +556,12 @@ export function recordApiBaseUrl(
 async function recordApiRequest<T>(
   path: string,
   init: RequestInit & { schema?: (body: unknown) => T; destinationSpaceId?: string } = {},
+  database?: Database,
 ): Promise<T> {
   const baseUrl = recordApiBaseUrl()
   const token = init.signal
-    ? await storedRecordTokenAsync(undefined, init.signal)
-    : storedRecordToken()
+    ? await storedRecordTokenAsync(database, init.signal)
+    : storedRecordToken(database)
   if (!token) throw new RecordApiRequestError(RECORD_SIGN_IN_REMEDY, 'refused')
   const headers = new Headers(init.headers)
   for (const [name, value] of bearerHeaders(token)) headers.set(name, value)
@@ -708,13 +710,18 @@ const reorderDocsRequest: RecordApiClient['reorderDocs'] = (input, destination) 
     ...destination,
   })
 
-export function recordApiClient(): RecordApiClient {
+export function recordApiClient(database?: Database): RecordApiClient {
   const injected = injectedClient()
   if (injected) return injected
   if (process.env.NODE_ENV === 'test' && !process.env.ORCH_TEST_POSTGRES_CONTAINER)
     throw new Error(TEST_REFUSAL)
+  const migrationRequest = <T>(
+    path: string,
+    init: RequestInit & { schema?: (body: unknown) => T; destinationSpaceId?: string } = {},
+  ) => recordApiRequest<T>(path, init, database)
   return {
     ...recordIdentityAndSpaceClient(),
+    whoami: () => migrationRequest('/v1/whoami', { schema: recordIdentityResponse }),
     putSnapshot: (kind, input) =>
       request(`/v1/snapshots/${kind}`, { method: 'PUT', body: JSON.stringify(input) }),
     listSnapshots: () => request('/v1/snapshots'),
@@ -791,8 +798,12 @@ export function recordApiClient(): RecordApiClient {
         ...destination,
       }),
     upsertProject: (input, destination) =>
-      request('/v1/projects', { method: 'PUT', body: JSON.stringify(input), ...destination }),
-    listProjects: (destination) => request('/v1/projects', destination),
+      migrationRequest('/v1/projects', {
+        method: 'PUT',
+        body: JSON.stringify(input),
+        ...destination,
+      }),
+    listProjects: (destination) => migrationRequest('/v1/projects', destination),
     retireProject: (name, destination) =>
       request(`/v1/projects/${encodeURIComponent(name)}/retire`, {
         method: 'POST',

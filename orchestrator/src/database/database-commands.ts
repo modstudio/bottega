@@ -4,10 +4,12 @@
 import { fillProjectRecordIds } from '../project/project-record-identity.ts'
 import { reconcileRun } from '../run/run-artifacts.ts'
 import { backfillSpecSha, migrateDatabase, withDatabaseForMigrationStep } from './db.ts'
+import { migrationApplied } from './migrations.ts'
 
 export type DatabaseCommandPresentation = { log(value: string): void }
 type MigrateCommandActions = {
   migrate(input?: { beforeMigration?: string }): { path: string; versions: string[] }
+  contracted(): Promise<boolean>
   fill(): Promise<unknown>
   backfill(): { updated: number; missing: number }
 }
@@ -18,12 +20,19 @@ export async function migrateCommand(
   presentation: DatabaseCommandPresentation,
   actions: MigrateCommandActions = {
     migrate: migrateDatabase,
+    contracted: () =>
+      withDatabaseForMigrationStep(async (database) =>
+        migrationApplied(database, PROJECT_IDENTITY_CONTRACT_MIGRATION),
+      ),
     fill: () => withDatabaseForMigrationStep((database) => fillProjectRecordIds(database)),
     backfill: backfillSpecSha,
   },
 ): Promise<void> {
-  const before = actions.migrate({ beforeMigration: PROJECT_IDENTITY_CONTRACT_MIGRATION })
-  await actions.fill()
+  const alreadyContracted = await actions.contracted()
+  const before = alreadyContracted
+    ? { path: '', versions: [] }
+    : actions.migrate({ beforeMigration: PROJECT_IDENTITY_CONTRACT_MIGRATION })
+  if (!alreadyContracted) await actions.fill()
   const after = actions.migrate()
   const migrated = { path: after.path, versions: [...before.versions, ...after.versions] }
   if (migrated.versions.length === 0) presentation.log(`schema already current: ${migrated.path}`)

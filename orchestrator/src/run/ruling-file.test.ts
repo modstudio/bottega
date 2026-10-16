@@ -426,7 +426,7 @@ describe('file ruling', () => {
   })
 
   test('files through the real setDoc when the question has a task key and the ruling has a numeral', async () => {
-    upsertProject({ name: PLATFORM_SLUG, path: process.cwd() })
+    upsertProject({ recordId: newRecordId(), name: PLATFORM_SLUG, path: process.cwd() })
     const run = addRun({
       agent: 'codex',
       job: 'implement',

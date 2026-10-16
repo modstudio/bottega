@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { chmodSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { upsertProject, type WorktreeTool } from '../project/projects.ts'
@@ -122,7 +123,7 @@ test('grants trust to an orch-created no-repo isolate but not its caller checkou
   )
 })
 test('preflightMcp defers cwd-discovered attachment until the worker tree exists', () => {
-  upsertProject({ name: 'fixture-project', path: dir, settings: {} })
+  upsertProject({ recordId: newRecordId(), name: 'fixture-project', path: dir, settings: {} })
   const original = AGENTS.grok!.bin
   const doctor = fixtureFile('fake-grok-preflight-doctor.sh')
   AGENTS.grok!.bin = doctor
@@ -147,6 +148,7 @@ test('preflightMcp defers cwd-discovered attachment until the worker tree exists
 })
 test('preflightMcp dispatches from a register-shaped legacy row with declared MCP settings', () => {
   upsertProject({
+    recordId: newRecordId(),
     name: 'legacy-mcp-project',
     path: dir,
     settings: {
@@ -160,7 +162,12 @@ test('preflightMcp dispatches from a register-shaped legacy row with declared MC
   ).not.toThrow()
 })
 test('preflightMcp leaves cwd-discovered config decisions until the worker tree exists', () => {
-  upsertProject({ name: 'fixture-project', path: dir, settings: { mcpServer: 'orch' } })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'fixture-project',
+    path: dir,
+    settings: { mcpServer: 'orch' },
+  })
   const original = AGENTS.grok!.bin
   const doctor = fixtureFile('fake-grok-configured-server-doctor.sh')
   AGENTS.grok!.bin = doctor

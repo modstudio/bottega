@@ -37,7 +37,7 @@ function insert(status: string, job = 'file-question'): number {
 
 const priorEnv: Record<string, string | undefined> = {}
 beforeEach(() => {
-  upsertProject({ name: 'continuation-fixture', path: dir })
+  upsertProject({ recordId: newRecordId(), name: 'continuation-fixture', path: dir })
   priorEnv.CLAUDE_CODE_SESSION_ID = process.env.CLAUDE_CODE_SESSION_ID
   priorEnv.ORCH_DEPTH = process.env.ORCH_DEPTH
   priorEnv.ORCH_EXEC_PATH = process.env.ORCH_EXEC_PATH

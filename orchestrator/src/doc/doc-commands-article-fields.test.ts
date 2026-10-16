@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { register } from '../commands/docs.ts'
 import { drainStdout } from '../commands/support.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -79,6 +80,7 @@ const show = async (slug: string) => {
 
 test(`${PLATFORM_SLUG} doc commands preserve, clear, and list article fields by subject name`, async () => {
   upsertProject({
+    recordId: newRecordId(),
     name: 'article-command-project',
     path: '/w/article-command-project',
     settings: {},

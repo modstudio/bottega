@@ -118,17 +118,18 @@ async function hostedProjectIdentity(
 
 /** Fill only missing identities; existing local identities are never name-matched again. */
 export async function fillProjectRecordIds(database?: Database): Promise<FilledProjectRecordId[]> {
-  const authority = currentRecordWriteDecision()
-  if (authority === 'refused') throw new Error(BOUND_RECORD_WRITE_REFUSAL)
-  const hostingConfigured = authority === 'hosted'
-  const client = hostingConfigured ? recordApiClient() : null
-  const filled: FilledProjectRecordId[] = []
   const rows = (database ?? (await import('../database/db.ts')).writableDb())
     .query(
       `SELECT id,record_id,name,path,stack,canon,settings,retired_at
        FROM project WHERE record_id IS NULL ORDER BY name`,
     )
     .all() as MissingProjectRecordRow[]
+  if (rows.length === 0) return []
+  const authority = currentRecordWriteDecision(database)
+  if (authority === 'refused') throw new Error(BOUND_RECORD_WRITE_REFUSAL)
+  const hostingConfigured = authority === 'hosted'
+  const client = hostingConfigured ? recordApiClient(database) : null
+  const filled: FilledProjectRecordId[] = []
   for (const row of rows) {
     const project = parseMissingProject(row)
     const localDecision = decideProjectRecordId({

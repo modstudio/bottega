@@ -388,8 +388,16 @@ describe('scoped operator docs', () => {
   })
 
   test('an unreadable unrelated checkout does not affect a project doc write', async () => {
-    upsertProject({ name: 'known', path: process.cwd(), stack: null, canon: true, settings: {} })
     upsertProject({
+      recordId: newRecordId(),
+      name: 'known',
+      path: process.cwd(),
+      stack: null,
+      canon: true,
+      settings: {},
+    })
+    upsertProject({
+      recordId: newRecordId(),
       name: 'unreadable',
       path: '/dev/null',
       stack: null,
@@ -515,7 +523,14 @@ describe('scoped operator docs', () => {
   })
 
   test('restore refuses a canon path colliding with the other level', async () => {
-    upsertProject({ name: 'known', path: process.cwd(), stack: null, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'known',
+      path: process.cwd(),
+      stack: null,
+      canon: true,
+      settings: {},
+    })
     const slug = '.agents/rules/shared.md'
     const body = '---\ndescription: Shared rule\nalways: true\n---\n\nRule.\n'
     const projectDoc = await writeDoc({
@@ -678,7 +693,14 @@ describe('scoped operator docs', () => {
   })
 
   test('history and restore survive retirement of the addressed project', async () => {
-    upsertProject({ name: 'former', path: '/w/former', stack: null, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'former',
+      path: '/w/former',
+      stack: null,
+      canon: true,
+      settings: {},
+    })
     await setDoc({
       scope: 'project',
       subject: 'former',
@@ -712,7 +734,14 @@ describe('scoped operator docs', () => {
   })
 
   test('consume survives retirement of the addressed project', async () => {
-    upsertProject({ name: 'former', path: '/w/former', stack: null, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'former',
+      path: '/w/former',
+      stack: null,
+      canon: true,
+      settings: {},
+    })
     await setDoc({
       scope: 'resume',
       subject: 'former',
@@ -736,7 +765,14 @@ describe('scoped operator docs', () => {
   })
 
   test('scope, slug, and every subject rule name a usable fix', async () => {
-    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'known',
+      path: '/w/known',
+      stack: null,
+      canon: true,
+      settings: {},
+    })
     const put = (scope: string, subject: string | null, slug = 'ok') =>
       setDoc({
         scope,
@@ -760,7 +796,14 @@ describe('scoped operator docs', () => {
   })
 
   test('docsForRun injects job docs and omits demand and non-run scopes', async () => {
-    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'known',
+      path: '/w/known',
+      stack: null,
+      canon: true,
+      settings: {},
+    })
     expect(docsForRun({ job: 'file-question', cwd: '/elsewhere' })).toEqual([])
     await setDoc({
       scope: 'project',
@@ -786,7 +829,14 @@ describe('scoped operator docs', () => {
   })
 
   test('delivery is round-tripped and demand docs never enter a compiled pack', async () => {
-    upsertProject({ name: 'known', path: dir, stack: null, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'known',
+      path: dir,
+      stack: null,
+      canon: true,
+      settings: {},
+    })
     await setDoc({
       scope: 'machine',
       subject: null,
@@ -822,7 +872,14 @@ describe('scoped operator docs', () => {
   })
 
   test('setDoc closes project and global inject while allowing canon and estate facts', async () => {
-    upsertProject({ name: 'known', path: dir, stack: null, canon: false, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'known',
+      path: dir,
+      stack: null,
+      canon: false,
+      settings: {},
+    })
     for (const [scope, subject] of [
       ['global', null],
       ['project', 'known'],
@@ -944,7 +1001,14 @@ describe('scoped operator docs', () => {
   })
 
   test('metadata listing omits bodies and supports discovery filters without widening exact matches', async () => {
-    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'known',
+      path: '/w/known',
+      stack: null,
+      canon: true,
+      settings: {},
+    })
     await setDoc({
       scope: 'project',
       subject: 'known',
@@ -991,7 +1055,14 @@ describe('scoped operator docs', () => {
   })
 
   test('export and import preserve title and markdown body', async () => {
-    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'known',
+      path: '/w/known',
+      stack: null,
+      canon: true,
+      settings: {},
+    })
     await setDoc({
       scope: 'global',
       subject: null,

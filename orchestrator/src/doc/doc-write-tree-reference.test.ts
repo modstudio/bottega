@@ -2,6 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { upsertProject } from '../project/projects.ts'
 import { collectDocReferenceProjects } from './doc-lint-adapter.ts'
@@ -35,8 +36,15 @@ afterEach(() => {
 test('project canon references use that project even when it is unmanaged', () => {
   const subject = trackedRepository('doc-reference-subject', true)
   const managed = trackedRepository('doc-reference-managed', false)
-  upsertProject({ name: 'subject', path: subject, canon: true, settings: {} })
   upsertProject({
+    recordId: newRecordId(),
+    name: 'subject',
+    path: subject,
+    canon: true,
+    settings: {},
+  })
+  upsertProject({
+    recordId: newRecordId(),
     name: 'managed',
     path: managed,
     canon: true,

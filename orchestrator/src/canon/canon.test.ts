@@ -712,6 +712,7 @@ describe('stripSqlComments feeds exec text that keeps quoted comment markers', (
 describe('scoped operator docs', () => {
   test('project-subject document roots use the registered project and preserve canon selection', () => {
     upsertProject({
+      recordId: newRecordId(),
       name: 'doc-root-project',
       path: '/work/doc-root-project',
       stack: null,

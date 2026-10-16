@@ -78,7 +78,11 @@ test('project add and set JSON use the published contract and carry record_id', 
   )
   expect(added.record_id).toBe(addId)
 
-  upsertProject({ name: 'identity-json-set', path: '/w/identity-json-set' })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'identity-json-set',
+    path: '/w/identity-json-set',
+  })
   const existingSetId = projectByName('identity-json-set')!.recordId
   const set = OrchProjectSchema.parse(
     JSON.parse(await runProject(['project', 'set', 'identity-json-set'], { json: true })),
@@ -135,7 +139,7 @@ test('the project identity decision is pure over local, hosted, and retirement f
 })
 
 test('project list JSON publishes required record_id beside the local id', async () => {
-  upsertProject({ name: 'identity-list', path: '/w/identity-list' })
+  upsertProject({ recordId: newRecordId(), name: 'identity-list', path: '/w/identity-list' })
   const rows = JSON.parse(await runProject(['project', 'list'], { json: true })) as Array<{
     id: number
     record_id: string
@@ -147,9 +151,22 @@ test('project list JSON publishes required record_id beside the local id', async
 })
 
 test('project push stores returned identities without overwriting concurrent set or retire writes', async () => {
-  upsertProject({ name: 'identity-push-set', path: '/w/identity-push-set', stack: 'before' })
-  upsertProject({ name: 'identity-push-retire', path: '/w/identity-push-retire' })
-  upsertProject({ name: 'identity-push-already-retired', path: '/w/identity-push-already-retired' })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'identity-push-set',
+    path: '/w/identity-push-set',
+    stack: 'before',
+  })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'identity-push-retire',
+    path: '/w/identity-push-retire',
+  })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'identity-push-already-retired',
+    path: '/w/identity-push-already-retired',
+  })
   const setId = projectByName('identity-push-set')!.recordId
   const retiredId = projectByName('identity-push-retire')!.recordId
   const alreadyRetiredId = projectByName('identity-push-already-retired')!.recordId
@@ -158,7 +175,12 @@ test('project push stores returned identities without overwriting concurrent set
     ...createMemoryRecordApiClient(),
     upsertProject: async (input) => {
       if (input.name === 'identity-push-set') {
-        upsertProject({ name: input.name, path: '/w/identity-push-set-after', stack: 'after' })
+        upsertProject({
+          recordId: newRecordId(),
+          name: input.name,
+          path: '/w/identity-push-set-after',
+          stack: 'after',
+        })
         return { id: input.id!, name: input.name }
       }
       if (input.name === 'identity-push-retire') {

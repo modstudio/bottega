@@ -34,7 +34,6 @@ import {
   type SequenceKind,
   type SequenceState,
 } from '../../../shared/git.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { releaseTagVersion } from '../../../shared/release-tag.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import {
@@ -270,7 +269,7 @@ export function stackAt(cwd: string): string | null {
 }
 
 export function upsertProject(p: {
-  recordId?: string | null
+  recordId: string
   name: string
   path: string
   stack?: string | null
@@ -280,7 +279,6 @@ export function upsertProject(p: {
   const database = writableDb()
   writeProjectRegisterRow(database, {
     ...p,
-    recordId: p.recordId ?? newRecordId(),
     settings: projectSettingsForStorage(p.settings),
   })
 }

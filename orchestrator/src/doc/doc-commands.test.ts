@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { consumeDoc, removeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
@@ -154,7 +155,12 @@ describe('scoped operator docs', () => {
   })
 
   test('subject-only matches cannot consume the keyword result cap', async () => {
-    upsertProject({ name: 'needle-cap-project', path: '/w/needle-cap-project', settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'needle-cap-project',
+      path: '/w/needle-cap-project',
+      settings: {},
+    })
     for (let index = 0; index < 50; index++) {
       await setDoc({
         scope: 'project',
@@ -249,8 +255,14 @@ describe('scoped operator docs', () => {
   })
 
   test(`${PLATFORM_SLUG} doc port exposes baseline, skip, ledger resolution, correction, and doctrine lifecycle`, async () => {
-    upsertProject({ name: 'source-invented', path: '/w/source', settings: {} })
     upsertProject({
+      recordId: newRecordId(),
+      name: 'source-invented',
+      path: '/w/source',
+      settings: {},
+    })
+    upsertProject({
+      recordId: newRecordId(),
       name: 'target-invented',
       path: '/w/target',
       settings: { keyPrefixes: ['TGT'] },
@@ -327,7 +339,12 @@ describe('scoped operator docs', () => {
   }, 20_000)
 
   test(`${PLATFORM_SLUG} doc port refuses unknown registered project names`, async () => {
-    upsertProject({ name: 'source-invented', path: '/w/source', settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'source-invented',
+      path: '/w/source',
+      settings: {},
+    })
     const unknown = await command(['port', 'baseline', 'show', 'source-invented', 'missing'])
     expect(unknown.code).toBe(1)
     expect(unknown.err).toContain('unknown project "missing"')
@@ -378,8 +395,14 @@ describe('scoped operator docs', () => {
   }, 20_000)
 
   test('MCP port tools use registered names and preserve resolved provenance', async () => {
-    upsertProject({ name: 'source-invented', path: '/w/source', settings: {} })
     upsertProject({
+      recordId: newRecordId(),
+      name: 'source-invented',
+      path: '/w/source',
+      settings: {},
+    })
+    upsertProject({
+      recordId: newRecordId(),
       name: 'target-invented',
       path: '/w/target',
       settings: { keyPrefixes: ['TGT'] },
@@ -469,7 +492,14 @@ describe('scoped operator docs', () => {
   })
 
   test(`${PLATFORM_SLUG} doc subjects --json lists project, agent and job names`, async () => {
-    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'known',
+      path: '/w/known',
+      stack: null,
+      canon: true,
+      settings: {},
+    })
     expect(docSubjects()).toEqual({
       project: ['known'],
       stack: [],

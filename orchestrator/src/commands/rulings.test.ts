@@ -52,7 +52,7 @@ async function fileThroughCli(questionId: number): Promise<void> {
 
 test('CLI ruling file --as doc allows an architect caller and refuses a worker caller', async () => {
   const project = 'ruling-cli-project'
-  upsertProject({ name: project, path: process.cwd() })
+  upsertProject({ recordId: newRecordId(), name: project, path: process.cwd() })
   const allowed = answeredQuestion(project)
   await fileThroughCli(allowed)
   expect(db().query('SELECT filed_as FROM question WHERE id=?').get(allowed)).toEqual({

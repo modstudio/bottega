@@ -12,7 +12,7 @@ function keptBranchClaim(tip: string | null = 'a'.repeat(40)) {
   const repository = `/repo/${project}`
   const branch = `DEV-1128-orch-${runId}`
   const ref = `refs/heads/${branch}`
-  upsertProject({ name: project, path: repository })
+  upsertProject({ recordId: newRecordId(), name: project, path: repository })
   const projectId = (
     db().query('SELECT id FROM project WHERE name=?').get(project) as { id: number }
   ).id
@@ -274,7 +274,7 @@ test('kept-branch dry runs change nothing and print each prospective action', ()
 test('sweep dry-run lists absent and kept claims without changing either row', () => {
   const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const project = `claim-reconciliation-${runId}`
-  upsertProject({ name: project, path: `/repo/${project}` })
+  upsertProject({ recordId: newRecordId(), name: project, path: `/repo/${project}` })
   const projectId = (
     db().query('SELECT id FROM project WHERE name=?').get(project) as { id: number }
   ).id
@@ -328,7 +328,7 @@ test('sweep dry-run lists absent and kept claims without changing either row', (
 test('reconciling an absent worktree leaves its dependent port claimed', () => {
   const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const project = `claim-cascade-${runId}`
-  upsertProject({ name: project, path: `/repo/${project}` })
+  upsertProject({ recordId: newRecordId(), name: project, path: `/repo/${project}` })
   const projectId = (
     db().query('SELECT id FROM project WHERE name=?').get(project) as { id: number }
   ).id
@@ -368,7 +368,7 @@ test('reconciling an absent worktree leaves its dependent port claimed', () => {
 test('an absent worktree does not release allocations shared with a present worktree', () => {
   const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const project = `claim-multiple-trees-${runId}`
-  upsertProject({ name: project, path: `/repo/${project}` })
+  upsertProject({ recordId: newRecordId(), name: project, path: `/repo/${project}` })
   const projectId = (
     db().query('SELECT id FROM project WHERE name=?').get(project) as { id: number }
   ).id
@@ -416,7 +416,7 @@ test('an absent worktree does not release allocations shared with a present work
 test('a guard that changes before locked settlement leaves the claim claimed', () => {
   const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const project = `claim-race-${runId}`
-  upsertProject({ name: project, path: `/repo/${project}` })
+  upsertProject({ recordId: newRecordId(), name: project, path: `/repo/${project}` })
   const projectId = (
     db().query('SELECT id FROM project WHERE name=?').get(project) as { id: number }
   ).id

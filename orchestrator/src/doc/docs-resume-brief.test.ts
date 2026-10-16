@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { consumeDoc, removeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -14,6 +15,7 @@ const otherRepository = `${repositoryRoot}/hub`
 describe('scoped operator docs', () => {
   test('restoring a resume document writes its registered project id', async () => {
     upsertProject({
+      recordId: newRecordId(),
       name: 'resume-restore',
       path: process.cwd(),
       stack: null,
@@ -110,8 +112,22 @@ describe('scoped operator docs', () => {
   })
 
   test('listOpenResumes lists only open briefs for the cwd project, newest first', async () => {
-    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
-    upsertProject({ name: 'other', path: otherRepository, stack: null, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'known',
+      path: knownRepository,
+      stack: null,
+      canon: true,
+      settings: {},
+    })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'other',
+      path: otherRepository,
+      stack: null,
+      canon: true,
+      settings: {},
+    })
     const now = Date.parse('2026-09-03T12:00:00.000Z')
     await setDoc({
       scope: 'resume',
@@ -185,7 +201,14 @@ describe('scoped operator docs', () => {
   })
 
   test('listOpenResumes measures an open brief from its store write time', async () => {
-    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'known',
+      path: knownRepository,
+      stack: null,
+      canon: true,
+      settings: {},
+    })
     await setDoc({
       scope: 'resume',
       subject: 'known',
@@ -209,7 +232,14 @@ describe('scoped operator docs', () => {
   })
 
   test('listOpenResumes orders briefs by store write time instead of written frontmatter', async () => {
-    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'known',
+      path: knownRepository,
+      stack: null,
+      canon: true,
+      settings: {},
+    })
     await setDoc({
       scope: 'resume',
       subject: 'known',
@@ -238,7 +268,14 @@ describe('scoped operator docs', () => {
   })
 
   test('indented resume frontmatter cases A-D parse and list, with top-level keys winning', async () => {
-    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'known',
+      path: knownRepository,
+      stack: null,
+      canon: true,
+      settings: {},
+    })
     const cases = [
       [
         'case-a',
@@ -291,7 +328,14 @@ describe('scoped operator docs', () => {
   })
 
   test('the last duplicate top-level status controls listing and consumption', async () => {
-    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'known',
+      path: knownRepository,
+      stack: null,
+      canon: true,
+      settings: {},
+    })
     await setDoc({
       scope: 'resume',
       subject: 'known',
@@ -319,7 +363,14 @@ describe('scoped operator docs', () => {
   })
 
   test('the last nested status controls parsing, listing, and consumption', async () => {
-    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'known',
+      path: knownRepository,
+      stack: null,
+      canon: true,
+      settings: {},
+    })
     const cases = [
       [
         'nested-open',
@@ -377,7 +428,14 @@ describe('scoped operator docs', () => {
   })
 
   test('round-three status forms still resolve and consume correctly', async () => {
-    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'known',
+      path: knownRepository,
+      stack: null,
+      canon: true,
+      settings: {},
+    })
     const bodies = [
       '---\r\nstatus: "consumed"\r\nstatus: \'open\'\r\n---\r\n\r\nBODY',
       '---\nmetadata:\n  status: consumed\nstatus: open\n---\n\nBODY',
@@ -397,7 +455,14 @@ describe('scoped operator docs', () => {
   })
 
   test('setDoc refuses a resume without readable top-level status', async () => {
-    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'known',
+      path: knownRepository,
+      stack: null,
+      canon: true,
+      settings: {},
+    })
     await expect(
       setDoc({
         scope: 'resume',
@@ -419,7 +484,14 @@ describe('scoped operator docs', () => {
   })
 
   test('setDoc refuses duplicate top-level resume statuses and names the slug', async () => {
-    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'known',
+      path: knownRepository,
+      stack: null,
+      canon: true,
+      settings: {},
+    })
     await expect(
       setDoc({
         scope: 'resume',
@@ -432,7 +504,14 @@ describe('scoped operator docs', () => {
   })
 
   test('setDoc refuses an unrecognized resume status and names the value and the permitted two', async () => {
-    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'known',
+      path: knownRepository,
+      stack: null,
+      canon: true,
+      settings: {},
+    })
     await expect(
       setDoc({
         scope: 'resume',
@@ -447,7 +526,14 @@ describe('scoped operator docs', () => {
   })
 
   test('setDoc accepts open and consumed resume status, including quoted forms', async () => {
-    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'known',
+      path: knownRepository,
+      stack: null,
+      canon: true,
+      settings: {},
+    })
     const accepted = [
       ['plain-open', 'open', 'open'],
       ['plain-consumed', 'consumed', 'consumed'],
@@ -469,7 +555,14 @@ describe('scoped operator docs', () => {
   })
 
   test('listOpenResumes reports a stored unrecognized status as unreadable rather than dropping it', async () => {
-    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'known',
+      path: knownRepository,
+      stack: null,
+      canon: true,
+      settings: {},
+    })
     await setDoc({
       scope: 'resume',
       subject: 'known',
@@ -488,7 +581,14 @@ describe('scoped operator docs', () => {
   })
 
   test(`${PLATFORM_SLUG} doc resumes prints padded columns and is silent when there are none`, async () => {
-    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'known',
+      path: knownRepository,
+      stack: null,
+      canon: true,
+      settings: {},
+    })
     expect(listOpenResumes(knownRepository)).toEqual({ open: [], unreadable: [] })
     expect(listOpenResumes('/nowhere')).toEqual({ open: [], unreadable: [] })
     const now = Date.now()
@@ -509,7 +609,14 @@ describe('scoped operator docs', () => {
   }, 20_000)
 
   test(`${PLATFORM_SLUG} doc resumes reports unreadable briefs without changing human stdout`, async () => {
-    upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'known',
+      path: knownRepository,
+      stack: null,
+      canon: true,
+      settings: {},
+    })
     const invalidBriefs: Array<[string, string]> = [
       ['no-frontmatter', 'BODY'],
       ['no-status', '---\nepic: demo\n---\n\nBODY'],

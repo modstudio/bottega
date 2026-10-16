@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -36,6 +37,7 @@ test('a hydration that introduces a canon lint finding stops publication before 
   try {
     installRecordApiClient(createMemoryRecordApiClient())
     upsertProject({
+      recordId: newRecordId(),
       name: 'canon-mirror-lint',
       path: root,
       canon: true,

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
 import { getDoc, listDocRevisions, listDocs } from '../doc/docs.ts'
@@ -20,11 +21,13 @@ const listPairs = () =>
 describe('port importer', () => {
   const registered = () => {
     upsertProject({
+      recordId: newRecordId(),
       name: 'alpha-invented',
       path: '/w/alpha-invented',
       settings: { keyPrefixes: ['ALP'] },
     })
     upsertProject({
+      recordId: newRecordId(),
       name: 'beta-invented',
       path: '/w/beta-invented',
       settings: { keyPrefixes: ['BET'] },
@@ -134,10 +137,30 @@ describe('port importer', () => {
     )
   })
   test('splits declared multi-sources, preserves qualifiers, and resolves targets from port pairs', () => {
-    upsertProject({ name: 'alpha-invented', path: '/w/a', settings: { keyPrefixes: ['ALP'] } })
-    upsertProject({ name: 'beta-invented', path: '/w/b', settings: { keyPrefixes: ['DUP'] } })
-    upsertProject({ name: 'gamma-invented', path: '/w/c', settings: { keyPrefixes: ['DUP'] } })
-    upsertProject({ name: 'target-invented', path: '/w/target', settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'alpha-invented',
+      path: '/w/a',
+      settings: { keyPrefixes: ['ALP'] },
+    })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'beta-invented',
+      path: '/w/b',
+      settings: { keyPrefixes: ['DUP'] },
+    })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'gamma-invented',
+      path: '/w/c',
+      settings: { keyPrefixes: ['DUP'] },
+    })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'target-invented',
+      path: '/w/target',
+      settings: {},
+    })
     const refs = JSON.stringify({
       'ALP-1': { source: 'alpha-invented + beta-invented', commits: [], paths: [], notes: '' },
       'ALP-2': {
@@ -339,11 +362,13 @@ describe('worker port import refusal', () => {
 
   test('port import and replacement allow an architect caller and refuse a worker caller', async () => {
     upsertProject({
+      recordId: newRecordId(),
       name: 'worker-source-invented',
       path: '/w/worker-source-invented',
       settings: { keyPrefixes: ['WRS'] },
     })
     upsertProject({
+      recordId: newRecordId(),
       name: 'worker-target-invented',
       path: '/w/worker-target-invented',
       settings: { keyPrefixes: ['WRT'] },

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { removeProject, upsertProject } from '../project/projects.ts'
 import { promoteWorkflow, setWorkflow, type WorkflowDefinition } from '../workflow/workflows.ts'
 import { createDocsMcpServer } from './mcp.ts'
@@ -8,13 +9,13 @@ import { bindWorkflowPromptArguments, workflowPromptDefinitions } from './mcp-pr
 
 const workflow = (
   slug: string,
-  arguments_: WorkflowDefinition['arguments'],
+  workflowArguments: WorkflowDefinition['arguments'],
 ): { slug: string; definition: WorkflowDefinition } => ({
   slug,
   definition: {
     title: 'Ship task',
     description: 'Ship one task.',
-    arguments: arguments_,
+    arguments: workflowArguments,
     modes: [
       { slug: 'fast', title: 'Fast', default: true, steps: ['implement'] },
       { slug: 'careful', title: 'Careful', steps: ['plan', 'implement'] },
@@ -229,6 +230,7 @@ describe('workflow prompts on the wire', () => {
 
   test('blank-argument mutation: blank values count as omitted, so composition asks for the missing argument', async () => {
     upsertProject({
+      recordId: newRecordId(),
       name: 'prompt-fixture',
       path: process.cwd(),
       stack: 'node',
@@ -252,6 +254,7 @@ describe('workflow prompts on the wire', () => {
   test('a prompt with no default mode lists its arguments and exact next calls', async () => {
     const slug = 'prompt-mode-chooser'
     upsertProject({
+      recordId: newRecordId(),
       name: 'prompt-fixture',
       path: process.cwd(),
       stack: 'node',
@@ -291,6 +294,7 @@ describe('workflow prompts on the wire', () => {
 
   test('plan-task rereads a positional key and carries it through the mode menu', async () => {
     upsertProject({
+      recordId: newRecordId(),
       name: 'prompt-fixture',
       path: process.cwd(),
       stack: 'node',
@@ -312,6 +316,7 @@ describe('workflow prompts on the wire', () => {
 
   test('plan-task leaves a correct named map unchanged', async () => {
     upsertProject({
+      recordId: newRecordId(),
       name: 'prompt-fixture',
       path: process.cwd(),
       stack: 'node',

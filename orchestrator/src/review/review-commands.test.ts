@@ -227,7 +227,12 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
     git(repo, 'init', '-b', 'main')
     importRebasedHistory(repo)
 
-    upsertProject({ name: 'tier-fixture', path: repo, settings: { trunk: 'main' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'tier-fixture',
+      path: repo,
+      settings: { trunk: 'main' },
+    })
     // Deterministic fast-import identity for the fixture's trunk-to-writer range.
     // The command measures the live range, so this assertion fails if they diverge.
     const currentIdentity = {
@@ -283,6 +288,7 @@ test('review tier reports stack and generic profile sources resolved for its pro
     git(repo, 'init', '-b', 'main')
     importRebasedHistory(repo)
     upsertProject({
+      recordId: newRecordId(),
       name: 'tier-profile-fixture',
       path: repo,
       stack: 'bun',

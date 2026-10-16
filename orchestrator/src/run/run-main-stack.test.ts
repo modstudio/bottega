@@ -1,6 +1,7 @@
 import { afterEach, expect, mock, spyOn, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { upsertProject } from '../project/projects.ts'
 import { run } from './run.ts'
@@ -16,6 +17,7 @@ afterEach(() => {
 test('a foreground repository run ensures its declared MCP stack before probing', async () => {
   const repository = fixtureRepository()
   upsertProject({
+    recordId: newRecordId(),
     name: 'foreground-mcp-stack-fixture',
     path: repository,
     settings: { mainStack: { consumers: ['mcp'], requiredServices: ['db'] } },
@@ -52,6 +54,7 @@ test('a foreground repository run ensures its declared MCP stack before probing'
 test('a cwd-discovered MCP run ensures its declared stack before the worker-tree probe', async () => {
   const repository = fixtureRepository()
   upsertProject({
+    recordId: newRecordId(),
     name: 'deferred-mcp-stack-fixture',
     path: repository,
     settings: { mainStack: { consumers: ['mcp'], requiredServices: ['db'] } },
@@ -88,6 +91,7 @@ test('a cwd-discovered MCP run ensures its declared stack before the worker-tree
 test('a read-only run without an MCP request starts no project stack', () => {
   const repository = fixtureRepository()
   upsertProject({
+    recordId: newRecordId(),
     name: 'read-only-no-mcp-stack-fixture',
     path: repository,
     settings: { mainStack: { consumers: ['mcp'], requiredServices: ['db'] } },

@@ -20,7 +20,6 @@ function aliveOwnerOnBranch(input: {
   branch: string
   conversationRootId: number | null
   projectId: number | null
-  projectName: string | null
 }): BranchConversationRow | null {
   const rows = db()
     .query(
@@ -41,7 +40,6 @@ export function assertBranchHasNoAliveOwner(input: {
   branch: string | undefined
   conversationRootId: number | null
   projectId: number | null
-  projectName: string | null
   retryCommand?: string
 }): void {
   const branch = input.branch

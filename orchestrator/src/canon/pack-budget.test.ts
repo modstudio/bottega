@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { checkPackBudget } from '../../scripts/check-pack-budget.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { dir } from '../../test/fixtures/store.ts'
@@ -62,7 +63,12 @@ describe('canon pack budget', () => {
   })
 
   test('a pack one byte over fails the gate naming the largest item; one byte under passes', async () => {
-    upsertProject({ name: 'pack-budget', path: dir, settings: { trunk: 'main' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'pack-budget',
+      path: dir,
+      settings: { trunk: 'main' },
+    })
     await setDoc({
       scope: 'job',
       subject: 'understand',
@@ -102,7 +108,12 @@ describe('canon pack budget', () => {
   })
 
   test('a small inject write is refused when its affected pack would cross the ceiling', async () => {
-    upsertProject({ name: 'proposed-pack-budget', path: dir, settings: { trunk: 'main' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'proposed-pack-budget',
+      path: dir,
+      settings: { trunk: 'main' },
+    })
     await setDoc({
       scope: 'job',
       subject: 'file-question',

@@ -32,7 +32,7 @@ describe('project subjects', () => {
     expect(() => listSubjects('missing')).toThrow(
       `unknown project "missing"; cleared by: ${PLATFORM_SLUG} project list`,
     )
-    upsertProject({ name: 'alpha', path: '/w/alpha' })
+    upsertProject({ recordId: newRecordId(), name: 'alpha', path: '/w/alpha' })
     expect(listSubjects('alpha')).toEqual([])
   })
 
@@ -48,7 +48,7 @@ describe('project subjects', () => {
   })
 
   test('adds at the end, keeps retired rows readable, and permits their names to be reused', async () => {
-    upsertProject({ name: 'alpha', path: '/w/alpha' })
+    upsertProject({ recordId: newRecordId(), name: 'alpha', path: '/w/alpha' })
     const first = await addSubject({ project: 'alpha', name: 'First', definition: 'First.' })
     const second = await addSubject({ project: 'alpha', name: 'Second', definition: 'Second.' })
     expect(listSubjects('alpha').map(({ name, position }) => ({ name, position }))).toEqual([
@@ -68,8 +68,8 @@ describe('project subjects', () => {
   })
 
   test('reorder requires exactly the active set from its project', async () => {
-    upsertProject({ name: 'alpha', path: '/w/alpha' })
-    upsertProject({ name: 'beta', path: '/w/beta' })
+    upsertProject({ recordId: newRecordId(), name: 'alpha', path: '/w/alpha' })
+    upsertProject({ recordId: newRecordId(), name: 'beta', path: '/w/beta' })
     const one = await addSubject({ project: 'alpha', name: 'One', definition: 'One.' })
     const two = await addSubject({ project: 'alpha', name: 'Two', definition: 'Two.' })
     const foreign = await addSubject({ project: 'beta', name: 'Foreign', definition: 'Foreign.' })
@@ -86,8 +86,8 @@ describe('project subjects', () => {
   })
 
   test('parent validation refuses another project, itself, and a cycle', () => {
-    upsertProject({ name: 'alpha', path: '/w/alpha' })
-    upsertProject({ name: 'beta', path: '/w/beta' })
+    upsertProject({ recordId: newRecordId(), name: 'alpha', path: '/w/alpha' })
+    upsertProject({ recordId: newRecordId(), name: 'beta', path: '/w/beta' })
     const parent = applySubjectRecord(row('alpha', 'Parent'), db())
     const foreign = applySubjectRecord(row('beta', 'Foreign'), db())
     expect(() => applySubjectRecord(row('alpha', 'Child', foreign.id), db())).toThrow(
@@ -103,7 +103,7 @@ describe('project subjects', () => {
   test.each(['First line\nSecond line', 'First line\rSecond line'])(
     'refuses a definition containing a line break',
     async (definition) => {
-      upsertProject({ name: 'alpha', path: '/w/alpha' })
+      upsertProject({ recordId: newRecordId(), name: 'alpha', path: '/w/alpha' })
       await expect(addSubject({ project: 'alpha', name: 'Broken', definition })).rejects.toThrow(
         'a subject definition must be one non-empty line',
       )
@@ -111,7 +111,7 @@ describe('project subjects', () => {
   )
 
   test('trims surrounding whitespace and refuses an interior line break', async () => {
-    upsertProject({ name: 'alpha', path: '/w/alpha' })
+    upsertProject({ recordId: newRecordId(), name: 'alpha', path: '/w/alpha' })
     const subject = await addSubject({
       project: 'alpha',
       name: 'Trimmed',

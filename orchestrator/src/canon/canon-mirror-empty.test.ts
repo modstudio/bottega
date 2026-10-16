@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { upsertProject } from '../project/projects.ts'
 import { applyHydration } from './canon-apply.ts'
@@ -24,6 +25,7 @@ test('an empty hydration plan closes its synthetic run without creating a tree',
   const root = repository()
   try {
     upsertProject({
+      recordId: newRecordId(),
       name: 'canon-mirror-empty',
       path: root,
       canon: true,

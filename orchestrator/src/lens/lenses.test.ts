@@ -16,8 +16,8 @@ import {
 
 describe('lens catalogue', () => {
   test('six seeded cores render their default profile for every registered project', () => {
-    upsertProject({ name: 'one', path: '/tmp/one', settings: {} })
-    upsertProject({ name: 'two', path: '/tmp/two', settings: {} })
+    upsertProject({ recordId: newRecordId(), name: 'one', path: '/tmp/one', settings: {} })
+    upsertProject({ recordId: newRecordId(), name: 'two', path: '/tmp/two', settings: {} })
     expect(listLenses().map((x) => x.id)).toEqual([
       'correctness',
       'craft',
@@ -70,7 +70,13 @@ describe('lens catalogue', () => {
   })
 
   test('an enabled stack profile wins while a disabled one falls through to generic', () => {
-    upsertProject({ name: 'stacked', path: '/tmp/stacked', stack: 'node', settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'stacked',
+      path: '/tmp/stacked',
+      stack: 'node',
+      settings: {},
+    })
     setProfile({
       lensId: 'correctness',
       axis: 'framework',
@@ -133,8 +139,8 @@ describe('lens catalogue', () => {
   })
 
   test('profile validation refuses undeclared slots and project selection binds one shared row', () => {
-    upsertProject({ name: 'one', path: '/tmp/one', settings: {} })
-    upsertProject({ name: 'two', path: '/tmp/two', settings: {} })
+    upsertProject({ recordId: newRecordId(), name: 'one', path: '/tmp/one', settings: {} })
+    upsertProject({ recordId: newRecordId(), name: 'two', path: '/tmp/two', settings: {} })
     expect(() =>
       setProfile({
         lensId: 'correctness',
@@ -230,7 +236,7 @@ describe('lens catalogue', () => {
   })
 
   test('a disabled unselected profile does not introduce its axis', () => {
-    upsertProject({ name: 'one', path: '/tmp/one', settings: {} })
+    upsertProject({ recordId: newRecordId(), name: 'one', path: '/tmp/one', settings: {} })
     const before = resolveLens('correctness', 'one')
     setProfile({
       lensId: 'correctness',
@@ -244,8 +250,13 @@ describe('lens catalogue', () => {
   })
 
   test('the project-id repair resolves every populated project reference', () => {
-    upsertProject({ name: 'one', path: '/tmp/one', settings: {} })
-    upsertProject({ name: PLATFORM_SLUG, path: `/tmp/${PLATFORM_SLUG}`, settings: {} })
+    upsertProject({ recordId: newRecordId(), name: 'one', path: '/tmp/one', settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: PLATFORM_SLUG,
+      path: `/tmp/${PLATFORM_SLUG}`,
+      settings: {},
+    })
     const runId = addRun({ agent: 'codex', job: 'review-lens', repo: 'one' })
     const renamedRunId = addRun({ agent: 'codex', job: 'review-lens', repo: 'devbox' })
     const live = db()

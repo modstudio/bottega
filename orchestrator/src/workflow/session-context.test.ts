@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { dir } from '../../test/preload.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -114,6 +115,7 @@ test('an unregistered cwd prints nothing and JSON says unregistered', async () =
 test('a registered project reports rulings and one value when a stage agrees', async () => {
   const path = repository('session-context-agree')
   upsertProject({
+    recordId: newRecordId(),
     name: 'session-context-agree',
     path,
     stack: 'bun',
@@ -180,6 +182,7 @@ test('ship-to renders every register branch phrase', async () => {
   for (const item of cases) {
     const path = repository(item.name)
     upsertProject({
+      recordId: newRecordId(),
       name: item.name,
       path,
       stack: 'bun',
@@ -207,6 +210,7 @@ test('a missing landing branch is nullable and never renders undefined', async (
     const name = `session-context-${shipTo}-missing-landing`
     const path = repository(name)
     upsertProject({
+      recordId: newRecordId(),
       name,
       path,
       stack: 'bun',
@@ -233,6 +237,7 @@ test('context warns about an ignored invalid ship-to and keeps the scope stage',
   const name = 'session-context-invalid-ship-to'
   const path = repository(name)
   upsertProject({
+    recordId: newRecordId(),
     name,
     path,
     stack: 'bun',
@@ -270,6 +275,7 @@ test('a mixed stage lists each distinct value with its step count and scope', as
   const first = implement[0]!
   const path = repository('session-context-mixed')
   upsertProject({
+    recordId: newRecordId(),
     name: 'session-context-mixed',
     path,
     stack: 'bun',
@@ -311,6 +317,7 @@ test('a workflow catalogue with no canon steps still reports resolved canon auto
   )
   const path = repository('session-context-empty-stage')
   upsertProject({
+    recordId: newRecordId(),
     name: 'session-context-empty-stage',
     path,
     stack: 'bun',
@@ -351,6 +358,7 @@ test('a hosted-read failure combines live local layers with cached hosted layers
   const name = 'session-context-stale-adapter'
   const path = repository(name)
   upsertProject({
+    recordId: newRecordId(),
     name,
     path,
     stack: 'bun',
@@ -413,6 +421,7 @@ test('a machine auto winner stays auto and does not make the context stale', asy
   const config = join(stateRoot, `${name}-config`)
   mkdirSync(config)
   upsertProject({
+    recordId: newRecordId(),
     name,
     path,
     stack: 'bun',
@@ -446,6 +455,7 @@ test('a hosted-read failure without a cache serves the local-scope resolution', 
   const name = 'session-context-degraded-without-cache'
   const path = repository(name)
   upsertProject({
+    recordId: newRecordId(),
     name,
     path,
     stack: 'bun',
@@ -477,6 +487,7 @@ test('a cache carrying the internal shipTo shape is ignored', async () => {
   const name = 'session-context-ignores-old-cache'
   const path = repository(name)
   upsertProject({
+    recordId: newRecordId(),
     name,
     path,
     stack: 'bun',
@@ -515,6 +526,7 @@ test('a degraded resolution does not overwrite the successful cache', async () =
   const name = 'session-context-degraded-preserves-cache'
   const path = repository(name)
   upsertProject({
+    recordId: newRecordId(),
     name,
     path,
     stack: 'bun',

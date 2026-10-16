@@ -173,6 +173,18 @@ export function storeMigrationState(
   return 'current'
 }
 
+/** Whether one exact journal entry is already recorded in this store. */
+export function migrationApplied(d: Database, tag: string, folder = MIGRATIONS_FOLDER): boolean {
+  if (!tableExists(d, MIGRATIONS_TABLE)) return false
+  const entry = migrationJournal(folder).find((candidate) => candidate.tag === tag)
+  if (!entry) throw new Error(`unknown migration ${tag}`)
+  return Boolean(
+    d
+      .query(`SELECT 1 FROM ${MIGRATIONS_TABLE} WHERE created_at=? AND hash=?`)
+      .get(entry.when, migrationHash(entry, folder)),
+  )
+}
+
 export function migrationRefusal(d: Database): string | null {
   const state = migrationState(d)
   if (state.ahead) {
@@ -620,7 +632,14 @@ function applyMigrationRange(d: Database, folder: string, beforeMigration?: stri
       versions.push(entry.tag)
     }
     applyBackfills(d, allowedEntries, folder)
-    stampUserVersion(d, allowedEntries.length)
+    const highestApplied = journal.reduce(
+      (highest, entry) =>
+        state.pending.some((pending) => pending.tag === entry.tag)
+          ? highest
+          : Math.max(highest, entry.idx + 1),
+      0,
+    )
+    stampUserVersion(d, Math.max(readUserVersion(d), highestApplied))
     const broken = d.query('PRAGMA foreign_key_check').all() as Array<{
       table: string
       rowid: number | null

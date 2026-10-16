@@ -20,7 +20,6 @@ export function assertRetryRootWorkspace(input: {
     branch: input.worktree.branch,
     conversationRootId: input.conversationRootId,
     projectId: input.projectId,
-    projectName: input.projectName,
   })
   const exists = worktreeExists(input.worktree.path)
   const decision = atomicRetryReuseDecision({

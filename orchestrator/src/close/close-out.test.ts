@@ -80,7 +80,7 @@ function closeOutFixture(
     join(tree, '.orch-run'),
     `${ownership === 'owned' ? id : id + 1}\n${repo}\nsource: git\n`,
   )
-  upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
+  upsertProject({ recordId: newRecordId(), name: project, path: repo, settings: { trunk: 'main' } })
   db()
     .query(
       `UPDATE run SET repo=?, cwd=?, worktree=?, branch=?, minted_branch=?,
@@ -252,6 +252,7 @@ test('a close-out that fails after removing the tree still clears its pointer', 
 test('present-tree recipe teardown becomes done with successful close-out', () => {
   const fixture = closeOutFixture('owned')
   upsertProject({
+    recordId: newRecordId(),
     name: `close-out-${fixture.id}`,
     path: fixture.repo,
     settings: { trunk: 'main', worktree: { recipePath: '.orch/worktree.jsonc' } },
@@ -286,6 +287,7 @@ test('present-tree recipe teardown becomes done with successful close-out', () =
 test('present-tree recipe teardown stays done when Git removal fails and is not repeated', () => {
   const fixture = closeOutFixture('owned')
   upsertProject({
+    recordId: newRecordId(),
     name: `close-out-${fixture.id}`,
     path: fixture.repo,
     settings: { trunk: 'main', worktree: { recipePath: '.orch/worktree.jsonc' } },
@@ -344,6 +346,7 @@ test('present-tree recipe teardown stays done when Git removal fails and is not 
 test('present-tree inline-recipe teardown stays done when Git removal fails and is not repeated', () => {
   const fixture = closeOutFixture('owned')
   upsertProject({
+    recordId: newRecordId(),
     name: `close-out-${fixture.id}`,
     path: fixture.repo,
     settings: { trunk: 'main', worktree: { recipe: { stop: 'inline-stop-marker' } } },
@@ -446,7 +449,7 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
   const repo = join(dir, project)
   const tree = join(repo, '.claude', 'worktrees', `orch-${id}-land`)
   mkdirSync(join(repo, '.git'), { recursive: true })
-  upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
+  upsertProject({ recordId: newRecordId(), name: project, path: repo, settings: { trunk: 'main' } })
   const projectId = (
     db().query('SELECT id FROM project WHERE name=?').get(project) as { id: number }
   ).id
@@ -526,7 +529,7 @@ test('absent landing-tree close-out rechecks conversation liveness before cleari
   const tree = join(repo, '.claude', 'worktrees', `orch-${id}-land`)
   const branch = `DEV-1023-orch-${id}`
   mkdirSync(join(repo, '.git'), { recursive: true })
-  upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
+  upsertProject({ recordId: newRecordId(), name: project, path: repo, settings: { trunk: 'main' } })
   db()
     .query(
       `UPDATE run SET repo=?,cwd=?,worktree=?,branch=?,minted_branch=?,session_id='owner'
@@ -578,7 +581,7 @@ function absentRecipeFixture() {
   const repo = join(dir, project)
   const tree = join(repo, '.claude', 'worktrees', `orch-${id}`)
   mkdirSync(join(repo, '.git'), { recursive: true })
-  upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
+  upsertProject({ recordId: newRecordId(), name: project, path: repo, settings: { trunk: 'main' } })
   const snapshot = JSON.stringify({
     source: { path: '.orch/worktree.jsonc', commit: 'abc' },
     recipe: {
@@ -714,6 +717,7 @@ test('an absent attached tree does not run its registered remove command', () =>
     .query('UPDATE run SET recipe_snapshot=NULL,worktree_source=? WHERE id=?')
     .run('git', fixture.id)
   upsertProject({
+    recordId: newRecordId(),
     name: `absent-recipe-${fixture.id}`,
     path: fixture.repo,
     settings: { trunk: 'main', worktree: { remove: 'registered-remove-marker {path}' } },
@@ -736,6 +740,7 @@ test('an absent recipe tree runs its registered remove command without Git remov
   const fixture = absentRecipeFixture()
   db().query('UPDATE run SET recipe_snapshot=NULL WHERE id=?').run(fixture.id)
   upsertProject({
+    recordId: newRecordId(),
     name: `absent-recipe-${fixture.id}`,
     path: fixture.repo,
     settings: { trunk: 'main', worktree: { remove: 'registered-remove-marker {path}' } },

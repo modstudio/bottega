@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -87,6 +88,7 @@ describe('stored canon removal preflight', () => {
 
   test("checks an unmanaged project's canon before removing a global row", async () => {
     upsertProject({
+      recordId: newRecordId(),
       name: 'unmanaged',
       path: process.cwd(),
       canon: true,

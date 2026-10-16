@@ -11,6 +11,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { git } from '../git/git-environment.ts'
 import { projectAt, upsertProject } from '../project/projects.ts'
 import {
@@ -90,6 +91,7 @@ test('built-in read-only trees are detached shared clones with private refs', ()
     writeFileSync(join(remoteRefs, 'develop'), `${base}\n`)
     writeFileSync(join(remoteRefs, 'topic'), `${base}\n`)
     upsertProject({
+      recordId: newRecordId(),
       name: `readonly-worktree-${runId}`,
       path: realpathSync(repoRoot),
       settings: { trunk: 'develop' },

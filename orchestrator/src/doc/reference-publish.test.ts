@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { REFERENCE_GENERATOR } from './doc-generator.ts'
@@ -18,7 +19,12 @@ test('reference publishing is the only write path and is idempotent and removing
     const taskFile = 'docs/reference/task.md'
     writeFileSync(join(root, indexFile), '# Command reference\n\n- [task](./task.md)\n')
     writeFileSync(join(root, taskFile), '# task\n\nTasks.\n')
-    upsertProject({ name: PLATFORM_SLUG, path: process.cwd(), settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: PLATFORM_SLUG,
+      path: process.cwd(),
+      settings: {},
+    })
     await setDoc({
       scope: 'project',
       subject: PLATFORM_SLUG,
@@ -137,7 +143,12 @@ test('an ordinary article already at a generated slug is converted, not reported
     const taskFile = 'docs/reference/task.md'
     writeFileSync(join(root, indexFile), '# Command reference\n\n- [task](./task.md)\n')
     writeFileSync(join(root, taskFile), '# task\n\nTasks.\n')
-    upsertProject({ name: PLATFORM_SLUG, path: process.cwd(), settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: PLATFORM_SLUG,
+      path: process.cwd(),
+      settings: {},
+    })
     const article = {
       scope: 'project' as const,
       subject: PLATFORM_SLUG,

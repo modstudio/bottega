@@ -133,6 +133,7 @@ describe('orch MCP', () => {
   test('worker-facing workflow tools refuse session ship-to names', async () => {
     const project = 'mcp-ship-to'
     upsertProject({
+      recordId: newRecordId(),
       name: project,
       path: '/mcp-ship-to',
       stack: 'bun',
@@ -289,6 +290,7 @@ describe('orch MCP', () => {
   test('every MCP workflow operation routes by cursor handle', async () => {
     const project = 'mcp-cursor-handles'
     upsertProject({
+      recordId: newRecordId(),
       name: project,
       path: '/mcp-cursor-handles',
       stack: 'bun',

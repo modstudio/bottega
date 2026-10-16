@@ -203,14 +203,15 @@ function seedNameMirrors(projectId: number, otherId: number): void {
 
 test('a local rename leaves no listed table naming the old project', () => {
   writeTransaction(() => {
-    upsertProject({ name: OLD, path: '/w/rename-from' })
-    upsertProject({ name: OTHER, path: '/w/rename-other' })
+    upsertProject({ recordId: newRecordId(), name: OLD, path: '/w/rename-from' })
+    upsertProject({ recordId: newRecordId(), name: OTHER, path: '/w/rename-other' })
   })
   const project = projectByName(OLD)
   const other = projectByName(OTHER)
   if (!project || !other) throw new Error('fixture projects were not registered')
   writeTransaction(() => seedNameMirrors(project.id, other.id))
   persistLocalProjectSet({ id: project.id }, OLD, NEXT, {
+    recordId: project.recordId,
     name: NEXT,
     path: '/w/rename-from',
   })

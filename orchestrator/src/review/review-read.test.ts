@@ -112,7 +112,12 @@ test('the read command records the branch and tip from --cwd', () => {
     )
     const tip = git(cwd, 'rev-parse', 'HEAD')
     expect(git(process.cwd(), 'branch', '--show-current')).not.toBe('DEV-1262-review-read-fixture')
-    upsertProject({ name: 'read-command-fixture', path: cwd, settings: { trunk: 'main' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'read-command-fixture',
+      path: cwd,
+      settings: { trunk: 'main' },
+    })
     db()
       .query(
         `INSERT INTO run

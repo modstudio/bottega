@@ -159,7 +159,6 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
     branch,
     conversationRootId: null,
     projectId: project.id,
-    projectName: project.name,
     retryCommand: `${PLATFORM_SLUG} tree open ${runId}${seed ? ` --seed ${seed}` : ''}`,
   })
   const existingPath = checkedOutWorktree(project.path, branch)
@@ -254,7 +253,6 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
         branch,
         conversationRootId: null,
         projectId: project.id,
-        projectName: project.name,
         retryCommand: `${PLATFORM_SLUG} tree open ${runId}${seed ? ` --seed ${seed}` : ''}`,
       })
       prepareResumeBranchIfNeeded(project.path, plan)

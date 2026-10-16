@@ -182,6 +182,7 @@ test('an article cannot be created or changed to effective inject delivery', asy
 
 test('set and restore repair the project id on an existing document', () => {
   upsertProject({
+    recordId: newRecordId(),
     name: 'repair-project',
     path: '/w/repair',
     stack: null,
@@ -222,8 +223,8 @@ test('set and restore repair the project id on an existing document', () => {
 })
 
 test('article fields validate, keep omitted values, clear explicitly, and restore snapshots', async () => {
-  upsertProject({ name: 'articles', path: '/w/articles' })
-  upsertProject({ name: 'foreign', path: '/w/foreign' })
+  upsertProject({ recordId: newRecordId(), name: 'articles', path: '/w/articles' })
+  upsertProject({ recordId: newRecordId(), name: 'foreign', path: '/w/foreign' })
   const own = await addSubject({ project: 'articles', name: 'Own', definition: 'Own.' })
   const related = await addSubject({ project: 'articles', name: 'Related', definition: 'Related.' })
   const retired = await addSubject({ project: 'articles', name: 'Retired', definition: 'Retired.' })
@@ -378,7 +379,7 @@ test('article fields validate, keep omitted values, clear explicitly, and restor
 })
 
 test('subject filtering lists own-subject documents before related documents', async () => {
-  upsertProject({ name: 'filter-articles', path: '/w/filter-articles' })
+  upsertProject({ recordId: newRecordId(), name: 'filter-articles', path: '/w/filter-articles' })
   const subject = await addSubject({
     project: 'filter-articles',
     name: 'Topic',

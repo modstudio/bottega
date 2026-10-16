@@ -261,7 +261,7 @@ test('inbox gives no answer command for a foreign-owned workflow question', asyn
   )
 })
 test('project inbox exposes a foreign question without adopting it', async () => {
-  upsertProject({ name: 'inbox-project', path: process.cwd() })
+  upsertProject({ recordId: newRecordId(), name: 'inbox-project', path: process.cwd() })
   const id = addRun({
     agent: 'codex',
     job: 'implement',
@@ -279,7 +279,7 @@ test('project inbox exposes a foreign question without adopting it', async () =>
   )
 })
 test('project inbox reports a recently-seen foreign owner as live, without authority', async () => {
-  upsertProject({ name: 'live-project', path: process.cwd() })
+  upsertProject({ recordId: newRecordId(), name: 'live-project', path: process.cwd() })
   const id = addRun({
     agent: 'codex',
     job: 'implement',
@@ -351,7 +351,7 @@ test('inbox treats an empty-string exclusion as voided, matching VOIDED_SQL', as
   )
 })
 test('bare project inbox includes its questions and this session questions from other projects', async () => {
-  upsertProject({ name: 'here', path: process.cwd() })
+  upsertProject({ recordId: newRecordId(), name: 'here', path: process.cwd() })
   const here = addRun({
     agent: 'codex',
     job: 'implement',
@@ -383,7 +383,7 @@ test('bare project inbox includes its questions and this session questions from 
   expect(shown).toContain(`run ${ownElsewhere} · codex/implement · elsewhere`)
 })
 test('bare project inbox includes recoverable roots owned by this session in other projects', async () => {
-  upsertProject({ name: 'here', path: process.cwd() })
+  upsertProject({ recordId: newRecordId(), name: 'here', path: process.cwd() })
   const ownElsewhere = addRun({
     agent: 'codex',
     job: 'implement',
