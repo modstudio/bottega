@@ -9,7 +9,7 @@ import {
   HUB_UI_ROOT,
   hubWorkspaceDependencies,
 } from './architecture-hub-packages.ts'
-import { hubUiLayerFolders } from './architecture-ui-layers.ts'
+import { isDeclaredHubUiSourceLocation } from './architecture-ui-layers.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const dependencyFields = [
@@ -74,16 +74,12 @@ for (const relativePath of workspacePackagePaths) {
   }
 }
 
-const declaredLayerFolders = new Set(hubUiLayerFolders)
 for (const sourcePath of new Glob('**/*.{ts,tsx,css}').scanSync({
   cwd: join(ROOT, HUB_UI_ROOT, 'src'),
 })) {
-  if (/\.(?:test|spec)\.[cm]?tsx?$/.test(sourcePath)) continue
-  const folder = sourcePath.split(sep)[0]
-  if (folder !== 'styles' && !declaredLayerFolders.has(folder!)) {
-    violations.push(
-      `${HUB_UI_ROOT}/src/${sourcePath.split(sep).join('/')}: ${folder} is not a declared hub-ui layer folder`,
-    )
+  const repositoryPath = `${HUB_UI_ROOT}/src/${sourcePath.split(sep).join('/')}`
+  if (!isDeclaredHubUiSourceLocation(repositoryPath)) {
+    violations.push(`${repositoryPath}: source file is not in a declared hub-ui layer folder`)
   }
 }
 

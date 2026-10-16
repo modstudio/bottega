@@ -47,6 +47,21 @@ const uiLayers: { name: string; folders: string[] }[] = [
 export const hubUiLayerFolders = uiLayers.flatMap((layer) => layer.folders)
 export const hubUiFolderLayerRuleName = 'hub-ui-folder-has-a-layer'
 
+const hubUiLayerFolderSet = new Set(hubUiLayerFolders)
+const HUB_UI_SOURCE_PREFIX = 'hub/ui/src/'
+const TEST_SOURCE = /\.(?:test|spec)\.[cm]?tsx?$/
+
+/** Whether a repository-relative hub-ui source path belongs to a declared location. */
+export function isDeclaredHubUiSourceLocation(path: string): boolean {
+  const normalized = path.replaceAll('\\', '/')
+  if (!normalized.startsWith(HUB_UI_SOURCE_PREFIX) || TEST_SOURCE.test(normalized)) return true
+  const sourcePath = normalized.slice(HUB_UI_SOURCE_PREFIX.length)
+  const slash = sourcePath.indexOf('/')
+  if (slash < 1) return false
+  const folder = sourcePath.slice(0, slash)
+  return folder === 'styles' || hubUiLayerFolderSet.has(folder)
+}
+
 const uiFolders = (folders: string[]) => `^hub/ui/src/(?:${folders.join('|')})/`
 
 type UiArchitectureRule = {

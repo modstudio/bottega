@@ -23,6 +23,7 @@ type ArchitectureCruiseRequest = {
   stdout?: 'pipe' | 'inherit'
   config?: ReturnType<typeof dependencyCruiserConfig>
   cwd?: string
+  timeoutMs?: number
 }
 
 export async function runArchitectureCruise(request: ArchitectureCruiseRequest) {
@@ -46,8 +47,23 @@ export async function runArchitectureCruise(request: ArchitectureCruiseRequest) 
         stderr: 'inherit',
       },
     )
-    const output = stdout === 'pipe' ? await new Response(child.stdout).text() : ''
-    return { exitCode: await child.exited, stdout: output }
+    let timedOut = false
+    const timeout =
+      request.timeoutMs === undefined
+        ? undefined
+        : setTimeout(() => {
+            timedOut = true
+            child.kill()
+          }, request.timeoutMs)
+    try {
+      const [output, exitCode] = await Promise.all([
+        stdout === 'pipe' ? new Response(child.stdout).text() : Promise.resolve(''),
+        child.exited,
+      ])
+      return { exitCode, stdout: output, timedOut }
+    } finally {
+      if (timeout !== undefined) clearTimeout(timeout)
+    }
   } finally {
     rmSync(generatedDirectory, { recursive: true, force: true })
   }

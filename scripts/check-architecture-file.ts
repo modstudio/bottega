@@ -9,7 +9,10 @@ import {
   writeTimeArchitectureRules,
 } from './architecture.ts'
 import { runArchitectureCruise } from './architecture-cruise.ts'
-import { hubUiFolderLayerRuleName, hubUiLayerFolders } from './architecture-ui-layers.ts'
+import {
+  hubUiFolderLayerRuleName,
+  isDeclaredHubUiSourceLocation,
+} from './architecture-ui-layers.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const VIEW_DATA_BASELINE = new Set<string>(
@@ -27,6 +30,8 @@ const target = process.argv[2]
 const original = process.argv[3] ?? target
 const checkoutRoot = process.argv[4] ?? ROOT
 const pathOnly = process.argv[5] === '--path-only'
+// Safely shorter than hub-import-guard.py's 8-second outer backstop so cleanup can finish.
+const DEPENDENCY_CRUISE_TIMEOUT_MS = 6_000
 
 if (!target || !original) {
   console.error(
@@ -38,19 +43,11 @@ if (!target || !original) {
 const config = dependencyCruiserConfig()
 config.forbidden = writeTimeArchitectureRules()
 config.options.tsConfig.fileName = join(checkoutRoot, 'hub/web/tsconfig.json')
-const declaredLayerFolders = new Set(hubUiLayerFolders)
-const originalFolder = original.match(/^hub\/ui\/src\/([^/]+)\//)?.[1]
-const undeclaredUiFolder =
-  originalFolder !== undefined &&
-  originalFolder !== 'styles' &&
-  !declaredLayerFolders.has(originalFolder) &&
-  !/\.(?:test|spec)\.[cm]?tsx?$/.test(original)
-
-if (undeclaredUiFolder) {
+if (!isDeclaredHubUiSourceLocation(original)) {
   console.log(
     JSON.stringify({
       status: 'refused',
-      findings: [{ rule: hubUiFolderLayerRuleName, dependency: originalFolder }],
+      findings: [{ rule: hubUiFolderLayerRuleName, dependency: original }],
     }),
   )
   process.exit(0)
@@ -67,7 +64,18 @@ const cruise = await runArchitectureCruise({
   stdout: 'pipe',
   config,
   cwd: checkoutRoot,
+  timeoutMs: DEPENDENCY_CRUISE_TIMEOUT_MS,
 })
+if (cruise.timedOut) {
+  console.log(
+    JSON.stringify({
+      status: 'unchecked',
+      findings: [],
+      reason: `dependency cruise timed out after ${DEPENDENCY_CRUISE_TIMEOUT_MS}ms`,
+    }),
+  )
+  process.exit(0)
+}
 const result = JSON.parse(cruise.stdout) as ICruiseResult
 const rulesByName = new Map(config.forbidden.map((rule) => [rule.name, rule]))
 
