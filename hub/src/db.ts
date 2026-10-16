@@ -72,17 +72,6 @@ function legacyDatabaseRefusal(): string | null {
   )
 }
 
-/** A test process never falls back to the live hub store; production still does. */
-export function decideHubDatabasePath(
-  isTestProcess: boolean,
-  hubDb: string | undefined,
-  liveStore: string | null,
-): string | null {
-  assertTestHubDatabasePath(isTestProcess, hubDb)
-  if (hubDb) return hubDb
-  return liveStore
-}
-
 function authorizedHubInstallation(): boolean {
   return runtime.authorized
 }
@@ -172,7 +161,7 @@ function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
 export function db(): Database {
   if (handle) return refuseOrReloadStaleSchema(handle, false)
   // bun test sets NODE_ENV=test; an unset HUB_DB must not fall back to the live store.
-  decideHubDatabasePath(process.env.NODE_ENV === 'test', process.env.HUB_DB, livePath)
+  assertTestHubDatabasePath()
   requireDatabase()
   const d = new Database(DB_PATH!, { readwrite: true, create: false })
   d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')

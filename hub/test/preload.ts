@@ -7,14 +7,17 @@ import { fileURLToPath } from 'node:url'
 import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../shared/config-directory.ts'
 import { machineId } from '../../shared/machine-config.ts'
-import { createTestHubDatabaseGuard } from '../../shared/test-hub-database.ts'
+import {
+  createTestHubDatabaseGuard,
+  mintTestHubDatabase,
+} from '../../shared/test-hub-database.ts'
 import { HUB_MIGRATION_BACKFILL_VALUES } from './migration-values.ts'
 
 const fixture = fileURLToPath(new URL('./project-register.ts', import.meta.url))
 chmodSync(fixture, 0o755)
 process.env.HUB_ORCH = fixture
 
-const databaseDir = mkdtempSync(join(tmpdir(), 'hub-test-'))
+const { directory: databaseDir } = mintTestHubDatabase(FROZEN_STATE_NAMES.hubDatabase)
 const originalConfigHome = process.env[CONFIG_HOME_ENV]
 const originalHarnessEnvFile = process.env[HARNESS_ENV_FILE_ENV]
 const originalRecordApiUrl = process.env.ORCH_RECORD_API_URL
@@ -23,7 +26,6 @@ process.env[CONFIG_HOME_ENV] = configDir
 machineId(HUB_MIGRATION_BACKFILL_VALUES.machine_id)
 process.env[HARNESS_ENV_FILE_ENV] = ''
 delete process.env.ORCH_RECORD_API_URL
-process.env.HUB_DB = join(databaseDir, FROZEN_STATE_NAMES.hubDatabase)
 const assertTestHubDatabase = createTestHubDatabaseGuard()
 assertTestHubDatabase()
 const { applyMigrations } = await import('../src/migrations.ts')

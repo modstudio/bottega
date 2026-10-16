@@ -1,6 +1,15 @@
-import { realpathSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { mkdtempSync, realpathSync } from 'node:fs'
+import { tmpdir, userInfo } from 'node:os'
+import { basename, dirname, join, resolve } from 'node:path'
+import { resolveStatePaths, type StateEnvironment } from './state-directory.ts'
+
+type MintedHubDatabase = {
+  database: string
+  directory: string
+  livePaths: string[]
+}
+
+let mintedHubDatabase: MintedHubDatabase | null = null
 
 function canonicalPath(path: string): string {
   let existing = resolve(path)
@@ -17,50 +26,50 @@ function canonicalPath(path: string): string {
   }
 }
 
-/** Decide the one hub database rule for test processes from canonical paths. */
+/** Decide whether the current store has the provenance recorded by the preload. */
 export function testHubDatabasePathRefusal(
-  isTestProcess: boolean,
-  configuredPath: string | undefined,
-  resolvedPath: string | null,
-  temporaryDirectory: string,
+  mintedPath: string | null,
+  currentPath: string | null,
+  livePaths: readonly string[],
 ): string | null {
-  if (!isTestProcess) return null
-  const offset = resolvedPath === null ? null : relative(temporaryDirectory, resolvedPath)
-  if (
-    configuredPath &&
-    offset &&
-    offset !== '..' &&
-    !offset.startsWith(`..${sep}`) &&
-    !isAbsolute(offset)
-  ) {
+  if (mintedPath !== null && currentPath === mintedPath && !livePaths.includes(currentPath)) {
     return null
   }
-  const resolved = resolvedPath ?? (configuredPath === '' ? '<empty>' : '<unset>')
   return (
-    `test process refuses hub database: HUB_DB resolved ${resolved}; temporary directory is ${temporaryDirectory}\n` +
+    `test process refuses hub database: HUB_DB resolved ${currentPath ?? '<unset>'}; preload minted ${mintedPath ?? '<none minted>'}\n` +
     'invariant: A test suite never falls back to the live hub database.\n' +
-    'cleared by: set HUB_DB to a scratch store under the operating system temporary directory before importing hub/src/db.ts'
+    'cleared by: run the hub tests from hub/ so the package preload mints the store'
   )
 }
 
-/** Refuse any test process state in which hub would open a store outside temporary storage. */
-export function assertTestHubDatabasePath(
-  isTestProcess: boolean,
-  configuredPath: string | undefined,
-): void {
-  if (!isTestProcess) return
+/** Mint and record the only hub store this process may use for test fixtures. */
+export function mintTestHubDatabase(databaseFileName: string): MintedHubDatabase {
+  const environmentAtMint = { ...process.env }
+  const defaultEnvironment: StateEnvironment = { HOME: userInfo().homedir }
+  const livePaths = [environmentAtMint, defaultEnvironment].map((environment) =>
+    canonicalPath(resolveStatePaths(environment).hubDatabase),
+  )
   const temporaryDirectory = canonicalPath(tmpdir())
-  const resolvedPath = configuredPath ? canonicalPath(configuredPath) : null
+  const directory = mkdtempSync(join(temporaryDirectory, 'hub-test-'))
+  const database = join(directory, databaseFileName)
+  mintedHubDatabase = { database: canonicalPath(database), directory, livePaths }
+  process.env.HUB_DB = database
+  return mintedHubDatabase
+}
+
+/** Refuse a test store unless this process's preload minted that exact non-live path. */
+export function assertTestHubDatabasePath(): void {
+  if (process.env.NODE_ENV !== 'test') return
+  const currentPath = process.env.HUB_DB ? canonicalPath(process.env.HUB_DB) : null
   const refusal = testHubDatabasePathRefusal(
-    isTestProcess,
-    configuredPath,
-    resolvedPath,
-    temporaryDirectory,
+    mintedHubDatabase?.database ?? null,
+    currentPath,
+    mintedHubDatabase?.livePaths ?? [],
   )
   if (refusal) throw new Error(refusal)
 }
 
-/** Refuse fixture resets unless the process uses its preload-minted temporary store. */
+/** Guard fixture resets with the same minted-store assertion used by hub startup. */
 export function createTestHubDatabaseGuard(): () => void {
-  return () => assertTestHubDatabasePath(true, process.env.HUB_DB)
+  return assertTestHubDatabasePath
 }
