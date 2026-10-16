@@ -8,13 +8,19 @@ import { finishReleaseLedgerEntry, startReleaseLedgerEntry } from './release-led
 import { backfillReleaseRecords, enqueueReleaseRecord } from './release-outbox.ts'
 
 const RELEASE_RECORD_PAYLOAD_CONTRACT = OUTBOX_PAYLOAD_CONTRACTS.release
+const DECOY_PROJECT_RECORD_ID = '01990000-0000-7000-8000-000000001213'
+const RELEASE_PROJECT_RECORD_ID = '01990000-0000-7000-8000-000000001214'
+const RELEASE_PROJECT_LOCAL_ID = 2
 
 function fixture(): Database {
   const database = new Database(':memory:')
   applyMigrations(database)
   database
     .query('INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?)')
-    .run('01990000-0000-7000-8000-000000001214', PLATFORM_SLUG, '/fixture', '{}')
+    .run(DECOY_PROJECT_RECORD_ID, 'decoy', '/decoy', '{}')
+  database
+    .query('INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?)')
+    .run(RELEASE_PROJECT_RECORD_ID, PLATFORM_SLUG, '/fixture', '{}')
   return database
 }
 
@@ -47,9 +53,7 @@ test('release writes and evolves one whole-row pending payload without deploy ou
   )
   expect(startedPayload).toMatchObject({
     id: initial.record_id,
-    projectId: expect.stringMatching(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-    ),
+    projectId: RELEASE_PROJECT_RECORD_ID,
     projectName: PLATFORM_SLUG,
     rung: 'production',
     candidateCommit: 'candidate-sha',
@@ -61,7 +65,7 @@ test('release writes and evolves one whole-row pending payload without deploy ou
   expect(startedPayload).not.toHaveProperty('outputTail')
   expect(startedPayload).not.toHaveProperty('output_tail')
   expect(database.query('SELECT project_id FROM release_ledger WHERE id=?').get(id)).toEqual({
-    project_id: expect.any(Number),
+    project_id: RELEASE_PROJECT_LOCAL_ID,
   })
 
   finishReleaseLedgerEntry(

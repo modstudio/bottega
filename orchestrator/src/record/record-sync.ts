@@ -282,7 +282,7 @@ function payloadWithProjectIdentity(
   row: OutboxRow,
   parsed: Payload | null,
 ): string {
-  if (!parsed || Object.hasOwn(parsed, 'projectId') || !Object.hasOwn(parsed, 'projectName'))
+  if (!parsed || parsed.projectId != null || parsed.projectName == null)
     return row.payload
   const projectId = sourceProjectRecordId(local, row)
   if (projectId === undefined) return row.payload

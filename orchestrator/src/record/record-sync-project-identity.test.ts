@@ -1,5 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { applyMigrations } from '../database/migrations.ts'
+import { backfillReleaseRecords } from '../release/release-outbox.ts'
 import { syncRecord } from './record-sync.ts'
 
 const PROJECT_ID = '01990000-0000-7000-8000-000000000088'
@@ -22,7 +24,29 @@ function oldShapeRun(projectId: number | null): Database {
     .query(
       "INSERT INTO outbox VALUES (1,'run','outbox-record','run-record',?,'2026-09-15',0,NULL,NULL,NULL,NULL,NULL,NULL)",
     )
-    .run(JSON.stringify({ id: 'run-record', projectName: 'widget', machineId: MACHINE_ID }))
+    .run(
+      JSON.stringify({
+        id: 'run-record',
+        projectId: null,
+        projectName: 'widget',
+        machineId: MACHINE_ID,
+      }),
+    )
+  return local
+}
+
+function backfilledUnscopedRelease(): Database {
+  const local = new Database(':memory:')
+  applyMigrations(local)
+  local
+    .query(
+      `INSERT INTO release_ledger
+       (record_id,project,project_id,rung,candidate_commit,rollback,actor,started_at)
+       VALUES ('01990000-0000-7000-8000-000000000077','widget',NULL,'production','sha',0,
+               'operator','2026-09-15T00:00:00.000Z')`,
+    )
+    .run()
+  expect(backfillReleaseRecords(local)).toEqual({ enqueued: 1 })
   return local
 }
 
@@ -46,41 +70,7 @@ function oldShapeRelease(): Database {
   return local
 }
 
-async function sentPayload(projectId: number | null): Promise<Record<string, unknown>> {
-  const local = oldShapeRun(projectId)
-  let sent: Record<string, unknown> = {}
-  const result = await syncRecord({
-    local,
-    now: () => '2026-09-15T01:01:00.000Z',
-    identity: { id: MACHINE_ID, name: 'test-machine' },
-    client: {
-      whoami: async () => ({
-        user: { id: MACHINE_ID },
-        activeSpaceId: SPACE_ID,
-        personalSpaceId: SPACE_ID,
-        memberships: [{ space_id: SPACE_ID, slug: 'platform', permission: 'write' }],
-      }),
-      sync: async (request) => {
-        sent = JSON.parse(request.rows[0]!.payload) as Record<string, unknown>
-        return { results: [{ id: request.rows[0]!.id, status: 'synced' as const }] }
-      },
-    },
-  })
-  expect(result).toMatchObject({ pushed: 1, failed: 0 })
-  local.close()
-  return sent
-}
-
-test('an old-shape run derives its project UUID from its source row', async () => {
-  expect(await sentPayload(1)).toMatchObject({ projectId: PROJECT_ID, projectName: 'widget' })
-})
-
-test('an old-shape run whose source has no project is sent unscoped', async () => {
-  expect(await sentPayload(null)).toMatchObject({ projectId: null, projectName: null })
-})
-
-test('an old-shape release derives its project UUID from its source row', async () => {
-  const local = oldShapeRelease()
+async function syncPayload(local: Database): Promise<Record<string, unknown>> {
   let sent: Record<string, unknown> = {}
   const result = await syncRecord({
     local,
@@ -100,6 +90,32 @@ test('an old-shape release derives its project UUID from its source row', async 
     },
   })
   expect(result).toMatchObject({ pushed: 1, failed: 0, quarantined: [] })
-  expect(sent).toMatchObject({ projectId: PROJECT_ID, projectName: 'widget' })
   local.close()
+  return sent
+}
+
+async function sentPayload(projectId: number | null): Promise<Record<string, unknown>> {
+  return syncPayload(oldShapeRun(projectId))
+}
+
+test('an old-shape run derives its project UUID from its source row', async () => {
+  expect(await sentPayload(1)).toMatchObject({ projectId: PROJECT_ID, projectName: 'widget' })
+})
+
+test('a run with a null project id whose source has no project is sent unscoped', async () => {
+  expect(await sentPayload(null)).toMatchObject({ projectId: null, projectName: null })
+})
+
+test('a backfilled release whose source has no project is sent unscoped', async () => {
+  expect(await syncPayload(backfilledUnscopedRelease())).toMatchObject({
+    projectId: null,
+    projectName: null,
+  })
+})
+
+test('an old-shape release derives its project UUID from its source row', async () => {
+  expect(await syncPayload(oldShapeRelease())).toMatchObject({
+    projectId: PROJECT_ID,
+    projectName: 'widget',
+  })
 })
