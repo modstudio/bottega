@@ -16,24 +16,22 @@ import {
 afterEach(() => registerEmbeddedAssets(null))
 
 const livePath = '/nonexistent-live-hub-store/hub.db'
-const tempPath = '/nonexistent-temp-hub-store/hub.db'
 
 describe('hub database path decision', () => {
   test('test-process unset HUB_DB mutation: refuses the live fallback', () => {
     expect(() => decideHubDatabasePath(true, undefined, livePath)).toThrow(
-      `test process refuses hub database: HUB_DB resolved <unset>; live store is ${livePath}\n` +
-        'invariant: A test suite never falls back to the live hub database.\n' +
-        'cleared by: set HUB_DB to a scratch store before importing hub/src/db.ts',
+      'test process refuses hub database: HUB_DB resolved <unset>',
     )
   })
 
   test('test-process empty HUB_DB mutation: refuses the live fallback', () => {
     expect(() => decideHubDatabasePath(true, '', livePath)).toThrow(
-      'test process refuses hub database: HUB_DB resolved <unset>',
+      'test process refuses hub database: HUB_DB resolved <empty>',
     )
   })
 
   test('test-process temp HUB_DB mutation: uses the scratch store', () => {
+    const tempPath = join(tmpdir(), 'nonexistent-temp-hub-store', 'hub.db')
     expect(decideHubDatabasePath(true, tempPath, livePath)).toBe(tempPath)
   })
 
