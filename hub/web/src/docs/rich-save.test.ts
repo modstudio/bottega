@@ -61,6 +61,16 @@ test("editing one paragraph changes only that paragraph's lines", () => {
   expect(saved).toBe(`Alpha line extra.\n\n${rest}`)
 })
 
+test('an articles fence is a locked block and survives a neighboring edit byte-for-byte', () => {
+  const fence = '```articles\n```'
+  const markdown = `Intro line.\n\n${fence}\n`
+  const nodes = clone(parseRichDocument(markdown))
+  expect(nodes[1]).toEqual({ type: 'lockedBlock', attrs: { source: fence } })
+
+  setParagraphText(nodes, 'Intro line changed.')
+  expect(saveRichDocument(markdown, nodes)).toBe(`Intro line changed.\n\n${fence}\n`)
+})
+
 test('deleting a block removes only it', () => {
   const markdown = 'Keep this.\n\nDrop this.\n'
   const nodes = clone(parseRichDocument(markdown)).filter((_, index) => index !== 1)

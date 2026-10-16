@@ -24,14 +24,18 @@ export function ArticleList({
           </tr>
         </thead>
         <tbody>
-          {rows.map(({ item, depth }) => (
+          {rows.map(({ item, depth, linked }) => (
             <tr key={item.id}>
               <td>{item.form ? DOC_FORM_LABELS[item.form] : ''}</td>
               <td>
                 {depth === 1 ? '↳ ' : null}
-                <Link {...locationFor(item)}>
-                  {depth === 0 ? <strong>{item.title}</strong> : item.title}
-                </Link>
+                {linked ? (
+                  <Link {...locationFor(item)}>
+                    {depth === 0 ? <strong>{item.title}</strong> : item.title}
+                  </Link>
+                ) : (
+                  <strong>{item.title}</strong>
+                )}
               </td>
               <td>{item.summary ?? ''}</td>
             </tr>

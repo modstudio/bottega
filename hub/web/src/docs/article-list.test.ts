@@ -65,3 +65,25 @@ test('a document with no visible article children has no rows', () => {
   expect(articleListRows(treeForAudience([items[0]!], 'technical'), 'root')).toEqual([])
   expect(articleListRows(treeForAudience(items, 'customer'), 'root')).toEqual([])
 })
+
+test('an audience-hidden child stays as an unlinked parent of a visible grandchild', () => {
+  const audienceItems = [
+    item('customer-root', 'Customer root', null, 0, { audiences: ['customer'] }),
+    item('technical-child', 'Technical child', 'customer-root', 0),
+    item('customer-grandchild', 'Customer grandchild', 'technical-child', 0, {
+      audiences: ['customer'],
+    }),
+  ]
+  const tree = treeForAudience(audienceItems, 'customer')
+
+  expect(
+    articleListRows(tree, 'customer-root').map(({ item: row, depth, linked }) => [
+      row.id,
+      depth,
+      linked,
+    ]),
+  ).toEqual([
+    ['technical-child', 0, false],
+    ['customer-grandchild', 1, true],
+  ])
+})
