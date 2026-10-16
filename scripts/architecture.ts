@@ -640,6 +640,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/state-directory.ts',
     '../database/db.ts',
     '../mcp/mcp-probe.ts',
+    '../no-follow-file.ts',
     '../project/projects.ts',
     './sandbox-runtime.ts',
   ]),

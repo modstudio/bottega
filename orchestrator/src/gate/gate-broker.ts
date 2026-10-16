@@ -144,7 +144,7 @@ function recordFinishedGate(input: {
   timedOut: boolean
   elapsedMs: number
   tail: string
-  artifactPath: string
+  artifactPath: string | null
   cancelledReason: string | null
   command: string | null
 }): void {
@@ -275,7 +275,7 @@ function startGateExecution(
       timedOut,
       elapsedMs: Date.now() - started,
       tail,
-      artifactPath,
+      artifactPath: fd === null ? null : artifactPath,
       cancelledReason,
       command,
     })

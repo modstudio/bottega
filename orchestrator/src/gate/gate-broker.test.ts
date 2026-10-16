@@ -241,10 +241,11 @@ test('an occupied gate log path fails the execution without following the path',
   try {
     await waitForFinishedGate(gateId)
     const execution = db()
-      .query('SELECT exit_code,output_tail FROM gate_execution WHERE id=?')
-      .get(gateId) as { exit_code: number; output_tail: string }
+      .query('SELECT exit_code,output_tail,output_artifact FROM gate_execution WHERE id=?')
+      .get(gateId) as { exit_code: number; output_tail: string; output_artifact: string | null }
 
     expect(execution.exit_code).toBe(-1)
+    expect(execution.output_artifact).toBeNull()
     expect(execution.output_tail).toContain(
       `gate log path is occupied: ${occupiedPath}; gate did not run`,
     )
