@@ -38,8 +38,17 @@ const cruise = await runArchitectureCruise({
   config,
 })
 const result = JSON.parse(cruise.stdout) as ICruiseResult
+const rulesByName = new Map(config.forbidden.map((rule) => [rule.name, rule]))
+
+function appliesToOriginalPath(ruleName: string) {
+  const from = rulesByName.get(ruleName)?.from
+  if (!from || !new RegExp(from.path).test(original)) return false
+  return !from.pathNot?.some((pattern) => new RegExp(pattern).test(original))
+}
+
 const findings = result.summary.violations.filter(({ from, rule }) => {
   if (rule.severity !== 'error') return false
+  if (from === target && !appliesToOriginalPath(rule.name)) return false
   if (rule.name === VIEW_DATA_RULE) return from !== target || !VIEW_DATA_BASELINE.has(original)
   return rule.name.startsWith('hub-ui-')
 })
