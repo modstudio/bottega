@@ -22,6 +22,7 @@ import { mcpModules } from './architecture-mcp-modules.ts'
 import { metricModules } from './architecture-metric-modules.ts'
 import { monitorModules } from './architecture-monitor-modules.ts'
 import { operatorWaitingModules } from './architecture-operator-waiting.ts'
+import { projectModules } from './architecture-project-modules.ts'
 import { pullRequestModuleSpecs } from './architecture-pull-request.ts'
 import { ratchetModules } from './architecture-ratchet-modules.ts'
 import { recipeModules } from './architecture-recipe-modules.ts'
@@ -493,34 +494,7 @@ export const modules: ArchitectureModule[] = [
     '../record/outbox-sanitize.ts',
     '../verdict/verdict-payload.ts',
   ]),
-  module('orchestrator/src/project/project-lock.ts', [
-    '../../../shared/brand.ts',
-    '../database/db.ts',
-    '../git/git-environment.ts',
-    '../../../shared/process-identity.ts',
-  ]),
-  module('orchestrator/src/project/project-hosted-write.ts', [
-    '../../../shared/brand.ts',
-    '../../../shared/record-id.ts',
-    '../../../shared/record-space-membership.ts',
-    '../record/record-api-client.ts',
-    '../record/record-project-destination.ts',
-    '../record/record-project-destination-client.ts',
-    '../record/record-write-authority.ts',
-    './project-settings.ts',
-  ]),
-  module('orchestrator/src/project/project-record-identity.ts', [
-    '../../../shared/brand.ts',
-    '../../../shared/record-id.ts',
-    '../record/record-api-client.ts',
-    '../record/record-project-destination-client.ts',
-    '../record/record-session.ts',
-    '../record/record-write-authority.ts',
-    '../database/db.ts',
-    './project-settings.ts',
-    './projects.ts',
-  ]),
-  module('orchestrator/src/project/project-rename.ts', ['../database/db.ts', './projects.ts']),
+  ...projectModules,
   module('orchestrator/src/database/project-register-store.ts', [
     'bun:sqlite',
     'node:fs',
