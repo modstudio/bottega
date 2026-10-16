@@ -1,7 +1,18 @@
 import { describe, expect, test } from 'bun:test'
-import { dispatchThenGatherIssueReviews, runIssueFixReviews } from './issue-review-run.ts'
+import {
+  dispatchThenGatherIssueReviews,
+  distinctModelsForIssueReview,
+  runIssueFixReviews,
+} from './issue-review-run.ts'
 
 describe('filed issue review adapter', () => {
+  test('the repeated lens excludes the first run effective model', () => {
+    expect(distinctModelsForIssueReview(undefined, () => 'unused')).toEqual([])
+    expect(distinctModelsForIssueReview(17, (runId) => `model-for-${runId}`)).toEqual([
+      'model-for-17',
+    ])
+  })
+
   test('waits for each lens claim before dispatching the next and gathers in lens order', async () => {
     let firstClaimed = false
     const dispatched: string[] = []

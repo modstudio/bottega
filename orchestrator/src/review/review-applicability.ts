@@ -38,12 +38,3 @@ export function applicableReview(
   if (!selected.includes(secondOpinion.lens)) selected.push(secondOpinion.lens)
   return { lenses: selected, secondOpinion: secondOpinion.lens }
 }
-
-/** Decide the distinct catalogue lenses that apply, preserving declaration order. */
-export function applicableReviewLenses(
-  tier: 0 | 1 | 2 | 3,
-  changedPaths: readonly string[],
-  review: ReviewSettings | undefined,
-): string[] {
-  return applicableReview(tier, changedPaths, review).lenses
-}

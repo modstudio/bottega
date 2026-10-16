@@ -21,7 +21,13 @@ export type TriageReviewRow = {
   patchId: string | null
   pathSet: string | null
   lensIdentities: readonly string[]
-  lenses: readonly { id: number; graded: boolean }[]
+  lenses: readonly {
+    id: number
+    runId?: number
+    lens?: string
+    model?: string | null
+    graded: boolean
+  }[]
   findings: readonly { id: number; ordinal: number; disposition: string | null }[]
 }
 
@@ -168,7 +174,9 @@ function reviewsForBranch(
         patch_id: string | null
         path_set: string | null
         lens_id: number
+        run_id: number
         lens: string
+        model: string | null
         reproduced: string | null
         coverage: string | null
         limits: string | null
@@ -180,7 +188,7 @@ function reviewsForBranch(
       [string, string, number | null]
     >(
       `SELECT r.id review_id,r.recorded_at,r.completed_at,r.tier,r.patch_id,r.path_set,
-              rl.id lens_id,rl.lens,rl.reproduced,rl.coverage,rl.limits,rl.overlap,
+              rl.id lens_id,rl.run_id,rl.lens,rl.model,rl.reproduced,rl.coverage,rl.limits,rl.overlap,
               rf.id finding_id,rf.ordinal,rf.disposition
          FROM review r JOIN review_lens rl ON rl.review_id=r.id
          JOIN run ON run.id=rl.run_id
@@ -205,8 +213,19 @@ function reviewsForBranch(
       ;(review.lensIdentities as string[]).push(row.lens)
     }
     if (!review.lenses.some((lens) => lens.id === row.lens_id)) {
-      ;(review.lenses as { id: number; graded: boolean }[]).push({
+      ;(
+        review.lenses as {
+          id: number
+          runId: number
+          lens: string
+          model: string | null
+          graded: boolean
+        }[]
+      ).push({
         id: row.lens_id,
+        runId: row.run_id,
+        lens: row.lens,
+        model: row.model,
         graded:
           row.reproduced !== null &&
           row.coverage !== null &&

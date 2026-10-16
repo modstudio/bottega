@@ -81,12 +81,15 @@ export async function runIssueFixReviews(input: {
   } catch (cause) {
     return reviewNotStarted(String((cause as Error)?.message ?? cause))
   }
-  const lenses = issueReviewLenses(tier.lenses)
+  const lenses = issueReviewLenses(tier.lenses, tier.secondOpinion)
+  const firstRuns = new Map<string, number>()
   const results = await dispatchThenGatherIssueReviews(
     lenses,
     async (lens): Promise<DispatchResult<ReviewLaunch>> => {
       let runId: number
       try {
+        const firstRunId = firstRuns.get(lens)
+        const distinctModels = distinctModelsForIssueReview(firstRunId, modelForRun)
         runId = await detach('review-lens', reviewPrompt(issue, lens, tier.tier), {
           cwd: worktree.path,
           lens,
@@ -96,8 +99,10 @@ export async function runIssueFixReviews(input: {
           // Route across another eligible lane instead of exceeding one whose
           // registration declares it is at capacity.
           noWaitCapacity: true,
+          distinctModels,
           label: issueReviewRunLabel(issue.key, lens),
         })
+        if (firstRunId === undefined) firstRuns.set(lens, runId)
       } catch (cause) {
         return {
           claim: {
@@ -151,6 +156,21 @@ export async function runIssueFixReviews(input: {
     },
   )
   return { tier: tier.tier, selectedLenses: tier.lenses, reviewNotStarted: null, results }
+}
+
+function modelForRun(runId: number): string {
+  const row = db().query('SELECT model FROM run WHERE id=?').get(runId) as {
+    model: string | null
+  } | null
+  if (!row?.model) throw new Error(`run ${runId} recorded no model for second opinion to exclude`)
+  return row.model
+}
+
+export function distinctModelsForIssueReview(
+  firstRunId: number | undefined,
+  modelAt: (runId: number) => string,
+): string[] {
+  return firstRunId === undefined ? [] : [modelAt(firstRunId)]
 }
 
 function reviewPrompt(issue: FiledIssue, lens: string, tier: 0 | 1 | 2 | 3): string {
