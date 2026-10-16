@@ -28,6 +28,7 @@ import { recordDocArticleCompatibilityRefusal } from '../record/record-doc-trans
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
 import {
+  assertLocalArticleDelivery,
   type DocWriteContext,
   type DocWriteInput,
   hostedArticleWriteFields,
@@ -36,7 +37,7 @@ import {
   localRevisionArticleReferences,
   resolveLocalDocArticleFields,
 } from './doc-article-fields.ts'
-import { assertCustomerGuideCommands } from './doc-command-check.ts'
+import { assertDocBodyCommands } from './doc-command-check.ts'
 import { exportDocFiles, importDocFiles } from './doc-files.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
 import { storedDocLintRefusal } from './doc-lint-adapter.ts'
@@ -105,7 +106,6 @@ import {
   docWriteProjectName,
   forcedDocDelivery,
   globalCanonWriteTargets,
-  refuseArticleDelivery,
   refuseCanonWrite,
   refuseOversizedInject,
   refuseOwnedDocAddress,
@@ -379,14 +379,9 @@ async function setDocWithOp(
   const { form, articleSubject, relatedSubjects, sourceFiles, checkedAgainstCommit } =
     resolveLocalDocArticleFields(input, prior, kind, projectName)
   const tree = localDocTreeFields(input, prior)
-  assertDocSections(input.body, tree.audiences)
-  const commandWarning = assertCustomerGuideCommands(
-    { body: input.body, kind, form, audiences: tree.audiences },
-    input.loadKnownCommands,
-  )
+  const commandWarning = assertDocBodyCommands(input, { kind, form, audiences: tree.audiences })
   const lifecycle = localDocumentLifecycle(input, prior)
-  const articleDelivery = refuseArticleDelivery({ ...input, delivery, kind })
-  if (articleDelivery) throw new Error(articleDelivery)
+  assertLocalArticleDelivery(input, delivery, kind)
   assertDocWriteAllowed({ ...input, delivery })
   assertDocLint(input, prior)
   const written = await applyRecordWriteAuthority({

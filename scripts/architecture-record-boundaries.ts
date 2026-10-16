@@ -75,6 +75,7 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
       './record-doc-article-fields.ts',
       './record-doc-audiences.ts',
       './record-doc-command-check.ts',
+      './record-doc-write-input.ts',
       './record-doc-errors.ts',
       './record-doc-lifecycle.ts',
       './record-doc-order.ts',

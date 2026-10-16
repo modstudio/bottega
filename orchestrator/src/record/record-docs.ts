@@ -3,7 +3,7 @@
 
 import { SQL } from 'bun'
 import { assertDocSections } from '../../../shared/doc-sections.ts'
-import type { DocAudiences, DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
+import type { DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
@@ -38,7 +38,7 @@ import {
 } from './record-doc-article-fields.ts'
 import { bindRecordDocAudiences } from './record-doc-audience-sql.ts'
 import { recordDocAudiences } from './record-doc-audiences.ts'
-import { assertRecordCustomerGuideCommands } from './record-doc-command-check.ts'
+import { checkRecordCommands } from './record-doc-command-check.ts'
 import { assertRevisionWrite, assertWrite, RecordDocError } from './record-doc-errors.ts'
 import { writeImportedRecordDoc } from './record-doc-import-write.ts'
 import {
@@ -71,6 +71,7 @@ import {
   recordCanonTreeWriteRefusal,
   recordTreeWriteRefusal,
 } from './record-doc-tree.ts'
+import type { RecordDocWriteInput } from './record-doc-write-input.ts'
 
 export { RecordDocError } from './record-doc-errors.ts'
 export type { RecordDoc, RecordDocImportInput, RecordDocRevision } from './record-doc-mapping.ts'
@@ -117,40 +118,6 @@ export async function reorderRecordDocs(
   input: Tenant & RecordDocOrderInput,
 ): Promise<{ orderedIds: string[] }> {
   return reorderRecordDocRows(input)
-}
-
-type RecordDocWriteInput = Tenant & {
-  scope: string
-  subject: string | null
-  owner?: string | null
-  slug: string
-  title: string
-  body: string
-  delivery?: DocDelivery
-  audiences?: DocAudiences
-  parentRecordId?: string | null
-  position?: number
-  featured?: boolean
-  status?: DocStatus
-  kind?: DocKind
-  form?: DocForm | null
-  articleSubjectId?: string | null
-  relatedSubjectIds?: string[]
-  sourceFiles?: string[]
-  checkedAgainstCommit?: string | null
-  replacementSlug?: string | null
-  projectName?: string | null
-  projectId?: string | null
-  reason: string
-  author: string
-  sessionId?: string | null
-  forceInject?: string
-  op?: DocRevisionOp
-  at?: string
-  id?: string
-  revisionId?: string
-  expectedRevision?: string
-  generator?: DocGenerator
 }
 
 function assertUpsertAddress(input: RecordDocWriteInput): void {
@@ -231,12 +198,7 @@ export async function upsertRecordDoc(
       resolvedProject,
     )
     const audiences = storedDocAudiences(input, existing[0])
-    const commandWarning = assertRecordCustomerGuideCommands({
-      body: input.body,
-      kind,
-      form: articleFields.form,
-      audiences,
-    })
+    const commandWarning = checkRecordCommands(input, kind, articleFields.form, audiences)
     const now = input.at ?? new Date().toISOString()
     const docId = existing[0] ? String(existing[0].id) : (input.id ?? newRecordId())
     assertDocSections(input.body, audiences)
@@ -909,17 +871,19 @@ async function referenceImportExisting(
   return existing
 }
 
+function assertImportAddress(doc: ReturnType<typeof normalizeRecordDocImport>['doc']): void {
+  const refusal =
+    refuseOwnedDocAddress(doc.scope, doc.subject, doc.owner) ??
+    refuseSettingsAddress(doc.scope, doc.subject, doc.owner)
+  if (refusal) throw new RecordDocError(refusal)
+  assertWrite(refuseMismatchedDocProject(doc.scope, doc.subject, doc.projectName))
+}
+
 export async function importRecordDoc(
   input: Tenant & RecordDocImportInput,
 ): Promise<{ id: string; revisionIds: string[] } & HostedArticleResponse> {
   const { doc: importedDoc, revisions } = normalizeRecordDocImport(input, newRecordId())
-  const ownedAddress =
-    refuseOwnedDocAddress(importedDoc.scope, importedDoc.subject, importedDoc.owner) ??
-    refuseSettingsAddress(importedDoc.scope, importedDoc.subject, importedDoc.owner)
-  if (ownedAddress) throw new RecordDocError(ownedAddress)
-  assertWrite(
-    refuseMismatchedDocProject(importedDoc.scope, importedDoc.subject, importedDoc.projectName),
-  )
+  assertImportAddress(importedDoc)
   assertImportedRevisions(importedDoc, revisions)
   return tenant(input, async (tx) => {
     const existing = await referenceImportExisting(tx, input.spaceId, importedDoc)

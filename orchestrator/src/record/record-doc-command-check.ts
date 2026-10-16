@@ -3,13 +3,17 @@
 
 import {
   checkCustomerGuideCommands,
-  type CustomerGuideCommandInput,
   customerGuideCommandRefusal,
 } from '../doc/doc-command-check.ts'
 import { assertWrite } from './record-doc-errors.ts'
 
-export function assertRecordCustomerGuideCommands(input: CustomerGuideCommandInput): string | null {
-  const checked = checkCustomerGuideCommands(input)
+export function checkRecordCommands(
+  input: { body: string },
+  kind: string,
+  form: string | null,
+  audiences: readonly string[],
+): string | null {
+  const checked = checkCustomerGuideCommands({ body: input.body, kind, form, audiences })
   assertWrite(customerGuideCommandRefusal(checked.findings))
   return checked.warning
 }

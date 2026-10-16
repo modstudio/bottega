@@ -1,8 +1,8 @@
 // concern: stale-customer-guide-command-monitor
 /** Reports cached customer articles whose command mentions no longer resolve. */
 
-import { PLATFORM_COMMANDS } from '../../../shared/command-spellings.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_COMMANDS } from '../../../shared/command-spellings.ts'
 import { checkCustomerGuideCommands } from '../doc/doc-command-check.ts'
 import { listDocs } from '../doc/doc-list.ts'
 import type { MonitorCondition } from './monitor-types.ts'

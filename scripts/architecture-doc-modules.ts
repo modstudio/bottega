@@ -15,6 +15,7 @@ export const docModules: DocModule[] = [
   module('orchestrator/src/doc/doc-command-check.ts', [
     '../../../shared/command-spellings.ts',
     '../../../shared/brand.ts',
+    '../../../shared/doc-sections.ts',
     './doc-command-mentions.ts',
   ]),
   module('orchestrator/src/doc/doc-order.ts', []),

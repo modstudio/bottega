@@ -1,8 +1,9 @@
 // concern: doc-command-check
 /** Adapts the generated command set to the pure customer-guide command decision. */
 
-import { PLATFORM_COMMANDS } from '../../../shared/command-spellings.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_COMMANDS } from '../../../shared/command-spellings.ts'
+import { assertDocSections } from '../../../shared/doc-sections.ts'
 import { type UnknownCommandMention, unknownCommandMentions } from './doc-command-mentions.ts'
 
 export type CustomerGuideCommandCheck = {
@@ -56,7 +57,7 @@ export function customerGuideCommandRefusal(
   )
 }
 
-export function assertCustomerGuideCommands(
+function assertCustomerGuideCommands(
   input: CustomerGuideCommandInput,
   loadCommands?: () => readonly string[],
 ): string | null {
@@ -64,4 +65,19 @@ export function assertCustomerGuideCommands(
   const refusal = customerGuideCommandRefusal(checked.findings)
   if (refusal) throw new Error(refusal)
   return checked.warning
+}
+
+function assertDocCommands(
+  input: { body: string; loadKnownCommands?: () => readonly string[] },
+  fields: Omit<CustomerGuideCommandInput, 'body'>,
+): string | null {
+  return assertCustomerGuideCommands({ body: input.body, ...fields }, input.loadKnownCommands)
+}
+
+export function assertDocBodyCommands(
+  input: { body: string; loadKnownCommands?: () => readonly string[] },
+  fields: Omit<CustomerGuideCommandInput, 'body'>,
+): string | null {
+  assertDocSections(input.body, fields.audiences)
+  return assertDocCommands(input, fields)
 }
