@@ -57,7 +57,7 @@ function gatePlan(runId: number): {
 } {
   const row = db()
     .query(
-      `SELECT r.worktree,r.base_commit,p.id project_record_id,p.name project_name,p.settings
+      `SELECT r.worktree,r.base_commit,p.record_id project_record_id,p.name project_name,p.settings
        FROM run r JOIN project p ON p.record_id=r.project_record_id WHERE r.id=?`,
     )
     .get(runId) as {

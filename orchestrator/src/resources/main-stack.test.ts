@@ -36,7 +36,7 @@ test.each([
   try {
     expect(() =>
       ensureMainStackStarted({
-        projectId: 42,
+        projectId: 'project-42',
         projectName: 'fixture',
         projectPath: '/registered/fixture',
         declaration: {

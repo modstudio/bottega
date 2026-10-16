@@ -430,14 +430,14 @@ describe('fan-out routing exclusions', () => {
   test('a known incompatible MCP catalogue excludes grok and refuses an explicit pin', () => {
     const project = db()
       .query(
-        "INSERT INTO project (record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'compat-fixture','/compat-fixture','{}') RETURNING id",
+        "INSERT INTO project (record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'compat-fixture','/compat-fixture','{}') RETURNING record_id",
       )
-      .get() as { id: number }
+      .get() as { record_id: string }
     const run = addRun({ agent: 'codex', job: 'mcp-query', repo: 'compat-fixture' })
     db()
-      .query('UPDATE run SET project_id=?, mcp_server=?, mcp_probe=? WHERE id=?')
+      .query('UPDATE run SET project_record_id=?, mcp_server=?, mcp_probe=? WHERE id=?')
       .run(
-        project.id,
+        project.record_id,
         'compat-fixture',
         JSON.stringify({
           server: 'compat-fixture',
@@ -458,9 +458,9 @@ describe('fan-out routing exclusions', () => {
       startedAt: '2099-01-01T00:00:00.000Z',
     })
     db()
-      .query('UPDATE run SET project_id=?, mcp_server=?, mcp_probe=? WHERE id=?')
+      .query('UPDATE run SET project_record_id=?, mcp_server=?, mcp_probe=? WHERE id=?')
       .run(
-        project.id,
+        project.record_id,
         'compat-fixture',
         JSON.stringify({
           server: 'compat-fixture',
@@ -474,7 +474,7 @@ describe('fan-out routing exclusions', () => {
         newerOldEvidence,
       )
     const requiredMcp = {
-      projectId: project.id,
+      projectId: project.record_id,
       project: 'compat-fixture',
       server: 'compat-fixture',
       mode: 'require' as const,

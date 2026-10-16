@@ -61,7 +61,7 @@ function insertGate(input: {
 test('recorded gate result is the most recent finished execution for the exact project commit', () => {
   const row = (
     id: number,
-    projectId: number,
+    projectId: string,
     headCommit: string,
     finishedAt: string,
   ): RecordedGateCandidate => ({
@@ -75,21 +75,21 @@ test('recorded gate result is the most recent finished execution for the exact p
     finishedAt,
     outputTail: `gate ${id}`,
   })
-  const target = { projectId: 7, headCommit: 'reviewed' }
+  const target = { projectId: 'project-7', headCommit: 'reviewed' }
   expect(
     selectRecordedGateResult(
       [
-        row(1, 7, 'reviewed', '2026-09-30T12:00:00.000Z'),
-        row(2, 8, 'reviewed', '2026-10-01T12:00:00.000Z'),
-        row(3, 7, 'other', '2026-10-01T13:00:00.000Z'),
-        row(4, 7, 'reviewed', '2026-10-01T11:00:00.000Z'),
-        row(5, 7, 'reviewed', '2026-10-01T11:00:00.000Z'),
+        row(1, 'project-7', 'reviewed', '2026-09-30T12:00:00.000Z'),
+        row(2, 'project-8', 'reviewed', '2026-10-01T12:00:00.000Z'),
+        row(3, 'project-7', 'other', '2026-10-01T13:00:00.000Z'),
+        row(4, 'project-7', 'reviewed', '2026-10-01T11:00:00.000Z'),
+        row(5, 'project-7', 'reviewed', '2026-10-01T11:00:00.000Z'),
       ],
       target,
     )?.id,
   ).toBe(5)
   expect(
-    selectRecordedGateResult([row(6, 8, 'reviewed', '2026-10-01T14:00:00.000Z')], target),
+    selectRecordedGateResult([row(6, 'project-8', 'reviewed', '2026-10-01T14:00:00.000Z')], target),
   ).toBeNull()
 })
 
@@ -160,7 +160,7 @@ test(`formatRecordedGateResult names ${PLATFORM_SLUG} gate run when the row has 
     headCommit: 'abc',
     result: {
       id: 9,
-      projectId: 1,
+      projectId: 'project-1',
       headCommit: 'abc',
       runId: null,
       exitCode: 0,

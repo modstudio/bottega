@@ -35,7 +35,7 @@ function countName(table: string, column: string, value: string): number {
   ).n
 }
 
-function seedNameMirrors(projectId: number, otherId: number): void {
+function seedNameMirrors(projectId: string, otherId: string): void {
   const id = newRecordId
   const d = db()
   d.query(
@@ -209,14 +209,14 @@ test('a local rename leaves no listed table naming the old project', () => {
   const project = projectByName(OLD)
   const other = projectByName(OTHER)
   if (!project || !other) throw new Error('fixture projects were not registered')
-  writeTransaction(() => seedNameMirrors(project.id, other.id))
-  persistLocalProjectSet({ id: project.id }, OLD, NEXT, {
+  writeTransaction(() => seedNameMirrors(project.recordId, other.recordId))
+  persistLocalProjectSet({ recordId: project.recordId }, OLD, NEXT, {
     recordId: project.recordId,
     name: NEXT,
     path: '/w/rename-from',
   })
   expect(projectByName(OLD)).toBeNull()
-  expect(projectByName(NEXT)?.id).toBe(project.id)
+  expect(projectByName(NEXT)?.recordId).toBe(project.recordId)
   for (const [table, column] of PROJECT_NAME_ONLY_COLUMNS) {
     expect(countName(table, column, OLD), `${table}.${column} kept ${OLD}`).toBe(0)
   }
@@ -233,7 +233,7 @@ test('a local rename leaves no listed table naming the old project', () => {
         `SELECT COUNT(*) AS n FROM ${table}
          WHERE subject=? AND project_id=?`,
       )
-      .get(OLD, project.id) as { n: number }
+      .get(OLD, project.recordId) as { n: number }
     expect(renamed.n, `${table} kept a project subject`).toBe(0)
     expect(countName(table, 'subject', OLD), `${table} changed unresolved subjects`).toBe(3)
   }

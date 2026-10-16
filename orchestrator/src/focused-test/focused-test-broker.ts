@@ -45,7 +45,7 @@ export type FocusedTestBroker = { close(): Promise<void> }
 function focusedTestPlan(runId: number) {
   const row = db()
     .query(
-      `SELECT r.worktree,p.id project_record_id,p.name project_name,p.settings
+      `SELECT r.worktree,p.record_id project_record_id,p.name project_name,p.settings
        FROM run r JOIN project p ON p.record_id=r.project_record_id WHERE r.id=?`,
     )
     .get(runId) as {
