@@ -1,12 +1,19 @@
 import { expect, test } from 'bun:test'
 import { join } from 'node:path'
 import {
+  isPathAtOrBelow,
   namedArtifactPlan,
   persistedRunArtifactPath,
   rewriteScratchDirPaths,
   runArtifactsDir,
   runScratchDir,
 } from './artifact-paths.ts'
+
+test('path containment accepts only the directory itself and slash descendants', () => {
+  expect(isPathAtOrBelow('/runs/42/artifacts', '/runs/42/artifacts')).toBe(true)
+  expect(isPathAtOrBelow('/runs/42/artifacts/report.md', '/runs/42/artifacts')).toBe(true)
+  expect(isPathAtOrBelow('/runs/42/artifacts-old/report.md', '/runs/42/artifacts')).toBe(false)
+})
 
 test('named artifact plans resolve sources, destinations, and already-persisted entries', () => {
   const runs = join('/tmp', 'orch-runs')
