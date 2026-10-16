@@ -746,6 +746,64 @@ test('receipt flushing follows change fetch; network failure stays pending and r
   ).toEqual({ pending_sync: 0, sync_error: null })
 })
 
+test('a delivered-only receipt refresh preserves and flushes a queued acknowledgement', async () => {
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  const cached = message({ ackRequired: true })
+  const base = createMemoryRecordApiClient()
+  await refreshHostedBoard({
+    budgetMs: 1_000,
+    env: { ORCH_RECORD_API_URL: 'x' },
+    client: {
+      ...base,
+      listBoardChanges: async () => ({
+        userId,
+        items: [change(cached)],
+        highestRevision: cached.revision,
+      }),
+    },
+  })
+  queueHostedBoardAcknowledgement(cached.id, 'cache-reader', true, '2026-10-05T12:05:00.000Z')
+  let sent: Parameters<typeof base.putBoardReceipt>[0] | undefined
+  await refreshHostedBoard({
+    budgetMs: 1_000,
+    env: { ORCH_RECORD_API_URL: 'x' },
+    client: {
+      ...base,
+      listBoardChanges: async () => ({
+        userId,
+        items: [
+          {
+            ...change(cached),
+            receipts: [
+              {
+                messageId: cached.id,
+                readerUserId: userId,
+                readerSession: 'cache-reader',
+                audienceAtPosting: true,
+                deliveredAt: '2026-10-05T12:04:00.000Z',
+                acknowledgedAt: null,
+              },
+            ],
+          },
+        ],
+        highestRevision: cached.revision,
+      }),
+      putBoardReceipt: async (input) => {
+        sent = input
+        return {
+          messageId: input.messageId,
+          readerUserId: userId,
+          readerSession: input.readerSession,
+          audienceAtPosting: input.audienceAtPosting,
+          deliveredAt: '2026-10-05T12:05:00.000Z',
+          acknowledgedAt: '2026-10-05T12:05:00.000Z',
+        }
+      },
+    },
+  })
+  expect(sent).toMatchObject({ delivered: true, acknowledged: true })
+})
+
 test('cache pruning removes an expired unaccepted thread and keeps an accepted thread', () => {
   const expired = '2025-01-01T00:00:00.000Z'
   const accepted = message({ expiresAt: expired, acceptedReplyId: newRecordId() })

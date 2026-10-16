@@ -143,12 +143,7 @@ export function deliverableTo(
     : addressed(message, reader, clock, database)
 }
 
-function render(
-  message: MessageRow,
-  worker = false,
-  database = db(),
-  acknowledgementRequired = message.ack_required === 1,
-) {
+function render(message: MessageRow, worker = false, database = db()) {
   const tags = messageTags(message.id, database)
   if (message.kind === 'reply') {
     const root = messageRows(database).find((candidate) => candidate.id === message.thread_root_id)
@@ -207,7 +202,7 @@ function render(
       title: message.title ?? '',
       body: message.body,
       expiresAt: message.expires_at ?? '',
-      ackRequired: acknowledgementRequired,
+      ackRequired: message.ack_required === 1,
       tags: tags.filter((tag) => tag.origin === 'sender'),
       worker,
     }),
@@ -215,7 +210,7 @@ function render(
       id: message.id,
       title: message.title ?? '',
       sender: originText(boardOrigin(message)),
-      ackRequired: acknowledgementRequired,
+      ackRequired: message.ack_required === 1,
     }),
     purpose: message.purpose ?? 'information',
   }
@@ -269,7 +264,7 @@ export function claimRunPushNotices(
     .get(runId) as { root_id: number } | null
   if (!run)
     return {
-      ...selectPushNotices(null, [], clock),
+      ...selectPushNotices('unbounded', [], clock),
       warning: missingReaderStartWarning(`run:${runId}`),
     }
   const reader = `run:${run.root_id}`
@@ -347,16 +342,11 @@ export function claimPushNotices(
   warning: string | null
 } {
   const reader = boardReader(env)
-  const beganAt = reader === OPERATOR_READER ? null : boardReaderBeganAt(reader, database)
+  const beganAt =
+    reader === OPERATOR_READER ? ('unbounded' as const) : boardReaderBeganAt(reader, database)
   const selected = selectPushNotices(beganAt, claimNotices(all, env, clock, database), clock)
   return {
     ...selected,
-    notices: selected.notices.map((notice) => {
-      const row = messageRows(database).find((candidate) => candidate.id === notice.id)
-      return row && !notice.ackRequired
-        ? { ...notice, ...render(row, false, database, false) }
-        : notice
-    }),
     warning:
       reader !== OPERATOR_READER && beganAt === null ? missingReaderStartWarning(reader) : null,
   }

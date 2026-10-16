@@ -133,7 +133,11 @@ export function cacheHostedBoardReceipt(
        audience_at_posting=excluded.audience_at_posting,
        delivered_at=COALESCE(hosted_board_receipt_cache.delivered_at,excluded.delivered_at),
        acknowledged_at=COALESCE(hosted_board_receipt_cache.acknowledged_at,excluded.acknowledged_at),
-       pending_sync=0,sync_error=NULL`,
+       pending_sync=CASE WHEN hosted_board_receipt_cache.pending_sync=1 AND (
+         (hosted_board_receipt_cache.delivered_at IS NOT NULL AND excluded.delivered_at IS NULL) OR
+         (hosted_board_receipt_cache.acknowledged_at IS NOT NULL AND excluded.acknowledged_at IS NULL)
+       ) THEN 1 ELSE 0 END,
+       sync_error=NULL`,
     )
     .run(
       receipt.messageId,
@@ -525,7 +529,6 @@ function renderCached(
   tags: BoardTag[],
   rows: HostedBoardMessage[],
   worker: boolean,
-  acknowledgementRequired = message.ackRequired,
 ): string {
   if (message.kind === 'reply') {
     const root = rows.find((candidate) => candidate.id === message.threadRootId)
@@ -561,7 +564,7 @@ function renderCached(
     audience: message.audienceDescription,
     body: message.body,
     expiresAt: message.expiresAt ?? '',
-    ackRequired: acknowledgementRequired,
+    ackRequired: message.ackRequired,
     tags: tags.filter((tag) => tag.origin === 'sender'),
     worker,
   })
@@ -608,31 +611,15 @@ export function claimCachedHostedForPush(
   clock = Date.now(),
   database: Database = db(),
 ): { notices: HostedCacheNotice[]; withheldOlderCount: number; warning: string | null } {
-  const beganAt = reader === OPERATOR_READER ? null : boardReaderBeganAt(reader, database)
+  const beganAt =
+    reader === OPERATOR_READER ? ('unbounded' as const) : boardReaderBeganAt(reader, database)
   const selected = selectPushNotices(
     beganAt,
     claimCachedHosted(reader, all, clock, database),
     clock,
   )
-  const cached = cachedRows(database)
-  const messages = cached.map((row) => row.message)
   return {
     ...selected,
-    notices: selected.notices.map((notice) => {
-      const row = cached.find((candidate) => candidate.message.id === notice.id)
-      return row && !notice.ackRequired
-        ? {
-            ...notice,
-            text: renderCached(row.message, row.tags, messages, reader.startsWith('run:'), false),
-            oneLine: renderBoardNoticeOneLine({
-              id: notice.id,
-              title: row.message.title ?? '',
-              sender: originText(row.message.origin),
-              ackRequired: false,
-            }),
-          }
-        : notice
-    }),
     warning:
       reader !== OPERATOR_READER && beganAt === null ? missingReaderStartWarning(reader) : null,
   }

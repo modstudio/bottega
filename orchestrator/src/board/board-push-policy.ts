@@ -4,6 +4,7 @@
 import type { BoardPurpose } from '../../../shared/board-purpose.ts'
 
 export type BoardPushDecision = 'withheld' | 'ordinary' | 'acknowledgement'
+export type BoardReaderStart = string | null | 'unbounded'
 
 export function boardPushDecision(input: {
   acknowledgementRequired: boolean
@@ -11,7 +12,7 @@ export function boardPushDecision(input: {
   acknowledgementDeadline: string | null
   expiresAt: string | null
   purpose?: BoardPurpose
-  readerBeganAt: string | null
+  readerBeganAt: BoardReaderStart
   clock: number
 }): BoardPushDecision {
   if (input.expiresAt !== null && Date.parse(input.expiresAt) <= input.clock) return 'withheld'
@@ -21,11 +22,14 @@ export function boardPushDecision(input: {
       Date.parse(input.acknowledgementDeadline) <= input.clock
     )
       return 'withheld'
-    if (input.readerBeganAt !== null && input.readerBeganAt > input.postedAt) return 'withheld'
+    if (input.readerBeganAt === null) return 'withheld'
+    if (input.readerBeganAt !== 'unbounded' && input.readerBeganAt > input.postedAt)
+      return 'withheld'
     return 'acknowledgement'
   }
   if (
     input.readerBeganAt !== null &&
+    input.readerBeganAt !== 'unbounded' &&
     input.purpose !== 'standing' &&
     input.postedAt < input.readerBeganAt
   )
@@ -42,7 +46,7 @@ export function selectPushNotices<
     purpose?: BoardPurpose
   },
 >(
-  readerBeganAt: string | null,
+  readerBeganAt: BoardReaderStart,
   candidates: T[],
   clock: number,
 ): { notices: T[]; withheldOlderCount: number } {

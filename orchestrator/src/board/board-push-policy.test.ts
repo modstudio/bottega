@@ -25,6 +25,8 @@ test('acknowledgement delivery ends at its deadline and belongs only to sessions
     }),
   ).toBe('withheld')
   expect(decision()).toBe('acknowledgement')
+  expect(decision({ readerBeganAt: null })).toBe('withheld')
+  expect(decision({ readerBeganAt: 'unbounded' })).toBe('acknowledgement')
   expect(decision({ purpose: 'standing', readerBeganAt: '2026-10-16T11:00:00.001Z' })).toBe(
     'withheld',
   )
@@ -36,16 +38,4 @@ test('acknowledgement delivery ends at its deadline and belongs only to sessions
       readerBeganAt: '2026-10-16T11:00:00.001Z',
     }),
   ).toBe('ordinary')
-})
-
-test('reported notice 01a13fd6 is withheld from a session started today', () => {
-  expect(
-    decision({
-      postedAt: '2026-10-15T13:53:00.000Z',
-      acknowledgementDeadline: '2026-10-15T14:53:00.000Z',
-      expiresAt: '2026-10-22T13:53:00.000Z',
-      purpose: 'standing',
-      readerBeganAt: '2026-10-16T12:00:00.000Z',
-    }),
-  ).toBe('withheld')
 })
