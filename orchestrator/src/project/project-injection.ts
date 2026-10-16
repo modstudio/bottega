@@ -1,5 +1,6 @@
 // concern: project-injection
 /** Knows the project facts shared workflows may request, their stored grammar, and refusal remedies. */
+import { isAbsolute, normalize, posix, win32 } from 'node:path'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
@@ -60,6 +61,44 @@ const docsSchema = z.discriminatedUnion('protocol', [
   strictObject({ protocol: z.literal('cursor-mcp') }),
   strictObject({ protocol: z.literal('array-mcp') }),
 ])
+
+const referenceSchema = strictObject({
+  directory: z
+    .string()
+    .min(1)
+    .superRefine((directory, context) => {
+      if (directory !== directory.trim()) {
+        context.addIssue({ code: 'custom', message: `must be written as ${directory.trim()}` })
+        return
+      }
+      if (isAbsolute(directory) || win32.isAbsolute(directory)) {
+        context.addIssue({ code: 'custom', message: 'must be a repository-relative path' })
+        return
+      }
+      const normalized = normalize(directory)
+      const normalizedWindows = win32.normalize(directory)
+      if (
+        normalized === '..' ||
+        normalized.startsWith('../') ||
+        normalized.startsWith('..\\') ||
+        normalizedWindows === '..' ||
+        normalizedWindows.startsWith('..\\')
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message: 'must not escape the repository',
+        })
+        return
+      }
+      // The merge step compares changed paths with this spelling, so only the canonical one is stored.
+      const canonical = posix.normalize(directory.replaceAll('\\', '/')).replace(/\/+$/, '')
+      if (canonical === '.')
+        context.addIssue({ code: 'custom', message: 'must name a directory inside the repository' })
+      else if (canonical !== directory)
+        context.addIssue({ code: 'custom', message: `must be written as ${canonical}` })
+    }),
+  publish: z.string().trim().min(1),
+})
 
 const signalsSchema = strictObject({
   sources: z.array(
@@ -145,6 +184,7 @@ const trackerSchema = strictObject({
 
 export type ReleaseSettings = z.infer<typeof releaseSchema>
 export type DocsSettings = z.infer<typeof docsSchema>
+export type ReferenceSettings = z.infer<typeof referenceSchema>
 export type SignalsSettings = z.infer<typeof signalsSchema>
 export type ReviewSettings = z.infer<typeof reviewSchema>
 export type TestSubstanceSettings = z.infer<typeof testSubstanceSchema>
@@ -278,6 +318,7 @@ type InjectionSettings = {
   worktree?: unknown
   release?: ReleaseSettings
   docs?: DocsSettings
+  reference?: ReferenceSettings
   signals?: SignalsSettings
   review?: ReviewSettings
   testSubstance?: TestSubstanceSettings
@@ -304,7 +345,12 @@ const injectionSources = [
   'mainStack',
 ] as const
 export type InjectionSource = (typeof injectionSources)[number]
-export const workflowFactSources = [...injectionSources, 'ship-to', 'workflow-text'] as const
+export const workflowFactSources = [
+  ...injectionSources,
+  'reference',
+  'ship-to',
+  'workflow-text',
+] as const
 export type WorkflowFactSource = (typeof workflowFactSources)[number]
 
 type InjectionValues<Project extends InjectableProject> = {
@@ -434,6 +480,7 @@ type ValidatedInjectionSettings = Pick<
   | 'trunk'
   | 'release'
   | 'docs'
+  | 'reference'
   | 'signals'
   | 'gate'
   | 'review'
@@ -448,6 +495,7 @@ export function validateProjectInjectionSettings(settings: ValidatedInjectionSet
     ['tracker', trackerSchema],
     ['release', releaseSchema],
     ['docs', docsSchema],
+    ['reference', referenceSchema],
     ['signals', signalsSchema],
     ['review', reviewSchema],
     ['testSubstance', testSubstanceSchema],

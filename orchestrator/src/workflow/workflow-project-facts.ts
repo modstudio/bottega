@@ -17,8 +17,14 @@ export type WorkflowFactProject = Pick<Project, 'name' | 'stack' | 'settings'>
 
 const projectInjectionNeeds = (needs: readonly WorkflowFactSource[]): InjectionSource[] =>
   needs.filter(
-    (source): source is InjectionSource => source !== 'ship-to' && source !== 'workflow-text',
+    (source): source is InjectionSource =>
+      source !== 'reference' && source !== 'ship-to' && source !== 'workflow-text',
   )
+
+function referenceFact(project: WorkflowFactProject, needs: readonly WorkflowFactSource[]) {
+  if (!needs.includes('reference') || !project.settings.reference) return {}
+  return { reference: project.settings.reference }
+}
 
 function closeShipToFact(
   projectName: string,
@@ -122,6 +128,7 @@ export function resolveWorkflowProjectFacts(
     resolved,
     facts: {
       ...projectFacts,
+      ...referenceFact(project, needs),
       ...shipToFact(project, needs, needsCloseState, args, autonomy, projectFacts),
     },
   }

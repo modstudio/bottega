@@ -32,6 +32,46 @@ const signals: SignalsSettings = {
 }
 
 describe('project workflow injection', () => {
+  test('validates generated-reference settings at the register edge', () => {
+    expect(
+      validateProjectSettings({
+        reference: {
+          directory: 'docs/reference',
+          publish: `${PLATFORM_SLUG} doc reference publish`,
+        },
+      }),
+    ).toEqual([])
+    expect(
+      validateProjectSettings({
+        reference: { directory: '/docs/reference', publish: 'publish-reference' },
+      }),
+    ).toEqual([expect.stringContaining('reference.directory: must be a repository-relative path')])
+    expect(
+      validateProjectSettings({
+        reference: { directory: 'docs/../../outside', publish: 'publish-reference' },
+      }),
+    ).toEqual([expect.stringContaining('reference.directory: must not escape the repository')])
+    expect(
+      validateProjectSettings({
+        reference: { directory: 'docs/reference', publish: '   ' },
+      }),
+    ).toEqual([expect.stringContaining('reference.publish: Too small')])
+  })
+
+  test.each([
+    ['./docs/reference', 'must be written as docs/reference'],
+    ['docs/reference/', 'must be written as docs/reference'],
+    ['docs\\reference', 'must be written as docs/reference'],
+    ['docs//reference', 'must be written as docs/reference'],
+    ['docs/x/../reference', 'must be written as docs/reference'],
+    [' docs/reference ', 'must be written as docs/reference'],
+    ['.', 'must name a directory inside the repository'],
+  ])('reference directory %s is refused because %s', (directory, message) => {
+    expect(
+      validateProjectSettings({ reference: { directory, publish: 'publish-reference' } }),
+    ).toEqual([expect.stringContaining(`reference.directory: ${message}`)])
+  })
+
   test('valid release and docs settings pass while unknown keys are refused', () => {
     expect(validateProjectSettings({ release, docs, gate: 'bun run check' })).toEqual([])
 

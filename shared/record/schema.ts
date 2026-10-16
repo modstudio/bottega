@@ -216,6 +216,7 @@ export const project = pgTable.withRLS(
     mcpProbeTool: text('mcp_probe_tool'),
     mcpReaderTools: jsonb('mcp_reader_tools'),
     docs: jsonb(),
+    reference: jsonb(),
     signals: jsonb(),
     review: jsonb(),
     testSubstance: jsonb('test_substance'),
