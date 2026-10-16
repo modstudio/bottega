@@ -34,7 +34,7 @@ import {
   type RootAuthority,
   reauthorizeRunMutation,
 } from './run-authority.ts'
-import { resolveRootFromLastTurn } from './run-liveness.ts'
+import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import type {
   RunProcessTerminationPlan,
@@ -125,6 +125,12 @@ type RunControlHelpers = {
 export type RunStopHelpers = RunControlHelpers & {
   planRunProcessTermination: (runId: number, exceptPids?: number[]) => RunProcessTerminationPlan
   terminateRunProcesses: (plan: VerifiedRunProcessTermination) => TerminateRunProcessesResult
+}
+
+function enqueueAbandonedChain(rowId: number, rootId: number, at: string): void {
+  const localMachineId = machineId()
+  enqueueRunRecord(db(), rowId, localMachineId, at)
+  rollUpRootAndEnqueue(db(), rootId, null, localMachineId, at)
 }
 
 type StopRow = {
@@ -345,9 +351,8 @@ export async function abandonRun(
         authority.rootId,
         authority.rootId,
       )
-    enqueueRunRecord(db(), row.id, machineId(), at)
+    enqueueAbandonedChain(row.id, authority.rootId, at)
     for (const question of openQuestions) enqueueQuestionRecord(db(), question.id)
-    resolveRootFromLastTurn(db(), authority.rootId)
     retireRunChainQuestionDeliveries(db(), authority.rootId, 'abandoned', at)
     auditRunMutation(authority, 'abandon', note ?? null)
     return { row, cleanupRow }

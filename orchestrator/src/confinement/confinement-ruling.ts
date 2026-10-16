@@ -5,14 +5,27 @@
  * reviews, contracts, the CLI, or durable execution.
  */
 import { existsSync } from 'node:fs'
-import { db, writeTransaction } from '../database/db.ts'
+import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { contentTree, targetGitEnvironment } from '../git/git-environment.ts'
 import { projectByName } from '../project/projects.ts'
+import { machineId } from '../record/machine-identity.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from '../run/run-authority.ts'
-import { resolveRootFromLastTurn } from '../run/run-liveness.ts'
+import { rollUpRootAndEnqueue } from '../run/run-liveness.ts'
+import { enqueueRunRecord } from '../run/run-outbox.ts'
 import { parseConfinement } from './confinement.ts'
 
 type ConfinementPresentation = { log(...values: unknown[]): void }
+
+function enqueueClearedConfinementRecords(
+  database: ReturnType<typeof db>,
+  rows: { id: number }[],
+  rootId: number,
+): void {
+  const at = nowIso()
+  const localMachineId = machineId()
+  for (const row of rows) enqueueRunRecord(database, row.id, localMachineId, at)
+  rollUpRootAndEnqueue(database, rootId, null, localMachineId, at)
+}
 
 export function clearConfinement(
   id: number,
@@ -177,7 +190,7 @@ export function clearConfinement(
         )
       }
     }
-    resolveRootFromLastTurn(db(), authority.rootId)
+    enqueueClearedConfinementRecords(db(), rows, authority.rootId)
     auditRunMutation(
       authority,
       'reclassify',

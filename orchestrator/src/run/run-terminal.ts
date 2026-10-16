@@ -53,7 +53,7 @@ import {
   runTerminalReplyPath,
   type TerminalSnapshot,
 } from './run-artifacts.ts'
-import { recordArtifactPersistenceFailure, rollUpRootAndEnqueue } from './run-liveness.ts'
+import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
 import { checkpointRoot, claimIdentity } from './run-resume-kind.ts'
@@ -107,7 +107,7 @@ export function finalizeTerminalChain(
   }
   closeTerminalQuestions(database, rootId, input.status, input.failureKind)
   if (input.parentRunId !== null) {
-    rollUpRootAndEnqueue(database, input.parentRunId, ...input.record)
+    rollUpRootAndEnqueue(database, input.parentRunId, null, ...input.record)
   }
   if (
     input.status !== 'asking' &&
@@ -123,6 +123,31 @@ type TerminalMcpRuling = {
   error: string | null
   requiredFailure: string | null
 } | null
+
+function recordArtifactPersistenceFailure(
+  database: Database,
+  input: {
+    runId: number
+    parentRunId: number | null
+    error: string | null
+    machineId: string
+    finishedAt: string
+  },
+): void {
+  writeTransaction(() => {
+    database
+      .query(
+        `UPDATE run SET
+           error=CASE WHEN status='stopped' THEN error ELSE ? END
+         WHERE id=?`,
+      )
+      .run(input.error, input.runId)
+    enqueueRunRecord(database, input.runId, input.machineId, input.finishedAt)
+    if (input.parentRunId !== null) {
+      rollUpRootAndEnqueue(database, input.parentRunId, null, input.machineId, input.finishedAt)
+    }
+  }, database)
+}
 
 export type TerminalInput = {
   timer: ReturnType<typeof setTimeout> | null

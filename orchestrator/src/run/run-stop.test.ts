@@ -3,7 +3,9 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { machineId } from '../record/machine-identity.ts'
 import { candidates } from '../route/route.ts'
+import { enqueueRunRecord } from './run-outbox.ts'
 import type { RunProcessTerminationPlan, TerminateRunProcessesResult } from './run-process.ts'
 import { abandonRun, stoppedRunLine, stopRun, stopTerminationRefusal } from './run-stop.ts'
 
@@ -361,6 +363,7 @@ test('an abandoned run is not routing evidence', async () => {
 test("abandoning a resumed turn keeps the root's prior failure kind", async () => {
   const root = insert('failed')
   db().query("UPDATE run SET failure_kind='timeout',error='timed out' WHERE id=?").run(root)
+  enqueueRunRecord(db(), root, machineId(), new Date().toISOString())
   const child = insert('asking')
   db().query('UPDATE run SET parent_run_id=?,turn=2 WHERE id=?').run(root, child)
   db()
@@ -374,6 +377,16 @@ test("abandoning a resumed turn keeps the root's prior failure kind", async () =
     error: 'abandoned by architect',
     failure_kind: 'timeout',
   })
+  const rootPayloads = db()
+    .query<{ payload: string }, [number]>(
+      `SELECT payload FROM outbox
+       WHERE kind='run' AND row_id=(SELECT record_id FROM run WHERE id=?) ORDER BY id`,
+    )
+    .all(root)
+  expect(rootPayloads.map(({ payload }) => JSON.parse(payload))).toMatchObject([
+    { status: 'failed', failureKind: 'timeout' },
+    { status: 'stale', failureKind: 'timeout' },
+  ])
 })
 
 test('abandon by a chain root retires its asking child turn', async () => {

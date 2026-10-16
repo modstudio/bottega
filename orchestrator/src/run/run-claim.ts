@@ -436,7 +436,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
      * happened without fabricating a failure or an operator stop: the worker
      * fulfilled its contract by asking, the question was ruled on, and the
      * conversation moved to a later turn. The root's counterpart is
-     * `resolveRootFromLastTurn`, which inherits the last turn's terminal status
+     * `rollUpRootAndEnqueue`, which inherits the last turn's terminal status
      * once the chain has ended.
      *
      * Match the row's own facts even though continueRun already refuses an open

@@ -153,47 +153,7 @@ function resolveRootFromLastTurnPreserving(
     .run(preserveFailureKindForTurnId, rootId).changes
 }
 
-export function resolveRootFromLastTurn(database: Database, rootId: number): number {
-  return resolveRootFromLastTurnPreserving(database, rootId, null)
-}
-
 export function rollUpRootAndEnqueue(
-  database: Database,
-  rootId: number,
-  machine: string,
-  finishedAt: string,
-): number {
-  const changes = resolveRootFromLastTurnPreserving(database, rootId, null)
-  enqueueRunRecord(database, rootId, machine, finishedAt)
-  return changes
-}
-
-export function recordArtifactPersistenceFailure(
-  database: Database,
-  input: {
-    runId: number
-    parentRunId: number | null
-    error: string | null
-    machineId: string
-    finishedAt: string
-  },
-): void {
-  writeTransaction(() => {
-    database
-      .query(
-        `UPDATE run SET
-           error=CASE WHEN status='stopped' THEN error ELSE ? END
-         WHERE id=?`,
-      )
-      .run(input.error, input.runId)
-    enqueueRunRecord(database, input.runId, input.machineId, input.finishedAt)
-    if (input.parentRunId !== null) {
-      rollUpRootAndEnqueue(database, input.parentRunId, input.machineId, input.finishedAt)
-    }
-  }, database)
-}
-
-function rollUpRootPreservingAndEnqueue(
   database: Database,
   rootId: number,
   preserveFailureKindForTurnId: number | null,
@@ -224,7 +184,7 @@ function rollUpReapedRoots(
     .all(...ended) as { id: number; last_id: number }[]
   for (const { id, last_id } of roots) {
     writeTransaction(() => {
-      rollUpRootPreservingAndEnqueue(
+      rollUpRootAndEnqueue(
         database,
         id,
         preservedFailureKindTurnId(setupDeathIds, last_id),

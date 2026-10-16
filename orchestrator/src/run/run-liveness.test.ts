@@ -145,6 +145,18 @@ describe('reapStale', () => {
       status: 'stale',
       failure_kind: null,
     })
+    const rootPayload = db()
+      .query<{ payload: string }, [number]>(
+        `SELECT payload FROM outbox
+         WHERE kind='run' AND row_id=(SELECT record_id FROM run WHERE id=?)
+         ORDER BY id DESC LIMIT 1`,
+      )
+      .get(root)!
+    expect(JSON.parse(rootPayload.payload)).toMatchObject({
+      localId: root,
+      status: 'stale',
+      failureKind: null,
+    })
     const grok = candidates('implement').find((c) => c.agent === 'grok')!
     expect(grok.failures).toBe(1)
     expect(grok.evidence).toBe(1)
