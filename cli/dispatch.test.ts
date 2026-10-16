@@ -27,8 +27,13 @@ test('record outbox combines owner-qualified rows and routes qualified actions',
   const calls: string[] = []
   const dispatch = entries(calls)
   dispatch.orchOutbox = async () => [{ id: 7, kind: 'score' }]
-  dispatch.hubOutbox = async () => [{ id: 'change-1', table_name: 'task' }]
-  dispatch.hubOutboxSummaryLines = async () => ['hub summary']
+  let hubRows: Record<string, unknown>[] = [{ id: 'change-1', table_name: 'task' }]
+  dispatch.hubOutbox = async () => {
+    const snapshot = hubRows
+    hubRows = []
+    return snapshot
+  }
+  dispatch.hubOutboxSummaryLines = async (rows) => [`hub summary rows=${rows.length}`]
   const lines: string[] = []
   const originalLog = console.log
   console.log = (value) => lines.push(String(value))
@@ -41,8 +46,9 @@ test('record outbox combines owner-qualified rows and routes qualified actions',
       { id: 'hub:change-1', table_name: 'task', owner: 'hub' },
     ])
     lines.length = 0
+    hubRows = [{ id: 'change-1', table_name: 'task' }]
     expect(await dispatchBinary(['record', 'outbox'], PLATFORM_SLUG, dispatch, () => '')).toBe(0)
-    expect(lines[0]).toBe('hub summary')
+    expect(lines[0]).toBe('hub summary rows=1')
   } finally {
     console.log = originalLog
   }

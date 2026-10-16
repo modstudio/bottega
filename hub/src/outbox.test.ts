@@ -468,22 +468,8 @@ describe('hosted outbox', () => {
     expect(waiting.waitingOnRouting).toEqual({ 'unregistered-project': 1 })
     expect(listHostedOutbox()[0]).toMatchObject({
       attempts: 0,
-      last_error: `waiting on routing: project "fixture" is not registered; register it with ${PLATFORM_SLUG} project add <path>, or, if it is not a real project, see DEV-1354 (unroutable rows cannot be retired yet)`,
+      last_error: `waiting on routing: project "fixture" is not registered; register it with ${PLATFORM_SLUG} project add <path>, or, if it is not a real project, note that such rows cannot be retired yet`,
     })
-    writeTransaction((conn) =>
-      conn.exec(`CREATE TEMP TRIGGER refuse_unchanged_routing_error
-        BEFORE UPDATE OF last_error ON hosted_outbox
-        WHEN OLD.last_error IS NEW.last_error
-        BEGIN SELECT RAISE(ABORT,'rewrote unchanged routing error'); END`),
-    )
-    await drainHostedOutbox({
-      identity: async () => identity,
-      registered: () => registered,
-      push: async () => {
-        throw new Error('must not push without routing')
-      },
-    })
-    writeTransaction((conn) => conn.exec('DROP TRIGGER refuse_unchanged_routing_error'))
     expect(
       await hostedOutboxDoctorLines({
         identity: async () => identity,

@@ -1,7 +1,14 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db } from './db.ts'
-import { drainHostedOutbox, type OutboxEntry, queueHostedChange } from './outbox.ts'
+import {
+  drainHostedOutbox,
+  type HostedRoutingWait,
+  hostedRoutingWaitForEntries,
+  type OutboxEntry,
+  parseHostedRoutingWait,
+  queueHostedChange,
+} from './outbox.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
 import { HOSTED_DOCUMENT_TABLE } from './push-contract.ts'
 import { hostedPushChanges, hostedTaskIdentity } from './task-client.ts'
@@ -15,17 +22,19 @@ export type HostedEditDelivery =
 function classifyHostedEditDelivery(
   remaining: OutboxEntry[],
   report: Awaited<ReturnType<typeof drainHostedOutbox>>,
+  leaseRoutingWait: HostedRoutingWait | null,
 ): HostedEditDelivery {
-  const waitingOnRouting = remaining.find((entry) =>
-    entry.last_error?.startsWith('waiting on routing:'),
-  )
+  const waitingOnRouting = remaining
+    .map((entry) => parseHostedRoutingWait(entry.last_error))
+    .find((wait) => wait !== null)
   const refused = remaining.find(
-    (entry) => entry.last_error && !entry.last_error.startsWith('waiting on routing:'),
+    (entry) => entry.last_error && !parseHostedRoutingWait(entry.last_error),
   )
   if (refused) return { kind: 'rejected', reason: refused.last_error! }
   if (!remaining.length && report.hostedReachable && !report.skippedCapability)
     return { kind: 'sent' }
-  if (waitingOnRouting) return { kind: 'queued', reason: waitingOnRouting.last_error! }
+  if (waitingOnRouting) return { kind: 'queued', reason: waitingOnRouting.message }
+  if (leaseRoutingWait) return { kind: 'queued', reason: leaseRoutingWait.message }
   if (report.lockAcquired === false)
     return {
       kind: 'queued',
@@ -52,7 +61,13 @@ export async function drainHostedEditOutbox(
     const remaining = db()
       .query<OutboxEntry, [string]>(`SELECT * FROM hosted_outbox WHERE queued_at=?`)
       .all(queuedAt)
-    const result = classifyHostedEditDelivery(remaining, report)
+    const leaseRoutingWait =
+      report.lockAcquired === false
+        ? await hostedRoutingWaitForEntries(remaining, {
+            identity: () => hostedTaskIdentity(options),
+          })
+        : null
+    const result = classifyHostedEditDelivery(remaining, report, leaseRoutingWait)
     reportHostedEditDelivery(result)
     return result
   } catch (error) {

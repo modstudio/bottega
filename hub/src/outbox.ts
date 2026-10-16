@@ -402,14 +402,26 @@ function recordRoutingWaits(
       (report.waitingOnRouting[selected.reason] ?? 0) + selected.rows.length
 }
 
+export const ROUTING_WAIT_PREFIX = 'waiting on routing:'
+
+export type HostedRoutingWait = { project: string; message: string }
+
 function routingWaitMessage(project: string, reason: string): string {
   if (reason === 'unregistered-project')
     return (
-      `waiting on routing: project "${project}" is not registered; register it with ` +
-      `${PLATFORM_SLUG} project add <path>, or, if it is not a real project, see DEV-1354 ` +
-      '(unroutable rows cannot be retired yet)'
+      `${ROUTING_WAIT_PREFIX} project "${project}" is not registered; register it with ` +
+      `${PLATFORM_SLUG} project add <path>, or, if it is not a real project, note that such ` +
+      'rows cannot be retired yet'
     )
-  return `waiting on routing: project "${project}" was refused: ${reason}`
+  return `${ROUTING_WAIT_PREFIX} project "${project}" was refused: ${reason}`
+}
+
+export function parseHostedRoutingWait(
+  message: string | null | undefined,
+): HostedRoutingWait | null {
+  if (!message?.startsWith(`${ROUTING_WAIT_PREFIX} project "`)) return null
+  const project = /^waiting on routing: project "([^"]+)"/.exec(message)?.[1]
+  return project ? { project, message } : null
 }
 
 function reconcileRoutingErrors(routed: ReturnType<typeof routeOutboxRows>): void {
@@ -429,9 +441,9 @@ function reconcileRoutingErrors(routed: ReturnType<typeof routeOutboxRows>): voi
         conn
           .query(
             `UPDATE hosted_outbox SET last_error=NULL
-             WHERE id=? AND generation=? AND last_error LIKE 'waiting on routing:%'`,
+             WHERE id=? AND generation=? AND last_error LIKE ?`,
           )
-          .run(entry.id, entry.generation)
+          .run(entry.id, entry.generation, `${ROUTING_WAIT_PREFIX}%`)
   })
 }
 
@@ -665,6 +677,24 @@ function routeOutboxRows(
   return routed
 }
 
+/** Classify selected rows without acquiring the drainer lease or changing the store. */
+export async function hostedRoutingWaitForEntries(
+  entries: OutboxEntry[],
+  dependencies: Pick<DrainDependencies, 'identity' | 'registered'> = {},
+): Promise<HostedRoutingWait | null> {
+  let rows = prepareOutboxRows(entries).rows
+  if (!rows.length) return null
+  const identity = await (dependencies.identity ?? hostedTaskIdentity)()
+  const accepted = new Set(
+    identity.capabilities?.spacePushTables ?? [HOSTED_TASK_TABLE, HOSTED_STATUS_EVENT_TABLE],
+  )
+  rows = rows.filter((row) => accepted.has(row.change.table))
+  const { refusals } = routeOutboxRows(rows, (dependencies.registered ?? projects)(), identity)
+  for (const [project, refusal] of refusals)
+    return parseHostedRoutingWait(routingWaitMessage(project, refusal.reason))
+  return null
+}
+
 async function drainHostedOutboxHeld(
   dependencies: DrainDependencies = {},
 ): Promise<HostedOutboxReport> {
@@ -881,16 +911,18 @@ export function hostedOutboxLines(json = false): string[] {
   ]
 }
 
-export function hostedOutboxSummaryLines(rows = listHostedOutbox()): string[] {
+export function hostedOutboxSummaryLines(
+  rows: readonly OutboxEntry[] = listHostedOutbox(),
+): string[] {
   const blocked = new Map<string, { count: number; oldest: string; remedy: string }>()
   for (const row of rows) {
-    const project = /^waiting on routing: project "([^"]+)"/.exec(row.last_error ?? '')?.[1]
-    if (!project) continue
-    const current = blocked.get(project)
-    blocked.set(project, {
+    const wait = parseHostedRoutingWait(row.last_error)
+    if (!wait) continue
+    const current = blocked.get(wait.project)
+    blocked.set(wait.project, {
       count: (current?.count ?? 0) + 1,
       oldest: current && current.oldest < row.queued_at ? current.oldest : row.queued_at,
-      remedy: row.last_error!,
+      remedy: wait.message,
     })
   }
   return [...blocked.entries()]
