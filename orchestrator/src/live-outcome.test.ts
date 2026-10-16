@@ -4,7 +4,6 @@ import {
   deriveLiveOutcome,
   LAST_VENDOR_EVENT_TYPE_MAX,
   type LiveOutcomeFacts,
-  lastStdoutJsonlType,
 } from './live-outcome.ts'
 import { decideOutcome } from './outcome.ts'
 
@@ -113,8 +112,9 @@ describe('live outcome derivation', () => {
 })
 
 const endedNotice = (exitCode: number) =>
-  `the worker completed and wrote its reply, then the process ended ` +
-  `(exit ${exitCode}). Its work is in the worktree; resume or read the diff.`
+  `the worker wrote a done-shaped reply, then the process ended ` +
+  `(exit ${exitCode}) before the run finished. ` +
+  `Its work so far is in the worktree; read the diff and resume.`
 
 describe('completed-reply process-ended error composition', () => {
   test.each([
@@ -221,21 +221,6 @@ describe('completed-reply process-ended error composition', () => {
   })
 })
 
-describe('last stdout JSONL type', () => {
-  test.each([
-    ['{"type":"item.completed"}\n', 'item.completed'],
-    ['{"type":"error"}\nnot-json\n', null],
-    ['not-json\n{"type":"error"}\n', 'error'],
-    ['{"type":"turn.failed"}', 'turn.failed'],
-    ['', null],
-    ['[]\n', null],
-    ['{"type":1}\n', null],
-    ['{"no":"type"}\n', null],
-  ])('%j → %j', (stdout, expected) => {
-    expect(lastStdoutJsonlType(stdout)).toBe(expected)
-  })
-})
-
 describe('completed-reply process-ended live outcome', () => {
   test('exit 1 with stderr and stdout both present records the stderr tail', () => {
     expect(
@@ -253,16 +238,79 @@ describe('completed-reply process-ended live outcome', () => {
     })
   })
 
-  test('an unrecognized last stdout JSONL type is recorded without a timestamp', () => {
+  test.each([
+    ['message', '{"type":"error","message":"turn aborted"}\n'],
+    ['error', '{"type":"error","error":"turn aborted"}\n'],
+  ])('the last stdout JSONL event records its top-level %s', (_, stdout) => {
     expect(
       outcome({
         contractStatus: 'done',
         replyFilePresent: true,
         exitCode: 1,
-        stdout: '{"type":"error","message":"turn aborted"}\n',
+        stdout,
         stderr: '',
         signal: null,
       }).error,
-    ).toBe(`${endedNotice(1)}\nlast vendor event: error`)
+    ).toBe(`${endedNotice(1)}\nlast vendor event: error\nvendor error: turn aborted`)
+  })
+
+  test('a turn.failed event records its nested error message', () => {
+    expect(
+      outcome({
+        contractStatus: 'done',
+        replyFilePresent: true,
+        exitCode: 1,
+        stdout: '{"type":"turn.failed","error":{"message":"thread x not found"}}\n',
+        stderr: '',
+        signal: null,
+      }).error,
+    ).toBe(
+      `${endedNotice(1)}\n` +
+        `last vendor event: turn.failed\n` +
+        `vendor error: thread x not found`,
+    )
+  })
+
+  test('a secret-shaped vendor error is withheld', () => {
+    expect(
+      outcome({
+        contractStatus: 'done',
+        replyFilePresent: true,
+        exitCode: 1,
+        stdout: '{"type":"turn.failed","error":{"message":"token=not-a-real-secret"}}\n',
+        stderr: '',
+        signal: null,
+      }).error,
+    ).toBe(
+      `${endedNotice(1)}\n` +
+        `last vendor event: turn.failed\n` +
+        `vendor error: [withheld: secret-shaped content]`,
+    )
+  })
+
+  test('a last event with no error message adds no vendor error line', () => {
+    expect(
+      outcome({
+        contractStatus: 'done',
+        replyFilePresent: true,
+        exitCode: 1,
+        stdout: '{"type":"turn.failed","error":{"code":"transport_error"}}\n',
+        stderr: '',
+        signal: null,
+      }).error,
+    ).toBe(`${endedNotice(1)}\nlast vendor event: turn.failed`)
+  })
+
+  test('a non-JSON final stdout line does not reuse an earlier vendor event', () => {
+    expect(
+      outcome({
+        contractStatus: 'done',
+        replyFilePresent: true,
+        exitCode: 1,
+        stdout: '{"type":"turn.failed","error":{"message":"stale failure"}}\nnot-json\n',
+        stderr: '',
+        signal: null,
+      }).error,
+    ).toBe(endedNotice(1))
   })
 })
