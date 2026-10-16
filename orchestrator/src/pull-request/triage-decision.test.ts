@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { decideTriage, type TriageEvidence } from './triage-decision.ts'
+import { decideSecondOpinion, decideTriage, type TriageEvidence } from './triage-decision.ts'
 
 const review = (overrides: Partial<TriageEvidence['reviews'][number]> = {}) => ({
   reviewId: 4,
@@ -17,14 +17,15 @@ const review = (overrides: Partial<TriageEvidence['reviews'][number]> = {}) => (
 const branchGroup = (
   reviews: TriageEvidence['reviews'],
   applicableLenses: readonly string[] = ['correctness'],
-) => ({ reviews, applicableLenses })
+  secondOpinion?: string,
+) => ({ reviews, applicableReview: { lenses: [...applicableLenses], secondOpinion } })
 
 const evidence = (overrides: Partial<TriageEvidence> = {}): TriageEvidence => ({
   patchId: 'patch-a',
   pathSet: '["a.ts"]',
   tip: 'tip-a',
   tier: 1,
-  applicableLenses: ['correctness'],
+  applicableReview: { lenses: ['correctness'] },
   branchOwnerSession: 'owner-session',
   reviews: [review({ patchId: 'patch-a' })],
   branchReviewGroups: [],
@@ -34,9 +35,9 @@ const evidence = (overrides: Partial<TriageEvidence> = {}): TriageEvidence => ({
 
 describe('pull-request triage decision', () => {
   test('tier zero needs no review', () => {
-    expect(decideTriage(evidence({ tier: 0, applicableLenses: [], reviews: [] }))).toMatchObject({
-      complete: true,
-    })
+    expect(
+      decideTriage(evidence({ tier: 0, applicableReview: { lenses: [] }, reviews: [] })),
+    ).toMatchObject({ complete: true })
   })
 
   test('path a admits unchanged complete exact evidence', () => {
@@ -144,7 +145,7 @@ describe('pull-request triage decision', () => {
       decideTriage(
         evidence({
           tier: 2,
-          applicableLenses: ['correctness', 'craft'],
+          applicableReview: { lenses: ['correctness', 'craft'] },
           reviews: [first, second],
         }),
       ),
@@ -292,7 +293,7 @@ describe('pull-request triage decision', () => {
       decideTriage(
         evidence({
           tier: 3,
-          applicableLenses: ['correctness', 'craft', 'safety'],
+          applicableReview: { lenses: ['correctness', 'craft', 'safety'] },
           reviews: [incomplete],
         }),
       ),
@@ -312,7 +313,7 @@ describe('pull-request triage decision', () => {
     expect(
       decideTriage(
         evidence({
-          applicableLenses: ['correctness', 'migration-safety'],
+          applicableReview: { lenses: ['correctness', 'migration-safety'] },
           reviews: [required],
         }),
       ),
@@ -320,10 +321,121 @@ describe('pull-request triage decision', () => {
     expect(
       decideTriage(
         evidence({
-          applicableLenses: ['correctness', 'craft'],
+          applicableReview: { lenses: ['correctness', 'craft'] },
           reviews: [required],
         }),
       ),
     ).toMatchObject({ complete: false, missingLenses: ['craft'] })
+  })
+
+  test('a second opinion requires two completed runs on different models', () => {
+    const opinion = (id: number, model: string) => ({
+      id,
+      runId: id + 100,
+      lens: 'correctness',
+      model,
+      graded: true,
+    })
+    const withOpinions = (...opinions: ReturnType<typeof opinion>[]) => [
+      review({ lenses: opinions }),
+    ]
+
+    expect(decideSecondOpinion(withOpinions(opinion(1, 'model-a')), 'correctness')).toEqual({
+      complete: false,
+      lens: 'correctness',
+      firstRunId: 101,
+    })
+    expect(
+      decideSecondOpinion(
+        withOpinions(opinion(1, 'model-a'), opinion(2, 'model-a')),
+        'correctness',
+      ),
+    ).toEqual({ complete: false, lens: 'correctness', firstRunId: 101 })
+    expect(
+      decideSecondOpinion(
+        withOpinions(opinion(1, 'model-a'), opinion(2, 'model-b')),
+        'correctness',
+      ),
+    ).toEqual({ complete: true })
+  })
+
+  test('a second opinion is enforced on exact and earlier credited review rounds', () => {
+    const twoModels = review({
+      patchId: 'patch-a',
+      lenses: [
+        { id: 1, runId: 101, lens: 'correctness', model: 'model-a', graded: true },
+        { id: 2, runId: 102, lens: 'correctness', model: 'model-b', graded: true },
+      ],
+    })
+    expect(
+      decideTriage(
+        evidence({
+          applicableReview: { lenses: ['correctness'], secondOpinion: 'correctness' },
+          reviews: [twoModels],
+        }),
+      ),
+    ).toMatchObject({ complete: true, snapshot: { lensRounds: 2 } })
+
+    expect(
+      decideTriage(
+        evidence({
+          reviews: [],
+          applicableReview: { lenses: ['correctness'], secondOpinion: 'correctness' },
+          branchReviewGroups: [branchGroup([twoModels], ['correctness'], 'correctness')],
+          reads: [
+            {
+              id: 9,
+              tip: 'tip-a',
+              patchId: 'patch-a',
+              pathSet: '["a.ts"]',
+              recordedAt: '2026-09-25T02:00:00Z',
+              sessionId: 'owner-session',
+            },
+          ],
+        }),
+      ),
+    ).toMatchObject({
+      complete: true,
+      snapshot: { admissionPath: 'architect_read', lensRounds: 2 },
+    })
+
+    const sameModel = review({
+      patchId: 'patch-a',
+      lenses: [
+        { id: 1, runId: 101, lens: 'correctness', model: 'model-a', graded: true },
+        { id: 2, runId: 102, lens: 'correctness', model: 'model-a', graded: true },
+      ],
+    })
+    expect(
+      decideTriage(
+        evidence({
+          applicableReview: { lenses: ['correctness'], secondOpinion: 'correctness' },
+          reviews: [sameModel],
+        }),
+      ),
+    ).toMatchObject({
+      complete: false,
+      missingSecondOpinion: { lens: 'correctness', firstRunId: 101 },
+    })
+
+    expect(
+      decideTriage(
+        evidence({
+          reviews: [],
+          applicableReview: { lenses: ['correctness'], secondOpinion: 'correctness' },
+          branchReviewGroups: [branchGroup([sameModel], ['correctness'], 'correctness')],
+          reads: [
+            {
+              id: 9,
+              tip: 'tip-a',
+              patchId: 'patch-a',
+              pathSet: '["a.ts"]',
+              recordedAt: '2026-09-25T02:00:00Z',
+              sessionId: 'owner-session',
+            },
+          ],
+        }),
+      ),
+    ).toMatchObject({ complete: false, earlierReviewId: null })
   })
 })

@@ -108,12 +108,21 @@ describe('project workflow injection', () => {
               { lens: 'migration-safety', paths: ['**/migrations/**'] },
               { lens: 'craft', minTier: 2 },
             ],
+            secondOpinion: { lens: 'craft' },
           },
         },
         undefined,
         { enabledLensIds: ['correctness', 'migration-safety', 'craft'] },
       ),
     ).toEqual([])
+    expect(
+      validateProjectSettings({
+        review: {
+          lenses: [],
+          secondOpinion: { lens: 'correctness', unexpected: true },
+        },
+      } as Parameters<typeof validateProjectSettings>[0]),
+    ).toEqual([expect.stringContaining('review.secondOpinion: Unrecognized key')])
     expect(
       validateProjectSettings({
         review: {

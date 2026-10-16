@@ -283,6 +283,12 @@ function printReviewTier(
       .join(', ')
     log(`lens ${lens.id}${sources ? `  ${sources}` : ''}`)
   }
+  if (output.secondOpinion) {
+    log(
+      `second opinion ${output.secondOpinion}: dispatch this lens a second time on a different model ` +
+        `with --distinct-from <the first run of ${output.secondOpinion} on this tip>`,
+    )
+  }
   for (const reason of output.reasons) log(reason)
 }
 

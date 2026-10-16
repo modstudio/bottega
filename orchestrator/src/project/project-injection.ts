@@ -119,6 +119,10 @@ const reviewSchema = strictObject({
       minTier: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
     }),
   ),
+  secondOpinion: strictObject({
+    lens: z.string().trim().min(1),
+    minTier: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
+  }).optional(),
   record: z.string().trim().min(1).optional(),
 }).superRefine((review, context) => {
   if (!review.record) return

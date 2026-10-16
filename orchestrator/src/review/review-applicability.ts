@@ -7,15 +7,21 @@ const BUILT_IN_REVIEW: ReviewSettings = {
   lenses: [{ lens: 'correctness' }, { lens: 'craft', minTier: 2 }, { lens: 'safety', minTier: 3 }],
 }
 
-/** Decide the distinct catalogue lenses that apply, preserving declaration order. */
-export function applicableReviewLenses(
+export type ApplicableReview = {
+  lenses: string[]
+  secondOpinion?: string
+}
+
+/** Decide the review opinions that apply, preserving lens declaration order. */
+export function applicableReview(
   tier: 0 | 1 | 2 | 3,
   changedPaths: readonly string[],
   review: ReviewSettings | undefined,
-): string[] {
-  if (tier === 0) return []
+): ApplicableReview {
+  if (tier === 0) return { lenses: [] }
+  const declaration = review ?? BUILT_IN_REVIEW
   const selected: string[] = []
-  for (const entry of (review ?? BUILT_IN_REVIEW).lenses) {
+  for (const entry of declaration.lenses) {
     if (tier < (entry.minTier ?? 1)) continue
     if (
       entry.paths &&
@@ -25,5 +31,10 @@ export function applicableReviewLenses(
     }
     if (!selected.includes(entry.lens)) selected.push(entry.lens)
   }
-  return selected
+  const secondOpinion = declaration.secondOpinion
+  if (!secondOpinion || tier < (secondOpinion.minTier ?? 3)) {
+    return { lenses: selected }
+  }
+  if (!selected.includes(secondOpinion.lens)) selected.push(secondOpinion.lens)
+  return { lenses: selected, secondOpinion: secondOpinion.lens }
 }

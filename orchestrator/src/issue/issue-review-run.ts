@@ -23,25 +23,60 @@ const POLL_MS = 100
 type ReviewLaunch = { runId: number | null; failedToRun: string | null }
 type DispatchResult<T> = { claim: T; dispatchNext: boolean }
 
-/** Dispatch serially through the claim boundary, then gather concurrently in lens order. */
-export async function dispatchThenGatherIssueReviews<TClaim, TResult>(
+type IssueReviewOperations = {
+  dispatch(lens: string, distinctModels: readonly string[]): Promise<DispatchResult<ReviewLaunch>>
+  blocked(lens: string, blockingLens: string): ReviewLaunch
+  gather(lens: string, claim: ReviewLaunch): Promise<IssueReviewLensResult>
+  modelForRun(runId: number): string
+}
+
+/** Fan out primary lenses, then gather the first declared opinion before routing its repeat. */
+export async function dispatchThenGatherIssueReviews(
   lenses: readonly string[],
-  dispatch: (lens: string) => Promise<DispatchResult<TClaim>>,
-  blocked: (lens: string, blockingLens: string) => TClaim,
-  gather: (lens: string, claim: TClaim) => Promise<TResult>,
-): Promise<TResult[]> {
-  const claims: { lens: string; claim: TClaim }[] = []
+  secondOpinion: string | undefined,
+  operations: IssueReviewOperations,
+): Promise<IssueReviewLensResult[]> {
+  const claims: { lens: string; claim: ReviewLaunch }[] = []
   let blockingLens: string | null = null
   for (const lens of lenses) {
     if (blockingLens !== null) {
-      claims.push({ lens, claim: blocked(lens, blockingLens) })
+      claims.push({ lens, claim: operations.blocked(lens, blockingLens) })
       continue
     }
-    const launched = await dispatch(lens)
+    const launched = await operations.dispatch(lens, [])
     claims.push({ lens, claim: launched.claim })
     if (!launched.dispatchNext) blockingLens = lens
   }
-  return Promise.all(claims.map(({ lens, claim }) => gather(lens, claim)))
+  const gathered = claims.map(({ lens, claim }) => operations.gather(lens, claim))
+  if (!secondOpinion) return Promise.all(gathered)
+
+  const firstIndex = claims.findIndex(({ lens }) => lens === secondOpinion)
+  if (firstIndex === -1) return Promise.all(gathered)
+  await gathered[firstIndex]
+  const firstRunId = claims[firstIndex]!.claim.runId
+  let repeated: IssueReviewLensResult
+  if (firstRunId === null) {
+    repeated = failedLens(
+      secondOpinion,
+      `the first ${secondOpinion} opinion did not start, so its model could not be excluded`,
+      null,
+    )
+  } else {
+    let excludedModel: string
+    try {
+      excludedModel = operations.modelForRun(firstRunId)
+    } catch (cause) {
+      repeated = failedLens(secondOpinion, String((cause as Error)?.message ?? cause), null)
+      const results = await Promise.all(gathered)
+      results.splice(firstIndex + 1, 0, repeated)
+      return results
+    }
+    const launched = await operations.dispatch(secondOpinion, [excludedModel])
+    repeated = await operations.gather(secondOpinion, launched.claim)
+  }
+  const results = await Promise.all(gathered)
+  results.splice(firstIndex + 1, 0, repeated)
+  return results
 }
 
 export async function runIssueFixReviews(input: {
@@ -82,9 +117,8 @@ export async function runIssueFixReviews(input: {
     return reviewNotStarted(String((cause as Error)?.message ?? cause))
   }
   const lenses = issueReviewLenses(tier.lenses)
-  const results = await dispatchThenGatherIssueReviews(
-    lenses,
-    async (lens): Promise<DispatchResult<ReviewLaunch>> => {
+  const results = await dispatchThenGatherIssueReviews(lenses, tier.secondOpinion, {
+    dispatch: async (lens, distinctModels): Promise<DispatchResult<ReviewLaunch>> => {
       let runId: number
       try {
         runId = await detach('review-lens', reviewPrompt(issue, lens, tier.tier), {
@@ -96,6 +130,7 @@ export async function runIssueFixReviews(input: {
           // Route across another eligible lane instead of exceeding one whose
           // registration declares it is at capacity.
           noWaitCapacity: true,
+          distinctModels: [...distinctModels],
           label: issueReviewRunLabel(issue.key, lens),
         })
       } catch (cause) {
@@ -116,11 +151,11 @@ export async function runIssueFixReviews(input: {
         return { claim: { runId, failedToRun: null }, dispatchNext: false }
       }
     },
-    (lens, blockingLens) => ({
+    blocked: (lens, blockingLens) => ({
       runId: null,
       failedToRun: `${lens} was not dispatched because ${blockingLens} remained pending for ${followDuration()}`,
     }),
-    async (lens, launch): Promise<IssueReviewLensResult> => {
+    gather: async (lens, launch): Promise<IssueReviewLensResult> => {
       if (launch.runId === null) {
         return failedLens(lens, launch.failedToRun ?? 'review run did not start', launch.runId)
       }
@@ -149,8 +184,17 @@ export async function runIssueFixReviews(input: {
         return failedLens(lens, String((cause as Error)?.message ?? cause), launch.runId)
       }
     },
-  )
+    modelForRun,
+  })
   return { tier: tier.tier, selectedLenses: tier.lenses, reviewNotStarted: null, results }
+}
+
+function modelForRun(runId: number): string {
+  const row = db().query('SELECT model FROM run WHERE id=?').get(runId) as {
+    model: string | null
+  } | null
+  if (!row?.model) throw new Error(`run ${runId} recorded no model for second opinion to exclude`)
+  return row.model
 }
 
 function reviewPrompt(issue: FiledIssue, lens: string, tier: 0 | 1 | 2 | 3): string {

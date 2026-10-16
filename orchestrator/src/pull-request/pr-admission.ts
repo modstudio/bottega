@@ -8,7 +8,7 @@ import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { type Project, projectAt } from '../project/projects.ts'
 import { enqueueLandingOverride, enqueueLandingTriageSnapshot } from '../record/landing-outbox.ts'
-import { applicableReviewLenses } from '../review/review-applicability.ts'
+import { applicableReview } from '../review/review-applicability.ts'
 import {
   branchRunOwnerSession,
   type ChangeGroup,
@@ -98,7 +98,7 @@ function triageDecision(change: PullRequestChange, database: Database): TriageDe
     const tier = (tiers.length ? Math.max(...tiers) : 0) as 0 | 1 | 2 | 3
     return {
       reviews: group,
-      applicableLenses: applicableReviewLenses(
+      applicableReview: applicableReview(
         tier,
         JSON.parse(group[0]!.pathSet!) as string[],
         change.project.settings.review,
@@ -110,7 +110,7 @@ function triageDecision(change: PullRequestChange, database: Database): TriageDe
     pathSet: serializePathSet(change.group.pathSet),
     tip: change.tip,
     tier: change.tier,
-    applicableLenses: applicableReviewLenses(
+    applicableReview: applicableReview(
       change.tier,
       change.group.pathSet,
       change.project.settings.review,
@@ -209,6 +209,12 @@ export function triageRefusal(
   for (const lens of decision.missingLenses) {
     lines.push(
       `applicable lens ${lens} has not run and been judged; cleared by: ${PLATFORM_SLUG} run start review-lens --review ${change.branch} --key <task-key> --lens ${lens} "Review ${change.branch} with ${lens}."`,
+    )
+  }
+  if (decision.missingSecondOpinion) {
+    const { lens, firstRunId } = decision.missingSecondOpinion
+    lines.push(
+      `missing second opinion for ${lens} on a different model; cleared by: ${PLATFORM_SLUG} run start review-lens --review ${change.branch} --key <task-key> --lens ${lens} --distinct-from ${firstRunId ?? '<first run>'} "Review ${change.branch} with ${lens}."`,
     )
   }
   if (decision.finalTierRaised) {

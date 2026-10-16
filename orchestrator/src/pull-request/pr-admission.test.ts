@@ -188,6 +188,7 @@ test('a missing applicable lens refusal names the lens and dispatch command', ()
     unfinishedReviewIds: [],
     undisposedFindings: [],
     missingLenses: ['craft'],
+    missingSecondOpinion: null,
     architectReadRequired: false,
     earlierReviewId: null,
     earlierReviewTier: null,
@@ -197,4 +198,37 @@ test('a missing applicable lens refusal names the lens and dispatch command', ()
   expect(message).toContain(
     `${PLATFORM_SLUG} run start review-lens --review DEV-1221-review-lenses --key <task-key> --lens craft`,
   )
+})
+
+test('a missing second opinion refusal names the lens and distinct first run', () => {
+  const change = {
+    project: { name: 'fixture' },
+    branch: 'DEV-1374-second-opinion',
+    tip: 'tip',
+    group: { patchId: 'patch' },
+    tier: 3,
+  } as PullRequestChange
+  const message = triageRefusal(change, {
+    complete: false,
+    snapshot: {
+      reviewIds: [4],
+      patchId: 'patch',
+      tier: 3,
+      lensRounds: 1,
+      findingCount: 0,
+      admissionPath: 'exact_review',
+      readId: null,
+    },
+    missingReview: false,
+    unfinishedReviewIds: [],
+    undisposedFindings: [],
+    missingLenses: [],
+    missingSecondOpinion: { lens: 'correctness', firstRunId: 47 },
+    architectReadRequired: false,
+    earlierReviewId: null,
+    earlierReviewTier: null,
+    finalTierRaised: false,
+  })
+  expect(message).toContain('missing second opinion for correctness on a different model')
+  expect(message).toContain('--lens correctness --distinct-from 47')
 })

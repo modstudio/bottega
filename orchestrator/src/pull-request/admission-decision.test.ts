@@ -17,6 +17,7 @@ const incomplete: TriageDecision = {
   unfinishedReviewIds: [],
   undisposedFindings: [],
   missingLenses: ['correctness'],
+  missingSecondOpinion: null,
   architectReadRequired: false,
   earlierReviewId: null,
   earlierReviewTier: null,

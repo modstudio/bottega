@@ -93,13 +93,13 @@ test('a rebase credits the complete round from the same branch and never another
       pathSet: '["a.ts"]',
       tip: 'rebased-tip',
       tier: 2,
-      applicableLenses: ['correctness', 'craft'],
+      applicableReview: { lenses: ['correctness', 'craft'] },
       branchOwnerSession: 'owner',
       reviews: selected.reviews,
       branchReviewGroups: [
         {
           reviews: selected.branchReviews,
-          applicableLenses: ['correctness', 'craft'],
+          applicableReview: { lenses: ['correctness', 'craft'] },
         },
       ],
       reads: [
