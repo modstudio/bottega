@@ -85,7 +85,7 @@ export function uiArchitectureRules(
       comment: 'Every ui/ folder is declared in uiLayers in architecture-ui-layers.ts.',
       from: {
         path: '^hub/ui/src/',
-        pathNot: uiFolders(uiLayers.flatMap((layer) => layer.folders)),
+        pathNot: [uiFolders(uiLayers.flatMap((layer) => layer.folders))],
       },
       to: {},
     },
