@@ -264,7 +264,7 @@ export function implicitDatabaseCreationRefusal(
   return null
 }
 
-/** Existing stores retain the linked-worktree migration refusal. */
+/** Existing stores retain the linked-worktree migration refusal unless they live in the OS temporary directory. */
 export function existingDatabaseMigrationRefusal(
   resolution: DatabaseResolution = DATABASE_RESOLUTION,
 ): string | null {

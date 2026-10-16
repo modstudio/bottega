@@ -108,16 +108,26 @@ function collectEvidence(page: Page, origin: string): string[] {
   return evidence
 }
 
+// A route's first queries can fail after its first paint, so each phase is
+// observed until the network goes idle. Live queries poll, so idle may never
+// come; the bound keeps the observation window finite either way.
+const SETTLE_TIMEOUT_MS = 10_000
+
+function rootRendered(): boolean {
+  const root = document.querySelector('#root')
+  return Boolean(root?.childElementCount || root?.textContent?.trim())
+}
+
 async function assertRendered(page: Page, route: string, phase: string): Promise<void> {
   try {
     await page.locator('#root').waitFor({ state: 'attached', timeout: 5_000 })
-    await page.waitForFunction(() => {
-      const root = document.querySelector('#root')
-      return Boolean(root?.childElementCount || root?.textContent?.trim())
-    })
-    await page.waitForTimeout(100)
+    await page.waitForFunction(rootRendered)
   } catch (error) {
     throw new Error(`${route} ${phase}: application root rendered nothing (${String(error)})`)
+  }
+  await page.waitForLoadState('networkidle', { timeout: SETTLE_TIMEOUT_MS }).catch(() => {})
+  if (!(await page.evaluate(rootRendered))) {
+    throw new Error(`${route} ${phase}: application root emptied after rendering`)
   }
 }
 
@@ -159,25 +169,23 @@ try {
   const loginUrl = await command(['dashboard', 'login', '--port', String(port)])
   browser = await chromium.launch({ headless: true })
   const page = await browser.newPage()
-  let currentRoute = '/login'
   const evidence = collectEvidence(page, origin)
   await page.goto(loginUrl, { waitUntil: 'domcontentloaded' })
   await page.waitForURL((url) => url.origin === origin && url.pathname === '/')
 
   for (const route of localRoutes()) {
-    currentRoute = route
     evidence.length = 0
     await page.goto(new URL(route, origin).href, { waitUntil: 'domcontentloaded' })
-    await assertRendered(page, currentRoute, 'direct navigation')
+    await assertRendered(page, route, 'direct navigation')
     if (evidence.length > 0) {
-      throw new Error(`${currentRoute} direct navigation: ${evidence.join('; ')}`)
+      throw new Error(`${route} direct navigation: ${evidence.join('; ')}`)
     }
 
     evidence.length = 0
     await page.reload({ waitUntil: 'domcontentloaded' })
-    await assertRendered(page, currentRoute, 'reload')
-    if (evidence.length > 0) throw new Error(`${currentRoute} reload: ${evidence.join('; ')}`)
-    console.log(`passed ${currentRoute}`)
+    await assertRendered(page, route, 'reload')
+    if (evidence.length > 0) throw new Error(`${route} reload: ${evidence.join('; ')}`)
+    console.log(`passed ${route}`)
   }
   console.log(
     `dashboard smoke passed ${localRoutes().length} routes in ${((performance.now() - startedAt) / 1_000).toFixed(2)}s`,
