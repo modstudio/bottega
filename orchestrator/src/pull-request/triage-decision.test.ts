@@ -374,7 +374,30 @@ describe('pull-request triage decision', () => {
           reviews: [twoModels],
         }),
       ),
-    ).toMatchObject({ complete: true })
+    ).toMatchObject({ complete: true, snapshot: { lensRounds: 2 } })
+
+    expect(
+      decideTriage(
+        evidence({
+          reviews: [],
+          applicableReview: { lenses: ['correctness'], secondOpinion: 'correctness' },
+          branchReviewGroups: [branchGroup([twoModels], ['correctness'], 'correctness')],
+          reads: [
+            {
+              id: 9,
+              tip: 'tip-a',
+              patchId: 'patch-a',
+              pathSet: '["a.ts"]',
+              recordedAt: '2026-09-25T02:00:00Z',
+              sessionId: 'owner-session',
+            },
+          ],
+        }),
+      ),
+    ).toMatchObject({
+      complete: true,
+      snapshot: { admissionPath: 'architect_read', lensRounds: 2 },
+    })
 
     const sameModel = review({
       patchId: 'patch-a',

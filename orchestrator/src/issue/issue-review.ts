@@ -20,12 +20,8 @@ export type IssueReviewDecision = {
 }
 
 /** Add the coordinator-specific lens without duplicating a declared lens. */
-export function issueReviewLenses(tierLenses: readonly string[], secondOpinion?: string): string[] {
-  const lenses = [
-    ISSUE_BLAST_RADIUS_LENS,
-    ...tierLenses.filter((lens) => lens !== ISSUE_BLAST_RADIUS_LENS),
-  ]
-  return lenses.flatMap((lens) => (lens === secondOpinion ? [lens, lens] : [lens]))
+export function issueReviewLenses(tierLenses: readonly string[]): string[] {
+  return [ISSUE_BLAST_RADIUS_LENS, ...tierLenses.filter((lens) => lens !== ISSUE_BLAST_RADIUS_LENS)]
 }
 
 /** Whether a lens produced no review result, regardless of the failure shape. */

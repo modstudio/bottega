@@ -1,16 +1,12 @@
 // concern: pull-request-triage-decision
 /** Decides whether recorded review evidence admits one exact change group. */
 
+import type { ApplicableReview } from '../review/review-applicability.ts'
 import type { TriageReviewRow } from '../review/review-group.ts'
-
-type ApplicableReviewEvidence = {
-  lenses: string[]
-  secondOpinion?: string
-}
 
 export type TriageReviewGroup = {
   reviews: readonly TriageReviewRow[]
-  applicableReview: ApplicableReviewEvidence
+  applicableReview: ApplicableReview
 }
 
 export type TriageEvidence = {
@@ -18,7 +14,7 @@ export type TriageEvidence = {
   pathSet: string
   tip: string
   tier: 0 | 1 | 2 | 3
-  applicableReview: ApplicableReviewEvidence
+  applicableReview: ApplicableReview
   branchOwnerSession: string | null
   reviews: readonly TriageReviewRow[]
   branchReviewGroups: readonly TriageReviewGroup[]
@@ -62,6 +58,10 @@ type CompleteReviewRound = {
   reviews: readonly TriageReviewRow[]
   tier: 0 | 1 | 2 | 3
   completedAt: string
+}
+
+function recordedLensRounds(reviews: readonly TriageReviewRow[]): number {
+  return reviews.reduce((count, review) => count + review.lenses.length, 0)
 }
 
 export type SecondOpinionDecision =
@@ -110,7 +110,7 @@ function mostRecentCompleteRound(
 /** One pure decision over the already-selected rows for a patch/path change group. */
 export function decideTriage(evidence: TriageEvidence): TriageDecision {
   const reviewIds = [...new Set(evidence.reviews.map((row) => row.reviewId))].sort((a, b) => a - b)
-  const lensRounds = new Set(evidence.reviews.flatMap((row) => row.lensIdentities)).size
+  const lensRounds = recordedLensRounds(evidence.reviews)
   const findings = evidence.reviews.flatMap((review) =>
     review.findings.map((finding) => ({
       ...finding,
@@ -176,7 +176,7 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
         reviewIds: earlierRound.reviews.map((review) => review.reviewId).sort((a, b) => a - b),
         patchId: evidence.patchId,
         tier: evidence.tier,
-        lensRounds: new Set(earlierRound.reviews.flatMap((review) => review.lensIdentities)).size,
+        lensRounds: recordedLensRounds(earlierRound.reviews),
         findingCount: earlierRound.reviews.flatMap((review) => review.findings).length,
         admissionPath: 'architect_read',
         readId: exactRead.id,

@@ -30,15 +30,6 @@ describe('filed issue review policy', () => {
     expect(issueReviewLenses([])).toEqual(['issue-blast-radius'])
   })
 
-  test('places a declared second opinion immediately after its first run', () => {
-    expect(issueReviewLenses(['correctness', 'craft'], 'correctness')).toEqual([
-      'issue-blast-radius',
-      'correctness',
-      'correctness',
-      'craft',
-    ])
-  })
-
   test('requires every lens to finish cleanly', () => {
     expect(issueReviewDecision([clean('issue-blast-radius'), clean('correctness')])).toEqual({
       ready: true,

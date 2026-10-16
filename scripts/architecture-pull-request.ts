@@ -1,7 +1,7 @@
 export const pullRequestModuleSpecs = [
   {
     file: 'orchestrator/src/pull-request/triage-decision.ts',
-    allowed: ['../review/review-group.ts'],
+    allowed: ['../review/review-applicability.ts', '../review/review-group.ts'],
   },
   { file: 'orchestrator/src/pull-request/pre-push-decision.ts', allowed: [] },
   { file: 'orchestrator/src/pull-request/override-decision.ts', allowed: [] },
