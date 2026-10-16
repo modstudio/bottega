@@ -20,6 +20,7 @@ import {
   checkoutReleaseDecision,
   forwardReleaseDecision,
   postDeployLiveDecision,
+  releaseAncestryFromExitCode,
   releaseCapturedText,
   releaseCommandEnvironment,
   releaseLockDecision,
@@ -114,10 +115,13 @@ function shell(
 
 function releaseAncestry(live: string | null, candidate: string, cwd: string): boolean | null {
   if (live === null) return null
-  const exitCode = run(['git', 'merge-base', '--is-ancestor', live, candidate], cwd).exitCode
-  if (exitCode === 0) return true
-  if (exitCode === 1) return false
-  return null
+  try {
+    return releaseAncestryFromExitCode(
+      run(['git', 'merge-base', '--is-ancestor', live, candidate], cwd).exitCode,
+    )
+  } catch {
+    return null
+  }
 }
 
 function capturedReleaseText(text: string): string {

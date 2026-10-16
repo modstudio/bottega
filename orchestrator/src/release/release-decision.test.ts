@@ -4,6 +4,7 @@ import {
   forwardReleaseDecision,
   postDeployLiveDecision,
   RELEASE_OUTPUT_WITHHELD,
+  releaseAncestryFromExitCode,
   releaseCapturedText,
   releaseCommandEnvironment,
   releaseLockDecision,
@@ -47,6 +48,12 @@ test('release variables reach only the deploy environment', () => {
     ORCH_RELEASE_RUNG: 'rung',
     ORCH_RELEASE_COMMIT: 'commit',
   })
+})
+
+test('maps git ancestry exit codes to three-valued release ancestry', () => {
+  expect(releaseAncestryFromExitCode(0)).toBe(true)
+  expect(releaseAncestryFromExitCode(1)).toBe(false)
+  expect(releaseAncestryFromExitCode(128)).toBeNull()
 })
 
 const level = {

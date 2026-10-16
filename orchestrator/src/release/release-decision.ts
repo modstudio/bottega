@@ -113,6 +113,12 @@ export type ForwardDecision =
   | { ok: true; rollback: boolean; reason: string | null; baseline: boolean }
   | { ok: false; message: string }
 
+export function releaseAncestryFromExitCode(exitCode: number): boolean | null {
+  if (exitCode === 0) return true
+  if (exitCode === 1) return false
+  return null
+}
+
 export function forwardReleaseDecision(facts: {
   candidate: string
   live: string | null
