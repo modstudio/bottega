@@ -89,7 +89,7 @@ export function resolveWritingRetryWorkspace(input: {
   job: string
   launchKey: string | null
   repo: string | null
-  projectId: number | null
+  projectId: string | null
   branchKept: string | null
   branchKeptTip: string | null
   strandedRecordOnly: boolean

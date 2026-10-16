@@ -19,13 +19,13 @@ export function jobWritesRepo(
 function aliveOwnerOnBranch(input: {
   branch: string
   conversationRootId: number | null
-  projectId: number | null
+  projectId: string | null
 }): BranchConversationRow | null {
   const rows = db()
     .query(
       `SELECT id, parent_run_id, status, branch, job FROM run
        WHERE branch=? AND status IN ('running','asking')
-         AND project_id=?
+         AND project_record_id=?
        ORDER BY id`,
     )
     .all(input.branch, input.projectId) as Omit<BranchConversationRow, 'writesRepo'>[]
@@ -39,7 +39,7 @@ function aliveOwnerOnBranch(input: {
 export function assertBranchHasNoAliveOwner(input: {
   branch: string | undefined
   conversationRootId: number | null
-  projectId: number | null
+  projectId: string | null
   retryCommand?: string
 }): void {
   const branch = input.branch

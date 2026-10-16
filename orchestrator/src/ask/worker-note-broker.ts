@@ -49,7 +49,7 @@ function runFacts(runId: number): WorkerNoteRun {
     .query(
       `SELECT r.id,p.name AS project,p.path AS project_path,COALESCE(r.worktree,r.cwd) AS tree,
               r.branch,r.session_id,r.head_commit
-       FROM run r JOIN project p ON p.id=r.project_id WHERE r.id=?`,
+       FROM run r JOIN project p ON p.record_id=r.project_record_id WHERE r.id=?`,
     )
     .get(runId) as {
     id: number

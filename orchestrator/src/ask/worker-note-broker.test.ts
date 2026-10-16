@@ -133,3 +133,4 @@ test('host broker records one permanent claim failure and stops polling', async 
   expect(events[0]?.text).toContain('broken claim query')
   await broker.close()
 })
+

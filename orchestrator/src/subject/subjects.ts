@@ -56,7 +56,7 @@ export function listSubjects(
   assertRegisteredProject(project, database)
   const rows = database
     .query<LocalRow, [string, number]>(
-      `SELECT s.*,p.name AS project FROM subject s JOIN project p ON p.id=s.project_id
+      `SELECT s.*,p.name AS project FROM subject s JOIN project p ON p.record_id=s.project_record_id
        WHERE p.name=? AND (? OR s.retired_at IS NULL) ORDER BY s.position,s.id`,
     )
     .all(project, options.retired ? 1 : 0)
@@ -71,14 +71,14 @@ export function resolveSubject(
   assertRegisteredProject(project, database)
   const byId = database
     .query<LocalRow, [string, string]>(
-      `SELECT s.*,p.name AS project FROM subject s JOIN project p ON p.id=s.project_id
+      `SELECT s.*,p.name AS project FROM subject s JOIN project p ON p.record_id=s.project_record_id
        WHERE p.name=? AND s.id=?`,
     )
     .get(project, reference)
   if (byId) return mapped(byId)
   const matches = database
     .query<LocalRow, [string, string]>(
-      `SELECT s.*,p.name AS project FROM subject s JOIN project p ON p.id=s.project_id
+      `SELECT s.*,p.name AS project FROM subject s JOIN project p ON p.record_id=s.project_record_id
        WHERE p.name=? AND s.name=? AND s.retired_at IS NULL`,
     )
     .all(project, reference)
@@ -93,13 +93,13 @@ export function resolveSubject(
   )
 }
 
-function assertParent(database: Database, row: RecordSubject, projectId: number): void {
+function assertParent(database: Database, row: RecordSubject, projectId: string): void {
   if (row.parentId === null) return
   if (row.parentId === row.id) throw new Error('a subject cannot parent itself')
   const parent = database
-    .query<{ project_id: number }, [string]>('SELECT project_id FROM subject WHERE id=?')
+    .query<{ project_record_id: string }, [string]>('SELECT project_record_id FROM subject WHERE id=?')
     .get(row.parentId)
-  if (!parent || parent.project_id !== projectId) {
+  if (!parent || parent.project_record_id !== projectId) {
     throw new Error('a subject parent must belong to the same project')
   }
   let cursor: string | null = row.parentId
@@ -123,20 +123,20 @@ export function applySubjectRecord(row: RecordSubject, database: Database = db()
     )
   }
   const definition = SubjectDefinitionSchema.parse(row.definition)
-  assertParent(database, row, project.id)
+  assertParent(database, row, project.recordId)
   try {
     database
       .query(
         `INSERT INTO subject
-       (id,project_id,name,definition,position,parent_id,retired_at,created_at,updated_at)
+       (id,project_record_id,name,definition,position,parent_id,retired_at,created_at,updated_at)
        VALUES (?,?,?,?,?,?,?,?,?)
-       ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,name=excluded.name,
+       ON CONFLICT(id) DO UPDATE SET project_record_id=excluded.project_record_id,name=excluded.name,
          definition=excluded.definition,position=excluded.position,parent_id=excluded.parent_id,
          retired_at=excluded.retired_at,updated_at=excluded.updated_at`,
       )
       .run(
         row.id,
-        project.id,
+        project.recordId,
         row.name,
         definition,
         row.position,
@@ -146,7 +146,7 @@ export function applySubjectRecord(row: RecordSubject, database: Database = db()
         row.updatedAt,
       )
   } catch (error) {
-    if (String(error).includes('subject.project_id, subject.name')) {
+    if (String(error).includes('subject.project_record_id, subject.name')) {
       throw new Error(
         `subject "${row.name}" already exists in project ${row.project}; cleared by: ${PLATFORM_SLUG} doc subject list ${row.project}`,
       )
@@ -166,10 +166,10 @@ function localAdd(input: {
   if (!project) throw unknownProject(input.project)
   const at = nowIso()
   const position = db()
-    .query<{ position: number }, [number]>(
-      'SELECT COALESCE(MAX(position),-1)+1 AS position FROM subject WHERE project_id=? AND retired_at IS NULL',
+    .query<{ position: number }, [string]>(
+      'SELECT COALESCE(MAX(position),-1)+1 AS position FROM subject WHERE project_record_id=? AND retired_at IS NULL',
     )
-    .get(project.id)!.position
+    .get(project.recordId)!.position
   return applySubjectRecord({
     ...input,
     position,

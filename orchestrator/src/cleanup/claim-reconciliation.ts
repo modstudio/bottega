@@ -29,7 +29,7 @@ type ClaimedRow = {
   id: number
   root_run_id: number
   run_id: number
-  project_id: number | null
+  project_record_id: string | null
   kind: ReconciledKind
   allocation_key: string
   project_name: string | null
@@ -83,7 +83,7 @@ const defaultObservers = (trust: GrokTrustObservation): ClaimReconciliationObser
 function claimedRows(database: Database, projectName: string | undefined): ClaimedRow[] {
   return database
     .query(
-      `SELECT claim.id,claim.root_run_id,claim.run_id,claim.project_id,claim.kind,claim.allocation_key,
+      `SELECT claim.id,claim.root_run_id,claim.run_id,claim.project_record_id,claim.kind,claim.allocation_key,
               project.name project_name,project.path project_path,root.repo run_repo,
               root.cwd run_cwd,root.launch_cwd,root.worktree recorded_worktree,
               CASE WHEN claim.kind='worktree' THEN claim.allocation_key ELSE
@@ -93,7 +93,7 @@ function claimedRows(database: Database, projectName: string | undefined): Claim
               END worktree_path
        FROM resource_claim claim
        JOIN run root ON root.id=claim.root_run_id
-       LEFT JOIN project ON project.id=claim.project_id
+       LEFT JOIN project ON project.record_id=claim.project_record_id
        WHERE claim.state='claimed'
          AND claim.kind IN ('branch','retained_ref','worktree','sandbox_dir','trust_entry')
          AND (? IS NULL OR project.name=?)

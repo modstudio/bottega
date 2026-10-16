@@ -188,3 +188,4 @@ describe('porting data model', () => {
     expect(() => addDoctrineRule(7, 'Replacement', 'Must not reuse seven.')).toThrow()
   })
 })
+

@@ -245,3 +245,4 @@ describe('worker pack canon', () => {
     expect(pack.docs.map((doc) => doc.slug)).toEqual(['injected'])
   })
 })
+

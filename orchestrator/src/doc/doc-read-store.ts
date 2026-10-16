@@ -24,7 +24,7 @@ export type Doc = {
   scope: DocScope
   subject: string | null
   owner: string | null
-  project_id: number | null
+  project_record_id: string | null
   slug: string
   title: string
   body: string
@@ -93,7 +93,7 @@ export type DocRevision = {
   scope: DocScope
   subject: string | null
   owner: string | null
-  project_id: number | null
+  project_record_id: string | null
   slug: string
   op: DocRevisionOp
   title: string

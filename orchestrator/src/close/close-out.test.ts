@@ -841,3 +841,4 @@ test('releasing a failover successor releases every held attempt oldest first', 
   expect(closeOutRun(predecessor, { intent: 'terminal' }).outcome).toBe('absent')
   expect(closeOutRun(successor, { intent: 'terminal' }).outcome).toBe('absent')
 })
+

@@ -76,7 +76,7 @@ function branchRunIdentity(branch: string): { project: Project; taskKey: string 
     .query(
       `SELECT DISTINCT p.name project_name,r.launch_key
          FROM run r
-         JOIN project p ON p.id=r.project_id
+         JOIN project p ON p.record_id=r.project_record_id
         WHERE r.minted_branch=?`,
     )
     .all(branch) as BranchRunIdentity[]

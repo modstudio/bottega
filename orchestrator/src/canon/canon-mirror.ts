@@ -257,7 +257,7 @@ function createLifecycleRun(project: Project, key: string): number {
     db()
       .query(
         `INSERT INTO run
-     (record_id,started_at,agent,job,repo,project_id,cwd,prompt_sha,prompt_bytes,prompt_head,status,
+     (record_id,started_at,agent,job,repo,project_record_id,cwd,prompt_sha,prompt_bytes,prompt_head,status,
       session_id,launch_cwd,launch_key,launch_base,stack,evidence_excluded,pid)
      VALUES (?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?) RETURNING id`,
       )
@@ -267,7 +267,7 @@ function createLifecycleRun(project: Project, key: string): number {
         '(architect)',
         CANON_MIRROR_JOB,
         project.name,
-        project.id,
+        project.recordId,
         project.path,
         createHash('sha256').update(prompt).digest('hex').slice(0, 16),
         Buffer.byteLength(prompt),
@@ -298,7 +298,7 @@ function recordTree(
     recordCreatedWorktreeClaims(db(), {
       rootRunId: runId,
       runId,
-      projectId: project.id,
+      projectId: project.recordId,
       owned: true,
       path,
       head: base,
@@ -359,22 +359,22 @@ function remoteOwnershipRefusal(
 }
 function previousPublication(project: Project, branch: string, runId: number): Publication | null {
   return db()
-    .query<Publication, [number, string, string, number]>(
+    .query<Publication, [number, string, string, string]>(
       `SELECT head_commit tip,base_commit base FROM run
      WHERE id<>? AND job=? AND branch=? AND head_commit IS NOT NULL
-       AND project_id=?
+       AND project_record_id=?
      ORDER BY id DESC LIMIT 1`,
     )
-    .get(runId, CANON_MIRROR_JOB, branch, project.id) as Publication | null
+    .get(runId, CANON_MIRROR_JOB, branch, project.recordId) as Publication | null
 }
 function releaseOwnedLeftover(project: Project, path: string, port: CanonMirrorPort): void {
   if (!existsSync(path)) return
   const owners = db()
-    .query<{ id: number }, [string, string, number]>(
+    .query<{ id: number }, [string, string, string]>(
       `SELECT id FROM run WHERE job=? AND worktree=?
-     AND project_id=? ORDER BY id`,
+     AND project_record_id=? ORDER BY id`,
     )
-    .all(CANON_MIRROR_JOB, path, project.id)
+    .all(CANON_MIRROR_JOB, path, project.recordId)
   const ownership = inspectTreeOwnership(
     path,
     project.path,

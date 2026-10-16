@@ -35,6 +35,7 @@ type StoreManifests = {
 }
 
 const REFERENCE_NAME = /(?:^parent_|_(?:id|ids|ref|key|session)$)/
+const PROJECT_NAME = /^(?:project|repo|.*_project)$/
 
 export function classifyKeyInventory(
   store: KeyStore,
@@ -130,10 +131,12 @@ function classifyKeyColumn(
   if (explicitReference) seen.references.add(address)
   const shapedReference =
     (column.type === 'integer' || column.type === 'text') && REFERENCE_NAME.test(column.name)
+  const shapedProjectName =
+    store === 'orchestrator' && column.type === 'text' && PROJECT_NAME.test(column.name)
   if (
     !column.foreignKey &&
     (column.type === 'integer' || column.type === 'text') &&
-    shapedReference &&
+    (shapedReference || shapedProjectName) &&
     !uuid &&
     !externalIdentifier &&
     !explicitReference &&
@@ -142,6 +145,7 @@ function classifyKeyColumn(
     throw new Error(`${store} reference-shaped column ${address} is not classified`)
   const reference =
     column.foreignKey || (!externalIdentifier && shapedReference) || explicitReference
+  if (manifests.values.has(address)) seen.values.add(address)
   if (column.type === 'integer')
     classifyIntegerColumn(store, address, column, reference, manifests.values, seen.values)
   return reference && !uuid ? [`${address}:reference`] : []

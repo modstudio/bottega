@@ -197,7 +197,7 @@ export async function loadHostedBoardMessage(
 ): Promise<{ row: Record<string, unknown>; tags: BoardTag[] } | null> {
   const rows = await tx`
     SELECT board_message.*, project.name AS author_project_name
-    FROM board_message LEFT JOIN project ON project.id=board_message.author_project_id
+    FROM board_message LEFT JOIN project ON project.recordId=board_message.author_project_id
     WHERE board_message.id=${id}::uuid
   `
   if (!rows[0]) return null
@@ -860,7 +860,7 @@ async function readThreadInTx(tx: SQL, id: string, clock: number): Promise<Hoste
   if (!root) throw new RecordBoardError(`board message ${id} not found`, 404)
   const replies = (await tx`
     SELECT board_message.*, project.name AS author_project_name
-    FROM board_message LEFT JOIN project ON project.id=board_message.author_project_id
+    FROM board_message LEFT JOIN project ON project.recordId=board_message.author_project_id
     WHERE board_message.thread_root_id=${rootId}::uuid
     ORDER BY board_message.created_at, board_message.id
   `) as Record<string, unknown>[]

@@ -59,7 +59,7 @@ export type CreateWorkerWorktreeOptions = {
   templateBaseRef?: string
   mainStackConsumers?: MainStackConsumer[]
   mainStackRequiredServices?: string[]
-  mainStackProject?: { id: number; name: string }
+  mainStackProject?: { recordId: string; name: string }
   provisionTimeoutMs?: number
 }
 
@@ -84,7 +84,7 @@ export function createWorkerWorktree(options: CreateWorkerWorktreeOptions): Work
         )
   }
   ensureMainStackStarted({
-    projectId: options.mainStackProject?.id ?? 0,
+    projectId: options.mainStackProject?.recordId ?? '',
     projectName: options.mainStackProject?.name ?? options.mainProjectPath,
     projectPath: options.mainProjectPath,
     declaration: options.mainStackConsumers

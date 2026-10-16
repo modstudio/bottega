@@ -238,3 +238,4 @@ test('a local rename leaves no listed table naming the old project', () => {
     expect(countName(table, 'subject', OLD), `${table} changed unresolved subjects`).toBe(3)
   }
 })
+

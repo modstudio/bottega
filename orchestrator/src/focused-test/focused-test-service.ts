@@ -14,7 +14,7 @@ export function focusedTestEligibility(runId: number, token: string): FocusedTes
   const row = db()
     .query(
       `SELECT r.job,p.settings FROM run r
-       LEFT JOIN project p ON p.id=r.project_id WHERE r.id=?`,
+       LEFT JOIN project p ON p.record_id=r.project_record_id WHERE r.id=?`,
     )
     .get(runId) as { job: string; settings: string | null } | null
   let runner = null

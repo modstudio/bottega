@@ -39,3 +39,4 @@ test('a reused local mirror branch at a foreign tip is refused', async () => {
     rmSync(root, { recursive: true, force: true })
   }
 })
+

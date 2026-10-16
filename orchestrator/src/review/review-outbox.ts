@@ -32,7 +32,7 @@ export function enqueueReview(database: Database, reviewId: number): void {
   const row = database
     .query<Record<string, unknown>, [number]>(
       `SELECT review.*, project.name AS project_name, project.record_id AS project_record_id FROM review
-      LEFT JOIN project ON project.id=review.project_id WHERE review.id=?`,
+      LEFT JOIN project ON project.record_id=review.project_record_id WHERE review.id=?`,
     )
     .get(reviewId)
   if (!row) throw new Error(`review ${reviewId} does not exist and cannot be enqueued`)
@@ -86,7 +86,7 @@ export function enqueueReviewLens(
               project.name AS project_name, project.record_id AS project_record_id
        FROM review_lens lens JOIN review ON review.id=lens.review_id
        JOIN run ON run.id=lens.run_id
-       LEFT JOIN project ON project.id=review.project_id WHERE lens.id=?`,
+       LEFT JOIN project ON project.record_id=review.project_record_id WHERE lens.id=?`,
     )
     .get(lensId)
   if (!row) throw new Error(`review lens ${lensId} does not exist and cannot be enqueued`)
@@ -140,7 +140,7 @@ export function enqueueReviewFinding(
             lens.record_id AS review_lens_record_id
        FROM review_finding finding JOIN review ON review.id=finding.review_id
        JOIN review_lens lens ON lens.id=finding.review_lens_id
-       LEFT JOIN project ON project.id=review.project_id WHERE finding.id=?`,
+       LEFT JOIN project ON project.record_id=review.project_record_id WHERE finding.id=?`,
     )
     .get(findingId)
   if (!row) throw new Error(`review finding ${findingId} does not exist and cannot be enqueued`)
@@ -178,7 +178,7 @@ export function enqueueReviewRead(database: Database, readId: number): void {
   const row = database
     .query<Record<string, unknown>, [number]>(
       `SELECT review_read.*, project.name AS project_name, project.record_id AS project_record_id FROM review_read
-     LEFT JOIN project ON project.id=review_read.project_id WHERE review_read.id=?`,
+     LEFT JOIN project ON project.record_id=review_read.project_record_id WHERE review_read.id=?`,
     )
     .get(readId)
   if (!row?.record_id) throw new Error(`review read ${readId} does not exist or has no record id`)

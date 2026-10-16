@@ -534,3 +534,4 @@ test('an unregistered claim settles absent when its owning repository root is go
     settled_detail: `observed absent repository ${repository}`,
   })
 })
+

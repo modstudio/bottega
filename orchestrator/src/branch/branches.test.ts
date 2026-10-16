@@ -110,3 +110,4 @@ test('dry-run previews automatic landing repair without writing, then non-dry pr
     removeGitRepository(repository)
   }
 })
+

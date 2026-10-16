@@ -17,7 +17,7 @@ type WorkerGateToolingFacts = {
 }
 
 type AdapterFacts = WorkerGateToolingFacts & {
-  projectId: number | null
+  projectId: string | null
   project: string | null
   branch: string | null
 }
@@ -28,7 +28,7 @@ type ToolingRow = {
   resolved_command: string | null
   started_at: string
   session_id: string | null
-  project_id: number | null
+  project_record_id: string | null
   project_name: string | null
   branch: string | null
   admitted: number
@@ -64,7 +64,7 @@ function toolingRows(database: Database): ToolingRow[] {
           GROUP BY run_id
        )
        SELECT g.run_id,g.tooling_paths,g.resolved_command,r.started_at,r.session_id,
-              p.id project_id,p.name project_name,COALESCE(r.minted_branch,r.branch) branch,
+              p.record_id project_record_id,p.name project_name,COALESCE(r.minted_branch,r.branch) branch,
               CASE WHEN latest_gate.finished_at IS NOT NULL AND EXISTS (
                 SELECT 1 FROM landing_triage_snapshot snapshot
                  WHERE snapshot.project=p.name
@@ -75,9 +75,9 @@ function toolingRows(database: Database): ToolingRow[] {
        JOIN latest_tooling latest ON latest.run_id=g.run_id
        JOIN gate_execution latest_gate ON latest_gate.id=latest.gate_id
        JOIN run r ON r.id=g.run_id
-       LEFT JOIN project p ON p.id=COALESCE(
-         r.project_id,
-         (SELECT legacy.id FROM project legacy WHERE legacy.name=r.repo LIMIT 1)
+       LEFT JOIN project p ON p.record_id=COALESCE(
+         r.project_record_id,
+         (SELECT legacy.record_id FROM project legacy WHERE legacy.name=r.repo LIMIT 1)
        )
        WHERE g.run_id IS NOT NULL AND g.tooling_paths <> '[]' ORDER BY g.run_id,g.id`,
     )
@@ -95,7 +95,7 @@ function factsByRun(rows: readonly ToolingRow[]): Map<number, AdapterFacts> {
       admitted: row.admitted === 1,
       landed: false,
       branchExists: true,
-      projectId: row.project_id,
+      projectId: row.project_record_id,
       project: row.project_name,
       branch: row.branch,
     }

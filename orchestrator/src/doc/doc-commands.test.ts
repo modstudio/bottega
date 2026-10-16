@@ -679,3 +679,4 @@ describe('scoped operator docs', () => {
     expect(getDoc('global', null, 'taken')).toEqual(before)
   })
 })
+
