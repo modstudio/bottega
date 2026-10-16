@@ -200,7 +200,7 @@ elif [ "$1" = "run" ] && [ "$2" = "list" ]; then
   echo '{"id":42,"live_member_id":42,"job":"implement","agent":"codex","status":"running","session_id":"notice-failure-session","started_at":"2026-09-22T12:00:00.000Z","latency_ms":null,"failure_kind":null,"idle":null,"stall_state":"healthy","stall":null}'
 elif [ "$1" = "machine" ] && [ "$2" = "monitor" ] && [ "$3" = "--notices" ]; then
   count=0
-  [ ! -f "$COUNTER_PATH" ] || count=$(<"$COUNTER_PATH")
+  [ ! -f "$COUNTER_PATH" ] || count=$(cat "$COUNTER_PATH")
   count=$((count + 1))
   echo "$count" > "$COUNTER_PATH"
   if [ "$SCENARIO" = "recovery" ] && [ "$count" -eq 2 ]; then
