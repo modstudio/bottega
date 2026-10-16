@@ -46,6 +46,13 @@ dialog element, the popover attribute and anchor positioning, is used beneath ou
 styling; no component library is added, and a component's keyboard behavior follows its
 WAI-ARIA APG pattern.
 
+A component's appearance is defined only in its sibling styles file through
+`hub/ui/src/text/variant.ts`. Nothing else imports `tailwind-variants` or
+`tailwind-merge`, and the shared merge knows the design system's theme keys.
+`scripts/check-architecture.ts` enforces the variant dependency boundary;
+`scripts/check-hub-ui-styles.ts` enforces styles-file use, theme-key synchronization and
+the generated component list in `hub/web/lint/layout-only-classname.grit`.
+
 Presentation that knows no domain belongs in `hub/ui`, while a component that knows what a
 project, run or tracker is belongs beside the screens using it. `ProjectName` renders a
 name and a color; `ProjectMark` knows where a project's color comes from.

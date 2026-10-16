@@ -1,5 +1,6 @@
 import { cloneElement, type ReactElement, useEffect, useRef } from 'react'
 import { useAnchor } from '../dom/use-anchor'
+import { tooltipStyles } from './tooltip.styles.ts'
 
 const OPEN_DELAY_MS = 500
 /** A tooltip opened within this window of another closing opens at once. */
@@ -89,7 +90,7 @@ export function Tooltip({
         popover="manual"
         role="tooltip"
         style={positionedStyle}
-        className={`${side === 'top' ? '[position-area:block-start]' : '[position-area:block-end]'} pointer-events-none [inset:auto] [position-try-fallbacks:flip-block] my-1 max-w-64 bg-accent-fill px-2 py-1 text-accent-on-fill text-xs`}
+        className={tooltipStyles({ side })}
       >
         {label}
       </div>

@@ -9,6 +9,7 @@ import {
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { BottomSheet } from '../bottom-sheet/bottom-sheet'
 import { IconButton } from '../button/button'
+import { toolbarBandStyles } from './toolbar-band.styles.ts'
 
 type Section = { id: string; label: string; icon: LucideIcon; body: ReactNode; active?: boolean }
 
@@ -58,16 +59,13 @@ export function ToolbarBand({
   ]
   const current = sections.find((section) => section.id === open)
 
-  const cell =
-    'relative flex h-10 min-w-0 basis-0 items-center justify-center gap-1.5 overflow-hidden whitespace-nowrap text-sm text-text-secondary transition-[flex-grow,opacity] duration-(--duration-base) hover:bg-control-hover hover:text-text-primary [&_svg]:size-4'
-  const grow = searching ? 'grow-0 border-x-0 opacity-0' : 'grow opacity-100'
   return (
     <>
-      <div className="flex divide-x divide-border-default border border-border-default bg-surface-page">
+      <div className={toolbarBandStyles().root()}>
         {search ? (
-          <div ref={searchRow} className={`${cell} grow`}>
+          <div ref={searchRow} className={toolbarBandStyles({ search: true }).cell()}>
             {searching ? (
-              <div className="flex h-full w-full items-center gap-1 pl-1 [&>*:first-child]:flex-1 [&_input]:border-0">
+              <div className={toolbarBandStyles().search()}>
                 {search}
                 <IconButton size="sm" label="Close search" onClick={() => setSearching(false)}>
                   <X />
@@ -76,7 +74,7 @@ export function ToolbarBand({
             ) : (
               <button
                 type="button"
-                className="flex h-full w-full items-center justify-center gap-1.5"
+                className={toolbarBandStyles().searchTrigger()}
                 onClick={() => setSearching(true)}
               >
                 <Search aria-hidden />
@@ -93,7 +91,7 @@ export function ToolbarBand({
               type="button"
               tabIndex={searching ? -1 : undefined}
               aria-hidden={searching || undefined}
-              className={`${cell} ${grow}`}
+              className={toolbarBandStyles({ searching }).cell()}
               onClick={() => setOpen(section.id)}
             >
               <Icon aria-hidden />
@@ -103,9 +101,9 @@ export function ToolbarBand({
                   <span
                     aria-hidden
                     data-tone="info"
-                    className="absolute top-2 right-3 size-1.5 rounded-full bg-status-fill"
+                    className={toolbarBandStyles().activeIndicator()}
                   />
-                  <span className="sr-only">(applied)</span>
+                  <span className={toolbarBandStyles().activeLabel()}>(applied)</span>
                 </>
               ) : null}
             </button>

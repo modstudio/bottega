@@ -1,0 +1,27 @@
+import { variant } from '../text/variant.ts'
+
+export const sheetStyles = variant({
+  slots: {
+    root: 'fixed inset-y-0 right-0 left-auto h-dvh max-h-none max-w-full border-border-default border-l bg-surface-page text-text-primary shadow-overlay transition-[translate,opacity] duration-(--duration-base) starting:translate-x-6 starting:opacity-0',
+    frame: 'flex h-full flex-col',
+    header:
+      'flex min-h-(--topbar-h) shrink-0 items-center gap-3 border-border-default border-b px-5 py-2',
+    heading: 'min-w-0 flex-1',
+    title: 'truncate font-semibold text-xl',
+    subtitle: 'text-sm text-text-secondary',
+    actions: 'flex shrink-0 items-center gap-2',
+    tabs: 'shrink-0 border-border-subtle border-b px-5 py-2',
+    context: 'shrink-0 px-5 pt-3 text-sm text-text-secondary',
+    body: 'min-h-0 flex-1 overflow-y-auto px-5 py-4',
+    destructive: 'mt-8 border border-status-border p-4',
+    footer: 'flex shrink-0 justify-end gap-2 border-border-default border-t px-5 py-3',
+  },
+  variants: {
+    size: {
+      default: { root: 'w-(--sheet-w)' },
+      wide: { root: 'w-(--sheet-w-wide)' },
+      document: { root: 'w-(--sheet-w-document)' },
+    },
+  },
+  defaultVariants: { size: 'default' },
+})

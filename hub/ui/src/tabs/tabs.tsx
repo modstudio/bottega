@@ -1,5 +1,5 @@
 import { type KeyboardEvent, useId } from 'react'
-import { classes } from '../text/classes'
+import { tabStyles, tabsStyles } from './tabs.styles.ts'
 
 type TabItem = { value: string; label: string; count?: number }
 
@@ -42,12 +42,7 @@ export function Tabs({
       ?.focus()
   }
   return (
-    <div
-      role="tablist"
-      aria-label={label}
-      onKeyDown={move}
-      className="flex min-w-0 gap-4 overflow-x-auto border-border-default border-b"
-    >
+    <div role="tablist" aria-label={label} onKeyDown={move} className={tabsStyles().list()}>
       {items.map((item) => {
         const selected = item.value === value
         return (
@@ -61,14 +56,11 @@ export function Tabs({
             tabIndex={selected ? 0 : -1}
             data-value={item.value}
             onClick={() => onChange(item.value)}
-            className={classes(
-              '-mb-px flex h-9 shrink-0 items-center gap-1.5 border-b-2 text-text-secondary hover:text-text-primary',
-              selected ? 'border-accent-fill font-medium text-text-primary' : 'border-transparent',
-            )}
+            className={tabStyles({ selected })}
           >
             {item.label}
             {item.count !== undefined ? (
-              <span className="text-sm text-text-muted tabular-nums">{item.count}</span>
+              <span className={tabsStyles().count()}>{item.count}</span>
             ) : null}
           </button>
         )

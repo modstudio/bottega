@@ -1,6 +1,7 @@
 import { Building2, LogOut, Monitor, Moon, Sun } from 'lucide-react'
 import { type ThemeChoice, useTheme } from '../dom/use-theme'
 import { Menu } from '../menu/menu'
+import { userMenuStyles } from './user-menu.styles.ts'
 
 const themeIcons = { system: Monitor, light: Sun, dark: Moon } as const
 const themeLabels = { system: 'System theme', light: 'Light theme', dark: 'Dark theme' } as const
@@ -57,9 +58,9 @@ export function UserMenu({
       side="right"
       align="end"
       header={
-        <div className="min-w-0">
-          <div className="truncate font-medium">{name}</div>
-          {detail ? <div className="truncate text-sm text-text-muted">{detail}</div> : null}
+        <div className={userMenuStyles().header()}>
+          <div className={userMenuStyles().name()}>{name}</div>
+          {detail ? <div className={userMenuStyles().detail()}>{detail}</div> : null}
         </div>
       }
       items={[
@@ -73,19 +74,14 @@ export function UserMenu({
         <button
           type="button"
           aria-label={`Account: ${name}`}
-          className="mx-2 flex w-[calc(100%-1rem)] items-center gap-3 px-[0.8125rem] py-1 text-left hover:bg-control-hover"
+          className={userMenuStyles().trigger()}
         >
-          <span
-            aria-hidden
-            className="grid size-7 shrink-0 place-items-center border border-border-default bg-surface-sunken font-medium text-text-secondary text-xs"
-          >
+          <span aria-hidden className={userMenuStyles().avatar()}>
             {initials(name)}
           </span>
-          <span className="min-w-0 truncate group-data-collapsed/rail:sr-only">
-            <span className="block truncate font-medium text-sm">{name}</span>
-            {detail ? (
-              <span className="block truncate text-text-muted text-xs">{detail}</span>
-            ) : null}
+          <span className={userMenuStyles().triggerText()}>
+            <span className={userMenuStyles().triggerName()}>{name}</span>
+            {detail ? <span className={userMenuStyles().triggerDetail()}>{detail}</span> : null}
           </span>
         </button>
       }

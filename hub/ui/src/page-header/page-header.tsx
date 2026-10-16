@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useTopbarSlot } from '../dom/topbar-slot'
+import { pageHeaderStyles } from './page-header.styles.ts'
 
 type PageHeaderProps = {
   title: ReactNode
@@ -19,34 +20,31 @@ export function PageHeader({ title, subtitle, subtitleTitle, actions }: PageHead
   const slot = useTopbarSlot()
   if (slot) {
     return createPortal(
-      <div className="flex min-w-0 flex-1 items-center gap-4">
-        <div className="flex min-w-0 items-baseline gap-3">
-          <h1 className="shrink-0 font-normal font-serif text-xl">{title}</h1>
+      <div className={pageHeaderStyles().portalRoot()}>
+        <div className={pageHeaderStyles().portalHeading()}>
+          <h1 className={pageHeaderStyles().portalTitle()}>{title}</h1>
           {subtitle ? (
-            <span
-              className="hidden truncate text-sm text-text-muted lg:inline"
-              title={subtitleTitle}
-            >
+            <span className={pageHeaderStyles().portalSubtitle()} title={subtitleTitle}>
               {subtitle}
             </span>
           ) : null}
         </div>
-        {actions ? <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div> : null}
+        {actions ? <div className={pageHeaderStyles().portalActions()}>{actions}</div> : null}
       </div>,
       slot,
     )
   }
   return (
-    <header className="flex min-w-0 flex-wrap items-end justify-between gap-x-6 gap-y-3 pt-6 pb-5">
-      <div className="min-w-0">
-        <h1 className="font-normal font-serif text-2xl tracking-tight">{title}</h1>
+    <header className={pageHeaderStyles().pageHeader()}>
+      <div className={pageHeaderStyles().pageHeading()}>
+        <h1 className={pageHeaderStyles().pageTitle()}>{title}</h1>
         {subtitle ? (
-          <div className="mt-1 truncate text-sm text-text-muted" title={subtitleTitle}>
+          <div className={pageHeaderStyles().pageSubtitle()} title={subtitleTitle}>
             {subtitle}
           </div>
         ) : null}
       </div>
-      {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+      {actions ? <div className={pageHeaderStyles().pageActions()}>{actions}</div> : null}
     </header>
   )
 }
@@ -54,9 +52,9 @@ export function PageHeader({ title, subtitle, subtitleTitle, actions }: PageHead
 /** A heading that opens a section of a page, with optional right-aligned detail. */
 export function SectionTitle({ children, detail }: { children: ReactNode; detail?: ReactNode }) {
   return (
-    <div className="mt-8 mb-3 flex items-baseline justify-between gap-4">
-      <h2 className="font-normal font-serif text-md">{children}</h2>
-      {detail ? <span className="text-right text-sm text-text-muted">{detail}</span> : null}
+    <div className={pageHeaderStyles().sectionHeader()}>
+      <h2 className={pageHeaderStyles().sectionHeading()}>{children}</h2>
+      {detail ? <span className={pageHeaderStyles().sectionDetail()}>{detail}</span> : null}
     </div>
   )
 }

@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react'
+import { projectMarkStyles } from './project-mark.styles.ts'
 
 /**
  * A project's name beside a bar in its register color, the fastest way to tell
@@ -17,12 +18,8 @@ export function ProjectName({
     ? ({ '--project-light': color, '--project-dark': colorDark ?? color } as CSSProperties)
     : undefined
   return (
-    <span
-      data-project=""
-      style={style}
-      className="inline-flex items-center gap-2 whitespace-nowrap font-medium"
-    >
-      <span aria-hidden className="h-3.5 w-[3px] shrink-0 bg-project" />
+    <span data-project="" style={style} className={projectMarkStyles().root()}>
+      <span aria-hidden className={projectMarkStyles().mark()} />
       {name}
     </span>
   )

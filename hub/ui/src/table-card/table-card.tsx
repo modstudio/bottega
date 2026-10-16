@@ -3,8 +3,8 @@ import { Children, type ReactNode } from 'react'
 import { Button } from '../button/button'
 import { PHONE_QUERY, useMediaQuery } from '../dom/use-media-query'
 import { Popover } from '../popover/popover'
-import { classes } from '../text/classes'
 import { ToolbarBand } from '../toolbar-band/toolbar-band'
+import { tableCardStyles } from './table-card.styles.ts'
 
 /** More filters than this always sit behind the Filters trigger, whatever the width. */
 /**
@@ -13,9 +13,9 @@ import { ToolbarBand } from '../toolbar-band/toolbar-band'
  * the last band they always group. Classes are written out so Tailwind sees them.
  */
 const FILTER_BANDS = [
-  { max: 2, show: 'hidden @3xl/card:flex', hide: '@3xl/card:hidden' },
-  { max: 4, show: 'hidden @5xl/card:flex', hide: '@5xl/card:hidden' },
-  { max: 6, show: 'hidden @7xl/card:flex', hide: '@7xl/card:hidden' },
+  { max: 2, name: 'small' },
+  { max: 4, name: 'medium' },
+  { max: 6, name: 'large' },
 ] as const
 
 type ToolbarProps = {
@@ -39,14 +39,12 @@ function FiltersTrigger({ filters, active }: { filters: ReactNode; active: numbe
           <SlidersHorizontal />
           Filters
           {active ? (
-            <span className="grid size-4 place-items-center rounded-full bg-accent-fill text-xs text-accent-on-fill tabular-nums">
-              {active > 9 ? '9+' : active}
-            </span>
+            <span className={tableCardStyles().filterCount()}>{active > 9 ? '9+' : active}</span>
           ) : null}
         </Button>
       }
     >
-      <div className="flex min-w-60 flex-col gap-2 [&_button[role=combobox]]:w-full">{filters}</div>
+      <div className={tableCardStyles().filterPanel()}>{filters}</div>
     </Popover>
   )
 }
@@ -66,24 +64,22 @@ function DeskToolbar({
   const trigger = filters ? <FiltersTrigger filters={filters} active={filtersActive} /> : null
   const band = filterCount > 0 ? FILTER_BANDS.find((b) => filterCount <= b.max) : undefined
   return (
-    <div className="flex min-h-9 min-w-0 flex-nowrap items-center gap-2">
-      {heading ? (
-        <div className="mr-2 flex shrink-0 items-baseline gap-2 whitespace-nowrap">{heading}</div>
-      ) : null}
-      {tabs ? <div className="flex shrink-0 items-center">{tabs}</div> : null}
-      {search ? <div className="min-w-40 shrink basis-60">{search}</div> : null}
+    <div className={tableCardStyles().desktopToolbar()}>
+      {heading ? <div className={tableCardStyles().desktopHeading()}>{heading}</div> : null}
+      {tabs ? <div className={tableCardStyles().tabs()}>{tabs}</div> : null}
+      {search ? <div className={tableCardStyles().search()}>{search}</div> : null}
       {band ? (
         <>
-          <div className={classes('shrink-0 items-center gap-2', band.show)}>{filters}</div>
-          <div className={classes('shrink-0', band.hide)}>{trigger}</div>
+          <div className={tableCardStyles({ filterBand: band.name }).filters()}>{filters}</div>
+          <div className={tableCardStyles({ filterBand: band.name }).filterTrigger()}>
+            {trigger}
+          </div>
         </>
       ) : (
-        <div className="shrink-0">{trigger}</div>
+        <div className={tableCardStyles().filtersButton()}>{trigger}</div>
       )}
-      {meta ? (
-        <div className="hidden shrink-0 text-sm text-text-muted @3xl/card:block">{meta}</div>
-      ) : null}
-      <div className="ml-auto flex shrink-0 items-center gap-2">
+      {meta ? <div className={tableCardStyles().meta()}>{meta}</div> : null}
+      <div className={tableCardStyles().actions()}>
         {view}
         {actions}
       </div>
@@ -111,7 +107,7 @@ function PhoneToolbar({
     ) : undefined
   return (
     <>
-      {heading ? <div className="flex items-baseline gap-2">{heading}</div> : null}
+      {heading ? <div className={tableCardStyles().phoneHeading()}>{heading}</div> : null}
       <ToolbarBand
         search={search}
         filters={filters}
@@ -160,18 +156,13 @@ export function TableCard({
   const phone = useMediaQuery(PHONE_QUERY)
   const Toolbar = phone ? PhoneToolbar : DeskToolbar
   return (
-    <section className="@container/card flex min-w-0 flex-col gap-3">
+    <section className={tableCardStyles().root()}>
       <Toolbar {...toolbar} filtersActive={filtersActive} />
-      <div className="flex min-h-0 min-w-0">
-        <div
-          className={classes(
-            'flex min-w-0 flex-1 flex-col border border-border-default bg-surface-page',
-            panel ? 'border-r-0' : null,
-          )}
-        >
+      <div className={tableCardStyles().body()}>
+        <div className={tableCardStyles({ panel: Boolean(panel) }).card()}>
           {/* Positioned, so absolutely placed content (screen-reader labels) is clipped with the rows. */}
-          <div className="@container/rows relative min-w-0 overflow-auto">{children}</div>
-          {footer ? <div className="border-border-default border-t px-3 py-2">{footer}</div> : null}
+          <div className={tableCardStyles().rows()}>{children}</div>
+          {footer ? <div className={tableCardStyles().footer()}>{footer}</div> : null}
         </div>
         {panel}
       </div>

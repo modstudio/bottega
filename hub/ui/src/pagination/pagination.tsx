@@ -1,7 +1,7 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { IconButton } from '../button/button'
 import { Select } from '../listbox/select'
-import { classes } from '../text/classes'
+import { paginationStyles } from './pagination.styles.ts'
 
 export const PAGE_SIZES = [25, 50, 100] as const
 export type PageSize = (typeof PAGE_SIZES)[number]
@@ -32,25 +32,19 @@ export function Pagination({
   const last = total === undefined ? page * pageSize : Math.min(page * pageSize, total)
   const canNext = pageCount === undefined ? Boolean(hasNext) : page < pageCount
   return (
-    <nav
-      aria-label="Pagination"
-      className={classes(
-        'flex items-center justify-between gap-3 text-sm text-text-secondary',
-        className,
-      )}
-    >
-      <span className="tabular-nums">
+    <nav aria-label="Pagination" className={paginationStyles().root({ class: className })}>
+      <span className={paginationStyles().summary()}>
         {total === undefined
           ? `Page ${page}`
           : `${first.toLocaleString()}–${last.toLocaleString()} of ${total.toLocaleString()}`}
       </span>
-      <div className="flex items-center gap-2">
+      <div className={paginationStyles().controls()}>
         {onPageSizeChange ? (
-          <span className="max-sm:hidden">
+          <span className={paginationStyles().pageSizeLabel()}>
             <Select
               label="Rows per page"
               size="sm"
-              className="min-w-0"
+              className={paginationStyles().pageSizeSelect()}
               value={String(pageSize)}
               options={PAGE_SIZES.map((size) => ({ value: String(size), label: `${size} rows` }))}
               onChange={(value) => onPageSizeChange(Number(value) as PageSize)}
@@ -67,7 +61,7 @@ export function Pagination({
           <ChevronLeft />
         </IconButton>
         {pageCount !== undefined ? (
-          <span className="min-w-16 text-center tabular-nums max-sm:hidden">
+          <span className={paginationStyles().pageCount()}>
             {page} / {pageCount}
           </span>
         ) : null}

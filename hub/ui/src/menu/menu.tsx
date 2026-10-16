@@ -10,9 +10,9 @@ import {
 } from 'react'
 import { useAnchor } from '../dom/use-anchor'
 import { useTypeahead } from '../dom/use-typeahead'
-import { type Align, panelClasses, placementClasses, type Side } from '../popover/placement'
+import type { Align, Side } from '../popover/placement'
 import { moveIndex, typeaheadIndex } from '../state/list-navigation'
-import { classes } from '../text/classes'
+import { menuItemStyles, menuPanelStyles, menuStyles } from './menu.styles.ts'
 
 type MenuItem = {
   label: string
@@ -108,11 +108,9 @@ export function Menu({
           focusAt(moveIndex(focusStart.current === 'last' ? 'End' : 'Home', -1, disabled))
           focusStart.current = 'first'
         }}
-        className={classes(placementClasses(side, align), panelClasses, 'min-w-44 py-1')}
+        className={menuPanelStyles(side, align)()}
       >
-        {header ? (
-          <div className="mb-1 border-border-subtle border-b px-3 pt-1.5 pb-2">{header}</div>
-        ) : null}
+        {header ? <div className={menuStyles().header()}>{header}</div> : null}
         {items.map((item) => {
           const Icon = item.icon
           return (
@@ -127,10 +125,7 @@ export function Menu({
                 close()
                 item.onSelect()
               }}
-              className={classes(
-                'flex h-control-md w-full items-center gap-2 px-3 text-left outline-none hover:bg-control-hover focus-visible:bg-control-hover disabled:text-text-disabled [&_svg]:size-4',
-                item.danger && 'text-status-text',
-              )}
+              className={menuItemStyles({ danger: item.danger })}
             >
               {Icon ? <Icon aria-hidden /> : null}
               {item.label}

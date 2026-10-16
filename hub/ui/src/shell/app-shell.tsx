@@ -14,7 +14,17 @@ import { TopbarSlotProvider } from '../dom/topbar-slot'
 import { PHONE_QUERY, useMediaQuery } from '../dom/use-media-query'
 import { useStoredState } from '../dom/use-stored-state'
 import { Popover } from '../popover/popover'
-import { classes } from '../text/classes'
+import {
+  appShellStyles,
+  brandCellStyles,
+  brandNameStyles,
+  brandToggleStyles,
+  navLabelStyles,
+  navLinkStyles,
+  navMarkStyles,
+  navSectionStyles,
+  railStyles,
+} from './app-shell.styles.ts'
 
 type Icon = ComponentType<{ className?: string; 'aria-hidden'?: boolean }>
 
@@ -59,35 +69,26 @@ export function useDockedPanel() {
 
 // The inline padding centers an 18px icon in the collapsed rail, so labels open
 // beside icons that never move.
-const linkBase =
-  'relative flex h-10 items-center gap-3 border border-transparent px-[1.0625rem] text-text-secondary outline-none transition-colors hover:bg-control-hover hover:text-text-primary focus-visible:bg-control-hover data-[status=active]:border-border-default data-[status=active]:bg-surface-sunken data-[status=active]:text-text-primary [&_svg]:size-[18px] [&_svg]:shrink-0 [&_svg]:stroke-[1.5]'
-
-function Marks({ item, labelClass }: { item: NavItem; labelClass: string }) {
+function Marks({ item, hidden }: { item: NavItem; hidden: boolean }) {
   return (
     <>
       {item.live ? (
-        <span
-          aria-hidden
-          data-tone="success"
-          className="absolute top-2 left-9 size-1.5 shrink-0 rounded-full bg-status-fill"
-        />
+        <span aria-hidden data-tone="success" className={appShellStyles().liveIndicator()} />
       ) : null}
       {item.count ? (
-        <span className={classes(labelClass, 'ml-auto text-sm text-text-muted tabular-nums')}>
-          {item.count.toLocaleString()}
-        </span>
+        <span className={navMarkStyles({ hidden })}>{item.count.toLocaleString()}</span>
       ) : null}
     </>
   )
 }
 
-function ItemContent({ item, labelClass }: { item: NavItem; labelClass: string }) {
+function ItemContent({ item, hidden }: { item: NavItem; hidden: boolean }) {
   const Icon = item.icon
   return (
     <>
       <Icon aria-hidden />
-      <span className={labelClass}>{item.label}</span>
-      <Marks item={item} labelClass={labelClass} />
+      <span className={navLabelStyles({ hidden })}>{item.label}</span>
+      <Marks item={item} hidden={hidden} />
     </>
   )
 }
@@ -95,12 +96,12 @@ function ItemContent({ item, labelClass }: { item: NavItem; labelClass: string }
 function GroupEntry({
   group,
   renderLink,
-  labelClass,
+  hidden,
   active,
 }: {
   group: NavGroup
   renderLink: RenderLink
-  labelClass: string
+  hidden: boolean
   active: boolean
 }) {
   const Icon = group.icon
@@ -114,22 +115,22 @@ function GroupEntry({
         <button
           type="button"
           data-status={active ? 'active' : undefined}
-          className={classes(linkBase, 'w-full')}
+          className={navLinkStyles({ full: true })}
         >
           <Icon aria-hidden />
-          <span className={classes(labelClass, 'flex-1 text-left')}>{group.label}</span>
-          <ChevronRight aria-hidden className={classes(labelClass, 'ml-auto !size-3.5')} />
+          <span className={navLabelStyles({ hidden, role: 'switcherLabel' })}>{group.label}</span>
+          <ChevronRight aria-hidden className={navLabelStyles({ hidden, role: 'switcherIcon' })} />
         </button>
       }
     >
-      <div className="-m-3 flex min-w-48 flex-col gap-px p-1">
-        <div className="px-3 pt-2 pb-1 font-medium text-sm text-text-muted">{group.label}</div>
+      <div className={appShellStyles().switcherPanel()}>
+        <div className={appShellStyles().groupHeading()}>{group.label}</div>
         {group.items.map((item) => (
           <div key={item.to}>
             {renderLink(item, {
-              className: linkBase,
+              className: navLinkStyles(),
               onClick: () => panel.current?.hidePopover(),
-              children: <ItemContent item={item} labelClass="truncate" />,
+              children: <ItemContent item={item} hidden={false} />,
             })}
           </div>
         ))}
@@ -152,28 +153,26 @@ function NavList({
   isActive: (to: string) => boolean
   onNavigate?: () => void
 }) {
-  const labelClass = labeled === 'icons' ? 'sr-only' : 'truncate'
+  const hidden = labeled === 'icons'
   const link = (item: NavItem) => (
     <div key={item.to}>
       {renderLink(item, {
-        className: linkBase,
+        className: navLinkStyles(),
         onClick: onNavigate,
-        children: <ItemContent item={item} labelClass={labelClass} />,
+        children: <ItemContent item={item} hidden={hidden} />,
       })}
     </div>
   )
   return (
-    <nav aria-label="Main" className="flex flex-col py-3">
+    <nav aria-label="Main" className={appShellStyles().nav()}>
       {sections.map((section, index) => (
-        <div key={section.id} className={classes('flex flex-col gap-1 px-2', index > 0 && 'mt-4')}>
+        <div key={section.id} className={navSectionStyles({ separated: index > 0 })}>
           {section.entries.map((entry) =>
             !isGroup(entry) ? (
               link(entry)
             ) : labeled === 'full' ? (
-              <div key={entry.label} className="flex flex-col gap-px">
-                <div className="px-3 pt-2 pb-1 font-medium text-sm text-text-muted">
-                  {entry.label}
-                </div>
+              <div key={entry.label} className={appShellStyles().group()}>
+                <div className={appShellStyles().groupHeading()}>{entry.label}</div>
                 {entry.items.map(link)}
               </div>
             ) : (
@@ -181,7 +180,7 @@ function NavList({
                 key={entry.label}
                 group={entry}
                 renderLink={renderLink}
-                labelClass={labelClass}
+                hidden={hidden}
                 active={entry.items.some((item) => isActive(item.to))}
               />
             ),
@@ -223,16 +222,16 @@ function MobileMenu({
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) onClose()
       }}
-      className="fixed inset-y-0 left-0 h-dvh max-h-none w-[min(17rem,82vw)] border-border-default border-r bg-surface-page text-text-primary shadow-overlay transition-[translate] duration-(--duration-base) backdrop:bg-scrim starting:-translate-x-full"
+      className={appShellStyles().mobileDialog()}
     >
-      <div className="flex h-full flex-col">
-        <div className="flex h-topbar shrink-0 items-center justify-between border-border-default border-b px-4">
+      <div className={appShellStyles().mobileFrame()}>
+        <div className={appShellStyles().mobileHeader()}>
           {brand}
           <IconButton label="Close menu" onClick={onClose}>
             <X />
           </IconButton>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className={appShellStyles().mobileNav()}>
           <NavList
             sections={sections}
             renderLink={renderLink}
@@ -241,7 +240,7 @@ function MobileMenu({
             onNavigate={onClose}
           />
         </div>
-        {footer ? <div className="border-border-default border-t p-4">{footer}</div> : null}
+        {footer ? <div className={appShellStyles().mobileFooter()}>{footer}</div> : null}
       </div>
     </dialog>
   )
@@ -267,12 +266,7 @@ function BrandCell({
   onToggle: () => void
 }) {
   const toggle = canToggle ? (
-    <span
-      className={classes(
-        'opacity-0 transition-opacity group-hover/brand:opacity-100 has-focus-visible:opacity-100 [@media(hover:none)]:opacity-100',
-        collapsed ? 'absolute inset-0 grid place-items-center' : 'ml-auto',
-      )}
-    >
+    <span className={brandToggleStyles({ collapsed })}>
       <IconButton
         size="sm"
         label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
@@ -284,22 +278,10 @@ function BrandCell({
     </span>
   ) : null
   return (
-    <div
-      className={classes(
-        'group/brand relative flex h-topbar shrink-0 items-center gap-3 border-border-default border-b',
-        collapsed ? 'justify-center' : 'px-[1.625rem] pr-3',
-      )}
-    >
-      <span
-        className={classes(
-          'flex items-center gap-3 whitespace-nowrap font-serif text-xl lowercase transition-opacity',
-          collapsed &&
-            canToggle &&
-            'group-has-focus-visible/brand:opacity-0 group-hover/brand:opacity-0 [@media(hover:none)]:opacity-0',
-        )}
-      >
+    <div className={brandCellStyles({ collapsed })}>
+      <span className={brandNameStyles({ hidden: collapsed && canToggle })}>
         {mark}
-        {collapsed ? <span className="sr-only">{name}</span> : name}
+        {collapsed ? <span className={appShellStyles().collapsedBrandName()}>{name}</span> : name}
       </span>
       {toggle}
     </div>
@@ -352,7 +334,7 @@ export function AppShell({
   const pinnedByPanel = forced || docked > 0
   const collapsed = pinnedByPanel || rail === 'collapsed'
   const brand = (
-    <span className="flex items-center gap-3 whitespace-nowrap font-serif text-xl lowercase">
+    <span className={appShellStyles().mobileBrand()}>
       {mark}
       {name}
     </span>
@@ -360,15 +342,12 @@ export function AppShell({
 
   return (
     <DockedPanels.Provider value={changeDocked}>
-      <div className="flex min-h-dvh bg-surface-page text-text-primary">
+      <div className={appShellStyles().shell()}>
         {mobile ? null : (
           <aside
             aria-label="Navigation"
             data-collapsed={collapsed || undefined}
-            className={classes(
-              'group/rail sticky top-0 z-(--z-rail) flex h-dvh shrink-0 flex-col overflow-hidden border-border-default border-r bg-surface-page transition-[width] duration-(--duration-base)',
-              collapsed ? 'w-rail' : 'w-rail-open',
-            )}
+            className={railStyles({ collapsed })}
           >
             <BrandCell
               mark={mark}
@@ -377,7 +356,7 @@ export function AppShell({
               canToggle={!pinnedByPanel}
               onToggle={() => setRail(collapsed ? 'open' : 'collapsed')}
             />
-            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+            <div className={appShellStyles().railNav()}>
               <NavList
                 sections={nav}
                 renderLink={renderLink}
@@ -385,13 +364,11 @@ export function AppShell({
                 isActive={isActive}
               />
             </div>
-            {railFooter ? (
-              <div className="border-border-default border-t py-3">{railFooter}</div>
-            ) : null}
+            {railFooter ? <div className={appShellStyles().railFooter()}>{railFooter}</div> : null}
           </aside>
         )}
-        <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-(--z-rail) flex h-topbar shrink-0 items-center gap-3 border-border-default border-b bg-surface-page px-4 md:px-8">
+        <div className={appShellStyles().workspace()}>
+          <header className={appShellStyles().topbar()}>
             {mobile ? (
               <>
                 <IconButton label="Open menu" onClick={() => setMenuOpen(true)}>
@@ -400,10 +377,10 @@ export function AppShell({
                 {mark}
               </>
             ) : null}
-            <div ref={setTopbarSlot} className="flex min-w-0 flex-1 items-center" />
-            {topbar ? <div className="flex shrink-0 items-center gap-2">{topbar}</div> : null}
+            <div ref={setTopbarSlot} className={appShellStyles().topbarPortal()} />
+            {topbar ? <div className={appShellStyles().topbarActions()}>{topbar}</div> : null}
           </header>
-          <main className="min-w-0 flex-1 px-4 pb-8 md:px-8 md:pt-6">
+          <main className={appShellStyles().main()}>
             <TopbarSlotProvider value={mobile ? null : topbarSlot}>{children}</TopbarSlotProvider>
           </main>
         </div>

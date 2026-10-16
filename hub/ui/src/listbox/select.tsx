@@ -2,10 +2,8 @@ import { Check, ChevronDown } from 'lucide-react'
 import { type KeyboardEvent, type ToggleEvent, useRef, useState } from 'react'
 import { useAnchor } from '../dom/use-anchor'
 import { useTypeahead } from '../dom/use-typeahead'
-import { controlClasses } from '../field/control'
-import { panelClasses, placementClasses } from '../popover/placement'
 import { moveIndex, typeaheadIndex } from '../state/list-navigation'
-import { classes } from '../text/classes'
+import { selectStyles } from './select.styles.ts'
 
 export type SelectOption = { value: string; label: string; note?: string; disabled?: boolean }
 
@@ -101,15 +99,10 @@ export function Select({
         popoverTarget={id}
         style={anchorStyle}
         onKeyDown={onTriggerKeyDown}
-        className={classes(
-          controlClasses,
-          'inline-flex min-w-40 items-center justify-between gap-2 text-left',
-          size === 'sm' ? 'h-control-sm px-2 text-sm' : 'h-control-md px-3',
-          className,
-        )}
+        className={selectStyles({ size }).trigger({ class: className })}
       >
-        <span className="truncate">{current?.label ?? 'Choose…'}</span>
-        <ChevronDown aria-hidden className="size-4 shrink-0 text-icon-muted" />
+        <span className={selectStyles().triggerLabel()}>{current?.label ?? 'Choose…'}</span>
+        <ChevronDown aria-hidden className={selectStyles().triggerIcon()} />
       </button>
       <div
         ref={list}
@@ -124,11 +117,7 @@ export function Select({
           onOpenChange?.(next)
           if (next) activate(selected >= 0 ? selected : moveIndex('Home', -1, disabled))
         }}
-        className={classes(
-          placementClasses('bottom', 'start'),
-          panelClasses,
-          'max-h-80 overflow-y-auto py-1',
-        )}
+        className={selectStyles().panel()}
       >
         {options.map((option, index) => (
           // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the combobox; aria-activedescendant points here
@@ -142,21 +131,16 @@ export function Select({
             onPointerMove={() => !option.disabled && setActive(index)}
             onPointerDown={(event) => event.preventDefault()}
             onPointerUp={() => choose(index)}
-            className={classes(
-              'flex min-h-control-md cursor-pointer items-center gap-2 px-3 py-1.5',
-              index === active && 'bg-control-hover',
-              option.disabled && 'cursor-not-allowed text-text-disabled',
-            )}
+            className={selectStyles({
+              active: index === active,
+              disabled: option.disabled,
+            }).option()}
           >
-            <Check
-              aria-hidden
-              className={classes(
-                'size-4 shrink-0',
-                index === selected ? 'opacity-100' : 'opacity-0',
-              )}
-            />
-            <span className="min-w-0 flex-1 truncate">{option.label}</span>
-            {option.note ? <span className="text-sm text-text-muted">{option.note}</span> : null}
+            <Check aria-hidden className={selectStyles({ selected: index === selected }).check()} />
+            <span className={selectStyles().optionLabel()}>{option.label}</span>
+            {option.note ? (
+              <span className={selectStyles().optionNote()}>{option.note}</span>
+            ) : null}
           </div>
         ))}
       </div>

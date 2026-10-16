@@ -1,5 +1,5 @@
 import { Button } from '@bottega/hub-ui/button'
-import { classes } from '@bottega/hub-ui/text/classes'
+import { mergeClasses as classes } from '@bottega/hub-ui/text/variant'
 import { Link } from '@tanstack/react-router'
 import { CalendarDays, Maximize2, Minimize2 } from 'lucide-react'
 import {

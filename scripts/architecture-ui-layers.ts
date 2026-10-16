@@ -98,6 +98,22 @@ export function uiArchitectureRules(
       },
     },
     {
+      name: 'hub-ui-variant-dependencies-have-one-entry',
+      severity: 'error',
+      comment: 'Only the shared variant module imports tailwind-variants or tailwind-merge.',
+      from: {
+        path: '^(?!hub/ui/src/text/variant\\.ts$)',
+        pathNot: ['^hub/ui/src/text/variant\\.ts$'],
+      },
+      to: {
+        path: [
+          dependencyPath('tailwind-variants'),
+          dependencyPath('tailwind-merge'),
+          '^tailwind-(?:variants|merge)$',
+        ].join('|'),
+      },
+    },
+    {
       name: hubUiFolderLayerRuleName,
       severity: 'error',
       comment: 'Every ui/ folder is declared in uiLayers in architecture-ui-layers.ts.',

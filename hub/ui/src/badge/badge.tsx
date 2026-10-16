@@ -8,13 +8,9 @@ import {
 } from 'lucide-react'
 import type { HTMLAttributes, ReactNode, Ref } from 'react'
 import { titleCase } from '../text/title-case'
+import { badgeStyles } from './badge.styles.ts'
 
 export type Tone = 'neutral' | 'success' | 'warning' | 'error' | 'info' | 'progress'
-
-const emphases = {
-  subtle: 'border-status-border bg-status-surface text-status-text',
-  solid: 'border-transparent bg-status-fill text-status-on-fill',
-} as const
 
 /** A neutral tag describes rather than reports, so it carries no icon of its own. */
 const toneIcons: Record<Tone, LucideIcon | null> = {
@@ -29,7 +25,7 @@ const toneIcons: Record<Tone, LucideIcon | null> = {
 type BadgeProps = Omit<HTMLAttributes<HTMLSpanElement>, 'className'> & {
   ref?: Ref<HTMLSpanElement>
   tone?: Tone
-  emphasis?: keyof typeof emphases
+  emphasis?: 'subtle' | 'solid'
   /** Replaces the tone's icon; `false` removes it. */
   icon?: LucideIcon | false
   /** A leading dot in the tone's color, for a state that is live. Replaces the icon. */
@@ -62,21 +58,14 @@ export function Badge({
     <span
       {...props}
       data-tone={tone}
-      className={[
-        'inline-flex h-5 max-w-full shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 font-medium text-xs',
-        emphases[emphasis],
-        identifier && 'font-mono',
-        className,
-      ]
-        .filter(Boolean)
-        .join(' ')}
+      className={badgeStyles({ emphasis, identifier }).root({ class: className })}
     >
       {dot ? (
-        <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-current" />
+        <span aria-hidden className={badgeStyles().dot()} />
       ) : Icon ? (
-        <Icon aria-hidden className="-ml-0.5 size-3 shrink-0" strokeWidth={2} />
+        <Icon aria-hidden className={badgeStyles().icon()} strokeWidth={2} />
       ) : null}
-      <span className="truncate">{label}</span>
+      <span className={badgeStyles().label()}>{label}</span>
     </span>
   )
 }

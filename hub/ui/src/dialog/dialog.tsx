@@ -1,14 +1,7 @@
 import { X } from 'lucide-react'
 import { type ReactNode, useId, useLayoutEffect, useRef } from 'react'
 import { IconButton } from '../button/button'
-import { classes } from '../text/classes'
-
-const sizes = {
-  sm: 'w-[min(24rem,calc(100vw-2rem))]',
-  md: 'w-[min(32rem,calc(100vw-2rem))]',
-  lg: 'w-[min(40rem,calc(100vw-2rem))]',
-  full: 'h-dvh w-screen max-w-none',
-} as const
+import { dialogStyles } from './dialog.styles.ts'
 
 /**
  * A decision the reader answers and dismisses. A modal `<dialog>`: the browser
@@ -33,7 +26,7 @@ export function Dialog({
   description?: ReactNode
   /** Actions, right-aligned; the primary action last. */
   footer?: ReactNode
-  size?: keyof typeof sizes
+  size?: 'sm' | 'md' | 'lg' | 'full'
   variant?: 'default' | 'chromeless'
   /** Layout only: margin, size and placement. */
   className?: string
@@ -62,26 +55,20 @@ export function Dialog({
         // The backdrop belongs to the dialog element; its content fills the box.
         if (event.target === event.currentTarget) onOpenChange(false)
       }}
-      className={classes(
-        sizes[size],
-        chromeless ? 'fixed inset-x-0 mx-auto' : 'fixed inset-0 m-auto max-h-[calc(100dvh-2rem)]',
-        'border border-border-default bg-surface-overlay text-text-primary shadow-overlay backdrop:bg-scrim',
-        'transition-[opacity,scale] duration-(--duration-base) starting:scale-98 starting:opacity-0',
-        className,
-      )}
+      className={dialogStyles({ size, chromeless }).root({ class: className })}
     >
-      <div className="flex max-h-[inherit] flex-col">
+      <div className={dialogStyles().frame()}>
         {chromeless ? (
           children
         ) : (
           <>
-            <header className="flex items-start gap-3 px-5 pt-5 pb-3">
-              <div className="min-w-0 flex-1">
-                <h2 id={titleId} className="font-semibold text-lg">
+            <header className={dialogStyles().header()}>
+              <div className={dialogStyles().heading()}>
+                <h2 id={titleId} className={dialogStyles().title()}>
                   {title}
                 </h2>
                 {description ? (
-                  <div id={descriptionId} className="mt-1 text-text-secondary">
+                  <div id={descriptionId} className={dialogStyles().description()}>
                     {description}
                   </div>
                 ) : null}
@@ -90,12 +77,8 @@ export function Dialog({
                 <X />
               </IconButton>
             </header>
-            {children ? <div className="min-h-0 overflow-y-auto px-5 pb-4">{children}</div> : null}
-            {footer ? (
-              <footer className="flex justify-end gap-2 border-border-default border-t px-5 py-3">
-                {footer}
-              </footer>
-            ) : null}
+            {children ? <div className={dialogStyles().body()}>{children}</div> : null}
+            {footer ? <footer className={dialogStyles().footer()}>{footer}</footer> : null}
           </>
         )}
       </div>
