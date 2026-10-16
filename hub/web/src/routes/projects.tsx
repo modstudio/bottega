@@ -155,7 +155,7 @@ function ProjectsPage() {
           count={projects.data.length}
           columns={columns}
           rows={projects.data}
-          getKey={(project) => project.id}
+          getKey={(project) => project.record_id}
           onOpen={(project) =>
             void navigate({ to: '/projects/$name', params: { name: project.name } })
           }

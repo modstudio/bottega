@@ -209,7 +209,6 @@ describe('project.list', () => {
 
     expect(rows).toHaveLength(9)
     expect(rows[0]).toEqual({
-      id: 1,
       record_id: '01990000-0000-7000-8000-000000001101',
       name: 'alpha',
       path: '/fixtures/repos/alpha',

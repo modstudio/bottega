@@ -30,7 +30,11 @@ function answeredQuestion(
 
 describe('task ruling candidate query', () => {
   test('filters in SQL, orders by effective date, caps, and reports the full omitted count', () => {
-    upsertProject({ recordId: newRecordId(), name: PLATFORM_SLUG, path: '/fixture/bottega' })
+    upsertProject({
+      recordId: newRecordId(),
+      name: PLATFORM_SLUG,
+      path: `/fixture/${PLATFORM_SLUG}`,
+    })
     upsertProject({ recordId: newRecordId(), name: 'other', path: '/fixture/other' })
     const matching = root(PLATFORM_SLUG, 'DEV-960')
     const otherKey = root(PLATFORM_SLUG, 'DEV-999')

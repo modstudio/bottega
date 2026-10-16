@@ -484,9 +484,7 @@ function compatibleBackfillEntries(d: Database, entries: JournalEntry[]): Journa
   ).n
   if (projectHasIntegerId > 0)
     return entries.filter((entry) => !BACKFILL_SCHEMA_BOUNDARIES.has(entry.tag))
-  return entries.filter(
-    (entry) => !INTEGER_PROJECT_BACKFILLS.has(entry.tag),
-  )
+  return entries.filter((entry) => !INTEGER_PROJECT_BACKFILLS.has(entry.tag))
 }
 
 const expectedSchemaHashes = new Map<string, string>()
