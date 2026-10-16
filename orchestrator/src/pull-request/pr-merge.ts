@@ -22,6 +22,7 @@ import {
 import {
   decideMergeQueueAction,
   interpretMergeQueue,
+  MERGE_QUEUE_WAIT_MS,
   type MergeQueueObservation,
 } from './merge-queue-decision.ts'
 import { enqueuePullRequest, githubMergeQueueState } from './merge-queue-forge.ts'
@@ -82,9 +83,6 @@ export type PullRequestMergeAdapter = {
   now(): number
   wait(milliseconds: number): void
 }
-
-export const MERGE_QUEUE_WAIT_MS = 30 * 60 * 1000
-const MERGE_QUEUE_POLL_MS = 10 * 1000
 
 type ProcessResult = { exitCode: number; stdout: string; stderr: string }
 
@@ -325,25 +323,29 @@ function waitForQueuedMerge(
   adapter: PullRequestMergeAdapter,
 ): string {
   const deadline = adapter.now() + MERGE_QUEUE_WAIT_MS
-  let queueEstablished = false
+  let enqueueSubmitted = false
+  let activeEntryObserved = false
   while (true) {
     const state = interpretMergeQueue(adapter.queueState(cwd, pullRequest.nodeId))
-    const action = decideMergeQueueAction(pullRequest.number, state, queueEstablished)
+    if (state.state === 'queued') activeEntryObserved = true
+    const action = decideMergeQueueAction(
+      pullRequest.number,
+      state,
+      enqueueSubmitted,
+      activeEntryObserved,
+      adapter.now(),
+      deadline,
+    )
     if (action.action === 'complete') return action.mergeCommit
-    if (action.action === 'refuse') throw new Error(`refusing merge: ${action.refusal}`)
+    if (action.action === 'refuse') {
+      throw new Error(`refusing merge: ${action.refusal}; cleared by: ${action.remedy}`)
+    }
     if (action.action === 'enqueue') {
       adapter.enqueue(cwd, pullRequest.number, method, subject, pullRequest.headCommit)
-      queueEstablished = true
+      enqueueSubmitted = true
       continue
     }
-    queueEstablished = true
-    const remaining = deadline - adapter.now()
-    if (remaining <= 0) {
-      throw new Error(
-        `refusing merge: pull request #${pullRequest.number} did not merge within ${MERGE_QUEUE_WAIT_MS}ms; cleared by: re-run ${PLATFORM_SLUG} pr merge ${pullRequest.number}, which will keep waiting if it is already queued`,
-      )
-    }
-    adapter.wait(Math.min(MERGE_QUEUE_POLL_MS, remaining))
+    adapter.wait(action.delay)
   }
 }
 

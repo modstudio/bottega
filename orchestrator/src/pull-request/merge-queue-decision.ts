@@ -19,10 +19,12 @@ export type MergeQueueState =
 export type MergeQueueAction =
   | { action: 'complete'; mergeCommit: string }
   | { action: 'enqueue' }
-  | { action: 'wait' }
-  | { action: 'refuse'; refusal: string }
+  | { action: 'wait'; delay: number }
+  | { action: 'refuse'; refusal: string; remedy: string }
 
 const ACTIVE_ENTRY_STATES = new Set(['AWAITING_CHECKS', 'LOCKED', 'MERGEABLE', 'QUEUED'])
+export const MERGE_QUEUE_WAIT_MS = 30 * 60 * 1000
+const MERGE_QUEUE_POLL_MS = 10 * 1000
 
 export function interpretMergeQueue(observation: MergeQueueObservation): MergeQueueState {
   const pullRequestState = observation.pullRequestState.toUpperCase()
@@ -45,28 +47,43 @@ export function interpretMergeQueue(observation: MergeQueueObservation): MergeQu
 export function decideMergeQueueAction(
   number: number,
   queue: MergeQueueState,
-  queueEstablished: boolean,
+  enqueueSubmitted: boolean,
+  activeEntryObserved: boolean,
+  now: number,
+  deadline: number,
 ): MergeQueueAction {
   const retry = `${PLATFORM_SLUG} pr merge ${number}`
   if (queue.state === 'merged') {
     return { action: 'complete', mergeCommit: queue.mergeCommit }
   }
-  if (queue.state === 'queued') return { action: 'wait' }
-  if (queue.state === 'dequeued' && !queueEstablished) return { action: 'enqueue' }
-  if (queue.state === 'dequeued') {
+  if (queue.state === 'dequeued' && activeEntryObserved) {
     return {
       action: 'refuse',
-      refusal: `pull request #${number} left the merge queue without merging; cleared by: fix the dequeue reason, then ${retry}`,
+      refusal: `pull request #${number} left the merge queue without merging`,
+      remedy: `fix the dequeue reason, then ${retry}`,
     }
   }
   if (queue.state === 'failed') {
     return {
       action: 'refuse',
-      refusal: `pull request #${number} failed in the merge queue; cleared by: fix the merge-group check or conflict, then ${retry}`,
+      refusal: `pull request #${number} failed in the merge queue`,
+      remedy: `fix the merge-group check or conflict, then ${retry}`,
     }
   }
-  return {
-    action: 'refuse',
-    refusal: `pull request #${number} has an unknown merge-queue state (${queue.detail}); cleared by: inspect the pull request on GitHub, then ${retry}`,
+  if (queue.state === 'unknown') {
+    return {
+      action: 'refuse',
+      refusal: `pull request #${number} has an unknown merge-queue state (${queue.detail})`,
+      remedy: `inspect the pull request on GitHub, then ${retry}`,
+    }
   }
+  if (now >= deadline) {
+    return {
+      action: 'refuse',
+      refusal: `pull request #${number} did not merge within ${MERGE_QUEUE_WAIT_MS}ms`,
+      remedy: `re-run ${retry}, which will keep waiting if it is already queued`,
+    }
+  }
+  if (queue.state === 'dequeued' && !enqueueSubmitted) return { action: 'enqueue' }
+  return { action: 'wait', delay: Math.min(MERGE_QUEUE_POLL_MS, deadline - now) }
 }
