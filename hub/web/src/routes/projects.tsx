@@ -11,8 +11,8 @@ import { ChevronRight, FolderGit2, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { HostedProjects } from '@/components/hosted-projects'
-import { isHostedMode } from '@/lib/hub-mode'
-import { type ProjectRow, queryClient, trpc } from '@/trpc/client'
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
+import { type ProjectRow, queryClient, trpc } from '@bottega/hub-data/client'
 
 function TrackerState({ project }: { project: ProjectRow }) {
   const status = project.trackerStatus

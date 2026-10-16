@@ -1,6 +1,6 @@
 import { createFileRoute, Navigate } from '@tanstack/react-router'
 import { HostedSignIn } from '@/components/hosted-sign-in'
-import { isHostedMode } from '@/lib/hub-mode'
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
 
 export const Route = createFileRoute('/sign-in')({
   validateSearch: (search: Record<string, unknown>) => ({ reset: search.reset === 'success' }),

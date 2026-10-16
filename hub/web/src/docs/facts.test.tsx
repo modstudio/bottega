@@ -25,7 +25,13 @@ function renderFacts(signedIn: boolean, source: DocsSource) {
   const queryClient = new QueryClient()
   return renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
-      <DocsFacts doc={doc} headings={[]} signedIn={signedIn} source={source} audience={null} />
+      <DocsFacts
+        doc={doc}
+        headings={[]}
+        signedIn={signedIn}
+        showHistory={source !== 'public'}
+        history={{ items: [], pending: false, error: null }}
+      />
     </QueryClientProvider>,
   )
 }

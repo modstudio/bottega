@@ -7,7 +7,7 @@ import { RadioRows } from '@bottega/hub-ui/radio-rows'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState } from 'react'
-import { type OperatorWaitingItem, queryClient, trpc } from '@/trpc/client'
+import { type OperatorWaitingItem, queryClient, trpc } from '@bottega/hub-data/client'
 
 export const Route = createFileRoute('/inbox_/$kind/$id')({ component: InboxDetailPage })
 

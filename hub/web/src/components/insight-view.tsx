@@ -14,9 +14,9 @@ import type { inferRouterOutputs } from '@trpc/server'
 import { useEffect } from 'react'
 import { responseSubtitle, WindowControl } from '@/components/design-system'
 import { compactTokens, duration } from '@/lib/format'
-import { isHostedMode } from '@/lib/hub-mode'
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
 import { setWorkCounts, useWindowState } from '@/lib/window'
-import { trpc } from '@/trpc/client'
+import { trpc } from '@bottega/hub-data/client'
 import type { AppRouter } from '../../../src/trpc/router.ts'
 
 type Outputs = inferRouterOutputs<AppRouter>['insight']

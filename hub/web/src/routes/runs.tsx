@@ -14,12 +14,12 @@ import { WaitingBadge } from '@/components/waiting-badge'
 import { useNow } from '@/lib/clock'
 import { useDetailPanel } from '@/lib/detail-panel'
 import { collectedTime, compactTokens, duration } from '@/lib/format'
-import { isHostedMode } from '@/lib/hub-mode'
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
 import { waitingByRun } from '@/lib/operator-waiting'
 import { useDebounced } from '@/lib/use-debounced'
 import { verdictTone } from '@/lib/verdict-tone'
 import { useWindowState, type WindowHours } from '@/lib/window'
-import { trpc } from '@/trpc/client'
+import { trpc } from '@bottega/hub-data/client'
 
 /** The strings the server prints for a run; search on the server matches exactly these. */
 type RunDisplay = {

@@ -1,14 +1,32 @@
 import { Button } from '@bottega/hub-ui/button'
-import { useQuery } from '@tanstack/react-query'
-import { useLocation, useMatch, useNavigate } from '@tanstack/react-router'
+import { Link } from '@tanstack/react-router'
+import {
+  useArticleSave,
+  useCreateDoc,
+  useCreateDocSubjects,
+  useCurrentArticle,
+  useDocDelete,
+  useDocFieldSave,
+  useDocHistory,
+  useDocsIdentity,
+  useDocSubjects,
+  useRevisionView,
+} from '@bottega/hub-data/docs/actions'
+import { useReorderableDocsTree } from '@bottega/hub-data/docs/use-doc-reorder'
+import {
+  useDocsDocument,
+  useDocsSearch,
+  useStoredDocument,
+} from '@bottega/hub-data/docs/use-docs'
+import { hostedOrigin, isHostedMode } from '@bottega/hub-data/hub-mode'
+import { useBlocker, useLocation, useMatch, useNavigate } from '@tanstack/react-router'
 import { Plus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { hostedOrigin, isHostedMode } from '@/lib/hub-mode'
 import { recordSpaces } from '@/lib/record-spaces'
-import { trpc } from '@/trpc/client'
-import { editorChrome, useArticleEditor } from './article-editor.tsx'
-import { CreateDocDialog } from './create-dialog.tsx'
-import { canEditDoc } from './edit-permission.ts'
+import { editorChrome, useArticleEditor } from '../docs/article-editor.tsx'
+import { CreateDocDialog } from '../docs/create-dialog.tsx'
+import { type DocFieldChange, fieldWriteInput } from '../docs/doc-field-changes.ts'
+import { canEditDoc } from '../docs/edit-permission.ts'
 import {
   chooserProject,
   EMPTY_FILTERS,
@@ -16,16 +34,24 @@ import {
   projectSubjects,
   searchSubject,
   selectedAudience,
-} from './filters.ts'
-import { DocsHome } from './home.tsx'
-import { docsLocation } from './location.ts'
-import { docsSearchIncludesWorking, docsVisibleByStatus, resolveDocsReplacement } from './model.ts'
-import { type RevisionMode, RevisionViewer, useRevisionView } from './revision-viewer.tsx'
-import type { DocsTreeItem } from './types.ts'
-import { docsSource, docsSourceLabel } from './types.ts'
-import { useReorderableDocsTree } from './use-doc-reorder.ts'
-import { useDocsDocument, useDocsSearch } from './use-docs.ts'
-import { DocsView } from './view.tsx'
+} from '../docs/filters.ts'
+import { DocsHome } from '../docs/home.tsx'
+import { docsLocation } from '../docs/location.ts'
+import { mapDoc, mapSearchMatch, mapTreeItem } from '../docs/map.ts'
+import { docsSearchIncludesWorking, docsVisibleByStatus, resolveDocsReplacement } from '../docs/model.ts'
+import { revisionComparison } from '../docs/revision-diff.ts'
+import {
+  revisionIdForSource,
+  type RevisionMode,
+  RevisionViewer,
+  revisionViewError,
+} from '../docs/revision-viewer.tsx'
+import { docsSearchInputs } from '../docs/search-input.ts'
+import { isScope } from '../docs/scope.ts'
+import { orderedIdsAfterDrag, siblingKey } from '../docs/tree.ts'
+import type { DocsTreeItem } from '../docs/types.ts'
+import { docsSource, docsSourceLabel } from '../docs/types.ts'
+import { DocsView } from '../docs/view.tsx'
 
 function enterDocEdit(
   navigate: ReturnType<typeof useNavigate>,
@@ -77,16 +103,14 @@ const selectedRevision = (
   revision: string | number | undefined,
 ) => (source !== 'public' && revision !== undefined ? String(revision) : undefined)
 
+const errorMessage = (error: unknown) => (error instanceof Error ? error.message : undefined)
+
 export function DocsPage() {
   const hosted = isHostedMode()
   const origin = hostedOrigin()
   const navigate = useNavigate()
   const atDocsRoot = useLocation({ select: (location) => location.pathname === '/docs' })
-  const whoami = useQuery({
-    ...trpc.record.whoami.queryOptions(),
-    enabled: hosted && origin.kind !== 'public',
-    retry: false,
-  })
+  const whoami = useDocsIdentity(hosted && origin.kind !== 'public')
   const signedIn = hosted ? Boolean(whoami.data?.user && 'email' in whoami.data.user) : true
   const identityResolved = !hosted || origin.kind === 'public' || whoami.isFetched
   const source = docsSource(hosted, signedIn)
@@ -102,7 +126,14 @@ export function DocsPage() {
   const [showDrafts, setShowDrafts] = useState(false)
   const [showWorking, setShowWorking] = useState(false)
   const [revisionMode, setRevisionMode] = useState<RevisionMode>('version')
-  const catalog = useReorderableDocsTree(source, whoami.data?.memberships)
+  const catalog = useReorderableDocsTree(
+    source,
+    whoami.data?.memberships,
+    mapTreeItem,
+    canEditDoc,
+    siblingKey,
+    orderedIdsAfterDrag,
+  )
   const includeDrafts = source !== 'public' && showDrafts
   const navigationItems = useMemo(
     () => docsVisibleByStatus(catalog.items, includeDrafts),
@@ -133,12 +164,20 @@ export function DocsPage() {
     setProject(chooserProject(null, subjects))
     setEmptyChooserSet(true)
   }, [selectedId, emptyChooserSet, catalog.isPending, subjects])
-  const reading = useDocsDocument(source, selected, selectedAudience(filters))
+  const reading = useDocsDocument(source, selected, selectedAudience(filters), mapDoc, isScope)
   const revisionId = selectedRevision(source, search?.revision)
   useEffect(() => {
     if (!revisionId) setRevisionMode('version')
   }, [revisionId])
-  const revision = useRevisionView(source, reading.document, revisionId, selectedAudience(filters))
+  const revision = useRevisionView(
+    source,
+    reading.document,
+    revisionId,
+    selectedAudience(filters),
+    revisionIdForSource,
+    revisionComparison,
+    revisionViewError,
+  )
   const replacement = useMemo(
     () => resolveDocsReplacement(reading.document, catalog.items),
     [reading.document, catalog.items],
@@ -150,6 +189,8 @@ export function DocsPage() {
     searchSubject(project, navigationItems),
     includeDrafts,
     includeWorking,
+    docsSearchInputs,
+    mapSearchMatch,
   )
 
   const open = useCallback(
@@ -177,12 +218,62 @@ export function DocsPage() {
   }, [navigate, selected, source])
   const mayEdit = canEditSelected(selected, source, whoami.data?.memberships)
   const editing = isEditingArticle(search?.edit, mayEdit, Boolean(reading.document))
+  const storedDocument = useStoredDocument(reading.document, source, editing || mayEdit, isScope)
+  const saveAction = useArticleSave(source, reading.document, storedDocument?.revision, isScope)
+  const fetchCurrentArticle = useCurrentArticle(source, reading.document, isScope)
+  const [leaveRequested, setLeaveRequested] = useState(false)
+  const blocker = useBlocker({
+    shouldBlockFn: () => leaveRequested,
+    enableBeforeUnload: () => leaveRequested,
+    withResolver: true,
+    disabled: !editing,
+  })
   const editor = useArticleEditor({
     doc: reading.document,
-    source,
     editing,
     onLeave: backToCurrent,
+    storedDocument,
+    saveAction,
+    fetchCurrentArticle,
+    onLeaveRequest: setLeaveRequested,
+    leaveBlocker: {
+      blocked: blocker.status === 'blocked',
+      onKeep: () => blocker.reset?.(),
+      onDiscard: () => blocker.proceed?.(),
+    },
   })
+  const field = useDocFieldSave<DocFieldChange>(
+    source,
+    reading.document,
+    storedDocument,
+    isScope,
+    (mode, change) => {
+      if (!reading.document || !storedDocument) return null
+      if (mode === 'hosted') {
+        return fieldWriteInput(
+          mode,
+          { ...reading.document, spaceId: reading.document.spaceId! },
+          { ...storedDocument, revision: storedDocument.revision! },
+          change,
+        )
+      }
+      return fieldWriteInput(mode, reading.document, storedDocument, change)
+    },
+  )
+  const subjectCatalog = useDocSubjects(
+    source,
+    reading.document,
+    Boolean(mayEdit && reading.document?.kind === 'article'),
+  )
+  const history = useDocHistory(source, reading.document, selectedAudience(filters))
+  const deleteAction = useDocDelete(
+    source,
+    reading.document,
+    storedDocument?.revision,
+    isScope,
+  )
+  const createAction = useCreateDoc()
+  const createSubjects = useCreateDocSubjects(creating)
   const enterEdit = useCallback(
     () => enterDocEdit(navigate, selected, source),
     [navigate, selected, source],
@@ -198,7 +289,7 @@ export function DocsPage() {
         onQuery={setSearchQuery}
         onSelect={open}
         loading={catalog.isPending}
-        error={catalog.error?.message ?? results.error?.message ?? null}
+        error={errorMessage(catalog.error) ?? errorMessage(results.error) ?? null}
       />
     )
   }
@@ -207,7 +298,6 @@ export function DocsPage() {
     <>
       <DocsView
         sourceLabel={sourceLabel}
-        source={source}
         items={catalog.items}
         selectedId={selected?.id ?? null}
         filters={filters}
@@ -219,11 +309,17 @@ export function DocsPage() {
         showDrafts={includeDrafts}
         onShowDrafts={setShowDrafts}
         canShowDrafts={source !== 'public'}
+        canShowWorking={source !== 'public'}
         showWorking={source !== 'public' && showWorking}
         onShowWorking={setShowWorking}
         doc={reading.document}
         replacement={replacement}
         locationFor={locationFor}
+        renderLink={(location, children, className) => (
+          <Link {...location} className={className}>
+            {children}
+          </Link>
+        )}
         onSelect={open}
         onOpenFirst={openFirst}
         treeReorder={catalog.treeReorder}
@@ -238,11 +334,30 @@ export function DocsPage() {
         onSearchQuery={setSearchQuery}
         searchResults={results.items}
         framed={hosted && !signedIn}
+        showHistory={source !== 'public'}
+        factsControls={
+          mayEdit
+            ? {
+                field,
+                items: catalog.items,
+                subjects: subjectCatalog,
+                remove: {
+                  ...deleteAction,
+                  async run(reason) {
+                    await deleteAction.run(reason)
+                    if (!deleteAction.refused) await navigate({ to: '/docs' })
+                  },
+                },
+              }
+            : undefined
+        }
+        field={mayEdit ? field : undefined}
+        history={history}
         loading={catalog.isPending}
         error={
-          catalog.error?.message ??
-          reading.error?.message ??
-          results.error?.message ??
+          errorMessage(catalog.error) ??
+          errorMessage(reading.error) ??
+          errorMessage(results.error) ??
           revision.error ??
           null
         }
@@ -274,7 +389,25 @@ export function DocsPage() {
         )}
       />
       {editing ? editor.overlays : null}
-      {source === 'local' && creating ? <CreateDocDialog open onOpenChange={setCreating} /> : null}
+      {source === 'local' && creating ? (
+        <CreateDocDialog
+          open
+          onOpenChange={setCreating}
+          subjects={createSubjects.data}
+          create={createAction}
+          onCreated={(address) => {
+            void navigate({
+              to: '/docs/$scope/$subject/$slug',
+              params: {
+                scope: address.scope,
+                subject: address.subject ?? '_',
+                slug: address.slug,
+              },
+              search: { edit: true },
+            })
+          }}
+        />
+      ) : null}
     </>
   )
 }

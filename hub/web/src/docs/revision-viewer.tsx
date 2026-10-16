@@ -1,16 +1,13 @@
 import { Button } from '@bottega/hub-ui/button'
 import { Callout } from '@bottega/hub-ui/callout'
 import { Segmented } from '@bottega/hub-ui/segmented'
-import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { Markdown } from '@/components/markdown/markdown'
-import { trpc } from '@/trpc/client'
-import type { DocScope } from '../../../../shared/docs.ts'
 import { hasRecordIdShape } from '../../../../shared/record-id.ts'
 import { readingBody } from './body.ts'
 import { savedVersionAuthor } from './reading.tsx'
-import { revisionComparison, shapeRevisionDiff } from './revision-diff.ts'
-import type { DocsAudience, DocsDoc, DocsSource } from './types.ts'
+import { shapeRevisionDiff } from './revision-diff.ts'
+import type { DocsSource } from './types.ts'
 
 export type RevisionMode = 'diff' | 'version'
 
@@ -40,122 +37,10 @@ export function revisionIdForSource(
   return null
 }
 
-function hostedRevisionSelection<
-  T extends { id: string; body: string; withheldForAudience: boolean },
->(
-  revisions: readonly T[] | undefined,
-  revisionId: number | string | null,
-  currentBody: string | null,
-): { selected: T | null; replacementBody: string | null; ids: string[] | undefined } {
-  const ids = revisions?.map(({ id }) => id)
-  const comparison =
-    typeof revisionId === 'string' && ids ? revisionComparison(ids, revisionId) : null
-  const selected = revisions?.find(({ id }) => id === revisionId) ?? null
-  const newer =
-    comparison?.kind === 'revision'
-      ? (revisions?.find(({ id }) => id === comparison.id) ?? null)
-      : null
-  return {
-    selected,
-    replacementBody:
-      selected?.withheldForAudience || newer?.withheldForAudience
-        ? null
-        : comparison?.kind === 'current'
-          ? currentBody
-          : (newer?.body ?? null),
-    ids,
-  }
-}
-
-function revisionReadFailed(
-  source: DocsSource,
-  hostedError: unknown,
-  localErrors: readonly unknown[],
-): boolean {
-  return source === 'hosted' ? Boolean(hostedError) : localErrors.some(Boolean)
-}
-
-function localReplacementBody(
-  comparison: ReturnType<typeof revisionComparison> | null,
-  currentBody: string | null,
-  newerBody: string | undefined,
-): string | null {
-  if (comparison?.kind === 'current') return currentBody
-  return comparison?.kind === 'revision' ? (newerBody ?? null) : null
-}
-
 function savedAt(value: string): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
-}
-
-export function useRevisionView(
-  source: DocsSource,
-  doc: DocsDoc | null,
-  revisionParam: string | undefined,
-  audience: DocsAudience | null,
-) {
-  const revisionId = revisionIdForSource(source, revisionParam)
-  const address = {
-    scope: (doc?.scope ?? 'global') as DocScope,
-    subject: doc?.subject ?? null,
-    slug: doc?.slug ?? '',
-  }
-  const localHistory = useQuery({
-    ...trpc.doc.history.queryOptions(address),
-    enabled: source === 'local' && Boolean(doc && revisionParam),
-  })
-  const hostedHistory = useQuery({
-    ...trpc.record.docRevisions.queryOptions({
-      id: doc?.id ?? '00000000-0000-4000-8000-000000000000',
-      audience: audience ?? undefined,
-    }),
-    enabled: source === 'hosted' && Boolean(doc && revisionParam),
-  })
-  const selected = useQuery({
-    ...trpc.doc.revision.queryOptions({
-      ...address,
-      revisionId: typeof revisionId === 'number' ? revisionId : 1,
-      audience: audience ?? undefined,
-    }),
-    enabled: source === 'local' && Boolean(doc && revisionId),
-  })
-  const comparison =
-    typeof revisionId === 'number'
-      ? revisionComparison(
-          (localHistory.data ?? []).map(({ id }) => id),
-          revisionId,
-        )
-      : null
-  const newer = useQuery({
-    ...trpc.doc.revision.queryOptions({
-      ...address,
-      revisionId: comparison?.kind === 'revision' ? comparison.id : 1,
-      audience: audience ?? undefined,
-    }),
-    enabled: source === 'local' && Boolean(doc && revisionParam && comparison?.kind === 'revision'),
-  })
-  const hosted = hostedRevisionSelection(hostedHistory.data?.items, revisionId, doc?.body ?? null)
-  const localIds = localHistory.data?.map(({ id }) => id)
-  const error = revisionViewError({
-    param: revisionParam,
-    id: revisionId,
-    historyIds: source === 'hosted' ? hosted.ids : localIds,
-    readFailed: revisionReadFailed(source, hostedHistory.error, [
-      selected.error,
-      localHistory.error,
-      newer.error,
-    ]),
-  })
-  if (source === 'hosted') {
-    return { revision: hosted.selected, replacementBody: hosted.replacementBody, error }
-  }
-  return {
-    revision: selected.data ?? null,
-    replacementBody: localReplacementBody(comparison, doc?.body ?? null, newer.data?.body),
-    error,
-  }
 }
 
 export function RevisionViewer({

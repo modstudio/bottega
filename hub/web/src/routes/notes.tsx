@@ -15,8 +15,8 @@ import { toast } from '@bottega/hub-ui/toast'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
-import { isHostedMode } from '@/lib/hub-mode'
-import { queryClient, trpc } from '@/trpc/client'
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
+import { queryClient, trpc } from '@bottega/hub-data/client'
 
 import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 export const Route = createFileRoute('/notes')({ component: NotesPage })

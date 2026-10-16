@@ -7,7 +7,7 @@ import type { inferRouterOutputs } from '@trpc/server'
 import { X } from 'lucide-react'
 import { useState } from 'react'
 import { MachineOptIn } from '@/components/machine-override'
-import { queryClient, trpc } from '@/trpc/client'
+import { queryClient, trpc } from '@bottega/hub-data/client'
 import type { AppRouter } from '../../../src/trpc/router.ts'
 
 type Overlay = NonNullable<inferRouterOutputs<AppRouter>['context']['settings']['get']['machine']>

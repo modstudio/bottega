@@ -6,8 +6,8 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { SnapshotEmpty, SnapshotHeader } from '@/components/hosted-snapshot'
-import { isHostedMode } from '@/lib/hub-mode'
-import { type AgentRow, trpc } from '@/trpc/client'
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
+import { type AgentRow, trpc } from '@bottega/hub-data/client'
 
 export const Route = createFileRoute('/agents')({
   validateSearch: (search: Record<string, unknown>) => ({

@@ -14,7 +14,7 @@ import {
   setActiveOrganization,
   signUpForRecord,
 } from '@/lib/hosted-organization'
-import { isHostedMode } from '@/lib/hub-mode'
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
 
 export const Route = createFileRoute('/accept-invitation/$id')({ component: InvitationRoute })
 

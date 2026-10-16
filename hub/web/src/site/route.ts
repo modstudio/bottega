@@ -1,5 +1,5 @@
 import { notFound } from '@tanstack/react-router'
-import { isHostedMode } from '@/lib/hub-mode'
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 
 const SITE_DESCRIPTION = `You keep every decision. Workers do the rest. ${PLATFORM_NAME} runs the whole task lifecycle for coding agents: declared workflows, multi-lens review on a budget, a board across every project.`

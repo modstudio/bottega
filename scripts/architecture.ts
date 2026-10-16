@@ -20,7 +20,7 @@ import { focusedTestModules } from './architecture-focused-test-modules.ts'
 import { gateModules } from './architecture-gate-modules.ts'
 import { hubImportModules } from './architecture-hub-import-modules.ts'
 import { hubModuleSpecs } from './architecture-hub-modules.ts'
-import { HUB_UI_PACKAGE } from './architecture-hub-packages.ts'
+import { HUB_DATA_PACKAGE, HUB_UI_PACKAGE } from './architecture-hub-packages.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
 import { metricModules } from './architecture-metric-modules.ts'
 import { monitorModules } from './architecture-monitor-modules.ts'
@@ -80,6 +80,12 @@ const concerns: ConcernManifest = {
       to: 'hub/src/trpc/router.ts',
       dependencyTypes: ['type-only'],
       reason: 'The web client imports only the hub router type across the web boundary.',
+    },
+    {
+      from: 'hub/data',
+      to: 'hub/src/trpc/router.ts',
+      dependencyTypes: ['type-only'],
+      reason: 'The hub data client imports only the hub router type across the package boundary.',
     },
     ...cliConcernEntries.map((to) => ({
       from: 'cli',
@@ -803,21 +809,45 @@ export const hubWebViewDataRule: ArchitectureRule = {
   from: {
     path: '^hub/web/src/',
     pathNot: [
-      '^hub/web/src/(?:routes|trpc)/',
-      '^hub/web/src/lib/hub-mode\\.ts$',
+      '^hub/web/src/routes/',
       '^hub/web/src/(?:main|router)\\.tsx$',
       '^hub/web/src/.*\\.test\\.tsx?$',
     ],
   },
   to: {
-    path: `(?:^@/trpc/|^@/lib/hub-mode$|^hub/web/src/trpc/|^hub/web/src/lib/hub-mode\\.ts$|${architectureDependencyPath('@tanstack/react-query')}|^@trpc/|(^|/)node_modules/@trpc/[^/]+(?:/|$))`,
+    path: `(?:${architectureDependencyPath(HUB_DATA_PACKAGE)}|${architectureDependencyPath('@tanstack/react-query')}|${architectureDependencyPath('@tanstack/react-router')}|^@trpc/|(^|/)node_modules/@trpc/[^/]+(?:/|$))`,
   },
 }
 const hubWebRouterException = concerns.exceptions[0]!
+const hubDataRouterException = concerns.exceptions[1]!
+
+const hubDataBoundaryRules: ArchitectureRule[] = [
+  {
+    name: 'hub-data-imports-no-ui-or-web',
+    severity: 'error',
+    comment: 'Hub data owns data access and may not import presentation or the web package.',
+    from: { path: '^hub/data/src/' },
+    to: { path: `(?:${architectureDependencyPath(HUB_UI_PACKAGE)}|^hub/(?:ui|web)/)` },
+  },
+  {
+    name: 'hub-data-router-is-type-only',
+    severity: 'error',
+    comment: hubDataRouterException.reason,
+    from: { path: `^${hubDataRouterException.from}/` },
+    to: {
+      path: exactArchitecturePath(hubDataRouterException.to),
+      dependencyTypesNot: hubDataRouterException.dependencyTypes,
+    },
+  },
+]
 
 /** The manifest-owned rule set enforced against every proposed hub source write. */
 export function writeTimeArchitectureRules(): ArchitectureRule[] {
-  return [...uiArchitectureRules(architectureDependencyPath, HUB_UI_PACKAGE), hubWebViewDataRule]
+  return [
+    ...uiArchitectureRules(architectureDependencyPath, HUB_UI_PACKAGE),
+    ...hubDataBoundaryRules,
+    hubWebViewDataRule,
+  ]
 }
 
 export function architectureRules() {
@@ -840,7 +870,11 @@ export function architectureRules() {
       from: { path: `^${hubWebRouterException.from}/` },
       to: {
         path: '^hub/(?!web/)',
-        pathNot: [exactArchitecturePath(hubWebRouterException.to), '^hub/ui/src/'],
+        pathNot: [
+          exactArchitecturePath(hubWebRouterException.to),
+          '^hub/ui/src/',
+          '^hub/data/src/',
+        ],
       },
     },
     {

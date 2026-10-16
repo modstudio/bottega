@@ -15,7 +15,7 @@ import {
   WINDOWS,
   type WindowHours,
 } from '@/lib/window'
-import { trpc } from '@/trpc/client'
+import { trpc } from '@bottega/hub-data/client'
 
 function Filter({
   kind,

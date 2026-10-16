@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { queryClient, trpc } from '@/trpc/client'
+import { queryClient, trpc } from '@bottega/hub-data/client'
 import { HostedTaskSheet } from './hosted-task-sheet'
 
 test('hosted task detail renders all history without mutation controls', () => {

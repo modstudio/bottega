@@ -1,13 +1,21 @@
 import { useQuery } from '@tanstack/react-query'
-import { hostedTrpc, queryClient, trpc } from '@/trpc/client'
-import type { DocScope } from '../../../../shared/docs.ts'
-import { mapDoc, mapSearchMatch, mapTreeItem } from './map.ts'
-import { isScope } from './scope.ts'
-import { docsSearchInputs } from './search-input.ts'
-import type { DocsAudience, DocsDoc, DocsSearchMatch, DocsSource, DocsTreeItem } from './types.ts'
+import type { DocAudience, DocScope } from '../../../../shared/docs.ts'
+import { hostedTrpc, queryClient, trpc } from '../client.ts'
 
-async function loadHostedTree(): Promise<DocsTreeItem[]> {
-  const items: DocsTreeItem[] = []
+export type DocsSource = 'local' | 'hosted' | 'public'
+export type DataTreeItem = {
+  id: string
+  scope: string
+  subject: string | null
+  slug: string
+  parentId: string | null
+  spaceId?: string
+}
+export type StoredDocument = { title: string; body: string; revision: string | null }
+type Mapper<T> = (row: Record<string, unknown>) => T
+
+async function loadHostedTree<T>(mapTreeItem: Mapper<T>): Promise<T[]> {
+  const items: T[] = []
   let cursor: string | undefined
   for (;;) {
     const page = await queryClient.fetchQuery(
@@ -23,11 +31,11 @@ async function loadHostedTree(): Promise<DocsTreeItem[]> {
   }
 }
 
-export function useDocsTree(source: DocsSource) {
+export function useDocsTree<T>(source: DocsSource, mapTreeItem: Mapper<T>) {
   const local = useQuery({ ...trpc.doc.tree.queryOptions({}), enabled: source === 'local' })
   const hosted = useQuery({
     queryKey: ['docs-adapter', 'hosted-tree'],
-    queryFn: loadHostedTree,
+    queryFn: () => loadHostedTree(mapTreeItem),
     enabled: source === 'hosted',
   })
   const published = useQuery({
@@ -44,10 +52,12 @@ export function useDocsTree(source: DocsSource) {
   return { items, isPending: result.isPending, error: result.error }
 }
 
-export function useDocsDocument(
+export function useDocsDocument<T extends DataTreeItem, D>(
   source: DocsSource,
-  selected: DocsTreeItem | null,
-  audience: DocsAudience | null,
+  selected: T | null,
+  audience: DocAudience | null,
+  mapDoc: Mapper<D>,
+  isScope: (scope: string) => scope is DocScope,
 ) {
   const localScope = selected && isScope(selected.scope) ? selected.scope : null
   const local = useQuery({
@@ -73,19 +83,31 @@ export function useDocsDocument(
     enabled: source === 'public' && Boolean(selected?.id),
   })
   const result = source === 'local' ? local : source === 'hosted' ? hosted : published
-  const document: DocsDoc | null = result.data
+  const document: D | null = result.data
     ? mapDoc(result.data as unknown as Record<string, unknown>)
     : null
   return { document, isPending: Boolean(selected) && result.isPending, error: result.error }
 }
 
-export function useDocsSearch(
+export function useDocsSearch<T, I extends {
+  local: Parameters<typeof trpc.doc.search.queryOptions>[0]
+  hosted: Parameters<typeof trpc.record.docSearch.queryOptions>[0]
+  public: Parameters<typeof hostedTrpc.publicDocs.search.queryOptions>[0]
+}>(
   source: DocsSource,
   query: string,
-  audience: DocsAudience | null,
+  audience: DocAudience | null,
   subject: string | undefined,
   includeDrafts: boolean,
   includeWorking: boolean,
+  docsSearchInputs: (
+    query: string,
+    audience: DocAudience | null,
+    subject: string | undefined,
+    includeDrafts: boolean,
+    includeWorking: boolean,
+  ) => I,
+  mapSearchMatch: Mapper<T>,
 ) {
   const trimmed = query.trim()
   const enabled = trimmed.length >= 2
@@ -103,19 +125,18 @@ export function useDocsSearch(
     enabled: source === 'public' && enabled,
   })
   const result = source === 'local' ? local : source === 'hosted' ? hosted : published
-  const items: DocsSearchMatch[] = (result.data?.items ?? []).map((row) =>
+  const items: T[] = (result.data?.items ?? []).map((row) =>
     mapSearchMatch(row as unknown as Record<string, unknown>),
   )
   return { items, isPending: enabled && result.isFetching, error: result.error }
 }
 
-export type StoredDocument = { title: string; body: string; revision: string | null }
-
 /** The unprojected document a write replaces; fetched only while `enabled`. */
-export function useStoredDocument(
-  doc: DocsDoc | null,
+export function useStoredDocument<T extends DataTreeItem>(
+  doc: T | null,
   source: DocsSource,
   enabled: boolean,
+  isScope: (scope: string) => scope is DocScope,
 ): StoredDocument | undefined {
   const scoped = Boolean(doc && isScope(doc.scope))
   const localDoc = useQuery({

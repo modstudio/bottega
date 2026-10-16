@@ -2,10 +2,7 @@ import { Button } from '@bottega/hub-ui/button'
 import { Dialog } from '@bottega/hub-ui/dialog'
 import { Input } from '@bottega/hub-ui/field/input'
 import { Select } from '@bottega/hub-ui/listbox/select'
-import { useMutation, useQuery } from '@tanstack/react-query'
-import { useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
-import { queryClient, trpc } from '@/trpc/client'
 import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES, type DocScope } from '../../../../shared/docs.ts'
 import { DOC_DELIVERY_LABELS } from './filters.ts'
 import { isScope } from './scope.ts'
@@ -22,37 +19,37 @@ const deliveryOptions = (['inject', 'demand'] as const).map((value) => ({
 export function CreateDocDialog({
   open,
   onOpenChange,
+  subjects,
+  create,
+  onCreated,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  subjects: Partial<Record<(typeof DOC_SCOPE_SUBJECT_KIND)[DocScope] & string, string[]>> | undefined
+  create: {
+    run: (input: {
+      scope: DocScope
+      subject: string | null
+      slug: string
+      title: string
+      body: string
+      reason: string
+      delivery: 'inject' | 'demand'
+    }) => Promise<unknown>
+    pending: boolean
+    error: unknown
+    refused?: string
+  }
+  onCreated: (address: { scope: DocScope; subject: string | null; slug: string }) => void
 }) {
-  const navigate = useNavigate()
-  const subjects = useQuery({ ...trpc.doc.subjects.queryOptions(), enabled: open })
   const [scope, setScope] = useState<DocScope>('global')
   const [subject, setSubject] = useState('')
   const [slug, setSlug] = useState('')
   const [title, setTitle] = useState('')
   const [delivery, setDelivery] = useState<'inject' | 'demand'>('inject')
 
-  const create = useMutation({
-    ...trpc.doc.set.mutationOptions(),
-    onSuccess: async (_row, input) => {
-      await queryClient.invalidateQueries()
-      onOpenChange(false)
-      await navigate({
-        to: '/docs/$scope/$subject/$slug',
-        params: {
-          scope: input.scope,
-          subject: input.subject ?? '_',
-          slug: input.slug,
-        },
-        search: { edit: true },
-      })
-    },
-  })
-
   const subjectKind = DOC_SCOPE_SUBJECT_KIND[scope]
-  const subjectOptions = subjectKind === null ? [] : (subjects.data?.[subjectKind] ?? [])
+  const subjectOptions = subjectKind === null ? [] : (subjects?.[subjectKind] ?? [])
 
   useEffect(() => {
     if (!needsSubject(scope)) {
@@ -63,18 +60,24 @@ export function CreateDocDialog({
     setSubject(subjectOptions[0] ?? '')
   }, [scope, subject, subjectOptions])
 
-  function submitCreate() {
+  async function submitCreate() {
     if (!slug || !title) return
     if (needsSubject(scope) && !subject) return
-    create.mutate({
+    const address = {
       scope,
       subject: needsSubject(scope) ? subject : null,
       slug,
+    }
+    if (create.refused) return
+    await create.run({
+      ...address,
       title,
       body: '',
       reason: 'created from hub',
       delivery,
     })
+    onOpenChange(false)
+    onCreated(address)
   }
 
   return (
@@ -89,7 +92,7 @@ export function CreateDocDialog({
           <Button
             variant="primary"
             onClick={submitCreate}
-            disabled={create.isPending || !slug || !title || (needsSubject(scope) && !subject)}
+            disabled={create.pending || Boolean(create.refused) || !slug || !title || (needsSubject(scope) && !subject)}
           >
             Create
           </Button>
@@ -136,9 +139,9 @@ export function CreateDocDialog({
             onChange={(next) => setDelivery(next as 'inject' | 'demand')}
           />
         </div>
-        {create.error ? (
+        {create.error || create.refused ? (
           <p data-tone="error" className="text-status-text">
-            {create.error.message}
+            {create.refused ?? (create.error instanceof Error ? create.error.message : String(create.error))}
           </p>
         ) : null}
       </div>

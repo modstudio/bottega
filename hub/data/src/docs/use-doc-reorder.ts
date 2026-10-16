@@ -1,19 +1,24 @@
-import { toast } from '@bottega/hub-ui/toast'
 import { useMutation } from '@tanstack/react-query'
 import { useCallback, useMemo, useState } from 'react'
-import { queryClient, trpc } from '@/trpc/client'
+import { queryClient, trpc } from '../client.ts'
 import type { DocScope } from '../../../../shared/docs.ts'
-import { canEditDoc } from './edit-permission.ts'
-import { orderedIdsAfterDrag, siblingKey } from './tree.ts'
-import type { DocsSource, DocsTreeItem } from './types.ts'
-import { useDocsTree } from './use-docs.ts'
+import { type DataTreeItem, type DocsSource, useDocsTree } from './use-docs.ts'
 
-export function useReorderableDocsTree(
+export function useReorderableDocsTree<T extends DataTreeItem & { kind: string; position: number }>(
   source: DocsSource,
   memberships: readonly Record<string, unknown>[] | undefined,
+  mapTreeItem: (row: Record<string, unknown>) => T,
+  canEditDoc: (
+    source: DocsSource,
+    memberships: readonly Record<string, unknown>[] | undefined,
+    spaceId?: string,
+  ) => boolean,
+  siblingKey: (item: T) => string,
+  orderedIdsAfterDrag: (items: readonly T[], activeId: string, overId: string) => string[],
 ) {
-  const catalog = useDocsTree(source)
+  const catalog = useDocsTree(source, mapTreeItem)
   const [orders, setOrders] = useState<ReadonlyMap<string, readonly string[]>>(new Map())
+  const [error, setError] = useState<unknown>(null)
   const local = useMutation(trpc.doc.reorder.mutationOptions())
   const hosted = useMutation(trpc.record.reorderDocs.mutationOptions())
   const items = useMemo(() => {
@@ -24,7 +29,7 @@ export function useReorderableDocsTree(
     })
   }, [catalog.items, orders])
   const canReorder = useCallback(
-    (item: DocsTreeItem) =>
+    (item: T) =>
       !local.isPending &&
       !hosted.isPending &&
       item.kind === 'article' &&
@@ -44,6 +49,7 @@ export function useReorderableDocsTree(
       const key = siblingKey(active)
       setOrders((current) => new Map(current).set(key, orderedIds))
       try {
+        setError(null)
         const order = {
           scope: active.scope as DocScope,
           subject: active.subject,
@@ -55,7 +61,7 @@ export function useReorderableDocsTree(
         else await local.mutateAsync(order)
         await queryClient.invalidateQueries()
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : 'Could not save the document order')
+        setError(error)
       } finally {
         setOrders((current) => {
           const next = new Map(current)
@@ -66,5 +72,5 @@ export function useReorderableDocsTree(
     },
     [canReorder, hosted, items, local, source],
   )
-  return { ...catalog, items, treeReorder: { canReorder, onReorder } }
+  return { ...catalog, error: error ?? catalog.error, items, treeReorder: { canReorder, onReorder } }
 }

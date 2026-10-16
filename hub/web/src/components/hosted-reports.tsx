@@ -19,7 +19,7 @@ import {
   SessionDetail,
 } from '@/components/measure-display'
 import { useWindowState } from '@/lib/window'
-import { type MeasuresResponse, trpc } from '@/trpc/client'
+import { type MeasuresResponse, trpc } from '@bottega/hub-data/client'
 
 type ScopeKind = 'space' | 'project' | 'person'
 

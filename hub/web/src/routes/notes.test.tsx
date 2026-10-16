@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { HostedNotesPage } from '@/routes/notes'
-import { queryClient, trpc } from '@/trpc/client'
+import { queryClient, trpc } from '@bottega/hub-data/client'
 
 test('hosted notes render their records without disposition controls', () => {
   queryClient.setQueryData(trpc.record.notes.queryOptions({ stale: false }).queryKey, {

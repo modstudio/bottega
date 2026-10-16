@@ -12,7 +12,7 @@ import { ProjectMark } from '@/components/design-system'
 import { hostedProjectColors } from '@/components/hosted-projects'
 import { useDetailPanel } from '@/lib/detail-panel'
 import { runEasternTime } from '@/lib/format'
-import { trpc } from '@/trpc/client'
+import { trpc } from '@bottega/hub-data/client'
 
 type HostedReview = {
   id: string

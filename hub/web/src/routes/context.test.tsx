@@ -2,7 +2,7 @@ import { beforeEach, expect, test } from 'bun:test'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { ManagedContextPage, UserCanonSection } from '@/routes/context'
-import { queryClient, trpc } from '@/trpc/client'
+import { queryClient, trpc } from '@bottega/hub-data/client'
 
 import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 

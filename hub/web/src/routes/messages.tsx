@@ -16,8 +16,8 @@ import { useState } from 'react'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { useDetailPanel } from '@/lib/detail-panel'
 import { sendTimestamp } from '@/lib/format'
-import { isHostedMode } from '@/lib/hub-mode'
-import { queryClient, trpc } from '@/trpc/client'
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
+import { queryClient, trpc } from '@bottega/hub-data/client'
 import {
   BOARD_PURPOSES,
   type BoardPurpose,

@@ -87,7 +87,6 @@ function view(partial: Partial<Parameters<typeof DocsView>[0]> = {}) {
     <QueryClientProvider client={queryClient}>
       <DocsView
         sourceLabel="Local store"
-        source="local"
         items={items}
         selectedId="2"
         filters={EMPTY_FILTERS}
@@ -99,6 +98,7 @@ function view(partial: Partial<Parameters<typeof DocsView>[0]> = {}) {
         showDrafts={false}
         onShowDrafts={() => {}}
         canShowDrafts
+        canShowWorking
         showWorking={false}
         onShowWorking={() => {}}
         doc={{
@@ -118,6 +118,9 @@ function view(partial: Partial<Parameters<typeof DocsView>[0]> = {}) {
         onSearchQuery={() => {}}
         searchResults={[]}
         framed={false}
+        showHistory
+        history={{ items: [], pending: false, error: null }}
+        renderLink={(_location, children) => children}
         {...partial}
       />
     </QueryClientProvider>

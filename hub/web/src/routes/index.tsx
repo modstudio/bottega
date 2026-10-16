@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { TaskView } from '@/components/work-view'
-import { hostedOrigin, isHostedMode } from '@/lib/hub-mode'
+import { hostedOrigin, isHostedMode } from '@bottega/hub-data/hub-mode'
 import { HomePage } from '@/site/home'
 import { siteHead } from '@/site/route'
-import { trpc } from '@/trpc/client'
+import { trpc } from '@bottega/hub-data/client'
 
 /** The marketing home for a signed-out hosted visitor; the app's own home for everyone else. */
 function HostedIndex() {

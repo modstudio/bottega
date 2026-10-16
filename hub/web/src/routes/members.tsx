@@ -24,7 +24,7 @@ import {
   removeOrganizationMember,
   updateOrganizationMemberRole,
 } from '@/lib/hosted-organization'
-import { isHostedMode } from '@/lib/hub-mode'
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
 
 export const Route = createFileRoute('/members')({ component: MembersRoute })
 const roles: OrganizationRole[] = ['owner', 'admin', 'member']
