@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { PLATFORM_NAME } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { CanonLintInput } from '../canon/canon-lint.ts'
 import {
   type DocReferenceProject,
@@ -41,7 +41,7 @@ describe('stored document lint', () => {
       rule: 'doc/article-summary',
       level: 'warning',
       message: 'article has no written summary',
-      remedy: 'set one with bottega doc set <slug> --summary',
+      remedy: `set one with ${PLATFORM_SLUG} doc set <slug> --summary`,
     })
   })
 

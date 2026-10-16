@@ -56,7 +56,6 @@ import {
   countRecordDocs,
   deleteRecordDoc,
   getRecordDoc,
-  importRecordCanon,
   importRecordDoc,
   listRecordDocRevisions,
   listRecordDocs,
@@ -65,6 +64,7 @@ import {
   restoreRecordDoc,
   upsertRecordDoc,
 } from './record-docs.ts'
+import { importRecordCanon } from './record-canon-import.ts'
 import { listPendingRecordInvitations } from './record-pending-invitations.ts'
 import { listRecordProjects, retireRecordProject, upsertRecordProject } from './record-projects.ts'
 import {

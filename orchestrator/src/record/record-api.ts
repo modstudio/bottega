@@ -48,8 +48,6 @@ import {
   recordCursorOf,
 } from './record-cursor.ts'
 import {
-  type RecordCanonImportInput,
-  type RecordCanonImportResult,
   type RecordDoc,
   RecordDocError,
   type RecordDocImportInput,
@@ -57,6 +55,7 @@ import {
   type RecordDocOrderInput,
   type RecordDocRevision,
 } from './record-docs.ts'
+import type { RecordCanonImportInput, RecordCanonImportResult } from './record-canon-import.ts'
 import {
   type RecordProject,
   RecordProjectError,

@@ -21,6 +21,28 @@ const boundary = (
 
 export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
   boundary(
+    'record-canon-import-boundary',
+    'orchestrator/src/record/record-canon-import.ts',
+    [
+      'bun',
+      '../../../shared/doc-sections.ts',
+      '../../../shared/docs.ts',
+      '../../../shared/record/schema.ts',
+      '../../../shared/record/tenant.ts',
+      '../canon/canon-import-policy.ts',
+      '../doc/canon-import-collision.ts',
+      '../doc/doc-write-allowed.ts',
+      './record-canon-facts.ts',
+      './record-doc-audience-sql.ts',
+      './record-doc-article-fields.ts',
+      './record-doc-errors.ts',
+      './record-doc-revision-write.ts',
+      './record-doc-tree.ts',
+    ],
+    'Keep hosted canon import transactions separate from general hosted document writes.',
+    ['../canon/canon-lint.ts'],
+  ),
+  boundary(
     'record-doc-api-schemas-boundary',
     'orchestrator/src/record/record-api-doc-schemas.ts',
     ['zod', '../../../shared/docs.ts', '../canon/user-canon-home.ts', '../doc/doc-generator.ts'],
