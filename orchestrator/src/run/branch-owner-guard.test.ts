@@ -34,4 +34,3 @@ test('an alive owner refusal names the landing-tree retry command', () => {
     }),
   ).toThrow(`then retry ${PLATFORM_SLUG} tree open 41`)
 })
-

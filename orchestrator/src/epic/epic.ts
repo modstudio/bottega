@@ -169,7 +169,9 @@ export function epicScoreboard(
     )
     .all() as RunRow[]
   const landings = database
-    .query(`SELECT id,branch,status,error,steps,project_record_id,tip FROM landing ORDER BY started_at,id`)
+    .query(
+      `SELECT id,branch,status,error,steps,project_record_id,tip FROM landing ORDER BY started_at,id`,
+    )
     .all() as LandingRow[]
   const reviews = database
     .query(
@@ -344,7 +346,9 @@ function durationMetrics(runs: RunRow[], clock: number): DurationMetrics {
 }
 
 function commitSubjects(database: Database): Map<string, Map<string, string>> {
-  const projects = database.query('SELECT record_id,path FROM project ORDER BY record_id').all() as {
+  const projects = database
+    .query('SELECT record_id,path FROM project ORDER BY record_id')
+    .all() as {
     record_id: string
     path: string
   }[]

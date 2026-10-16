@@ -39,7 +39,9 @@ test('project UUID migration preserves every project child relationship', () => 
       )
       .get(project.id) as { id: number }
     const review = database
-      .query(`INSERT INTO review (record_id,recorded_at,project_id) VALUES ('review-record','t',?) RETURNING id`)
+      .query(
+        `INSERT INTO review (record_id,recorded_at,project_id) VALUES ('review-record','t',?) RETURNING id`,
+      )
       .get(project.id) as { id: number }
     database
       .query(
@@ -56,10 +58,14 @@ test('project UUID migration preserves every project child relationship', () => 
       )
       .run(doc.id, project.id)
     database
-      .query(`INSERT INTO landing (record_id,project,branch,status,started_at,project_id) VALUES ('landing-record','project-closure','main','queued','t',?)`)
+      .query(
+        `INSERT INTO landing (record_id,project,branch,status,started_at,project_id) VALUES ('landing-record','project-closure','main','queued','t',?)`,
+      )
       .run(project.id)
     database
-      .query(`INSERT INTO landing_override (record_id,project,branch,tip,tree,reason,at,project_id) VALUES ('override-record','project-closure','main','tip','tree','reason','t',?)`)
+      .query(
+        `INSERT INTO landing_override (record_id,project,branch,tip,tree,reason,at,project_id) VALUES ('override-record','project-closure','main','tip','tree','reason','t',?)`,
+      )
       .run(project.id)
     database
       .query(
@@ -75,30 +81,48 @@ test('project UUID migration preserves every project child relationship', () => 
          VALUES ('snapshot-record','project-closure','main','tip','tree','[]','patch',1,0,0,'t',?)`,
       )
       .run(project.id)
-    database.query(`INSERT INTO main_stack_activity (project_id,last_ensured_at) VALUES (?,'t')`).run(project.id)
     database
-      .query(`INSERT INTO port_pair (record_id,source_project_id,target_project_id,created_at) VALUES ('pair-record',?,?, 't')`)
+      .query(`INSERT INTO main_stack_activity (project_id,last_ensured_at) VALUES (?,'t')`)
+      .run(project.id)
+    database
+      .query(
+        `INSERT INTO port_pair (record_id,source_project_id,target_project_id,created_at) VALUES ('pair-record',?,?, 't')`,
+      )
       .run(project.id, other.id)
     database
-      .query(`INSERT INTO port_ref (record_id,task_key,target_project_id,note,created_at) VALUES ('ref-record','DEV-1',?,'note','t')`)
+      .query(
+        `INSERT INTO port_ref (record_id,task_key,target_project_id,note,created_at) VALUES ('ref-record','DEV-1',?,'note','t')`,
+      )
       .run(project.id)
     database
-      .query(`INSERT INTO port_ref_source (record_id,task_key,target_project_id,source_project_id,commits,paths,note) VALUES ('source-record','DEV-1',?,?,'[]','[]','note')`)
+      .query(
+        `INSERT INTO port_ref_source (record_id,task_key,target_project_id,source_project_id,commits,paths,note) VALUES ('source-record','DEV-1',?,?,'[]','[]','note')`,
+      )
       .run(project.id, other.id)
     database
-      .query(`INSERT INTO project_lens_profile (record_id,project_id,axis,profile_name) VALUES ('profile-record',?,'framework','default')`)
+      .query(
+        `INSERT INTO project_lens_profile (record_id,project_id,axis,profile_name) VALUES ('profile-record',?,'framework','default')`,
+      )
       .run(project.id)
     database
-      .query(`INSERT INTO release_ledger (record_id,project,rung,candidate_commit,rollback,actor,started_at,project_id) VALUES ('release-record','project-closure','production','tip',0,'operator','t',?)`)
+      .query(
+        `INSERT INTO release_ledger (record_id,project,rung,candidate_commit,rollback,actor,started_at,project_id) VALUES ('release-record','project-closure','production','tip',0,'operator','t',?)`,
+      )
       .run(project.id)
     database
-      .query(`INSERT INTO resource_claim (record_id,root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at) VALUES ('claim-record',?,?,?,'branch','main','claimed','t')`)
+      .query(
+        `INSERT INTO resource_claim (record_id,root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at) VALUES ('claim-record',?,?,?,'branch','main','claimed','t')`,
+      )
       .run(run.id, run.id, project.id)
     database
-      .query(`INSERT INTO review_read (record_id,project,branch,tip,patch_id,path_set,tier,note,recorded_at,project_id) VALUES ('read-record','project-closure','main','tip','patch','[]',1,'note','t',?)`)
+      .query(
+        `INSERT INTO review_read (record_id,project,branch,tip,patch_id,path_set,tier,note,recorded_at,project_id) VALUES ('read-record','project-closure','main','tip','patch','[]',1,'note','t',?)`,
+      )
       .run(project.id)
     database
-      .query(`INSERT INTO subject (project_id,name,definition,position,created_at,updated_at) VALUES (?,'subject','definition',0,'t','t')`)
+      .query(
+        `INSERT INTO subject (project_id,name,definition,position,created_at,updated_at) VALUES (?,'subject','definition',0,'t','t')`,
+      )
       .run(project.id)
 
     expect(applyMigrations(database)).toContain(MIGRATION)

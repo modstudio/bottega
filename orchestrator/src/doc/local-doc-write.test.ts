@@ -189,7 +189,9 @@ test('set and restore repair the project id on an existing document', () => {
     canon: true,
     settings: {},
   })
-  const project = db().query('SELECT record_id FROM project WHERE name=?').get('repair-project') as {
+  const project = db()
+    .query('SELECT record_id FROM project WHERE name=?')
+    .get('repair-project') as {
     record_id: string
   }
   const input = {
@@ -415,4 +417,3 @@ test('subject filtering lists own-subject documents before related documents', a
     ),
   ).toEqual(['own-last-title', 'related-first-title'])
 })
-

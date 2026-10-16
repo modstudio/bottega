@@ -153,7 +153,9 @@ const setTrackerStates = (d: Database, name: string, states: Record<string, stri
 
 const projectId = (d: Database, name: string) =>
   (
-    d.query<{ id: number }, [string]>('SELECT record_id AS id FROM project WHERE name=?').get(name) as {
+    d
+      .query<{ id: number }, [string]>('SELECT record_id AS id FROM project WHERE name=?')
+      .get(name) as {
       id: number
     }
   ).id
@@ -884,4 +886,3 @@ test('an explicit run artifact reaches keyless binding', () => {
     exists: true,
   })
 })
-

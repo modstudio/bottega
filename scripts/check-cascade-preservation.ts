@@ -624,7 +624,8 @@ function counts(database: Database): Map<string, number> {
 function execute(database: Database, migration: Migration): void {
   const ddl = splitMigrationSource(migration.source).ddl.trim()
   if (!stripSqlComments(ddl).trim()) return
-  const rebuildsRequiredProjectIdentity = migration.tag === '0115_project_identity_contract'
+  const rebuildsRequiredProjectIdentity =
+    migration.tag === '0115_project_identity_contract' || migration.tag === '0117_project_uuid_key'
   const legacyAlterTable = (
     database.query('PRAGMA legacy_alter_table').get() as { legacy_alter_table: number }
   ).legacy_alter_table

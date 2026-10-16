@@ -20,7 +20,9 @@ import {
 
 const listPairs = () =>
   db()
-    .query('SELECT id,source_project_record_id,target_project_record_id,created_at FROM port_pair ORDER BY id')
+    .query(
+      'SELECT id,source_project_record_id,target_project_record_id,created_at FROM port_pair ORDER BY id',
+    )
     .all() as PortPair[]
 
 describe('porting data model', () => {
@@ -157,7 +159,12 @@ describe('porting data model', () => {
       targetProjectId: projects().find((project) => project.name === 'target-invented')!.recordId,
       note: 'provenance',
       sources: [
-        { source_project_record_id: source.recordId, commits: ['abc'], paths: ['src/a.ts'], note: 'source' },
+        {
+          source_project_record_id: source.recordId,
+          commits: ['abc'],
+          paths: ['src/a.ts'],
+          note: 'source',
+        },
       ],
     })
     expect(listLedgerRefs()).toHaveLength(1)
@@ -188,4 +195,3 @@ describe('porting data model', () => {
     expect(() => addDoctrineRule(7, 'Replacement', 'Must not reuse seven.')).toThrow()
   })
 })
-

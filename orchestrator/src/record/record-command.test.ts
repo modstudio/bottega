@@ -138,4 +138,3 @@ describe('record audit-secrets command', () => {
     }
   })
 })
-

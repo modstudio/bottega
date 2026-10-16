@@ -470,6 +470,11 @@ function applyBackfills(d: Database, entries: JournalEntry[], folder: string): v
 }
 
 const BACKFILL_SCHEMA_BOUNDARIES = new Set(['0117_project_uuid_key'])
+const INTEGER_PROJECT_BACKFILLS = new Set([
+  '0006_project_id_backfill',
+  '0010_landing_queue',
+  '0116_release_project_identity',
+])
 
 function compatibleBackfillEntries(d: Database, entries: JournalEntry[]): JournalEntry[] {
   const projectHasIntegerId = (
@@ -477,12 +482,12 @@ function compatibleBackfillEntries(d: Database, entries: JournalEntry[]): Journa
       n: number
     }
   ).n
-  if (projectHasIntegerId > 0) return entries.filter((entry) => !BACKFILL_SCHEMA_BOUNDARIES.has(entry.tag))
-  let first = -1
-  for (let index = 0; index < entries.length; index += 1) {
-    if (BACKFILL_SCHEMA_BOUNDARIES.has(entries[index]!.tag)) first = index
-  }
-  return first < 0 ? [] : entries.slice(first)
+  if (projectHasIntegerId > 0)
+    return entries.filter((entry) => !BACKFILL_SCHEMA_BOUNDARIES.has(entry.tag))
+  return entries.filter(
+    (entry) =>
+      !BACKFILL_SCHEMA_BOUNDARIES.has(entry.tag) && !INTEGER_PROJECT_BACKFILLS.has(entry.tag),
+  )
 }
 
 const expectedSchemaHashes = new Map<string, string>()

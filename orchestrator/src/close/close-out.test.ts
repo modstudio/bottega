@@ -192,7 +192,9 @@ test("a resumed turn's retained branch claim is settled with the branch it marks
   })
   const turnBranch = `DEV-1128-orch-${child}`
   const projectId = (
-    db().query('SELECT record_id AS id FROM project WHERE name=?').get(`close-out-${fixture.id}`) as {
+    db()
+      .query('SELECT record_id AS id FROM project WHERE name=?')
+      .get(`close-out-${fixture.id}`) as {
       id: number
     }
   ).id
@@ -475,10 +477,10 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
   try {
     db()
       .query(
-        `INSERT INTO landing (record_id,project,branch,status,started_at)
-         VALUES (?,?,?,'queued','2026-09-29T00:00:00.000Z')`,
+        `INSERT INTO landing (record_id,project,project_record_id,branch,status,started_at)
+         VALUES (?,?,?,?,'queued','2026-09-29T00:00:00.000Z')`,
       )
-      .run(newRecordId(), project, `DEV-1023-orch-${id}`)
+      .run(newRecordId(), project, projectId, `DEV-1023-orch-${id}`)
     expect(closeOutRun(id, { intent: 'explicit' })).toMatchObject({
       outcome: 'held',
       detail: 'landing tree held by session owner: landing is in flight',
@@ -841,4 +843,3 @@ test('releasing a failover successor releases every held attempt oldest first', 
   expect(closeOutRun(predecessor, { intent: 'terminal' }).outcome).toBe('absent')
   expect(closeOutRun(successor, { intent: 'terminal' }).outcome).toBe('absent')
 })
-

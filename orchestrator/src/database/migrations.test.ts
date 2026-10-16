@@ -1008,4 +1008,3 @@ test('user canon owner migration preserves docs and enforces owner addresses', (
     rmSync(folder, { recursive: true, force: true })
   }
 })
-

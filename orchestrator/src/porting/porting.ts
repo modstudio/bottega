@@ -167,7 +167,9 @@ export function listLedgerRefs(includeResolved = false): LedgerRef[] {
       `SELECT target_project_record_id,task_key FROM port_ref${includeResolved ? '' : ' WHERE resolved_at IS NULL'} ORDER BY target_project_record_id,task_key`,
     )
     .all() as { target_project_record_id: string; task_key: string }[]
-  return keys.map(({ target_project_record_id, task_key }) => ledgerRef(target_project_record_id, task_key)!)
+  return keys.map(
+    ({ target_project_record_id, task_key }) => ledgerRef(target_project_record_id, task_key)!,
+  )
 }
 
 export function setLedgerRef(input: {
@@ -180,7 +182,8 @@ export function setLedgerRef(input: {
   writableDb()
   if (input.sources.length === 0) throw new Error('a ledger ref needs at least one source project')
   if (
-    new Set(input.sources.map((source) => source.source_project_record_id)).size !== input.sources.length
+    new Set(input.sources.map((source) => source.source_project_record_id)).size !==
+    input.sources.length
   ) {
     throw new Error('a ledger ref may name each source project only once')
   }

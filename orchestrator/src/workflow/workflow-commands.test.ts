@@ -744,4 +744,3 @@ test('mode-less cursor command refuses active cursors in multiple modes', async 
       'active cursor modes: repair, report; pass --mode <slug>',
   )
 })
-

@@ -268,7 +268,9 @@ describe('lens catalogue', () => {
       VALUES (8001,?,'review-lens','one','sha',1,1,'[]','now',0,NULL)`)
       .run(newRecordId())
     live
-      .query(`INSERT INTO review (id,record_id,recorded_at,project_record_id) VALUES (8002,?,'now',NULL)`)
+      .query(
+        `INSERT INTO review (id,record_id,recorded_at,project_record_id) VALUES (8002,?,'now',NULL)`,
+      )
       .run(newRecordId())
     live
       .query(`INSERT INTO review_lens (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
@@ -301,7 +303,9 @@ describe('lens catalogue', () => {
     expect(applyMigrations(live)).toEqual([])
     expect(live.query('SELECT project_record_id FROM run WHERE id=?').get(renamedRunId)).toEqual({
       project_record_id: (
-        live.query(`SELECT record_id AS id FROM project WHERE name='${PLATFORM_SLUG}'`).get() as { id: number }
+        live.query(`SELECT record_id AS id FROM project WHERE name='${PLATFORM_SLUG}'`).get() as {
+          id: number
+        }
       ).id,
     })
     for (const [table, where] of [
@@ -332,4 +336,3 @@ describe('lens catalogue', () => {
     ).toBe(0)
   })
 })
-
