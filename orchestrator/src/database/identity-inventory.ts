@@ -11,7 +11,7 @@ export type IdentityInventory = {
 }
 
 export type KeyStore = 'orchestrator' | 'hub' | 'hosted'
-export type KeyColumn = {
+type KeyColumn = {
   table: string
   name: string
   type: string
@@ -23,7 +23,12 @@ export type IntegerValue = { store: KeyStore; column: string; reason: string }
 export type InfrastructureIdentity = { store: KeyStore; table: string; reason: string }
 export type KeyInventory = { findings: string[]; values: string[]; infrastructure: string[] }
 
-const REFERENCE_NAME = /(?:_id|_ids)$/
+type KeyManifests = {
+  values: Map<string, string>
+  infrastructure: Map<string, string>
+}
+
+const REFERENCE_NAME = /(?:^parent_|_id$|_ids$)/
 const IMPLICIT_REFERENCES = new Set(['run.retry_of', 'landing_triage_snapshot.review_ids'])
 
 export function classifyKeyInventory(
@@ -32,58 +37,111 @@ export function classifyKeyInventory(
   values: readonly IntegerValue[],
   infrastructure: readonly InfrastructureIdentity[],
 ): KeyInventory {
-  const valueMap = new Map(
-    values.filter((entry) => entry.store === store).map((entry) => [entry.column, entry.reason]),
-  )
-  const infrastructureMap = new Map(
-    infrastructure
-      .filter((entry) => entry.store === store)
-      .map((entry) => [entry.table, entry.reason]),
-  )
-  const findings: string[] = []
+  const manifests = keyManifests(store, values, infrastructure)
   const seenValues = new Set<string>()
-  for (const table of tables) {
-    const columns = new Map(table.columns.map((column) => [column.name, column]))
-    const primaryColumn = columns.get(table.primaryKey[0]!)
-    const uuidPrimaryKey =
-      table.primaryKey.length === 1 && isUuidColumn(primaryColumn) && !primaryColumn?.foreignKey
-    if (!uuidPrimaryKey) findings.push(`${table.name}:primary-key`)
-    for (const column of table.columns) {
-      const address = `${table.name}.${column.name}`
-      const reference =
-        column.foreignKey ||
-        (column.type === 'integer' && REFERENCE_NAME.test(column.name)) ||
-        (store === 'orchestrator' && IMPLICIT_REFERENCES.has(address))
-      if (reference && !isUuidColumn(column)) findings.push(`${address}:reference`)
-      if (column.type !== 'integer') continue
-      const reason = valueMap.get(address)
-      if (reason) {
-        if (column.primaryKey || column.foreignKey)
-          throw new Error(`${store} integer value ${address} may not be a primary or foreign key`)
-        if (reference)
-          throw new Error(`${store} integer value ${address} is shaped as a row reference`)
-        if (!reason.trim()) throw new Error(`${store} integer value ${address} needs a reason`)
-        seenValues.add(address)
-      } else if (!column.primaryKey && !reference) {
-        throw new Error(
-          `${store} integer column ${address} is not classified as a value or row identity`,
-        )
-      }
-    }
-  }
-  const tableNames = new Set(tables.map((table) => table.name))
-  for (const entry of values.filter((candidate) => candidate.store === store)) {
-    if (!seenValues.has(entry.column))
-      throw new Error(`${store} integer value ${entry.column} is stale`)
-  }
-  for (const [table, reason] of infrastructureMap) {
-    if (!reason.trim()) throw new Error(`${store} infrastructure ${table} needs a reason`)
-    if (!tableNames.has(table)) throw new Error(`${store} infrastructure ${table} is stale`)
-  }
+  const findings = tables.flatMap((table) =>
+    classifyKeyTable(store, table, manifests.values, seenValues),
+  )
+  validateKeyManifests(store, tables, manifests, seenValues)
   return {
     findings: [...new Set(findings)].sort(),
     values: [...seenValues].sort(),
-    infrastructure: [...infrastructureMap.keys()].sort(),
+    infrastructure: [...manifests.infrastructure.keys()].sort(),
+  }
+}
+
+function keyManifests(
+  store: KeyStore,
+  values: readonly IntegerValue[],
+  infrastructure: readonly InfrastructureIdentity[],
+): KeyManifests {
+  return {
+    values: new Map(
+      values.filter((entry) => entry.store === store).map((entry) => [entry.column, entry.reason]),
+    ),
+    infrastructure: new Map(
+      infrastructure
+        .filter((entry) => entry.store === store)
+        .map((entry) => [entry.table, entry.reason]),
+    ),
+  }
+}
+
+function classifyKeyTable(
+  store: KeyStore,
+  table: KeyTable,
+  values: ReadonlyMap<string, string>,
+  seenValues: Set<string>,
+): string[] {
+  const findings = hasOwnedUuidPrimaryKey(table) ? [] : [`${table.name}:primary-key`]
+  for (const column of table.columns)
+    findings.push(...classifyKeyColumn(store, column, values, seenValues))
+  return findings
+}
+
+function hasOwnedUuidPrimaryKey(table: KeyTable): boolean {
+  if (table.primaryKey.length !== 1) return false
+  const primaryColumn = table.columns.find((column) => column.name === table.primaryKey[0])
+  return isUuidColumn(primaryColumn) && !primaryColumn?.foreignKey
+}
+
+function classifyKeyColumn(
+  store: KeyStore,
+  column: KeyColumn,
+  values: ReadonlyMap<string, string>,
+  seenValues: Set<string>,
+): string[] {
+  const address = `${column.table}.${column.name}`
+  const reference = isRowReference(store, address, column)
+  if (column.type === 'integer')
+    classifyIntegerColumn(store, address, column, reference, values, seenValues)
+  return reference && !isUuidColumn(column) ? [`${address}:reference`] : []
+}
+
+function isRowReference(store: KeyStore, address: string, column: KeyColumn): boolean {
+  return (
+    column.foreignKey ||
+    (column.type === 'integer' && REFERENCE_NAME.test(column.name)) ||
+    (store === 'orchestrator' && IMPLICIT_REFERENCES.has(address))
+  )
+}
+
+function classifyIntegerColumn(
+  store: KeyStore,
+  address: string,
+  column: KeyColumn,
+  reference: boolean,
+  values: ReadonlyMap<string, string>,
+  seenValues: Set<string>,
+): void {
+  const reason = values.get(address)
+  if (!reason) {
+    if (!column.primaryKey && !reference)
+      throw new Error(
+        `${store} integer column ${address} is not classified as a value or row identity`,
+      )
+    return
+  }
+  if (column.primaryKey || column.foreignKey)
+    throw new Error(`${store} integer value ${address} may not be a primary or foreign key`)
+  if (reference) throw new Error(`${store} integer value ${address} is shaped as a row reference`)
+  if (!reason.trim()) throw new Error(`${store} integer value ${address} needs a reason`)
+  seenValues.add(address)
+}
+
+function validateKeyManifests(
+  store: KeyStore,
+  tables: readonly KeyTable[],
+  manifests: KeyManifests,
+  seenValues: ReadonlySet<string>,
+): void {
+  for (const column of manifests.values.keys()) {
+    if (!seenValues.has(column)) throw new Error(`${store} integer value ${column} is stale`)
+  }
+  const tableNames = new Set(tables.map((table) => table.name))
+  for (const [table, reason] of manifests.infrastructure) {
+    if (!reason.trim()) throw new Error(`${store} infrastructure ${table} needs a reason`)
+    if (!tableNames.has(table)) throw new Error(`${store} infrastructure ${table} is stale`)
   }
 }
 

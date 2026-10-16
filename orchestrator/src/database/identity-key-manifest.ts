@@ -227,7 +227,6 @@ export const INFRASTRUCTURE_IDENTITIES: readonly InfrastructureIdentity[] = [
   { store: 'orchestrator', table: 'orch_schema_lock', reason: 'schema migration lock' },
   { store: 'orchestrator', table: 'record_install_binding', reason: 'singleton install binding' },
   { store: 'orchestrator', table: 'board_reach_recording', reason: 'singleton reach cursor' },
-  { store: 'orchestrator', table: 'main_stack_activity', reason: 'singleton per project cache' },
   { store: 'hub', table: 'hub_migrations', reason: 'migration journal bookkeeping' },
   { store: 'hub', table: 'hub_schema_lock', reason: 'schema migration lock' },
   { store: 'hub', table: 'install_binding', reason: 'singleton install binding' },
