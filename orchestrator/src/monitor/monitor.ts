@@ -29,12 +29,13 @@ import {
   dockerRunResources,
   orchRunLabel,
 } from '../resources/docker-resources.ts'
-import { gitLocks, missingPrunableWorktrees } from '../resources/git-locks.ts'
+import { gitLocks, worktreeIndexLockForPath } from '../resources/git-locks.ts'
 import { terminalDockerRetentionReasonForRun } from '../resources/resource-ownership.ts'
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
 import { grokTrustHeadings, grokTrustPathFromHeading } from '../sandbox/grok-trust.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
+import { missingPrunableWorktrees } from '../worktree/worktree-porcelain.ts'
 import { treeDatabaseConnectionConditions } from './database-connection-conditions.ts'
 import { branchInventoryDecision } from './monitor-branches.ts'
 import { observeProjectCanonDrift } from './monitor-canon-drift.ts'
@@ -142,15 +143,30 @@ function recipeDatabaseObservations(
   }
 }
 
+export function prunableWorktreeAction(
+  projectPath: string,
+  worktreePath: string,
+  commonDir: string,
+): string {
+  const lock = worktreeIndexLockForPath(commonDir, worktreePath)
+  return lock
+    ? `resolve ${lock} before running git -C ${projectPath} worktree prune`
+    : `git -C ${projectPath} worktree prune`
+}
+
 function prunableWorktreeConditions(project: Pick<Project, 'name' | 'path'>): MonitorCondition[] {
   const porcelain = git(project.path, ['worktree', 'list', '--porcelain']) ?? ''
+  const commonValue = git(project.path, ['rev-parse', '--git-common-dir'])
+  const commonDir = commonValue ? resolve(project.path, commonValue) : null
   return missingPrunableWorktrees(porcelain, existsSync).map((worktree) => ({
     kind: 'prunable-worktree',
     subject: worktree.path,
     since: null,
     ageMs: null,
     detail: `${project.name} has a missing worktree entry; Git reports ${worktree.reason}`,
-    action: `git -C ${project.path} worktree prune`,
+    action: commonDir
+      ? prunableWorktreeAction(project.path, worktree.path, commonDir)
+      : `git -C ${project.path} worktree prune`,
     affectedProject: project.name,
   }))
 }

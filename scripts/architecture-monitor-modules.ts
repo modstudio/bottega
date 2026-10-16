@@ -62,6 +62,7 @@ export const monitorModules: MonitorModule[] = [
     '../review/review-vocabulary.ts',
     '../run/run-artifacts.ts',
     '../worktree/worktree-attribution.ts',
+    '../worktree/worktree-porcelain.ts',
     './database-connection-conditions.ts',
     './orphan-inventory-conditions.ts',
   ]),

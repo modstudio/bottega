@@ -1,22 +1,19 @@
 import { expect, test } from 'bun:test'
-import { missingPrunableWorktrees } from './git-locks.ts'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { worktreeIndexLockPaths } from './git-locks.ts'
 
-test('finds missing prunable worktrees and ignores worktrees whose directory exists', () => {
-  const porcelain = `worktree /projects/example
-HEAD 1111111111111111111111111111111111111111
-branch refs/heads/main
+test('finds linked-worktree index locks directly under the common Git directory', () => {
+  const commonDir = mkdtempSync(join(tmpdir(), 'git-locks-common-'))
+  const adminDir = join(commonDir, 'worktrees', 'missing')
+  const indexLock = join(adminDir, 'index.lock')
+  try {
+    mkdirSync(adminDir, { recursive: true })
+    writeFileSync(indexLock, '')
 
-worktree /runs/missing/tree
-HEAD 2222222222222222222222222222222222222222
-detached
-prunable gitdir file points to non-existent location
-
-`
-
-  expect(missingPrunableWorktrees(porcelain, (path) => path === '/projects/example')).toEqual([
-    {
-      path: '/runs/missing/tree',
-      reason: 'gitdir file points to non-existent location',
-    },
-  ])
+    expect(worktreeIndexLockPaths(commonDir)).toEqual([indexLock])
+  } finally {
+    rmSync(commonDir, { recursive: true, force: true })
+  }
 })

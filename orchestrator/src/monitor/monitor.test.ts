@@ -1,11 +1,19 @@
 import { describe, expect, spyOn, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
-import { groupMonitorConditions, monitor, monitorHistory } from './monitor.ts'
+import {
+  groupMonitorConditions,
+  monitor,
+  monitorHistory,
+  prunableWorktreeAction,
+} from './monitor.ts'
 import { claimMonitorNotices, markMonitorNoticesDelivered } from './monitor-notices.ts'
 
 const condition = (
@@ -71,6 +79,25 @@ function insertRun4177PackRows(): string {
 }
 
 describe('operational monitor conditions', () => {
+  test('a prunable worktree action names a surviving index lock before prune', () => {
+    const commonDir = mkdtempSync(join(tmpdir(), 'prunable-worktree-common-'))
+    const projectPath = '/projects/example'
+    const worktreePath = '/runs/missing/tree'
+    const adminDir = join(commonDir, 'worktrees', 'missing')
+    const indexLock = join(adminDir, 'index.lock')
+    try {
+      mkdirSync(adminDir, { recursive: true })
+      writeFileSync(join(adminDir, 'gitdir'), `${worktreePath}/.git\n`)
+      writeFileSync(indexLock, '')
+
+      expect(prunableWorktreeAction(projectPath, worktreePath, commonDir)).toBe(
+        `resolve ${indexLock} before running git -C ${projectPath} worktree prune`,
+      )
+    } finally {
+      rmSync(commonDir, { recursive: true, force: true })
+    }
+  })
+
   test('identical conditions collapse without an anomaly', () => {
     const duplicate = condition()
     expect(groupMonitorConditions([duplicate, { ...duplicate }])).toEqual({

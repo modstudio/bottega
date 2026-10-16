@@ -12,6 +12,7 @@ const module = (file: string, allowed: string[]): WorktreeModule => ({
 })
 
 export const worktreeModules: WorktreeModule[] = [
+  module('orchestrator/src/worktree/worktree-porcelain.ts', []),
   module('orchestrator/src/worktree/worktree-caller.ts', [
     '../project/projects.ts',
     '../git/git-environment.ts',
