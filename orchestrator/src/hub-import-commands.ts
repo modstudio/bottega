@@ -92,12 +92,15 @@ export function registeredHubCheckout(
     projectRelative[0] === '.claude' && projectRelative[1] === 'worktrees' && projectRelative[2]
       ? join(project.path, ...projectRelative.slice(0, 3))
       : project.path
+  let projectRoot: string
   let checkout: string
   try {
+    projectRoot = realpathSync(project.path)
     checkout = realpathSync(lexicalCheckout)
   } catch {
     return null
   }
+  if (checkout !== projectRoot && !within(projectRoot, checkout)) return null
   const canonicalFile = canonicalTarget(file)
   if (!canonicalFile || !within(checkout, canonicalFile)) return null
   const checkoutRelative = relative(checkout, canonicalFile).split(sep).join('/')
