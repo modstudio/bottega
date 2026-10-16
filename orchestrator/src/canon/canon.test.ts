@@ -449,10 +449,10 @@ describe('schema coexistence', () => {
       `INSERT INTO project (record_id,name,path,canon,settings) VALUES (?, 'alephbeis', '/a', 1, '{}')`,
     ).run(newRecordId())
     const platformId = (
-      d.query('SELECT record_id FROM project WHERE name=?').get(PLATFORM_SLUG) as { id: number }
+      d.query('SELECT record_id AS id FROM project WHERE name=?').get(PLATFORM_SLUG) as { id: number }
     ).id
     const starship = (
-      d.query("SELECT record_id FROM project WHERE name='starship'").get() as { id: number }
+      d.query("SELECT record_id AS id FROM project WHERE name='starship'").get() as { id: number }
     ).id
     const insertRun = (repo: string, projectId: number) =>
       (
@@ -536,7 +536,7 @@ describe('schema coexistence', () => {
         .map((entry) => entry.tag),
     )
     const row = d
-      .query('SELECT project_record_id, (SELECT record_id FROM project WHERE name=?) expected FROM run')
+      .query('SELECT project_record_id, (SELECT record_id AS id FROM project WHERE name=?) expected FROM run')
       .get('widget') as { project_record_id: number; expected: number }
     expect(row.project_record_id).toBe(row.expected)
     d.close()

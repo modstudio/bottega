@@ -192,7 +192,7 @@ test("a resumed turn's retained branch claim is settled with the branch it marks
   })
   const turnBranch = `DEV-1128-orch-${child}`
   const projectId = (
-    db().query('SELECT record_id FROM project WHERE name=?').get(`close-out-${fixture.id}`) as {
+    db().query('SELECT record_id AS id FROM project WHERE name=?').get(`close-out-${fixture.id}`) as {
       id: number
     }
   ).id
@@ -451,7 +451,7 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
   mkdirSync(join(repo, '.git'), { recursive: true })
   upsertProject({ recordId: newRecordId(), name: project, path: repo, settings: { trunk: 'main' } })
   const projectId = (
-    db().query('SELECT record_id FROM project WHERE name=?').get(project) as { id: number }
+    db().query('SELECT record_id AS id FROM project WHERE name=?').get(project) as { id: number }
   ).id
   db()
     .query(

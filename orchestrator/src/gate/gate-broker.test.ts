@@ -73,7 +73,7 @@ test("a rebased writer runs the gate from its tree and records only a clean tree
   const projectId = (
     db()
       .query(
-        `INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?) RETURNING id`,
+        `INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?) RETURNING record_id AS id`,
       )
       .get(
         'gate-broker-fixture',
@@ -200,7 +200,7 @@ test('an occupied gate log path fails the execution without following the path',
   const projectId = (
     db()
       .query(
-        `INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?) RETURNING id`,
+        `INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?) RETURNING record_id AS id`,
       )
       .get(
         newRecordId(),

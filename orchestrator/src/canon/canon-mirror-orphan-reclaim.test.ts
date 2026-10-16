@@ -16,7 +16,7 @@ test('a tip recorded before a failed PR step is reclaimed on the next run', asyn
   try {
     await registerManagedMirror(root, 'cm-reclaim-push')
     const project = db()
-      .query<{ id: number }, []>("SELECT record_id FROM project WHERE name='cm-reclaim-push'")
+      .query<{ id: number }, []>("SELECT record_id AS id FROM project WHERE name='cm-reclaim-push'")
       .get()!
     db()
       .query(`INSERT INTO run

@@ -14,7 +14,7 @@ function keptBranchClaim(tip: string | null = 'a'.repeat(40)) {
   const ref = `refs/heads/${branch}`
   upsertProject({ recordId: newRecordId(), name: project, path: repository })
   const projectId = (
-    db().query('SELECT record_id FROM project WHERE name=?').get(project) as { id: number }
+    db().query('SELECT record_id AS id FROM project WHERE name=?').get(project) as { id: number }
   ).id
   db()
     .query('UPDATE run SET repo=?,project_record_id=?,cwd=?,branch_kept=?,branch_kept_tip=? WHERE id=?')
@@ -276,7 +276,7 @@ test('sweep dry-run lists absent and kept claims without changing either row', (
   const project = `claim-reconciliation-${runId}`
   upsertProject({ recordId: newRecordId(), name: project, path: `/repo/${project}` })
   const projectId = (
-    db().query('SELECT record_id FROM project WHERE name=?').get(project) as { id: number }
+    db().query('SELECT record_id AS id FROM project WHERE name=?').get(project) as { id: number }
   ).id
   db()
     .query('UPDATE run SET repo=?,project_record_id=?,cwd=? WHERE id=?')
@@ -330,7 +330,7 @@ test('reconciling an absent worktree leaves its dependent port claimed', () => {
   const project = `claim-cascade-${runId}`
   upsertProject({ recordId: newRecordId(), name: project, path: `/repo/${project}` })
   const projectId = (
-    db().query('SELECT record_id FROM project WHERE name=?').get(project) as { id: number }
+    db().query('SELECT record_id AS id FROM project WHERE name=?').get(project) as { id: number }
   ).id
   db().query('UPDATE run SET repo=?,project_record_id=? WHERE id=?').run(project, projectId, runId)
   const insert = db().query(
@@ -370,7 +370,7 @@ test('an absent worktree does not release allocations shared with a present work
   const project = `claim-multiple-trees-${runId}`
   upsertProject({ recordId: newRecordId(), name: project, path: `/repo/${project}` })
   const projectId = (
-    db().query('SELECT record_id FROM project WHERE name=?').get(project) as { id: number }
+    db().query('SELECT record_id AS id FROM project WHERE name=?').get(project) as { id: number }
   ).id
   db().query('UPDATE run SET repo=?,project_record_id=? WHERE id=?').run(project, projectId, runId)
   const insert = db().query(
@@ -418,7 +418,7 @@ test('a guard that changes before locked settlement leaves the claim claimed', (
   const project = `claim-race-${runId}`
   upsertProject({ recordId: newRecordId(), name: project, path: `/repo/${project}` })
   const projectId = (
-    db().query('SELECT record_id FROM project WHERE name=?').get(project) as { id: number }
+    db().query('SELECT record_id AS id FROM project WHERE name=?').get(project) as { id: number }
   ).id
   db().query('UPDATE run SET repo=?,project_record_id=? WHERE id=?').run(project, projectId, runId)
   const claimId = Number(

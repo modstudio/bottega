@@ -301,7 +301,7 @@ describe('lens catalogue', () => {
     expect(applyMigrations(live)).toEqual([])
     expect(live.query('SELECT project_record_id FROM run WHERE id=?').get(renamedRunId)).toEqual({
       project_record_id: (
-        live.query(`SELECT record_id FROM project WHERE name='${PLATFORM_SLUG}'`).get() as { id: number }
+        live.query(`SELECT record_id AS id FROM project WHERE name='${PLATFORM_SLUG}'`).get() as { id: number }
       ).id,
     })
     for (const [table, where] of [

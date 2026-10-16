@@ -98,19 +98,20 @@ test('live since-read sends the recorded tip through the service to the observed
     .query<{ id: number }, []>(
       `INSERT INTO run
         (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,cwd,worktree,
-         branch,base_commit)
+         branch,base_commit,project_record_id)
        VALUES
         ('${newRecordId()}','2026-10-12','codex','implementation','sha',1,'head','running',
-         'diff-service-fixture','/repo/tree','/repo/tree','DEV-1257-work','base-tip')
+         'diff-service-fixture','/repo/tree','/repo/tree','DEV-1257-work','base-tip',
+         (SELECT record_id FROM project WHERE name='diff-service-fixture'))
        RETURNING id`,
     )
     .get()!
   database
     .query(
       `INSERT INTO review_read
-        (record_id,project,branch,tip,patch_id,path_set,tier,note,recorded_at)
+        (record_id,project,project_record_id,branch,tip,patch_id,path_set,tier,note,recorded_at)
        VALUES
-        ('read-service','diff-service-fixture','DEV-1257-work','read-tip','patch','[]',1,
+        ('read-service','diff-service-fixture',(SELECT record_id FROM project WHERE name='diff-service-fixture'),'DEV-1257-work','read-tip','patch','[]',1,
          'read before fixes','2026-10-12T12:00:00.000Z')`,
     )
     .run()

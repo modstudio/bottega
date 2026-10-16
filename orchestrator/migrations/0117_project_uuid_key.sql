@@ -1,7 +1,7 @@
 CREATE TABLE board_claim_project_uuid (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   project TEXT NOT NULL,
-  project_record_id TEXT NOT NULL REFERENCES project(record_id) ON DELETE RESTRICT,
+  project_record_id TEXT REFERENCES project(record_id) ON DELETE RESTRICT,
   subject_kind TEXT NOT NULL CHECK (subject_kind IN ('task','path','resource')),
   subject_value TEXT NOT NULL,
   holder_kind TEXT NOT NULL CHECK (holder_kind IN ('operator','architect')),
@@ -40,7 +40,7 @@ CREATE TABLE presence_project_uuid (
   role TEXT NOT NULL CHECK (role = 'architect'),
   machine TEXT NOT NULL,
   project TEXT NOT NULL,
-  project_record_id TEXT NOT NULL REFERENCES project(record_id) ON DELETE RESTRICT,
+  project_record_id TEXT REFERENCES project(record_id) ON DELETE RESTRICT,
   cwd TEXT NOT NULL,
   current_task_key TEXT,
   last_seen TEXT NOT NULL,
@@ -88,7 +88,7 @@ CREATE INDEX worker_note_request_project_record_id ON worker_note_request(projec
 CREATE TABLE workflow_cursor_project_uuid (
   id INTEGER PRIMARY KEY,
   project TEXT NOT NULL,
-  project_record_id TEXT NOT NULL REFERENCES project(record_id) ON DELETE RESTRICT,
+  project_record_id TEXT REFERENCES project(record_id) ON DELETE RESTRICT,
   workflow_slug TEXT NOT NULL,
   mode_slug TEXT NOT NULL,
   workflow_key TEXT NOT NULL DEFAULT '',
@@ -122,7 +122,7 @@ CREATE UNIQUE INDEX workflow_cursor_record_id_unique ON workflow_cursor(record_i
 --> statement-breakpoint
 CREATE TABLE branch_landing_record_project_uuid (
   project TEXT NOT NULL,
-  project_record_id TEXT NOT NULL REFERENCES project(record_id) ON DELETE RESTRICT,
+  project_record_id TEXT REFERENCES project(record_id) ON DELETE RESTRICT,
   branch TEXT NOT NULL,
   tip TEXT NOT NULL,
   pr_number INTEGER NOT NULL CHECK (pr_number > 0),
