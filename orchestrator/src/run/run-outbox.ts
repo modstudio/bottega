@@ -5,6 +5,7 @@ import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
+import { chainTerminationAtForRoot } from './run-chain.ts'
 import { HOOK_TREE_JOB, LANDING_TREE_JOB } from './synthetic-lifecycle-job.ts'
 
 type LocalRun = Record<string, unknown> & {
@@ -148,27 +149,16 @@ export function backfillRunRecords(database: Database, machineId: string): RunRe
         status: string
         failure_kind: string | null
         latest_payload: string | null
-        chain_started_at: string | null
-        chain_latency_ms: number | null
-        chain_status: string | null
       },
       [string, string]
     >(
       `SELECT r.id, COALESCE(r.last_event_at, r.started_at) AS finished_at,
-              r.parent_run_id, r.status, r.failure_kind, latest.payload AS latest_payload,
-              chain_last.started_at AS chain_started_at,
-              chain_last.latency_ms AS chain_latency_ms,
-              chain_last.status AS chain_status
+              r.parent_run_id, r.status, r.failure_kind, latest.payload AS latest_payload
          FROM run r
          LEFT JOIN outbox latest ON latest.id = (
            SELECT prior.id FROM outbox prior
             WHERE prior.kind='run' AND prior.row_id=r.record_id
             ORDER BY prior.id DESC LIMIT 1
-         )
-         LEFT JOIN run chain_last ON chain_last.id = (
-           SELECT member.id FROM run member
-            WHERE member.id=r.id OR member.parent_run_id=r.id
-            ORDER BY member.turn DESC, member.id DESC LIMIT 1
          )
         WHERE r.status IN ('ok', 'failed', 'stale', 'stopped', 'asking')
           AND r.job NOT IN (?,?)
@@ -191,13 +181,7 @@ export function backfillRunRecords(database: Database, machineId: string): RunRe
       latest = {}
     }
     if (latest.status === row.status && latest.failureKind === row.failure_kind) continue
-    const chainTermination =
-      row.chain_started_at !== null &&
-      row.chain_latency_ms !== null &&
-      row.chain_status !== null &&
-      ['ok', 'failed', 'stale'].includes(row.chain_status)
-        ? new Date(Date.parse(row.chain_started_at) + row.chain_latency_ms).toISOString()
-        : row.finished_at
+    const chainTermination = chainTerminationAtForRoot(database, row.id) ?? row.finished_at
     enqueueRunRecord(database, row.id, machineId, chainTermination)
     refreshedRoots++
   }

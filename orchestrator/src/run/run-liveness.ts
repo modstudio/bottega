@@ -17,6 +17,7 @@ import { questionOpenSql } from './question-open.ts'
 import { runAlive } from './run-alive.ts'
 import { auditRunMutation, runMutationAuthority } from './run-authority.ts'
 import { abandonedBootstrap, coordinatorSetupDeath, PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
+import { chainTerminationAtForRoot } from './run-chain.ts'
 import { coordinatorSetupError } from './run-coordinator-log.ts'
 import { runLeaseState } from './run-lease.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
@@ -47,21 +48,7 @@ export function chainTerminationAt(database: Database, memberId: number): string
   } | null
   if (!member) return null
   const rootId = member.parent_run_id ?? member.id
-  const terminal = database
-    .query(
-      `SELECT started_at, latency_ms, status FROM run
-      WHERE id=? OR parent_run_id=?
-      ORDER BY turn DESC, id DESC LIMIT 1`,
-    )
-    .get(rootId, rootId) as { started_at: string; latency_ms: number | null; status: string } | null
-  if (
-    !terminal ||
-    !['ok', 'failed', 'stale'].includes(terminal.status) ||
-    terminal.latency_ms === null
-  ) {
-    return null
-  }
-  return new Date(Date.parse(terminal.started_at) + terminal.latency_ms).toISOString()
+  return chainTerminationAtForRoot(database, rootId)
 }
 
 /**
