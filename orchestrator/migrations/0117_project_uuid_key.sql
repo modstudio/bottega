@@ -622,5 +622,40 @@ INSERT INTO project_project_uuid (record_id,name,path,stack,canon,settings,retir
 SELECT record_id,name,path,stack,canon,settings,retired_at FROM project;
 DROP TABLE project;
 ALTER TABLE project_project_uuid RENAME TO project;
+--> statement-breakpoint
+-- BACKFILL
+UPDATE run SET project_record_id=(SELECT record_id FROM project WHERE name=run.repo)
+WHERE project_record_id IS NULL AND (SELECT COUNT(*) FROM project WHERE name=run.repo)=1;
+UPDATE run SET project_record_id=(SELECT record_id FROM project WHERE name='bottega')
+WHERE repo IN ('devbox','devbox-ops') AND project_record_id IS NULL;
+UPDATE canon_pack SET project_record_id=(SELECT record_id FROM project WHERE name=canon_pack.project)
+WHERE project_record_id IS NULL AND (SELECT COUNT(*) FROM project WHERE name=canon_pack.project)=1;
+UPDATE landing SET project_record_id=(SELECT record_id FROM project WHERE name=landing.project)
+WHERE project_record_id IS NULL AND (SELECT COUNT(*) FROM project WHERE name=landing.project)=1;
+UPDATE landing_override SET project_record_id=(SELECT record_id FROM project WHERE name=landing_override.project)
+WHERE project_record_id IS NULL AND (SELECT COUNT(*) FROM project WHERE name=landing_override.project)=1;
+UPDATE landing_review_carry SET project_record_id=(SELECT record_id FROM project WHERE name=landing_review_carry.project)
+WHERE project_record_id IS NULL AND (SELECT COUNT(*) FROM project WHERE name=landing_review_carry.project)=1;
+UPDATE landing_triage_snapshot SET project_record_id=(SELECT record_id FROM project WHERE name=landing_triage_snapshot.project)
+WHERE project_record_id IS NULL AND (SELECT COUNT(*) FROM project WHERE name=landing_triage_snapshot.project)=1;
+UPDATE review_read SET project_record_id=(SELECT record_id FROM project WHERE name=review_read.project)
+WHERE project_record_id IS NULL AND (SELECT COUNT(*) FROM project WHERE name=review_read.project)=1;
+UPDATE doc SET project_record_id=(SELECT record_id FROM project WHERE name=doc.subject)
+WHERE project_record_id IS NULL AND scope IN ('project','resume','canon','settings')
+  AND (SELECT COUNT(*) FROM project WHERE name=doc.subject)=1;
+UPDATE doc_revision SET project_record_id=(SELECT record_id FROM project WHERE name=doc_revision.subject)
+WHERE project_record_id IS NULL AND scope IN ('project','resume','canon','settings')
+  AND (SELECT COUNT(*) FROM project WHERE name=doc_revision.subject)=1;
+UPDATE review SET project_record_id=(
+  SELECT MIN(r.project_record_id) FROM review_lens rl JOIN run r ON r.id=rl.run_id
+   WHERE rl.review_id=review.id
+) WHERE project_record_id IS NULL
+    AND EXISTS (SELECT 1 FROM review_lens rl JOIN run r ON r.id=rl.run_id
+                 WHERE rl.review_id=review.id AND r.project_record_id IS NOT NULL)
+    AND 1=(SELECT COUNT(DISTINCT r.project_record_id) FROM review_lens rl JOIN run r ON r.id=rl.run_id
+            WHERE rl.review_id=review.id AND r.project_record_id IS NOT NULL)
+    AND NOT EXISTS (SELECT 1 FROM review_lens rl JOIN run r ON r.id=rl.run_id
+                     WHERE rl.review_id=review.id AND r.project_record_id IS NULL);
+-- /BACKFILL
 
 

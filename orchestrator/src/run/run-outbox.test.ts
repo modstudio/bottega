@@ -133,7 +133,8 @@ test('backfill resolves chains, enqueues finished turns once, and skips running 
     .map((row) => JSON.parse(row.payload) as Record<string, unknown>)
   expect(payloads).toHaveLength(4)
   expect(payloads[0]).toMatchObject({
-    projectName: null,
+    projectName: 'project',
+    projectId: '01990000-0000-7000-8000-000000000201',
     finishedAt: '2026-09-15T01:01:00.000Z',
   })
   expect(payloads[1]).toMatchObject({
