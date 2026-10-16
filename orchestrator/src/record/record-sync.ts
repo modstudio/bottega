@@ -81,16 +81,35 @@ function parsedPayload(source: string): Payload | null {
   }
 }
 
+function runProjectName(local: Database, runRecordId: unknown): string | null {
+  if (runRecordId == null) return null
+  return (
+    local
+      .query<{ name: string }, [string]>(
+        'SELECT project.name FROM run JOIN project ON project.id=run.project_id WHERE run.record_id=?',
+      )
+      .get(String(runRecordId))?.name ?? null
+  )
+}
+
+function landingProjectName(local: Database, landingRecordId: unknown): string | null {
+  if (landingRecordId == null) return null
+  return (
+    local
+      .query<{ name: string }, [string]>(
+        'SELECT project.name FROM landing JOIN project ON project.id=landing.project_id WHERE landing.record_id=?',
+      )
+      .get(String(landingRecordId))?.name ?? null
+  )
+}
+
 function outboxProjectName(kind: string, record: Payload | null, local: Database): string | null {
   if (typeof record?.projectName === 'string' && record.projectName) return record.projectName
   if (kind === 'score' && record) {
-    return (
-      local
-        .query<{ name: string }, [string]>(
-          'SELECT project.name FROM run JOIN project ON project.id=run.project_id WHERE run.record_id=?',
-        )
-        .get(String(record.id))?.name ?? null
-    )
+    return runProjectName(local, record.id)
+  }
+  if (kind === 'contention' && record) {
+    return runProjectName(local, record.runId) ?? landingProjectName(local, record.landingId)
   }
   if ((kind === 'review_lens' || kind === 'review_finding') && record) {
     return (
