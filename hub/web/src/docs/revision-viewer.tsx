@@ -3,11 +3,9 @@ import { Callout } from '@bottega/hub-ui/callout'
 import { Segmented } from '@bottega/hub-ui/segmented'
 import { useMemo } from 'react'
 import { Markdown } from '@/components/markdown/markdown'
-import { hasRecordIdShape } from '../../../../shared/record-id.ts'
 import { readingBody } from './body.ts'
 import { savedVersionAuthor } from './reading.tsx'
 import { shapeRevisionDiff } from './revision-diff.ts'
-import type { DocsSource } from './types.ts'
 
 export type RevisionMode = 'diff' | 'version'
 
@@ -24,16 +22,6 @@ export function revisionViewError(input: {
     (input.historyIds !== undefined && !input.historyIds.includes(input.id))
   )
     return `Revision ${input.param} could not be read.`
-  return null
-}
-
-export function revisionIdForSource(
-  source: DocsSource,
-  revisionParam: string | undefined,
-): number | string | null {
-  if (!revisionParam) return null
-  if (source === 'local') return /^\d+$/.test(revisionParam) ? Number(revisionParam) : null
-  if (source === 'hosted') return hasRecordIdShape(revisionParam) ? revisionParam : null
   return null
 }
 

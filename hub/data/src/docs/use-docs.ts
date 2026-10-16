@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import type { DocAudience, DocScope } from '../../../../shared/docs.ts'
 import { hostedTrpc, queryClient, trpc } from '../client.ts'
+import { docsSearchInputs } from './search-input.ts'
 
 export type DocsSource = 'local' | 'hosted' | 'public'
 export type DataTreeItem = {
@@ -91,11 +92,6 @@ export function useDocsDocument<T extends DataTreeItem, D>(
 
 export function useDocsSearch<
   T,
-  I extends {
-    local: Parameters<typeof trpc.doc.search.queryOptions>[0]
-    hosted: Parameters<typeof trpc.record.docSearch.queryOptions>[0]
-    public: Parameters<typeof hostedTrpc.publicDocs.search.queryOptions>[0]
-  },
 >(
   source: DocsSource,
   query: string,
@@ -103,13 +99,6 @@ export function useDocsSearch<
   subject: string | undefined,
   includeDrafts: boolean,
   includeWorking: boolean,
-  docsSearchInputs: (
-    query: string,
-    audience: DocAudience | null,
-    subject: string | undefined,
-    includeDrafts: boolean,
-    includeWorking: boolean,
-  ) => I,
   mapSearchMatch: Mapper<T>,
 ) {
   const trimmed = query.trim()

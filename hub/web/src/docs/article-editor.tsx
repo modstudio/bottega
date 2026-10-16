@@ -359,14 +359,10 @@ function useReloadArticle(
   setLoaded: (draft: Draft) => void,
 ) {
   const [reason, setReason] = useState('')
-  const [conflict, setConflict] = useState(false)
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [confirmingReload, setConfirmingReload] = useState(false)
   // biome-ignore lint/correctness/useExhaustiveDependencies: notices reset when edit starts on a document.
   useEffect(() => {
     setReason('')
-    setConflict(false)
-    setErrorMessage(null)
     setConfirmingReload(false)
   }, [doc?.id, editing])
   const reload = useCallback(async () => {
@@ -378,17 +374,11 @@ function useReloadArticle(
       setBody(next.body)
       setLoaded(next)
     }
-    setConflict(false)
-    setErrorMessage(null)
     setReason('')
   }, [doc, fetchCurrentArticle, setTitle, setBody, setLoaded])
   return {
     reason,
     setReason,
-    conflict,
-    setConflict,
-    errorMessage,
-    setErrorMessage,
     confirmingReload,
     setConfirmingReload,
     reload,
@@ -494,15 +484,12 @@ export function useArticleEditor({
     setReason: notice.setReason,
     conflict: saveAction.conflict,
     errorMessage:
-      saveAction.refused ??
-      (saveAction.error instanceof Error ? saveAction.error.message : notice.errorMessage),
+      saveAction.refused ?? (saveAction.error instanceof Error ? saveAction.error.message : null),
     popoverRef,
     reasonRef,
     openSave,
     async save() {
       if (!doc || !saveEnabled || !isDocReasonReady(notice.reason) || saving) return
-      notice.setConflict(false)
-      notice.setErrorMessage(null)
       const saved = await saveAction.run({ ...draft, reason: notice.reason })
       if (!saved) return
       allowLeave.current = true

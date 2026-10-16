@@ -1,7 +1,6 @@
 import { expect, test } from 'bun:test'
 import {
   fieldChangeReason,
-  fieldWriteInput,
   parentChoices,
   subjectsExcept,
   withCurrentSubjects,
@@ -92,77 +91,6 @@ test('article subject choices exclude related subjects', () => {
       [{ id: 'pricing', name: 'Pricing' }],
     ),
   ).toEqual([{ id: 'inventory', name: 'Inventory' }])
-})
-
-test('local writes use stored text, slugs, and subject names', () => {
-  expect(
-    fieldWriteInput(
-      'local',
-      { ...doc, body: 'Audience-filtered body' },
-      {
-        title: 'Stored title',
-        body: 'Stored body',
-        revision: 'revision-1',
-      },
-      {
-        field: 'articleSubject',
-        value: { id: 'subject-id', name: 'Pricing' },
-      },
-    ),
-  ).toEqual({
-    scope: 'project',
-    subject: 'workshop',
-    slug: 'article',
-    title: 'Stored title',
-    body: 'Stored body',
-    reason: 'Subject set to Pricing',
-    expectedRevision: 'revision-1',
-    articleSubject: 'Pricing',
-  })
-})
-
-test('summary writes use the existing field-save input for local and hosted docs', () => {
-  const change = { field: 'summary', value: 'A written summary' } as const
-  expect(
-    fieldWriteInput(
-      'local',
-      doc,
-      { title: 'Article', body: 'Stored body', revision: 'revision-1' },
-      change,
-    ),
-  ).toMatchObject({ summary: 'A written summary', reason: 'Summary updated' })
-  expect(
-    fieldWriteInput(
-      'hosted',
-      { ...doc, spaceId: 'space-id' },
-      { title: 'Article', body: 'Stored body', revision: 'revision-2' },
-      { field: 'summary', value: null },
-    ),
-  ).toMatchObject({ summary: null, reason: 'Summary cleared' })
-})
-
-test('hosted writes use record ids and send only the changed optional field', () => {
-  expect(
-    fieldWriteInput(
-      'hosted',
-      { ...doc, spaceId: 'space-id' },
-      { title: 'Article', body: 'Stored body', revision: 'revision-2' },
-      {
-        field: 'parent',
-        value: item('parent-id', null, { slug: 'parent-slug', title: 'Product pricing' }),
-      },
-    ),
-  ).toEqual({
-    spaceId: 'space-id',
-    scope: 'project',
-    subject: 'workshop',
-    slug: 'article',
-    title: 'Article',
-    body: 'Stored body',
-    reason: 'Parent set to Product pricing',
-    expectedRevision: 'revision-2',
-    parentRecordId: 'parent-id',
-  })
 })
 
 test('a subject the article carries but the catalog does not list stays choosable', () => {

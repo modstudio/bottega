@@ -1,8 +1,9 @@
 import { expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { DocsSource } from '@bottega/hub-data/docs/use-docs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { DocsFacts } from './facts.tsx'
-import type { DocsDoc, DocsSource } from './types.ts'
+import type { DocsDoc } from './types.ts'
 
 const doc: DocsDoc = {
   id: 'doc-1',

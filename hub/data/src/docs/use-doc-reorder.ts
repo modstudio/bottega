@@ -2,17 +2,13 @@ import { useMutation } from '@tanstack/react-query'
 import { useCallback, useMemo, useState } from 'react'
 import type { DocScope } from '../../../../shared/docs.ts'
 import { queryClient, trpc } from '../client.ts'
+import { canEditDoc } from './edit-permission.ts'
 import { type DataTreeItem, type DocsSource, useDocsTree } from './use-docs.ts'
 
 export function useReorderableDocsTree<T extends DataTreeItem & { kind: string; position: number }>(
   source: DocsSource,
   memberships: readonly Record<string, unknown>[] | undefined,
   mapTreeItem: (row: Record<string, unknown>) => T,
-  canEditDoc: (
-    source: DocsSource,
-    memberships: readonly Record<string, unknown>[] | undefined,
-    spaceId?: string,
-  ) => boolean,
   siblingKey: (item: T) => string,
   orderedIdsAfterDrag: (items: readonly T[], activeId: string, overId: string) => string[],
 ) {
@@ -34,7 +30,7 @@ export function useReorderableDocsTree<T extends DataTreeItem & { kind: string; 
       !hosted.isPending &&
       item.kind === 'article' &&
       canEditDoc(source, memberships, item.spaceId),
-    [hosted.isPending, local.isPending, memberships, source, canEditDoc],
+    [hosted.isPending, local.isPending, memberships, source],
   )
   const onReorder = useCallback(
     async (activeId: string, overId: string) => {

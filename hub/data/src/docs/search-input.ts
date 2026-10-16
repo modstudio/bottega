@@ -1,8 +1,8 @@
-import type { DocsAudience } from './types.ts'
+import type { DocAudience } from '../../../../shared/docs.ts'
 
 export function docsSearchInputs(
   query: string,
-  audience: DocsAudience | null,
+  audience: DocAudience | null,
   subject: string | undefined,
   includeDrafts: boolean,
   includeWorking: boolean,

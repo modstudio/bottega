@@ -10,6 +10,11 @@
   "exports": {
     "./client": "./src/client.ts",
     "./docs/actions": "./src/docs/actions.ts",
+    "./docs/edit-permission": "./src/docs/edit-permission.ts",
+    "./docs/field-write": "./src/docs/field-write.ts",
+    "./docs/location": "./src/docs/location.ts",
+    "./docs/mode": "./src/docs/mode.ts",
+    "./docs/search-input": "./src/docs/search-input.ts",
     "./docs/use-doc-reorder": "./src/docs/use-doc-reorder.ts",
     "./docs/use-docs": "./src/docs/use-docs.ts",
     "./hub-mode": "./src/hub-mode.ts",

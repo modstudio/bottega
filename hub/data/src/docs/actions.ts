@@ -3,6 +3,8 @@ import { TRPCClientError } from '@trpc/client'
 import { useState } from 'react'
 import type { DocAudience, DocScope } from '../../../../shared/docs.ts'
 import { queryClient, trpc } from '../client.ts'
+import { type DataDocFieldChange, fieldWriteInput } from './field-write.ts'
+import { revisionIdForSource } from './mode.ts'
 import type { DataTreeItem, DocsSource, StoredDocument } from './use-docs.ts'
 
 type DataDoc = DataTreeItem & { body: string; title: string }
@@ -84,6 +86,10 @@ export function useArticleSave(
     error: mutation.error,
     refused,
     conflict: mutation.error instanceof TRPCClientError && mutation.error.data?.code === 'CONFLICT',
+    reset() {
+      local.reset()
+      hosted.reset()
+    },
   }
 }
 
@@ -91,6 +97,7 @@ export function useCurrentArticle(
   source: DocsSource,
   doc: DataDoc | null,
   isScope: (scope: string) => scope is DocScope,
+  onReloaded: () => void,
 ) {
   return async () => {
     if (!doc) return null
@@ -99,6 +106,8 @@ export function useCurrentArticle(
         ...trpc.record.doc.queryOptions({ id: doc.id }),
         staleTime: 0,
       })
+      await queryClient.invalidateQueries()
+      onReloaded()
       return { title: next.title, body: next.body }
     }
     if (!isScope(doc.scope)) return null
@@ -106,6 +115,8 @@ export function useCurrentArticle(
       ...trpc.doc.get.queryOptions({ scope: doc.scope, subject: doc.subject, slug: doc.slug }),
       staleTime: 0,
     })
+    await queryClient.invalidateQueries()
+    onReloaded()
     return { title: next.title, body: next.body }
   }
 }
@@ -193,7 +204,6 @@ export function useRevisionView(
   doc: DataDoc | null,
   revisionParam: string | undefined,
   audience: DocAudience | null,
-  revisionIdForSource: (source: DocsSource, revision: string | undefined) => number | string | null,
   revisionComparison: (
     ids: readonly (number | string)[],
     id: number | string,
@@ -309,12 +319,11 @@ export function useDocSubjects(source: DocsSource, doc: DataDoc | null, enabled:
   }
 }
 
-export function useDocFieldSave<C>(
+export function useDocFieldSave(
   source: DocsSource,
   doc: DataDoc | null,
   stored: StoredDocument | undefined,
   isScope: (scope: string) => scope is DocScope,
-  buildInput: (source: Exclude<DocsSource, 'public'>, change: C) => unknown,
 ) {
   const [pending, setPending] = useState<Set<string>>(() => new Set())
   const [errors, setErrors] = useState<Record<string, string | undefined>>({})
@@ -327,13 +336,19 @@ export function useDocFieldSave<C>(
     disabled: (field: string) => !ready || pending.has(field),
     error: Object.values(errors).find(Boolean),
     errorFor: (field: string) => errors[field],
-    async run(change: C & { field: string }) {
-      if (!canAddress || !stored) return
+    async run(change: DataDocFieldChange, reason: string) {
+      if (!canAddress || !doc || !stored) return
       const field = change.field
       setErrors((current) => ({ ...current, [field]: undefined }))
       setPending((current) => new Set(current).add(field))
       try {
-        const input = buildInput(source === 'hosted' ? 'hosted' : 'local', change)
+        const input = fieldWriteInput(
+          source === 'hosted' ? 'hosted' : 'local',
+          doc,
+          stored,
+          change,
+          reason,
+        )
         if (source === 'hosted')
           await hosted.mutateAsync(input as Parameters<typeof hosted.mutateAsync>[0])
         else await local.mutateAsync(input as Parameters<typeof local.mutateAsync>[0])

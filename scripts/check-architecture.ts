@@ -7,6 +7,10 @@ import { Glob } from 'bun'
 import type { ICruiseResult } from 'dependency-cruiser'
 import { CONCERNS } from '../shared/brand.ts'
 import { architectureRules, modules } from './architecture.ts'
+import {
+  hubWebDocsModeLiteralLines,
+  hubWebDocsModeLiteralRuleName,
+} from './architecture-hub-data.ts'
 import { ARCHITECTURE_CRUISE_ROOTS, runArchitectureCruise } from './architecture-cruise.ts'
 import { importSpecifiers } from './import-scanner.ts'
 
@@ -22,6 +26,16 @@ const violations: string[] = []
 
 function isProductionTypeScript(path: string) {
   return !/(^|\/)tests?\//.test(path) && !/\.(?:test|spec)\.[cm]?tsx?$/.test(path)
+}
+
+for (const relative of new Glob('**/*.{ts,tsx}').scanSync({ cwd: join(ROOT, 'hub/web/src/docs') })) {
+  const file = `hub/web/src/docs/${relative}`
+  if (!isProductionTypeScript(file)) continue
+  for (const line of hubWebDocsModeLiteralLines(readFileSync(join(ROOT, file), 'utf8'))) {
+    violations.push(
+      `${file}:${line} (${hubWebDocsModeLiteralRuleName}): docs components receive mode-neutral props`,
+    )
+  }
 }
 
 for (const root of [...CONCERNS, 'shared']) {

@@ -11,7 +11,13 @@ import {
   useRevisionView,
 } from '@bottega/hub-data/docs/actions'
 import { useReorderableDocsTree } from '@bottega/hub-data/docs/use-doc-reorder'
-import { useDocsDocument, useDocsSearch, useStoredDocument } from '@bottega/hub-data/docs/use-docs'
+import { useDocsMode } from '@bottega/hub-data/docs/mode'
+import {
+  type DocsSource,
+  useDocsDocument,
+  useDocsSearch,
+  useStoredDocument,
+} from '@bottega/hub-data/docs/use-docs'
 import { hostedOrigin, isHostedMode } from '@bottega/hub-data/hub-mode'
 import { Button } from '@bottega/hub-ui/button'
 import { toast } from '@bottega/hub-ui/toast'
@@ -21,8 +27,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { recordSpaces } from '@/lib/record-spaces'
 import { editorChrome, useArticleEditor } from '../docs/article-editor.tsx'
 import { CreateDocDialog } from '../docs/create-dialog.tsx'
-import { type DocFieldChange, fieldWriteInput } from '../docs/doc-field-changes.ts'
-import { canEditDoc } from '../docs/edit-permission.ts'
+import { type DocFieldChange, fieldChangeReason } from '../docs/doc-field-changes.ts'
 import {
   chooserProject,
   EMPTY_FILTERS,
@@ -32,7 +37,6 @@ import {
   selectedAudience,
 } from '../docs/filters.ts'
 import { DocsHome } from '../docs/home.tsx'
-import { docsLocation } from '../docs/location.ts'
 import { mapDoc, mapSearchMatch, mapTreeItem } from '../docs/map.ts'
 import {
   docsSearchIncludesWorking,
@@ -43,32 +47,21 @@ import { revisionComparison } from '../docs/revision-diff.ts'
 import {
   type RevisionMode,
   RevisionViewer,
-  revisionIdForSource,
   revisionViewError,
 } from '../docs/revision-viewer.tsx'
 import { isScope } from '../docs/scope.ts'
-import { docsSearchInputs } from '../docs/search-input.ts'
 import { orderedIdsAfterDrag, siblingKey } from '../docs/tree.ts'
-import type { DocsDoc, DocsSource, DocsTreeItem } from '../docs/types.ts'
-import { docsSource, docsSourceLabel } from '../docs/types.ts'
+import type { DocsDoc, DocsTreeItem } from '../docs/types.ts'
 import { DocsView } from '../docs/view.tsx'
 
 function enterDocEdit(
   navigate: ReturnType<typeof useNavigate>,
   selected: DocsTreeItem | null,
-  source: ReturnType<typeof docsSource>,
+  locationFor: (item: DocsTreeItem) => ReturnType<ReturnType<typeof useDocsMode>['locationFor']>,
 ) {
   if (!selected) return
-  const location = docsLocation(selected, source)
+  const location = locationFor(selected)
   void navigate({ ...location, search: { ...location.search, edit: true } })
-}
-
-function canEditSelected(
-  selected: DocsTreeItem | null,
-  source: ReturnType<typeof docsSource>,
-  memberships: Parameters<typeof canEditDoc>[1],
-) {
-  return Boolean(selected && canEditDoc(source, memberships, selected.spaceId))
 }
 
 function isEditingArticle(editFlag: boolean | undefined, mayEdit: boolean, hasDocument: boolean) {
@@ -85,53 +78,34 @@ function docsWorkspaceReady(
   return !catalogPending && emptyChooserSet && identityResolved && (atDocsRoot || selected)
 }
 
-function docsSourceName(
-  source: ReturnType<typeof docsSource>,
-  memberships: unknown,
-  active?: string | null,
-) {
-  return docsSourceLabel(
-    source,
-    recordSpaces(memberships as Parameters<typeof recordSpaces>[0]).find(
-      (space) => space.id === active,
-    )?.name,
-  )
-}
-
-const selectedRevision = (
-  source: ReturnType<typeof docsSource>,
-  revision: string | number | undefined,
-) => (source !== 'public' && revision !== undefined ? String(revision) : undefined)
-
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : undefined)
 
 function useDocsRouteNavigation(
   navigate: ReturnType<typeof useNavigate>,
   selected: DocsTreeItem | null,
-  source: DocsSource,
+  locationFor: (item: DocsTreeItem) => ReturnType<ReturnType<typeof useDocsMode>['locationFor']>,
 ) {
   const open = useCallback(
     (item: DocsTreeItem, replace = false) => {
-      void navigate({ ...docsLocation(item, source), replace })
+      void navigate({ ...locationFor(item), replace })
     },
-    [navigate, source],
+    [navigate, locationFor],
   )
   const openFirst = useCallback((item: DocsTreeItem) => open(item, true), [open])
-  const locationFor = useCallback((item: DocsTreeItem) => docsLocation(item, source), [source])
   const openRevision = useCallback(
     (id: number | string) => {
       if (!selected) return
-      const location = docsLocation(selected, source)
+      const location = locationFor(selected)
       void navigate({ ...location, search: { ...location.search, revision: id } })
     },
-    [navigate, selected, source],
+    [navigate, selected, locationFor],
   )
   const backToCurrent = useCallback(() => {
-    if (selected) void navigate({ ...docsLocation(selected, source), replace: true })
-  }, [navigate, selected, source])
+    if (selected) void navigate({ ...locationFor(selected), replace: true })
+  }, [navigate, selected, locationFor])
   const enterEdit = useCallback(
-    () => enterDocEdit(navigate, selected, source),
-    [navigate, selected, source],
+    () => enterDocEdit(navigate, selected, locationFor),
+    [navigate, selected, locationFor],
   )
   return { open, openFirst, locationFor, openRevision, backToCurrent, enterEdit }
 }
@@ -145,7 +119,7 @@ function useArticleActions(
 ) {
   const storedDocument = useStoredDocument(doc, source, editing || mayEdit, isScope)
   const saveAction = useArticleSave(source, doc, storedDocument?.revision, isScope)
-  const fetchCurrentArticle = useCurrentArticle(source, doc, isScope)
+  const fetchCurrentArticle = useCurrentArticle(source, doc, isScope, saveAction.reset)
   const leaveRequest = useRef<() => boolean>(() => false)
   const blocker = useBlocker({
     shouldBlockFn: () => leaveRequest.current(),
@@ -180,24 +154,13 @@ function useDocumentActions(
   audience: ReturnType<typeof selectedAudience>,
   creating: boolean,
 ) {
-  const field = useDocFieldSave<DocFieldChange>(
-    source,
-    doc,
-    storedDocument,
-    isScope,
-    (mode, change) => {
-      if (!doc || !storedDocument) return null
-      if (mode === 'hosted') {
-        return fieldWriteInput(
-          mode,
-          { ...doc, spaceId: doc.spaceId! },
-          { ...storedDocument, revision: storedDocument.revision! },
-          change,
-        )
-      }
-      return fieldWriteInput(mode, doc, storedDocument, change)
+  const fieldAction = useDocFieldSave(source, doc, storedDocument, isScope)
+  const field = {
+    ...fieldAction,
+    run(change: DocFieldChange) {
+      return fieldAction.run(change, fieldChangeReason(change))
     },
-  )
+  }
   const subjectCatalog = useDocSubjects(source, doc, Boolean(mayEdit && doc?.kind === 'article'))
   return {
     field,
@@ -211,10 +174,10 @@ function useDocumentActions(
 
 function useDocsSelection(
   source: DocsSource,
-  memberships: Parameters<typeof canEditDoc>[1],
+  memberships: readonly Record<string, unknown>[] | undefined,
   params: { scope: string; subject: string; slug: string } | undefined,
   search: { id?: string } | undefined,
-  showDrafts: boolean,
+  includeDrafts: boolean,
 ) {
   const [project, setProject] = useState<string | 'all'>('all')
   const [emptyChooserSet, setEmptyChooserSet] = useState(false)
@@ -222,11 +185,9 @@ function useDocsSelection(
     source,
     memberships,
     mapTreeItem,
-    canEditDoc,
     siblingKey,
     orderedIdsAfterDrag,
   )
-  const includeDrafts = source !== 'public' && showDrafts
   useEffect(() => {
     if (catalog.reorderError)
       toast.error(
@@ -274,21 +235,21 @@ function useDocsSelection(
 }
 
 function RouteCreateDialog({
-  source,
+  show,
   creating,
   onCreating,
   subjects,
   create,
   navigate,
 }: {
-  source: DocsSource
+  show: boolean
   creating: boolean
   onCreating: (creating: boolean) => void
   subjects: Parameters<typeof CreateDocDialog>[0]['subjects']
   create: Parameters<typeof CreateDocDialog>[0]['create']
   navigate: ReturnType<typeof useNavigate>
 }) {
-  if (source !== 'local' || !creating) return null
+  if (!show || !creating) return null
   return (
     <CreateDocDialog
       open
@@ -330,7 +291,6 @@ function useDocsRevision(
     doc,
     revisionId,
     audience,
-    revisionIdForSource,
     revisionComparison,
     revisionViewError,
   )
@@ -344,8 +304,11 @@ function useDocsPageModel() {
   const whoami = useDocsIdentity(hosted && origin.kind !== 'public')
   const signedIn = hosted ? Boolean(whoami.data?.user && 'email' in whoami.data.user) : true
   const identityResolved = !hosted || origin.kind === 'public' || whoami.isFetched
-  const source = docsSource(hosted, signedIn)
-  const sourceLabel = docsSourceName(source, whoami.data?.memberships, whoami.data?.activeSpaceId)
+  const activeSpaceName = recordSpaces(whoami.data?.memberships).find(
+    (space) => space.id === whoami.data?.activeSpaceId,
+  )?.name
+  const mode = useDocsMode(hosted, signedIn, whoami.data?.memberships, activeSpaceName)
+  const { source } = mode
   const detail = useMatch({ from: '/docs/$scope/$subject/$slug', shouldThrow: false })
   const search = detail?.search
   const [filters, setFilters] = useState<FilterSelection>(EMPTY_FILTERS)
@@ -361,10 +324,16 @@ function useDocsPageModel() {
     project,
     setProject,
     emptyChooserSet,
-  } = useDocsSelection(source, whoami.data?.memberships, detail?.params, search, showDrafts)
+  } = useDocsSelection(
+    source,
+    whoami.data?.memberships,
+    detail?.params,
+    search,
+    mode.includeDrafts(showDrafts),
+  )
   const includeWorking = docsSearchIncludesWorking(navigationItems, project, showWorking)
   const reading = useDocsDocument(source, selected, selectedAudience(filters), mapDoc, isScope)
-  const revisionId = selectedRevision(source, search?.revision)
+  const revisionId = mode.selectedRevision(search?.revision)
   const { revisionMode, setRevisionMode, revision } = useDocsRevision(
     source,
     reading.document,
@@ -382,13 +351,12 @@ function useDocsPageModel() {
     searchSubject(project, navigationItems),
     includeDrafts,
     includeWorking,
-    docsSearchInputs,
     mapSearchMatch,
   )
 
   const { open, openFirst, locationFor, openRevision, backToCurrent, enterEdit } =
-    useDocsRouteNavigation(navigate, selected, source)
-  const mayEdit = canEditSelected(selected, source, whoami.data?.memberships)
+    useDocsRouteNavigation(navigate, selected, mode.locationFor)
+  const mayEdit = mode.canEdit(selected)
   const editing = isEditingArticle(search?.edit, mayEdit, Boolean(reading.document))
   const { editor, storedDocument } = useArticleActions(
     source,
@@ -408,7 +376,7 @@ function useDocsPageModel() {
     )
 
   return Object.assign(
-    { hosted, navigate, atDocsRoot, whoami, signedIn, identityResolved, source, sourceLabel },
+    { hosted, navigate, atDocsRoot, whoami, signedIn, identityResolved, source, mode },
     {
       filters,
       setFilters,
@@ -434,10 +402,10 @@ function useDocsPageModel() {
 type DocsPageModel = ReturnType<typeof useDocsPageModel>
 
 function PublicDocsHome({ model }: { model: DocsPageModel }) {
-  if (model.source !== 'public' || !model.identityResolved || model.selected) return null
+  if (!model.mode.isPublic || !model.identityResolved || model.selected) return null
   return (
     <DocsHome
-      sourceLabel={model.sourceLabel}
+      sourceLabel={model.mode.label}
       items={model.catalog.items}
       results={model.results.items}
       query={model.searchQuery}
@@ -477,7 +445,7 @@ function DocsWorkspaceView({ model }: { model: DocsPageModel }) {
   ) : undefined
   return (
     <DocsView
-      sourceLabel={model.sourceLabel}
+      sourceLabel={model.mode.label}
       items={model.catalog.items}
       selectedId={model.selected?.id ?? null}
       filters={model.filters}
@@ -488,9 +456,9 @@ function DocsWorkspaceView({ model }: { model: DocsPageModel }) {
       showProjectChooser={model.signedIn}
       showDrafts={model.includeDrafts}
       onShowDrafts={model.setShowDrafts}
-      canShowDrafts={model.source !== 'public'}
-      canShowWorking={model.source !== 'public'}
-      showWorking={model.source !== 'public' && model.showWorking}
+      canShowDrafts={model.mode.canShowDrafts}
+      canShowWorking={model.mode.canShowWorking}
+      showWorking={model.mode.showWorking(model.showWorking)}
       onShowWorking={model.setShowWorking}
       doc={model.reading.document}
       replacement={model.replacement}
@@ -514,7 +482,7 @@ function DocsWorkspaceView({ model }: { model: DocsPageModel }) {
       onSearchQuery={model.setSearchQuery}
       searchResults={model.results.items}
       framed={model.hosted && !model.signedIn}
-      showHistory={model.source !== 'public'}
+      showHistory={model.mode.showHistory}
       factsControls={docsFactsControls(model)}
       field={model.mayEdit ? model.field : undefined}
       history={model.history}
@@ -529,7 +497,7 @@ function DocsWorkspaceView({ model }: { model: DocsPageModel }) {
       revisionId={model.revisionId}
       onRevision={model.openRevision}
       createAction={
-        model.source === 'local' ? (
+        model.mode.canCreate ? (
           <Button variant="primary" size="sm" onClick={() => model.setCreating(true)}>
             <Plus size={14} />
             New doc
@@ -554,7 +522,7 @@ function DocsWorkspace({ model }: { model: DocsPageModel }) {
       <DocsWorkspaceView model={model} />
       {model.editing ? model.editor.overlays : null}
       <RouteCreateDialog
-        source={model.source}
+        show={model.mode.canCreate}
         creating={model.creating}
         onCreating={model.setCreating}
         subjects={model.createSubjects.data}
@@ -567,7 +535,7 @@ function DocsWorkspace({ model }: { model: DocsPageModel }) {
 
 export function DocsPage() {
   const model = useDocsPageModel()
-  if (model.source === 'public' && model.identityResolved && !model.selected)
+  if (model.mode.isPublic && model.identityResolved && !model.selected)
     return <PublicDocsHome model={model} />
   return <DocsWorkspace model={model} />
 }

@@ -10,6 +10,10 @@ import {
 } from './architecture.ts'
 import { runArchitectureCruise } from './architecture-cruise.ts'
 import {
+  hubWebDocsModeLiteralLines,
+  hubWebDocsModeLiteralRuleName,
+} from './architecture-hub-data.ts'
+import {
   hubUiFolderLayerRuleName,
   isDeclaredHubUiSourceLocation,
 } from './architecture-ui-layers.ts'
@@ -41,6 +45,20 @@ if (!target || !original || deadlineArgument === -1 || !Number.isFinite(deadline
     'usage: bun scripts/check-architecture-file.ts <candidate> [original] [checkout-root] --deadline-ms <epoch-ms>',
   )
   process.exit(2)
+}
+
+if (
+  /^hub\/web\/src\/docs\/.*\.[cm]?tsx?$/.test(original) &&
+  !/\.(?:test|spec)\.[cm]?tsx?$/.test(original) &&
+  hubWebDocsModeLiteralLines(readFileSync(target, 'utf8')).length
+) {
+  console.log(
+    JSON.stringify({
+      status: 'refused',
+      findings: [{ rule: hubWebDocsModeLiteralRuleName, dependency: '@bottega/hub-data' }],
+    }),
+  )
+  process.exit(0)
 }
 
 const config = dependencyCruiserConfig()

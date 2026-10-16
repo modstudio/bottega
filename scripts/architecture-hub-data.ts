@@ -1,3 +1,5 @@
+import ts from 'typescript'
+
 type ArchitectureRule = {
   name: string
   severity: 'error'
@@ -11,6 +13,26 @@ type RouterException = {
   to: string
   dependencyTypes: string[]
   reason: string
+}
+
+export const hubWebDocsModeLiteralRuleName = 'hub-web-docs-do-not-name-data-modes'
+const HUB_DATA_MODES = new Set(['local', 'hosted', 'public'])
+
+/** Lines where a production docs component names a data adapter mode. */
+export function hubWebDocsModeLiteralLines(source: string): number[] {
+  const file = ts.createSourceFile('candidate.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const lines: number[] = []
+  const visit = (node: ts.Node) => {
+    if (
+      (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
+      HUB_DATA_MODES.has(node.text)
+    ) {
+      lines.push(file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(file)
+  return lines
 }
 
 export function hubDataArchitectureRules(
