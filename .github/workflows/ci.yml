@@ -110,6 +110,23 @@ jobs:
       - name: Smoke
         run: bun run --cwd hub/web smoke
 
+  hub-ui-stories:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - name: Install
+        run: bun install --silent
+      - name: Install Chromium
+        run: bun run --cwd hub/ui playwright install --with-deps chromium
+      - name: Build stories
+        run: bun run --cwd hub/ui storybook:build
+      - name: Test stories
+        run: bun run --cwd hub/ui storybook:test
+
   hub-deploy-site:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -159,7 +176,7 @@ jobs:
 
   ci:
     if: always()
-    needs: [secrets, static, orchestrator, hub, hub-web, hub-web-smoke, hub-deploy-site, retrieval, root]
+    needs: [secrets, static, orchestrator, hub, hub-ui-stories, hub-web, hub-web-smoke, hub-deploy-site, retrieval, root]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

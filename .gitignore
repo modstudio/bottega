@@ -30,6 +30,7 @@ orchestrator/bun.lock
 hub/node_modules
 hub/bun.lock
 hub/web/dist/
+hub/ui/storybook-static/
 hub/web/node_modules
 hub/web/bun.lock
 

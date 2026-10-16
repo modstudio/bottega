@@ -286,6 +286,59 @@ function exportedFunctionAcceptsClassName(source: ts.SourceFile, statement: ts.S
   return acceptsClassName ? statement.name.text : undefined
 }
 
+function componentStoryViolations(path: string, sourceText: string) {
+  const stem = basename(path, '.tsx')
+  const storyPath = join(dirname(path), `${stem}.stories.tsx`)
+  return analyzeComponentStory(
+    sourceText,
+    existsSync(storyPath) ? readFileSync(storyPath, 'utf8') : undefined,
+    path,
+  )
+}
+
+export function analyzeComponentStory(
+  sourceText: string,
+  storyText: string | undefined,
+  componentPath: string,
+) {
+  const source = ts.createSourceFile(
+    componentPath,
+    sourceText,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  )
+  let rendersMarkup = false
+  const visit = (node: ts.Node) => {
+    if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node))
+      rendersMarkup = true
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  if (!rendersMarkup) return []
+  const stem = basename(componentPath, '.tsx')
+  if (storyText === undefined)
+    return [
+      `${relative(ROOT, componentPath)}: markup component requires sibling ${stem}.stories.tsx`,
+    ]
+  const story = ts.createSourceFile(
+    `${stem}.stories.tsx`,
+    storyText,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  )
+  const importsSubject = story.statements.some(
+    (statement) =>
+      ts.isImportDeclaration(statement) &&
+      ts.isStringLiteral(statement.moduleSpecifier) &&
+      statement.moduleSpecifier.text === `./${stem}`,
+  )
+  return importsSubject
+    ? []
+    : [`${relative(ROOT, componentPath)}: sibling ${stem}.stories.tsx must import ./${stem}`]
+}
+
 function componentInventory(
   styleAnalyses: ReadonlyMap<string, ReturnType<typeof analyzeStyleModule>>,
 ) {
@@ -303,8 +356,10 @@ function componentInventory(
       ts.ScriptKind.TSX,
     )
     const stem = basename(path, '.tsx')
+    if (stem.endsWith('.stories')) continue
     const stylesPath = join(dirname(path), `${stem}.styles.ts`)
     const siblingImport = `./${stem}.styles.ts`
+    violations.push(...componentStoryViolations(path, sourceText))
     const hasClassName = /\bclassName\s*=/.test(sourceText)
     if (hasClassName && !existsSync(stylesPath))
       violations.push(

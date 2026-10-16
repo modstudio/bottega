@@ -13,7 +13,6 @@ import {
   type LucideIcon,
   MessageSquareText,
   NotebookPen,
-  Palette,
   Plane,
   Play,
   Route as RouteIcon,
@@ -127,7 +126,6 @@ export const LOCAL_NAV: NavSection[] = [
         items: [
           { to: '/context', label: 'Agent settings', icon: SlidersHorizontal },
           { to: '/settings', label: 'Hub settings', icon: Settings },
-          { to: '/design', label: 'Design system', icon: Palette },
         ],
       },
     ],

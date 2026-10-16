@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
-import { analyzeComponentStyleCalls, analyzeStyleModule } from './check-hub-ui-styles.ts'
+import {
+  analyzeComponentStory,
+  analyzeComponentStyleCalls,
+  analyzeStyleModule,
+} from './check-hub-ui-styles.ts'
 
 const stylesPath = join(process.cwd(), 'hub/ui/src/example/example.styles.ts')
 const componentPath = join(process.cwd(), 'hub/ui/src/example/example.tsx')
@@ -33,6 +37,16 @@ describe('hub-ui styles decisions', () => {
       "import { exampleStyles } from './example.styles.ts'\nexport function Example({ className, active }: { className?: string; active: boolean }) { return <div className={exampleStyles({ tone: 'quiet', active, class: className })} /> }"
     expect(
       analyzeComponentStyleCalls(source, componentPath, './example.styles.ts', new Set(['quiet'])),
+    ).toEqual([])
+  })
+
+  test('requires a sibling story that imports a markup component', () => {
+    const component = 'export function Example() { return <div /> }'
+    expect(analyzeComponentStory(component, undefined, componentPath)).toContainEqual(
+      expect.stringContaining('requires sibling example.stories.tsx'),
+    )
+    expect(
+      analyzeComponentStory(component, "import { Example } from './example'", componentPath),
     ).toEqual([])
   })
 })

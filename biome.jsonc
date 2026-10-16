@@ -128,6 +128,21 @@
       }
     },
     {
+      "includes": [
+        "hub/ui/**/*.stories.tsx",
+        "hub/ui/.storybook/*.ts",
+        "hub/ui/.storybook/*.tsx",
+        "hub/ui/vitest.config.ts"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noDefaultExport": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": ["**/*.test.ts", "**/*.test.tsx", "**/test/**"],
       "linter": {
         "rules": {

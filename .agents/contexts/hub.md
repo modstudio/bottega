@@ -46,6 +46,12 @@ dialog element, the popover attribute and anchor positioning, is used beneath ou
 styling; no component library is added, and a component's keyboard behavior follows its
 WAI-ARIA APG pattern.
 
+Every hub-ui component has stories beside it. The preview fails on accessibility
+violations, with reasoned per-story exceptions only. Story tests run in CI as part of the
+aggregate `ci` check. `scripts/check-hub-ui-styles.ts` enforces story coverage,
+`scripts/check-storybook.ts` enforces the accessibility default and reasoned exceptions,
+and `scripts/check-ci-workflow.ts` enforces the CI job.
+
 A component's appearance is defined only in its sibling styles file through
 `hub/ui/src/text/variant.ts`. Nothing else imports `tailwind-variants` or
 `tailwind-merge`, and the shared merge knows the design system's theme keys.

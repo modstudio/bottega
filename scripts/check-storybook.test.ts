@@ -1,0 +1,17 @@
+import { expect, test } from 'bun:test'
+import { analyzePreview, analyzeStoryTodos } from './check-storybook.ts'
+
+test('requires the global accessibility audit to fail on violations', () => {
+  expect(analyzePreview("const preview = { parameters: { a11y: { test: 'error' } } }")).toEqual([])
+  expect(analyzePreview("const preview = { parameters: { a11y: { test: 'todo' } } }")).toHaveLength(
+    1,
+  )
+})
+
+test('requires a one-line reason for each story accessibility exception', () => {
+  const withoutReason = "export const Example = { parameters: { a11y: { test: 'todo' } } }"
+  expect(analyzeStoryTodos(withoutReason, 'example.stories.tsx').violations).toHaveLength(1)
+  const withReason =
+    "export const Example = { parameters: { a11y: { // a11y todo: upstream browser defect\n test: 'todo' } } }"
+  expect(analyzeStoryTodos(withReason, 'example.stories.tsx')).toEqual({ count: 1, violations: [] })
+})

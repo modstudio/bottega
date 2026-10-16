@@ -13,7 +13,6 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AgentsRouteImport } from './routes/agents'
 import { Route as BoardRouteImport } from './routes/board'
 import { Route as ContextRouteImport } from './routes/context'
-import { Route as DesignRouteImport } from './routes/design'
 import { Route as DocsRouteImport } from './routes/docs'
 import { Route as DoneRouteImport } from './routes/done'
 import { Route as FlightRouteImport } from './routes/flight'
@@ -71,11 +70,6 @@ const BoardRoute = BoardRouteImport.update({
 const ContextRoute = ContextRouteImport.update({
   id: '/context',
   path: '/context',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DesignRoute = DesignRouteImport.update({
-  id: '/design',
-  path: '/design',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DocsRoute = DocsRouteImport.update({
@@ -274,7 +268,6 @@ export interface FileRoutesByFullPath {
   '/agents': typeof AgentsRoute
   '/board': typeof BoardRouteWithChildren
   '/context': typeof ContextRoute
-  '/design': typeof DesignRoute
   '/docs': typeof DocsRouteWithChildren
   '/done': typeof DoneRouteWithChildren
   '/flight': typeof FlightRouteWithChildren
@@ -319,7 +312,6 @@ export interface FileRoutesByTo {
   '/agents': typeof AgentsRoute
   '/board': typeof BoardRouteWithChildren
   '/context': typeof ContextRoute
-  '/design': typeof DesignRoute
   '/docs': typeof DocsRouteWithChildren
   '/done': typeof DoneRouteWithChildren
   '/flight': typeof FlightRouteWithChildren
@@ -365,7 +357,6 @@ export interface FileRoutesById {
   '/agents': typeof AgentsRoute
   '/board': typeof BoardRouteWithChildren
   '/context': typeof ContextRoute
-  '/design': typeof DesignRoute
   '/docs': typeof DocsRouteWithChildren
   '/done': typeof DoneRouteWithChildren
   '/flight': typeof FlightRouteWithChildren
@@ -412,7 +403,6 @@ export interface FileRouteTypes {
     | '/agents'
     | '/board'
     | '/context'
-    | '/design'
     | '/docs'
     | '/done'
     | '/flight'
@@ -457,7 +447,6 @@ export interface FileRouteTypes {
     | '/agents'
     | '/board'
     | '/context'
-    | '/design'
     | '/docs'
     | '/done'
     | '/flight'
@@ -502,7 +491,6 @@ export interface FileRouteTypes {
     | '/agents'
     | '/board'
     | '/context'
-    | '/design'
     | '/docs'
     | '/done'
     | '/flight'
@@ -548,7 +536,6 @@ export interface RootRouteChildren {
   AgentsRoute: typeof AgentsRoute
   BoardRoute: typeof BoardRouteWithChildren
   ContextRoute: typeof ContextRoute
-  DesignRoute: typeof DesignRoute
   DocsRoute: typeof DocsRouteWithChildren
   DoneRoute: typeof DoneRouteWithChildren
   FlightRoute: typeof FlightRouteWithChildren
@@ -609,13 +596,6 @@ declare module '@tanstack/react-router' {
       path: '/context'
       fullPath: '/context'
       preLoaderRoute: typeof ContextRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/design': {
-      id: '/design'
-      path: '/design'
-      fullPath: '/design'
-      preLoaderRoute: typeof DesignRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/docs': {
@@ -978,7 +958,6 @@ const rootRouteChildren: RootRouteChildren = {
   AgentsRoute: AgentsRoute,
   BoardRoute: BoardRouteWithChildren,
   ContextRoute: ContextRoute,
-  DesignRoute: DesignRoute,
   DocsRoute: DocsRouteWithChildren,
   DoneRoute: DoneRouteWithChildren,
   FlightRoute: FlightRouteWithChildren,
