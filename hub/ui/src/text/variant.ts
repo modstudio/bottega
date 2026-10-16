@@ -1,7 +1,7 @@
 import { extendTailwindMerge } from 'tailwind-merge'
 import { createTV, type TWMergeConfig } from 'tailwind-variants'
 
-export const themeKeys = {
+const themeKeys = {
   color: [
     'transparent',
     'current',
