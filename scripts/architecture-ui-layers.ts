@@ -44,7 +44,7 @@ const uiLayers: { name: string; folders: string[] }[] = [
   { name: 'layout', folders: ['shell', 'table-card', 'toolbar-band', 'companion'] },
 ]
 
-export const hubUiLayerFolders = uiLayers.flatMap((layer) => layer.folders)
+const hubUiLayerFolders = uiLayers.flatMap((layer) => layer.folders)
 export const hubUiFolderLayerRuleName = 'hub-ui-folder-has-a-layer'
 
 const hubUiLayerFolderSet = new Set(hubUiLayerFolders)
