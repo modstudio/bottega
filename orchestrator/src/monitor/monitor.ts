@@ -29,7 +29,7 @@ import {
   dockerRunResources,
   orchRunLabel,
 } from '../resources/docker-resources.ts'
-import { gitLocks } from '../resources/git-locks.ts'
+import { gitLocks, missingPrunableWorktrees } from '../resources/git-locks.ts'
 import { terminalDockerRetentionReasonForRun } from '../resources/resource-ownership.ts'
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
 import { grokTrustHeadings, grokTrustPathFromHeading } from '../sandbox/grok-trust.ts'
@@ -140,6 +140,47 @@ function recipeDatabaseObservations(
     ],
     errors: [...inventory.errors, ...connectionInventory.errors],
   }
+}
+
+function prunableWorktreeConditions(project: Pick<Project, 'name' | 'path'>): MonitorCondition[] {
+  const porcelain = git(project.path, ['worktree', 'list', '--porcelain']) ?? ''
+  return missingPrunableWorktrees(porcelain, existsSync).map((worktree) => ({
+    kind: 'prunable-worktree',
+    subject: worktree.path,
+    since: null,
+    ageMs: null,
+    detail: `${project.name} has a missing worktree entry; Git reports ${worktree.reason}`,
+    action: `git -C ${project.path} worktree prune`,
+    affectedProject: project.name,
+  }))
+}
+
+function gitLockConditions(
+  project: Pick<Project, 'name' | 'path'>,
+  clock: number,
+): MonitorCondition[] {
+  const conditions = prunableWorktreeConditions(project)
+  for (const lock of gitLocks(project.path, clock)) {
+    const owner =
+      lock.ownerPids === null
+        ? 'owner pid could not be inspected'
+        : lock.ownerPids.length
+          ? `owner pid ${lock.ownerPids.join(', ')} is alive`
+          : 'no owning pid is alive'
+    const resolved = lock.contentRefs.length ? `; resolves to ${lock.contentRefs.join(', ')}` : ''
+    conditions.push({
+      kind: lock.ownerPids === null || lock.ownerPids.length ? 'git-lock' : 'dead-lock',
+      subject: lock.path,
+      since: lock.since,
+      ageMs: age(lock.since, clock),
+      detail:
+        `${project.name} git lock targets ${lock.target ?? 'an unknown primitive'}; ` +
+        `contents ${lock.contents || '(empty)'}${resolved}; ${owner}`,
+      action: 'reported; lock and its recoverable contents were not removed',
+      affectedProject: project.name,
+    })
+  }
+  return conditions
 }
 
 function worktreesWithoutLiveRuns(input: {
@@ -497,7 +538,6 @@ export async function monitor(
       ageMs: condition.ageMs ?? age(condition.since, clock),
     } as MonitorCondition)
   const reclaimProject = projectAt(process.cwd())
-
   const ratchetedRuleRefills = observeRatchetedRuleRefills(
     projects().filter(isProjectRepository),
     database,
@@ -650,27 +690,7 @@ export async function monitor(
     }
 
     try {
-      for (const lock of gitLocks(project.path, clock)) {
-        const owner =
-          lock.ownerPids === null
-            ? 'owner pid could not be inspected'
-            : lock.ownerPids.length
-              ? `owner pid ${lock.ownerPids.join(', ')} is alive`
-              : 'no owning pid is alive'
-        const resolved = lock.contentRefs.length
-          ? `; resolves to ${lock.contentRefs.join(', ')}`
-          : ''
-        add({
-          kind: lock.ownerPids === null || lock.ownerPids.length ? 'git-lock' : 'dead-lock',
-          subject: lock.path,
-          since: lock.since,
-          detail:
-            `${project.name} git lock targets ${lock.target ?? 'an unknown primitive'}; ` +
-            `contents ${lock.contents || '(empty)'}${resolved}; ${owner}`,
-          action: 'reported; lock and its recoverable contents were not removed',
-          affectedProject: project.name,
-        })
-      }
+      conditions.push(...gitLockConditions(project, clock))
     } catch (cause) {
       errors.push(
         `${project.name} git lock inventory: ${String((cause as Error).message ?? cause)}`,

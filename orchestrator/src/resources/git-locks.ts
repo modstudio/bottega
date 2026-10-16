@@ -13,6 +13,39 @@ export type GitLock = {
   ownerPids: number[] | null
 }
 
+export type PrunableWorktree = {
+  path: string
+  reason: string
+}
+
+/** Parse missing worktrees that Git has marked as safe for worktree-prune cleanup. */
+export function missingPrunableWorktrees(
+  porcelain: string,
+  directoryExists: (path: string) => boolean,
+): PrunableWorktree[] {
+  const missing: PrunableWorktree[] = []
+  let path: string | null = null
+  let reason: string | null = null
+  const finishEntry = () => {
+    if (path && reason && !directoryExists(path)) missing.push({ path, reason })
+    path = null
+    reason = null
+  }
+
+  for (const line of porcelain.split('\n')) {
+    if (line.startsWith('worktree ')) {
+      finishEntry()
+      path = line.slice('worktree '.length)
+    } else if (line.startsWith('prunable ')) {
+      reason = line.slice('prunable '.length)
+    } else if (!line) {
+      finishEntry()
+    }
+  }
+  finishEntry()
+  return missing
+}
+
 function git(cwd: string, args: string[]): string | null {
   const p = Bun.spawnSync(['git', ...args], {
     cwd,
@@ -82,22 +115,29 @@ function refsForContents(repoRoot: string, contents: string): string[] {
   return refs ? refs.split('\n').filter(Boolean) : []
 }
 
+function worktreeIndexLockPaths(porcelain: string): string[] {
+  const paths: string[] = []
+  for (const line of porcelain.split('\n')) {
+    if (!line.startsWith('worktree ')) continue
+    const worktree = line.slice('worktree '.length)
+    if (!existsSync(worktree)) continue
+    const gitDirValue = git(worktree, ['rev-parse', '--git-dir'])
+    if (gitDirValue) paths.push(join(resolve(worktree, gitDirValue), 'index.lock'))
+  }
+  return paths
+}
+
 /** Inventory lock files Git may leave behind. Observation never removes or rewrites one. */
 export function gitLocks(repoRoot: string, clock = Date.now()): GitLock[] {
   const commonValue = git(repoRoot, ['rev-parse', '--git-common-dir'])
   if (!commonValue) throw new Error(`${repoRoot} is not a readable git repository`)
   const commonDir = resolve(repoRoot, commonValue)
+  const worktrees = git(repoRoot, ['worktree', 'list', '--porcelain']) ?? ''
   const paths = new Set<string>([
     ...lockFiles(join(commonDir, 'refs')),
     join(commonDir, 'packed-refs.lock'),
+    ...worktreeIndexLockPaths(worktrees),
   ])
-  const worktrees = git(repoRoot, ['worktree', 'list', '--porcelain']) ?? ''
-  for (const line of worktrees.split('\n')) {
-    if (!line.startsWith('worktree ')) continue
-    const worktree = line.slice('worktree '.length)
-    const gitDirValue = git(worktree, ['rev-parse', '--git-dir'])
-    if (gitDirValue) paths.add(join(resolve(worktree, gitDirValue), 'index.lock'))
-  }
 
   const locks: GitLock[] = []
   for (const path of [...paths].sort()) {
