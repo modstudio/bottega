@@ -28,7 +28,7 @@ Operator docs are markdown facts about an installation, stored in `orch.db` rath
 
 `hooks/session-brief.py` fails open: it asks `bottega doc resumes` for the cwd and claims monitor conditions addressed to the starting session. When the resume list is non-empty it appends the list and one sentence — ask before loading on `startup`/`resume`, offer to resume on `clear`/`compact`/`fork`. It never fetches a brief body and never resumes anything itself. Addressed monitor conditions use at-least-once delivery: a hook reads without consuming, emits, and only then acknowledges, so interruption may repeat a notice but cannot lose one. Unowned findings remain in the monitor report. During a session `hooks/orch-heartbeat.sh` reads and acknowledges the same addressed stream. An architect's next tool call runs `hooks/board-interrupt.py`, which injects due acknowledgement-required board notices, and `hooks/board-ack-guard.py` holds Stop for an unacknowledged addressed notice up to `BOARD_ACK_STOP_BLOCKS`; both return immediately for workers and fail open. SessionStart, heartbeat, board interrupt and board acknowledgement guard are the delivery paths: the machine-wide monitor does not push into a harness channel. On any error, timeout, or missing binary the SessionStart hook exits `0`.
 
-An acknowledgement-required notice reaches only sessions already running when it was posted, and is no longer delivered once its acknowledgement deadline passes.
+An acknowledgement-required notice reaches only sessions already running when it was posted, and delivery stops once its acknowledgement deadline passes.
 
 # Resume briefs
 
