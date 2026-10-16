@@ -151,7 +151,7 @@ describe('canon drift branch gate', () => {
     writable
       .query('INSERT INTO project (name,path,canon,settings) VALUES (?,?,1,?)')
       .run('fixture', root, JSON.stringify({ trunk: 'main' }))
-    writable.close()
+    writable.exec('PRAGMA journal_mode = WAL; PRAGMA wal_checkpoint(TRUNCATE);')
     const digest = () => createHash('sha256').update(readFileSync(store)).digest('hex')
     const before = digest()
 
@@ -163,6 +163,7 @@ describe('canon drift branch gate', () => {
     readonly.close()
 
     expect(digest()).toBe(before)
+    writable.close()
   })
 
   test('refuses CI base metadata that differs from registered trunk', () => {

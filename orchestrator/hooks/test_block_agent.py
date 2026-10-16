@@ -3,6 +3,7 @@ import io
 import os
 import sqlite3
 import tempfile
+import time
 import unittest
 import uuid
 from contextlib import redirect_stderr
@@ -48,13 +49,32 @@ class SpawnIdentityTest(unittest.TestCase):
             self.assertEqual(parsed.version, 7)
             self.assertEqual(record_id, str(parsed))
 
+    def test_fallback_uuid_has_version_variant_and_current_timestamp(self):
+        with tempfile.TemporaryDirectory() as folder:
+            block_agent = self.load_hook(os.path.join(folder, "orch.db"))
+            before_ms = int(time.time() * 1000)
+            with patch.object(block_agent.uuid, "uuid7", None, create=True):
+                minted = block_agent.mint_uuid7()
+            after_ms = int(time.time() * 1000)
+
+            self.assertEqual(minted.version, 7)
+            self.assertEqual(minted.variant, uuid.RFC_4122)
+            timestamp_ms = minted.int >> 80
+            self.assertLessEqual(before_ms, timestamp_ms)
+            self.assertLessEqual(timestamp_ms, after_ms)
+
     def test_uuid_failure_takes_the_fail_open_write_failure_path(self):
         with tempfile.TemporaryDirectory() as folder:
             database = os.path.join(folder, "orch.db")
             sqlite3.connect(database).close()
             block_agent = self.load_hook(database)
             stderr = io.StringIO()
-            with patch.object(block_agent.uuid, "uuid7", side_effect=RuntimeError("mint failed")):
+            with patch.object(
+                block_agent.uuid,
+                "uuid7",
+                side_effect=RuntimeError("mint failed"),
+                create=True,
+            ):
                 with redirect_stderr(stderr):
                     block_agent.log("allowed", "test", {}, "PreToolUse", {})
 

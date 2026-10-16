@@ -13,22 +13,13 @@ import { mirrorRepositoryCanon, systemCanonMirrorPort } from './canon-mirror.ts'
 
 function repository(): string {
   const root = mkdtempSync(join(tmpdir(), 'canon-mirror-baseline-lint-'))
-  spawnFixtureGitSync(['init'], { cwd: root })
+  spawnFixtureGitSync(['init', '-b', 'main'], { cwd: root })
+  spawnFixtureGitSync(['config', 'user.email', 'mirror@example.test'], { cwd: root })
+  spawnFixtureGitSync(['config', 'user.name', 'Mirror Test'], { cwd: root })
   writeFileSync(join(root, 'README.txt'), 'fixture\n')
   writeFileSync(join(root, 'AGENTS.md'), 'Keep 123 rules.\n\nOld managed context.\n')
   spawnFixtureGitSync(['add', '.'], { cwd: root })
-  spawnFixtureGitSync(
-    [
-      '-c',
-      'user.email=mirror@example.test',
-      '-c',
-      'user.name=Mirror Test',
-      'commit',
-      '-m',
-      'fixture',
-    ],
-    { cwd: root },
-  )
+  spawnFixtureGitSync(['commit', '-m', 'fixture'], { cwd: root })
   return root
 }
 
