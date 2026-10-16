@@ -145,6 +145,18 @@ describe('reapStale', () => {
       status: 'stale',
       failure_kind: null,
     })
+    const childPayload = db()
+      .query<{ payload: string }, [number]>(
+        `SELECT payload FROM outbox
+         WHERE kind='run' AND row_id=(SELECT record_id FROM run WHERE id=?)
+         ORDER BY id DESC LIMIT 1`,
+      )
+      .get(child)!
+    expect(JSON.parse(childPayload.payload)).toMatchObject({
+      localId: child,
+      status: 'stale',
+      failureKind: 'interrupted',
+    })
     const rootPayload = db()
       .query<{ payload: string }, [number]>(
         `SELECT payload FROM outbox
@@ -197,7 +209,14 @@ describe('reapStale', () => {
   })
 
   test('a pid-less (pending) row older than the bootstrap bound is failed/harness', () => {
-    const old = addRun({ agent: '(pending)', job: 'craft', status: 'running' })
+    const root = addRun({ agent: 'codex', job: 'craft', status: 'asking' })
+    const old = addRun({
+      agent: '(pending)',
+      job: 'craft',
+      status: 'running',
+      parent: root,
+      turn: 2,
+    })
     const young = addRun({ agent: '(pending)', job: 'craft', status: 'running' })
     db()
       .query('UPDATE run SET pid=NULL, started_at=? WHERE id=?')
@@ -216,6 +235,18 @@ describe('reapStale', () => {
       status: 'failed',
       failure_kind: 'harness',
       error: 'coordinator exited during setup before the agent started; last output: (no output)',
+    })
+    const payload = db()
+      .query<{ payload: string }, [number]>(
+        `SELECT payload FROM outbox
+         WHERE kind='run' AND row_id=(SELECT record_id FROM run WHERE id=?)
+         ORDER BY id DESC LIMIT 1`,
+      )
+      .get(old)!
+    expect(JSON.parse(payload.payload)).toMatchObject({
+      localId: old,
+      status: 'failed',
+      failureKind: 'harness',
     })
     expect(
       (db().query('SELECT status FROM run WHERE id=?').get(young) as { status: string }).status,
@@ -255,7 +286,14 @@ describe('reapStale', () => {
   })
 
   test('a claimed coordinator that died before starting an agent is failed/harness with its log tail', () => {
-    const id = addRun({ agent: 'codex', job: 'craft', status: 'running' })
+    const root = addRun({ agent: 'codex', job: 'craft', status: 'asking' })
+    const id = addRun({
+      agent: 'codex',
+      job: 'craft',
+      status: 'running',
+      parent: root,
+      turn: 2,
+    })
     db().query('UPDATE run SET pid=?, agent_pid=NULL WHERE id=?').run(4_194_304, id)
     writeFileSync(runCoordinatorLogPath(id), 'setup began\nmodule import failed\n')
 
@@ -265,6 +303,19 @@ describe('reapStale', () => {
     expect(db().query('SELECT status, failure_kind, error FROM run WHERE id=?').get(id)).toEqual({
       status: 'failed',
       failure_kind: 'harness',
+      error,
+    })
+    const payload = db()
+      .query<{ payload: string }, [number]>(
+        `SELECT payload FROM outbox
+         WHERE kind='run' AND row_id=(SELECT record_id FROM run WHERE id=?)
+         ORDER BY id DESC LIMIT 1`,
+      )
+      .get(id)!
+    expect(JSON.parse(payload.payload)).toMatchObject({
+      localId: id,
+      status: 'failed',
+      failureKind: 'harness',
       error,
     })
     expect(

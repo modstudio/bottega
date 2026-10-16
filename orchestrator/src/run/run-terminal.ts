@@ -124,7 +124,7 @@ type TerminalMcpRuling = {
   requiredFailure: string | null
 } | null
 
-function recordArtifactPersistenceFailure(
+export function recordArtifactPersistenceFailure(
   database: Database,
   input: {
     runId: number

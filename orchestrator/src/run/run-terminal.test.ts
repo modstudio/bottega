@@ -8,6 +8,7 @@ import {
   artifactPersistenceOutcome,
   finalizeTerminalChain,
   questionsToInsert,
+  recordArtifactPersistenceFailure,
   recordTerminalReviewEvidence,
   shouldCheckpointAtTerminal,
 } from './run-terminal.ts'
@@ -97,6 +98,42 @@ test('artifact persistence failure retains a completed worker outcome', () => {
       'artifact persistence failed: named file is not a file',
     failureKind: null,
   })
+})
+
+test('artifact persistence failure refreshes a completed child and its root', () => {
+  const root = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+  const child = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'ok',
+    parent: root,
+    turn: 2,
+  })
+  const machine = '01990000-0000-7000-8000-000000000099'
+  enqueueRunRecord(db(), child, machine, '2026-10-16T12:00:00.000Z')
+  enqueueRunRecord(db(), root, machine, '2026-10-16T12:00:00.000Z')
+  const error = 'artifact persistence failed: named file is not a file'
+
+  recordArtifactPersistenceFailure(db(), {
+    runId: child,
+    parentRunId: root,
+    error,
+    machineId: machine,
+    finishedAt: '2026-10-16T12:01:00.000Z',
+  })
+
+  const latestPayload = (id: number) => {
+    const row = db()
+      .query<{ payload: string }, [number]>(
+        `SELECT payload FROM outbox
+         WHERE kind='run' AND row_id=(SELECT record_id FROM run WHERE id=?)
+         ORDER BY id DESC LIMIT 1`,
+      )
+      .get(id)!
+    return JSON.parse(row.payload)
+  }
+  expect(latestPayload(child)).toMatchObject({ status: 'ok', failureKind: null, error })
+  expect(latestPayload(root)).toMatchObject({ status: 'ok', failureKind: null, error })
 })
 
 describe('terminal question deduplication decision', () => {

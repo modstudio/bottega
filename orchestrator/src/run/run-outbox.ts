@@ -139,43 +139,71 @@ export function enqueueRunRecord(
 }
 
 export function backfillRunRecords(database: Database, machineId: string): RunRecordBackfillResult {
-  const terminal = database
-    .query<{ id: number; finished_at: string }, [string, string]>(
-      `SELECT r.id, COALESCE(r.last_event_at, r.started_at) AS finished_at
-           FROM run r
-          WHERE r.status IN ('ok', 'failed', 'stale', 'stopped', 'asking')
-            AND r.job NOT IN (?,?)
-            AND NOT EXISTS (
-              SELECT 1 FROM outbox WHERE kind='run' AND row_id=r.record_id
-            )
-          ORDER BY r.id`,
-    )
-    .all(HOOK_TREE_JOB, LANDING_TREE_JOB)
-  for (const row of terminal) enqueueRunRecord(database, row.id, machineId, row.finished_at)
-
-  const refreshedRoots = database
-    .query<{ id: number; finished_at: string }, [string, string]>(
-      `SELECT r.id, COALESCE(r.last_event_at, r.started_at) AS finished_at
+  const eligible = database
+    .query<
+      {
+        id: number
+        finished_at: string
+        parent_run_id: number | null
+        status: string
+        failure_kind: string | null
+        latest_payload: string | null
+        chain_started_at: string | null
+        chain_latency_ms: number | null
+        chain_status: string | null
+      },
+      [string, string]
+    >(
+      `SELECT r.id, COALESCE(r.last_event_at, r.started_at) AS finished_at,
+              r.parent_run_id, r.status, r.failure_kind, latest.payload AS latest_payload,
+              chain_last.started_at AS chain_started_at,
+              chain_last.latency_ms AS chain_latency_ms,
+              chain_last.status AS chain_status
          FROM run r
-         JOIN outbox latest ON latest.id = (
+         LEFT JOIN outbox latest ON latest.id = (
            SELECT prior.id FROM outbox prior
             WHERE prior.kind='run' AND prior.row_id=r.record_id
             ORDER BY prior.id DESC LIMIT 1
          )
-        WHERE r.parent_run_id IS NULL
-          AND r.status IN ('ok', 'failed', 'stale', 'stopped', 'asking')
+         LEFT JOIN run chain_last ON chain_last.id = (
+           SELECT member.id FROM run member
+            WHERE member.id=r.id OR member.parent_run_id=r.id
+            ORDER BY member.turn DESC, member.id DESC LIMIT 1
+         )
+        WHERE r.status IN ('ok', 'failed', 'stale', 'stopped', 'asking')
           AND r.job NOT IN (?,?)
-          AND CASE WHEN json_valid(latest.payload) THEN
-            json_extract(latest.payload, '$.status') IS NOT r.status
-            OR json_extract(latest.payload, '$.failureKind') IS NOT r.failure_kind
-          ELSE 1 END
         ORDER BY r.id`,
     )
     .all(HOOK_TREE_JOB, LANDING_TREE_JOB)
-  for (const row of refreshedRoots) enqueueRunRecord(database, row.id, machineId, row.finished_at)
+  let enqueued = 0
+  let refreshedRoots = 0
+  for (const row of eligible) {
+    if (row.latest_payload === null) {
+      enqueueRunRecord(database, row.id, machineId, row.finished_at)
+      enqueued++
+      continue
+    }
+    if (row.parent_run_id !== null) continue
+    let latest: { status?: unknown; failureKind?: unknown }
+    try {
+      latest = JSON.parse(row.latest_payload) as typeof latest
+    } catch {
+      latest = {}
+    }
+    if (latest.status === row.status && latest.failureKind === row.failure_kind) continue
+    const chainTermination =
+      row.chain_started_at !== null &&
+      row.chain_latency_ms !== null &&
+      row.chain_status !== null &&
+      ['ok', 'failed', 'stale'].includes(row.chain_status)
+        ? new Date(Date.parse(row.chain_started_at) + row.chain_latency_ms).toISOString()
+        : row.finished_at
+    enqueueRunRecord(database, row.id, machineId, chainTermination)
+    refreshedRoots++
+  }
 
   const skippedLive = database
     .query<{ count: number }, []>(`SELECT count(*) AS count FROM run WHERE status='running'`)
     .get()!.count
-  return { enqueued: terminal.length, refreshedRoots: refreshedRoots.length, skippedLive }
+  return { enqueued, refreshedRoots, skippedLive }
 }

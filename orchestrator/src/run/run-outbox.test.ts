@@ -179,3 +179,50 @@ test('backfill refreshes only roots whose latest run payload disagrees', () => {
   ])
   database.close()
 })
+
+test('backfill timestamps a refreshed root from its outcome-producing turn', () => {
+  const database = new Database(':memory:')
+  applyMigrations(database)
+  const rootRecordId = newRecordId()
+  database
+    .query(
+      `INSERT INTO run
+       (record_id,id,started_at,last_event_at,latency_ms,agent,job,prompt_sha,prompt_bytes,
+        prompt_head,status,failure_kind,parent_run_id,turn)
+       VALUES (?,1,'2026-10-16T12:00:00.000Z','2026-10-16T12:01:00.000Z',60000,
+               'codex','implement','sha',4,'root','ok',NULL,NULL,1)`,
+    )
+    .run(rootRecordId)
+  database
+    .query(
+      `INSERT INTO run
+       (record_id,id,started_at,last_event_at,latency_ms,agent,job,prompt_sha,prompt_bytes,
+        prompt_head,status,failure_kind,parent_run_id,turn)
+       VALUES (?,2,'2026-10-16T12:10:00.000Z','2026-10-16T12:15:00.000Z',300000,
+               'codex','implement','sha',4,'turn','ok',NULL,1,2)`,
+    )
+    .run(newRecordId())
+  const machine = '01990000-0000-7000-8000-000000000099'
+  enqueueRunRecord(database, 2, machine, '2026-10-16T12:15:00.000Z')
+  database.query("UPDATE run SET status='failed', failure_kind='capacity' WHERE id=1").run()
+  enqueueRunRecord(database, 1, machine, '2026-10-16T12:01:00.000Z')
+  database.query("UPDATE run SET status='ok', failure_kind=NULL WHERE id=1").run()
+
+  expect(backfillRunRecords(database, machine)).toEqual({
+    enqueued: 0,
+    refreshedRoots: 1,
+    skippedLive: 0,
+  })
+  const payload = database
+    .query<{ payload: string }, [string]>(
+      `SELECT payload FROM outbox WHERE kind='run' AND row_id=? ORDER BY id DESC LIMIT 1`,
+    )
+    .get(rootRecordId)!
+  expect(JSON.parse(payload.payload)).toMatchObject({
+    status: 'ok',
+    failureKind: null,
+    finishedAt: '2026-10-16T12:15:00.000Z',
+    updatedAt: '2026-10-16T12:15:00.000Z',
+  })
+  database.close()
+})
