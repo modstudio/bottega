@@ -3,7 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
-import { readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { openReadOnlyDatabase } from './database/db.ts'
@@ -95,6 +95,69 @@ function targetFile(payload: ToolPayload) {
   return resolve(typeof payload.cwd === 'string' ? payload.cwd : process.cwd(), raw)
 }
 
+async function runInstalledJudge(
+  judge: string,
+  args: string[],
+  installedRoot: string,
+): Promise<HubImportJudgment> {
+  const child = Bun.spawn([process.execPath, '--no-env-file', judge, ...args], {
+    cwd: installedRoot,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ])
+  if (exitCode !== 0) {
+    return {
+      status: 'unchecked',
+      findings: [],
+      reason: `judge failed (${stderr.trim().replaceAll('\n', ' ') || `exit ${exitCode}`})`,
+    }
+  }
+  return JSON.parse(stdout) as HubImportJudgment
+}
+
+function createCandidateDirectories(directory: string, created: string[]) {
+  const missing: string[] = []
+  let current = directory
+  while (!existsSync(current)) {
+    missing.push(current)
+    const parent = dirname(current)
+    if (parent === current) throw new Error(`no existing ancestor for ${directory}`)
+    current = parent
+  }
+  for (const path of missing.reverse()) {
+    mkdirSync(path)
+    created.push(path)
+  }
+}
+
+async function judgeOriginalPath(
+  file: string,
+  checkout: string,
+  judge: string,
+  installedRoot: string,
+): Promise<HubImportJudgment | null> {
+  const original = relative(checkout, file).split(sep).join('/')
+  try {
+    const judgment = await runInstalledJudge(
+      judge,
+      [original, original, checkout, '--path-only'],
+      installedRoot,
+    )
+    return judgment.status === 'ok' ? null : judgment
+  } catch (error) {
+    return {
+      status: 'unchecked',
+      findings: [],
+      reason: `judge could not run (${error instanceof Error ? error.message : String(error)})`,
+    }
+  }
+}
+
 export async function hubImportJudgeCommand(
   text: string,
   openDatabase: () => Database = openReadOnlyDatabase,
@@ -126,6 +189,12 @@ export async function hubImportJudgeCommand(
   }
   if (!checkout) return { status: 'ok', findings: [] }
 
+  const installedRoot = resolve(import.meta.dir, '../..')
+  const judge = join(installedRoot, 'scripts/check-architecture-file.ts')
+  const original = relative(checkout, file).split(sep).join('/')
+  const pathJudgment = await judgeOriginalPath(file, checkout, judge, installedRoot)
+  if (pathJudgment) return pathJudgment
+
   let content: string
   try {
     content = proposedContent(file, payload)
@@ -138,34 +207,15 @@ export async function hubImportJudgeCommand(
   }
 
   const candidate = join(dirname(file), `.architecture-guard-${randomUUID()}${extname(file)}`)
+  const createdDirectories: string[] = []
   try {
+    createCandidateDirectories(dirname(candidate), createdDirectories)
     writeFileSync(candidate, content)
-    const installedRoot = resolve(import.meta.dir, '../..')
-    const judge = join(installedRoot, 'scripts/check-architecture-file.ts')
-    const child = Bun.spawn(
-      [
-        process.execPath,
-        '--no-env-file',
-        judge,
-        relative(checkout, candidate).split(sep).join('/'),
-        relative(checkout, file).split(sep).join('/'),
-        checkout,
-      ],
-      { cwd: installedRoot, stdout: 'pipe', stderr: 'pipe' },
+    return await runInstalledJudge(
+      judge,
+      [relative(checkout, candidate).split(sep).join('/'), original, checkout],
+      installedRoot,
     )
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ])
-    if (exitCode !== 0) {
-      return {
-        status: 'unchecked',
-        findings: [],
-        reason: `judge failed (${stderr.trim().replaceAll('\n', ' ') || `exit ${exitCode}`})`,
-      }
-    }
-    return JSON.parse(stdout) as HubImportJudgment
   } catch (error) {
     return {
       status: 'unchecked',
@@ -174,5 +224,6 @@ export async function hubImportJudgeCommand(
     }
   } finally {
     rmSync(candidate, { force: true })
+    for (const directory of createdDirectories.reverse()) rmdirSync(directory)
   }
 }

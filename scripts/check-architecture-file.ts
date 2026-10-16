@@ -26,6 +26,7 @@ const VIEW_DATA_BASELINE = new Set<string>(
 const target = process.argv[2]
 const original = process.argv[3] ?? target
 const checkoutRoot = process.argv[4] ?? ROOT
+const pathOnly = process.argv[5] === '--path-only'
 
 if (!target || !original) {
   console.error(
@@ -52,6 +53,11 @@ if (undeclaredUiFolder) {
       findings: [{ rule: hubUiFolderLayerRuleName, dependency: originalFolder }],
     }),
   )
+  process.exit(0)
+}
+
+if (pathOnly) {
+  console.log(JSON.stringify({ status: 'ok' }))
   process.exit(0)
 }
 
