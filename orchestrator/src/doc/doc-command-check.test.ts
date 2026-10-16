@@ -48,6 +48,18 @@ describe('customer guide command write check', () => {
     ])
   })
 
+  test('a retired spelling is refused without guessing a replacement', async () => {
+    await expect(
+      setDoc({
+        ...article,
+        slug: 'retired-command-guide',
+        body: 'Run `orch do DEV-1`.',
+      }),
+    ).rejects.toThrow(
+      `refusing customer guide write; unknown command mention:\n- orch do DEV-1\ncleared by: correct the named mentions; ${PLATFORM_SLUG} --help lists the commands`,
+    )
+  })
+
   test('reference articles are excluded', () => {
     const result = checkCustomerGuideCommands({
       body: `\`${PLATFORM_SLUG} no-such-group\``,

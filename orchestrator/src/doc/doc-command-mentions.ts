@@ -5,7 +5,6 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
 export type UnknownCommandMention = {
   mention: string
-  replacement: string | null
 }
 
 const COMMAND_PREFIXES = [PLATFORM_SLUG, 'orch', 'hub'] as const
@@ -80,11 +79,7 @@ export function unknownCommandMentions(
       prefix === PLATFORM_SLUG ? unknownBottegaMention(tokens, known) : tokens.join(' ')
     if (!mention || seen.has(mention)) continue
     seen.add(mention)
-    findings.push({
-      mention,
-      replacement:
-        prefix === PLATFORM_SLUG ? null : `${PLATFORM_SLUG} ${tokens.slice(1).join(' ')}`,
-    })
+    findings.push({ mention })
   }
   return findings
 }

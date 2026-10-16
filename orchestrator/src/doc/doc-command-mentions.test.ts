@@ -17,30 +17,22 @@ describe('customer guide command mentions', () => {
     [
       'unknown group',
       `\`${PLATFORM_SLUG} missing thing\``,
-      [{ mention: `${PLATFORM_SLUG} missing`, replacement: null }],
+      [{ mention: `${PLATFORM_SLUG} missing` }],
     ],
     [
       'unknown verb under a known group',
       `\`${PLATFORM_SLUG} task missing\``,
-      [{ mention: `${PLATFORM_SLUG} task missing`, replacement: null }],
+      [{ mention: `${PLATFORM_SLUG} task missing` }],
     ],
     ['flag after the verb', `\`${PLATFORM_SLUG} task show --json\``, []],
     ['placeholder after the verb', `\`${PLATFORM_SLUG} task show <key>\``, []],
     [
       'fenced shell block',
       `\`\`\`sh\n${PLATFORM_SLUG} task missing\n\`\`\``,
-      [{ mention: `${PLATFORM_SLUG} task missing`, replacement: null }],
+      [{ mention: `${PLATFORM_SLUG} task missing` }],
     ],
-    [
-      'retired orch mention',
-      '`orch doc get guide`',
-      [{ mention: 'orch doc get guide', replacement: `${PLATFORM_SLUG} doc get guide` }],
-    ],
-    [
-      'retired hub mention',
-      '`hub task list`',
-      [{ mention: 'hub task list', replacement: `${PLATFORM_SLUG} task list` }],
-    ],
+    ['retired orch mention', '`orch doc get guide`', [{ mention: 'orch doc get guide' }]],
+    ['retired hub mention', '`hub task list`', [{ mention: 'hub task list' }]],
     ['prose containing the word', `Run ${PLATFORM_SLUG} to inspect the commands.`, []],
   ])('%s', (_name, body, expected) => {
     expect(unknownCommandMentions(body, known)).toEqual(expected)

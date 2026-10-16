@@ -2,7 +2,6 @@
 /** Reports cached customer articles whose command mentions no longer resolve. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { PLATFORM_COMMANDS } from '../../../shared/command-spellings.ts'
 import { checkCustomerGuideCommands } from '../doc/doc-command-check.ts'
 import { listDocs } from '../doc/doc-list.ts'
 import type { MonitorCondition } from './monitor-types.ts'
@@ -10,13 +9,9 @@ import type { MonitorCondition } from './monitor-types.ts'
 export function staleCustomerGuideCommandConditions(): MonitorCondition[] {
   return listDocs({ kind: 'article', audience: 'customer', status: 'current' }).flatMap(
     (doc): MonitorCondition[] => {
-      const checked = checkCustomerGuideCommands(doc, () => PLATFORM_COMMANDS)
+      const checked = checkCustomerGuideCommands(doc)
       if (!checked.findings.length) return []
-      const mentions = checked.findings
-        .map(({ mention, replacement }) =>
-          replacement ? `${mention} (use ${replacement})` : mention,
-        )
-        .join(', ')
+      const mentions = checked.findings.map(({ mention }) => mention).join(', ')
       return [
         {
           kind: 'stale-customer-guide-command',

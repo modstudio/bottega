@@ -2,7 +2,7 @@
 /** Adapts the generated command set to the pure customer-guide command decision. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { PLATFORM_COMMANDS } from '../../../shared/command-spellings.ts'
+import { PLATFORM_COMMAND_WORDS } from '../../../shared/command-spellings.ts'
 import { assertDocSections } from '../../../shared/doc-sections.ts'
 import type { DocAudiences } from '../../../shared/docs.ts'
 import { type UnknownCommandMention, unknownCommandMentions } from './doc-command-mentions.ts'
@@ -19,7 +19,8 @@ export type CustomerGuideCommandInput = {
   audiences: readonly string[]
 }
 
-const loadGeneratedCommands = (): readonly string[] => PLATFORM_COMMANDS
+const loadGeneratedCommands = (): readonly string[] =>
+  PLATFORM_COMMAND_WORDS.map((words) => `${PLATFORM_SLUG} ${words}`)
 
 export function checkCustomerGuideCommands(
   input: CustomerGuideCommandInput,
@@ -49,11 +50,7 @@ export function customerGuideCommandRefusal(
   if (!findings.length) return null
   return (
     `refusing customer guide write; unknown command mention${findings.length === 1 ? '' : 's'}:\n` +
-    findings
-      .map(({ mention, replacement }) =>
-        replacement ? `- ${mention}; use ${replacement}` : `- ${mention}`,
-      )
-      .join('\n') +
+    findings.map(({ mention }) => `- ${mention}`).join('\n') +
     `\ncleared by: correct the named mentions; ${PLATFORM_SLUG} --help lists the commands`
   )
 }

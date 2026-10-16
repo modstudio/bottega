@@ -13,7 +13,6 @@ const module = (file: string, allowed: string[]): MonitorModule => ({
 
 export const monitorModules: MonitorModule[] = [
   module('orchestrator/src/monitor/monitor-customer-guides.ts', [
-    '../../../shared/command-spellings.ts',
     '../../../shared/brand.ts',
     '../doc/doc-command-check.ts',
     '../doc/doc-list.ts',
