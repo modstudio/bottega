@@ -16,11 +16,11 @@ import { resolvedDocWriteIdentity } from './doc-write-identity.ts'
 export type CanonImportRow = { slug: string; title: string; body: string }
 export type LocalCanonImportAddress =
   | { kind: 'user'; owner: string }
-  | { kind: 'project'; subject: string; projectId: number }
+  | { kind: 'project'; subject: string; projectId: string }
 
-function hostedProjectId(projectId: number): string {
+function hostedProjectId(projectId: string): string {
   return db()
-    .query<{ record_id: string }, [number]>('SELECT record_id FROM project WHERE id=?')
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE record_id=?')
     .get(projectId)!.record_id
 }
 
@@ -137,7 +137,7 @@ export async function importCanon(input: {
         db()
           .query(
             `INSERT INTO doc
-             (scope, subject, owner, project_id, slug, title, body, delivery, audiences, created_at, updated_at, record_id)
+             (scope, subject, owner, project_record_id, slug, title, body, delivery, audiences, created_at, updated_at, record_id)
              VALUES ('canon',?,?,?, ?,?,?, 'demand','["technical"]',?,?,?)`,
           )
           .get(subject, owner, projectId, row.slug, row.title, row.body, at, at, result.id) as {

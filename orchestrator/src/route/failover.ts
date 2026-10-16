@@ -28,7 +28,7 @@ export type ResolvedTaskBranch = {
   tip: string
   commitCount: number
   mergeBase: string
-  projectId: number
+  projectId: string
   projectName: string
   nominatingRuns: TaskBranchNominatingRun[]
   trunk: string

@@ -368,25 +368,25 @@ export function selectProjectProfile(input: {
   writeTransaction(() => {
     const prior = d
       .query(
-        'SELECT id,profile_name,selected_version FROM project_lens_profile WHERE project_id=? AND lens_id IS ? AND axis=?',
+        'SELECT id,profile_name,selected_version FROM project_lens_profile WHERE project_record_id=? AND lens_id IS ? AND axis=?',
       )
-      .get(project.id, input.lensId ?? null, axis) as {
+      .get(project.recordId, input.lensId ?? null, axis) as {
       id: number
       profile_name: string
       selected_version: number | null
     } | null
-    d.query(`INSERT INTO project_lens_profile (record_id,project_id,lens_id,axis,profile_name,selected_version) VALUES (?,?,?,?,?,?)
+    d.query(`INSERT INTO project_lens_profile (record_id,project_record_id,lens_id,axis,profile_name,selected_version) VALUES (?,?,?,?,?,?)
       ON CONFLICT DO UPDATE SET profile_name=excluded.profile_name,selected_version=excluded.selected_version`).run(
       newRecordId(),
-      project.id,
+      project.recordId,
       input.lensId ?? null,
       axis,
       input.name,
       input.version ?? null,
     )
     const selection = d
-      .query('SELECT id FROM project_lens_profile WHERE project_id=? AND lens_id IS ? AND axis=?')
-      .get(project.id, input.lensId ?? null, axis) as { id: number }
+      .query('SELECT id FROM project_lens_profile WHERE project_record_id=? AND lens_id IS ? AND axis=?')
+      .get(project.recordId, input.lensId ?? null, axis) as { id: number }
     d.query(`INSERT INTO project_lens_profile_revision
       (record_id,selection_id,prior_profile_name,prior_selected_version,reason,session_id,at) VALUES (?,?,?,?,?,?,?)`).run(
       newRecordId(),
@@ -421,18 +421,18 @@ export function resolveLens(id: string, projectName: string | null, d: Database 
     SELECT DISTINCT axis FROM lens_profile WHERE lens_id=? AND enabled=1
     UNION
     SELECT DISTINCT axis FROM project_lens_profile
-      WHERE project_id=? AND (lens_id=? OR lens_id IS NULL)
+      WHERE project_record_id=? AND (lens_id=? OR lens_id IS NULL)
   ) ORDER BY axis`)
-    .all(id, project?.id ?? -1, id) as { axis: LensAxis }[]
+    .all(id, project?.recordId ?? -1, id) as { axis: LensAxis }[]
   const profiles: (ProfileRow & { source: LensProfileSource })[] = []
   for (const { axis } of axes) {
     const selections = project
       ? (d
           .query(
             `SELECT lens_id,profile_name,selected_version FROM project_lens_profile
-             WHERE project_id=? AND axis=? AND (lens_id=? OR lens_id IS NULL)`,
+             WHERE project_record_id=? AND axis=? AND (lens_id=? OR lens_id IS NULL)`,
           )
-          .all(project.id, axis, id) as {
+          .all(project.recordId, axis, id) as {
           lens_id: string | null
           profile_name: string
           selected_version: number | null

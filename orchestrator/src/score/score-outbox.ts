@@ -70,7 +70,7 @@ export function enqueueScoreRecord(database: Database, runId: number, machineId:
               s.note, s.scored_at, s.scored_by,
               lens.reproduced, lens.coverage, lens.limits, lens.overlap
          FROM score s JOIN run r ON r.id=s.run_id
-         LEFT JOIN project ON project.id=r.project_id
+         LEFT JOIN project ON project.record_id=r.project_record_id
          LEFT JOIN review_lens lens ON lens.run_id=r.id
         WHERE s.run_id=?`,
     )

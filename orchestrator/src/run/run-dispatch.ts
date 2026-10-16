@@ -114,7 +114,7 @@ export async function detach(
   const claimed = writeTransaction(() => {
     const identity = claimIdentity(spec.resume)
     const projectName = spec.repo ?? repoOf(cwd)
-    const projectId = projectName ? (projectByName(projectName)?.id ?? null) : null
+    const projectId = projectName ? (projectByName(projectName)?.recordId ?? null) : null
     if (spec.resume?.kind === 'retry-root') {
       const branch = spec.resume.worktree?.branch ?? spec.resume.treePlan?.branch ?? null
       const tree = spec.resume.worktree?.path ?? null
@@ -151,7 +151,7 @@ export async function detach(
     }
     const inserted = db()
       .query(
-        `INSERT INTO run (record_id, started_at, agent, job, repo, project_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, parent_run_id, turn, mcp,
+        `INSERT INTO run (record_id, started_at, agent, job, repo, project_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, parent_run_id, turn, mcp,
                       vendor_session, started_by_user_id)
        SELECT ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?
         WHERE ? IS NULL OR (

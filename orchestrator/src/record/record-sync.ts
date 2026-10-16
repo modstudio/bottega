@@ -86,7 +86,7 @@ function runProjectName(local: Database, runRecordId: unknown): string | null {
   return (
     local
       .query<{ name: string }, [string]>(
-        'SELECT project.name FROM run JOIN project ON project.id=run.project_id WHERE run.record_id=?',
+        'SELECT project.name FROM run JOIN project ON project.record_id=run.project_record_id WHERE run.record_id=?',
       )
       .get(String(runRecordId))?.name ?? null
   )
@@ -97,7 +97,7 @@ function landingProjectName(local: Database, landingRecordId: unknown): string |
   return (
     local
       .query<{ name: string }, [string]>(
-        'SELECT project.name FROM landing JOIN project ON project.id=landing.project_id WHERE landing.record_id=?',
+        'SELECT project.name FROM landing JOIN project ON project.record_id=landing.project_record_id WHERE landing.record_id=?',
       )
       .get(String(landingRecordId))?.name ?? null
   )
@@ -115,7 +115,7 @@ function outboxProjectName(kind: string, record: Payload | null, local: Database
     return (
       local
         .query<{ name: string }, [string]>(
-          'SELECT project.name FROM review JOIN project ON project.id=review.project_id WHERE review.record_id=?',
+          'SELECT project.name FROM review JOIN project ON project.record_id=review.project_record_id WHERE review.record_id=?',
         )
         .get(String(record.reviewId))?.name ?? null
     )
@@ -240,35 +240,35 @@ function preparePendingRows(local: Database): Set<PreparedOutboxRow> {
 function sourceProjectRecordId(local: Database, row: OutboxRow): string | null | undefined {
   const queries: Partial<Record<string, string>> = {
     run: `SELECT project.record_id FROM run
-      LEFT JOIN project ON project.id=run.project_id WHERE run.record_id=?`,
+      LEFT JOIN project ON project.record_id=run.project_record_id WHERE run.record_id=?`,
     score: `SELECT project.record_id FROM run
-      LEFT JOIN project ON project.id=run.project_id WHERE run.record_id=?`,
+      LEFT JOIN project ON project.record_id=run.project_record_id WHERE run.record_id=?`,
     question: `SELECT project.record_id FROM question
       LEFT JOIN run ON run.id=question.run_id
-      LEFT JOIN project ON project.id=run.project_id WHERE question.record_id=?`,
+      LEFT JOIN project ON project.record_id=run.project_record_id WHERE question.record_id=?`,
     review: `SELECT project.record_id FROM review
-      LEFT JOIN project ON project.id=review.project_id WHERE review.record_id=?`,
+      LEFT JOIN project ON project.record_id=review.project_record_id WHERE review.record_id=?`,
     review_lens: `SELECT project.record_id FROM review_lens
       JOIN review ON review.id=review_lens.review_id
-      LEFT JOIN project ON project.id=review.project_id WHERE review_lens.record_id=?`,
+      LEFT JOIN project ON project.record_id=review.project_record_id WHERE review_lens.record_id=?`,
     review_finding: `SELECT project.record_id FROM review_finding
       JOIN review ON review.id=review_finding.review_id
-      LEFT JOIN project ON project.id=review.project_id WHERE review_finding.record_id=?`,
+      LEFT JOIN project ON project.record_id=review.project_record_id WHERE review_finding.record_id=?`,
     review_read: `SELECT project.record_id FROM review_read
-      LEFT JOIN project ON project.id=review_read.project_id WHERE review_read.record_id=?`,
+      LEFT JOIN project ON project.record_id=review_read.project_record_id WHERE review_read.record_id=?`,
     landing: `SELECT project.record_id FROM landing
-      LEFT JOIN project ON project.id=landing.project_id WHERE landing.record_id=?`,
+      LEFT JOIN project ON project.record_id=landing.project_record_id WHERE landing.record_id=?`,
     landing_override: `SELECT project.record_id FROM landing_override
-      LEFT JOIN project ON project.id=landing_override.project_id
+      LEFT JOIN project ON project.record_id=landing_override.project_record_id
       WHERE landing_override.record_id=?`,
     landing_review_carry: `SELECT project.record_id FROM landing_review_carry
-      LEFT JOIN project ON project.id=landing_review_carry.project_id
+      LEFT JOIN project ON project.record_id=landing_review_carry.project_record_id
       WHERE landing_review_carry.record_id=?`,
     landing_triage_snapshot: `SELECT project.record_id FROM landing_triage_snapshot
-      LEFT JOIN project ON project.id=landing_triage_snapshot.project_id
+      LEFT JOIN project ON project.record_id=landing_triage_snapshot.project_record_id
       WHERE landing_triage_snapshot.record_id=?`,
     release: `SELECT project.record_id FROM release_ledger
-      LEFT JOIN project ON project.id=release_ledger.project_id WHERE release_ledger.record_id=?`,
+      LEFT JOIN project ON project.record_id=release_ledger.project_record_id WHERE release_ledger.record_id=?`,
   }
   const query = queries[row.kind]
   if (!query) return undefined

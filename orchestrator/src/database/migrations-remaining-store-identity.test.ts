@@ -147,3 +147,4 @@ test('remaining store identity migration fills ids and preserves rows, keys, and
     rmSync(folder, { recursive: true, force: true })
   }
 })
+

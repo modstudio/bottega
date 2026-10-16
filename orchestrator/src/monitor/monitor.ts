@@ -108,9 +108,9 @@ function recipeDatabaseObservations(
     database
       .query(
         `SELECT allocation_key,state FROM resource_claim
-         WHERE project_id=? AND kind='database'`,
+         WHERE project_record_id=? AND kind='database'`,
       )
-      .all(project.id) as { allocation_key: string; state: string }[]
+      .all(project.recordId) as { allocation_key: string; state: string }[]
   ).map((claim) => ({ allocationKey: claim.allocation_key, state: claim.state }))
   const connectionInventory = observeRecipeDatabaseConnections({
     project: project.name,
@@ -121,9 +121,9 @@ function recipeDatabaseObservations(
     database
       .query(
         `SELECT allocation_key,root_run_id FROM resource_claim
-         WHERE project_id=? AND kind='database' AND state IN ('claimed','retained')`,
+         WHERE project_record_id=? AND kind='database' AND state IN ('claimed','retained')`,
       )
-      .all(project.id) as { allocation_key: string; root_run_id: number }[]
+      .all(project.recordId) as { allocation_key: string; root_run_id: number }[]
   )
     .filter((claim) => claim.allocation_key.startsWith('postgres:'))
     .map((claim) => ({

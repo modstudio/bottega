@@ -332,3 +332,4 @@ describe('lens catalogue', () => {
     ).toBe(0)
   })
 })
+

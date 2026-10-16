@@ -309,7 +309,7 @@ function gatherReview(
       [number]
     >(
       `SELECT r.id, p.name AS project_name, r.patch_id, r.path_set
-         FROM review r LEFT JOIN project p ON p.id=r.project_id
+         FROM review r LEFT JOIN project p ON p.record_id=r.project_record_id
         WHERE r.id=?`,
     )
     .get(id)
@@ -378,7 +378,7 @@ function loadRunBinding(runId: number, d: Database): BoundRun | null {
       [number]
     >(
       `SELECT r.repo, r.launch_key, r.branch, r.session_id, r.started_at, p.name AS project_name
-         FROM run r LEFT JOIN project p ON p.id=r.project_id
+         FROM run r LEFT JOIN project p ON p.record_id=r.project_record_id
         WHERE r.id=?`,
     )
     .get(runId)
@@ -548,7 +548,7 @@ function requireDoc(flag: string, docId: number, identity: CursorIdentity, d: Da
   const row = d
     .query<{ scope: string; subject: string | null; project_name: string | null }, [number]>(
       `SELECT doc.scope, doc.subject, p.name AS project_name
-         FROM doc LEFT JOIN project p ON p.id=doc.project_id
+         FROM doc LEFT JOIN project p ON p.record_id=doc.project_record_id
         WHERE doc.id=?`,
     )
     .get(docId)

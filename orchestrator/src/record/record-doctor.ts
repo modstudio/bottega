@@ -262,7 +262,7 @@ export function localQuestionCountForSpace(
       `SELECT COALESCE(run_project.name,cursor.project) AS project
        FROM question q
        LEFT JOIN run r ON r.id=q.run_id
-       LEFT JOIN project run_project ON run_project.id=r.project_id
+       LEFT JOIN project run_project ON run_project.id=r.project_record_id
        LEFT JOIN workflow_cursor cursor ON cursor.id=q.workflow_cursor_id
       WHERE q.run_id IS NULL OR EXISTS (
         SELECT 1 FROM outbox o

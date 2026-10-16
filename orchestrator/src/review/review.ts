@@ -384,7 +384,7 @@ export function recordReviews(
   const runs = entries.map(({ runId }) => {
     const run = database
       .query(
-        `SELECT id, agent, model, lens, job, status, output_path, input_tree, head_commit, repo, project_id,
+        `SELECT id, agent, model, lens, job, status, output_path, input_tree, head_commit, repo, project_record_id,
               base_commit, review_ref, changed_paths, branch
          FROM run WHERE id=?`,
       )
@@ -439,7 +439,7 @@ export function recordReviews(
     const tier = measured?.tier ?? null
     const review = database
       .query(
-        `INSERT INTO review (record_id, recorded_at, tier, tier_risk, tier_size, tier_reasons, tier_reason, project_id,
+        `INSERT INTO review (record_id, recorded_at, tier, tier_risk, tier_size, tier_reasons, tier_reason, project_record_id,
                            patch_id, path_set, commit_message)
        VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       )
@@ -451,7 +451,7 @@ export function recordReviews(
         tier?.size ?? null,
         tier ? JSON.stringify(tier.reasons) : null,
         tier?.reasons[tier.risk >= tier.size ? 0 : 1] ?? null,
-        runs.every((run) => run.project_id === runs[0]!.project_id) ? runs[0]!.project_id : null,
+        runs.every((run) => run.project_record_id === runs[0]!.project_record_id) ? runs[0]!.project_record_id : null,
         measured?.patchId ?? null,
         measured ? serializePathSet(measured.pathSet) : null,
         measured?.message ?? null,

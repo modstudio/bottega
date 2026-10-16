@@ -64,7 +64,7 @@ function recordedRunProject(runId: number): string | null {
       db()
         .query(
           `SELECT COALESCE(project.name,r.repo) project
-           FROM run r LEFT JOIN project ON project.id=r.project_id WHERE r.id=?`,
+           FROM run r LEFT JOIN project ON project.record_id=r.project_record_id WHERE r.id=?`,
         )
         .get(runId) as { project: string | null } | null
     )?.project ?? null

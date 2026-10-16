@@ -213,7 +213,7 @@ function orphanComposeWorkingDirs(input: {
     if (!container.workingDir || container.runAttributed || container.mainCheckout) return false
     const owner = projectForWorktreeDirectory(container.workingDir, registered)
     return (
-      owner?.id === project.id &&
+      owner?.recordId === project.recordId &&
       isOrphanWorktreeDockerResource({
         workingDir: container.workingDir,
         projectPath: project.path,
@@ -255,7 +255,7 @@ function orphanWorktreeDockerGroups(input: {
     const firstWorkingDir = containers[0]!.workingDir
     if (!firstWorkingDir) continue
     const project = projectForWorktreeDirectory(firstWorkingDir, registered)
-    if (!project || (selectedProject && project.id !== selectedProject.id)) continue
+    if (!project || (selectedProject && project.recordId !== selectedProject.recordId)) continue
     if (!gitPaths.has(project)) gitPaths.set(project, listedWorktreePaths(project))
     const workingDirs = orphanComposeWorkingDirs({
       containers,
@@ -269,7 +269,7 @@ function orphanWorktreeDockerGroups(input: {
       (resource) => resource.kind === 'container' && resource.composeProject === composeProject,
     )
     if (resources.length !== containers.length) continue
-    grouped.set(`${project.id}\0${composeProject}`, { project, resources, workingDirs })
+    grouped.set(`${project.recordId}\0${composeProject}`, { project, resources, workingDirs })
   }
   const groups = [...grouped.values()]
   for (const group of groups) {

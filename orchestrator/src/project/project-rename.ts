@@ -27,7 +27,7 @@ const PROJECT_NAME_ONLY_COLUMNS = [
 ] as const
 
 function applyLocalProjectRename(
-  current: { id: number },
+  current: { recordId: string },
   currentName: string,
   nextName: string,
 ): void {
@@ -35,21 +35,21 @@ function applyLocalProjectRename(
   for (const [table, column] of PROJECT_ID_NAME_COLUMNS) {
     if (table === 'doc' || table === 'doc_revision') {
       database
-        .query(`UPDATE ${table} SET ${column}=? WHERE project_id=? AND ${column}=?`)
-        .run(nextName, current.id, currentName)
+        .query(`UPDATE ${table} SET ${column}=? WHERE project_record_id=? AND ${column}=?`)
+        .run(nextName, current.recordId, currentName)
       continue
     }
-    database.query(`UPDATE ${table} SET ${column}=? WHERE project_id=?`).run(nextName, current.id)
+    database.query(`UPDATE ${table} SET ${column}=? WHERE project_record_id=?`).run(nextName, current.recordId)
   }
   for (const [table, column] of PROJECT_NAME_ONLY_COLUMNS) {
     database.query(`UPDATE ${table} SET ${column}=? WHERE ${column}=?`).run(nextName, currentName)
   }
-  database.query('UPDATE project SET name=? WHERE id=?').run(nextName, current.id)
+  database.query('UPDATE project SET name=? WHERE record_id=?').run(nextName, current.recordId)
 }
 
 /** Owns the complete local register mutation so rename and upsert cannot split. */
 export function persistLocalProjectSet(
-  current: { id: number } | null,
+  current: { recordId: string } | null,
   currentName: string,
   nextName: string,
   candidate: Parameters<typeof upsertProject>[0],

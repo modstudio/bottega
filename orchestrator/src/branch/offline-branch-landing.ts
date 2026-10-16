@@ -14,7 +14,7 @@ import {
 } from './branch-state.ts'
 
 export type OfflineBranchLandingCandidate = {
-  projectId: number
+  projectId: string
   project: string
   branch: string
 }
@@ -136,7 +136,7 @@ export function offlineBranchLandingObservations(
   database: Database = db(),
 ): OfflineBranchLandingObservation[] {
   const registered = [...projects(undefined, database), ...projects({ retired: true }, database)]
-  const selected = new Map(registered.map((project) => [project.id, project]))
+  const selected = new Map(registered.map((project) => [project.recordId, project]))
   const records = recordedLandings(database)
   return [...Map.groupBy(candidates, (candidate) => candidate.projectId)].flatMap(
     ([projectId, projectCandidates]) => {

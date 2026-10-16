@@ -29,3 +29,4 @@ test('release project identity backfills only an exactly matching project', () =
   )
   database.close()
 })
+

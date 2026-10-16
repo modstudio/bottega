@@ -13,7 +13,7 @@ type RevisionDoc = {
   scope: string
   subject: string | null
   owner: string | null
-  project_id: number | null
+  project_record_id: string | null
   slug: string
   title: string
   body: string
@@ -106,7 +106,7 @@ export function insertLocalRevision(
   db()
     .query(
       `INSERT INTO doc_revision
-       (doc_id, scope, subject, owner, project_id, slug, op, title, body, delivery, audiences, parent_id, position, featured, status, kind, form, article_subject_id, related_subject_ids, source_files, checked_against_commit, summary, replacement_slug, author, reason, session_id, at, record_id)
+       (doc_id, scope, subject, owner, project_record_id, slug, op, title, body, delivery, audiences, parent_id, position, featured, status, kind, form, article_subject_id, related_subject_ids, source_files, checked_against_commit, summary, replacement_slug, author, reason, session_id, at, record_id)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
@@ -114,7 +114,7 @@ export function insertLocalRevision(
       doc.scope,
       doc.subject,
       doc.owner,
-      doc.project_id,
+      doc.project_record_id,
       doc.slug,
       op,
       doc.title,

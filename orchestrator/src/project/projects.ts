@@ -70,7 +70,6 @@ import type {
 export type { MainStackConsumer, ProjectSettings, WorktreeTool }
 
 export type Project = {
-  id: number
   /** Hosted record identity, minted locally when this install has no hosted record. */
   recordId: string
   /** What it is called. Matches the directory name by default, not necessarily. */
@@ -150,7 +149,6 @@ export function resolvedWorktreeTool(
 }
 
 function parse(row: {
-  id: number
   record_id: string
   name: string
   path: string
@@ -169,7 +167,6 @@ function parse(row: {
     settings = {}
   }
   return {
-    id: row.id,
     recordId: row.record_id,
     name: row.name,
     path: row.path,
@@ -192,13 +189,6 @@ export function projectRowByName(name: string, d = db()): Project | null {
     | Parameters<typeof parse>[0]
     | null
   return r ? parse(r) : null
-}
-
-function projectRowById(id: number, d = db()): Project | null {
-  const row = d.query('SELECT * FROM project WHERE id = ?').get(id) as
-    | Parameters<typeof parse>[0]
-    | null
-  return row ? parse(row) : null
 }
 
 export function projectByName(name: string, d = db()): Project | null {
@@ -293,15 +283,17 @@ export function storeProjectRecordId(
     .query('UPDATE project SET record_id=? WHERE id=? AND record_id IS NULL')
     .run(recordId, id)
   if (result.changes > 0) return
-  const project = projectRowById(id, database)
+  const project = database
+    .query('SELECT name,record_id FROM project WHERE id=?')
+    .get(id) as { name: string; record_id: string | null } | null
   if (!project) {
     throw new Error(
       `project row ${id} was removed while its hosted identity was being stored; inspect \`${PLATFORM_SLUG} project list --json\` and the hosted project before retrying`,
     )
   }
-  if (project.recordId !== recordId) {
+  if (project.record_id !== recordId) {
     throw new Error(
-      `project ${project.name} already has hosted identity ${project.recordId}; inspect \`${PLATFORM_SLUG} project list --json\` and the hosted project before retrying`,
+      `project ${project.name} already has hosted identity ${project.record_id}; inspect \`${PLATFORM_SLUG} project list --json\` and the hosted project before retrying`,
     )
   }
 }
@@ -347,7 +339,8 @@ export async function pushProjects(): Promise<string[]> {
       settings: project.settings,
       retiredAt: project.retiredAt,
     })
-    storeProjectRecordId(project.id, recordId)
+    if (project.recordId !== recordId)
+      throw new Error(`hosted project identity changed for ${project.name}`)
     names.push(project.name)
   }
   return names
@@ -362,18 +355,18 @@ export function setProjectRecordSpace(name: string, space: string): void {
   if (malformed.length) throw new Error(malformed.join('\n'))
   writableDb()
   db()
-    .query('UPDATE project SET settings=? WHERE id=?')
-    .run(JSON.stringify(projectSettingsForStorage(settings)), project.id)
+    .query('UPDATE project SET settings=? WHERE record_id=?')
+    .run(JSON.stringify(projectSettingsForStorage(settings)), project.recordId)
 }
 
 /** Local rename preconditions: existence, a non-empty target, and a free name. */
-export function assertProjectRename(currentName: string, nextName: string): { id: number } {
+export function assertProjectRename(currentName: string, nextName: string): { recordId: string } {
   if (!nextName.trim()) throw new Error('project --name must be non-empty')
   const current = projectByName(currentName)
   if (!current) throw new Error(`no project "${currentName}"`)
   if (currentName !== nextName && projectByName(nextName))
     throw new Error(`project "${nextName}" already exists`)
-  return { id: current.id }
+  return { recordId: current.recordId }
 }
 
 export type ProjectReferenceCounts = {
@@ -419,10 +412,10 @@ export function projectRemovalRefusal(
   ]
 }
 
-function projectReferenceCounts(projectId: number): ProjectReferenceCounts {
+function projectReferenceCounts(projectId: string): ProjectReferenceCounts {
   const count = (table: string) =>
     (
-      db().query(`SELECT COUNT(*) AS n FROM ${table} WHERE project_id=?`).get(projectId) as {
+      db().query(`SELECT COUNT(*) AS n FROM ${table} WHERE project_record_id=?`).get(projectId) as {
         n: number
       }
     ).n
@@ -445,15 +438,15 @@ export function removeProject(name: string): boolean {
   writableDb()
   const project = projectByName(name)
   if (!project) return false
-  const refusal = projectRemovalRefusal(name, projectReferenceCounts(project.id))
+  const refusal = projectRemovalRefusal(name, projectReferenceCounts(project.recordId))
   if (refusal) throw new Error(refusal.join('\n'))
-  return db().query('DELETE FROM project WHERE id = ?').run(project.id).changes > 0
+  return db().query('DELETE FROM project WHERE record_id = ?').run(project.recordId).changes > 0
 }
 
 export async function removeWrittenProject(name: string): Promise<boolean> {
   const project = projectByName(name)
   if (!project) return false
-  const refusal = projectRemovalRefusal(name, projectReferenceCounts(project.id))
+  const refusal = projectRemovalRefusal(name, projectReferenceCounts(project.recordId))
   if (refusal) throw new Error(refusal.join('\n'))
   await retireProjectInHostedRecord(project, project.settings)
   return removeProject(name)
@@ -464,7 +457,7 @@ export function retireProject(name: string): 'retired' | 'already-retired' {
   const project = projectRowByName(name)
   if (!project) throw new Error(`no project "${name}"`)
   if (project.retiredAt) return 'already-retired'
-  db().query('UPDATE project SET retired_at=? WHERE id=?').run(nowIso(), project.id)
+  db().query('UPDATE project SET retired_at=? WHERE record_id=?').run(nowIso(), project.recordId)
   return 'retired'
 }
 
@@ -480,7 +473,7 @@ export function unretireProject(name: string): boolean {
   const project = projectRowByName(name)
   if (!project) throw new Error(`no project "${name}"`)
   if (!project.retiredAt) return false
-  db().query('UPDATE project SET retired_at=NULL WHERE id=?').run(project.id)
+  db().query('UPDATE project SET retired_at=NULL WHERE record_id=?').run(project.recordId)
   return true
 }
 

@@ -109,7 +109,7 @@ export function createHookTree(input: {
   const prompt = `hook tree ${input.name}`
   const inserted = db()
     .query(
-      `INSERT INTO run (record_id,started_at,agent,job,repo,project_id,cwd,prompt_sha,prompt_bytes,prompt_head,status,
+      `INSERT INTO run (record_id,started_at,agent,job,repo,project_record_id,cwd,prompt_sha,prompt_bytes,prompt_head,status,
         session_id,launch_cwd,launch_key,launch_base,launch_seed,stack,evidence_excluded,pid)
        VALUES (?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?) RETURNING id`,
     )
@@ -119,7 +119,7 @@ export function createHookTree(input: {
       HOOK_TREE_AGENT,
       HOOK_TREE_JOB,
       project.name,
-      project.id,
+      project.recordId,
       project.path,
       createHash('sha256').update(prompt).digest('hex').slice(0, 16),
       Buffer.byteLength(prompt),
@@ -157,7 +157,7 @@ export function createHookTree(input: {
       recordCreatedWorktreeClaims(db(), {
         rootRunId: inserted.id,
         runId: inserted.id,
-        projectId: project.id,
+        projectId: project.recordId,
         owned: true,
         path: created.path,
         head: created.base,

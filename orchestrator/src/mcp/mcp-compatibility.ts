@@ -6,7 +6,7 @@ export type McpCompatibilityVerdict = 'compatible' | 'partial' | 'incompatible' 
 export type McpCompatibilityMode = 'require' | 'prefer'
 
 export type RequiredMcpServer = {
-  projectId: number
+  projectId: string
   project: string
   server: string
   mode: McpCompatibilityMode

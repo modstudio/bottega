@@ -45,12 +45,12 @@ export type FocusedTestBroker = { close(): Promise<void> }
 function focusedTestPlan(runId: number) {
   const row = db()
     .query(
-      `SELECT r.worktree,p.id project_id,p.name project_name,p.settings
-       FROM run r JOIN project p ON p.id=r.project_id WHERE r.id=?`,
+      `SELECT r.worktree,p.id project_record_id,p.name project_name,p.settings
+       FROM run r JOIN project p ON p.record_id=r.project_record_id WHERE r.id=?`,
     )
     .get(runId) as {
     worktree: string | null
-    project_id: number
+    project_record_id: string
     project_name: string
     settings: string | null
   } | null
@@ -64,7 +64,7 @@ function focusedTestPlan(runId: number) {
   return {
     runner,
     worktree: row.worktree,
-    projectId: row.project_id,
+    projectId: row.project_record_id,
     projectName: row.project_name,
     mainStackConsumers: settings.mainStack?.consumers,
     mainStackRequiredServices: settings.mainStack?.requiredServices,

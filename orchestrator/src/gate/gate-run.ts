@@ -192,7 +192,7 @@ export async function runArchitectGate(input: {
 }): Promise<ArchitectGateRecord> {
   const { caller, project, gate, checkoutTopLevel } = architectGateTarget(input)
   ensureMainStackStarted({
-    projectId: project.id,
+    projectId: project.recordId,
     projectName: project.name,
     projectPath: project.path,
     declaration: project.settings.mainStack,

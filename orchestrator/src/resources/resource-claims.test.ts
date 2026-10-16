@@ -459,3 +459,4 @@ describe('resource claim decisions', () => {
     expect(settledStateForCloseOut('released', 'retained_ref')).toBeNull()
   })
 })
+

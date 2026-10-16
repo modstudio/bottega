@@ -32,7 +32,7 @@ export type TaskBranchCandidate = {
   tip: string
   commitCount: number
   mergeBase: string
-  projectId: number
+  projectId: string
   projectName: string
   nominatingRuns: TaskBranchNominatingRun[]
   trunk: string
@@ -445,13 +445,13 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
             candidate.worktree_source
        FROM candidate
       WHERE candidate.launch_key=?
-        AND candidate.project_id=?
+        AND candidate.project_record_id=?
         AND candidate.branch IS NOT NULL
         AND ${taskBranchCandidacySql('candidate')}
         AND ${reviewRunEvidenceSql('candidate', 'candidate')}
       ORDER BY candidate.id`,
     )
-    .all(launchKey, project.id) as (TaskBranchRunRow & {
+    .all(launchKey, project.recordId) as (TaskBranchRunRow & {
     session_id: string | null
     worktree: string | null
     worktree_source: string | null
@@ -521,7 +521,7 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
       tip,
       commitCount,
       mergeBase,
-      projectId: project.id,
+      projectId: project.recordId,
       projectName: project.name,
       nominatingRuns: branchRows.map((row) => ({ id: row.id, sessionId: row.session_id })),
       trunk,

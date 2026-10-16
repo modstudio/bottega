@@ -1020,3 +1020,4 @@ describe('tracked recipe env writes', () => {
     expect(readFileSync(target, 'utf8')).toBe(old)
   })
 })
+

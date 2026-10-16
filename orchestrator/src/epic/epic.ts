@@ -66,7 +66,7 @@ type RunRow = {
   parent_run_id: number | null
   turn: number
   last_event_at: string | null
-  project_id: number | null
+  project_record_id: string | null
   head_commit: string | null
 }
 type LandingRow = {
@@ -75,7 +75,7 @@ type LandingRow = {
   status: string
   error: string | null
   steps: string | null
-  project_id: number | null
+  project_record_id: string | null
   tip: string | null
 }
 type LandingStep = {
@@ -118,7 +118,7 @@ type ReviewRow = {
   launch_key: string | null
   branch: string | null
   head_commit: string | null
-  project_id: number | null
+  project_record_id: string | null
 }
 
 const keyInBranch = (branch: string | null, keys: readonly string[]): string | null => {
@@ -165,34 +165,34 @@ export function epicScoreboard(
   const runs = database
     .query(
       `SELECT id,started_at,job,status,failure_kind,latency_ms,vendor_tokens,vendor_cost_usd,launch_key,branch,
-            parent_run_id,turn,last_event_at,project_id,head_commit FROM run ORDER BY started_at,id`,
+            parent_run_id,turn,last_event_at,project_record_id,head_commit FROM run ORDER BY started_at,id`,
     )
     .all() as RunRow[]
   const landings = database
-    .query(`SELECT id,branch,status,error,steps,project_id,tip FROM landing ORDER BY started_at,id`)
+    .query(`SELECT id,branch,status,error,steps,project_record_id,tip FROM landing ORDER BY started_at,id`)
     .all() as LandingRow[]
   const reviews = database
     .query(
       `SELECT DISTINCT review.id,review.completed_at,review.outdated_at,review.patch_id,run.launch_key,run.branch,
-            run.head_commit,run.project_id
+            run.head_commit,run.project_record_id
        FROM review JOIN review_lens ON review_lens.review_id=review.id
        JOIN run ON run.id=review_lens.run_id ORDER BY review.id`,
     )
     .all() as ReviewRow[]
   const subjects = commitSubjects(database)
 
-  const subjectKey = (projectId: number | null, commit: string | null) =>
+  const subjectKey = (projectId: string | null, commit: string | null) =>
     keyInBranch(projectId && commit ? (subjects.get(projectId)?.get(commit) ?? null) : null, keys)
 
   const runKey = (
-    row: Pick<RunRow, 'launch_key' | 'branch' | 'project_id' | 'head_commit'>,
+    row: Pick<RunRow, 'launch_key' | 'branch' | 'project_record_id' | 'head_commit'>,
   ): string | null => {
     const launch = row.launch_key?.toUpperCase()
     if (launch) return childByKey.has(launch) ? launch : null
-    return keyInBranch(row.branch, keys) ?? subjectKey(row.project_id, row.head_commit)
+    return keyInBranch(row.branch, keys) ?? subjectKey(row.project_record_id, row.head_commit)
   }
   const landingKey = (row: LandingRow) =>
-    keyInBranch(row.branch, keys) ?? subjectKey(row.project_id, row.tip)
+    keyInBranch(row.branch, keys) ?? subjectKey(row.project_record_id, row.tip)
   const reviewKey = (row: ReviewRow) => runKey(row)
 
   const rows = children.map((child): EpicTaskScore => {
@@ -343,12 +343,12 @@ function durationMetrics(runs: RunRow[], clock: number): DurationMetrics {
   }
 }
 
-function commitSubjects(database: Database): Map<number, Map<string, string>> {
-  const projects = database.query('SELECT id,path FROM project ORDER BY id').all() as {
-    id: number
+function commitSubjects(database: Database): Map<string, Map<string, string>> {
+  const projects = database.query('SELECT record_id,path FROM project ORDER BY record_id').all() as {
+    record_id: string
     path: string
   }[]
-  const result = new Map<number, Map<string, string>>()
+  const result = new Map<string, Map<string, string>>()
   for (const project of projects) {
     const git = Bun.spawnSync(['git', 'log', '--all', '--format=%H%x09%s'], {
       cwd: project.path,
@@ -362,7 +362,7 @@ function commitSubjects(database: Database): Map<number, Map<string, string>> {
       const tab = line.indexOf('\t')
       if (tab > 0) rows.set(line.slice(0, tab), line.slice(tab + 1))
     }
-    result.set(project.id, rows)
+    result.set(project.record_id, rows)
   }
   return result
 }

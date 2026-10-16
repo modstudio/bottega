@@ -101,7 +101,7 @@ export function recordArchitectRead(
         [
           string,
           string,
-          number,
+          string,
           string,
           string,
           string,
@@ -113,13 +113,13 @@ export function recordArchitectRead(
         ]
       >(
         `INSERT INTO review_read
-          (record_id,project,project_id,branch,tip,patch_id,path_set,tier,note,session_id,recorded_at)
+          (record_id,project,project_record_id,branch,tip,patch_id,path_set,tier,note,session_id,recorded_at)
          VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       )
       .get(
         newRecordId(),
         project.name,
-        project.id,
+        project.recordId,
         branch,
         tip,
         measured.group.patchId,

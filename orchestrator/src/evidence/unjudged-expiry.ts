@@ -42,7 +42,7 @@ export function unjudgedRuns(projectName: string | null): UnjudgedRun[] {
          FROM run r
          LEFT JOIN score s ON s.run_id=r.id
          LEFT JOIN session_seen seen ON seen.session_id=r.session_id
-         LEFT JOIN project ON project.id=r.project_id
+         LEFT JOIN project ON project.record_id=r.project_record_id
         WHERE ${UNSCORED_WHERE}
           AND (? IS NULL OR COALESCE(r.repo, project.name)=?)
         ORDER BY r.id`,

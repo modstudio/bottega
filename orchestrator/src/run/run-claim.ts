@@ -137,7 +137,7 @@ export type ClaimInput = {
   writesJob: boolean
   repoJob: boolean
   runProjectName: string | null
-  runProjectId: number | null
+  runProjectId: string | null
   reason: string
   vendorSession: string | null
   pack: Pack | null
@@ -333,7 +333,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const updateReservedRun = () =>
     db()
       .query(
-        `UPDATE run SET record_id=?, started_at=?, agent=?, job=?, repo=?, project_id=?, cwd=?, prompt_sha=?, spec_sha=?,
+        `UPDATE run SET record_id=?, started_at=?, agent=?, job=?, repo=?, project_record_id=?, cwd=?, prompt_sha=?, spec_sha=?,
                         prompt_bytes=?, prompt_head=?, label=?, status='running', probe=?, retry_of=?,
                         route_reason=?, branch=?, parent_run_id=?, turn=?, vendor_session=?, docs_injected=?, doc_revisions=?, canon_sha=?,
                         launch_cwd=?, launch_seed=?, launch_key=?, task_record_id=?, launch_base=?, no_failover=?,
@@ -379,7 +379,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const insertClaimedRun = () =>
     db()
       .query(
-        `INSERT INTO run (record_id, started_at, agent, job, repo, project_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of, route_reason, branch, parent_run_id, turn, vendor_session, docs_injected, doc_revisions, canon_sha,
+        `INSERT INTO run (record_id, started_at, agent, job, repo, project_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of, route_reason, branch, parent_run_id, turn, vendor_session, docs_injected, doc_revisions, canon_sha,
                           launch_cwd, launch_seed, launch_key, task_record_id, launch_base, no_failover,
                           automatic_failover, review_ref, pid, mcp, transport, started_by_user_id)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,

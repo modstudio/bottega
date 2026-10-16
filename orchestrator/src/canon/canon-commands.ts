@@ -185,7 +185,7 @@ function projectCanonImportPlan(
     hasHistory: hasCanonImportHistory({
       kind: 'project',
       subject: project.name,
-      projectId: project.id,
+      projectId: project.recordId,
     }),
     surroundings: [{ global, project: [] }],
     trackedPaths: collected.trackedPaths,
@@ -245,7 +245,7 @@ async function canonImportCommand(
   if (plan.refusal === 'findings') throw new Error(canonFindingsRefusal(plan.findings)!)
 
   const result = await importCanon({
-    address: { kind: 'project', subject: project.name, projectId: project.id },
+    address: { kind: 'project', subject: project.name, projectId: project.recordId },
     rows: rows.map((row) => ({ ...row, title: row.slug })),
     reason,
   })

@@ -415,3 +415,4 @@ test('subject filtering lists own-subject documents before related documents', a
     ),
   ).toEqual(['own-last-title', 'related-first-title'])
 })
+

@@ -240,7 +240,7 @@ function insertOverride(change: PullRequestChange, reason: string, database: Dat
       [
         string,
         string,
-        number,
+        string,
         string,
         string,
         string,
@@ -252,13 +252,13 @@ function insertOverride(change: PullRequestChange, reason: string, database: Dat
       ]
     >(
       `INSERT INTO landing_override
-         (record_id,project,project_id,branch,tip,tree,patch_id,path_set,reason,session_id,at)
+         (record_id,project,project_record_id,branch,tip,tree,patch_id,path_set,reason,session_id,at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
     )
     .get(
       newRecordId(),
       change.project.name,
-      change.project.id,
+      change.project.recordId,
       change.branch,
       change.tip,
       change.tree,
@@ -310,7 +310,7 @@ export function recordTriageIntent(
   const row = database
     .query(
       `INSERT INTO landing_triage_snapshot
-         (record_id,project,project_id,branch,tip,tree,pr_number,review_ids,patch_id,tier,
+         (record_id,project,project_record_id,branch,tip,tree,pr_number,review_ids,patch_id,tier,
           lens_rounds,finding_count,admission_path,read_id,override_id,session_id,at)
        VALUES (?,?,?,?,?,?,NULL,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(project,branch,tip) DO UPDATE SET
@@ -324,7 +324,7 @@ export function recordTriageIntent(
     .get(
       newRecordId(),
       change.project.name,
-      change.project.id,
+      change.project.recordId,
       change.branch,
       change.tip,
       change.tree,
@@ -479,11 +479,11 @@ export function createPullRequest(
 
 function recordedRunBranches(database: Database, project: Project): string[] {
   const rows = database
-    .query<{ branch: string | null; minted_branch: string | null }, [number]>(
+    .query<{ branch: string | null; minted_branch: string | null }, [string]>(
       `SELECT branch,minted_branch FROM run
-        WHERE project_id=?`,
+        WHERE project_record_id=?`,
     )
-    .all(project.id)
+    .all(project.recordId)
   return [
     ...new Set(rows.flatMap((row) => [row.branch, row.minted_branch]).filter(Boolean)),
   ] as string[]

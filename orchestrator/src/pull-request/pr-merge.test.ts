@@ -390,3 +390,4 @@ test('a moved landing branch refuses after reading the recorded local gate', () 
     ),
   ).toThrow(`bring the branch up to origin/main, run ${PLATFORM_SLUG} gate run`)
 })
+

@@ -76,7 +76,7 @@ function eligibleRows(
          FROM review_lens rl
          JOIN review r ON r.id=rl.review_id
          JOIN run ON run.id=rl.run_id
-         LEFT JOIN project p ON p.id=r.project_id
+         LEFT JOIN project p ON p.record_id=r.project_record_id
         WHERE ${reviewRunEvidenceSql('run', 'rl')}
           AND (? IS NULL OR r.recorded_at >= ?)
           AND (? IS NULL OR run.repo = ?)

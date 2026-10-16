@@ -16,14 +16,14 @@ export type McpListingObservation = {
 
 /** Latest catalogue observed for a project server, regardless of which agent probed it. */
 export function latestMcpListing(
-  projectId: number,
+  projectId: string,
   server: string,
   database: Database = db(),
 ): McpListingObservation | null {
   const rows = database
     .query(
       `SELECT id, started_at, mcp_connected, mcp_probe FROM run
-       WHERE project_id=? AND mcp_server=? AND mcp_probe IS NOT NULL
+       WHERE project_record_id=? AND mcp_server=? AND mcp_probe IS NOT NULL
        ORDER BY started_at DESC, id DESC`,
     )
     .all(projectId, server) as {
@@ -61,14 +61,14 @@ export type McpCompatibilityRow = {
 
 function latestAgentObservation(
   agent: string,
-  projectId: number,
+  projectId: string,
   server: string,
   database: Database = db(),
 ): { runId: number; time: string; connected: number | null } | null {
   const row = database
     .query(
       `SELECT id, started_at, mcp_connected FROM run
-       WHERE agent=? AND project_id=? AND mcp_server=?
+       WHERE agent=? AND project_record_id=? AND mcp_server=?
        ORDER BY started_at DESC, id DESC LIMIT 1`,
     )
     .get(agent, projectId, server) as {
@@ -87,7 +87,7 @@ export function mcpCompatibilityRows(projectFilter?: string): McpCompatibilityRo
   )) {
     const server = project.settings.mcpServer ?? project.name
     const config = readMcpConfig(project.path)[server]
-    const listing = latestMcpListing(project.id, server)
+    const listing = latestMcpListing(project.recordId, server)
     const headers = config?.headers ?? {}
     const auth = Object.entries(headers).some(
       ([name, value]) => name.toLowerCase() === 'authorization' && /^bearer\s+/i.test(value),
@@ -112,7 +112,7 @@ export function mcpCompatibilityRows(projectFilter?: string): McpCompatibilityRo
         pattern: declaration.mcpToolNamePattern ?? null,
         transport: config?.url ? 'url' : config?.command ? 'command' : 'unknown',
         auth,
-        lastObservation: latestAgentObservation(agent, project.id, server),
+        lastObservation: latestAgentObservation(agent, project.recordId, server),
       })
     }
   }

@@ -527,3 +527,4 @@ realPostgres('project import against copied live SQLite data', () => {
     expect(await targetState(sql)).toEqual(before)
   })
 })
+
