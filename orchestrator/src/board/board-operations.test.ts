@@ -5,6 +5,7 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
+import { RecordApiRequestError } from '../record/record-api-client.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
 import {
   boardAccept,
@@ -764,20 +765,44 @@ test('hosted acknowledgement uses the reserved operator reader without a session
   })
 })
 
-test('hosted acknowledgement refuses when the service is unreachable', async () => {
+test('hosted acknowledgement is cached and queued when the service is unreachable', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   const id = newRecordId()
+  const message = hostedMessage(id)
+  db()
+    .query(
+      `INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload)
+       VALUES (?,?,?,?,?)`,
+    )
+    .run(id, message.kind, message.threadRootId, message.revision, JSON.stringify(message))
   await expect(
     boardAcknowledge(id, {
+      clock: Date.parse('2026-10-16T12:00:00.000Z'),
       env: { ORCH_RECORD_API_URL: env.ORCH_RECORD_API_URL },
       client: {
         ...createMemoryRecordApiClient(),
         putBoardReceipt: async () => {
-          throw new Error('record service offline')
+          throw new RecordApiRequestError('record service offline', 'unreachable', 503)
         },
       },
     }),
-  ).rejects.toThrow('record service offline')
+  ).resolves.toEqual({
+    acknowledged: id,
+    queued: true,
+    message: 'hosted change saved and queued',
+  })
+  expect(
+    db()
+      .query(
+        `SELECT delivered_at,acknowledged_at,pending_sync
+         FROM hosted_board_receipt_cache WHERE message_id=? AND reader_session=?`,
+      )
+      .get(id, 'operator'),
+  ).toEqual({
+    delivered_at: '2026-10-16T12:00:00.000Z',
+    acknowledged_at: '2026-10-16T12:00:00.000Z',
+    pending_sync: 1,
+  })
 })
 
 test('an adopted install without hosted configuration refuses instead of writing locally', async () => {

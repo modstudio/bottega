@@ -14,7 +14,7 @@ import {
   syncCachedHostedReceipt,
 } from './board-hosted-cache.ts'
 import { requireRealSession } from './board-policy.ts'
-import { selectPushNotices } from './board-push-policy.ts'
+import { boardPushDecision } from './board-push-policy.ts'
 import {
   type BoardDeliveryPoint,
   noteBoardReachRecordingFailure,
@@ -84,6 +84,7 @@ function localPendingAcknowledgements(
       deadline: row.ack_deadline ?? '',
       requiresAcknowledgement: true,
       createdAt: row.created_at,
+      expiresAt: row.expires_at,
       deliveredAt: receiptAt(database, 'board_receipt', row.id, session).delivered_at,
       purpose: row.purpose ?? 'information',
       text: renderPendingAcknowledgement({
@@ -96,7 +97,18 @@ function localPendingAcknowledgements(
         purpose: row.purpose ?? 'information',
       }),
     }))
-  return selectPushNotices(beganAt, candidates).notices
+  return candidates.filter(
+    (candidate) =>
+      boardPushDecision({
+        acknowledgementRequired: true,
+        postedAt: candidate.createdAt,
+        acknowledgementDeadline: candidate.deadline,
+        expiresAt: candidate.expiresAt,
+        purpose: candidate.purpose,
+        readerBeganAt: beganAt,
+        clock,
+      }) === 'acknowledgement',
+  )
 }
 
 function hostedPendingAcknowledgements(
@@ -124,6 +136,7 @@ function hostedPendingAcknowledgements(
       deadline: message.ackDeadline ?? '',
       requiresAcknowledgement: true,
       createdAt: message.createdAt,
+      expiresAt: message.expiresAt ?? message.createdAt,
       deliveredAt: receiptAt(database, 'hosted_board_receipt_cache', message.id, session)
         .delivered_at,
       purpose: message.purpose ?? 'information',
@@ -138,7 +151,18 @@ function hostedPendingAcknowledgements(
         purpose: message.purpose ?? 'information',
       }),
     }))
-  return selectPushNotices(beganAt, candidates).notices
+  return candidates.filter(
+    (candidate) =>
+      boardPushDecision({
+        acknowledgementRequired: true,
+        postedAt: candidate.createdAt,
+        acknowledgementDeadline: candidate.deadline,
+        expiresAt: candidate.expiresAt,
+        purpose: candidate.purpose,
+        readerBeganAt: beganAt,
+        clock,
+      }) === 'acknowledgement',
+  )
 }
 
 export async function pendingBoardDelivery(input: DeliveryInput) {

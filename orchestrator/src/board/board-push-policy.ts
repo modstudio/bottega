@@ -3,26 +3,61 @@
 
 import type { BoardPurpose } from '../../../shared/board-purpose.ts'
 
-export function messageIsDueForPush(input: {
+export type BoardPushDecision = 'withheld' | 'ordinary' | 'acknowledgement'
+
+export function boardPushDecision(input: {
+  acknowledgementRequired: boolean
   postedAt: string
-  readerBeganAt: string
+  acknowledgementDeadline: string | null
+  expiresAt: string | null
   purpose?: BoardPurpose
-}): boolean {
-  return input.purpose === 'standing' || input.postedAt >= input.readerBeganAt
+  readerBeganAt: string | null
+  clock: number
+}): BoardPushDecision {
+  if (input.expiresAt !== null && Date.parse(input.expiresAt) <= input.clock) return 'withheld'
+  const acknowledgementIsPending =
+    input.acknowledgementRequired &&
+    input.acknowledgementDeadline !== null &&
+    Date.parse(input.acknowledgementDeadline) > input.clock
+  if (acknowledgementIsPending) {
+    if (input.readerBeganAt !== null && input.readerBeganAt > input.postedAt) return 'withheld'
+    return 'acknowledgement'
+  }
+  if (
+    input.readerBeganAt !== null &&
+    input.purpose !== 'standing' &&
+    input.postedAt < input.readerBeganAt
+  )
+    return 'withheld'
+  return 'ordinary'
 }
 
-export function selectPushNotices<T extends { createdAt: string; purpose?: BoardPurpose }>(
+export function selectPushNotices<
+  T extends {
+    ackRequired: boolean
+    ackDeadline: string | null
+    createdAt: string
+    expiresAt: string | null
+    purpose?: BoardPurpose
+  },
+>(
   readerBeganAt: string | null,
   candidates: T[],
+  clock: number,
 ): { notices: T[]; withheldOlderCount: number } {
-  if (readerBeganAt === null) return { notices: candidates, withheldOlderCount: 0 }
-  const notices = candidates.filter((notice) =>
-    messageIsDueForPush({
+  const notices = candidates.flatMap((notice) => {
+    const decision = boardPushDecision({
+      acknowledgementRequired: notice.ackRequired,
       postedAt: notice.createdAt,
+      acknowledgementDeadline: notice.ackDeadline,
+      expiresAt: notice.expiresAt,
       readerBeganAt,
       purpose: notice.purpose,
-    }),
-  )
+      clock,
+    })
+    if (decision === 'withheld') return []
+    return [{ ...notice, ackRequired: decision === 'acknowledgement' }]
+  })
   return { notices, withheldOlderCount: candidates.length - notices.length }
 }
 

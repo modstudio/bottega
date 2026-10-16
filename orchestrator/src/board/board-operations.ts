@@ -11,7 +11,11 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
 import { projectAt, projectRowByName } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
-import { type RecordApiClient, recordApiClient } from '../record/record-api-client.ts'
+import {
+  type RecordApiClient,
+  RecordApiRequestError,
+  recordApiClient,
+} from '../record/record-api-client.ts'
 import type {
   HostedBoardClaim,
   HostedBoardMessage,
@@ -37,7 +41,11 @@ import {
   takeClaim,
 } from './board-claim-service.ts'
 import { markBoardDeliveriesDelivered } from './board-delivery.ts'
-import { cachedAudienceAtPosting, cacheHostedBoardReceipt } from './board-hosted-cache.ts'
+import {
+  cachedAudienceAtPosting,
+  cacheHostedBoardReceipt,
+  queueHostedBoardAcknowledgement,
+} from './board-hosted-cache.ts'
 import { boardMode, boardModeForId } from './board-mode.ts'
 import {
   type Audience,
@@ -609,13 +617,25 @@ export async function boardAcknowledge(id: string, inputContext?: Context) {
   else {
     const session = boardActor(c.env).session ?? OPERATOR_READER
     // An acknowledged receipt never escalates; uncached legacy rows safely use true.
-    const receipt = await hostedClient(c).putBoardReceipt({
-      messageId: parsed as string,
-      readerSession: session,
-      audienceAtPosting: cachedAudienceAtPosting(parsed as string, session) ?? true,
-      acknowledged: true,
-    })
-    cacheHostedBoardReceipt(receipt)
+    const audienceAtPosting = cachedAudienceAtPosting(parsed as string, session) ?? true
+    try {
+      const receipt = await hostedClient(c).putBoardReceipt({
+        messageId: parsed as string,
+        readerSession: session,
+        audienceAtPosting,
+        acknowledged: true,
+      })
+      cacheHostedBoardReceipt(receipt)
+    } catch (error) {
+      if (!(error instanceof RecordApiRequestError) || error.kind !== 'unreachable') throw error
+      queueHostedBoardAcknowledgement(
+        parsed as string,
+        session,
+        audienceAtPosting,
+        new Date(c.clock).toISOString(),
+      )
+      return { acknowledged: id, queued: true, message: 'hosted change saved and queued' }
+    }
   }
   return { acknowledged: id }
 }

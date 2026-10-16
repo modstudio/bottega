@@ -19,6 +19,7 @@ import {
   hostedBoardCursor,
   hostedBoardVerificationWarning,
   markCachedHostedDelivered,
+  queueHostedBoardAcknowledgement,
   reapHostedBoardCache,
   refreshHostedBoard,
 } from './board-hosted-cache.ts'
@@ -715,6 +716,34 @@ test('receipt flushing follows change fetch; network failure stays pending and r
       .query('SELECT pending_sync,sync_error FROM hosted_board_receipt_cache WHERE message_id=?')
       .get(cached.id),
   ).toEqual({ pending_sync: 0, sync_error: 'receipt no longer visible' })
+
+  queueHostedBoardAcknowledgement(cached.id, 'cache-reader', true, '2026-10-05T12:05:00.000Z')
+  let sent: unknown
+  await refreshHostedBoard({
+    budgetMs: 1_000,
+    env: { ORCH_RECORD_API_URL: 'x' },
+    client: {
+      ...base,
+      listBoardChanges: async () => ({ userId, items: [], highestRevision: null }),
+      putBoardReceipt: async (input) => {
+        sent = input
+        return {
+          messageId: input.messageId,
+          readerUserId: userId,
+          readerSession: input.readerSession,
+          audienceAtPosting: input.audienceAtPosting,
+          deliveredAt: '2026-10-05T12:05:00.000Z',
+          acknowledgedAt: '2026-10-05T12:05:00.000Z',
+        }
+      },
+    },
+  })
+  expect(sent).toMatchObject({ delivered: true, acknowledged: true })
+  expect(
+    db()
+      .query('SELECT pending_sync,sync_error FROM hosted_board_receipt_cache WHERE message_id=?')
+      .get(cached.id),
+  ).toEqual({ pending_sync: 0, sync_error: null })
 })
 
 test('cache pruning removes an expired unaccepted thread and keeps an accepted thread', () => {
