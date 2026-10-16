@@ -26,13 +26,10 @@ function aliveOwnerOnBranch(input: {
     .query(
       `SELECT id, parent_run_id, status, branch, job FROM run
        WHERE branch=? AND status IN ('running','asking')
-         AND (project_id=? OR (project_id IS NULL AND repo=?))
+         AND project_id=?
        ORDER BY id`,
     )
-    .all(input.branch, input.projectId, input.projectName) as Omit<
-    BranchConversationRow,
-    'writesRepo'
-  >[]
+    .all(input.branch, input.projectId) as Omit<BranchConversationRow, 'writesRepo'>[]
   const declaredRows = rows.map((row) => ({
     ...row,
     writesRepo: jobWritesRepo(row.job, JOBS),

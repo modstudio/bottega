@@ -8,6 +8,7 @@ import {
   splitMigrationSource,
   stripSqlComments,
 } from '../orchestrator/src/database/migrations.ts'
+import { newRecordId } from '../shared/record-id.ts'
 
 export type CascadeExemption = {
   migration: string
@@ -35,6 +36,20 @@ type ForeignKey = { parent: string; dependent: string }
 // These migrations may already be applied. The repair restores every
 // missing review_finding row from its outbox payload, whichever migration removed it.
 const EXEMPTIONS: readonly CascadeExemption[] = [
+  {
+    migration: '0115_project_identity_contract',
+    deletedTable: 'project',
+    dependentTable: 'main_stack_activity',
+    remedy:
+      'DEV-1214: rebuild with foreign keys disabled and refuse any foreign_key_check violation before commit',
+  },
+  {
+    migration: '0115_project_identity_contract',
+    deletedTable: 'project',
+    dependentTable: 'project_lens_profile',
+    remedy:
+      'DEV-1214: rebuild with foreign keys disabled and refuse any foreign_key_check violation before commit',
+  },
   {
     migration: '0019_run_close_out_forgotten',
     deletedTable: 'review_lens',
@@ -609,13 +624,33 @@ function counts(database: Database): Map<string, number> {
 function execute(database: Database, migration: Migration): void {
   const ddl = splitMigrationSource(migration.source).ddl.trim()
   if (!stripSqlComments(ddl).trim()) return
-  database.exec('BEGIN IMMEDIATE')
+  const rebuildsRequiredProjectIdentity = migration.tag === '0115_project_identity_contract'
+  const legacyAlterTable = (
+    database.query('PRAGMA legacy_alter_table').get() as { legacy_alter_table: number }
+  ).legacy_alter_table
+  if (rebuildsRequiredProjectIdentity)
+    database.exec('PRAGMA foreign_keys=OFF; PRAGMA legacy_alter_table=OFF')
   try {
+    database.exec('BEGIN IMMEDIATE')
     database.exec(ddl)
+    const violations = database.query('PRAGMA foreign_key_check').all()
+    if (violations.length)
+      throw new Error(
+        `${migration.tag} left ${violations.length} foreign key violation(s): ${JSON.stringify(violations.slice(0, 3))}`,
+      )
     database.exec('COMMIT')
   } catch (error) {
-    database.exec('ROLLBACK')
+    try {
+      database.exec('ROLLBACK')
+    } catch {
+      /* migration statement already ended the transaction */
+    }
     throw error
+  } finally {
+    if (rebuildsRequiredProjectIdentity) {
+      database.exec('PRAGMA foreign_keys=ON')
+      database.exec(`PRAGMA legacy_alter_table=${legacyAlterTable}`)
+    }
   }
 }
 
@@ -627,6 +662,13 @@ function probeDestructiveMigration(
   result: CascadeProbe,
 ): void {
   result.unprobed.push(...seedTables(database, migration.tag))
+  if (migration.tag === '0115_project_identity_contract') {
+    const missing = database
+      .query<{ id: number }, []>('SELECT id FROM project WHERE record_id IS NULL')
+      .all()
+    const fill = database.query('UPDATE project SET record_id=? WHERE id=?')
+    for (const row of missing) fill.run(newRecordId(), row.id)
+  }
   const before = counts(database)
   const relationships = foreignKeys(database)
   execute(database, migration)

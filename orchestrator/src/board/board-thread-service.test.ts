@@ -17,7 +17,9 @@ const cwd = resolve(import.meta.dir, '../../..')
 
 function ensurePostingProject() {
   db()
-    .query(`INSERT OR IGNORE INTO project(name,path,settings) VALUES ('thread-fixture',?,'{}')`)
+    .query(
+      `INSERT OR IGNORE INTO project(record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'thread-fixture',?,'{}')`,
+    )
     .run(cwd)
   if (!projectAt(cwd)) throw new Error('thread test posting project did not resolve')
 }

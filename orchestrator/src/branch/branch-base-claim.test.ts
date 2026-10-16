@@ -8,13 +8,13 @@ test('a fully qualified base name is claimed while its chain is asking and relea
   const projectId = (
     db()
       .query(
-        "INSERT INTO project (name,path,settings) VALUES ('live-base-claim','/unused','{}') RETURNING id",
+        "INSERT INTO project (record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'live-base-claim','/unused','{}') RETURNING id",
       )
       .get() as { id: number }
   ).id
   const project: Project = {
     id: projectId,
-    recordId: null,
+    recordId: '01990000-0000-7000-8000-000000001214',
     name: 'live-base-claim',
     path: '/unused',
     stack: null,

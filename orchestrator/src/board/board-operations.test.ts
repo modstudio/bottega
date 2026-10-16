@@ -77,12 +77,12 @@ beforeEach(() => {
   db().query('DELETE FROM board_claim').run()
   db()
     .query(
-      "INSERT OR IGNORE INTO project(name,path,settings) VALUES ('board-route-project','/tmp/board-route-project','{}')",
+      "INSERT OR IGNORE INTO project(record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'board-route-project','/tmp/board-route-project','{}')",
     )
     .run()
   db()
     .query(
-      "INSERT OR IGNORE INTO project(name,path,settings) VALUES ('board-route-architect',?,'{}')",
+      "INSERT OR IGNORE INTO project(record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'board-route-architect',?,'{}')",
     )
     .run(process.cwd())
 })
@@ -234,7 +234,9 @@ test('thread results have one pinned shape in local and hosted modes', async () 
 
 test('reading a thread stamps its printed root and replies while acknowledgement remains pending', async () => {
   db()
-    .query(`INSERT OR IGNORE INTO project(name,path,settings) VALUES ('push-project',?,'{}')`)
+    .query(
+      `INSERT OR IGNORE INTO project(record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'push-project',?,'{}')`,
+    )
     .run(postingCwd)
   const clock = Date.parse('2026-10-08T13:00:00.000Z')
   const session = 'thread-reader'

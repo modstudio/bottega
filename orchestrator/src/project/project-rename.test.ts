@@ -216,8 +216,13 @@ test('a local rename leaves no listed table naming the old project', () => {
   })
   expect(projectByName(OLD)).toBeNull()
   expect(projectByName(NEXT)?.id).toBe(project.id)
-  for (const [table, column] of [...PROJECT_ID_NAME_COLUMNS, ...PROJECT_NAME_ONLY_COLUMNS]) {
+  for (const [table, column] of PROJECT_NAME_ONLY_COLUMNS) {
     expect(countName(table, column, OLD), `${table}.${column} kept ${OLD}`).toBe(0)
+  }
+  for (const [table, column] of PROJECT_ID_NAME_COLUMNS) {
+    expect(countName(table, column, OLD), `${table}.${column} changed an unresolved snapshot`).toBe(
+      table === 'run' ? 1 : 0,
+    )
   }
   expect(countName('run', 'repo', OTHER)).toBe(1)
   expect(countName('landing_override', 'project', OTHER)).toBe(1)
@@ -225,10 +230,10 @@ test('a local rename leaves no listed table naming the old project', () => {
     const renamed = db()
       .query(
         `SELECT COUNT(*) AS n FROM ${table}
-         WHERE subject=? AND (project_id=? OR (project_id IS NULL AND scope IN ('project','resume','canon','settings')))`,
+         WHERE subject=? AND project_id=?`,
       )
       .get(OLD, project.id) as { n: number }
     expect(renamed.n, `${table} kept a project subject`).toBe(0)
-    expect(countName(table, 'subject', OLD), `${table} changed protected subjects`).toBe(2)
+    expect(countName(table, 'subject', OLD), `${table} changed unresolved subjects`).toBe(3)
   }
 })

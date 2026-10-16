@@ -135,7 +135,7 @@ test('local rename collision makes no hosted call', async () => {
     ...createMemoryRecordApiClient(),
     upsertProject: async (input) => {
       hosted += 1
-      return { id: newRecordId(), name: input.name }
+      return { id: input.id!, name: input.name }
     },
     renameSubject: async () => {
       throw new Error('must not chain a second hosted rename')
@@ -156,7 +156,7 @@ test('empty rename target makes no hosted call', async () => {
     ...createMemoryRecordApiClient(),
     upsertProject: async (input) => {
       hosted += 1
-      return { id: newRecordId(), name: input.name }
+      return { id: input.id!, name: input.name }
     },
   })
   await expect(runProject(['project', 'set', 'empty-src'], { name: '   ' })).rejects.toThrow(
@@ -180,7 +180,7 @@ test('rename writes hosted once and updates the local name and release ledger', 
     ...createMemoryRecordApiClient(),
     upsertProject: async (input) => {
       hosted.push({ name: input.name, previousName: input.previousName })
-      return { id: newRecordId(), name: input.name }
+      return { id: input.id!, name: input.name }
     },
     renameSubject: async () => {
       throw new Error('must not chain a second hosted rename')
@@ -215,7 +215,7 @@ test('project push writes every registered project to the hosted record', async 
     upsertProject: async (input, destination) => {
       names.push(input.name)
       destinations.set(input.name, destination?.destinationSpaceId)
-      return { id: newRecordId(), name: input.name }
+      return { id: input.id!, name: input.name }
     },
   })
   upsertProject({ name: 'push-live', path: '/w/push-live' })

@@ -31,12 +31,9 @@ test('a timed-out zero-exit gate is not a passing gate', () => {
   const d = new Database(':memory:')
   d.exec('PRAGMA foreign_keys=ON')
   applyMigrations(d)
-  d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
-    'fixture',
-    repositoryPath,
-    'bun',
-    '{}',
-  )
+  d.query(
+    'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
+  ).run('fixture', repositoryPath, 'bun', '{}')
   const commit = 'a'.repeat(40)
   const gate = d
     .query(

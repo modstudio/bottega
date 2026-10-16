@@ -2,7 +2,6 @@
 /** Plans and performs the one-time, resumable move from the local board to the hosted board. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { writableDb, writeTransaction } from '../database/db.ts'
 import { projectRowByName } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
@@ -38,7 +37,7 @@ import {
 type LedgerRow = {
   local_kind: LocalKind
   local_id: number
-  hosted_id: string
+  source_record_id: string
   state: LedgerState
   refusal: string | null
 }
@@ -71,7 +70,14 @@ function ledger(database: Database): Map<string, LedgerRow> {
     (
       database
         .query(
-          'SELECT local_kind,local_id,hosted_id,state,refusal FROM board_hosted_adoption_ledger',
+          `SELECT ledger.local_kind,
+                  CASE WHEN ledger.local_kind='claim' THEN claim.id ELSE message.id END local_id,
+                  ledger.source_record_id,ledger.state,ledger.refusal
+           FROM board_hosted_adoption_ledger ledger
+           LEFT JOIN board_claim claim
+             ON ledger.local_kind='claim' AND claim.record_id=ledger.source_record_id
+           LEFT JOIN board_message message
+             ON ledger.local_kind<>'claim' AND message.record_id=ledger.source_record_id`,
         )
         .all() as LedgerRow[]
     ).map((row) => [`${row.local_kind}:${row.local_id}`, row]),
@@ -199,7 +205,7 @@ function planFor(
 
 function pendingLedger(
   candidate: Candidate,
-  hostedId: string,
+  sourceRecordId: string,
   at: string,
   database: Database,
 ): LedgerRow {
@@ -207,40 +213,33 @@ function pendingLedger(
     database
       .query(
         `INSERT OR IGNORE INTO board_hosted_adoption_ledger
-         (local_kind,local_id,hosted_id,state,refusal,created_at,updated_at,record_id)
-         VALUES (?,?,?,'pending',NULL,?,?,?)`,
+         (source_record_id,local_kind,state,refusal,created_at,updated_at)
+         VALUES (?,?,'pending',NULL,?,?)`,
       )
-      .run(candidate.kind, candidate.id, hostedId, at, at, newRecordId())
+      .run(sourceRecordId, candidate.kind, at, at)
     return database
-      .query<LedgerRow, [LocalKind, number]>(
-        `SELECT local_kind,local_id,hosted_id,state,refusal FROM board_hosted_adoption_ledger
-         WHERE local_kind=? AND local_id=?`,
+      .query<LedgerRow, [string]>(
+        `SELECT local_kind,0 local_id,source_record_id,state,refusal
+         FROM board_hosted_adoption_ledger WHERE source_record_id=?`,
       )
-      .get(candidate.kind, candidate.id)!
+      .get(sourceRecordId)!
   }, database)
 }
 
-function refuseCandidate(
-  candidate: Candidate,
-  hostedId: string,
-  reason: string,
-  at: string,
-  database: Database,
-) {
+function refuseCandidate(sourceRecordId: string, reason: string, at: string, database: Database) {
   writeTransaction(() => {
     database
       .query(
         `UPDATE board_hosted_adoption_ledger SET state='refused',refusal=?,updated_at=?
-         WHERE local_kind=? AND local_id=? AND hosted_id=?`,
+         WHERE source_record_id=?`,
       )
-      .run(reason, at, candidate.kind, candidate.id, hostedId)
+      .run(reason, at, sourceRecordId)
   }, database)
 }
 
 function retireCandidate(
   candidate: Candidate,
-  mintedId: string,
-  hostedId: string,
+  sourceRecordId: string,
   at: string,
   database: Database,
 ) {
@@ -248,10 +247,10 @@ function retireCandidate(
     database
       .query(
         `UPDATE board_hosted_adoption_ledger
-         SET hosted_id=?,state='uploaded',refusal=NULL,updated_at=?
-         WHERE local_kind=? AND local_id=? AND hosted_id=?`,
+         SET state='uploaded',refusal=NULL,updated_at=?
+         WHERE source_record_id=?`,
       )
-      .run(hostedId, at, candidate.kind, candidate.id, mintedId)
+      .run(at, sourceRecordId)
     if (candidate.kind === 'claim')
       database
         .query(
@@ -342,11 +341,11 @@ async function uploadReceipts(
         delivered: Boolean(receipt.delivered_at),
         acknowledged: Boolean(receipt.acknowledged_at),
       })
-      recordReceiptUpload(messageId, receipt.reader_session, 'uploaded', null, database, clock)
+      recordReceiptUpload(hostedId, receipt.reader_session, 'uploaded', null, database, clock)
     } catch (error) {
       if (!(error instanceof RecordApiRequestError) || error.kind !== 'refused') throw error
       recordReceiptUpload(
-        messageId,
+        hostedId,
         receipt.reader_session,
         'skipped',
         error.message,
@@ -387,9 +386,10 @@ function pendingReceiptsForMessage(
     .query(
       `SELECT r.message_id,r.reader_session,r.audience_at_posting,r.delivered_at,r.acknowledged_at
        FROM board_receipt r
+       JOIN board_message message ON message.id=r.message_id
        LEFT JOIN board_hosted_adoption_receipt a
-         ON a.local_message_id=r.message_id AND a.reader_session=r.reader_session
-       WHERE r.message_id=? AND a.local_message_id IS NULL
+         ON a.message_record_id=message.record_id AND a.reader_session=r.reader_session
+       WHERE r.message_id=? AND a.message_record_id IS NULL
        ORDER BY r.reader_session`,
     )
     .all(messageId) as LocalReceipt[]
@@ -410,7 +410,7 @@ function pendingReceiptsForMessage(
 }
 
 function recordReceiptUpload(
-  messageId: number,
+  messageRecordId: string,
   readerSession: string,
   state: 'uploaded' | 'skipped',
   refusal: string | null,
@@ -421,9 +421,9 @@ function recordReceiptUpload(
     database
       .query(
         `INSERT INTO board_hosted_adoption_receipt
-         (local_message_id,reader_session,state,refusal,updated_at,record_id) VALUES (?,?,?,?,?,?)`,
+         (message_record_id,reader_session,state,refusal,updated_at) VALUES (?,?,?,?,?)`,
       )
-      .run(messageId, readerSession, state, refusal, new Date(clock).toISOString(), newRecordId())
+      .run(messageRecordId, readerSession, state, refusal, new Date(clock).toISOString())
   }, database)
 }
 
@@ -522,7 +522,7 @@ async function uploadMessages(context: UploadContext): Promise<BoardAdoptionResu
     if (recorded?.state === 'uploaded')
       context.skippedReceipts += await uploadReceipts(
         candidate.id,
-        recorded.hosted_id,
+        recorded.source_record_id,
         context.client,
         context.database,
         context.clock(),
@@ -554,30 +554,30 @@ async function uploadOneCandidate(
   const recorded = ledger(context.database).get(candidateKey(candidate))
   if (isTerminalLedgerState(recorded?.state)) {
     if (candidate.kind !== 'reply' && candidate.kind !== 'claim')
-      context.hostedRoots.set(candidate.id, recorded!.hosted_id)
+      context.hostedRoots.set(candidate.id, recorded!.source_record_id)
     return 'continue'
   }
   const row = context.rows.get(candidateKey(candidate))!
   const pending = pendingLedger(
     candidate,
-    recorded?.hosted_id ?? row.record_id,
+    recorded?.source_record_id ?? row.record_id,
     context.at,
     context.database,
   )
   const localRefusal = lastingLocalRefusal(candidate, row, context.database)
   if (localRefusal) {
-    refuseCandidate(candidate, pending.hosted_id, localRefusal, context.at, context.database)
+    refuseCandidate(pending.source_record_id, localRefusal, context.at, context.database)
     return 'continue'
   }
   try {
-    const hostedId = await writeHosted(pending.hosted_id)
+    const hostedId = await writeHosted(pending.source_record_id)
     if (hostedId === null) return dropExpiredCandidate(candidate, context)
-    retireCandidate(candidate, pending.hosted_id, hostedId, context.at, context.database)
+    retireCandidate(candidate, pending.source_record_id, context.at, context.database)
     if (candidate.kind !== 'reply' && candidate.kind !== 'claim')
-      context.hostedRoots.set(candidate.id, hostedId)
+      context.hostedRoots.set(candidate.id, pending.source_record_id)
     return 'continue'
   } catch (error) {
-    return handleUploadError(candidate, pending.hosted_id, error, context)
+    return handleUploadError(candidate, pending.source_record_id, error, context)
   }
 }
 
@@ -585,9 +585,9 @@ function dropExpiredCandidate(candidate: Candidate, context: UploadContext): 'co
   writeTransaction(() => {
     context.database
       .query(
-        "DELETE FROM board_hosted_adoption_ledger WHERE local_kind=? AND local_id=? AND state='pending'",
+        "DELETE FROM board_hosted_adoption_ledger WHERE source_record_id=? AND state='pending'",
       )
-      .run(candidate.kind, candidate.id)
+      .run(context.rows.get(candidateKey(candidate))!.record_id)
   }, context.database)
   context.dropped.add(candidateKey(candidate))
   return 'continue'
@@ -610,7 +610,7 @@ function handleUploadError(
       { cause: error },
     )
   if (disposition === 'lasting') {
-    refuseCandidate(candidate, hostedId, (error as Error).message, context.at, context.database)
+    refuseCandidate(hostedId, (error as Error).message, context.at, context.database)
     return 'continue'
   }
   const refusal = unexpectedHostedRefusal(candidate, error)

@@ -163,7 +163,9 @@ test('a tip unreachable from the checked-out branch is refused without a review 
   const d = new Database(':memory:')
   applyMigrations(d)
   const cwd = resolve(import.meta.dir, '../../..')
-  d.query('INSERT INTO project (name,path,settings) VALUES (?,?,?)').run('fixture', cwd, '{}')
+  d.query(
+    'INSERT INTO project (record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?)',
+  ).run('fixture', cwd, '{}')
   d.query(
     `INSERT INTO run
       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch,session_id)

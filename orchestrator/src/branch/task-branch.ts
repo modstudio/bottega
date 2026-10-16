@@ -445,13 +445,13 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
             candidate.worktree_source
        FROM candidate
       WHERE candidate.launch_key=?
-        AND (candidate.project_id=? OR (candidate.project_id IS NULL AND candidate.repo=?))
+        AND candidate.project_id=?
         AND candidate.branch IS NOT NULL
         AND ${taskBranchCandidacySql('candidate')}
         AND ${reviewRunEvidenceSql('candidate', 'candidate')}
       ORDER BY candidate.id`,
     )
-    .all(launchKey, project.id, project.name) as (TaskBranchRunRow & {
+    .all(launchKey, project.id) as (TaskBranchRunRow & {
     session_id: string | null
     worktree: string | null
     worktree_source: string | null

@@ -35,19 +35,11 @@ function applyLocalProjectRename(
   for (const [table, column] of PROJECT_ID_NAME_COLUMNS) {
     if (table === 'doc' || table === 'doc_revision') {
       database
-        .query(
-          `UPDATE ${table} SET ${column}=?
-           WHERE (project_id=? AND ${column}=?)
-              OR (project_id IS NULL AND ${column}=? AND scope IN ('project','resume','canon','settings'))`,
-        )
-        .run(nextName, current.id, currentName, currentName)
+        .query(`UPDATE ${table} SET ${column}=? WHERE project_id=? AND ${column}=?`)
+        .run(nextName, current.id, currentName)
       continue
     }
-    database
-      .query(
-        `UPDATE ${table} SET ${column}=? WHERE project_id=? OR (project_id IS NULL AND ${column}=?)`,
-      )
-      .run(nextName, current.id, currentName)
+    database.query(`UPDATE ${table} SET ${column}=? WHERE project_id=?`).run(nextName, current.id)
   }
   for (const [table, column] of PROJECT_NAME_ONLY_COLUMNS) {
     database.query(`UPDATE ${table} SET ${column}=? WHERE ${column}=?`).run(nextName, currentName)

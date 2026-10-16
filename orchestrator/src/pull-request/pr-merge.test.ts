@@ -16,7 +16,9 @@ const cwd = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '
 
 function registerProject(requiredChecks: string[], mergeQueue = false): void {
   db()
-    .query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)')
+    .query(
+      'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
+    )
     .run(
       'merge-fixture',
       cwd,
@@ -286,7 +288,7 @@ test('an admitted head records a snapshot with the pull request number before me
           change: {
             project: {
               id: project.id,
-              recordId: null,
+              recordId: '01990000-0000-7000-8000-000000001214',
               name: 'merge-fixture',
               path: admissionCwd,
               stack: 'bun',

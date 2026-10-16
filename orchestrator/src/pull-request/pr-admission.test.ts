@@ -23,15 +23,15 @@ test('records the exact triage snapshot and outboxes it', () => {
   const database = db()
   const project = database
     .query<{ id: number }, []>(
-      `INSERT INTO project (name,path,stack,canon,settings,retired_at)
-       VALUES ('snapshot-fixture','/tmp/snapshot-fixture',NULL,0,'{"trunk":"main"}',NULL)
+      `INSERT INTO project (record_id,name,path,stack,canon,settings,retired_at)
+       VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'snapshot-fixture','/tmp/snapshot-fixture',NULL,0,'{"trunk":"main"}',NULL)
        RETURNING id`,
     )
     .get()!
   const change: PullRequestChange = {
     project: {
       id: project.id,
-      recordId: null,
+      recordId: '01990000-0000-7000-8000-000000001214',
       name: 'snapshot-fixture',
       path: '/tmp/snapshot-fixture',
       stack: null,
@@ -115,15 +115,15 @@ test('merge admission leaves an existing snapshot unchanged', () => {
   const database = db()
   const project = database
     .query<{ id: number }, []>(
-      `INSERT INTO project (name,path,stack,canon,settings,retired_at)
-       VALUES ('existing-snapshot','/tmp/existing-snapshot',NULL,0,'{"trunk":"main"}',NULL)
+      `INSERT INTO project (record_id,name,path,stack,canon,settings,retired_at)
+       VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'existing-snapshot','/tmp/existing-snapshot',NULL,0,'{"trunk":"main"}',NULL)
        RETURNING id`,
     )
     .get()!
   const change: PullRequestChange = {
     project: {
       id: project.id,
-      recordId: null,
+      recordId: '01990000-0000-7000-8000-000000001214',
       name: 'existing-snapshot',
       path: '/tmp/existing-snapshot',
       stack: null,

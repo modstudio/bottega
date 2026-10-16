@@ -130,9 +130,11 @@ test('a new adoption upload sends the row record id as the hosted id', async () 
   expect(ids).toEqual([recordId])
   expect(
     db()
-      .query<{ hosted_id: string }, []>('SELECT hosted_id FROM board_hosted_adoption_ledger')
+      .query<{ source_record_id: string }, []>(
+        'SELECT source_record_id FROM board_hosted_adoption_ledger',
+      )
       .get(),
-  ).toEqual({ hosted_id: recordId })
+  ).toEqual({ source_record_id: recordId })
 })
 
 test('an adoption resume uploads with the row record id', async () => {
@@ -148,16 +150,10 @@ test('an adoption resume uploads with the row record id', async () => {
   db()
     .query(
       `INSERT INTO board_hosted_adoption_ledger
-       (local_kind,local_id,hosted_id,state,refusal,created_at,updated_at,record_id)
-       VALUES ('notice',?,?,'pending',NULL,?,?,?)`,
+       (source_record_id,local_kind,state,refusal,created_at,updated_at)
+       VALUES (?,'notice','pending',NULL,?,?)`,
     )
-    .run(
-      posted.id,
-      recordId,
-      new Date(NOW).toISOString(),
-      new Date(NOW).toISOString(),
-      newRecordId(),
-    )
+    .run(recordId, new Date(NOW).toISOString(), new Date(NOW).toISOString())
   const ids: string[] = []
   const base = capturingClient([]).client
   const client: RecordApiClient = {
@@ -434,10 +430,10 @@ test('rate cap leaves the mark unset and reruns only the remainder with its stab
     db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_HOSTED_ADOPTED_KEY),
   ).toBeNull()
   const pending = db()
-    .query<{ hosted_id: string }, []>(
-      "SELECT hosted_id FROM board_hosted_adoption_ledger WHERE state='pending'",
+    .query<{ source_record_id: string }, []>(
+      "SELECT source_record_id FROM board_hosted_adoption_ledger WHERE state='pending'",
     )
-    .get()!.hosted_id
+    .get()!.source_record_id
 
   const secondCalls: string[] = []
   await adoptHostedBoard({
@@ -448,10 +444,10 @@ test('rate cap leaves the mark unset and reruns only the remainder with its stab
   expect(secondCalls.filter((call) => call.startsWith('post:'))).toEqual(['post:three'])
   expect(
     db()
-      .query<{ hosted_id: string }, [string]>(
-        'SELECT hosted_id FROM board_hosted_adoption_ledger WHERE local_id=(SELECT local_id FROM board_hosted_adoption_ledger WHERE hosted_id=?)',
+      .query<{ source_record_id: string }, [string]>(
+        'SELECT source_record_id FROM board_hosted_adoption_ledger WHERE source_record_id=?',
       )
-      .get(pending)?.hosted_id,
+      .get(pending)?.source_record_id,
   ).toBe(pending)
 })
 
@@ -616,7 +612,7 @@ test('candidate and final-mark decisions are pure', () => {
   expect(mayMarkBoardHostedAdopted(['uploaded', 'pending'])).toBeFalse()
 })
 
-test('uses the hosted message ids returned for duplicate roots, replies, receipts, and the ledger', async () => {
+test('keeps source record ids for roots, replies, receipts, and the ledger', async () => {
   presence()
   const root = askQuestion(
     { audience: 'session:reader', title: 'duplicate', body: 'question' },
@@ -670,16 +666,23 @@ test('uses the hosted message ids returned for duplicate roots, replies, receipt
 
   await adoptHostedBoard({ confirm: 2, clock: () => NOW + 2, client })
 
-  expect(replyRoot).toBe('stored-root')
-  expect(receiptIds).toEqual(['stored-root', 'stored-reply'])
+  const rootRecordId = db()
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM board_message WHERE id=?')
+    .get(root.id)!.record_id
+  const replyRecordId = db()
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM board_message WHERE id=?')
+    .get(reply.id)!.record_id
+  expect(replyRoot).toBe(rootRecordId)
+  expect(receiptIds).toEqual([rootRecordId, replyRecordId])
   expect(
     db()
-      .query('SELECT local_id,hosted_id FROM board_hosted_adoption_ledger ORDER BY local_id')
+      .query('SELECT source_record_id FROM board_hosted_adoption_ledger ORDER BY source_record_id')
       .all(),
-  ).toEqual([
-    { local_id: root.id, hosted_id: 'stored-root' },
-    { local_id: reply.id, hosted_id: 'stored-reply' },
-  ])
+  ).toEqual(
+    [{ source_record_id: rootRecordId }, { source_record_id: replyRecordId }].sort((a, b) =>
+      a.source_record_id.localeCompare(b.source_record_id),
+    ),
+  )
 })
 
 test('counts refused receipts without blocking adoption', async () => {
@@ -829,20 +832,16 @@ test('an install with uploaded message ledger rows and no receipt ledger complet
       {},
       NOW + index,
     )
-    const hostedId = `01990000-0000-7000-8000-00000000010${index}`
+    const hostedId = db()
+      .query<{ record_id: string }, [number]>('SELECT record_id FROM board_message WHERE id=?')
+      .get(notice.id)!.record_id
     db()
       .query(
         `INSERT INTO board_hosted_adoption_ledger
-         (local_kind,local_id,hosted_id,state,refusal,created_at,updated_at,record_id)
-         VALUES ('notice',?,?,'uploaded',NULL,?,?,?)`,
+         (source_record_id,local_kind,state,refusal,created_at,updated_at)
+         VALUES (?,'notice','uploaded',NULL,?,?)`,
       )
-      .run(
-        notice.id,
-        hostedId,
-        new Date(NOW).toISOString(),
-        new Date(NOW).toISOString(),
-        newRecordId(),
-      )
+      .run(hostedId, new Date(NOW).toISOString(), new Date(NOW).toISOString())
     db()
       .query('UPDATE board_message SET withdrawn_at=? WHERE id=?')
       .run(new Date(NOW + 10).toISOString(), notice.id)
@@ -890,7 +889,8 @@ test('a refused receipt is recorded as skipped and is not sent again on a rerun'
   expect(
     db()
       .query(
-        'SELECT state,refusal FROM board_hosted_adoption_receipt WHERE local_message_id=? AND reader_session=?',
+        `SELECT state,refusal FROM board_hosted_adoption_receipt
+         WHERE message_record_id=(SELECT record_id FROM board_message WHERE id=?) AND reader_session=?`,
       )
       .get(notice.id, 'refused-a'),
   ).toEqual({ state: 'skipped', refusal: 'receipt is no longer visible' })
@@ -951,8 +951,11 @@ test('drops a claim that expires before its request and clears its pending ledge
   expect(claimWrites).toBe(0)
   expect(
     db()
-      .query('SELECT * FROM board_hosted_adoption_ledger WHERE local_kind=? AND local_id=?')
-      .get('claim', local.id),
+      .query(
+        `SELECT * FROM board_hosted_adoption_ledger
+         WHERE source_record_id=(SELECT record_id FROM board_claim WHERE id=?)`,
+      )
+      .get(local.id),
   ).toBeNull()
 })
 

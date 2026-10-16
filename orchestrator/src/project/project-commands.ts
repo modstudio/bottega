@@ -5,6 +5,7 @@
  */
 import { existsSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { tryWriteContention, writeTransaction } from '../database/db.ts'
 import { listLenses, selectProjectProfile } from '../lens/lenses.ts'
 import { lifecycleForm } from '../worktree/worktree-lifecycle.ts'
@@ -150,7 +151,7 @@ export async function addProject(
   await validateDeclaredSpace(input.settings, requireMembership)
   const candidate = {
     id: 0,
-    recordId: null,
+    recordId: newRecordId(),
     name: input.name,
     path: input.path,
     stack: input.stack,
@@ -307,8 +308,8 @@ function fillCandidate(current: Project, input: FillAbsentProjectInput): FillCan
 async function writeHostedFillCandidate(
   snapshot: Project,
   candidate: FillCandidate,
-): Promise<string | null> {
-  if (!candidate.project) return null
+): Promise<string> {
+  if (!candidate.project) return snapshot.recordId
   const destination = await hostedProjectDestination(
     candidate.project.name,
     candidate.project.settings,

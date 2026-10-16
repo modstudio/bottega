@@ -293,7 +293,9 @@ describe('the live ask channel always answers', () => {
   test('run_gate returns at its bound, then rejoins the same execution for its result', async () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const project = db()
-      .query(`INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?) RETURNING id`)
+      .query(
+        `INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?) RETURNING id`,
+      )
       .get('gate-wait-fixture', '/fixture', 'bun', JSON.stringify({ gate: 'bun run check' })) as {
       id: number
     }
@@ -408,7 +410,9 @@ describe('the live ask channel always answers', () => {
   test('an aborted run_gate call leaves its result pending for the next call', async () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const project = db()
-      .query(`INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?) RETURNING id`)
+      .query(
+        `INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?) RETURNING id`,
+      )
       .get('gate-abort-fixture', '/fixture', 'bun', JSON.stringify({ gate: 'bun run check' })) as {
       id: number
     }
@@ -466,7 +470,7 @@ describe('the live ask channel always answers', () => {
   test('gate_result returns the newest finished gate for the reader project and exact commit', async () => {
     const project = db()
       .query(
-        `INSERT INTO project (name,path,stack,settings) VALUES ('gate-result-fixture','/fixture','bun','{}') RETURNING id`,
+        `INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'gate-result-fixture','/fixture','bun','{}') RETURNING id`,
       )
       .get() as { id: number }
     const reader = addRun({
@@ -644,7 +648,9 @@ describe('the live ask channel always answers', () => {
   test('note derives run identity and reports the filed and candidate ids', async () => {
     const run = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
     const project = db()
-      .query(`INSERT INTO project (name,path,settings) VALUES (?,?,?) RETURNING id,name`)
+      .query(
+        `INSERT INTO project (record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?) RETURNING id,name`,
+      )
       .get('worker-note-project', '/projects/worker-note', '{}') as { id: number; name: string }
     db()
       .query(

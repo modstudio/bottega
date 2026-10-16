@@ -515,6 +515,8 @@ export const modules: ArchitectureModule[] = [
     '../record/record-api-client.ts',
     '../record/record-project-destination-client.ts',
     '../record/record-write-authority.ts',
+    '../database/db.ts',
+    './project-settings.ts',
     './projects.ts',
   ]),
   module('orchestrator/src/project/project-rename.ts', ['../database/db.ts', './projects.ts']),

@@ -258,11 +258,7 @@ test('converted command families preserve trunk output and exit status without o
       1,
       `no hosted record is configured for this install; set ORCH_RECORD_API_URL before running \`${PLATFORM_SLUG} project push\``,
     ],
-    [
-      ['project', 'fill-record-ids'],
-      1,
-      `no hosted record is configured for this install; set ORCH_RECORD_API_URL before running \`${PLATFORM_SLUG} project fill-record-ids\``,
-    ],
+    [['project', 'fill-record-ids'], 0, 'filled 0 project record ids'],
     [['subject'], 1, 'project is required'],
     ...['list', 'add', 'rename', 'define', 'reorder', 'retire'].map(
       (verb): CompatibilityCase => [['subject', verb], 1, 'project is required'],

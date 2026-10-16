@@ -20,7 +20,7 @@ console.log(
   JSON.stringify([
     {
       id: 1,
-      record_id: null,
+      record_id: '01990000-0000-7000-8000-000000001101',
       name: 'alpha',
       path: '/fixtures/repos/alpha',
       stack: null,
@@ -40,7 +40,7 @@ console.log(
     },
     {
       id: 2,
-      record_id: null,
+      record_id: '01990000-0000-7000-8000-000000001102',
       name: 'beta',
       path: '/fixtures/repos/beta',
       stack: null,
@@ -50,7 +50,7 @@ console.log(
     },
     {
       id: 3,
-      record_id: null,
+      record_id: '01990000-0000-7000-8000-000000001103',
       name: 'gamma',
       path: '/fixtures/repos/gamma',
       stack: null,
@@ -60,7 +60,7 @@ console.log(
     },
     {
       id: 4,
-      record_id: null,
+      record_id: '01990000-0000-7000-8000-000000001104',
       name: 'delta',
       path: '/fixtures/repos/delta',
       stack: null,
@@ -85,7 +85,7 @@ console.log(
     },
     {
       id: 6,
-      record_id: null,
+      record_id: '01990000-0000-7000-8000-000000001106',
       name: 'nested',
       path: '/fixtures/repos/alpha/packages/nested',
       stack: null,
@@ -95,7 +95,7 @@ console.log(
     },
     {
       id: 7,
-      record_id: null,
+      record_id: '01990000-0000-7000-8000-000000001107',
       name: 'epsilon',
       path: '/fixtures/repos/epsilon',
       stack: null,
@@ -105,7 +105,7 @@ console.log(
     },
     {
       id: 8,
-      record_id: null,
+      record_id: '01990000-0000-7000-8000-000000001108',
       name: 'zeta',
       path: '/fixtures/repos/zeta',
       stack: null,
@@ -115,7 +115,7 @@ console.log(
     },
     {
       id: 9,
-      record_id: null,
+      record_id: '01990000-0000-7000-8000-000000001109',
       name: 'stopal',
       path: '/fixtures/repos/stopal',
       stack: null,

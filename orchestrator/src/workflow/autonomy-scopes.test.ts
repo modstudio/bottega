@@ -21,11 +21,9 @@ const steps = [
 const database = (settings = '{}') => {
   const d = new Database(':memory:')
   applyMigrations(d)
-  d.query('INSERT INTO project (name,path,settings) VALUES (?,?,?)').run(
-    'fixture',
-    '/fixture',
-    settings,
-  )
+  d.query(
+    'INSERT INTO project (record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?)',
+  ).run('fixture', '/fixture', settings)
   return d
 }
 const missingConfig = { BOTTEGA_CONFIG_HOME: '/missing-fixture-config' }

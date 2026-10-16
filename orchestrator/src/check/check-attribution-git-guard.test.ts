@@ -30,7 +30,9 @@ function fixture() {
   const database = new Database(databasePath, { create: true })
   applyMigrations(database)
   database
-    .query('INSERT INTO project (name,path,settings) VALUES (?,?,?)')
+    .query(
+      'INSERT INTO project (record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?)',
+    )
     .run(
       'fixture',
       project,

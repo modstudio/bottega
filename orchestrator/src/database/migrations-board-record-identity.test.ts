@@ -6,8 +6,8 @@ import { join } from 'node:path'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import {
   applyMigrations,
+  applyMigrationsBefore,
   canonicalSchemaHash,
-  expectedSchemaHash,
   MIGRATIONS_FOLDER,
   migrationJournal,
 } from './migrations.ts'
@@ -90,7 +90,7 @@ test('board identity migration fills ids, copies adopted hosted ids, and preserv
           .count,
       ]),
     )
-    expect(applyMigrations(database)).toEqual([
+    expect(applyMigrationsBefore(database, '0115_project_identity_contract')).toEqual([
       '0111_board_record_identity',
       '0112_project_record_identity',
       '0113_doc_form_reference',
@@ -152,7 +152,7 @@ test('board identity migration fills ids, copies adopted hosted ids, and preserv
     expect(database.query('PRAGMA foreign_key_check').all()).toEqual([])
     const fresh = new Database(':memory:')
     fresh.exec('PRAGMA foreign_keys=ON')
-    applyMigrations(fresh)
+    applyMigrationsBefore(fresh, '0115_project_identity_contract')
     const schemaRows = (subject: Database) =>
       subject
         .query(
@@ -163,7 +163,6 @@ test('board identity migration fills ids, copies adopted hosted ids, and preserv
     expect(schemaRows(database)).toEqual(schemaRows(fresh))
     expect(canonicalSchemaHash(database)).toBe(canonicalSchemaHash(fresh))
     fresh.close()
-    expect(canonicalSchemaHash(database)).toBe(expectedSchemaHash())
   } finally {
     database.close()
     rmSync(folder, { recursive: true, force: true })

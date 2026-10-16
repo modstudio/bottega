@@ -148,7 +148,9 @@ describe('importWorkflowTree', () => {
       ['orch-docs-fixture', 'orch-docs'],
       ['array-fixture', 'array-mcp'],
     ] as const) {
-      d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
+      d.query(
+        'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
+      ).run(
         project,
         `/${project}`,
         'bun',
@@ -179,7 +181,9 @@ describe('importWorkflowTree', () => {
   test('a single review state resolves both new steps in ship-task and code-review', () => {
     const d = database()
     importAndPromoteCurrentTree(d)
-    d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
+    d.query(
+      'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
+    ).run(
       'fixture',
       '/fixture',
       'bun',
@@ -214,7 +218,9 @@ describe('importWorkflowTree', () => {
   test('intake carries declared signals and leaves workflows without that need unaffected', () => {
     const d = database()
     importAndPromoteCurrentTree(d)
-    d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
+    d.query(
+      'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
+    ).run(
       'fixture',
       '/fixture',
       'bun',

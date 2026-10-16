@@ -910,7 +910,7 @@ export function projectsForDryRun(path: string): Project[] {
         )
         .all() as {
         id: number
-        record_id: string | null
+        record_id: string
         name: string
         path: string
         stack: string | null

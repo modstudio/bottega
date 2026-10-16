@@ -34,6 +34,7 @@ import {
   type SequenceKind,
   type SequenceState,
 } from '../../../shared/git.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { releaseTagVersion } from '../../../shared/release-tag.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import {
@@ -71,8 +72,8 @@ export type { MainStackConsumer, ProjectSettings, WorktreeTool }
 
 export type Project = {
   id: number
-  /** Hosted record identity; nullable until the one-time identity fill runs. */
-  recordId: string | null
+  /** Hosted record identity, minted locally when this install has no hosted record. */
+  recordId: string
   /** What it is called. Matches the directory name by default, not necessarily. */
   name: string
   /** Absolute path to its main checkout. */
@@ -151,7 +152,7 @@ export function resolvedWorktreeTool(
 
 function parse(row: {
   id: number
-  record_id?: string | null
+  record_id: string
   name: string
   path: string
   stack: string | null
@@ -170,7 +171,7 @@ function parse(row: {
   }
   return {
     id: row.id,
-    recordId: row.record_id ?? null,
+    recordId: row.record_id,
     name: row.name,
     path: row.path,
     stack: row.stack,
@@ -279,18 +280,22 @@ export function upsertProject(p: {
   const database = writableDb()
   writeProjectRegisterRow(database, {
     ...p,
+    recordId: p.recordId ?? newRecordId(),
     settings: projectSettingsForStorage(p.settings),
   })
 }
 
 /** Store the hosted identity once on the exact snapshotted row. */
-export function storeProjectRecordId(id: number, recordId: string): void {
-  writableDb()
-  const result = db()
+export function storeProjectRecordId(
+  id: number,
+  recordId: string,
+  database: Database = writableDb(),
+): void {
+  const result = database
     .query('UPDATE project SET record_id=? WHERE id=? AND record_id IS NULL')
     .run(recordId, id)
   if (result.changes > 0) return
-  const project = projectRowById(id)
+  const project = projectRowById(id, database)
   if (!project) {
     throw new Error(
       `project row ${id} was removed while its hosted identity was being stored; inspect \`${PLATFORM_SLUG} project list --json\` and the hosted project before retrying`,

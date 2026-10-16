@@ -3,6 +3,7 @@ import { afterAll, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { git } from '../git/git-environment.ts'
 import { checkpointRun } from './checkpoint.ts'
@@ -38,6 +39,12 @@ function fixture(name: string): { database: Database; repository: string } {
   )
   const database = new Database(':memory:')
   applyMigrations(database)
+  database
+    .query(
+      `INSERT INTO run (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       VALUES (835,?,'2026-10-15','codex','implement','sha',1,'checkpoint','running')`,
+    )
+    .run(newRecordId())
   return { database, repository }
 }
 

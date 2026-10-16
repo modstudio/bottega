@@ -54,6 +54,7 @@ const CONVERTED_TABLES = [
   'port_ref',
   'port_ref_source',
   'port_skip',
+  'project',
   'project_lens_profile',
   'project_lens_profile_revision',
   'probe',
@@ -111,9 +112,13 @@ export const EXEMPT_TABLES: readonly IdentityExemption[] = [
   },
 ]
 
-export const IDENTITY_BASELINE = ['project'] as const
+export const IDENTITY_BASELINE = [] as const
 
-const IDENTITY_COLUMNS: Readonly<Record<string, string>> = { subject: 'id' }
+const IDENTITY_COLUMNS: Readonly<Record<string, string>> = {
+  board_hosted_adoption_ledger: 'source_record_id',
+  board_hosted_adoption_receipt: 'message_record_id',
+  subject: 'id',
+}
 
 export function decideIdentityInventory(
   tables: readonly IdentityTable[],

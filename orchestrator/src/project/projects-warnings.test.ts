@@ -8,7 +8,7 @@ import { worktreeWarnings } from './projects.ts'
 
 const project = (path: string, worktree: Record<string, unknown>): Project => ({
   id: 1,
-  recordId: null,
+  recordId: '01990000-0000-7000-8000-000000001214',
   name: 'sample',
   path,
   stack: null,

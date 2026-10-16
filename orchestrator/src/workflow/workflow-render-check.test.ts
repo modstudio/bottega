@@ -44,7 +44,7 @@ const catalogue = (
 
 const project = (settings: Project['settings']): Project => ({
   id: 1,
-  recordId: null,
+  recordId: '01990000-0000-7000-8000-000000001214',
   name: 'fixture',
   path: '/fixture',
   stack: 'bun',
@@ -58,7 +58,9 @@ const database = () => {
   d.exec('PRAGMA foreign_keys=ON')
   applyMigrations(d)
   seedWorkflows(d)
-  d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
+  d.query(
+    'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
+  ).run(
     'fixture',
     '/fixture',
     'bun',

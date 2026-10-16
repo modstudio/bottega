@@ -359,22 +359,22 @@ function remoteOwnershipRefusal(
 }
 function previousPublication(project: Project, branch: string, runId: number): Publication | null {
   return db()
-    .query<Publication, [number, string, string, number, string]>(
+    .query<Publication, [number, string, string, number]>(
       `SELECT head_commit tip,base_commit base FROM run
      WHERE id<>? AND job=? AND branch=? AND head_commit IS NOT NULL
-       AND (project_id=? OR (project_id IS NULL AND repo=?))
+       AND project_id=?
      ORDER BY id DESC LIMIT 1`,
     )
-    .get(runId, CANON_MIRROR_JOB, branch, project.id, project.name) as Publication | null
+    .get(runId, CANON_MIRROR_JOB, branch, project.id) as Publication | null
 }
 function releaseOwnedLeftover(project: Project, path: string, port: CanonMirrorPort): void {
   if (!existsSync(path)) return
   const owners = db()
-    .query<{ id: number }, [string, string, number, string]>(
+    .query<{ id: number }, [string, string, number]>(
       `SELECT id FROM run WHERE job=? AND worktree=?
-     AND (project_id=? OR (project_id IS NULL AND repo=?)) ORDER BY id`,
+     AND project_id=? ORDER BY id`,
     )
-    .all(CANON_MIRROR_JOB, path, project.id, project.name)
+    .all(CANON_MIRROR_JOB, path, project.id)
   const ownership = inspectTreeOwnership(
     path,
     project.path,

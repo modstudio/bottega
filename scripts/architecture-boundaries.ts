@@ -611,6 +611,7 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/project/project-commands.ts',
     [
       '../../../shared/brand.ts',
+      '../../../shared/record-id.ts',
       'node:fs',
       '../database/db.ts',
       '../lens/lenses.ts',
