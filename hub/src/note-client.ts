@@ -3,6 +3,7 @@ import { jsonBody } from '../../shared/http-json.ts'
 import { readRecordSessionToken } from '../../shared/record-session.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import type { HostedTask } from './hosted-tasks.ts'
+import { resolveHostedUrl } from './hosted-url.ts'
 import { HOSTED_UNREACHABLE_REMEDY, MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
 import {
   assertProjectNoteCounters,
@@ -25,7 +26,7 @@ async function request<T>(
     const identity = await hostedTaskIdentity(options)
     if (options.recordSpace !== identity.activeSpaceId) assertTargetSpaceNotes(identity)
   }
-  const baseUrl = options.baseUrl ?? process.env.HUB_HOSTED_URL
+  const baseUrl = options.baseUrl ?? resolveHostedUrl()
   if (!baseUrl) throw new Error(`hosted hub is not configured. ${REMEDY}`)
   if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
   const token = options.token ?? readRecordSessionToken()

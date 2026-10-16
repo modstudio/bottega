@@ -4,29 +4,20 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type ConfigEnvironment, resolvePlatformEnvFile } from '../../../shared/config-directory.ts'
+import {
+  isHttpAddress,
+  RECORD_CLIENT_ADDRESSES_PATH,
+  type RecordClientAddresses,
+} from '../../../shared/record-client-addresses.ts'
 
-export type RecordClientAddresses = {
-  recordApiUrl: string
-  hubHostedUrl: string
-}
 type RecordUseRequest = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
-
-function validHttpUrl(value: unknown): value is string {
-  if (typeof value !== 'string') return false
-  try {
-    const url = new URL(value)
-    return url.protocol === 'http:' || url.protocol === 'https:'
-  } catch {
-    return false
-  }
-}
 
 function discoveredAddresses(body: unknown): RecordClientAddresses {
   if (
     typeof body !== 'object' ||
     body === null ||
-    !validHttpUrl(Reflect.get(body, 'recordApiUrl')) ||
-    !validHttpUrl(Reflect.get(body, 'hubHostedUrl'))
+    !isHttpAddress(Reflect.get(body, 'recordApiUrl')) ||
+    !isHttpAddress(Reflect.get(body, 'hubHostedUrl'))
   ) {
     throw new Error(
       'the discovery response did not contain valid recordApiUrl and hubHostedUrl addresses',
@@ -78,7 +69,8 @@ export async function useHostedRecord(
   environment: ConfigEnvironment = process.env,
   request: RecordUseRequest = fetch,
 ): Promise<void> {
-  const discoveryUrl = `${address.replace(/\/+$/, '')}/client-config`
+  const discoveryUrl = new URL(address)
+  discoveryUrl.pathname = `${discoveryUrl.pathname.replace(/\/+$/, '')}${RECORD_CLIENT_ADDRESSES_PATH}`
   let response: Response
   try {
     response = await request(discoveryUrl)

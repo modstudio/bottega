@@ -3,6 +3,7 @@
 import { createInterface } from 'node:readline/promises'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { isHttpAddress } from '../../../shared/record-client-addresses.ts'
 import { projects } from '../project/projects.ts'
 import { retireOutboxRowWithDependencyProof } from '../record/outbox-operator.ts'
 import { retryOutboxRow } from '../record/outbox-quarantine.ts'
@@ -31,12 +32,14 @@ import { log } from './support.ts'
 
 const presentation = { log }
 
-function httpAddress(value: string): string {
-  try {
-    const url = new URL(value)
-    if (url.protocol === 'http:' || url.protocol === 'https:') return value
-  } catch {}
-  throw new Error('address must be an http or https URL')
+export function httpAddress(value: string): string {
+  if (!isHttpAddress(value)) throw new Error('address must be an http or https URL')
+  const url = new URL(value)
+  if (url.username || url.password)
+    throw new Error('address must not contain credentials; remove them')
+  if (url.search) throw new Error('address must not contain a query; remove it')
+  if (url.hash) throw new Error('address must not contain a fragment; remove it')
+  return value
 }
 
 async function promptPassword(): Promise<string> {

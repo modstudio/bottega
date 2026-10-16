@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { builtCommitResponse } from '../../../shared/built-commit.ts'
 import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, type DocAudience } from '../../../shared/docs.ts'
+import type { RecordClientAddresses } from '../../../shared/record-client-addresses.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
@@ -97,7 +98,7 @@ type RecordDocMutationInput = {
 }
 type Deps = RecordSubjectRouteDeps & RecordReleaseRouteDeps & RecordSyncRouteDeps & RecordApiDeps
 type RecordApiDeps = RecordInvitationRouteDeps & {
-  clientAddresses: { recordApiUrl: string; hubHostedUrl: string }
+  clientAddresses: RecordClientAddresses
   recordUrl: string
   allowedOrigins?: string[]
   auth: { handler(request: Request): Response | Promise<Response> }

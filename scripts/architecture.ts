@@ -419,6 +419,7 @@ export const modules: ArchitectureModule[] = [
     './hosted-secrets.ts',
   ]),
   module('shared/env-values.ts', ['node:fs', 'node:util', './config-directory.ts']),
+  module('shared/record-client-addresses.ts', []),
   module('shared/machine-config.ts', [
     '@decimalturn/toml-patch',
     'node:fs',

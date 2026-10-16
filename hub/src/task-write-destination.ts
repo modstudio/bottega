@@ -1,3 +1,4 @@
+import { resolveHostedUrl } from './hosted-url.ts'
 import { declaredProjectSpace, projectWriteDecisionFor } from './hosted-write-mode.ts'
 import { readInstallBinding } from './install-binding.ts'
 import { projects } from './projects.ts'
@@ -27,7 +28,7 @@ export function taskWriteMode(
   const decision = projectWriteDecisionFor(
     registeredTaskProject(projectName),
     readInstallBinding(),
-    hosted?.baseUrl ?? process.env.HUB_HOSTED_URL,
+    hosted?.baseUrl ?? resolveHostedUrl(),
   )
   if (decision.mode === 'refused') throw new Error(decision.reason)
   return decision.mode

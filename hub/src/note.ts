@@ -16,6 +16,7 @@ import { hasRecordIdShape } from '../../shared/record-id.ts'
 import { projectOf } from './attribute.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { confirmCount } from './hosted-tasks.ts'
+import { resolveHostedUrl } from './hosted-url.ts'
 import {
   hostedUnavailableRemedy,
   hostedWriteMode,
@@ -170,7 +171,7 @@ function writeMode(
   const decision = projectWriteDecisionFor(
     project,
     readInstallBinding(),
-    hosted?.baseUrl ?? process.env.HUB_HOSTED_URL,
+    hosted?.baseUrl ?? resolveHostedUrl(),
   )
   if (decision.mode === 'refused') throw new Error(decision.reason)
   return decision.mode
@@ -835,7 +836,7 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
     .all(cutoff)
     .filter((row) => row.stale_at !== null || markedIds.has(row.record_id))
   const deletedIds = deletedRows.map((row) => row.record_id)
-  const url = deps.hosted?.baseUrl ?? process.env.HUB_HOSTED_URL
+  const url = deps.hosted?.baseUrl ?? resolveHostedUrl()
   if (hostedWriteMode(url) !== 'hosted-configured' && readInstallBinding().bound) {
     throw new Error(
       `this install belongs to a hosted space; local writes are refused while hosting is unavailable. ${hostedUnavailableRemedy(url)}`,

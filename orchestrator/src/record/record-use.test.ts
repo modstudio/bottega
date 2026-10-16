@@ -74,6 +74,25 @@ test('discovers addresses, writes the resolved config file, and warns about proc
   }
 })
 
+test('appends discovery to the address path with URL path operations', async () => {
+  let requested = ''
+  const root = mkdtempSync(join(tmpdir(), 'record-use-path-'))
+  try {
+    await useHostedRecord(
+      'https://entry.example.test/record/',
+      { log: () => undefined, warn: () => undefined },
+      { [CONFIG_HOME_ENV]: root },
+      async (input) => {
+        requested = String(input)
+        return Response.json(addresses)
+      },
+    )
+    expect(requested).toBe('https://entry.example.test/record/client-config')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('refuses malformed discovery with the address it tried and the reason', async () => {
   await expect(
     useHostedRecord(

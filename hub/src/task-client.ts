@@ -6,6 +6,7 @@ import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import type { HostedSend } from './hosted-reports.ts'
 import type { HostedTaskPresencePair } from './hosted-task-prune.ts'
 import type { HostedComment, HostedDocument, HostedTask } from './hosted-tasks.ts'
+import { resolveHostedUrl } from './hosted-url.ts'
 import { HOSTED_UNREACHABLE_REMEDY, MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
 import { parseIdentitySetPage } from './identity-set-contract.ts'
 import {
@@ -101,7 +102,7 @@ export function assertTargetSpaceNotes(identity: HostedTaskIdentity) {
 }
 
 function assertHostedTaskWriteConfigured(options: { baseUrl?: string } = {}) {
-  const baseUrl = options.baseUrl ?? process.env.HUB_HOSTED_URL
+  const baseUrl = options.baseUrl ?? resolveHostedUrl()
   if (!baseUrl) throw new Error(`hosted hub is not configured. ${REMEDY}`)
   return baseUrl
 }

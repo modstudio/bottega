@@ -84,7 +84,7 @@ describe('hosted write mode', () => {
     if (decision.mode !== 'refused') throw new Error('expected refusal')
     expect(decision.cause).toBe('hosted-space')
     expect(decision.reason).toContain("project 'hublocal' belongs to a hosted space")
-    expect(decision.reason).toContain('Set HUB_HOSTED_URL')
+    expect(decision.reason).toContain(`${PLATFORM_SLUG} record use <address>`)
     expect(decision.reason).not.toContain('run with no hosted record')
     expect(projectWriteDecisionFor(hublocal, bound, 'https://hub.example')).toEqual({
       mode: 'hosted-configured',
@@ -97,7 +97,7 @@ describe('hosted write mode', () => {
     if (decision.mode !== 'refused') throw new Error('expected refusal')
     expect(decision.cause).toBe('remote-tracker')
     expect(decision.reason).toContain("project 'alpha' declares a remote tracker")
-    expect(decision.reason).toContain('Set HUB_HOSTED_URL')
+    expect(decision.reason).toContain(`${PLATFORM_SLUG} record use <address>`)
     expect(projectWriteDecisionFor(alpha, NEVER_BOUND, 'https://hub.example')).toEqual({
       mode: 'hosted-configured',
     })
@@ -115,10 +115,9 @@ describe('hosted write mode', () => {
     expect(hostedUnavailableRemedy('https://hub.example')).toBe(
       'Retry when the hosted record is reachable.',
     )
-    expect(hostedUnavailableRemedy(undefined)).toContain('Set HUB_HOSTED_URL')
-    expect(hostedUnavailableRemedy(undefined)).toContain(`${PLATFORM_SLUG} record doctor`)
+    expect(hostedUnavailableRemedy(undefined)).toContain(`${PLATFORM_SLUG} record use <address>`)
     expect(hostedUnavailableRemedy(undefined)).not.toContain('run with no hosted record')
-    expect(hostedUnavailableRemedy('https://hub.example')).not.toContain('Set HUB_HOSTED_URL')
+    expect(hostedUnavailableRemedy('https://hub.example')).not.toContain('record use')
   })
 
   test('doctor lists the install binding and the mode of each project', () => {

@@ -60,7 +60,7 @@ export type RecordDoctorFacts = {
   operatorChecks?: readonly RecordDoctorCheck[]
 }
 
-const API_CONFIGURATION_REMEDY = 'set ORCH_RECORD_API_URL to the hosted record API address'
+const API_CONFIGURATION_REMEDY = `run \`${PLATFORM_SLUG} record use <address>\``
 const API_REACHABILITY_REMEDY =
   'check ORCH_RECORD_API_URL and make the hosted record API reachable, then retry'
 

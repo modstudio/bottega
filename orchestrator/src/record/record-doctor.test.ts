@@ -95,6 +95,23 @@ describe('record doctor decisions', () => {
     expect(recordDoctorExitCode(checks)).toBe(1)
   })
 
+  test('an unconfigured API directs the customer to record use', () => {
+    const checks = decideRecordDoctorChecks({
+      ...healthyFacts,
+      apiConfigured: false,
+      apiReachable: false,
+      sessionAccepted: false,
+      activeSpaceId: null,
+      memberships: [],
+    })
+    expect(checks[0]).toEqual({
+      name: 'hosted API address configured',
+      status: 'fail',
+      detail: `run \`${PLATFORM_SLUG} record use <address>\``,
+      section: 'customer',
+    })
+  })
+
   test('a project declaring an unavailable space fails and names it', () => {
     const checks = decideRecordDoctorChecks({
       ...healthyFacts,
