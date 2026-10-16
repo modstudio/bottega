@@ -20,10 +20,12 @@ import {
   type PullRequestCheck,
 } from './merge-decision.ts'
 import {
-  decideMergeQueueAction,
   interpretMergeQueue,
   MERGE_QUEUE_WAIT_MS,
   type MergeQueueObservation,
+  type MergeQueueWaitState,
+  mergeQueueEnqueueFailureRemedy,
+  stepMergeQueueWait,
 } from './merge-queue-decision.ts'
 import { enqueuePullRequest, githubMergeQueueState } from './merge-queue-forge.ts'
 import {
@@ -73,13 +75,7 @@ export type PullRequestMergeAdapter = {
     headCommit: string,
   ): string
   queueState(cwd: string, nodeId: string): MergeQueueObservation
-  enqueue(
-    cwd: string,
-    number: number,
-    method: 'squash' | 'merge' | 'rebase',
-    subject: string,
-    headCommit: string,
-  ): void
+  enqueue(cwd: string, number: number, headCommit: string): void
   now(): number
   wait(milliseconds: number): void
 }
@@ -254,8 +250,8 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
   queueState(cwd, nodeId) {
     return githubMergeQueueState(cwd, nodeId)
   },
-  enqueue(cwd, number, method, subject, headCommit) {
-    enqueuePullRequest(cwd, number, method, subject, headCommit)
+  enqueue(cwd, number, headCommit) {
+    enqueuePullRequest(cwd, number, headCommit)
   },
   now: Date.now,
   wait(milliseconds) {
@@ -317,35 +313,45 @@ function collectMergeProof(
 
 function waitForQueuedMerge(
   pullRequest: PullRequestMergeFacts,
-  method: 'squash' | 'merge' | 'rebase',
-  subject: string,
   cwd: string,
   adapter: PullRequestMergeAdapter,
 ): string {
   const deadline = adapter.now() + MERGE_QUEUE_WAIT_MS
-  let enqueueSubmitted = false
-  let activeEntryObserved = false
+  let waitState: MergeQueueWaitState = {
+    enqueueSubmitted: false,
+    activeEntryObserved: false,
+    dequeueObservedAt: null,
+  }
   while (true) {
     const state = interpretMergeQueue(adapter.queueState(cwd, pullRequest.nodeId))
-    if (state.state === 'queued') activeEntryObserved = true
-    const action = decideMergeQueueAction(
-      pullRequest.number,
-      state,
-      enqueueSubmitted,
-      activeEntryObserved,
-      adapter.now(),
-      deadline,
-    )
+    const now = adapter.now()
+    const step = stepMergeQueueWait(pullRequest.number, waitState, state, now, deadline)
+    waitState = step.state
+    const action = step.action
     if (action.action === 'complete') return action.mergeCommit
     if (action.action === 'refuse') {
       throw new Error(`refusing merge: ${action.refusal}; cleared by: ${action.remedy}`)
     }
     if (action.action === 'enqueue') {
-      adapter.enqueue(cwd, pullRequest.number, method, subject, pullRequest.headCommit)
-      enqueueSubmitted = true
+      enqueueForMergeQueue(pullRequest, cwd, adapter)
       continue
     }
     adapter.wait(action.delay)
+  }
+}
+
+function enqueueForMergeQueue(
+  pullRequest: PullRequestMergeFacts,
+  cwd: string,
+  adapter: PullRequestMergeAdapter,
+): void {
+  try {
+    adapter.enqueue(cwd, pullRequest.number, pullRequest.headCommit)
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause)
+    throw new Error(
+      `refusing merge: pull request #${pullRequest.number} could not be added to the merge queue: ${message}; cleared by: ${mergeQueueEnqueueFailureRemedy(pullRequest.number, message)}`,
+    )
   }
 }
 
@@ -444,10 +450,10 @@ export function mergePullRequest(
       pullRequest.number,
       database,
     )
-    const subject = `${pullRequest.title} (#${pullRequest.number})`
     if (release.mergeQueue) {
-      return waitForQueuedMerge(pullRequest, release.mergeMethod, subject, cwd, adapter)
+      return waitForQueuedMerge(pullRequest, cwd, adapter)
     }
+    const subject = `${pullRequest.title} (#${pullRequest.number})`
     return adapter.merge(
       cwd,
       pullRequest.number,

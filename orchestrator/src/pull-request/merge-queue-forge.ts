@@ -4,8 +4,6 @@
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import type { MergeQueueObservation } from './merge-queue-decision.ts'
 
-type MergeMethod = 'squash' | 'merge' | 'rebase'
-
 function successful(cwd: string, argv: string[], label: string): string {
   const result = Bun.spawnSync(argv, {
     cwd,
@@ -71,27 +69,10 @@ export function githubMergeQueueState(cwd: string, nodeId: string): MergeQueueOb
   }
 }
 
-export function enqueuePullRequest(
-  cwd: string,
-  number: number,
-  method: MergeMethod,
-  subject: string,
-  headCommit: string,
-): void {
+export function enqueuePullRequest(cwd: string, number: number, headCommit: string): void {
   successful(
     cwd,
-    [
-      'gh',
-      'pr',
-      'merge',
-      String(number),
-      '--auto',
-      `--${method}`,
-      '--subject',
-      subject,
-      '--match-head-commit',
-      headCommit,
-    ],
+    ['gh', 'pr', 'merge', String(number), '--auto', '--match-head-commit', headCommit],
     'merge-queue enqueue',
   )
 }
