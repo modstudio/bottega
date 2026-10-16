@@ -20,7 +20,7 @@ export async function writeImportedRecordDoc(
     await tx`
       UPDATE doc
       SET title=${doc.title}, body=${doc.body}, delivery=${doc.delivery},
-          audiences=${bindRecordDocAudiences(tx, doc.audiences)}, featured=${doc.featured}, status=${doc.status}, kind=${doc.kind}, form=${doc.form}, article_subject_id=${doc.articleSubjectId}::uuid, source_files=${bindJsonb(tx, doc.sourceFiles)}, checked_against_commit=${doc.checkedAgainstCommit}, replacement_slug=${doc.replacementSlug}, parent_id=${doc.parentId}::uuid, position=${doc.position},
+          audiences=${bindRecordDocAudiences(tx, doc.audiences)}, featured=${doc.featured}, status=${doc.status}, kind=${doc.kind}, form=${doc.form}, article_subject_id=${doc.articleSubjectId}::uuid, source_files=${bindJsonb(tx, doc.sourceFiles)}, checked_against_commit=${doc.checkedAgainstCommit}, summary=${doc.summary}, replacement_slug=${doc.replacementSlug}, parent_id=${doc.parentId}::uuid, position=${doc.position},
           owner_user_id=${doc.owner ?? null}::uuid, project_id=${projectId}::uuid,
           created_at=${doc.createdAt}::timestamptz,
           updated_at=${doc.updatedAt}::timestamptz,
@@ -30,11 +30,11 @@ export async function writeImportedRecordDoc(
   } else
     await tx`
     INSERT INTO doc (
-      id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, replacement_slug, parent_id, position, project_id,
+      id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, parent_id, position, project_id,
       created_at, updated_at, deleted_at
     ) VALUES (
       ${id}::uuid, ${spaceId}::uuid, ${doc.scope}, ${doc.subject}, ${doc.owner ?? null}::uuid, ${doc.slug},
-      ${doc.title}, ${doc.body}, ${doc.delivery}, ${bindRecordDocAudiences(tx, doc.audiences)}, ${doc.featured}, ${doc.status}, ${doc.kind}, ${doc.form}, ${doc.articleSubjectId}::uuid, ${bindJsonb(tx, doc.sourceFiles)}, ${doc.checkedAgainstCommit}, ${doc.replacementSlug}, ${doc.parentId}::uuid, ${doc.position}, ${projectId}::uuid,
+      ${doc.title}, ${doc.body}, ${doc.delivery}, ${bindRecordDocAudiences(tx, doc.audiences)}, ${doc.featured}, ${doc.status}, ${doc.kind}, ${doc.form}, ${doc.articleSubjectId}::uuid, ${bindJsonb(tx, doc.sourceFiles)}, ${doc.checkedAgainstCommit}, ${doc.summary}, ${doc.replacementSlug}, ${doc.parentId}::uuid, ${doc.position}, ${projectId}::uuid,
       ${doc.createdAt}::timestamptz, ${doc.updatedAt}::timestamptz, ${doc.deletedAt}::timestamptz
     )
   `

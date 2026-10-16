@@ -25,6 +25,7 @@ export type RecordDocWriteInput = { url: string } & TenantPrincipal & {
     relatedSubjectIds?: string[]
     sourceFiles?: string[]
     checkedAgainstCommit?: string | null
+    summary?: string | null
     replacementSlug?: string | null
     projectName?: string | null
     projectId?: string | null

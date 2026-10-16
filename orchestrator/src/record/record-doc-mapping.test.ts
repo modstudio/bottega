@@ -56,6 +56,7 @@ test('an older import keeps populated live article fields and defaults revision 
     relatedSubjectIds: ['related'],
     sourceFiles: ['src/article.ts'],
     checkedAgainstCommit: null,
+    summary: null,
   })
   expect(normalized.revisions[0]).toMatchObject({
     form: null,

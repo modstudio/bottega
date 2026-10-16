@@ -6,9 +6,11 @@ import {
   DOC_FORMS,
   DOC_KINDS,
   DOC_STATUSES,
+  effectiveDocSummary,
   normalizeDocAudiences,
   normalizeDocCheckedAgainstCommit,
   normalizeDocSourceFiles,
+  normalizeDocSummary,
 } from '../../../shared/docs.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import type { CanonLintInputCollector } from '../canon/canon-files.ts'
@@ -87,6 +89,7 @@ const articleFieldSchemaShape = {
   related_subjects: z.array(z.string().min(1)).optional(),
   source_files: z.array(z.string()).transform(normalizeDocSourceFiles).optional(),
   checked_against_commit: checkedAgainstCommitSchema,
+  summary: z.string().transform(normalizeDocSummary).nullable().optional(),
 }
 
 function setDocToolPayload(
@@ -107,6 +110,11 @@ function setDocToolPayload(
       : [],
     tree,
   }
+}
+
+async function docToolOwner(user: boolean | undefined, subject: string | null | undefined) {
+  if (user && subject !== undefined) throw new Error('user cannot be used with subject')
+  return user ? await signedInDocOwner() : null
 }
 
 export function registerDocTools(
@@ -156,8 +164,7 @@ export function registerDocTools(
       kind,
       article_subject,
     }) => {
-      if (user && subject !== undefined) throw new Error('user cannot be used with subject')
-      const owner = user ? await signedInDocOwner() : null
+      const owner = await docToolOwner(user, subject)
       return text(
         listDocMetadata({
           scope: user ? 'canon' : scope,
@@ -188,15 +195,14 @@ export function registerDocTools(
       }),
     },
     async ({ scope, subject, slug, user, audience }) => {
-      if (user && subject !== undefined) throw new Error('user cannot be used with subject')
+      const owner = await docToolOwner(user, subject)
       if (!user && !scope) throw new Error('scope is required unless user is true')
       const resolvedScope = user ? 'canon' : scope!
-      const owner = user ? await signedInDocOwner() : null
       const doc = audience
         ? getDocForAudience(resolvedScope, user ? null : (subject ?? null), slug, audience, owner)
         : getDoc(resolvedScope, user ? null : (subject ?? null), slug, owner)
       if (!doc) throw new Error(`no ${scope} doc "${slug}"`)
-      return text(doc)
+      return text({ ...doc, ...effectiveDocSummary(doc.summary, doc.body) })
     },
   )
   server.registerTool(
@@ -253,6 +259,7 @@ export function registerDocTools(
       related_subjects,
       source_files,
       checked_against_commit,
+      summary,
       replacement,
       force_inject,
       reason,
@@ -282,6 +289,7 @@ export function registerDocTools(
           relatedSubjects: related_subjects,
           sourceFiles: source_files,
           checkedAgainstCommit: checked_against_commit,
+          summary,
           replacementSlug: replacement,
           forceInject: force_inject,
           reason,

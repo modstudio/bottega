@@ -16,6 +16,7 @@ const doc: DocsDoc = {
   audiences: ['internal'],
   status: 'current',
   kind: 'article',
+  summarySource: 'derived',
   replacementSlug: null,
   body: 'Write down what matters.',
 }

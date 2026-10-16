@@ -53,6 +53,7 @@ describe('record public docs', () => {
       title: 'Guide',
       body: 'Read me\n',
       summary: 'Read me',
+      summarySource: 'derived',
       featured: false,
       parentId: null,
       position: 2,
@@ -71,6 +72,7 @@ describe('record public docs', () => {
         kind: 'article',
         audiences: ['customer'],
         snippet: `${DOC_SNIPPET_START}Read${DOC_SNIPPET_STOP} me`,
+        body: 'Read me',
         space_name: 'Public',
       }),
     ).toEqual({
@@ -81,6 +83,8 @@ describe('record public docs', () => {
       kind: 'article',
       audiences: ['customer'],
       snippet: 'Read me',
+      summary: 'Read me',
+      summarySource: 'derived',
       highlights: [{ start: 0, length: 4 }],
       spaceName: 'Public',
     })

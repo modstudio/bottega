@@ -21,6 +21,7 @@ type StoredDoc = {
   slug: string
   body: string
   kind: DocKind
+  summary?: string | null
 }
 
 const checkoutCache = new Map<string, DocReferenceProject['checkout']>()
@@ -98,7 +99,8 @@ export function storedDocWarnings(
   doc: StoredDoc,
   referenceProjects?: DocReferenceProject[],
 ): DocLintFinding[] {
-  return lintStoredDoc(doc, referenceProjects).filter(({ level }) => level === 'warning')
+  const findings = lintStoredDoc(doc, referenceProjects).filter(({ level }) => level === 'warning')
+  return findings
 }
 
 export function storedDocLintRefusal(

@@ -180,32 +180,7 @@ function Details({
         {canManage ? (
           <EditableAbout key={doc.id} doc={doc} source={source} />
         ) : (
-          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-md">
-            <dt className="text-text-muted">Audience</dt>
-            <dd className="m-0 text-text-secondary">
-              {doc.audiences.map((audience) => DOC_AUDIENCE_LABELS[audience]).join(', ')}
-            </dd>
-            {signedIn && doc.form ? (
-              <>
-                <dt className="text-text-muted">Type</dt>
-                <dd className="m-0 text-text-secondary">{DOC_FORM_LABELS[doc.form]}</dd>
-              </>
-            ) : null}
-            {signedIn && doc.articleSubject ? (
-              <>
-                <dt className="text-text-muted">Subject</dt>
-                <dd className="m-0 text-text-secondary">{doc.articleSubject.name}</dd>
-              </>
-            ) : null}
-            {signedIn && doc.relatedSubjects?.length ? (
-              <>
-                <dt className="text-text-muted">Related</dt>
-                <dd className="m-0 text-text-secondary">
-                  {doc.relatedSubjects.map((subject) => subject.name).join(', ')}
-                </dd>
-              </>
-            ) : null}
-          </dl>
+          <ReadonlyAbout doc={doc} signedIn={signedIn} />
         )}
       </FactsSection>
       {showHistory ? (
@@ -219,6 +194,52 @@ function Details({
         />
       ) : null}
     </>
+  )
+}
+
+function ReadonlyAbout({ doc, signedIn }: { doc: DocsDoc; signedIn: boolean }) {
+  return (
+    <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-md">
+      {doc.kind === 'article' ? (
+        <>
+          <dt className="text-text-muted">Summary</dt>
+          <dd
+            className={
+              doc.summarySource === 'derived' ? 'm-0 text-text-muted' : 'm-0 text-text-secondary'
+            }
+          >
+            {doc.summary || 'None'}
+            {doc.summarySource === 'derived' ? (
+              <span className="mt-1 block text-xs">From the opening paragraph</span>
+            ) : null}
+          </dd>
+        </>
+      ) : null}
+      <dt className="text-text-muted">Audience</dt>
+      <dd className="m-0 text-text-secondary">
+        {doc.audiences.map((audience) => DOC_AUDIENCE_LABELS[audience]).join(', ')}
+      </dd>
+      {signedIn && doc.form ? (
+        <>
+          <dt className="text-text-muted">Type</dt>
+          <dd className="m-0 text-text-secondary">{DOC_FORM_LABELS[doc.form]}</dd>
+        </>
+      ) : null}
+      {signedIn && doc.articleSubject ? (
+        <>
+          <dt className="text-text-muted">Subject</dt>
+          <dd className="m-0 text-text-secondary">{doc.articleSubject.name}</dd>
+        </>
+      ) : null}
+      {signedIn && doc.relatedSubjects?.length ? (
+        <>
+          <dt className="text-text-muted">Related</dt>
+          <dd className="m-0 text-text-secondary">
+            {doc.relatedSubjects.map((subject) => subject.name).join(', ')}
+          </dd>
+        </>
+      ) : null}
+    </dl>
   )
 }
 

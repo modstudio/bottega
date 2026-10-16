@@ -17,6 +17,7 @@ const rows: DocsTreeItem[] = [
     audiences: ['internal'],
     status: 'current',
     kind: 'article',
+    summarySource: 'derived',
     replacementSlug: null,
   },
   {
@@ -31,6 +32,7 @@ const rows: DocsTreeItem[] = [
     audiences: ['technical'],
     status: 'current',
     kind: 'article',
+    summarySource: 'derived',
     replacementSlug: null,
   },
 ]

@@ -31,6 +31,7 @@ import { listHostedBoardOverview } from './record-board-overview.ts'
 import { hostedBoardStatus, putHostedBoardReceipt } from './record-board-receipts.ts'
 import { createBoardStreamRegistry } from './record-board-stream.ts'
 import { createBoardWakeSource } from './record-board-wake.ts'
+import { importRecordCanon } from './record-canon-import.ts'
 import {
   addDataKeyWraps,
   createDataKey,
@@ -56,7 +57,6 @@ import {
   countRecordDocs,
   deleteRecordDoc,
   getRecordDoc,
-  importRecordCanon,
   importRecordDoc,
   listRecordDocRevisions,
   listRecordDocs,

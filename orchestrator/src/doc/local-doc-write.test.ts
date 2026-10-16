@@ -37,6 +37,13 @@ test('kind selects lint and an omitted kind keeps the current value', async () =
     expectedRevision: article.revision!,
   })
   expect(updated.kind).toBe('article')
+  expect(storedDocWarnings(updated)).toContainEqual({
+    line: 1,
+    rule: 'doc/article-summary',
+    level: 'warning',
+    message: 'article has no written summary',
+    remedy: `set one with ${PLATFORM_SLUG} doc set <slug> --summary`,
+  })
   const working = await setDoc({
     scope: 'global',
     subject: null,

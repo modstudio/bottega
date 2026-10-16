@@ -94,6 +94,7 @@ test('board identity migration fills ids, copies adopted hosted ids, and preserv
       '0111_board_record_identity',
       '0112_project_record_identity',
       '0113_doc_form_reference',
+      '0114_doc_summary',
     ])
     for (const table of TABLES) {
       expect(database.query(`SELECT count(*) AS count FROM ${table}`).get(), table).toEqual({

@@ -24,6 +24,7 @@ export type DocFieldChange =
   | { field: 'relatedSubjects'; value: DocArticleSubject[] }
   | { field: 'sourceFiles'; value: string[]; action: 'added' | 'removed'; path: string }
   | { field: 'delivery'; value: 'inject' | 'demand' }
+  | { field: 'summary'; value: string | null }
 
 type WriteBase = {
   scope: DocScope
@@ -44,6 +45,7 @@ export type LocalFieldWrite = WriteBase & {
   relatedSubjects?: string[]
   sourceFiles?: string[]
   delivery?: 'inject' | 'demand'
+  summary?: string | null
 }
 
 export type HostedFieldWrite = WriteBase & {
@@ -57,6 +59,7 @@ export type HostedFieldWrite = WriteBase & {
   relatedSubjectIds?: string[]
   sourceFiles?: string[]
   delivery?: 'inject' | 'demand'
+  summary?: string | null
 }
 
 /** Same-project, same-scope parents, excluding the document and everything below it. */
@@ -103,6 +106,8 @@ export function fieldChangeReason(change: DocFieldChange): string {
       return `Source file ${change.action}: ${change.path}`
     case 'delivery':
       return `Delivery set to ${DOC_DELIVERY_LABELS[change.value]}`
+    case 'summary':
+      return change.value ? 'Summary updated' : 'Summary cleared'
   }
 }
 
@@ -174,6 +179,8 @@ function sharedFieldPatch(
       return { sourceFiles: change.value }
     case 'delivery':
       return { delivery: change.value }
+    case 'summary':
+      return { summary: change.value }
   }
 }
 
