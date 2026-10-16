@@ -1,15 +1,22 @@
+import { Badge } from '@bottega/hub-ui/badge'
+import { Button } from '@bottega/hub-ui/button'
+import { Checkbox } from '@bottega/hub-ui/checkbox'
+import { EmptyState } from '@bottega/hub-ui/empty-state'
+import { PageHeader } from '@bottega/hub-ui/page-header'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@bottega/hub-ui/table'
+import { toast } from '@bottega/hub-ui/toast'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import { isHostedMode } from '@/lib/hub-mode'
 import { queryClient, trpc } from '@/trpc/client'
-import { Badge } from '@/ui/badge/badge'
-import { Button } from '@/ui/button/button'
-import { Checkbox } from '@/ui/checkbox/checkbox'
-import { EmptyState } from '@/ui/empty-state/empty-state'
-import { PageHeader } from '@/ui/page-header/page-header'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
-import { toast } from '@/ui/toast/toast'
 
 import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 export const Route = createFileRoute('/notes')({ component: NotesPage })

@@ -21,12 +21,15 @@ type ArchitectureCruiseRequest = {
   entries: readonly string[]
   extraArgs?: string[]
   stdout?: 'pipe' | 'inherit'
+  config?: ReturnType<typeof dependencyCruiserConfig>
+  cwd?: string
+  timeoutMs?: number
 }
 
 export async function runArchitectureCruise(request: ArchitectureCruiseRequest) {
   const generatedDirectory = mkdtempSync(join(tmpdir(), 'architecture-'))
   const generatedConfig = join(generatedDirectory, 'dependency-cruiser.json')
-  writeFileSync(generatedConfig, JSON.stringify(dependencyCruiserConfig()))
+  writeFileSync(generatedConfig, JSON.stringify(request.config ?? dependencyCruiserConfig()))
   try {
     const stdout = request.stdout ?? 'inherit'
     const child = Bun.spawn(
@@ -38,14 +41,29 @@ export async function runArchitectureCruise(request: ArchitectureCruiseRequest) 
         ...request.entries,
       ],
       {
-        cwd: ROOT,
+        cwd: request.cwd ?? ROOT,
         env: { ...process.env, ARCHITECTURE_CONFIG: generatedConfig },
         stdout,
         stderr: 'inherit',
       },
     )
-    const output = stdout === 'pipe' ? await new Response(child.stdout).text() : ''
-    return { exitCode: await child.exited, stdout: output }
+    let timedOut = false
+    const timeout =
+      request.timeoutMs === undefined
+        ? undefined
+        : setTimeout(() => {
+            timedOut = true
+            child.kill(9)
+          }, request.timeoutMs)
+    try {
+      const [output, exitCode] = await Promise.all([
+        stdout === 'pipe' ? new Response(child.stdout).text() : Promise.resolve(''),
+        child.exited,
+      ])
+      return { exitCode, stdout: output, timedOut }
+    } finally {
+      if (timeout !== undefined) clearTimeout(timeout)
+    }
   } finally {
     rmSync(generatedDirectory, { recursive: true, force: true })
   }

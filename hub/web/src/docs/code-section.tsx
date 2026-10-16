@@ -1,6 +1,6 @@
+import { classes } from '@bottega/hub-ui/text/classes'
 import { ChevronDown } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
-import { classes } from '@/ui/text/classes'
 
 /**
  * The "In the code" section under an article: a disclosure whose heading keeps the reader's

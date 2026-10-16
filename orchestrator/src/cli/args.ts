@@ -344,6 +344,7 @@ export const CLI_COMMANDS = new Set([
   'enforcement',
   'guide',
   'health',
+  'hub-import',
   'inbox',
   'init-db',
   'fix-defect',

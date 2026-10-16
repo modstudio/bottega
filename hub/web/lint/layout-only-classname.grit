@@ -2,7 +2,7 @@ language js
 
 // A ui/ component takes layout classes only (margin, size, flex and grid
 // placement); its appearance comes from its own variants. The list names every
-// component in hub/web/src/ui that takes a className; add one here when it lands.
+// component in hub/ui/src that takes a className; add one here when it lands.
 // Grit binds regex groups, so every group here is non-capturing.
 or {
   JsxOpeningElement(name=$element, attributes=$attributes),

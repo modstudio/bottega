@@ -1,4 +1,4 @@
-import { Badge } from '@/ui/badge/badge'
+import { Badge } from '@bottega/hub-ui/badge'
 import type { DocStatus } from '../../../../shared/docs.ts'
 
 export function DocStatusBadge({ status = 'current' }: { status?: DocStatus }) {

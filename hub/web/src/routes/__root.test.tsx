@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { spaceMenuItems } from '@bottega/hub-ui/shell/user-menu'
 import { renderToStaticMarkup } from 'react-dom/server'
 import {
   HostedPublicFrame,
@@ -6,7 +7,6 @@ import {
   identityQueryEnabled,
   RailFooterIdentity,
 } from '@/routes/__root'
-import { spaceMenuItems } from '@/ui/shell/user-menu'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 
 test('the public origin never enables the root identity query', () => {

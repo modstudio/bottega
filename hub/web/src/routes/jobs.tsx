@@ -1,3 +1,6 @@
+import { Companion } from '@bottega/hub-ui/companion'
+import { DisplayRow } from '@bottega/hub-ui/form-layout'
+import { PageHeader } from '@bottega/hub-ui/page-header'
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
@@ -5,9 +8,6 @@ import { Collection, type CollectionColumn } from '@/components/collection'
 import { SnapshotEmpty, SnapshotHeader } from '@/components/hosted-snapshot'
 import { isHostedMode } from '@/lib/hub-mode'
 import { type JobRow, trpc } from '@/trpc/client'
-import { Companion } from '@/ui/companion/companion'
-import { DisplayRow } from '@/ui/form-layout/form-layout'
-import { PageHeader } from '@/ui/page-header/page-header'
 
 export const Route = createFileRoute('/jobs')({
   validateSearch: (search: Record<string, unknown>) => ({

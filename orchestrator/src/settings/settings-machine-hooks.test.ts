@@ -85,7 +85,7 @@ test('typed profile hooks and an empty profile render the same canonical product
   const groups = Object.values(
     fromProfile.settings.hooks as Record<string, Array<{ hooks: unknown[] }>>,
   ).flat()
-  expect(groups.flatMap((group) => group.hooks)).toHaveLength(18)
+  expect(groups.flatMap((group) => group.hooks)).toHaveLength(19)
   expect(commands).not.toContain(OLD_ROOT)
   expect(commands.match(/git-guard\.py/g)).toHaveLength(1)
   expect(commands.match(/heartbeat-remind\.py/g)).toHaveLength(6)
@@ -131,6 +131,10 @@ test('test substance guard covers every editor tool from the rendered install', 
     {
       type: 'command',
       command: `python3 ${ASSET_ROOT}/orchestrator/hooks/test-substance-guard.py`,
+    },
+    {
+      type: 'command',
+      command: `python3 ${ASSET_ROOT}/orchestrator/hooks/hub-import-guard.py`,
     },
   ])
 })

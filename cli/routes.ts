@@ -122,6 +122,7 @@ export const ROUTES = (
     route('gate ratchet', 'orch', 'ratchet'),
     route('gate enforcement', 'orch', 'enforcement'),
     route('gate test-substance', 'orch', 'test-substance'),
+    route('gate hub-import', 'orch', 'hub-import'),
     route('gate', 'orch', 'gate'),
     route('release run', 'orch', 'release'),
     route(

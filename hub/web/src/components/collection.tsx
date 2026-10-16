@@ -1,10 +1,17 @@
+import { EmptyState } from '@bottega/hub-ui/empty-state'
+import { Input } from '@bottega/hub-ui/field/input'
+import { PAGE_SIZES, type PageSize, Pagination } from '@bottega/hub-ui/pagination'
+import { pageSlice } from '@bottega/hub-ui/state/pagination'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@bottega/hub-ui/table'
+import { TableCard } from '@bottega/hub-ui/table-card'
 import { type ReactNode, useState } from 'react'
-import { EmptyState } from '@/ui/empty-state/empty-state'
-import { Input } from '@/ui/field/input'
-import { PAGE_SIZES, type PageSize, Pagination } from '@/ui/pagination/pagination'
-import { pageSlice } from '@/ui/state/pagination'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
-import { TableCard } from '@/ui/table-card/table-card'
 
 /** A list the server pages: rows arrive as one page and `total` counts every match. */
 export type ServerPaging = {

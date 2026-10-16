@@ -1,4 +1,4 @@
-import type { Tone } from '@/ui/badge/badge'
+import type { Tone } from '@bottega/hub-ui/badge'
 
 /** The tone for a run's verdict: any failing axis wins over a passing one. */
 export function verdictTone(delivery: string | null, quality: string | null): Tone {

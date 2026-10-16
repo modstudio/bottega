@@ -1,7 +1,7 @@
+import { Badge } from '@bottega/hub-ui/badge'
+import { Button, TextButton } from '@bottega/hub-ui/button'
+import { Select } from '@bottega/hub-ui/listbox/select'
 import { type ReactNode, useState } from 'react'
-import { Badge } from '@/ui/badge/badge'
-import { Button, TextButton } from '@/ui/button/button'
-import { Select } from '@/ui/listbox/select'
 
 /**
  * The opt-in every machine override shares: a setting follows the profile until the

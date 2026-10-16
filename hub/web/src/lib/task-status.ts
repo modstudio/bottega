@@ -1,3 +1,4 @@
+import type { Tone } from '@bottega/hub-ui/badge'
 import {
   Circle,
   CircleCheck,
@@ -6,7 +7,6 @@ import {
   CircleSlash,
   type LucideIcon,
 } from 'lucide-react'
-import type { Tone } from '@/ui/badge/badge'
 
 type TaskStatusLook = { tone: Tone; icon: LucideIcon }
 

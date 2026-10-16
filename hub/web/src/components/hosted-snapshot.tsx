@@ -1,5 +1,5 @@
-import { Select } from '@/ui/listbox/select'
-import { PageHeader } from '@/ui/page-header/page-header'
+import { Select } from '@bottega/hub-ui/listbox/select'
+import { PageHeader } from '@bottega/hub-ui/page-header'
 
 type Machine = { id: string; takenAt: string }
 

@@ -26,21 +26,32 @@ can hide matching rows behind another project's traffic.
 
 # Design system
 
-Build screens from `hub/web/src/ui`, and leave no control wearing the browser's own
-appearance. `ui/` imports nothing from the app, its layers are declared in
-`architecture.ts`, and `hub/web/lint/layout-only-classname.grit` refuses appearance
-classes passed to its components: change a component's look through a variant it owns and
-pass it margin, size and placement only. Browser behavior, such as the dialog element,
-the popover attribute and anchor positioning, is used beneath our own styling; no
-component library is added, and a component's keyboard behavior follows its WAI-ARIA APG
-pattern.
+Build screens from `@bottega/hub-ui`, and leave no control wearing the browser's own
+appearance. A hub package depends only on the workspace packages its entry in
+`hubWorkspaceDependencies` allows, and code outside a package imports it only through a
+declared export subpath. Every non-test source file in `hub/ui/src` has exactly one export
+entry, derived from its path. `scripts/check-hub-packages.ts` enforces the dependency table
+and the export map; `scripts/check-architecture.ts` enforces imports, and
+`orchestrator/hooks/hub-import-guard.py` refuses a violating import when the file is
+written.
 
-Presentation that knows no domain belongs in `ui/`, while a component that knows what a
+The UI package knows nothing of data access, routing or the hub mode, and its internal
+imports stay relative; `scripts/check-architecture.ts` enforces this boundary and the
+layers declared in `scripts/architecture-ui-layers.ts`. UI source filenames are
+kebab-case and use named exports without barrels or export-all declarations; the
+`hub/ui` override in `biome.jsonc` enforces these rules. `hub/web/lint/layout-only-classname.grit`
+refuses appearance classes passed to UI components: change a component's look through a
+variant it owns and pass it margin, size and placement only. Browser behavior, such as the
+dialog element, the popover attribute and anchor positioning, is used beneath our own
+styling; no component library is added, and a component's keyboard behavior follows its
+WAI-ARIA APG pattern.
+
+Presentation that knows no domain belongs in `hub/ui`, while a component that knows what a
 project, run or tracker is belongs beside the screens using it. `ProjectName` renders a
 name and a color; `ProjectMark` knows where a project's color comes from.
 
-Color, type and measurement come from `hub/web/src/styles/tokens.css` through the
-Tailwind bridge in `hub/web/src/styles/theme.css`: raw values, then the meanings the
+Color, type and measurement come from `hub/ui/src/styles/tokens.css` through the
+Tailwind bridge in `hub/ui/src/styles/theme.css`: raw values, then the meanings the
 `dark` class overrides, then shared measurements. Name a token; never write a color
 literal or a default Tailwind palette class. Color that reports a status is selected by
 `data-tone`, which derives that role's whole triad from one anchor. Check a new pair's

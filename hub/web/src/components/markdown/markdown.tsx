@@ -1,3 +1,4 @@
+import { Callout } from '@bottega/hub-ui/callout'
 import {
   createContext,
   isValidElement,
@@ -13,7 +14,6 @@ import remarkDirective from 'remark-directive'
 import remarkGfm from 'remark-gfm'
 import { DOC_AUDIENCE_LABELS } from '@/docs/filters'
 import { secondLevelHeadings } from '@/docs/headings'
-import { Callout } from '@/ui/callout/callout'
 import { docSectionAudiences } from '../../../../../shared/doc-sections.ts'
 import { githubAlertPlugin, isTone } from './markdown-alerts'
 import { fenceUse } from './markdown-fences'

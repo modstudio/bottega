@@ -1,3 +1,6 @@
+import { Button } from '@bottega/hub-ui/button'
+import { Input } from '@bottega/hub-ui/field/input'
+import { PageHeader } from '@bottega/hub-ui/page-header'
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, Navigate } from '@tanstack/react-router'
 import { useState } from 'react'
@@ -12,9 +15,6 @@ import {
   signUpForRecord,
 } from '@/lib/hosted-organization'
 import { isHostedMode } from '@/lib/hub-mode'
-import { Button } from '@/ui/button/button'
-import { Input } from '@/ui/field/input'
-import { PageHeader } from '@/ui/page-header/page-header'
 
 export const Route = createFileRoute('/accept-invitation/$id')({ component: InvitationRoute })
 
