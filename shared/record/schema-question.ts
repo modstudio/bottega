@@ -21,7 +21,6 @@ export const question = pgTable.withRLS(
     machineId: uuid('machine_id')
       .notNull()
       .references(() => machine.id),
-    localId: bigint('local_id', { mode: 'bigint' }),
     revision: integer().notNull(),
     askedAt: timestamp('asked_at', { withTimezone: true }).notNull(),
     question: text().notNull(),

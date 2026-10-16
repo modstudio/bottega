@@ -26,7 +26,6 @@ export const run = pgTable.withRLS(
     machineId: uuid('machine_id')
       .notNull()
       .references(() => machine.id),
-    localId: bigint('local_id', { mode: 'bigint' }),
     startedByUserId: uuid('started_by_user_id').references(() => user.id),
     startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
     finishedAt: timestamp('finished_at', { withTimezone: true }),

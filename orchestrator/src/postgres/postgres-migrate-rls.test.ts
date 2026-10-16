@@ -126,13 +126,13 @@ realPostgres('RLS proof against real Postgres', () => {
       INSERT INTO machine (id, user_id, name, registered_at, last_seen)
         VALUES ('${MACHINE_A}', '${USER_A}', 'proof-machine', now(), now());
       INSERT INTO run (
-        id, space_id, project_id, machine_id, local_id, started_at, agent, job,
+        id, space_id, project_id, machine_id, started_at, agent, job,
         prompt_sha, prompt_bytes, prompt_head, probe, status, turn, no_failover,
         automatic_failover, work_preserved, created_at, updated_at
       ) VALUES
-        ('${RUN_A}', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', 1, now(), 'proof', 'proof',
+        ('${RUN_A}', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', now(), 'proof', 'proof',
          'a', 1, 'a', false, 'ok', 1, false, false, false, now(), now()),
-        ('${RUN_B}', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', 2, now(), 'proof', 'proof',
+        ('${RUN_B}', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', now(), 'proof', 'proof',
          'b', 1, 'b', false, 'ok', 1, false, false, false, now(), now());
       INSERT INTO seq (space_id, project_id, name, next) VALUES
         ('${SPACE_A}', '${PROJECT_A}', 'task:DEV', 446),
@@ -140,51 +140,51 @@ realPostgres('RLS proof against real Postgres', () => {
         ('${SPACE_A}', '${PROJECT_A2}', 'task:DEV', 12),
         ('${SPACE_B}', '${PROJECT_B}', 'task:DEV', 9);
       INSERT INTO review
-        (id, space_id, project_id, machine_id, local_id, recorded_at, created_at, updated_at)
+        (id, space_id, project_id, machine_id, recorded_at, created_at, updated_at)
       VALUES
-        ('${REVIEW_A}', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', 1, now(), now(), now()),
-        ('${REVIEW_B}', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', 2, now(), now(), now());
+        ('${REVIEW_A}', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', now(), now(), now()),
+        ('${REVIEW_B}', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', now(), now(), now());
       INSERT INTO review_lens
-        (id, space_id, review_id, run_id, machine_id, local_id, lens, agent,
+        (id, space_id, review_id, run_id, machine_id, lens, agent,
          standards_read, files_covered, commands_run, could_not_verify, mcp_tools, docs_read,
          substitutes, created_at, updated_at)
       VALUES
-        ('01990000-0000-7000-8000-00000000005a', '${SPACE_A}', '${REVIEW_A}', '${RUN_A}', '${MACHINE_A}', 1,
+        ('01990000-0000-7000-8000-00000000005a', '${SPACE_A}', '${REVIEW_A}', '${RUN_A}', '${MACHINE_A}',
          'craft', 'proof', '[]', '[]', '[]', '[]', '[]', '[]', '[]', now(), now()),
-        ('01990000-0000-7000-8000-00000000005b', '${SPACE_B}', '${REVIEW_B}', '${RUN_B}', '${MACHINE_A}', 2,
+        ('01990000-0000-7000-8000-00000000005b', '${SPACE_B}', '${REVIEW_B}', '${RUN_B}', '${MACHINE_A}',
          'craft', 'proof', '[]', '[]', '[]', '[]', '[]', '[]', '[]', now(), now());
       INSERT INTO review_finding
-        (id, space_id, review_id, review_lens_id, machine_id, local_id, ordinal, severity,
+        (id, space_id, review_id, review_lens_id, machine_id, ordinal, severity,
          location, evidence, proposed_correction, created_at, updated_at)
       VALUES
-        ('01990000-0000-7000-8000-00000000006a', '${SPACE_A}', '${REVIEW_A}', '01990000-0000-7000-8000-00000000005a', '${MACHINE_A}', 1, 1, 'major', 'a', 'a', 'a', now(), now()),
-        ('01990000-0000-7000-8000-00000000006b', '${SPACE_B}', '${REVIEW_B}', '01990000-0000-7000-8000-00000000005b', '${MACHINE_A}', 2, 1, 'major', 'b', 'b', 'b', now(), now());
+        ('01990000-0000-7000-8000-00000000006a', '${SPACE_A}', '${REVIEW_A}', '01990000-0000-7000-8000-00000000005a', '${MACHINE_A}', 1, 'major', 'a', 'a', 'a', now(), now()),
+        ('01990000-0000-7000-8000-00000000006b', '${SPACE_B}', '${REVIEW_B}', '01990000-0000-7000-8000-00000000005b', '${MACHINE_A}', 1, 'major', 'b', 'b', 'b', now(), now());
       INSERT INTO landing
-        (id, space_id, project_id, machine_id, local_id, branch, status, started_at, created_at, updated_at)
+        (id, space_id, project_id, machine_id, branch, status, started_at, created_at, updated_at)
       VALUES
-        ('01990000-0000-7000-8000-00000000007a', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', 1, 'a', 'landed', now(), now(), now()),
-        ('01990000-0000-7000-8000-00000000007b', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', 2, 'b', 'landed', now(), now(), now());
+        ('01990000-0000-7000-8000-00000000007a', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', 'a', 'landed', now(), now(), now()),
+        ('01990000-0000-7000-8000-00000000007b', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', 'b', 'landed', now(), now(), now());
       INSERT INTO landing_override
-        (id, space_id, project_id, machine_id, local_id, branch, tip, tree, reason, at, created_at, updated_at)
+        (id, space_id, project_id, machine_id, branch, tip, tree, reason, at, created_at, updated_at)
       VALUES
-        ('01990000-0000-7000-8000-00000000008a', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', 1, 'a', 'tip', 'tree', 'reason', now(), now(), now()),
-        ('01990000-0000-7000-8000-00000000008b', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', 2, 'b', 'tip', 'tree', 'reason', now(), now(), now());
+        ('01990000-0000-7000-8000-00000000008a', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', 'a', 'tip', 'tree', 'reason', now(), now(), now()),
+        ('01990000-0000-7000-8000-00000000008b', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', 'b', 'tip', 'tree', 'reason', now(), now(), now());
       INSERT INTO landing_review_carry
-        (id, space_id, project_id, machine_id, local_id, branch, tip, tree, review_id,
+        (id, space_id, project_id, machine_id, branch, tip, tree, review_id,
          reviewed_commit, reviewed_tree, patch_id, old_base, new_base, at, created_at, updated_at)
       VALUES
-        ('01990000-0000-7000-8000-00000000009a', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', 1, 'a', 'tip', 'tree', '${REVIEW_A}', 'commit', 'tree', 'patch', 'old', 'new', now(), now(), now()),
-        ('01990000-0000-7000-8000-00000000009b', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', 2, 'b', 'tip', 'tree', '${REVIEW_B}', 'commit', 'tree', 'patch', 'old', 'new', now(), now(), now());
+        ('01990000-0000-7000-8000-00000000009a', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', 'a', 'tip', 'tree', '${REVIEW_A}', 'commit', 'tree', 'patch', 'old', 'new', now(), now(), now()),
+        ('01990000-0000-7000-8000-00000000009b', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', 'b', 'tip', 'tree', '${REVIEW_B}', 'commit', 'tree', 'patch', 'old', 'new', now(), now(), now());
       INSERT INTO contention
-        (id, space_id, machine_id, local_id, at, resource_kind, resource_key, event_kind, created_at, updated_at)
+        (id, space_id, machine_id, at, resource_kind, resource_key, event_kind, created_at, updated_at)
       VALUES
-        ('01990000-0000-7000-8000-00000000010a', '${SPACE_A}', '${MACHINE_A}', 1, now(), 'lock', 'a', 'wait', now(), now()),
-        ('01990000-0000-7000-8000-00000000010b', '${SPACE_B}', '${MACHINE_A}', 2, now(), 'lock', 'b', 'wait', now(), now());
+        ('01990000-0000-7000-8000-00000000010a', '${SPACE_A}', '${MACHINE_A}', now(), 'lock', 'a', 'wait', now(), now()),
+        ('01990000-0000-7000-8000-00000000010b', '${SPACE_B}', '${MACHINE_A}', now(), 'lock', 'b', 'wait', now(), now());
       INSERT INTO test_flake
-        (id, space_id, project_id, machine_id, local_id, test, file, load_at_failure, at, created_at, updated_at)
+        (id, space_id, project_id, machine_id, test, file, load_at_failure, at, created_at, updated_at)
       VALUES
-        ('01990000-0000-7000-8000-00000000011a', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', 1, 'a', 'a.ts', '{}', now(), now(), now()),
-        ('01990000-0000-7000-8000-00000000011b', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', 2, 'b', 'b.ts', '{}', now(), now(), now());
+        ('01990000-0000-7000-8000-00000000011a', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', 'a', 'a.ts', '{}', now(), now(), now()),
+        ('01990000-0000-7000-8000-00000000011b', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', 'b', 'b.ts', '{}', now(), now(), now());
     `,
     )
 
@@ -247,12 +247,12 @@ realPostgres('RLS proof against real Postgres', () => {
         ('${authProjectA}','${authSpaceA}','auth-a-project',ARRAY['AA'],now()),
         ('${authProjectB}','${authSpaceB}','auth-b-project',ARRAY['BB'],now());
        INSERT INTO run (
-         id,space_id,project_id,machine_id,local_id,started_at,agent,job,prompt_sha,
+         id,space_id,project_id,machine_id,started_at,agent,job,prompt_sha,
          prompt_bytes,prompt_head,probe,status,turn,no_failover,automatic_failover,
          work_preserved,created_at,updated_at
        ) VALUES
-        ('${authRunA}','${authSpaceA}','${authProjectA}','${MACHINE_A}',101,now(),'proof','proof','a',1,'a',false,'ok',1,false,false,false,now(),now()),
-        ('${authRunB}','${authSpaceB}','${authProjectB}','${MACHINE_A}',102,now(),'proof','proof','b',1,'b',false,'ok',1,false,false,false,now(),now());`,
+        ('${authRunA}','${authSpaceA}','${authProjectA}','${MACHINE_A}',now(),'proof','proof','a',1,'a',false,'ok',1,false,false,false,now(),now()),
+        ('${authRunB}','${authSpaceB}','${authProjectB}','${MACHINE_A}',now(),'proof','proof','b',1,'b',false,'ok',1,false,false,false,now(),now());`,
     )
 
     recordSession.setToken(tokenA)
@@ -677,22 +677,22 @@ realPostgres('RLS proof against real Postgres', () => {
       `INSERT INTO project (id,space_id,name,key_prefixes,created_at)
            VALUES ('${httpProject}','${identity.activeSpaceId}','auth-http-project',ARRAY['HTTP'],now());
          INSERT INTO run (
-           id,space_id,project_id,machine_id,local_id,started_at,agent,job,prompt_sha,
+           id,space_id,project_id,machine_id,started_at,agent,job,prompt_sha,
            prompt_bytes,prompt_head,probe,status,turn,no_failover,automatic_failover,
            work_preserved,created_at,updated_at
          ) VALUES
-           ('${httpRun}','${identity.activeSpaceId}','${httpProject}','${MACHINE_A}',103,now(),
+           ('${httpRun}','${identity.activeSpaceId}','${httpProject}','${MACHINE_A}',now(),
             'proof','proof','http',1,'http',false,'ok',1,false,false,false,now(),now()),
-           ('${httpRunOlder}','${identity.activeSpaceId}','${httpProject}','${MACHINE_A}',104,now() - interval '1 minute',
+           ('${httpRunOlder}','${identity.activeSpaceId}','${httpProject}','${MACHINE_A}',now() - interval '1 minute',
             'proof','proof','older',1,'older',false,'ok',1,false,false,false,now(),now());
          INSERT INTO run_score (run_id,space_id,delivery,quality,fidelity,note,scored_at,scored_by,updated_at)
            VALUES ('${httpRun}','${identity.activeSpaceId}','full','right','faithful','good',now(),'architect',now());
-         INSERT INTO review (id,space_id,project_id,machine_id,local_id,recorded_at,created_at,updated_at)
-           VALUES ('${httpReview}','${identity.activeSpaceId}','${httpProject}','${MACHINE_A}',103,now(),now(),now());
-         INSERT INTO review_lens (id,space_id,review_id,run_id,machine_id,local_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,mcp_tools,docs_read,substitutes,created_at,updated_at)
-           VALUES ('${httpLens}','${identity.activeSpaceId}','${httpReview}','${httpRun}','${MACHINE_A}',103,'correctness','proof','[]','[]','[]','[]','[]','[]','[]',now(),now());
-         INSERT INTO review_finding (id,space_id,review_id,review_lens_id,machine_id,local_id,ordinal,severity,location,evidence,proposed_correction,created_at,updated_at)
-           VALUES ('${httpFinding}','${identity.activeSpaceId}','${httpReview}','${httpLens}','${MACHINE_A}',103,1,'major','file:1','evidence','fix',now(),now());`,
+         INSERT INTO review (id,space_id,project_id,machine_id,recorded_at,created_at,updated_at)
+           VALUES ('${httpReview}','${identity.activeSpaceId}','${httpProject}','${MACHINE_A}',now(),now(),now());
+         INSERT INTO review_lens (id,space_id,review_id,run_id,machine_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,mcp_tools,docs_read,substitutes,created_at,updated_at)
+           VALUES ('${httpLens}','${identity.activeSpaceId}','${httpReview}','${httpRun}','${MACHINE_A}','correctness','proof','[]','[]','[]','[]','[]','[]','[]',now(),now());
+         INSERT INTO review_finding (id,space_id,review_id,review_lens_id,machine_id,ordinal,severity,location,evidence,proposed_correction,created_at,updated_at)
+           VALUES ('${httpFinding}','${identity.activeSpaceId}','${httpReview}','${httpLens}','${MACHINE_A}',1,'major','file:1','evidence','fix',now(),now());`,
     )
 
     const ownRuns = await fetch(`${origin}/v1/runs`, {
