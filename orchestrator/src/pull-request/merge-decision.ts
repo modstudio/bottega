@@ -31,6 +31,7 @@ type LocalGateProofInput = {
   headCommit: string
   currentHeadCommit: string
   landingBranch: string
+  mergeQueue: boolean
   gate: { recorded: false } | { recorded: true; remoteLandingTip: string; mergeBase: string }
 }
 
@@ -116,7 +117,7 @@ export function decideMergeProof(input: MergeProofInput): MergeDecision {
       refusal: `no passing local gate is recorded for pull request #${input.number} head ${input.headCommit}; cleared by: run ${PLATFORM_SLUG} gate run in the branch's tree, then ${rerun(input.number)}`,
     }
   }
-  if (input.gate.remoteLandingTip !== input.gate.mergeBase) {
+  if (!input.mergeQueue && input.gate.remoteLandingTip !== input.gate.mergeBase) {
     return {
       admitted: false,
       refusal: `the registered landing branch ${input.landingBranch} moved to ${input.gate.remoteLandingTip} past merge base ${input.gate.mergeBase} for head ${input.headCommit}; cleared by: bring the branch up to origin/${input.landingBranch}, run ${PLATFORM_SLUG} gate run in the branch's tree, push it, then ${rerun(input.number)}`,

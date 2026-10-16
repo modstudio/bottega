@@ -14,7 +14,7 @@ import {
 
 const cwd = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 
-function registerProject(requiredChecks: string[]): void {
+function registerProject(requiredChecks: string[], mergeQueue = false): void {
   db()
     .query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)')
     .run(
@@ -23,12 +23,13 @@ function registerProject(requiredChecks: string[]): void {
       'bun',
       JSON.stringify({
         trunk: 'main',
-        release: { rungs: [], mergeMethod: 'squash', requiredChecks },
+        release: { rungs: [], mergeMethod: 'squash', requiredChecks, mergeQueue },
       }),
     )
 }
 
 const pullRequest: PullRequestMergeFacts = {
+  nodeId: 'PR_node_id',
   number: 42,
   headCommit: 'head-commit',
   headBranch: 'DEV-1255-admission',
@@ -77,6 +78,14 @@ function adapter(
       input.recordAdmission?.(change, decision, prNumber, database) ?? null,
     merge: (_cwd, _number, method, subject, headCommit) =>
       input.merge?.(method, subject, headCommit) ?? 'merge-commit',
+    queueState: () => ({
+      pullRequestState: 'MERGED',
+      mergeCommit: 'merge-commit',
+      entryState: null,
+    }),
+    enqueue: () => {},
+    now: Date.now,
+    wait: () => {},
   }
 }
 

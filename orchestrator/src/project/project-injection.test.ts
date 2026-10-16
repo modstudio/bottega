@@ -20,6 +20,7 @@ const release: ReleaseSettings = {
   ],
   mergeMethod: 'squash',
   requiredChecks: ['gate'],
+  mergeQueue: true,
   observationWindowHours: 24,
 }
 
