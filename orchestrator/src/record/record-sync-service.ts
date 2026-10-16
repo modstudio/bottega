@@ -450,7 +450,7 @@ function reviewFindingValues(row: Payload) {
   }
 }
 
-export const landingCommonValues = (row: Payload) => ({
+const landingCommonValues = (row: Payload) => ({
   id: String(row.id),
   spaceId: String(row.spaceId),
   machineId: String(row.machineId),
