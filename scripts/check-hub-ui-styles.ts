@@ -296,64 +296,50 @@ function componentStoryViolations(path: string, sourceText: string) {
   )
 }
 
-export function analyzeComponentStory(
-  sourceText: string,
-  storyText: string | undefined,
-  componentPath: string,
-) {
-  const source = ts.createSourceFile(
-    componentPath,
-    sourceText,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX,
-  )
+const interactiveTags = new Set(['button', 'input', 'select', 'textarea'])
+const interactiveRoles = new Set([
+  'button',
+  'checkbox',
+  'radio',
+  'switch',
+  'tab',
+  'menuitem',
+  'option',
+  'slider',
+])
+
+function interactiveOpening(node: ts.JsxOpeningLikeElement, source: ts.SourceFile) {
+  if (interactiveTags.has(node.tagName.getText(source))) return true
+  return node.attributes.properties.some((attribute) => {
+    if (!ts.isJsxAttribute(attribute)) return false
+    const name = attribute.name.getText(source)
+    return (
+      name === 'onKeyDown' ||
+      (name === 'role' &&
+        ts.isStringLiteral(attribute.initializer) &&
+        interactiveRoles.has(attribute.initializer.text))
+    )
+  })
+}
+
+function componentMarkup(source: ts.SourceFile) {
   let rendersMarkup = false
   let rendersInteractiveElement = false
-  const interactiveTags = new Set(['button', 'input', 'select', 'textarea'])
-  const interactiveRoles = new Set([
-    'button',
-    'checkbox',
-    'radio',
-    'switch',
-    'tab',
-    'menuitem',
-    'option',
-    'slider',
-  ])
   const visit = (node: ts.Node) => {
     if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node))
       rendersMarkup = true
-    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
-      if (interactiveTags.has(node.tagName.getText(source))) rendersInteractiveElement = true
-      for (const attribute of node.attributes.properties) {
-        if (!ts.isJsxAttribute(attribute)) continue
-        const name = attribute.name.getText(source)
-        if (name === 'onKeyDown') rendersInteractiveElement = true
-        if (
-          name === 'role' &&
-          ts.isStringLiteral(attribute.initializer) &&
-          interactiveRoles.has(attribute.initializer.text)
-        )
-          rendersInteractiveElement = true
-      }
-    }
+    if (
+      (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) &&
+      interactiveOpening(node, source)
+    )
+      rendersInteractiveElement = true
     ts.forEachChild(node, visit)
   }
   visit(source)
-  if (!rendersMarkup) return []
-  const stem = basename(componentPath, '.tsx')
-  if (storyText === undefined)
-    return [
-      `${relative(ROOT, componentPath)}: markup component requires sibling ${stem}.stories.tsx`,
-    ]
-  const story = ts.createSourceFile(
-    `${stem}.stories.tsx`,
-    storyText,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX,
-  )
+  return { rendersMarkup, rendersInteractiveElement }
+}
+
+function storySubjectImports(story: ts.SourceFile, stem: string) {
   const subjectImports = new Set<string>()
   for (const statement of story.statements) {
     if (
@@ -370,58 +356,102 @@ export function analyzeComponentStory(
       for (const element of bindings.elements)
         if (!element.isTypeOnly) subjectImports.add(element.name.text)
   }
-  if (!subjectImports.size)
-    return [
-      `${relative(ROOT, componentPath)}: sibling ${stem}.stories.tsx must value-import ./${stem}`,
-    ]
+  return subjectImports
+}
+
+function containsIdentifier(node: ts.Node, identifiers: ReadonlySet<string>) {
+  let found = false
+  const visit = (child: ts.Node) => {
+    if (ts.isIdentifier(child) && identifiers.has(child.text)) found = true
+    if (!found) ts.forEachChild(child, visit)
+  }
+  visit(node)
+  return found
+}
+
+function playPositions(node: ts.Node, story: ts.SourceFile) {
+  let lastUserEvent = -1
+  let lastExpect = -1
+  const visit = (child: ts.Node) => {
+    if (ts.isCallExpression(child) && rootIdentifier(child.expression) === 'userEvent')
+      lastUserEvent = Math.max(lastUserEvent, child.getStart(story))
+    if (
+      ts.isCallExpression(child) &&
+      ts.isIdentifier(child.expression) &&
+      child.expression.text === 'expect'
+    )
+      lastExpect = Math.max(lastExpect, child.getStart(story))
+    ts.forEachChild(child, visit)
+  }
+  visit(node)
+  return { lastUserEvent, lastExpect }
+}
+
+function analyzeStory(story: ts.SourceFile, subjectImports: ReadonlySet<string>) {
   let coversSubject = false
   let hasPlay = false
-  const playViolations: string[] = []
-  const containsSubject = (node: ts.Node) => {
-    let found = false
-    const inspect = (child: ts.Node) => {
-      if (ts.isIdentifier(child) && subjectImports.has(child.text)) found = true
-      if (!found) ts.forEachChild(child, inspect)
-    }
-    inspect(node)
-    return found
-  }
+  let invalidPlay = false
   const inspectStory = (node: ts.Node) => {
     if (
       ts.isPropertyAssignment(node) &&
       (propertyName(node.name) === 'component' || propertyName(node.name) === 'render') &&
-      containsSubject(node.initializer)
+      containsIdentifier(node.initializer, subjectImports)
     )
       coversSubject = true
     if (ts.isPropertyAssignment(node) && propertyName(node.name) === 'play') {
       hasPlay = true
-      let lastUserEvent = -1
-      let lastExpect = -1
-      const inspectPlay = (child: ts.Node) => {
-        if (ts.isCallExpression(child)) {
-          if (rootIdentifier(child.expression) === 'userEvent')
-            lastUserEvent = Math.max(lastUserEvent, child.getStart(story))
-          if (ts.isIdentifier(child.expression) && child.expression.text === 'expect')
-            lastExpect = Math.max(lastExpect, child.getStart(story))
-        }
-        ts.forEachChild(child, inspectPlay)
-      }
-      inspectPlay(node.initializer)
-      if (lastUserEvent < 0 || lastExpect < lastUserEvent)
-        playViolations.push(
-          `${relative(ROOT, componentPath)}: every play function must call expect after its last userEvent call`,
-        )
+      const positions = playPositions(node.initializer, story)
+      if (positions.lastUserEvent < 0 || positions.lastExpect < positions.lastUserEvent)
+        invalidPlay = true
     }
     ts.forEachChild(node, inspectStory)
   }
   inspectStory(story)
-  const violations = coversSubject
-    ? playViolations
+  return { coversSubject, hasPlay, invalidPlay }
+}
+
+export function analyzeComponentStory(
+  sourceText: string,
+  storyText: string | undefined,
+  componentPath: string,
+) {
+  const source = ts.createSourceFile(
+    componentPath,
+    sourceText,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  )
+  const markup = componentMarkup(source)
+  if (!markup.rendersMarkup) return []
+  const stem = basename(componentPath, '.tsx')
+  if (storyText === undefined)
+    return [
+      `${relative(ROOT, componentPath)}: markup component requires sibling ${stem}.stories.tsx`,
+    ]
+  const story = ts.createSourceFile(
+    `${stem}.stories.tsx`,
+    storyText,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  )
+  const subjectImports = storySubjectImports(story, stem)
+  if (!subjectImports.size)
+    return [
+      `${relative(ROOT, componentPath)}: sibling ${stem}.stories.tsx must value-import ./${stem}`,
+    ]
+  const analysis = analyzeStory(story, subjectImports)
+  const violations = analysis.coversSubject
+    ? []
     : [
         `${relative(ROOT, componentPath)}: sibling ${stem}.stories.tsx must name an imported subject as meta component or render it in a story`,
-        ...playViolations,
       ]
-  if (rendersInteractiveElement && !hasPlay)
+  if (analysis.invalidPlay)
+    violations.push(
+      `${relative(ROOT, componentPath)}: every play function must call expect after its last userEvent call`,
+    )
+  if (markup.rendersInteractiveElement && !analysis.hasPlay)
     violations.push(
       `${relative(ROOT, componentPath)}: interactive component requires a story with a play function`,
     )

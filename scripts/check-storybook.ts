@@ -44,6 +44,17 @@ function unwrapObject(expression: ts.Expression): ts.ObjectLiteralExpression | u
     return unwrapObject(expression.expression)
 }
 
+function variableDeclarations(source: ts.SourceFile) {
+  const declarations = new Map<string, ts.Expression>()
+  for (const statement of source.statements) {
+    if (!ts.isVariableStatement(statement)) continue
+    for (const declaration of statement.declarationList.declarations)
+      if (ts.isIdentifier(declaration.name) && declaration.initializer)
+        declarations.set(declaration.name.text, declaration.initializer)
+  }
+  return declarations
+}
+
 export function analyzePreview(sourceText: string) {
   const source = ts.createSourceFile(
     'preview.tsx',
@@ -52,19 +63,16 @@ export function analyzePreview(sourceText: string) {
     true,
     ts.ScriptKind.TSX,
   )
-  const declarations = new Map<string, ts.Expression>()
-  for (const statement of source.statements)
-    if (ts.isVariableStatement(statement))
-      for (const declaration of statement.declarationList.declarations)
-        if (ts.isIdentifier(declaration.name) && declaration.initializer)
-          declarations.set(declaration.name.text, declaration.initializer)
-  const exported = source.statements.find(
-    (statement): statement is ts.ExportAssignment => ts.isExportAssignment(statement),
+  const declarations = variableDeclarations(source)
+  const exported = source.statements.find((statement): statement is ts.ExportAssignment =>
+    ts.isExportAssignment(statement),
   )
   const expression = exported?.expression
   const preview = expression
     ? unwrapObject(
-        ts.isIdentifier(expression) ? (declarations.get(expression.text) ?? expression) : expression,
+        ts.isIdentifier(expression)
+          ? (declarations.get(expression.text) ?? expression)
+          : expression,
       )
     : undefined
   if (preview && nestedTestValue(preview)?.text === 'error') return []
