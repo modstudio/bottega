@@ -1,11 +1,7 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { upsertRecordProject } from '../src/record/record-projects.ts'
-import {
-  createRecordSpace,
-  recordMemberships,
-  switchRecordSpace,
-} from '../src/record/record-space.ts'
+import { createRecordSpace, recordMemberships } from '../src/record/record-space.ts'
 import { moveRecordProjectSpace } from '../src/record/record-space-move.ts'
 import { proveProjectSpaceRecordSync, SYNC_PROOF_MACHINE } from './postgres-score-proof.ts'
 import { registerHostedSyncAuthorizationProofs } from './postgres-sync-authorization-proof.ts'
@@ -434,14 +430,22 @@ export function registerProjectSpaceProofs(input: {
     input.setToken(input.token())
     const source = (await recordMemberships()).activeSpaceId
     if (!source) throw new Error('article move proof has no active source space')
-    const destination = await createRecordSpace(
-      'DEV 1214 Move',
-      `dev-1214-${newRecordId().slice(-8)}`,
-    )
+    const destination = {
+      id: newRecordId(),
+      slug: `dev-1214-${newRecordId().slice(-8)}`,
+    }
+    const destinationMembership = newRecordId()
     const project = newRecordId()
     const subject = newRecordId()
     const article = newRecordId()
     try {
+      input.admin(
+        `INSERT INTO space (id,name,slug,created_at)
+           VALUES ('${destination.id}','DEV 1214 Move','${destination.slug}',now());
+         INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+           VALUES ('${destinationMembership}','${destination.id}','${input.userId()}',
+             'owner','write',now());`,
+      )
       const inserted = input.asSpace(
         input.actorRole,
         'actor-password',
@@ -487,7 +491,6 @@ export function registerProjectSpaceProofs(input: {
       SELECT count(*) FROM public_doc_space WHERE project_id='${project}' AND space_id='${destination.id}';`)
       expect(leftover.trim().split('\n')).toEqual(['0', '0', '0', '0', '1', '1', '1', '1'])
     } finally {
-      await switchRecordSpace(source)
       input.admin(`
         DELETE FROM public_doc_space WHERE project_id='${project}';
         DELETE FROM doc WHERE id='${article}';
