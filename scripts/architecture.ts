@@ -375,6 +375,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/monitor/monitor-types.ts', ['../review/review-vocabulary.ts']),
   module('orchestrator/src/stalled-run.ts', []),
+  module('orchestrator/src/no-follow-file.ts', ['node:fs']),
   module('orchestrator/src/mail/password-reset-mailer.ts', [
     '@aws-sdk/client-sesv2',
     '../../../shared/brand.ts',

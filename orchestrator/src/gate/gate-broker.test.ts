@@ -1,5 +1,13 @@
 import { expect, test } from 'bun:test'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { dir } from '../../test/fixtures/store.ts'
@@ -174,6 +182,73 @@ test("a rebased writer runs the gate from its tree and records only a clean tree
         }
       ).cancelled_reason,
     ).not.toBeNull()
+  } finally {
+    await broker.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('an occupied gate log path fails the execution without following the path', async () => {
+  const root = mkdtempSync(join(dir, 'gate-broker-occupied-log-'))
+  const scratch = join(root, 'scratch')
+  const sentinel = join(root, 'sentinel.txt')
+  mkdirSync(scratch)
+  writeFileSync(sentinel, 'original')
+
+  const projectId = (
+    db()
+      .query(`INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?) RETURNING id`)
+      .get(
+        'gate-broker-occupied-log-fixture',
+        root,
+        'bun',
+        JSON.stringify({ gate: 'scripts/gate', trunk: 'main' }),
+      ) as { id: number }
+  ).id
+  const runId = (
+    db()
+      .query(
+        `INSERT INTO run
+          (record_id,started_at,agent,job,project_id,prompt_sha,prompt_bytes,prompt_head,status,worktree,base_commit,head_commit,worktree_source)
+         VALUES ('${newRecordId()}',?,?,?,?,?,1,'fixture','running',?,?,?,'git') RETURNING id`,
+      )
+      .get(
+        new Date().toISOString(),
+        'codex',
+        'implement',
+        projectId,
+        'sha',
+        root,
+        'base',
+        'head',
+      ) as { id: number }
+  ).id
+  const gateId = (
+    db()
+      .query(
+        `INSERT INTO gate_execution (record_id, run_id,requested_at) VALUES ('${newRecordId()}', ?,?) RETURNING id`,
+      )
+      .get(runId, new Date().toISOString()) as { id: number }
+  ).id
+  const occupiedPath = join(scratch, `gate-${gateId}.log`)
+  symlinkSync(sentinel, occupiedPath)
+
+  const broker = startGateBroker({
+    runId,
+    scratchDir: scratch,
+    environment: { ORCH_MAIN_CHECKOUT: '/main/checkout' },
+  })
+  try {
+    await waitForFinishedGate(gateId)
+    const execution = db()
+      .query('SELECT exit_code,output_tail FROM gate_execution WHERE id=?')
+      .get(gateId) as { exit_code: number; output_tail: string }
+
+    expect(execution.exit_code).toBe(-1)
+    expect(execution.output_tail).toContain(
+      `gate log path is occupied: ${occupiedPath}; gate did not run`,
+    )
+    expect(readFileSync(sentinel, 'utf8')).toBe('original')
   } finally {
     await broker.close()
     rmSync(root, { recursive: true, force: true })
