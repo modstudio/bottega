@@ -282,8 +282,7 @@ function payloadWithProjectIdentity(
   row: OutboxRow,
   parsed: Payload | null,
 ): string {
-  if (!parsed || parsed.projectId != null || parsed.projectName == null)
-    return row.payload
+  if (!parsed || parsed.projectId != null || parsed.projectName == null) return row.payload
   const projectId = sourceProjectRecordId(local, row)
   if (projectId === undefined) return row.payload
   return JSON.stringify({
