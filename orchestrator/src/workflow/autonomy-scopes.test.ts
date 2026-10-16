@@ -278,10 +278,10 @@ test('answer strictly combines every active workflow rulings snapshot', async ()
   const d = database(JSON.stringify({ autonomy: { rulings: 'agent' } }))
   const insert = d.query(
     `INSERT INTO workflow_cursor
-      (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,workflow_version,
+      (record_id,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,session_id,workflow_version,
        catalogue_version,args,autonomy,ordinal,step_slug,state,closed,question,total_steps,
        created_at,updated_at)
-     VALUES (?,'fixture','flow','default','DEV-866',?,NULL,1,1,'{}',?,0,'design',?,'[]',NULL,1,?,?)`,
+     VALUES (?,'fixture',(SELECT record_id FROM project WHERE name='fixture'),'flow','default','DEV-866',?,NULL,1,1,'{}',?,0,'design',?,'[]',NULL,1,?,?)`,
   )
   insert.run(
     newRecordId(),

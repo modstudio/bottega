@@ -36,7 +36,7 @@ function insertRun4177PackRows(): string {
     settings: { trunk: 'main' },
   })
   const projectId = (
-    db().query('SELECT record_id FROM project WHERE name=?').get(PLATFORM_SLUG) as {
+    db().query('SELECT record_id AS id FROM project WHERE name=?').get(PLATFORM_SLUG) as {
       record_id: string
     }
   ).record_id

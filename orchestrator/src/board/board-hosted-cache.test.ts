@@ -344,7 +344,7 @@ test('cache refresh distinguishes legacy architects rows from a hidden stored pr
      VALUES (?,'claude','architect','machine',?,(SELECT record_id FROM project WHERE name=?),'/tmp',NULL,?,?)`,
   )
   addPresence.run('cache-reader', 'cache-project', 'cache-project', createdAt, createdAt)
-  addPresence.run('cache-reader-other', 'other-project', createdAt, createdAt)
+  addPresence.run('cache-reader-other', 'other-project', 'other-project', createdAt, createdAt)
   const recordResponse = (authorProjectId: string | null, revision: string) =>
     hostedBoardMessageView(
       {

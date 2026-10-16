@@ -1,5 +1,5 @@
 -- Re-runnable repair for rows written by processes that started before
--- project_record_id existed. 0004_lens_catalogue.sql stays byte-identical.
+-- project_id existed. 0004_lens_catalogue.sql stays byte-identical.
 -- BACKFILL
 UPDATE run SET project_id=(SELECT id FROM project WHERE name=run.repo)
  WHERE repo IS NOT NULL AND project_id IS NULL;

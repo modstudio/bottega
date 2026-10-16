@@ -153,7 +153,7 @@ const setTrackerStates = (d: Database, name: string, states: Record<string, stri
 
 const projectId = (d: Database, name: string) =>
   (
-    d.query<{ id: number }, [string]>('SELECT record_id FROM project WHERE name=?').get(name) as {
+    d.query<{ id: number }, [string]>('SELECT record_id AS id FROM project WHERE name=?').get(name) as {
       id: number
     }
   ).id
@@ -238,8 +238,8 @@ test('resolves probe artifacts and task comments through injected ports', () => 
   ).run()
   d.query(
     `INSERT INTO landing_triage_snapshot
-      (record_id,project,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
-     VALUES ('snap-1','fixture','DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
+      (record_id,project,project_record_id,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
+     VALUES ('snap-1','fixture',(SELECT record_id FROM project WHERE name='fixture'),'DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
   ).run()
   const gathered = gather(d, { artifact: 'probe:1', task: 'DEV-977' })
   expect(gathered.artifact).toEqual({ ref: 'probe:1', exists: true })
@@ -732,8 +732,8 @@ test('a snapshot plus a merged PR satisfies tracker evidence', () => {
   const d = database()
   d.query(
     `INSERT INTO landing_triage_snapshot
-      (record_id,project,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
-     VALUES ('snap-1','fixture','DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
+      (record_id,project,project_record_id,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
+     VALUES ('snap-1','fixture',(SELECT record_id FROM project WHERE name='fixture'),'DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
   ).run()
   expect(gather(d, { task: 'DEV-977' }).task).toEqual({
     key: 'DEV-977',
@@ -748,8 +748,8 @@ test('an open PR is gathered as an unmerged tracker fact', () => {
   const d = database()
   d.query(
     `INSERT INTO landing_triage_snapshot
-      (record_id,project,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
-     VALUES ('snap-1','fixture','DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
+      (record_id,project,project_record_id,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
+     VALUES ('snap-1','fixture',(SELECT record_id FROM project WHERE name='fixture'),'DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
   ).run()
   expect(
     gather(d, { task: 'DEV-977' }, { viewPullRequest: () => ({ state: 'OPEN', mergedAt: null }) })
@@ -777,8 +777,8 @@ test('an unavailable pull request read is gathered as unmerged', () => {
   const d = database()
   d.query(
     `INSERT INTO landing_triage_snapshot
-      (record_id,project,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
-     VALUES ('snap-1','fixture','DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
+      (record_id,project,project_record_id,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
+     VALUES ('snap-1','fixture',(SELECT record_id FROM project WHERE name='fixture'),'DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
   ).run()
   expect(
     gather(

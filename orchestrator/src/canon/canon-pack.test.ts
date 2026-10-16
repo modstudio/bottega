@@ -24,7 +24,7 @@ function putCanon(
   status: 'draft' | 'current' = 'current',
 ): void {
   const projectId = subject
-    ? (db().query('SELECT record_id FROM project WHERE name=?').get(subject) as { id: number }).id
+    ? (db().query('SELECT record_id AS id FROM project WHERE name=?').get(subject) as { id: number }).id
     : null
   const id = (
     db()
@@ -75,7 +75,7 @@ describe('worker pack canon', () => {
       settings: { trunk: 'main' },
     })
     const projectId = (
-      db().query('SELECT record_id FROM project WHERE name=?').get(PLATFORM_SLUG) as { id: number }
+      db().query('SELECT record_id AS id FROM project WHERE name=?').get(PLATFORM_SLUG) as { id: number }
     ).id
     const docs = JSON.stringify([
       {

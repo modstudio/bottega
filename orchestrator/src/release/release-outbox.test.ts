@@ -10,7 +10,6 @@ import { backfillReleaseRecords, enqueueReleaseRecord } from './release-outbox.t
 const RELEASE_RECORD_PAYLOAD_CONTRACT = OUTBOX_PAYLOAD_CONTRACTS.release
 const DECOY_PROJECT_RECORD_ID = '01990000-0000-7000-8000-000000001213'
 const RELEASE_PROJECT_RECORD_ID = '01990000-0000-7000-8000-000000001214'
-const RELEASE_PROJECT_LOCAL_ID = 2
 
 function fixture(): Database {
   const database = new Database(':memory:')
@@ -65,7 +64,7 @@ test('release writes and evolves one whole-row pending payload without deploy ou
   expect(startedPayload).not.toHaveProperty('outputTail')
   expect(startedPayload).not.toHaveProperty('output_tail')
   expect(database.query('SELECT project_record_id FROM release_ledger WHERE id=?').get(id)).toEqual({
-    project_record_id: RELEASE_PROJECT_LOCAL_ID,
+    project_record_id: RELEASE_PROJECT_RECORD_ID,
   })
 
   finishReleaseLedgerEntry(
