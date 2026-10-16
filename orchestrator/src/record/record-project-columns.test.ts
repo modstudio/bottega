@@ -27,7 +27,11 @@ const samples = {
     column: 'reference',
     value: { directory: 'docs/reference', publish: 'publish-reference' },
   },
-  release: { setting: { depth: 'pr' }, column: 'release', value: { depth: 'pr' } },
+  release: {
+    setting: { mergeQueue: true },
+    column: 'release',
+    value: { mergeQueue: true },
+  },
   requireCleanMain: { setting: false, column: 'requireCleanMain', value: false },
   secretPaths: { setting: ['secret'], column: 'secretPaths', value: ['secret'] },
   signals: {

@@ -120,6 +120,7 @@ describe('local-gate merge proof', () => {
     headCommit: 'head-commit',
     currentHeadCommit: 'head-commit',
     landingBranch: 'main',
+    mergeQueue: false,
     gate: {
       recorded: true,
       remoteLandingTip: 'base-commit',
@@ -152,6 +153,17 @@ describe('local-gate merge proof', () => {
         `bring the branch up to origin/main, run ${PLATFORM_SLUG} gate run`,
       ),
     })
+  })
+
+  test('a merge queue exempts a proven head from the moved-landing refusal', () => {
+    expect(
+      decideMergeProof(
+        local({
+          mergeQueue: true,
+          gate: { recorded: true, remoteLandingTip: 'new-base', mergeBase: 'base-commit' },
+        }),
+      ),
+    ).toEqual({ admitted: true })
   })
 })
 

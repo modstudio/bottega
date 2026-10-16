@@ -20,6 +20,12 @@ import {
   type PullRequestCheck,
 } from './merge-decision.ts'
 import {
+  decideMergeQueueAction,
+  interpretMergeQueue,
+  type MergeQueueObservation,
+} from './merge-queue-decision.ts'
+import { enqueuePullRequest, githubMergeQueueState } from './merge-queue-forge.ts'
+import {
   admissionDecision,
   type PullRequestChange,
   recordMergeAdmission,
@@ -28,6 +34,7 @@ import {
 } from './pr-admission.ts'
 
 export type PullRequestMergeFacts = {
+  nodeId: string
   number: number
   headCommit: string
   headBranch: string
@@ -64,7 +71,20 @@ export type PullRequestMergeAdapter = {
     subject: string,
     headCommit: string,
   ): string
+  queueState(cwd: string, nodeId: string): MergeQueueObservation
+  enqueue(
+    cwd: string,
+    number: number,
+    method: 'squash' | 'merge' | 'rebase',
+    subject: string,
+    headCommit: string,
+  ): void
+  now(): number
+  wait(milliseconds: number): void
 }
+
+export const MERGE_QUEUE_WAIT_MS = 30 * 60 * 1000
+const MERGE_QUEUE_POLL_MS = 10 * 1000
 
 type ProcessResult = { exitCode: number; stdout: string; stderr: string }
 
@@ -103,6 +123,7 @@ function parsed<T>(value: string, label: string): T {
 const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
   view(cwd, target) {
     const value = parsed<{
+      id?: unknown
       number?: unknown
       headRefOid?: unknown
       headRefName?: unknown
@@ -118,13 +139,14 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
           'view',
           target,
           '--json',
-          'number,headRefOid,headRefName,baseRefName,title,state',
+          'id,number,headRefOid,headRefName,baseRefName,title,state',
         ],
         'pull-request lookup',
       ),
       'pull-request lookup',
     )
     if (
+      typeof value.id !== 'string' ||
       !Number.isSafeInteger(value.number) ||
       typeof value.headRefOid !== 'string' ||
       typeof value.headRefName !== 'string' ||
@@ -135,6 +157,7 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
       throw new Error('pull-request lookup returned an unexpected JSON shape')
     }
     return {
+      nodeId: value.id,
       number: Number(value.number),
       headCommit: value.headRefOid,
       headBranch: value.headRefName,
@@ -230,12 +253,23 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
     }
     return value.mergeCommit.oid
   },
+  queueState(cwd, nodeId) {
+    return githubMergeQueueState(cwd, nodeId)
+  },
+  enqueue(cwd, number, method, subject, headCommit) {
+    enqueuePullRequest(cwd, number, method, subject, headCommit)
+  },
+  now: Date.now,
+  wait(milliseconds) {
+    Bun.sleepSync(milliseconds)
+  },
 }
 
 function collectMergeProof(
   pullRequest: PullRequestMergeFacts,
   landingBranch: string,
   requiredChecks: readonly string[],
+  mergeQueue: boolean,
   cwd: string,
   adapter: PullRequestMergeAdapter,
   database: Database,
@@ -261,10 +295,13 @@ function collectMergeProof(
       headCommit: pullRequest.headCommit,
       currentHeadCommit,
       landingBranch,
+      mergeQueue,
       gate: { recorded: false },
     }
   }
-  const landingState = adapter.landingState(cwd, pullRequest.headCommit, landingBranch)
+  const landingState = mergeQueue
+    ? { remoteLandingTip: '', mergeBase: '' }
+    : adapter.landingState(cwd, pullRequest.headCommit, landingBranch)
   const currentHeadCommit = adapter.view(cwd, String(pullRequest.number)).headCommit
   return {
     kind: 'local-gate',
@@ -272,10 +309,41 @@ function collectMergeProof(
     headCommit: pullRequest.headCommit,
     currentHeadCommit,
     landingBranch,
+    mergeQueue,
     gate: {
       recorded: true,
       ...landingState,
     },
+  }
+}
+
+function waitForQueuedMerge(
+  pullRequest: PullRequestMergeFacts,
+  method: 'squash' | 'merge' | 'rebase',
+  subject: string,
+  cwd: string,
+  adapter: PullRequestMergeAdapter,
+): string {
+  const deadline = adapter.now() + MERGE_QUEUE_WAIT_MS
+  let queueEstablished = false
+  while (true) {
+    const state = interpretMergeQueue(adapter.queueState(cwd, pullRequest.nodeId))
+    const action = decideMergeQueueAction(pullRequest.number, state, queueEstablished)
+    if (action.action === 'complete') return action.mergeCommit
+    if (action.action === 'refuse') throw new Error(`refusing merge: ${action.refusal}`)
+    if (action.action === 'enqueue') {
+      adapter.enqueue(cwd, pullRequest.number, method, subject, pullRequest.headCommit)
+      queueEstablished = true
+      continue
+    }
+    queueEstablished = true
+    const remaining = deadline - adapter.now()
+    if (remaining <= 0) {
+      throw new Error(
+        `refusing merge: pull request #${pullRequest.number} did not merge within ${MERGE_QUEUE_WAIT_MS}ms; cleared by: re-run ${PLATFORM_SLUG} pr merge ${pullRequest.number}, which will keep waiting if it is already queued`,
+      )
+    }
+    adapter.wait(Math.min(MERGE_QUEUE_POLL_MS, remaining))
   }
 }
 
@@ -361,6 +429,7 @@ export function mergePullRequest(
       pullRequest,
       landingBranch,
       release.requiredChecks,
+      release.mergeQueue ?? false,
       cwd,
       adapter,
       database,
@@ -374,6 +443,9 @@ export function mergePullRequest(
       database,
     )
     const subject = `${pullRequest.title} (#${pullRequest.number})`
+    if (release.mergeQueue) {
+      return waitForQueuedMerge(pullRequest, release.mergeMethod, subject, cwd, adapter)
+    }
     return adapter.merge(
       cwd,
       pullRequest.number,

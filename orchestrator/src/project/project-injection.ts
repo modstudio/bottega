@@ -52,6 +52,7 @@ const releaseSchema = strictObject({
     }),
   mergeMethod: z.enum(['squash', 'merge', 'rebase']),
   requiredChecks: z.array(z.string()),
+  mergeQueue: z.boolean().optional(),
   observationWindowHours: z.number().int().positive().optional(),
 })
 
