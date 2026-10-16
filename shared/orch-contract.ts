@@ -235,7 +235,7 @@ export const OrchProjectSchema = z
       })
       .passthrough(),
   })
-  .passthrough()
+  .strip()
 
 export const OrchProjectListSchema = z.array(OrchProjectSchema)
 

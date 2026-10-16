@@ -146,22 +146,7 @@ export function attributedTaskKey(launchKey: string | null, branch: string | nul
 const utcMillis = (value: string): number =>
   Date.parse(/(?:Z|[+-]\d{2}:?\d{2})$/i.test(value) ? value : `${value}Z`)
 
-/**
- * Evidence attribution is deliberately ordered. run.launch_key is authoritative
- * when present; otherwise the task key embedded in run.branch and then its head
- * commit subject are used. Landings use landing.branch and then the tip subject.
- * Reviews inherit the same run attribution through review_lens. Evidence naming
- * a non-child launch key, or no child by any route, is outside this epic rather
- * than being silently assigned to its nearest task.
- */
-export function epicScoreboard(
-  epicKey: string,
-  children: EpicChild[],
-  database: Database = db(),
-  clock = Date.now(),
-): EpicScoreboard {
-  const keys = children.map((child) => child.key.toUpperCase())
-  const childByKey = new Map(children.map((child) => [child.key.toUpperCase(), child]))
+function epicEvidence(database: Database) {
   const runs = database
     .query(
       `SELECT id,started_at,job,status,failure_kind,latency_ms,vendor_tokens,vendor_cost_usd,launch_key,branch,
@@ -181,6 +166,26 @@ export function epicScoreboard(
        JOIN run ON run.id=review_lens.run_id ORDER BY review.id`,
     )
     .all() as ReviewRow[]
+  return { runs, landings, reviews }
+}
+
+/**
+ * Evidence attribution is deliberately ordered. run.launch_key is authoritative
+ * when present; otherwise the task key embedded in run.branch and then its head
+ * commit subject are used. Landings use landing.branch and then the tip subject.
+ * Reviews inherit the same run attribution through review_lens. Evidence naming
+ * a non-child launch key, or no child by any route, is outside this epic rather
+ * than being silently assigned to its nearest task.
+ */
+export function epicScoreboard(
+  epicKey: string,
+  children: EpicChild[],
+  database: Database = db(),
+  clock = Date.now(),
+): EpicScoreboard {
+  const keys = children.map((child) => child.key.toUpperCase())
+  const childByKey = new Map(children.map((child) => [child.key.toUpperCase(), child]))
+  const { runs, landings, reviews } = epicEvidence(database)
   const subjects = commitSubjects(database)
 
   const subjectKey = (projectId: string | null, commit: string | null) =>

@@ -68,7 +68,7 @@ function ProjectEditPage() {
         </p>
       </Sheet>
     )
-  return <ProjectForm key={project.id} project={project} />
+  return <ProjectForm key={project.record_id} project={project} />
 }
 
 function ProjectForm({ project }: { project: ProjectRow }) {
