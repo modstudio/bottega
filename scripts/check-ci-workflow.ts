@@ -4,7 +4,7 @@ import { CHECK_LEGS } from './check-plan.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 
-export function workflowJobNames(source: string): string[] {
+function workflowJobNames(source: string): string[] {
   const jobsStart = source.split('\n').indexOf('jobs:')
   if (jobsStart < 0) throw new Error('CI workflow has no jobs mapping')
   return source

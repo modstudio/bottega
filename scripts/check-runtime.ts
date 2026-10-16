@@ -1,10 +1,5 @@
 import { type Shard as CheckShard, parseShard } from '../shared/shard.ts'
-import {
-  CHECK_LEGS,
-  type CheckLegName,
-  STATIC_OMIT_GROUPS,
-  type StaticOmitGroup,
-} from './check-plan.ts'
+import { CHECK_LEGS, STATIC_OMIT_GROUPS } from './check-plan.ts'
 
 // The suite budgets detect runtime regressions. The generous hung-suite bound
 // separately stops a wedged child from hanging the gate indefinitely.
@@ -18,7 +13,9 @@ export type CommandCpuSample = { name: string; userMs: number; systemMs: number 
 export type AttributedCommandCpu = { name: string; cpuMs: number; share: number }
 
 const CHECK_LEG_NAMES = CHECK_LEGS.map((leg) => leg.name)
-export type CheckOnly = CheckLegName | 'root'
+type CheckLegName = (typeof CHECK_LEGS)[number]['name']
+type StaticOmitGroup = keyof typeof STATIC_OMIT_GROUPS
+type CheckOnly = CheckLegName | 'root'
 export type CheckArguments = {
   mode: 'static' | 'suite'
   only?: CheckOnly

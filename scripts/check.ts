@@ -8,7 +8,6 @@ import { CHECK_LEGS, STATIC_OMIT_GROUPS } from './check-plan.ts'
 import {
   attributeCommandCpu,
   type CheckArguments,
-  type CheckLegName,
   type CommandCpuSample,
   decideRuntimeBudget,
   HUNG_SUITE_TIMEOUT_MS,
@@ -22,7 +21,7 @@ import { resolveLandingBase } from './landing-base'
 import { readRemainingReport } from './remaining-report.ts'
 
 type Command = { cwd: string; argv: string[] }
-type Leg = { name: CheckLegName; typecheck: Command; suite: Command[] }
+type Leg = { name: (typeof CHECK_LEGS)[number]['name']; typecheck: Command; suite: Command[] }
 type RunnableLeg = { name: string; commands: Command[] }
 type LegResult = GateStepResult & { tail: string[] }
 type StaticCheck = { name: string; argv: string[]; category?: string; reportPath?: string }

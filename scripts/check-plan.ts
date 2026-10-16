@@ -1,5 +1,3 @@
-export type CheckCommand = { directory: string; argv: string[] }
-
 export const CHECK_LEGS = [
   {
     name: 'orchestrator',
@@ -41,8 +39,6 @@ export const CHECK_LEGS = [
   },
 ] as const
 
-export type CheckLegName = (typeof CHECK_LEGS)[number]['name']
-
 export const STATIC_OMIT_GROUPS = {
   'machine-only': {
     reason: "CI runners do not have this machine's project register and canon store",
@@ -53,5 +49,3 @@ export const STATIC_OMIT_GROUPS = {
     checks: ['scripts/check-gitleaks.ts'],
   },
 } as const
-
-export type StaticOmitGroup = keyof typeof STATIC_OMIT_GROUPS
