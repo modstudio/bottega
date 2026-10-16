@@ -87,13 +87,13 @@ function projectLockParticipant(path: string): ProjectLockParticipant | null {
   }
 }
 
-function staleProjectLockHolder(holder: ProjectLockParticipant): string | null {
-  if (!pidAlive(holder.pid)) return `dead holder pid ${holder.pid}`
-  if (holder.startTime === null) return null
-  const actual = processStartTime(holder.pid)
+function staleProjectLockParticipant(participant: ProjectLockParticipant): string | null {
+  if (!pidAlive(participant.pid)) return `dead participant pid ${participant.pid}`
+  if (participant.startTime === null) return null
+  const actual = processStartTime(participant.pid)
   if (actual === null) return null
-  if (actual !== holder.startTime) {
-    return `pid ${holder.pid} start time changed from ${holder.startTime} to ${actual}`
+  if (actual !== participant.startTime) {
+    return `pid ${participant.pid} start time changed from ${participant.startTime} to ${actual}`
   }
   return null
 }
@@ -189,8 +189,18 @@ function waiterEntries(
   return readdirSync(waitersDir)
     .flatMap((name) => {
       if (name.startsWith('.')) return []
-      const participant = projectLockParticipant(join(waitersDir, name))
-      return participant && pidAlive(participant.pid) ? [{ name, participant }] : []
+      const path = join(waitersDir, name)
+      const participant = projectLockParticipant(path)
+      if (!participant) return []
+      if (staleProjectLockParticipant(participant)) {
+        try {
+          rmSync(path)
+        } catch {
+          /* the next scan retries */
+        }
+        return []
+      }
+      return [{ name, participant }]
     })
     .sort((a, b) => a.name.localeCompare(b.name))
 }
@@ -463,32 +473,16 @@ function withProjectLock<T>(
   const waiter = join(legacyWaiters, waiterName)
   writeFileSync(waiter, `${JSON.stringify(participant)}\n`)
   const lockSession = identity.session ?? process.env.CLAUDE_CODE_SESSION_ID ?? null
-  const recordLegacyContention = (
-    eventKind: 'timeout' | 'wait',
-    holder: ProjectLockParticipant | null,
-  ) => {
-    tryWriteContention(
-      {
-        sessionId: lockSession,
-        resourceKind: 'lock',
-        resourceKey: name,
-        eventKind,
-        durationMs: Math.max(0, Date.now() - waitStarted),
-        cause: holder
-          ? `holder session ${holder.session ?? 'unknown'}, pid ${holder.pid}, ${holder.what}`
-          : `${eventKind === 'timeout' ? 'timed out waiting' : 'waited'} for ${lockLabel(name)}`,
-      },
-      { busyTimeoutMs: 0 },
-    )
-  }
+  const recordLegacyContention = legacyContentionRecorder(name, lockSession, waitStarted)
   try {
     for (;;) {
       const first = waiterEntries(legacyWaiters)[0]
       if (first && first.name !== waiterName) {
         const holder = projectLockParticipant(join(legacy, 'owner'))
         if (Date.now() >= deadline) {
-          recordLegacyContention('timeout', holder)
-          throw lockTimeout(name, timeoutMs, legacy, holder)
+          const blocker = { kind: 'head-waiter', participant: first.participant } as const
+          recordLegacyContention('timeout', holder, blocker)
+          throw lockTimeout(name, timeoutMs, legacy, holder, blocker)
         }
         waitedForLegacy = true
         onWait?.(holder, Math.max(0, deadline - Date.now()))
@@ -501,7 +495,7 @@ function withProjectLock<T>(
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
         const holder = projectLockParticipant(join(legacy, 'owner'))
-        const stale = holder && staleProjectLockHolder(holder)
+        const stale = holder && staleProjectLockParticipant(holder)
         if (holder && stale) {
           const gone = `${legacy}.stale-${process.pid}-${randomUUID()}`
           try {
@@ -516,6 +510,17 @@ function withProjectLock<T>(
           continue
         }
         if (Date.now() >= deadline) {
+          if (!holder) {
+            let ageMs: number
+            try {
+              ageMs = Math.max(0, Date.now() - statSync(legacy).mtimeMs)
+            } catch {
+              continue
+            }
+            const blocker = { kind: 'ownerless-directory', ageMs } as const
+            recordLegacyContention('timeout', holder, blocker)
+            throw lockTimeout(name, timeoutMs, legacy, holder, blocker)
+          }
           recordLegacyContention('timeout', holder)
           throw lockTimeout(name, timeoutMs, legacy, holder)
         }
@@ -548,23 +553,74 @@ function withProjectLock<T>(
   }
 }
 
+type LegacyTimeoutBlocker =
+  | { kind: 'head-waiter'; participant: ProjectLockParticipant }
+  | { kind: 'ownerless-directory'; ageMs: number }
+
+function headWaiterDescription(waiter: ProjectLockParticipant): string {
+  return (
+    `head waiter pid ${waiter.pid}, session ${waiter.session ?? 'unknown'}, ` +
+    `${waiter.what}, since ${waiter.since}`
+  )
+}
+
+function ownerlessDirectoryDescription(ageMs: number): string {
+  return `legacy lock directory exists with no owner (age ${Math.round(ageMs / 1000)}s)`
+}
+
+function legacyContentionRecorder(name: string, sessionId: string | null, waitStarted: number) {
+  return (
+    eventKind: 'timeout' | 'wait',
+    holder: ProjectLockParticipant | null,
+    blocker?: LegacyTimeoutBlocker,
+  ) => {
+    const cause =
+      blocker?.kind === 'head-waiter'
+        ? headWaiterDescription(blocker.participant)
+        : blocker?.kind === 'ownerless-directory'
+          ? ownerlessDirectoryDescription(blocker.ageMs)
+          : holder
+            ? `holder session ${holder.session ?? 'unknown'}, pid ${holder.pid}, ${holder.what}`
+            : `${eventKind === 'timeout' ? 'timed out waiting' : 'waited'} for ${lockLabel(name)}`
+    tryWriteContention(
+      {
+        sessionId,
+        resourceKind: 'lock',
+        resourceKey: name,
+        eventKind,
+        durationMs: Math.max(0, Date.now() - waitStarted),
+        cause,
+      },
+      { busyTimeoutMs: 0 },
+    )
+  }
+}
+
 function lockTimeout(
   name: string,
   timeoutMs: number,
   lock: string,
   held: ProjectLockParticipant | null,
+  blocker?: LegacyTimeoutBlocker,
 ): Error {
   const label = lockLabel(name)
   const heldFor = held ? Math.max(0, Date.now() - Date.parse(held.since)) : null
-  const detail = held
-    ? ` (holder session ${held.session ?? 'unknown'}, pid ${held.pid}, ` +
-      `${held.what}, held for ${Math.round(heldFor! / 1000)}s)`
-    : ''
+  const detail = blocker
+    ? ` (${blocker.kind === 'head-waiter' ? headWaiterDescription(blocker.participant) : ownerlessDirectoryDescription(blocker.ageMs)})`
+    : held
+      ? ` (holder session ${held.session ?? 'unknown'}, pid ${held.pid}, ` +
+        `${held.what}, held for ${Math.round(heldFor! / 1000)}s)`
+      : ''
+  const clearingParticipant = blocker?.kind === 'head-waiter' ? blocker.participant : held
+  const clearedBy =
+    blocker?.kind === 'ownerless-directory'
+      ? `cleared by: after establishing no legacy process owns it, remove ${lock}`
+      : `cleared by: the holder${clearingParticipant ? ` (pid ${clearingParticipant.pid})` : ''} finishing; ` +
+        'the kernel releases the lock if its process exits'
   return new Error(
     `timed out after ${timeoutMs / 1000}s waiting for this project's ${label} lock${detail}: ${lock}\n` +
       `invariant: A lock waiter is served in arrival order.\n` +
-      `cleared by: the holder${held ? ` (pid ${held.pid})` : ''} finishing; ` +
-      'the kernel releases the lock if its process exits',
+      clearedBy,
   )
 }
 
