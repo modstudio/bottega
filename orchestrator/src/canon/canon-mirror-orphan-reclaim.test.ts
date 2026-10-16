@@ -41,4 +41,3 @@ test('a tip recorded before a failed PR step is reclaimed on the next run', asyn
     rmSync(root, { recursive: true, force: true })
   }
 })
-

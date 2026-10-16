@@ -65,7 +65,8 @@ export async function portCommand(
     if (source.recordId === target.recordId)
       throw new Error('a port source and target must be different projects')
     const pair =
-      pairByProjects(source.recordId, target.recordId) ?? (create ? addPair(source.recordId, target.recordId) : null)
+      pairByProjects(source.recordId, target.recordId) ??
+      (create ? addPair(source.recordId, target.recordId) : null)
     return { pair, source, target }
   }
   const output = (value: unknown, line: string) => log(has('json') ? JSON.stringify(value) : line)
@@ -322,7 +323,9 @@ export async function portCommand(
     }
     log(`${ref.task_key}  ${ref.resolved_at ?? 'unresolved'}\n${ref.note}`)
     for (const source of ref.sources) {
-      const project = projects().find((candidate) => candidate.recordId === source.source_project_record_id)
+      const project = projects().find(
+        (candidate) => candidate.recordId === source.source_project_record_id,
+      )
       if (!project)
         throw new Error(
           `ledger ref ${taskKey} names unregistered project id ${source.source_project_record_id}`,

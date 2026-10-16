@@ -214,7 +214,9 @@ function latestActivity(
   lastEnsureAtMs: number | null
 } {
   const liveRows = database
-    .query("SELECT id,status,pid FROM run WHERE project_record_id=? AND status IN ('running','asking')")
+    .query(
+      "SELECT id,status,pid FROM run WHERE project_record_id=? AND status IN ('running','asking')",
+    )
     .all(projectId) as { id: number; status: string; pid: number | null }[]
   const liveRun = liveRows.some((row) =>
     runAlive({
@@ -224,7 +226,9 @@ function latestActivity(
     }),
   )
   const created = database
-    .query('SELECT MAX(started_at) value FROM run WHERE project_record_id=? AND worktree IS NOT NULL')
+    .query(
+      'SELECT MAX(started_at) value FROM run WHERE project_record_id=? AND worktree IS NOT NULL',
+    )
     .get(projectId) as { value: string | null }
   const gated = database
     .query(

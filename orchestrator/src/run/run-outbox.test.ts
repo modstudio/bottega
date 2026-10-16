@@ -73,10 +73,46 @@ test('backfill resolves chains, enqueues finished turns once, and skips running 
     null,
     null,
   )
-  insert.run(newRecordId(), 2, '2026-09-15T02:00:00.000Z', null, '01990000-0000-7000-8000-000000000201', 'failed', 1, null)
-  insert.run(newRecordId(), 3, '2026-09-15T03:00:00.000Z', null, '01990000-0000-7000-8000-000000000201', 'stale', null, 1)
-  insert.run(newRecordId(), 4, '2026-09-15T04:00:00.000Z', null, '01990000-0000-7000-8000-000000000201', 'asking', null, null)
-  insert.run(newRecordId(), 5, '2026-09-15T05:00:00.000Z', null, '01990000-0000-7000-8000-000000000201', 'running', null, null)
+  insert.run(
+    newRecordId(),
+    2,
+    '2026-09-15T02:00:00.000Z',
+    null,
+    '01990000-0000-7000-8000-000000000201',
+    'failed',
+    1,
+    null,
+  )
+  insert.run(
+    newRecordId(),
+    3,
+    '2026-09-15T03:00:00.000Z',
+    null,
+    '01990000-0000-7000-8000-000000000201',
+    'stale',
+    null,
+    1,
+  )
+  insert.run(
+    newRecordId(),
+    4,
+    '2026-09-15T04:00:00.000Z',
+    null,
+    '01990000-0000-7000-8000-000000000201',
+    'asking',
+    null,
+    null,
+  )
+  insert.run(
+    newRecordId(),
+    5,
+    '2026-09-15T05:00:00.000Z',
+    null,
+    '01990000-0000-7000-8000-000000000201',
+    'running',
+    null,
+    null,
+  )
 
   expect(backfillRunRecords(database, '01990000-0000-7000-8000-000000000099')).toEqual({
     enqueued: 4,
@@ -226,4 +262,3 @@ test('backfill timestamps a refreshed root from its outcome-producing turn', () 
   })
   database.close()
 })
-

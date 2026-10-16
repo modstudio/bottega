@@ -230,4 +230,3 @@ test('a missing second opinion refusal names the lens and distinct first run', (
   expect(message).toContain('missing second opinion for correctness on a different model')
   expect(message).toContain('--lens correctness --distinct-from 47')
 })
-

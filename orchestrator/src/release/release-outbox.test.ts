@@ -63,9 +63,11 @@ test('release writes and evolves one whole-row pending payload without deploy ou
   })
   expect(startedPayload).not.toHaveProperty('outputTail')
   expect(startedPayload).not.toHaveProperty('output_tail')
-  expect(database.query('SELECT project_record_id FROM release_ledger WHERE id=?').get(id)).toEqual({
-    project_record_id: RELEASE_PROJECT_RECORD_ID,
-  })
+  expect(database.query('SELECT project_record_id FROM release_ledger WHERE id=?').get(id)).toEqual(
+    {
+      project_record_id: RELEASE_PROJECT_RECORD_ID,
+    },
+  )
 
   finishReleaseLedgerEntry(
     database,
@@ -191,4 +193,3 @@ test('release backfill enqueues each existing row once', () => {
   })
   database.close()
 })
-

@@ -23,7 +23,12 @@ export type ImportPlan = {
     taskKey: string
     targetProjectId: string
     note: string
-    sources: { source_project_record_id: string; commits: string[]; paths: string[]; note: string }[]
+    sources: {
+      source_project_record_id: string
+      commits: string[]
+      paths: string[]
+      note: string
+    }[]
   }[]
   doctrine: { number: number; title: string; body: string }[]
   docs: { scope: string; subject: string | null; slug: string; title: string; body: string }[]
@@ -273,7 +278,9 @@ function targetForSources(
   }
   const targetIds = sources.map(
     (source) =>
-      new Set(pairs.filter((pair) => pair.sourceId === source.recordId).map((pair) => pair.targetId)),
+      new Set(
+        pairs.filter((pair) => pair.sourceId === source.recordId).map((pair) => pair.targetId),
+      ),
   )
   const shared = [...(targetIds[0] ?? [])].filter((id) => targetIds.every((ids) => ids.has(id)))
   const matches = registered.filter((project) => shared.includes(project.recordId))
@@ -905,9 +912,7 @@ export function projectsForDryRun(path: string): Project[] {
     const readonly = new Database(path, { readonly: true })
     try {
       const rows = readonly
-        .query(
-          'SELECT record_id, name, path, stack, canon, settings FROM project ORDER BY name',
-        )
+        .query('SELECT record_id, name, path, stack, canon, settings FROM project ORDER BY name')
         .all() as {
         record_id: string
         name: string

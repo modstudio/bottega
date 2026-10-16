@@ -16,7 +16,9 @@ test('a reused local mirror branch at a foreign tip is refused', async () => {
     await registerManagedMirror(root, 'cm-foreign-branch')
     spawnFixtureGitSync(['branch', 'DEV-1002-canon-mirror', 'HEAD'], { cwd: root })
     const project = db()
-      .query<{ id: number }, []>("SELECT record_id AS id FROM project WHERE name='cm-foreign-branch'")
+      .query<{ id: number }, []>(
+        "SELECT record_id AS id FROM project WHERE name='cm-foreign-branch'",
+      )
       .get()!
     db()
       .query(`INSERT INTO run
@@ -39,4 +41,3 @@ test('a reused local mirror branch at a foreign tip is refused', async () => {
     rmSync(root, { recursive: true, force: true })
   }
 })
-

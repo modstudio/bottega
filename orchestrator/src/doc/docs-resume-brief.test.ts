@@ -22,7 +22,9 @@ describe('scoped operator docs', () => {
       canon: true,
       settings: {},
     })
-    const project = db().query('SELECT record_id FROM project WHERE name=?').get('resume-restore') as {
+    const project = db()
+      .query('SELECT record_id FROM project WHERE name=?')
+      .get('resume-restore') as {
       record_id: string
     }
     const created = await setDoc({
@@ -38,7 +40,9 @@ describe('scoped operator docs', () => {
     await restoreDoc('resume', 'resume-restore', created.slug, createRevision.id, {
       reason: 'restore over existing resume',
     })
-    expect(getDoc('resume', 'resume-restore', created.slug)?.project_record_id).toBe(project.record_id)
+    expect(getDoc('resume', 'resume-restore', created.slug)?.project_record_id).toBe(
+      project.record_id,
+    )
 
     await removeDoc('resume', 'resume-restore', created.slug)
     const restored = await restoreDoc('resume', 'resume-restore', created.slug, createRevision.id, {
@@ -644,4 +648,3 @@ describe('scoped operator docs', () => {
     })
   })
 })
-

@@ -451,7 +451,9 @@ export function recordReviews(
         tier?.size ?? null,
         tier ? JSON.stringify(tier.reasons) : null,
         tier?.reasons[tier.risk >= tier.size ? 0 : 1] ?? null,
-        runs.every((run) => run.project_record_id === runs[0]!.project_record_id) ? runs[0]!.project_record_id : null,
+        runs.every((run) => run.project_record_id === runs[0]!.project_record_id)
+          ? runs[0]!.project_record_id
+          : null,
         measured?.patchId ?? null,
         measured ? serializePathSet(measured.pathSet) : null,
         measured?.message ?? null,

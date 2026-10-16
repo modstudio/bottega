@@ -97,7 +97,9 @@ function assertParent(database: Database, row: RecordSubject, projectId: string)
   if (row.parentId === null) return
   if (row.parentId === row.id) throw new Error('a subject cannot parent itself')
   const parent = database
-    .query<{ project_record_id: string }, [string]>('SELECT project_record_id FROM subject WHERE id=?')
+    .query<{ project_record_id: string }, [string]>(
+      'SELECT project_record_id FROM subject WHERE id=?',
+    )
     .get(row.parentId)
   if (!parent || parent.project_record_id !== projectId) {
     throw new Error('a subject parent must belong to the same project')

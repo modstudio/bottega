@@ -21,13 +21,14 @@ import { createDocsMcpServer, fileIssueTaskKey } from './mcp.ts'
 
 describe('orch MCP', () => {
   test('workflow ruling tools return the durable question id', async () => {
+    upsertProject({ recordId: newRecordId(), name: 'fixture', path: '/fixture', settings: {} })
     db()
       .query(
         `INSERT INTO workflow_cursor
-        (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+        (record_id,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
          workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
          total_steps,created_at,updated_at,enforcement)
-       VALUES ('${newRecordId()}','fixture','fix-defect','default','DEV-1069','',NULL,1,1,'{"key":"DEV-1069"}',
+       VALUES ('${newRecordId()}','fixture',(SELECT record_id FROM project WHERE name='fixture'),'fix-defect','default','DEV-1069','',NULL,1,1,'{"key":"DEV-1069"}',
                0,'diagnose','running','[]',NULL,1,'2026-10-01','2026-10-01','floors')`,
       )
       .run()

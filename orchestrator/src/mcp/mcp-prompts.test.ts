@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { db } from '../database/db.ts'
 import { removeProject, upsertProject } from '../project/projects.ts'
 import { promoteWorkflow, setWorkflow, type WorkflowDefinition } from '../workflow/workflows.ts'
 import { createDocsMcpServer } from './mcp.ts'
@@ -184,6 +185,11 @@ describe('workflow prompt argument binding', () => {
 
 describe('workflow prompts on the wire', () => {
   afterEach(() => {
+    db()
+      .query(
+        "DELETE FROM workflow_cursor WHERE project_record_id=(SELECT record_id FROM project WHERE name='prompt-fixture')",
+      )
+      .run()
     removeProject('prompt-fixture')
   })
 

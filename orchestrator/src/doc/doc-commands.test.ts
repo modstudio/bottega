@@ -40,7 +40,9 @@ import {
 
 const listPairs = () =>
   db()
-    .query('SELECT id,source_project_record_id,target_project_record_id,created_at FROM port_pair ORDER BY id')
+    .query(
+      'SELECT id,source_project_record_id,target_project_record_id,created_at FROM port_pair ORDER BY id',
+    )
     .all() as PortPair[]
 
 test('user document addressing refuses a subject', () => {
@@ -679,4 +681,3 @@ describe('scoped operator docs', () => {
     expect(getDoc('global', null, 'taken')).toEqual(before)
   })
 })
-

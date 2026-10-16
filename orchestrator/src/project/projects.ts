@@ -283,9 +283,10 @@ export function storeProjectRecordId(
     .query('UPDATE project SET record_id=? WHERE id=? AND record_id IS NULL')
     .run(recordId, id)
   if (result.changes > 0) return
-  const project = database
-    .query('SELECT name,record_id FROM project WHERE id=?')
-    .get(id) as { name: string; record_id: string | null } | null
+  const project = database.query('SELECT name,record_id FROM project WHERE id=?').get(id) as {
+    name: string
+    record_id: string | null
+  } | null
   if (!project) {
     throw new Error(
       `project row ${id} was removed while its hosted identity was being stored; inspect \`${PLATFORM_SLUG} project list --json\` and the hosted project before retrying`,
@@ -466,19 +467,29 @@ function projectReferenceCounts(projectId: string): ProjectReferenceCounts {
     workflow_cursor: count('workflow_cursor'),
     main_stack_activity: count('main_stack_activity'),
     port_pair_source: (
-      db().query('SELECT COUNT(*) AS n FROM port_pair WHERE source_project_record_id=?').get(projectId) as { n: number }
+      db()
+        .query('SELECT COUNT(*) AS n FROM port_pair WHERE source_project_record_id=?')
+        .get(projectId) as { n: number }
     ).n,
     port_pair_target: (
-      db().query('SELECT COUNT(*) AS n FROM port_pair WHERE target_project_record_id=?').get(projectId) as { n: number }
+      db()
+        .query('SELECT COUNT(*) AS n FROM port_pair WHERE target_project_record_id=?')
+        .get(projectId) as { n: number }
     ).n,
     port_ref: (
-      db().query('SELECT COUNT(*) AS n FROM port_ref WHERE target_project_record_id=?').get(projectId) as { n: number }
+      db()
+        .query('SELECT COUNT(*) AS n FROM port_ref WHERE target_project_record_id=?')
+        .get(projectId) as { n: number }
     ).n,
     port_ref_source: (
-      db().query('SELECT COUNT(*) AS n FROM port_ref_source WHERE source_project_record_id=?').get(projectId) as { n: number }
+      db()
+        .query('SELECT COUNT(*) AS n FROM port_ref_source WHERE source_project_record_id=?')
+        .get(projectId) as { n: number }
     ).n,
     port_ref_target: (
-      db().query('SELECT COUNT(*) AS n FROM port_ref_source WHERE target_project_record_id=?').get(projectId) as { n: number }
+      db()
+        .query('SELECT COUNT(*) AS n FROM port_ref_source WHERE target_project_record_id=?')
+        .get(projectId) as { n: number }
     ).n,
     project_lens_profile: count('project_lens_profile'),
     release_ledger: count('release_ledger'),

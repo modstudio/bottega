@@ -222,7 +222,7 @@ describe('resource claim decisions', () => {
   test('project indexes are stable per root and reusable after release', () => {
     const database = db()
     const insertProject = database.query<{ record_id: string }, [string, string]>(
-      "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,1) RETURNING record_id",
+      'INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,1) RETURNING record_id',
     )
     const projectOne = insertProject.get('one', '/one')!.record_id
     const projectTwo = insertProject.get('two', '/two')!.record_id
@@ -446,4 +446,3 @@ describe('resource claim decisions', () => {
     expect(settledStateForCloseOut('released', 'retained_ref')).toBeNull()
   })
 })
-

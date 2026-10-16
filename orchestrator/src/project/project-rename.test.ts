@@ -63,7 +63,9 @@ function seedNameMirrors(projectId: string, otherId: string): void {
      VALUES (?,?,?,?,?,?,?,?)`,
   ).run(id(), OLD, 'main', 'tip', 'tree', 'reason', 't', projectId)
   const review = d
-    .query(`INSERT INTO review (record_id,recorded_at,project_record_id) VALUES (?,?,?) RETURNING id`)
+    .query(
+      `INSERT INTO review (record_id,recorded_at,project_record_id) VALUES (?,?,?) RETURNING id`,
+    )
     .get(id(), 't', projectId) as { id: number }
   d.query(
     `INSERT INTO landing_review_carry
@@ -191,7 +193,9 @@ function seedNameMirrors(projectId: string, otherId: string): void {
      (record_id,project,project_record_id,rung,candidate_commit,rollback,actor,started_at)
      VALUES (?,?,?,?,?,?,?,?)`,
   ).run(id(), OLD, projectId, 'live', 'abc', 0, 'op', 't')
-  const run = d.query(`SELECT id FROM run WHERE project_record_id=?`).get(projectId) as { id: number }
+  const run = d.query(`SELECT id FROM run WHERE project_record_id=?`).get(projectId) as {
+    id: number
+  }
   d.query(
     `INSERT INTO worker_note_request
      (record_id,run_id,text,requested_at,status,project,project_record_id)
@@ -241,4 +245,3 @@ test('a local rename leaves no listed table naming the old project', () => {
     expect(countName(table, 'subject', OLD), `${table} changed unresolved subjects`).toBe(3)
   }
 })
-

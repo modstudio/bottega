@@ -385,7 +385,9 @@ export function selectProjectProfile(input: {
       input.version ?? null,
     )
     const selection = d
-      .query('SELECT id FROM project_lens_profile WHERE project_record_id=? AND lens_id IS ? AND axis=?')
+      .query(
+        'SELECT id FROM project_lens_profile WHERE project_record_id=? AND lens_id IS ? AND axis=?',
+      )
       .get(project.recordId, input.lensId ?? null, axis) as { id: number }
     d.query(`INSERT INTO project_lens_profile_revision
       (record_id,selection_id,prior_profile_name,prior_selected_version,reason,session_id,at) VALUES (?,?,?,?,?,?,?)`).run(

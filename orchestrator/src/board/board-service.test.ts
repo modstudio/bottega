@@ -934,7 +934,13 @@ test('machine:this resolves to the posting machine, interrupts, and reports unac
   )
   insert.run('machine-one', machine, PLATFORM_SLUG, PLATFORM_SLUG, new Date(clock).toISOString())
   insert.run('machine-two', machine, PLATFORM_SLUG, PLATFORM_SLUG, new Date(clock).toISOString())
-  insert.run('elsewhere', `${machine}-elsewhere`, PLATFORM_SLUG, PLATFORM_SLUG, new Date(clock).toISOString())
+  insert.run(
+    'elsewhere',
+    `${machine}-elsewhere`,
+    PLATFORM_SLUG,
+    PLATFORM_SLUG,
+    new Date(clock).toISOString(),
+  )
   const posted = postNotice(
     {
       audience: 'machine:this',

@@ -260,4 +260,3 @@ test('an occupied gate log path fails the execution without following the path',
     rmSync(root, { recursive: true, force: true })
   }
 })
-

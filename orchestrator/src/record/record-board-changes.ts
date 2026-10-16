@@ -38,7 +38,7 @@ export async function listHostedBoardChanges(
   return withBoardTenant(input, false, async (tx) => {
     const messages = (await tx`
       SELECT board_message.*, project.name AS author_project_name FROM board_message
-      LEFT JOIN project ON project.recordId=board_message.author_project_id
+      LEFT JOIN project ON project.id=board_message.author_project_id
       WHERE board_message.revision > ${input.after}::bigint
       ORDER BY board_message.revision
       LIMIT ${limit}

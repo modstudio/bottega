@@ -39,7 +39,9 @@ function applyLocalProjectRename(
         .run(nextName, current.recordId, currentName)
       continue
     }
-    database.query(`UPDATE ${table} SET ${column}=? WHERE project_record_id=?`).run(nextName, current.recordId)
+    database
+      .query(`UPDATE ${table} SET ${column}=? WHERE project_record_id=?`)
+      .run(nextName, current.recordId)
   }
   for (const [table, column] of PROJECT_NAME_ONLY_COLUMNS) {
     database.query(`UPDATE ${table} SET ${column}=? WHERE ${column}=?`).run(nextName, currentName)

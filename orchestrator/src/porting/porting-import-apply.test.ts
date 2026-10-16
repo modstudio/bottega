@@ -15,7 +15,9 @@ import { applyImport, ImportRefusalError, planImport, sourceCoverage } from './p
 
 const listPairs = () =>
   db()
-    .query('SELECT id,source_project_record_id,target_project_record_id,created_at FROM port_pair ORDER BY id')
+    .query(
+      'SELECT id,source_project_record_id,target_project_record_id,created_at FROM port_pair ORDER BY id',
+    )
     .all() as PortPair[]
 
 describe('port importer', () => {
@@ -413,4 +415,3 @@ describe('worker port import refusal', () => {
     )
   })
 })
-

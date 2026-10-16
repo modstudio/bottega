@@ -184,4 +184,3 @@ test(`formatRecordedGateResult names ${PLATFORM_SLUG} gate run when the row has 
     ].join('\n'),
   )
 })
-

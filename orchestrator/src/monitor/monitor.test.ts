@@ -689,4 +689,3 @@ describe('operational monitor conditions', () => {
     }
   })
 })
-

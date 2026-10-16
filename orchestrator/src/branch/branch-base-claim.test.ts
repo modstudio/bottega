@@ -37,4 +37,3 @@ test('a fully qualified base name is claimed while its chain is asking and relea
   db().query("UPDATE run SET status='ok' WHERE id=?").run(holder)
   expect(liveBaseClaim(project, branch)).toBeNull()
 })
-

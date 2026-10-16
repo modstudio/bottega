@@ -95,13 +95,11 @@ describe('tracked recipe execution', () => {
     )
 
     const database = db()
-    const projectId = (
-      database
-        .query<{ record_id: string }, [string]>(
-          "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'compose-owner',?,1) RETURNING record_id",
-        )
-        .get(repoRoot)!
-    ).record_id
+    const projectId = database
+      .query<{ record_id: string }, [string]>(
+        "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'compose-owner',?,1) RETURNING record_id",
+      )
+      .get(repoRoot)!.record_id
     const runId = Number(
       database
         .query(
@@ -491,13 +489,11 @@ describe('tracked recipe execution', () => {
 
   test('shared declarations add no claims to the recipe allocation set', () => {
     const database = db()
-    const projectId = (
-      database
-        .query<{ record_id: string }, []>(
-          "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'shared','/shared',1) RETURNING record_id",
-        )
-        .get()!
-    ).record_id
+    const projectId = database
+      .query<{ record_id: string }, []>(
+        "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'shared','/shared',1) RETURNING record_id",
+      )
+      .get()!.record_id
     const runId = Number(
       database
         .query(
@@ -567,13 +563,11 @@ describe('tracked recipe execution', () => {
 
   test('the worker environment uses the conversation root label for a resumed turn', () => {
     const database = db()
-    const projectId = (
-      database
-        .query<{ record_id: string }, []>(
-          "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'resume','/resume',1) RETURNING record_id",
-        )
-        .get()!
-    ).record_id
+    const projectId = database
+      .query<{ record_id: string }, []>(
+        "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'resume','/resume',1) RETURNING record_id",
+      )
+      .get()!.record_id
     const rootId = Number(
       database
         .query(
@@ -610,13 +604,11 @@ describe('tracked recipe execution', () => {
 
   test('claims every database before a pre step can run and exposes their filled names', () => {
     const database = db()
-    const projectId = (
-      database
-        .query<{ record_id: string }, []>(
-          "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'tracked','/tracked',1) RETURNING record_id",
-        )
-        .get()!
-    ).record_id
+    const projectId = database
+      .query<{ record_id: string }, []>(
+        "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'tracked','/tracked',1) RETURNING record_id",
+      )
+      .get()!.record_id
     const runId = Number(
       database
         .query(
@@ -771,13 +763,11 @@ describe('tracked recipe execution', () => {
 
   test('releases database claims only after every teardown result succeeds', () => {
     const database = db()
-    const projectId = (
-      database
-        .query<{ record_id: string }, []>(
-          "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'teardown','/teardown',1) RETURNING record_id",
-        )
-        .get()!
-    ).record_id
+    const projectId = database
+      .query<{ record_id: string }, []>(
+        "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'teardown','/teardown',1) RETURNING record_id",
+      )
+      .get()!.record_id
     const insertRun = database.query(
       `INSERT INTO run
        (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id,turn)
@@ -1018,4 +1008,3 @@ describe('tracked recipe env writes', () => {
     expect(readFileSync(target, 'utf8')).toBe(old)
   })
 })
-

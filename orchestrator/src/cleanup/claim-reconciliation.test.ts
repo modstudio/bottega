@@ -17,7 +17,9 @@ function keptBranchClaim(tip: string | null = 'a'.repeat(40)) {
     db().query('SELECT record_id AS id FROM project WHERE name=?').get(project) as { id: number }
   ).id
   db()
-    .query('UPDATE run SET repo=?,project_record_id=?,cwd=?,branch_kept=?,branch_kept_tip=? WHERE id=?')
+    .query(
+      'UPDATE run SET repo=?,project_record_id=?,cwd=?,branch_kept=?,branch_kept_tip=? WHERE id=?',
+    )
     .run(project, projectId, repository, branch, tip, runId)
   const claimId = Number(
     db()
@@ -460,7 +462,9 @@ test('an unregistered missing worktree probes a present ref in its owning reposi
   const repository = `/scratch/repository-${runId}`
   const worktree = `${repository}/.claude/worktrees/orch-${runId}`
   db()
-    .query('UPDATE run SET repo=NULL,project_record_id=NULL,cwd=?,worktree=?,launch_cwd=? WHERE id=?')
+    .query(
+      'UPDATE run SET repo=NULL,project_record_id=NULL,cwd=?,worktree=?,launch_cwd=? WHERE id=?',
+    )
     .run(worktree, worktree, repository, runId)
   const claimId = Number(
     db()
@@ -501,7 +505,9 @@ test('an unregistered claim settles absent when its owning repository root is go
   const repository = `/scratch/gone-repository-${runId}`
   const worktree = `${repository}/.claude/worktrees/orch-${runId}`
   db()
-    .query('UPDATE run SET repo=NULL,project_record_id=NULL,cwd=?,worktree=?,launch_cwd=? WHERE id=?')
+    .query(
+      'UPDATE run SET repo=NULL,project_record_id=NULL,cwd=?,worktree=?,launch_cwd=? WHERE id=?',
+    )
     .run(worktree, worktree, repository, runId)
   const claimId = Number(
     db()
@@ -534,4 +540,3 @@ test('an unregistered claim settles absent when its owning repository root is go
     settled_detail: `observed absent repository ${repository}`,
   })
 })
-
