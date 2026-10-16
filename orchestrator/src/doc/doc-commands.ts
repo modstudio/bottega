@@ -495,11 +495,19 @@ async function handleSetDocCommand(
     )
   else {
     presentation.log(`set ${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`)
+    printDocWriteWarnings(doc.writeWarnings, presentation)
     for (const warning of lintWarnings)
       presentation.error(`warning: line ${warning.line}: ${warning.message}`)
     for (const warning of warnings) presentation.error(`warning: ${warning.message}`)
   }
   return true
+}
+
+function printDocWriteWarnings(
+  warnings: readonly string[] | undefined,
+  presentation: Pick<DocPresentation, 'error'>,
+): void {
+  for (const warning of warnings ?? []) presentation.error(`warning: ${warning}`)
 }
 
 async function handleReorderDocCommand(

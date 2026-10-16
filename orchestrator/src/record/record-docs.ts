@@ -3,7 +3,7 @@
 
 import { SQL } from 'bun'
 import { assertDocSections } from '../../../shared/doc-sections.ts'
-import type { DocAudiences, DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
+import type { DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
@@ -29,6 +29,7 @@ import {
   type HostedArticleResponse,
   hostedArticleProjectId,
   hostedArticleResponse,
+  hostedArticleResponseFromRows,
   importedArticleSubjectNames,
   replaceHostedRelatedSubjects,
   resolveHostedArticleFields,
@@ -37,6 +38,7 @@ import {
 } from './record-doc-article-fields.ts'
 import { bindRecordDocAudiences } from './record-doc-audience-sql.ts'
 import { recordDocAudiences } from './record-doc-audiences.ts'
+import { checkRecordCommands } from './record-doc-command-check.ts'
 import { assertRevisionWrite, assertWrite, RecordDocError } from './record-doc-errors.ts'
 import { writeImportedRecordDoc } from './record-doc-import-write.ts'
 import {
@@ -69,6 +71,7 @@ import {
   recordCanonTreeWriteRefusal,
   recordTreeWriteRefusal,
 } from './record-doc-tree.ts'
+import type { RecordDocWriteInput } from './record-doc-write-input.ts'
 
 export { RecordDocError } from './record-doc-errors.ts'
 export type { RecordDoc, RecordDocImportInput, RecordDocRevision } from './record-doc-mapping.ts'
@@ -97,6 +100,38 @@ export type RecordCanonImportResult = {
 type Tenant = { url: string } & TenantPrincipal
 type StoredDocRow = Record<string, unknown>
 
+function assertRestoredRecordDoc(
+  body: string,
+  kind: DocKind,
+  form: DocForm | null,
+  audiences: readonly string[],
+): void {
+  assertDocSections(body, recordDocAudiences(audiences))
+  checkRecordCommands({ body }, kind, form, audiences)
+}
+
+function assertImportedRecordDoc(
+  doc: ReturnType<typeof normalizeRecordDocImport>['doc'] &
+    ReturnType<typeof importedLiveArticleFields>,
+  existing: StoredDocRow | undefined,
+): void {
+  checkRecordCommands(doc, doc.kind, doc.form, recordDocAudiences(doc.audiences))
+  assertWrite(
+    recordDocLintRefusal(
+      doc,
+      existing
+        ? {
+            scope: String(existing.scope),
+            subject: existing.subject == null ? null : String(existing.subject),
+            slug: String(existing.slug),
+            body: String(existing.body),
+            kind: (existing.kind == null ? 'working' : String(existing.kind)) as DocKind,
+          }
+        : undefined,
+    ),
+  )
+}
+
 export type RecordDocOrderInput = Omit<RecordDocOrder, 'spaceId'>
 
 async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<T> {
@@ -115,40 +150,6 @@ export async function reorderRecordDocs(
   input: Tenant & RecordDocOrderInput,
 ): Promise<{ orderedIds: string[] }> {
   return reorderRecordDocRows(input)
-}
-
-type RecordDocWriteInput = Tenant & {
-  scope: string
-  subject: string | null
-  owner?: string | null
-  slug: string
-  title: string
-  body: string
-  delivery?: DocDelivery
-  audiences?: DocAudiences
-  parentRecordId?: string | null
-  position?: number
-  featured?: boolean
-  status?: DocStatus
-  kind?: DocKind
-  form?: DocForm | null
-  articleSubjectId?: string | null
-  relatedSubjectIds?: string[]
-  sourceFiles?: string[]
-  checkedAgainstCommit?: string | null
-  replacementSlug?: string | null
-  projectName?: string | null
-  projectId?: string | null
-  reason: string
-  author: string
-  sessionId?: string | null
-  forceInject?: string
-  op?: DocRevisionOp
-  at?: string
-  id?: string
-  revisionId?: string
-  expectedRevision?: string
-  generator?: DocGenerator
 }
 
 function assertUpsertAddress(input: RecordDocWriteInput): void {
@@ -228,9 +229,10 @@ export async function upsertRecordDoc(
       existing[0],
       resolvedProject,
     )
+    const audiences = storedDocAudiences(input, existing[0])
+    checkRecordCommands(input, kind, articleFields.form, audiences)
     const now = input.at ?? new Date().toISOString()
     const docId = existing[0] ? String(existing[0].id) : (input.id ?? newRecordId())
-    const audiences = storedDocAudiences(input, existing[0])
     assertDocSections(input.body, audiences)
     const parentId = storedDocParentId(input, existing[0])
     assertWrite(
@@ -303,13 +305,12 @@ export async function upsertRecordDoc(
       sessionId: input.sessionId ?? null,
       at: now,
     })
-    const names = new Map(
-      articleFields.subjectRows.map((row: Record<string, unknown>) => [
-        String(row.id),
-        String(row.name),
-      ]),
-    )
-    return { id: docId, revisionId, ...hostedArticleResponse(articleFields, names) }
+    const written = {
+      id: docId,
+      revisionId,
+      ...hostedArticleResponseFromRows(articleFields, articleFields.subjectRows),
+    }
+    return written
   })
 }
 
@@ -750,7 +751,6 @@ export async function restoreRecordDoc(
     const body = String(revision.body)
     const delivery = String(revision.delivery) as DocDelivery
     const audiences = recordDocAudiences(revision.audiences)
-    assertDocSections(body, audiences)
     const parentId = revision.parent_id == null ? null : String(revision.parent_id)
     const position = Number(revision.position)
     const featured = revision.featured == null ? false : Boolean(revision.featured)
@@ -758,6 +758,7 @@ export async function restoreRecordDoc(
     const kind = (revision.kind == null ? 'working' : String(revision.kind)) as DocKind
     const { form, articleSubjectId, relatedSubjectIds, sourceFiles, checkedAgainstCommit } =
       restoredArticleFields(revision)
+    assertRestoredRecordDoc(body, kind, form, audiences)
     const replacementSlug =
       revision.replacement_slug == null ? null : String(revision.replacement_slug)
     assertWrite(
@@ -902,17 +903,19 @@ async function referenceImportExisting(
   return existing
 }
 
+function assertImportAddress(doc: ReturnType<typeof normalizeRecordDocImport>['doc']): void {
+  const refusal =
+    refuseOwnedDocAddress(doc.scope, doc.subject, doc.owner) ??
+    refuseSettingsAddress(doc.scope, doc.subject, doc.owner)
+  if (refusal) throw new RecordDocError(refusal)
+  assertWrite(refuseMismatchedDocProject(doc.scope, doc.subject, doc.projectName))
+}
+
 export async function importRecordDoc(
   input: Tenant & RecordDocImportInput,
 ): Promise<{ id: string; revisionIds: string[] } & HostedArticleResponse> {
   const { doc: importedDoc, revisions } = normalizeRecordDocImport(input, newRecordId())
-  const ownedAddress =
-    refuseOwnedDocAddress(importedDoc.scope, importedDoc.subject, importedDoc.owner) ??
-    refuseSettingsAddress(importedDoc.scope, importedDoc.subject, importedDoc.owner)
-  if (ownedAddress) throw new RecordDocError(ownedAddress)
-  assertWrite(
-    refuseMismatchedDocProject(importedDoc.scope, importedDoc.subject, importedDoc.projectName),
-  )
+  assertImportAddress(importedDoc)
   assertImportedRevisions(importedDoc, revisions)
   return tenant(input, async (tx) => {
     const existing = await referenceImportExisting(tx, input.spaceId, importedDoc)
@@ -942,20 +945,7 @@ export async function importRecordDoc(
         existingRelated.map((row: Record<string, unknown>) => String(row.subject_id)),
       ),
     }
-    assertWrite(
-      recordDocLintRefusal(
-        doc,
-        existing
-          ? {
-              scope: String(existing.scope),
-              subject: existing.subject == null ? null : String(existing.subject),
-              slug: String(existing.slug),
-              body: String(existing.body),
-              kind: (existing.kind == null ? 'working' : String(existing.kind)) as DocKind,
-            }
-          : undefined,
-      ),
-    )
+    assertImportedRecordDoc(doc, existing)
     const resolvedProject = await resolvedDocProjectId(tx, input.spaceId, doc)
     const importedSubjectNames = await importedArticleSubjectNames(
       tx,

@@ -62,6 +62,7 @@ import {
   unsettledClaimInventory,
   worktreeDatabaseConditions,
 } from './monitor-conditions.ts'
+import { staleCustomerGuideCommandConditions } from './monitor-customer-guides.ts'
 import { workerGateToolingConditions } from './monitor-gate-tooling.ts'
 import { observeProjectHarnessLoad } from './monitor-harness-load.ts'
 import { outboxQuarantineConditions, outboxRetiredParentConditions } from './monitor-outbox.ts'
@@ -476,7 +477,7 @@ export async function monitor(
 ): Promise<MonitorResult> {
   const startedAt = new Date(clock).toISOString()
   const { database, invocation } = startMonitorInvocation(trigger, startedAt)
-  const conditions: MonitorCondition[] = []
+  const conditions: MonitorCondition[] = staleCustomerGuideCommandConditions()
   const errors: string[] = []
   const canonRows = allInjectChecks()
   const canon = {
@@ -503,7 +504,6 @@ export async function monitor(
   )
   conditions.push(...ratchetedRuleRefills.conditions)
   errors.push(...ratchetedRuleRefills.errors)
-
   const strayWorktrees = strayWorktreeConditions({
     projects: projects().filter(isProjectRepository),
     database,
