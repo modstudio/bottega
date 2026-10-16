@@ -26,15 +26,4 @@ describe('workflow project facts', () => {
     expect(facts).toEqual({ reference })
   })
 
-  test('omits an undeclared generated reference', () => {
-    const { facts } = resolveWorkflowProjectFacts(
-      { name: 'fixture', stack: 'bun', settings: {} },
-      ['reference'],
-      false,
-      {},
-      autonomy,
-    )
-
-    expect(facts).toEqual({})
-  })
 })

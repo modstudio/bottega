@@ -58,6 +58,20 @@ describe('project workflow injection', () => {
     ).toEqual([expect.stringContaining('reference.publish: Too small')])
   })
 
+  test.each([
+    ['./docs/reference', 'must be written as docs/reference'],
+    ['docs/reference/', 'must be written as docs/reference'],
+    ['docs\\reference', 'must be written as docs/reference'],
+    ['docs//reference', 'must be written as docs/reference'],
+    ['docs/x/../reference', 'must be written as docs/reference'],
+    [' docs/reference ', 'must be written as docs/reference'],
+    ['.', 'must name a directory inside the repository'],
+  ])('reference directory %s is refused because %s', (directory, message) => {
+    expect(
+      validateProjectSettings({ reference: { directory, publish: 'publish-reference' } }),
+    ).toEqual([expect.stringContaining(`reference.directory: ${message}`)])
+  })
+
   test('valid release and docs settings pass while unknown keys are refused', () => {
     expect(validateProjectSettings({ release, docs, gate: 'bun run check' })).toEqual([])
 

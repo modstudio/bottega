@@ -1,6 +1,6 @@
 // concern: project-injection
 /** Knows the project facts shared workflows may request, their stored grammar, and refusal remedies. */
-import { isAbsolute, normalize, win32 } from 'node:path'
+import { isAbsolute, normalize, posix, win32 } from 'node:path'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
@@ -65,9 +65,12 @@ const docsSchema = z.discriminatedUnion('protocol', [
 const referenceSchema = strictObject({
   directory: z
     .string()
-    .trim()
     .min(1)
     .superRefine((directory, context) => {
+      if (directory !== directory.trim()) {
+        context.addIssue({ code: 'custom', message: `must be written as ${directory.trim()}` })
+        return
+      }
       if (isAbsolute(directory) || win32.isAbsolute(directory)) {
         context.addIssue({ code: 'custom', message: 'must be a repository-relative path' })
         return
@@ -80,11 +83,19 @@ const referenceSchema = strictObject({
         normalized.startsWith('..\\') ||
         normalizedWindows === '..' ||
         normalizedWindows.startsWith('..\\')
-      )
+      ) {
         context.addIssue({
           code: 'custom',
           message: 'must not escape the repository',
         })
+        return
+      }
+      // The merge step compares changed paths with this spelling, so only the canonical one is stored.
+      const canonical = posix.normalize(directory.replaceAll('\\', '/')).replace(/\/+$/, '')
+      if (canonical === '.')
+        context.addIssue({ code: 'custom', message: 'must name a directory inside the repository' })
+      else if (canonical !== directory)
+        context.addIssue({ code: 'custom', message: `must be written as ${canonical}` })
     }),
   publish: z.string().trim().min(1),
 })

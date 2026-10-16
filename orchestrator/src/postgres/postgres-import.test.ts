@@ -231,6 +231,7 @@ realPostgres('project import against copied live SQLite data', () => {
       mcpServer: 'mcp_server',
       mechanicalChecks: 'mechanical_checks',
       productionBranch: 'production_branch',
+      reference: 'reference',
       release: 'release',
       requireCleanMain: 'require_clean_main',
       secretPaths: 'secret_paths',
