@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { DocOverflow } from '@/components/markdown/markdown-overflow'
+import { DocTable } from '@/components/markdown/markdown'
 import type { ArticleListRow } from './article-list.ts'
 import { DOC_FORM_LABELS } from './filters.ts'
 import type { DocsLocation } from './location.ts'
@@ -14,8 +14,7 @@ export function ArticleList({
 }) {
   if (!rows.length) return <div className="mt-3 text-md text-text-muted">No articles yet.</div>
   return (
-    <DocOverflow expandLabel="Expand table" title="Table">
-      <table>
+    <DocTable fit>
         <thead>
           <tr>
             <th>Kind</th>
@@ -41,7 +40,6 @@ export function ArticleList({
             </tr>
           ))}
         </tbody>
-      </table>
-    </DocOverflow>
+    </DocTable>
   )
 }
