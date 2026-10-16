@@ -29,6 +29,7 @@ type RevisionDoc = {
   relatedSubjects: Array<{ id: string; name: string }>
   sourceFiles: string[]
   checkedAgainstCommit: string | null
+  summary: string | null
   replacement_slug: string | null
 }
 
@@ -105,8 +106,8 @@ export function insertLocalRevision(
   db()
     .query(
       `INSERT INTO doc_revision
-       (doc_id, scope, subject, owner, project_id, slug, op, title, body, delivery, audiences, parent_id, position, featured, status, kind, form, article_subject_id, related_subject_ids, source_files, checked_against_commit, replacement_slug, author, reason, session_id, at, record_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (doc_id, scope, subject, owner, project_id, slug, op, title, body, delivery, audiences, parent_id, position, featured, status, kind, form, article_subject_id, related_subject_ids, source_files, checked_against_commit, summary, replacement_slug, author, reason, session_id, at, record_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
       doc.id,
@@ -130,6 +131,7 @@ export function insertLocalRevision(
       JSON.stringify(doc.relatedSubjects.map(({ id }) => id)),
       JSON.stringify(doc.sourceFiles),
       doc.checkedAgainstCommit,
+      doc.summary,
       doc.replacement_slug,
       identity.author,
       identity.reason,
@@ -148,7 +150,7 @@ export function listStoredDocRevisions(
   validateHistoricDocAddress(scope, slug)
   const rows = db()
     .query(
-      `SELECT id, op, author, reason, at, status, kind, form, article_subject_id, related_subject_ids, source_files, checked_against_commit, replacement_slug, record_id,
+      `SELECT id, op, author, reason, at, status, kind, form, article_subject_id, related_subject_ids, source_files, checked_against_commit, summary, replacement_slug, record_id,
               length(CAST(body AS BLOB)) AS bytes
        FROM doc_revision WHERE scope=? AND subject IS ? AND owner IS ? AND slug=? ORDER BY id DESC`,
     )
@@ -255,6 +257,7 @@ export function diffStoredDocRevisions(a: number, b: number, owner: string | nul
     `related subjects: ${left.relatedSubjects.map(({ id }) => id).join(',')}`,
     `source files: ${left.sourceFiles.join(',')}`,
     `checked against: ${left.checkedAgainstCommit ?? '-'}`,
+    `summary: ${left.summary ?? '-'}`,
     `replacement: ${left.replacement_slug ?? '-'}`,
     '',
     ...left.body.split('\n'),
@@ -267,6 +270,7 @@ export function diffStoredDocRevisions(a: number, b: number, owner: string | nul
     `related subjects: ${right.relatedSubjects.map(({ id }) => id).join(',')}`,
     `source files: ${right.sourceFiles.join(',')}`,
     `checked against: ${right.checkedAgainstCommit ?? '-'}`,
+    `summary: ${right.summary ?? '-'}`,
     `replacement: ${right.replacement_slug ?? '-'}`,
     '',
     ...right.body.split('\n'),

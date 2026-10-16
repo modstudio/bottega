@@ -13,6 +13,7 @@ const item = (id: string, title: string, extra: Partial<DocsTreeItem> = {}): Doc
   subject: null,
   audiences: ['customer'],
   summary: `${title} summary`,
+  summarySource: 'written',
   featured: false,
   ...extra,
   status: extra.status ?? 'current',

@@ -19,6 +19,7 @@ export type LintableDoc = {
   slug: string
   body: string
   kind: DocKind
+  summary?: string | null
   referenceProjects?: DocReferenceProject[]
 }
 
@@ -193,7 +194,21 @@ function proseFindingLevel(finding: ProseFinding, profile: DocLintProfile): DocL
 }
 
 export function lintDoc(doc: LintableDoc): DocLintFinding[] {
-  if (doc.scope === 'resume' || doc.scope === 'canon' || doc.scope === 'settings') return []
+  const articleSummaryFindings: DocLintFinding[] =
+    doc.kind === 'article' && !doc.summary
+      ? [
+          {
+            line: 1,
+            rule: 'doc/article-summary',
+            level: 'warning',
+            message: 'article has no written summary',
+            remedy: `set one with ${PLATFORM_SLUG} doc set <slug> --summary`,
+          },
+        ]
+      : []
+  if (doc.scope === 'resume' || doc.scope === 'canon' || doc.scope === 'settings') {
+    return articleSummaryFindings
+  }
   const profile = docLintProfile(doc.kind)
   const findings = lintProse(doc.body)
     .filter((finding) => profile.rules[finding.rule] !== undefined)
@@ -206,6 +221,7 @@ export function lintDoc(doc: LintableDoc): DocLintFinding[] {
     }))
   if (doc.referenceProjects) findings.push(...referenceFindings(doc))
   if (doc.slug.startsWith('design-')) findings.push(...designHeadingFindings(doc.body))
+  findings.push(...articleSummaryFindings)
   return findings.sort(
     (a, b) => a.rule.localeCompare(b.rule) || a.line - b.line || a.message.localeCompare(b.message),
   )

@@ -5,8 +5,8 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 /** Presents the stable semantic document-search contract. */
 import {
   CodeSearchOutputSchema,
-  DocSearchOutputSchema,
   OrchProjectListSchema,
+  RetrievalDocSearchOutputSchema,
 } from '../../shared/orch-contract.ts'
 import { bottegaEntryArgv } from '../../shared/self-spawn.ts'
 import { checkDocPins } from './benchmark/doc-pins.ts'
@@ -155,7 +155,9 @@ export async function main(argv: string[]): Promise<void> {
     ? CodeSearchOutputSchema.parse(
         await searchCode(await registeredCodeProject(projectPath!), query, k),
       )
-    : DocSearchOutputSchema.parse(await search(query, k, { scope, subject, includeDrafts }))
+    : RetrievalDocSearchOutputSchema.parse(
+        await search(query, k, { scope, subject, includeDrafts }),
+      )
   if (json) {
     console.log(JSON.stringify(output))
     return

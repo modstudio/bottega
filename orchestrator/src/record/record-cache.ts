@@ -349,6 +349,7 @@ function pulledDocArticleFields(local: Database, item: Record<string, unknown>, 
   const sourceFiles = decodedSourceFiles.values.map(String)
   const checkedAgainstCommit =
     item.checkedAgainstCommit == null ? null : String(item.checkedAgainstCommit)
+  const summary = item.summarySource === 'written' ? String(item.summary) : null
   for (const id of [articleSubjectId, ...relatedSubjectIds].filter((value): value is string =>
     Boolean(value),
   )) {
@@ -357,7 +358,7 @@ function pulledDocArticleFields(local: Database, item: Record<string, unknown>, 
         `record cache deferred document ${recordId}: subject ${id} is not local; cleared by: refresh subjects and pull again`,
       )
   }
-  return { articleSubjectId, relatedSubjectIds, sourceFiles, checkedAgainstCommit }
+  return { articleSubjectId, relatedSubjectIds, sourceFiles, checkedAgainstCommit, summary }
 }
 
 function syncPulledDocRelatedSubjects(
@@ -372,6 +373,15 @@ function syncPulledDocRelatedSubjects(
         'INSERT INTO doc_related_subject (id,record_id,doc_record_id,subject_id) VALUES (?,?,?,?)',
       )
       .run(newRecordId(), newRecordId(), recordId, id)
+}
+
+function pulledDocParentId(local: Database, parentRecordId: string | null): number | null {
+  if (parentRecordId == null) return null
+  return (
+    local
+      .query<{ id: number }, [string]>('SELECT id FROM doc WHERE record_id=?')
+      .get(parentRecordId)?.id ?? null
+  )
 }
 
 function applyDoc(
@@ -399,15 +409,10 @@ function applyDoc(
   const featured = item.featured == null ? false : Boolean(item.featured)
   const { status, kind, replacementSlug } = pulledDocLifecycle(item)
   const form = item.form == null ? null : String(item.form)
-  const { articleSubjectId, relatedSubjectIds, sourceFiles, checkedAgainstCommit } =
+  const { articleSubjectId, relatedSubjectIds, sourceFiles, checkedAgainstCommit, summary } =
     pulledDocArticleFields(local, item, recordId)
   const parentRecordId = item.parentId == null ? null : String(item.parentId)
-  const parentId: number | null =
-    parentRecordId == null
-      ? null
-      : (local
-          .query<{ id: number }, [string]>('SELECT id FROM doc WHERE record_id=?')
-          .get(parentRecordId)?.id ?? null)
+  const parentId = pulledDocParentId(local, parentRecordId)
   if (parentRecordId && parentId == null) unresolvedParents.set(recordId, parentRecordId)
   else unresolvedParents.delete(recordId)
   const updatedAt = String(item.updatedAt ?? nowIso())
@@ -418,7 +423,7 @@ function applyDoc(
   if (existing) {
     local
       .query(
-        'UPDATE doc SET title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, checked_against_commit=?, replacement_slug=?, updated_at=?, subject=?, owner=? WHERE id=?',
+        'UPDATE doc SET title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, checked_against_commit=?, summary=?, replacement_slug=?, updated_at=?, subject=?, owner=? WHERE id=?',
       )
       .run(
         title,
@@ -434,6 +439,7 @@ function applyDoc(
         articleSubjectId,
         JSON.stringify(sourceFiles),
         checkedAgainstCommit,
+        summary,
         replacementSlug,
         updatedAt,
         subject,
@@ -451,7 +457,7 @@ function applyDoc(
   if (byAddress) {
     local
       .query(
-        'UPDATE doc SET title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, checked_against_commit=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
+        'UPDATE doc SET title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, checked_against_commit=?, summary=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
       )
       .run(
         title,
@@ -467,6 +473,7 @@ function applyDoc(
         articleSubjectId,
         JSON.stringify(sourceFiles),
         checkedAgainstCommit,
+        summary,
         replacementSlug,
         updatedAt,
         recordId,
@@ -477,8 +484,8 @@ function applyDoc(
   }
   local
     .query(
-      `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audiences, parent_id, position, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, replacement_slug, created_at, updated_at, record_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audiences, parent_id, position, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, created_at, updated_at, record_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
       scope,
@@ -499,6 +506,7 @@ function applyDoc(
       articleSubjectId,
       JSON.stringify(sourceFiles),
       checkedAgainstCommit,
+      summary,
       replacementSlug,
       createdAt,
       updatedAt,

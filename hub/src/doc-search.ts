@@ -1,5 +1,5 @@
 import { DOC_SNIPPET_START, DOC_SNIPPET_STOP, docPlainSnippet } from '../../shared/doc-snippet.ts'
-import type { DocAudience } from '../../shared/docs.ts'
+import { type DocAudience, effectiveDocSummary } from '../../shared/docs.ts'
 import { type DocSearchMatch, DocSearchSchema } from './doc-contract.ts'
 import { docList } from './orch.ts'
 
@@ -87,6 +87,7 @@ export async function searchLocalDocs(
       audiences: row.audiences,
       status: row.status ?? 'current',
       kind: row.kind,
+      ...effectiveDocSummary(row.summary, row.body),
       ...docSnippet(row.body, query),
     }))
 }

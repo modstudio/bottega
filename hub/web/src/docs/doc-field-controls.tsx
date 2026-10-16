@@ -12,6 +12,7 @@ import { Popover } from '@/ui/popover/popover'
 import {
   DOC_AUDIENCES,
   DOC_FORMS,
+  DOC_SUMMARY_MAX_LENGTH,
   type DocArticleSubject,
   type DocForm,
 } from '../../../../shared/docs.ts'
@@ -433,6 +434,7 @@ function ArticleRows({
   const subjectChoices = subjectsExcept(known, related)
   return (
     <>
+      <SummaryRow doc={doc} field={field} />
       <Row label="Type">
         {field.canAddress ? (
           <ChoiceText
@@ -500,6 +502,56 @@ function ArticleRows({
         <FieldError message={field.error('relatedSubjects')} />
       </Row>
     </>
+  )
+}
+
+function SummaryRow({ doc, field }: { doc: DocsDoc; field: FieldSave }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(doc.summarySource === 'written' ? (doc.summary ?? '') : '')
+  const save = () => {
+    setEditing(false)
+    const next = draft.trim() || null
+    const current = doc.summarySource === 'written' ? (doc.summary ?? '') : null
+    if (next !== current) field.save({ field: 'summary', value: next })
+  }
+  return (
+    <Row label="Summary">
+      {editing ? (
+        <Input
+          autoFocus
+          maxLength={DOC_SUMMARY_MAX_LENGTH}
+          value={draft}
+          disabled={field.disabled('summary')}
+          aria-label="Summary"
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={save}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') event.currentTarget.blur()
+            if (event.key === 'Escape') {
+              setDraft(doc.summarySource === 'written' ? (doc.summary ?? '') : '')
+              setEditing(false)
+            }
+          }}
+        />
+      ) : (
+        <button
+          type="button"
+          className={fieldTrigger}
+          disabled={!field.canAddress || field.disabled('summary')}
+          title="Change summary"
+          onClick={() => setEditing(true)}
+        >
+          <span className={doc.summarySource === 'derived' ? 'text-text-muted' : undefined}>
+            {doc.summary || 'None'}
+            {doc.summarySource === 'derived' ? (
+              <span className="mt-1 block text-xs">From the opening paragraph</span>
+            ) : null}
+          </span>
+          <RowChevron />
+        </button>
+      )}
+      <FieldError message={field.error('summary')} />
+    </Row>
   )
 }
 

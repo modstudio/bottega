@@ -30,6 +30,7 @@ import { type RecordSyncRouteDeps, registerRecordSyncRoute } from './record-api-
 import { registerRecordWriteRoutes } from './record-api-write-routes.ts'
 import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import { RecordBoardError } from './record-board-contract.ts'
+import type { RecordCanonImportInput, RecordCanonImportResult } from './record-canon-import.ts'
 import type {
   ConfigEntry,
   ConfigScope,
@@ -48,8 +49,6 @@ import {
   recordCursorOf,
 } from './record-cursor.ts'
 import {
-  type RecordCanonImportInput,
-  type RecordCanonImportResult,
   type RecordDoc,
   RecordDocError,
   type RecordDocImportInput,

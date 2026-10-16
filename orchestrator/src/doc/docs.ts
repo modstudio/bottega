@@ -185,6 +185,7 @@ function assertInjectSize(input: {
         relatedSubjects: [],
         sourceFiles: [],
         checkedAgainstCommit: null,
+        summary: null,
         replacement_slug: null,
         parent_id: null,
         parent_slug: null,
@@ -384,10 +385,9 @@ async function setDocWithOp(
   const delivery = forcedDocDelivery(input.scope) ?? input.delivery ?? prior?.delivery ?? 'inject'
   const kind = input.kind ?? prior?.kind ?? 'working'
   const projectName = docWriteProjectName(input.scope, input.subject)
-  const { form, articleSubject, relatedSubjects, sourceFiles, checkedAgainstCommit } =
-    resolveLocalDocArticleFields(input, prior, kind, projectName)
+  const articleFields = resolveLocalDocArticleFields(input, prior, kind, projectName)
   const tree = localDocTreeFields(input, prior)
-  assertDocBodyCommands(input, { kind, form, audiences: tree.audiences })
+  assertDocBodyCommands(input, { kind, form: articleFields.form, audiences: tree.audiences })
   const lifecycle = localDocumentLifecycle(input, prior)
   assertLocalArticleDelivery(input, delivery, kind)
   assertDocWriteAllowed({ ...input, delivery })
@@ -402,11 +402,7 @@ async function setDocWithOp(
         delivery,
         ...tree,
         ...lifecycle,
-        form,
-        articleSubject,
-        relatedSubjects,
-        sourceFiles,
-        checkedAgainstCommit,
+        ...articleFields,
         requestedOp,
         identity,
       }),
@@ -431,13 +427,7 @@ async function setDocWithOp(
         position: tree.position,
         featured: tree.featured,
         kind,
-        ...hostedDocWriteFields(input, {
-          form,
-          articleSubject,
-          relatedSubjects,
-          sourceFiles,
-          checkedAgainstCommit,
-        }),
+        ...hostedDocWriteFields(input, articleFields),
         status: lifecycle.status,
         replacementSlug: lifecycle.replacementSlug,
         projectName,
@@ -458,11 +448,7 @@ async function setDocWithOp(
         delivery,
         ...tree,
         ...lifecycle,
-        form,
-        articleSubject,
-        relatedSubjects,
-        sourceFiles,
-        checkedAgainstCommit,
+        ...articleFields,
         requestedOp,
         identity,
         recordId: hosted.id,

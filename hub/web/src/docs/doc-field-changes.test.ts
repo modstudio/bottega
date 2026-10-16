@@ -22,6 +22,7 @@ const doc: DocsDoc = {
   audiences: ['internal'],
   status: 'draft',
   kind: 'article',
+  summarySource: 'derived',
   replacementSlug: null,
 }
 
@@ -118,6 +119,26 @@ test('local writes use stored text, slugs, and subject names', () => {
     expectedRevision: 'revision-1',
     articleSubject: 'Pricing',
   })
+})
+
+test('summary writes use the existing field-save input for local and hosted docs', () => {
+  const change = { field: 'summary', value: 'A written summary' } as const
+  expect(
+    fieldWriteInput(
+      'local',
+      doc,
+      { title: 'Article', body: 'Stored body', revision: 'revision-1' },
+      change,
+    ),
+  ).toMatchObject({ summary: 'A written summary', reason: 'Summary updated' })
+  expect(
+    fieldWriteInput(
+      'hosted',
+      { ...doc, spaceId: 'space-id' },
+      { title: 'Article', body: 'Stored body', revision: 'revision-2' },
+      { field: 'summary', value: null },
+    ),
+  ).toMatchObject({ summary: null, reason: 'Summary cleared' })
 })
 
 test('hosted writes use record ids and send only the changed optional field', () => {

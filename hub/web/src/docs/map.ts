@@ -78,6 +78,7 @@ export function mapTreeItem(row: Record<string, unknown>): DocsTreeItem {
     replacementSlug: typeof row.replacementSlug === 'string' ? row.replacementSlug : null,
     delivery: deliveryOf(row.delivery),
     summary: typeof row.summary === 'string' ? row.summary : '',
+    summarySource: row.summarySource === 'written' ? 'written' : 'derived',
     featured: row.featured === true,
     projectName: projectNameOf(row, scope, subject),
   }
@@ -116,6 +117,8 @@ export function mapSearchMatch(row: Record<string, unknown>): DocsSearchMatch {
     kind: kindOf(row.kind),
     audiences: audiencesOf(row.audiences),
     snippet: String(row.snippet ?? ''),
+    summary: String(row.summary ?? ''),
+    summarySource: row.summarySource === 'written' ? 'written' : 'derived',
     spaceName: typeof row.spaceName === 'string' ? row.spaceName : undefined,
     highlights: highlightsOf(row.highlights),
   }

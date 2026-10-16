@@ -1,4 +1,4 @@
-import { type DocAudience, docSummary } from '../../shared/docs.ts'
+import { type DocAudience, effectiveDocSummary } from '../../shared/docs.ts'
 import { ArticleDocFieldsSchema, DocSchema, DocTreeItemSchema } from './doc-contract.ts'
 import { type DocRow, docGet, docList } from './orch.ts'
 import { docRevision } from './orch-doc-revision.ts'
@@ -25,7 +25,7 @@ function localDocContract(row: DocRow, includeBody: boolean) {
     subject: row.subject,
     audiences: row.audiences,
     delivery: row.delivery,
-    summary: docSummary(row.body),
+    ...effectiveDocSummary(row.summary, row.body),
     featured: Boolean(row.featured),
     status: row.status ?? 'current',
     kind: row.kind,

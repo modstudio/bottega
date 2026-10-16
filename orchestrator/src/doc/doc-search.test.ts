@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { checkRetrieval, searchDocs } from './doc-search.ts'
+import { searchDocs as searchDocService } from './doc-search-service.ts'
 
 test('orch adapter parses the retrieval JSON contract', async () => {
   const output = {
@@ -31,6 +32,33 @@ test('orch adapter parses the retrieval JSON contract', async () => {
 
   expect(seen).toEqual([['meaning', '--k', '1', '--json']])
   expect(result).toEqual(output)
+  await expect(
+    searchDocService(
+      'meaning',
+      1,
+      {},
+      async () => output,
+      () => null,
+    ),
+  ).resolves.toEqual({
+    ...output,
+    results: output.results.map((row) => ({
+      ...row,
+      summary: '',
+      summarySource: 'derived',
+    })),
+  })
+  await expect(
+    searchDocService(
+      'meaning',
+      1,
+      {},
+      async () => output,
+      () => ({ summary: 'Written search summary.', body: 'Derived body.' }) as never,
+    ),
+  ).resolves.toMatchObject({
+    results: [{ summary: 'Written search summary.', summarySource: 'written' }],
+  })
 })
 
 test('orch adapter forwards optional document address filters', async () => {

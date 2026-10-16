@@ -29,6 +29,7 @@ export type DocsTreeItem = {
   replacementSlug: string | null
   delivery?: DocsDelivery
   summary?: string
+  summarySource: 'written' | 'derived'
   featured?: boolean
   /** Set when the adapter says this document belongs to a project. */
   projectName?: string
@@ -51,6 +52,8 @@ export type DocsSearchMatch = {
   kind: DocKind
   audiences: DocAudiences
   snippet: string
+  summary: string
+  summarySource: 'written' | 'derived'
   spaceName?: string
   highlights: DocSnippetHighlight[]
 }

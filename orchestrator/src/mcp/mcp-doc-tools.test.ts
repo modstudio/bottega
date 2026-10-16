@@ -105,6 +105,11 @@ test('set_doc returns standing document warnings', async () => {
     }
     expect(written.lintFindings).toEqual([
       expect.objectContaining({
+        rule: 'doc/article-summary',
+        level: 'warning',
+        message: 'article has no written summary',
+      }),
+      expect.objectContaining({
         rule: 'doc/issue',
         level: 'warning',
         message: 'contains a task key',

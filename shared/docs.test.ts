@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { DOC_SUMMARY_MAX_LENGTH, docSummary, normalizeDocAudiences } from './docs.ts'
+import {
+  DOC_SUMMARY_MAX_LENGTH,
+  docSummary,
+  normalizeDocAudiences,
+  normalizeDocSummary,
+} from './docs.ts'
 
 describe('normalizeDocAudiences', () => {
   test('refuses empty, duplicate, and unknown sets and orders valid input', () => {
@@ -34,4 +39,15 @@ describe('docSummary', () => {
     expect(summary.slice(0, -1).endsWith(' ')).toBe(false)
   })
   test('is empty without prose', () => expect(docSummary('# Heading\n\n- item\n')).toBe(''))
+})
+
+describe('normalizeDocSummary', () => {
+  test('trims, treats empty as none, and refuses multiline and oversized values', () => {
+    expect(normalizeDocSummary('  Written copy.  ')).toBe('Written copy.')
+    expect(normalizeDocSummary('   ')).toBeNull()
+    expect(() => normalizeDocSummary('one\ntwo')).toThrow('summary must be a single line')
+    expect(() => normalizeDocSummary('x'.repeat(DOC_SUMMARY_MAX_LENGTH + 1))).toThrow(
+      `summary must be at most ${DOC_SUMMARY_MAX_LENGTH} characters`,
+    )
+  })
 })

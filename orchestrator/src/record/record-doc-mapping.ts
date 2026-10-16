@@ -6,7 +6,7 @@ import {
   type DocForm,
   type DocKind,
   type DocStatus,
-  docSummary,
+  effectiveDocSummary,
 } from '../../../shared/docs.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import { recordDocAudiences } from './record-doc-audiences.ts'
@@ -46,6 +46,7 @@ export type RecordDoc = {
   checkedAgainstCommit?: string | null
   replacementSlug?: string | null
   summary?: string
+  summarySource?: 'written' | 'derived'
   projectName: string | null
   createdAt: string
   updatedAt: string
@@ -75,6 +76,7 @@ export type RecordDocRevision = {
   relatedSubjects?: DocArticleSubject[]
   sourceFiles?: string[]
   checkedAgainstCommit?: string | null
+  summary?: string | null
   replacementSlug?: string | null
   author: string
   authorName: string | null
@@ -105,6 +107,7 @@ export type RecordDocImportInput = {
     relatedSubjectIds?: string[]
     sourceFiles?: string[]
     checkedAgainstCommit?: string | null
+    summary?: string | null
     replacementSlug?: string | null
     projectName?: string | null
     projectId?: string | null
@@ -132,6 +135,7 @@ export type RecordDocImportInput = {
     relatedSubjectIds?: string[]
     sourceFiles?: string[]
     checkedAgainstCommit?: string | null
+    summary?: string | null
     replacementSlug?: string | null
     author: string
     reason: string
@@ -239,6 +243,7 @@ export function normalizeRecordDocImport(
       relatedSubjectIds: revision.relatedSubjectIds ?? [],
       sourceFiles: revision.sourceFiles ?? [],
       checkedAgainstCommit: revision.checkedAgainstCommit ?? null,
+      summary: revision.summary ?? null,
       replacementSlug: revision.replacementSlug ?? null,
     })),
   }
@@ -247,7 +252,12 @@ export function normalizeRecordDocImport(
 export function importedLiveArticleFields(
   incoming: Pick<
     NormalizedRecordDocImport['doc'],
-    'form' | 'articleSubjectId' | 'relatedSubjectIds' | 'sourceFiles' | 'checkedAgainstCommit'
+    | 'form'
+    | 'articleSubjectId'
+    | 'relatedSubjectIds'
+    | 'sourceFiles'
+    | 'checkedAgainstCommit'
+    | 'summary'
   >,
   existing?: Record<string, unknown>,
   existingRelatedSubjectIds: readonly string[] = [],
@@ -257,6 +267,7 @@ export function importedLiveArticleFields(
   relatedSubjectIds: string[]
   sourceFiles: string[]
   checkedAgainstCommit: string | null
+  summary: string | null
 } {
   return {
     form:
@@ -288,6 +299,12 @@ export function importedLiveArticleFields(
         : existing?.checked_against_commit == null
           ? null
           : String(existing.checked_against_commit),
+    summary:
+      incoming.summary !== undefined
+        ? incoming.summary
+        : existing?.summary == null
+          ? null
+          : String(existing.summary),
   }
 }
 
@@ -363,7 +380,7 @@ export function recordDocRow(row: Record<string, unknown>): RecordDoc {
     checkedAgainstCommit:
       row.checked_against_commit == null ? null : String(row.checked_against_commit),
     replacementSlug: row.replacement_slug == null ? null : String(row.replacement_slug),
-    summary: docSummary(String(row.body)),
+    ...effectiveDocSummary(row.summary == null ? null : String(row.summary), String(row.body)),
     projectName: row.project_name == null ? null : String(row.project_name),
     createdAt: recordDocIso(row.created_at)!,
     updatedAt: recordDocIso(row.updated_at)!,
@@ -412,6 +429,7 @@ export function recordDocRevisionRow(row: Record<string, unknown>): RecordDocRev
     }).map(String),
     checkedAgainstCommit:
       row.checked_against_commit == null ? null : String(row.checked_against_commit),
+    summary: row.summary == null ? null : String(row.summary),
     replacementSlug: row.replacement_slug == null ? null : String(row.replacement_slug),
     author: String(row.author),
     authorName: row.author_name == null ? null : String(row.author_name),

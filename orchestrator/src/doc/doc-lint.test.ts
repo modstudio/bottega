@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { PLATFORM_NAME } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { CanonLintInput } from '../canon/canon-lint.ts'
 import {
   type DocReferenceProject,
@@ -30,10 +30,21 @@ const doc = (body: string, extra: Partial<Parameters<typeof lintDoc>[0]> = {}) =
   slug: 'guide',
   body,
   kind: 'working' as const,
+  summary: 'Written summary.',
   ...extra,
 })
 
 describe('stored document lint', () => {
+  test('an article without a written summary gets a non-refusing warning', () => {
+    expect(lintDoc(doc('Current prose.', { kind: 'article', summary: null }))).toContainEqual({
+      line: 1,
+      rule: 'doc/article-summary',
+      level: 'warning',
+      message: 'article has no written summary',
+      remedy: `set one with ${PLATFORM_SLUG} doc set <slug> --summary`,
+    })
+  })
+
   test.each(['working', 'article'] as const)('%s warns for both used-to senses', (kind) => {
     for (const body of [
       'This field is used to compute the price.',

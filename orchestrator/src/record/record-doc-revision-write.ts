@@ -33,6 +33,7 @@ export async function insertRecordDocRevision(
     relatedSubjectIds?: string[]
     sourceFiles?: string[]
     checkedAgainstCommit?: string | null
+    summary?: string | null
     replacementSlug?: string | null
     author: string
     reason: string
@@ -53,12 +54,12 @@ export async function insertRecordDocRevision(
   if (!existing[0]) {
     await tx`
       INSERT INTO doc_revision (
-        id, space_id, doc_id, scope, subject, owner_user_id, slug, project_id, op, title, body, delivery, audiences, featured, status, kind, form, article_subject_id, related_subject_ids, source_files, checked_against_commit, replacement_slug, parent_id, position,
+        id, space_id, doc_id, scope, subject, owner_user_id, slug, project_id, op, title, body, delivery, audiences, featured, status, kind, form, article_subject_id, related_subject_ids, source_files, checked_against_commit, summary, replacement_slug, parent_id, position,
         author, reason, session_id, at
       ) VALUES (
         ${id}::uuid, ${input.spaceId}::uuid, ${input.docId}::uuid, ${input.scope}, ${input.subject}, ${input.owner}::uuid,
         ${input.slug}, ${input.projectId}::uuid, ${input.op}, ${input.title}, ${input.body},
-        ${input.delivery}, ${bindRecordDocAudiences(tx, input.audiences)}, ${input.featured ?? false}, ${input.status ?? 'current'}, ${input.kind ?? 'working'}, ${input.form ?? null}, ${input.articleSubjectId ?? null}::uuid, ${bindJsonb(tx, input.relatedSubjectIds ?? [])}, ${bindJsonb(tx, input.sourceFiles ?? [])}, ${input.checkedAgainstCommit ?? null}, ${input.replacementSlug ?? null}, ${input.parentId}::uuid, ${input.position}, ${input.author}, ${input.reason}, ${input.sessionId}, ${input.at}::timestamptz
+        ${input.delivery}, ${bindRecordDocAudiences(tx, input.audiences)}, ${input.featured ?? false}, ${input.status ?? 'current'}, ${input.kind ?? 'working'}, ${input.form ?? null}, ${input.articleSubjectId ?? null}::uuid, ${bindJsonb(tx, input.relatedSubjectIds ?? [])}, ${bindJsonb(tx, input.sourceFiles ?? [])}, ${input.checkedAgainstCommit ?? null}, ${input.summary ?? null}, ${input.replacementSlug ?? null}, ${input.parentId}::uuid, ${input.position}, ${input.author}, ${input.reason}, ${input.sessionId}, ${input.at}::timestamptz
       )
     `
   }

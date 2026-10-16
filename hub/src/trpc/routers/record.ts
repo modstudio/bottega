@@ -8,6 +8,7 @@ import {
   DOC_STATUSES,
   normalizeDocAudiences,
   normalizeDocSourceFiles,
+  normalizeDocSummary,
 } from '../../../../shared/docs.ts'
 import { parseRecordSpaceMemberships } from '../../../../shared/record-space-membership.ts'
 import { recordSpaceAccessDecision } from '../../../../shared/record-space-request.ts'
@@ -357,6 +358,7 @@ export const recordRouter = t.router({
         articleSubjectId: uuid.nullable().optional(),
         relatedSubjectIds: z.array(uuid).optional(),
         sourceFiles: z.array(z.string()).transform(normalizeDocSourceFiles).optional(),
+        summary: z.string().transform(normalizeDocSummary).nullable().optional(),
         reason: z.string().trim().min(1, 'Reason is required'),
         expectedRevision: uuid,
       }),

@@ -8,6 +8,7 @@ import {
   DOC_STATUSES,
   normalizeDocAudiences,
   normalizeDocSourceFiles,
+  normalizeDocSummary,
 } from '../../../../shared/docs.ts'
 import { localDocSearch } from '../../doc-search.ts'
 import { localDocRead, localDocRevisionRead, localDocsTree } from '../../local-docs.ts'
@@ -115,6 +116,7 @@ export const docRouter = t.router({
         articleSubject: z.string().trim().min(1).nullable().optional(),
         relatedSubjects: z.array(z.string().trim().min(1)).optional(),
         sourceFiles: z.array(z.string()).transform(normalizeDocSourceFiles).optional(),
+        summary: z.string().transform(normalizeDocSummary).nullable().optional(),
         position: z.number().int().optional(),
         expectedRevision,
       }),
