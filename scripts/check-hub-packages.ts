@@ -98,10 +98,30 @@ function exportSubpath(sourcePath: string) {
 
 const uiPackagePath = join(ROOT, HUB_UI_ROOT, 'package.json')
 const uiPackage = readPackage(uiPackagePath)
+const exportSources = new Map<string, string[]>()
+for (const path of new Glob('**/*.{ts,tsx,css}').scanSync({
+  cwd: join(ROOT, HUB_UI_ROOT, 'src'),
+})) {
+  if (/\.(?:test|spec)\.[cm]?tsx?$/.test(path)) continue
+  const normalized = path.split(sep).join('/')
+  const subpath = exportSubpath(normalized)
+  const sources = exportSources.get(subpath) ?? []
+  sources.push(`${HUB_UI_ROOT}/src/${normalized}`)
+  exportSources.set(subpath, sources)
+}
+for (const [subpath, sources] of exportSources) {
+  if (sources.length > 1) {
+    violations.push(
+      `${relative(ROOT, uiPackagePath)}: export ${subpath} is derived from ${sources.join(' and ')}`,
+    )
+  }
+}
 const expectedExports = Object.fromEntries(
-  [...new Glob('**/*.{ts,tsx,css}').scanSync({ cwd: join(ROOT, HUB_UI_ROOT, 'src') })]
-    .filter((path) => !/\.(?:test|spec)\.[cm]?tsx?$/.test(path))
-    .map((path) => [exportSubpath(path), `./src/${path.split(sep).join('/')}`])
+  [...exportSources.entries()]
+    .map(([subpath, sources]) => [
+      subpath,
+      `./src/${sources[0].slice(`${HUB_UI_ROOT}/src/`.length)}`,
+    ])
     .sort(([left], [right]) => left.localeCompare(right)),
 )
 const actualExports = uiPackage.exports ?? {}

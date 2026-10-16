@@ -4,8 +4,17 @@
 import type { Database } from 'bun:sqlite'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, rmdirSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { openReadOnlyDatabase } from './database/db.ts'
 import { type Project, projectAt } from './project/projects.ts'
@@ -24,6 +33,11 @@ type HubImportJudgment = {
 
 type RegisteredProject = Pick<Project, 'name' | 'path'>
 
+type RegisteredHubTarget = {
+  checkout: string
+  file: string
+}
+
 // Must leave enough of the hook's absolute deadline for candidate and directory cleanup.
 const JUDGE_CLEANUP_MARGIN_MS = 500
 
@@ -38,22 +52,59 @@ function within(root: string, path: string) {
   return value !== '' && value !== '..' && !value.startsWith(`..${sep}`) && !isAbsolute(value)
 }
 
+function canonicalTarget(path: string): string | null {
+  const target = lstatSync(path, { throwIfNoEntry: false })
+  if (target?.isSymbolicLink()) return null
+  if (target) {
+    try {
+      return realpathSync(path)
+    } catch {
+      return null
+    }
+  }
+
+  const missing: string[] = []
+  let ancestor = path
+  while (true) {
+    const fact = lstatSync(ancestor, { throwIfNoEntry: false })
+    if (fact) {
+      try {
+        return resolve(realpathSync(ancestor), ...missing.reverse())
+      } catch {
+        return null
+      }
+    }
+    const parent = dirname(ancestor)
+    if (parent === ancestor) return null
+    missing.push(basename(ancestor))
+    ancestor = parent
+  }
+}
+
 /** Pure applicability decision after the project register has resolved the owning project. */
 export function registeredHubCheckout(
   file: string,
   project: RegisteredProject | null,
-): string | null {
+): RegisteredHubTarget | null {
   if (!project || project.name !== PLATFORM_SLUG || !within(project.path, file)) return null
   const projectRelative = relative(project.path, file).split(sep)
-  const checkout =
+  const lexicalCheckout =
     projectRelative[0] === '.claude' && projectRelative[1] === 'worktrees' && projectRelative[2]
       ? join(project.path, ...projectRelative.slice(0, 3))
       : project.path
-  const checkoutRelative = relative(checkout, file).split(sep).join('/')
-  return checkoutRelative.startsWith('hub/') ? checkout : null
+  let checkout: string
+  try {
+    checkout = realpathSync(lexicalCheckout)
+  } catch {
+    return null
+  }
+  const canonicalFile = canonicalTarget(file)
+  if (!canonicalFile || !within(checkout, canonicalFile)) return null
+  const checkoutRelative = relative(checkout, canonicalFile).split(sep).join('/')
+  return checkoutRelative.startsWith('hub/') ? { checkout, file: canonicalFile } : null
 }
 
-function registeredCheckout(file: string, database: Database): string | null {
+function registeredCheckout(file: string, database: Database): RegisteredHubTarget | null {
   return registeredHubCheckout(file, projectAt(file, database))
 }
 
@@ -228,23 +279,31 @@ export async function hubImportJudgeCommand(
       reason: `project register could not be read: ${error instanceof Error ? error.message : String(error)}`,
     }
   }
-  let checkout: string | null
+  let target: RegisteredHubTarget | null
   try {
-    checkout = registeredCheckout(file, database)
+    target = registeredCheckout(file, database)
   } finally {
     database.close()
   }
-  if (!checkout) return { status: 'ok', findings: [] }
+  if (!target) return { status: 'ok', findings: [] }
+
+  const { checkout, file: canonicalFile } = target
 
   const installedRoot = resolve(import.meta.dir, '../..')
   const judge = join(installedRoot, 'scripts/check-architecture-file.ts')
-  const original = relative(checkout, file).split(sep).join('/')
-  const pathJudgment = await judgeOriginalPath(file, checkout, judge, installedRoot, deadlineMs)
+  const original = relative(checkout, canonicalFile).split(sep).join('/')
+  const pathJudgment = await judgeOriginalPath(
+    canonicalFile,
+    checkout,
+    judge,
+    installedRoot,
+    deadlineMs,
+  )
   if (pathJudgment) return pathJudgment
 
   let content: string
   try {
-    content = proposedContent(file, payload)
+    content = proposedContent(canonicalFile, payload)
   } catch (error) {
     return {
       status: 'unchecked',
@@ -253,7 +312,10 @@ export async function hubImportJudgeCommand(
     }
   }
 
-  const candidate = join(dirname(file), `.architecture-guard-${randomUUID()}${extname(file)}`)
+  const candidate = join(
+    dirname(canonicalFile),
+    `.architecture-guard-${randomUUID()}${extname(canonicalFile)}`,
+  )
   const createdDirectories: string[] = []
   try {
     if (deadlineMs - Date.now() <= JUDGE_CLEANUP_MARGIN_MS) {
