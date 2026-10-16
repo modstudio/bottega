@@ -13,7 +13,7 @@ import {
 describe('check mode arguments', () => {
   test('defaults to every static leg without a shard', () => {
     const parsed = parseCheckArguments([])
-    expect(parsed).toEqual({ mode: 'static' })
+    expect(parsed).toEqual({ mode: 'static', omit: [] })
     expect(selectedCheckLegs(parsed)).toEqual([
       'orchestrator',
       'hub',
@@ -29,10 +29,11 @@ describe('check mode arguments', () => {
       mode: 'suite',
       only: 'orchestrator',
       shard: { index: 2, total: 4, value: '2/4' },
+      omit: [],
     })
     expect(selectedCheckLegs(parsed)).toEqual(['orchestrator'])
     expect(runsRootSuiteTests(parsed)).toBe(false)
-    expect(runsRootSuiteTests(parseCheckArguments(['--suite', '--shard=1/4']))).toBe(true)
+    expect(runsRootSuiteTests(parseCheckArguments(['--suite', '--only=root']))).toBe(true)
   })
 
   test('refuses arguments that could silently omit a leg or use a malformed shard', () => {
@@ -44,6 +45,16 @@ describe('check mode arguments', () => {
       'only to the orchestrator',
     )
     expect(() => parseCheckArguments(['--suite', '--unexpected'])).toThrow('unknown')
+  })
+
+  test('accepts explicit static omit groups and refuses them in suite mode', () => {
+    expect(parseCheckArguments(['--omit=machine-only', '--omit=secrets'])).toEqual({
+      mode: 'static',
+      omit: ['machine-only', 'secrets'],
+    })
+    expect(() => parseCheckArguments(['--suite', '--omit=machine-only'])).toThrow(
+      'only to the static check',
+    )
   })
 })
 

@@ -39,7 +39,7 @@ jobs:
       - name: Install
         run: bun install --silent
       - name: Static checks
-        run: bun run check
+        run: bun run check --omit=machine-only --omit=secrets
 
   orchestrator:
     name: orchestrator (${{ matrix.shard }}/${{ strategy.job-total }})
@@ -123,9 +123,26 @@ jobs:
           CI: "1"
         run: $SUITE_COMMAND --only=retrieval
 
+  root:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - name: Install
+        run: bun install --silent
+      - name: Test root batch
+        env:
+          CI: "1"
+        run: $SUITE_COMMAND --only=root
+
   ci:
     if: always()
-    needs: [secrets, static, orchestrator, hub, hub-web, hub-deploy-site, retrieval]
+    needs: [secrets, static, orchestrator, hub, hub-web, hub-deploy-site, retrieval, root]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

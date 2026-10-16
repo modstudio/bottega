@@ -1,15 +1,12 @@
 #!/usr/bin/env bun
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { CHECK_LEGS } from './check-plan.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
-const nestedPackageDirectories = [
-  'hub/deploy/site',
-  'hub/web',
-  'orchestrator',
-  'hub',
-  'retrieval',
-] as const
+const nestedPackageDirectories = CHECK_LEGS.map((leg) => leg.directory).sort(
+  (left, right) => right.length - left.length,
+)
 
 export type FocusedTestGroup = { directory: string; paths: string[] }
 

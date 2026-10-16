@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CHECK_EXECUTION_FILE_ENV, type CheckExecutionRecord } from '../shared/check-execution'
 import { decideGateOutcome, type GateStepResult } from './check-outcome.ts'
+import { CHECK_LEGS, STATIC_OMIT_GROUPS } from './check-plan.ts'
 import {
   attributeCommandCpu,
   type CheckArguments,
@@ -165,46 +166,19 @@ function track(
   return child
 }
 
-const legs: Leg[] = [
-  {
-    name: 'orchestrator',
-    typecheck: { cwd: `${root}orchestrator`, argv: ['bun', 'run', 'typecheck'] },
-    suite: [
-      {
-        cwd: `${root}orchestrator`,
-        argv: [
-          'bun',
-          'run',
-          'test:gate',
-          ...(checkArguments.shard ? [`--shard=${checkArguments.shard.value}`] : []),
-        ],
-      },
+const legs: Leg[] = CHECK_LEGS.map((leg) => ({
+  name: leg.name,
+  typecheck: { cwd: `${root}${leg.directory}`, argv: [...leg.typecheck] },
+  suite: leg.suite.map((argv) => ({
+    cwd: `${root}${leg.directory}`,
+    argv: [
+      ...argv,
+      ...(leg.name === 'orchestrator' && checkArguments.shard
+        ? [`--shard=${checkArguments.shard.value}`]
+        : []),
     ],
-  },
-  {
-    name: 'hub',
-    typecheck: { cwd: `${root}hub`, argv: ['bun', 'run', 'typecheck'] },
-    suite: [{ cwd: `${root}hub`, argv: ['bun', 'run', 'test'] }],
-  },
-  {
-    name: 'hub/web',
-    typecheck: { cwd: `${root}hub/web`, argv: ['bun', 'run', 'typecheck'] },
-    suite: [
-      { cwd: `${root}hub/web`, argv: ['bun', 'run', 'test'] },
-      { cwd: `${root}hub/web`, argv: ['bun', 'run', 'build'] },
-    ],
-  },
-  {
-    name: 'hub/deploy/site',
-    typecheck: { cwd: `${root}hub/deploy/site`, argv: ['bun', 'run', 'typecheck'] },
-    suite: [{ cwd: `${root}hub/deploy/site`, argv: ['bun', 'run', 'test'] }],
-  },
-  {
-    name: 'retrieval',
-    typecheck: { cwd: `${root}retrieval`, argv: ['bun', 'run', 'typecheck'] },
-    suite: [{ cwd: `${root}retrieval`, argv: ['bun', 'run', 'test'] }],
-  },
-]
+  })),
+}))
 
 async function inherit(argv: string[], cwd = root, observation: ExecutionObservation = {}) {
   const startedAt = performance.now()
@@ -329,6 +303,7 @@ const rootTests = [
   'test',
   './scripts/check-machine-state.test.ts',
   './scripts/check-runtime.test.ts',
+  './scripts/check-ci-workflow.test.ts',
   './scripts/check-outcome.test.ts',
   './scripts/check-gitleaks-plan.test.ts',
   './scripts/check-cascade-preservation.test.ts',
@@ -370,6 +345,7 @@ const rootTests = [
   './shared/orch-contract.test.ts',
   './shared/interval.test.ts',
   './shared/trackers-protocols.test.ts',
+  './shared/shard.test.ts',
   './scripts/test-focused.test.ts',
 ]
 
@@ -461,12 +437,22 @@ if (checkArguments.mode === 'static') {
     staticCheck('scripts/check-doc-editor-rich-style.ts'),
     staticCheck('scripts/check-harness-mirror.ts'),
     staticCheck('scripts/check-canon-drift.ts'),
+    staticCheck('scripts/check-ci-workflow.ts'),
     staticCheck('scripts/generate-recipe-schema.ts', ['--check']),
     staticCheck('orchestrator/scripts/check-pack-budget.ts'),
     staticCheck('orchestrator/scripts/check-canon-lint.ts'),
     staticCheck('scripts/quality/check-test-substance.ts', [qualityMode], 'test-substance'),
   ]
-  for (const check of staticChecks) gateSteps.push(await recordGateStep(check))
+  const omittedChecks = new Set(
+    checkArguments.omit.flatMap((group) => STATIC_OMIT_GROUPS[group].checks),
+  )
+  for (const group of checkArguments.omit) {
+    const plan = STATIC_OMIT_GROUPS[group]
+    console.log(`omitting ${group} static checks (${plan.checks.join(', ')}): ${plan.reason}`)
+  }
+  for (const check of staticChecks) {
+    if (!omittedChecks.has(check.name)) gateSteps.push(await recordGateStep(check))
+  }
 }
 
 if (reportDirectory) rmSync(reportDirectory, { recursive: true, force: true })
@@ -475,15 +461,12 @@ clearTimeout(runtimeDeadline)
 const summary = printSummary()
 if (!summary) throw new Error('check summary printed before budget checks')
 const { elapsedMs, cpuMs } = summary
-const cpuBudgetVerdict =
-  checkArguments.mode === 'suite'
-    ? decideRuntimeBudget({
-        elapsedMs: cpuMs,
-        budgetMs: SUITE_CPU_BUDGET_MS,
-        ci: Boolean(process.env.CI),
-        measure: 'cpu',
-      })
-    : 'within'
+const cpuBudgetVerdict = decideRuntimeBudget({
+  elapsedMs: cpuMs,
+  budgetMs: SUITE_CPU_BUDGET_MS,
+  ci: checkArguments.mode === 'suite' && Boolean(process.env.CI),
+  measure: 'cpu',
+})
 if (checkArguments.mode === 'suite') {
   const runtimeBudgetVerdict = decideRuntimeBudget({
     elapsedMs,
@@ -504,6 +487,9 @@ if (checkArguments.mode === 'suite') {
       `suite CPU budget exceeded by ${((cpuMs - SUITE_CPU_BUDGET_MS) / 1000).toFixed(2)}s`,
     )
   }
+}
+if (checkArguments.mode === 'static' && cpuBudgetVerdict === 'over-informational') {
+  console.log('static CPU budget is informational because static work runs on varying hosts')
 }
 const gate = decideGateOutcome(gateSteps)
 if (gate.failures.length > 0) {

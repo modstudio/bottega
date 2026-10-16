@@ -1,3 +1,11 @@
+import { type Shard as CheckShard, parseShard } from '../shared/shard.ts'
+import {
+  CHECK_LEGS,
+  type CheckLegName,
+  STATIC_OMIT_GROUPS,
+  type StaticOmitGroup,
+} from './check-plan.ts'
+
 // The suite budgets detect runtime regressions. The generous hung-suite bound
 // separately stops a wedged child from hanging the gate indefinitely.
 export const SUITE_RUNTIME_BUDGET_MS = 120_000
@@ -9,42 +17,47 @@ export type RuntimeMeasure = 'wall' | 'cpu'
 export type CommandCpuSample = { name: string; userMs: number; systemMs: number }
 export type AttributedCommandCpu = { name: string; cpuMs: number; share: number }
 
-const CHECK_LEG_NAMES = ['orchestrator', 'hub', 'hub/web', 'hub/deploy/site', 'retrieval'] as const
-
-export type CheckLegName = (typeof CHECK_LEG_NAMES)[number]
-type CheckShard = { index: number; total: number; value: string }
+const CHECK_LEG_NAMES = CHECK_LEGS.map((leg) => leg.name)
+export type CheckOnly = CheckLegName | 'root'
 export type CheckArguments = {
   mode: 'static' | 'suite'
-  only?: CheckLegName
+  only?: CheckOnly
   shard?: CheckShard
+  omit: StaticOmitGroup[]
 }
 type ParsedArgument =
   | { kind: 'suite' }
-  | { kind: 'only'; value: CheckLegName }
+  | { kind: 'only'; value: CheckOnly }
   | { kind: 'shard'; value: CheckShard }
-
-function parseShard(value: string): CheckShard {
-  const match = value.match(/^(\d+)\/(\d+)$/)
-  if (!match) throw new Error(`invalid --shard=${value}; expected M/N`)
-  const index = Number(match[1])
-  const total = Number(match[2])
-  if (total < 1 || index < 1 || index > total) {
-    throw new Error(`invalid --shard=${value}; M and N must satisfy 1 <= M <= N`)
-  }
-  return { index, total, value }
-}
+  | { kind: 'omit'; value: StaticOmitGroup }
 
 function parseArgument(argument: string): ParsedArgument {
   if (argument === '--suite') return { kind: 'suite' }
   if (argument.startsWith('--only=')) {
     const value = argument.slice('--only='.length)
-    if (!CHECK_LEG_NAMES.includes(value as CheckLegName)) {
-      throw new Error(`invalid --only=${value}; expected one of ${CHECK_LEG_NAMES.join(', ')}`)
+    if (value !== 'root' && !CHECK_LEG_NAMES.includes(value as CheckLegName)) {
+      throw new Error(
+        `invalid --only=${value}; expected one of ${CHECK_LEG_NAMES.join(', ')}, root`,
+      )
     }
-    return { kind: 'only', value: value as CheckLegName }
+    return { kind: 'only', value: value as CheckOnly }
   }
   if (argument.startsWith('--shard=')) {
-    return { kind: 'shard', value: parseShard(argument.slice('--shard='.length)) }
+    const value = argument.slice('--shard='.length)
+    try {
+      return { kind: 'shard', value: parseShard(value) }
+    } catch (error) {
+      throw new Error(`invalid --shard=${value}; ${error instanceof Error ? error.message : error}`)
+    }
+  }
+  if (argument.startsWith('--omit=')) {
+    const value = argument.slice('--omit='.length)
+    if (!(value in STATIC_OMIT_GROUPS)) {
+      throw new Error(
+        `invalid --omit=${value}; expected one of ${Object.keys(STATIC_OMIT_GROUPS).join(', ')}`,
+      )
+    }
+    return { kind: 'omit', value: value as StaticOmitGroup }
   }
   throw new Error(`unknown check argument ${JSON.stringify(argument)}`)
 }
@@ -68,7 +81,11 @@ export function parseCheckArguments(argv: readonly string[]): CheckArguments {
     parsed.filter((argument) => argument.kind === 'shard').map((argument) => argument.value),
     '--shard',
   )
+  const omit = parsed
+    .filter((argument) => argument.kind === 'omit')
+    .map((argument) => argument.value)
   if (!suite && (only || shard)) throw new Error('--only and --shard require --suite')
+  if (suite && omit.length > 0) throw new Error('--omit applies only to the static check')
   if (shard && only && only !== 'orchestrator') {
     throw new Error('--shard applies only to the orchestrator suite')
   }
@@ -76,19 +93,17 @@ export function parseCheckArguments(argv: readonly string[]): CheckArguments {
     mode: suite ? 'suite' : 'static',
     ...(only ? { only } : {}),
     ...(shard ? { shard } : {}),
+    omit,
   }
 }
 
 export function selectedCheckLegs(options: CheckArguments): CheckLegName[] {
+  if (options.only === 'root') return []
   return options.only ? [options.only] : [...CHECK_LEG_NAMES]
 }
 
 export function runsRootSuiteTests(options: CheckArguments): boolean {
-  return (
-    options.mode === 'suite' &&
-    (!options.only || options.only === 'orchestrator') &&
-    (!options.shard || options.shard.index === 1)
-  )
+  return options.mode === 'suite' && options.only === 'root'
 }
 
 export function attributeCommandCpu(commands: CommandCpuSample[]): {
