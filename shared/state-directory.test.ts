@@ -15,12 +15,49 @@ import {
   ensureHubLoginTokenDirectory,
   hubLoginTokenDirectory,
   legacyStoreRefusal,
+  realPathForPotentialPath,
   resolveHubDatabase,
   resolveOrchestratorDatabase,
   resolveRunsDirectory,
   resolveStateRoot,
   STATE_HOME_ENV,
+  temporaryStateStoreMigrationAllowed,
 } from './state-directory.ts'
+
+test('only a real path inside the OS temporary directory earns scratch migration authority', () => {
+  const temporaryDirectory = realPathForPotentialPath(tmpdir())
+  const scratch = mkdtempSync(join(tmpdir(), 'state-directory-scratch-'))
+  const linked = join(scratch, 'linked-outside')
+  try {
+    symlinkSync(process.cwd(), linked)
+    expect(
+      temporaryStateStoreMigrationAllowed(
+        realPathForPotentialPath(join(scratch, 'state', 'orch.db')),
+        temporaryDirectory,
+      ),
+    ).toBeTrue()
+    expect(
+      temporaryStateStoreMigrationAllowed(
+        realPathForPotentialPath('/installation/state/orch.db'),
+        temporaryDirectory,
+      ),
+    ).toBeFalse()
+    expect(
+      temporaryStateStoreMigrationAllowed(
+        realPathForPotentialPath(`${temporaryDirectory}-lookalike/orch.db`),
+        temporaryDirectory,
+      ),
+    ).toBeFalse()
+    expect(
+      temporaryStateStoreMigrationAllowed(
+        realPathForPotentialPath(join(linked, 'orch.db')),
+        temporaryDirectory,
+      ),
+    ).toBeFalse()
+  } finally {
+    rmSync(scratch, { recursive: true, force: true })
+  }
+})
 
 test('the login-token directory refuses a symlink without changing its target', () => {
   const state = mkdtempSync(join(tmpdir(), 'state-directory-symlink-'))

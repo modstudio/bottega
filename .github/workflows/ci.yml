@@ -104,7 +104,7 @@ jobs:
       - name: Install
         run: bun install --silent
       - name: Install Chromium
-        run: bunx playwright install --with-deps chromium
+        run: bun run --cwd hub/web playwright install --with-deps chromium
       - name: Build
         run: bun run --cwd hub/web build
       - name: Smoke

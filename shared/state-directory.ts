@@ -1,16 +1,40 @@
 import {
   closeSync,
   constants,
+  existsSync,
   fchmodSync,
   fstatSync,
   lstatSync,
   mkdirSync,
   openSync,
+  realpathSync,
 } from 'node:fs'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { FROZEN_STATE_NAMES, PLATFORM_SLUG } from './brand.ts'
 
 export type StateEnvironment = Record<string, string | undefined>
+
+/** Resolve aliases for a path that may not exist yet by resolving its nearest existing parent. */
+export function realPathForPotentialPath(path: string): string {
+  let existing = resolve(path)
+  const missing: string[] = []
+  while (!existsSync(existing)) {
+    const parent = dirname(existing)
+    if (parent === existing) break
+    missing.unshift(basename(existing))
+    existing = parent
+  }
+  return resolve(realpathSync(existing), ...missing)
+}
+
+/** Pure permission decision over paths whose filesystem aliases have already been resolved. */
+export function temporaryStateStoreMigrationAllowed(
+  resolvedStorePath: string,
+  resolvedTemporaryDirectory: string,
+): boolean {
+  const child = relative(resolvedTemporaryDirectory, resolvedStorePath)
+  return child !== '' && child !== '..' && !child.startsWith(`..${sep}`) && !isAbsolute(child)
+}
 
 /** The platform-specific override name is derived from the one canonical slug. */
 export const STATE_HOME_ENV = `${PLATFORM_SLUG.toUpperCase()}_STATE_HOME`

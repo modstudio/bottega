@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -7,10 +8,12 @@ import { borrowedCheckoutOf, inspectionGitEnv } from '../../../shared/git.ts'
 import { isAuthorizedPlatformInstallation } from '../../../shared/install-root.ts'
 import {
   legacyStoreRefusal,
+  realPathForPotentialPath,
   resolveOrchestratorDatabase,
   resolveRunsDirectory,
   resolveStatePaths,
   type StateEnvironment,
+  temporaryStateStoreMigrationAllowed,
 } from '../../../shared/state-directory.ts'
 
 export type DatabaseResolutionMethod = 'ORCH_DB' | 'state-root'
@@ -239,12 +242,24 @@ export function linkedWorktreeDatabaseInitializationMessage(): string {
   )
 }
 
+/** A linked binary may migrate only an isolated store whose real path is under OS temporary state. */
+export function linkedWorktreeMigrationAllowed(path: string): boolean {
+  return temporaryStateStoreMigrationAllowed(
+    realPathForPotentialPath(path),
+    realPathForPotentialPath(tmpdir()),
+  )
+}
+
 export function implicitDatabaseCreationRefusal(
   resolution: DatabaseResolution = DATABASE_RESOLUTION,
   path = resolution.path,
 ): string | null {
   if (resolution.method === 'ORCH_DB') return missingDatabaseMessage(path)
-  if (resolution.linkedWorktreeBinary) return linkedWorktreeDatabaseInitializationMessage()
+  if (resolution.linkedWorktreeBinary) {
+    return linkedWorktreeMigrationAllowed(path)
+      ? null
+      : linkedWorktreeDatabaseInitializationMessage()
+  }
   if (!resolution.initializable) return unauthorizedDatabaseInitializationMessage(path)
   return null
 }
@@ -253,7 +268,9 @@ export function implicitDatabaseCreationRefusal(
 export function existingDatabaseMigrationRefusal(
   resolution: DatabaseResolution = DATABASE_RESOLUTION,
 ): string | null {
-  return resolution.linkedWorktreeBinary ? linkedWorktreeDatabaseInitializationMessage() : null
+  return resolution.linkedWorktreeBinary && !linkedWorktreeMigrationAllowed(resolution.path)
+    ? linkedWorktreeDatabaseInitializationMessage()
+    : null
 }
 
 export function legacyDatabaseRefusal(

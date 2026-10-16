@@ -4,17 +4,23 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type Browser, chromium, type Page } from 'playwright'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import { LOCAL_NAV } from '../src/lib/hub-mode.ts'
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
-const executable = join(repoRoot, 'bin', 'bottega')
+const executable = join(repoRoot, 'bin', PLATFORM_SLUG)
 const distribution = join(repoRoot, 'hub', 'web', 'dist', 'index.html')
-const stateRoot = mkdtempSync(join(tmpdir(), 'bottega-dashboard-smoke-'))
+const stateRoot = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-dashboard-smoke-`))
 const startedAt = performance.now()
 
 function smokeEnvironment(): Record<string, string | undefined> {
-  const env = { ...process.env, [STATE_HOME_ENV]: stateRoot }
+  const env = {
+    ...process.env,
+    [CONFIG_HOME_ENV]: join(stateRoot, 'config'),
+    [STATE_HOME_ENV]: stateRoot,
+  }
   delete env.ORCH_DB
   delete env.ORCH_RUNS
   delete env.HUB_DB

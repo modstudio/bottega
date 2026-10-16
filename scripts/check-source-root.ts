@@ -18,7 +18,7 @@ export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
   },
   {
     path: 'orchestrator/src/database/database-location.ts',
-    line: 30,
+    line: 33,
     reason: 'defines the empty installed source root used by explicit embedded-manifest branches',
   },
   {
@@ -69,7 +69,7 @@ export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
   },
   {
     path: 'hub/src/db.ts',
-    line: 53,
+    line: 56,
     reason: 'embedded hub runtime resolution skips checkout discovery and legacy paths',
   },
   {
