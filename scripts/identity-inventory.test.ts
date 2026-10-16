@@ -12,7 +12,13 @@ import {
 } from './identity-inventory.ts'
 import { KEY_MANIFESTS } from './identity-key-manifest.ts'
 
-const EMPTY: KeyManifests = { values: [], references: [], uuids: [], infrastructure: [] }
+const EMPTY: KeyManifests = {
+  values: [],
+  references: [],
+  externalIdentifiers: [],
+  uuids: [],
+  infrastructure: [],
+}
 const column = (
   table: string,
   name: string,
@@ -83,6 +89,31 @@ test('a reviewed integer handle may not become a foreign key', () => {
   expect(() => classifyKeyInventory('hub', [table], manifests)).toThrow(
     'integer value note.number may not be a primary or foreign key',
   )
+})
+
+test('an external identifier cannot conceal a primary or foreign key', () => {
+  for (const [name, primaryKey, foreignKey] of [
+    ['primary', true, false],
+    ['foreign', false, true],
+  ] as const) {
+    const table = {
+      name,
+      primaryKey: primaryKey ? ['session_id'] : ['record_id'],
+      columns: [
+        column(name, 'record_id', 'uuid', !primaryKey),
+        column(name, 'session_id', 'text', primaryKey, foreignKey),
+      ],
+    }
+    const manifests = {
+      ...EMPTY,
+      externalIdentifiers: [
+        { store: 'hosted' as const, column: `${name}.session_id`, reason: 'harness session id' },
+      ],
+    }
+    expect(classifyKeyInventory('hosted', [table], manifests).findings).toContain(
+      primaryKey ? `${name}:primary-key` : `${name}.session_id:reference`,
+    )
+  }
 })
 
 test('a baseline entry that disappeared must be removed', () => {

@@ -21,6 +21,7 @@ export type KeyInventory = { findings: string[]; values: string[]; infrastructur
 export type KeyManifests = {
   values: readonly ManifestColumn[]
   references: readonly ManifestColumn[]
+  externalIdentifiers: readonly ManifestColumn[]
   uuids: readonly ManifestColumn[]
   infrastructure: readonly InfrastructureIdentity[]
 }
@@ -28,6 +29,7 @@ export type KeyManifests = {
 type StoreManifests = {
   values: Map<string, string>
   references: Map<string, string>
+  externalIdentifiers: Map<string, string>
   uuids: Map<string, string>
   infrastructure: Map<string, string>
 }
@@ -43,6 +45,7 @@ export function classifyKeyInventory(
   const seen = {
     values: new Set<string>(),
     references: new Set<string>(),
+    externalIdentifiers: new Set<string>(),
     uuids: new Set<string>(),
   }
   const findings = tables.flatMap((table) => classifyKeyTable(store, table, manifests, seen))
@@ -62,6 +65,7 @@ function keyManifests(store: KeyStore, manifests: KeyManifests): StoreManifests 
   return {
     values: selected(manifests.values),
     references: selected(manifests.references),
+    externalIdentifiers: selected(manifests.externalIdentifiers),
     uuids: selected(manifests.uuids),
     infrastructure: new Map(
       manifests.infrastructure
@@ -75,7 +79,12 @@ function classifyKeyTable(
   store: KeyStore,
   table: KeyTable,
   manifests: StoreManifests,
-  seen: { values: Set<string>; references: Set<string>; uuids: Set<string> },
+  seen: {
+    values: Set<string>
+    references: Set<string>
+    externalIdentifiers: Set<string>
+    uuids: Set<string>
+  },
 ): string[] {
   const findings = hasOwnedUuidPrimaryKey(table, manifests.uuids)
     ? []
@@ -105,14 +114,24 @@ function classifyKeyColumn(
   store: KeyStore,
   column: KeyColumn,
   manifests: StoreManifests,
-  seen: { values: Set<string>; references: Set<string>; uuids: Set<string> },
+  seen: {
+    values: Set<string>
+    references: Set<string>
+    externalIdentifiers: Set<string>
+    uuids: Set<string>
+  },
 ): string[] {
   const address = `${column.table}.${column.name}`
   const uuid = column.type === 'uuid' || manifests.uuids.has(address)
   if (uuid) seen.uuids.add(address)
+  const externalIdentifier = manifests.externalIdentifiers.has(address)
+  if (externalIdentifier) seen.externalIdentifiers.add(address)
   const explicitReference = manifests.references.has(address)
   if (explicitReference) seen.references.add(address)
-  const reference = column.foreignKey || REFERENCE_NAME.test(column.name) || explicitReference
+  const reference =
+    column.foreignKey ||
+    (!externalIdentifier && REFERENCE_NAME.test(column.name)) ||
+    explicitReference
   if (column.type === 'integer')
     classifyIntegerColumn(store, address, column, reference, manifests.values, seen.values)
   return reference && !uuid ? [`${address}:reference`] : []
@@ -148,6 +167,7 @@ function validateKeyManifests(
   seen: {
     values: ReadonlySet<string>
     references: ReadonlySet<string>
+    externalIdentifiers: ReadonlySet<string>
     uuids: ReadonlySet<string>
   },
 ): void {
@@ -156,11 +176,29 @@ function validateKeyManifests(
       table.columns.map((column) => [`${table.name}.${column.name}`, column] as const),
     ),
   )
-  const overlap = [...manifests.values.keys()].filter((column) => manifests.references.has(column))
-  if (overlap.length)
-    throw new Error(`${store} value/reference manifests overlap: ${overlap.join(', ')}`)
+  const kinds = [
+    ['value', manifests.values],
+    ['reference', manifests.references],
+    ['external identifier', manifests.externalIdentifiers],
+    ['UUID', manifests.uuids],
+  ] as const
+  for (let left = 0; left < kinds.length; left++) {
+    for (let right = left + 1; right < kinds.length; right++) {
+      const overlap = [...kinds[left][1].keys()].filter((column) => kinds[right][1].has(column))
+      if (overlap.length)
+        throw new Error(
+          `${store} ${kinds[left][0]}/${kinds[right][0]} manifests overlap: ${overlap.join(', ')}`,
+        )
+    }
+  }
   validateManifestEntries(store, 'integer value', manifests.values, seen.values)
   validateManifestEntries(store, 'undeclared reference', manifests.references, seen.references)
+  validateManifestEntries(
+    store,
+    'external identifier',
+    manifests.externalIdentifiers,
+    seen.externalIdentifiers,
+  )
   validateManifestEntries(store, 'UUID column', manifests.uuids, seen.uuids)
   validateManifestShapes(store, columns, manifests)
   validateInfrastructure(
