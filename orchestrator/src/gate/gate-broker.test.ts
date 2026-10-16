@@ -199,8 +199,11 @@ test('an occupied gate log path fails the execution without following the path',
 
   const projectId = (
     db()
-      .query(`INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?) RETURNING id`)
+      .query(
+        `INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?) RETURNING id`,
+      )
       .get(
+        newRecordId(),
         'gate-broker-occupied-log-fixture',
         root,
         'bun',

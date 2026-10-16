@@ -2,6 +2,75 @@
 /** Builds project-bearing record request bodies and paths without transport state. */
 
 export type RecordRequestDestination = { destinationSpaceId?: string }
+export type RecordApiAuthentication = {
+  token(): string | null
+  tokenAsync(signal: AbortSignal): Promise<string | null>
+}
+export type RecordBoardStreamSource = {
+  read(): Promise<Uint8Array | null>
+}
+export type RecordBoardStreamOpen =
+  | { kind: 'stream'; source: RecordBoardStreamSource; close: () => void }
+  | { kind: 'unauthorized' }
+  | { kind: 'error'; reason: string }
+export type RecordDocOrderInput = {
+  scope: string
+  subject: string | null
+  parentId: string | null
+  orderedIds: string[]
+}
+
+export type RecordSnapshotAndPublicDocMethod =
+  | 'putSnapshot'
+  | 'listSnapshots'
+  | 'listPublicDocs'
+  | 'getPublicDoc'
+  | 'searchPublicDocs'
+export type RecordDocReadMethod = 'searchDocs' | 'listDocs' | 'getDoc' | 'listRevisions'
+export type RecordDocWriteMethod =
+  | 'upsertDoc'
+  | 'reorderDocs'
+  | 'applySettingsPermission'
+  | 'importDoc'
+  | 'importCanon'
+  | 'deleteDoc'
+  | 'consumeDoc'
+  | 'restoreDoc'
+  | 'renameSubject'
+export type RecordProjectSubjectMethod =
+  | 'listProjectSubjects'
+  | 'addProjectSubject'
+  | 'renameProjectSubject'
+  | 'defineProjectSubject'
+  | 'reorderProjectSubjects'
+  | 'retireProjectSubject'
+export type RecordRunMethod = 'putScore' | 'voidRun' | 'unvoidRun' | 'listScores' | 'counts'
+export type RecordBoardMethod =
+  | 'listBoardMessages'
+  | 'postBoardMessage'
+  | 'replyBoardMessage'
+  | 'withdrawBoardMessage'
+  | 'acceptBoardAnswer'
+  | 'takeBoardFilingLease'
+  | 'completeBoardFilingLease'
+  | 'failBoardFilingLease'
+  | 'getBoardThread'
+  | 'getBoardStatus'
+  | 'putBoardReceipt'
+  | 'listBoardChanges'
+  | 'takeBoardClaim'
+  | 'renewBoardClaim'
+  | 'releaseBoardClaim'
+  | 'listBoardClaims'
+export type RecordIdentityAndSpaceMethod =
+  | 'whoami'
+  | 'sync'
+  | 'createOrganization'
+  | 'setActiveOrganization'
+  | 'listInvitations'
+  | 'acceptInvitation'
+  | 'inviteMember'
+export type RecordBoardWatchMethod = 'releaseBoardTaskClaims' | 'openBoardStream'
 
 export type ProjectIdentityClient = {
   upsertProject(

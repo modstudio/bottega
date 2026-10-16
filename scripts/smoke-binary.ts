@@ -15,6 +15,7 @@ import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { newRecordId } from '../shared/record-id.ts'
 import { BOTTEGA_ENTRY_PROTOCOL } from '../shared/self-spawn.ts'
 import { buildHostBinary } from './build-binary.ts'
 import { run } from './build-release.ts'
@@ -341,8 +342,10 @@ try {
   const smokeStore = new Database(join(stateHome, 'orchestrator', 'orch.db'))
   try {
     smokeStore
-      .query('INSERT INTO project (name, path, stack, canon, settings) VALUES (?, ?, ?, 0, ?)')
-      .run('binary-smoke', realpathSync(probeRepository), 'fixture', '{}')
+      .query(
+        'INSERT INTO project (record_id, name, path, stack, canon, settings) VALUES (?, ?, ?, ?, 0, ?)',
+      )
+      .run(newRecordId(), 'binary-smoke', realpathSync(probeRepository), 'fixture', '{}')
     const codexCaps = JSON.parse(
       (smokeStore.query('SELECT caps FROM agent WHERE name = ?').get('codex') as { caps: string })
         .caps,

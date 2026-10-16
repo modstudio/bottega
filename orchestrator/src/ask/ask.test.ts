@@ -352,8 +352,11 @@ describe('the live ask channel always answers', () => {
   test('run_gate reports no evidence paths when an occupied log prevented log creation', async () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const project = db()
-      .query(`INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?) RETURNING id`)
+      .query(
+        `INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?) RETURNING id`,
+      )
       .get(
+        newRecordId(),
         'gate-occupied-log-fixture',
         '/fixture',
         'bun',

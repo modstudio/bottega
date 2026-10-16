@@ -19,9 +19,22 @@ import {
   boardClaimListPath,
   type ProjectIdentityClient,
   projectIdentityClient,
+  type RecordApiAuthentication,
+  type RecordBoardMethod,
+  type RecordBoardStreamOpen,
+  type RecordBoardStreamSource,
+  type RecordBoardWatchMethod,
+  type RecordDocOrderInput,
+  type RecordDocReadMethod,
+  type RecordDocWriteMethod,
+  type RecordIdentityAndSpaceMethod,
+  type RecordProjectSubjectMethod,
   type RecordRequestDestination,
+  type RecordRunMethod,
+  type RecordSnapshotAndPublicDocMethod,
   subjectMutationBody,
 } from './record-api-client-paths.ts'
+
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import type {
   HostedBoardAcceptInput,
@@ -94,12 +107,6 @@ export type RecordDocUpsertInput = {
   revisionId?: string
   expectedRevision?: string
   generator?: DocGenerator
-}
-type RecordDocOrderInput = {
-  scope: string
-  subject: string | null
-  parentId: string | null
-  orderedIds: string[]
 }
 type RecordDocWriteResult = RecordDocWriteResponse<{ id: string; revisionId: string }>
 type RecordDocImportResult = RecordDocWriteResponse<{ id: string; revisionIds: string[] }>
@@ -178,7 +185,11 @@ export type RecordCanonImportResult = {
   bootstrap: boolean
 }
 
-export type { RecordRequestDestination } from './record-api-client-paths.ts'
+export type {
+  RecordApiAuthentication,
+  RecordBoardStreamOpen,
+  RecordRequestDestination,
+} from './record-api-client-paths.ts'
 
 export type RecordApiClient = ProjectIdentityClient & {
   whoami(): Promise<RecordIdentity>
@@ -371,15 +382,6 @@ export type RecordApiClient = ProjectIdentityClient & {
   }): Promise<{ released: number }>
   openBoardStream(signal?: AbortSignal): Promise<RecordBoardStreamOpen>
 }
-
-type RecordBoardStreamSource = {
-  read(): Promise<Uint8Array | null>
-}
-
-export type RecordBoardStreamOpen =
-  | { kind: 'stream'; source: RecordBoardStreamSource; close: () => void }
-  | { kind: 'unauthorized' }
-  | { kind: 'error'; reason: string }
 
 const INJECT_KEY = Symbol.for('orch.record-api-client')
 type InjectSlot = { current: RecordApiClient | null }
@@ -690,11 +692,6 @@ const reorderDocsRequest: RecordApiClient['reorderDocs'] = (input, destination) 
     ...destination,
   })
 
-export type RecordApiAuthentication = {
-  token(): string | null
-  tokenAsync(signal: AbortSignal): Promise<string | null>
-}
-
 export function authenticatedRecordApiClient(
   authentication: RecordApiAuthentication,
 ): RecordApiClient {
@@ -708,207 +705,230 @@ export function recordApiClient(request = defaultRequest): RecordApiClient {
     throw new Error(TEST_REFUSAL)
   return {
     ...recordIdentityAndSpaceClient(request),
-    putSnapshot: (kind, input) =>
-      request(`/v1/snapshots/${kind}`, { method: 'PUT', body: JSON.stringify(input) }),
-    listSnapshots: () => request('/v1/snapshots'),
-    listPublicDocs: () => publicRequest('/public/v1/docs'),
-    getPublicDoc: (id) => publicRequest(`/public/v1/docs/${id}`),
-    searchPublicDocs: (query) =>
-      publicRequest(`/public/v1/docs/search?${new URLSearchParams({ q: query })}`),
-    searchDocs: (query) => request(`/v1/docs/search?${docSearchParams(query)}`),
-    listDocs: (query, destination) => {
-      const search = new URLSearchParams()
-      if (query.scope) search.set('scope', query.scope)
-      if (query.subject !== undefined) search.set('subject', query.subject ?? '')
-      if (query.audience) search.set('audience', query.audience)
-      if (query.status) search.set('status', query.status)
-      if (query.kind) search.set('kind', query.kind)
-      if (query.updatedSince) search.set('updatedSince', query.updatedSince)
-      if (query.limit) search.set('limit', String(query.limit))
-      if (query.cursor) search.set('cursor', query.cursor)
-      if (query.includeDeleted) search.set('includeDeleted', 'true')
-      if (query.acrossReadableSpaces) search.set('acrossReadableSpaces', 'true')
-      const suffix = search.toString()
-      return request(`/v1/docs${suffix ? `?${suffix}` : ''}`, destination)
-    },
-    getDoc: (id, destination) => request(`/v1/docs/${id}`, destination),
-    listRevisions: listDocRevisionsRequest,
-    upsertDoc: (input, destination) =>
-      request('/v1/docs', { method: 'PUT', body: JSON.stringify(input), ...destination }).then(ids),
-    reorderDocs: reorderDocsRequest,
-    applySettingsPermission: (input, destination) =>
-      request('/v1/settings/permission', {
-        method: 'POST',
-        body: JSON.stringify(input),
-        ...destination,
-      }),
-    importDoc: (input, destination) =>
-      request('/v1/docs/import', {
-        method: 'POST',
-        body: JSON.stringify(input),
-        ...destination,
-      }).then(importIds),
-    importCanon: (input, destination) =>
-      request('/v1/docs/canon/import', {
-        method: 'POST',
-        body: JSON.stringify(input),
-        ...destination,
-      }),
-    deleteDoc: (id, input, destination) =>
-      request(`/v1/docs/${id}`, {
-        method: 'DELETE',
-        body: JSON.stringify(input),
-        ...destination,
-      }).then(ids),
-    consumeDoc: async (id, input, destination) => {
-      const body = await request<Record<string, unknown>>(`/v1/docs/${id}/consume`, {
-        method: 'POST',
-        body: JSON.stringify(input),
-        ...destination,
-      })
-      return {
-        ...ids(body),
-        alreadyConsumed: Boolean(body.alreadyConsumed),
-      }
-    },
-    restoreDoc: (id, input, destination) =>
-      request(`/v1/docs/${id}/restore`, {
-        method: 'POST',
-        body: JSON.stringify(input),
-        ...destination,
-      }).then(ids),
-    renameSubject: (input, destination) =>
-      request('/v1/docs/rename-subject', {
-        method: 'POST',
-        body: JSON.stringify(input),
-        ...destination,
-      }),
+    ...recordSnapshotAndPublicDocClient(request),
+    ...recordDocReadClient(request),
+    ...recordDocWriteClient(request),
     ...projectIdentityClient(request),
-    listProjectSubjects: (query, destination) => {
-      const search = new URLSearchParams()
-      if (query.project) search.set('project', query.project)
-      if (query.projectId) search.set('projectId', query.projectId)
-      if (query.includeRetired) search.set('includeRetired', 'true')
-      if (query.order) search.set('order', query.order)
-      if (query.cursor) search.set('cursor', query.cursor)
-      if (query.limit) search.set('limit', String(query.limit))
-      return request(`/v1/subjects?${search}`, destination)
-    },
-    addProjectSubject: (input, destination) =>
-      request('/v1/subjects', { method: 'PUT', body: JSON.stringify(input), ...destination }),
-    renameProjectSubject: (input, destination) =>
-      request(`/v1/subjects/${input.id}/rename`, {
-        method: 'POST',
-        body: subjectMutationBody(input, { name: input.name }),
-        ...destination,
-      }),
-    defineProjectSubject: (input, destination) =>
-      request(`/v1/subjects/${input.id}/define`, {
-        method: 'POST',
-        body: subjectMutationBody(input, { definition: input.definition }),
-        ...destination,
-      }),
-    reorderProjectSubjects: (input, destination) =>
-      request('/v1/subjects/reorder', {
-        method: 'POST',
-        body: JSON.stringify(input),
-        ...destination,
-      }),
-    retireProjectSubject: (input, destination) =>
-      request(`/v1/subjects/${input.id}/retire`, {
-        method: 'POST',
-        body: JSON.stringify({ project: input.project, projectId: input.projectId }),
-        ...destination,
-      }),
-    putScore: async (runId, input) => {
-      await request(`/v1/runs/${runId}/score`, { method: 'PUT', body: JSON.stringify(input) })
-    },
-    voidRun: async (runId, input) => {
-      await request(`/v1/runs/${runId}/void`, { method: 'POST', body: JSON.stringify(input) })
-    },
-    unvoidRun: async (runId, input) => {
-      await request(`/v1/runs/${runId}/unvoid`, { method: 'POST', body: JSON.stringify(input) })
-    },
-    listScores: (query) => {
-      const search = new URLSearchParams()
-      if (query.updatedSince) search.set('updatedSince', query.updatedSince)
-      if (query.limit) search.set('limit', String(query.limit))
-      if (query.cursor) search.set('cursor', query.cursor)
-      const suffix = search.toString()
-      return request(`/v1/scores${suffix ? `?${suffix}` : ''}`)
-    },
-    counts: (destination) => request('/v1/docs/counts', destination),
-    listBoardMessages: (query = {}) => {
-      const search = new URLSearchParams()
-      if (query.kind) search.set('kind', query.kind)
-      if (query.open !== undefined) search.set('open', String(query.open))
-      if (query.includeEnded !== undefined) search.set('includeEnded', String(query.includeEnded))
-      const suffix = search.toString()
-      return request(`/v1/board/messages${suffix ? `?${suffix}` : ''}`)
-    },
-    postBoardMessage: (input) =>
-      request('/v1/board/messages', { method: 'PUT', body: JSON.stringify(input) }),
-    replyBoardMessage: (rootId, input) =>
-      request(`/v1/board/messages/${rootId}/replies`, {
-        method: 'POST',
-        body: JSON.stringify(input),
-      }),
-    withdrawBoardMessage: (id, input) =>
-      request(`/v1/board/messages/${id}/withdraw`, {
-        method: 'POST',
-        body: JSON.stringify(input ?? {}),
-      }),
-    acceptBoardAnswer: (id, input) =>
-      request(`/v1/board/messages/${id}/accept`, { method: 'POST', body: JSON.stringify(input) }),
-    takeBoardFilingLease: (id, input) =>
-      request(`/v1/board/messages/${id}/filing-lease`, {
-        method: 'POST',
-        body: JSON.stringify(input ?? {}),
-      }),
-    completeBoardFilingLease: (id, input) =>
-      request(`/v1/board/messages/${id}/filing-lease/complete`, {
-        method: 'POST',
-        body: JSON.stringify(input),
-      }),
-    failBoardFilingLease: (id, input) =>
-      request(`/v1/board/messages/${id}/filing-lease/fail`, {
-        method: 'POST',
-        body: JSON.stringify(input),
-      }),
-    getBoardThread: (id) => request(`/v1/board/threads/${id}`),
-    getBoardStatus: (id) => request(`/v1/board/messages/${id}/status`),
-    putBoardReceipt: (input, signal) =>
-      request('/v1/board/receipts', { method: 'PUT', body: JSON.stringify(input), signal }),
-    listBoardChanges: listBoardChangesRequest,
-    takeBoardClaim: (input) =>
-      request('/v1/board/claims', { method: 'PUT', body: JSON.stringify(input) }),
-    renewBoardClaim: (id, input) =>
-      request(`/v1/board/claims/${id}/renew`, {
-        method: 'POST',
-        body: JSON.stringify(input ?? {}),
-      }),
-    releaseBoardClaim: (id, input) =>
-      request(`/v1/board/claims/${id}/release`, {
-        method: 'POST',
-        body: JSON.stringify(input ?? {}),
-      }),
-    listBoardClaims: (project, projectId) => request(boardClaimListPath(project, projectId)),
+    ...recordProjectSubjectClient(request),
+    ...recordRunClient(request),
+    ...recordBoardClient(request),
     ...recordApiBoardWatchClient(),
   }
 }
 
+const recordSnapshotAndPublicDocClient = (
+  request = defaultRequest,
+): Pick<RecordApiClient, RecordSnapshotAndPublicDocMethod> => ({
+  putSnapshot: (kind, input) =>
+    request(`/v1/snapshots/${kind}`, { method: 'PUT', body: JSON.stringify(input) }),
+  listSnapshots: () => request('/v1/snapshots'),
+  listPublicDocs: () => publicRequest('/public/v1/docs'),
+  getPublicDoc: (id) => publicRequest(`/public/v1/docs/${id}`),
+  searchPublicDocs: (query) =>
+    publicRequest(`/public/v1/docs/search?${new URLSearchParams({ q: query })}`),
+})
+
+const recordDocReadClient = (
+  request = defaultRequest,
+): Pick<RecordApiClient, RecordDocReadMethod> => ({
+  searchDocs: (query) => request(`/v1/docs/search?${docSearchParams(query)}`),
+  listDocs: (query, destination) => {
+    const search = new URLSearchParams()
+    if (query.scope) search.set('scope', query.scope)
+    if (query.subject !== undefined) search.set('subject', query.subject ?? '')
+    if (query.audience) search.set('audience', query.audience)
+    if (query.status) search.set('status', query.status)
+    if (query.kind) search.set('kind', query.kind)
+    if (query.updatedSince) search.set('updatedSince', query.updatedSince)
+    if (query.limit) search.set('limit', String(query.limit))
+    if (query.cursor) search.set('cursor', query.cursor)
+    if (query.includeDeleted) search.set('includeDeleted', 'true')
+    if (query.acrossReadableSpaces) search.set('acrossReadableSpaces', 'true')
+    const suffix = search.toString()
+    return request(`/v1/docs${suffix ? `?${suffix}` : ''}`, destination)
+  },
+  getDoc: (id, destination) => request(`/v1/docs/${id}`, destination),
+  listRevisions: listDocRevisionsRequest,
+})
+
+const recordDocWriteClient = (
+  request = defaultRequest,
+): Pick<RecordApiClient, RecordDocWriteMethod> => ({
+  upsertDoc: (input, destination) =>
+    request('/v1/docs', { method: 'PUT', body: JSON.stringify(input), ...destination }).then(ids),
+  reorderDocs: reorderDocsRequest,
+  applySettingsPermission: (input, destination) =>
+    request('/v1/settings/permission', {
+      method: 'POST',
+      body: JSON.stringify(input),
+      ...destination,
+    }),
+  importDoc: (input, destination) =>
+    request('/v1/docs/import', {
+      method: 'POST',
+      body: JSON.stringify(input),
+      ...destination,
+    }).then(importIds),
+  importCanon: (input, destination) =>
+    request('/v1/docs/canon/import', {
+      method: 'POST',
+      body: JSON.stringify(input),
+      ...destination,
+    }),
+  deleteDoc: (id, input, destination) =>
+    request(`/v1/docs/${id}`, {
+      method: 'DELETE',
+      body: JSON.stringify(input),
+      ...destination,
+    }).then(ids),
+  consumeDoc: async (id, input, destination) => {
+    const body = await request<Record<string, unknown>>(`/v1/docs/${id}/consume`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+      ...destination,
+    })
+    return {
+      ...ids(body),
+      alreadyConsumed: Boolean(body.alreadyConsumed),
+    }
+  },
+  restoreDoc: (id, input, destination) =>
+    request(`/v1/docs/${id}/restore`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+      ...destination,
+    }).then(ids),
+  renameSubject: (input, destination) =>
+    request('/v1/docs/rename-subject', {
+      method: 'POST',
+      body: JSON.stringify(input),
+      ...destination,
+    }),
+})
+
+const recordProjectSubjectClient = (
+  request = defaultRequest,
+): Pick<RecordApiClient, RecordProjectSubjectMethod> => ({
+  listProjectSubjects: (query, destination) => {
+    const search = new URLSearchParams()
+    if (query.project) search.set('project', query.project)
+    if (query.projectId) search.set('projectId', query.projectId)
+    if (query.includeRetired) search.set('includeRetired', 'true')
+    if (query.order) search.set('order', query.order)
+    if (query.cursor) search.set('cursor', query.cursor)
+    if (query.limit) search.set('limit', String(query.limit))
+    return request(`/v1/subjects?${search}`, destination)
+  },
+  addProjectSubject: (input, destination) =>
+    request('/v1/subjects', { method: 'PUT', body: JSON.stringify(input), ...destination }),
+  renameProjectSubject: (input, destination) =>
+    request(`/v1/subjects/${input.id}/rename`, {
+      method: 'POST',
+      body: subjectMutationBody(input, { name: input.name }),
+      ...destination,
+    }),
+  defineProjectSubject: (input, destination) =>
+    request(`/v1/subjects/${input.id}/define`, {
+      method: 'POST',
+      body: subjectMutationBody(input, { definition: input.definition }),
+      ...destination,
+    }),
+  reorderProjectSubjects: (input, destination) =>
+    request('/v1/subjects/reorder', {
+      method: 'POST',
+      body: JSON.stringify(input),
+      ...destination,
+    }),
+  retireProjectSubject: (input, destination) =>
+    request(`/v1/subjects/${input.id}/retire`, {
+      method: 'POST',
+      body: JSON.stringify({ project: input.project, projectId: input.projectId }),
+      ...destination,
+    }),
+})
+
+const recordRunClient = (request = defaultRequest): Pick<RecordApiClient, RecordRunMethod> => ({
+  putScore: async (runId, input) =>
+    void (await request(`/v1/runs/${runId}/score`, { method: 'PUT', body: JSON.stringify(input) })),
+  voidRun: async (runId, input) =>
+    void (await request(`/v1/runs/${runId}/void`, { method: 'POST', body: JSON.stringify(input) })),
+  unvoidRun: async (runId, input) =>
+    void (await request(`/v1/runs/${runId}/unvoid`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })),
+  listScores: (query) => {
+    const search = new URLSearchParams()
+    if (query.updatedSince) search.set('updatedSince', query.updatedSince)
+    if (query.limit) search.set('limit', String(query.limit))
+    if (query.cursor) search.set('cursor', query.cursor)
+    const suffix = search.toString()
+    return request(`/v1/scores${suffix ? `?${suffix}` : ''}`)
+  },
+  counts: (destination) => request('/v1/docs/counts', destination),
+})
+
+const recordBoardClient = (request = defaultRequest): Pick<RecordApiClient, RecordBoardMethod> => ({
+  listBoardMessages: (query = {}) => {
+    const search = new URLSearchParams()
+    if (query.kind) search.set('kind', query.kind)
+    if (query.open !== undefined) search.set('open', String(query.open))
+    if (query.includeEnded !== undefined) search.set('includeEnded', String(query.includeEnded))
+    const suffix = search.toString()
+    return request(`/v1/board/messages${suffix ? `?${suffix}` : ''}`)
+  },
+  postBoardMessage: (input) =>
+    request('/v1/board/messages', { method: 'PUT', body: JSON.stringify(input) }),
+  replyBoardMessage: (rootId, input) =>
+    request(`/v1/board/messages/${rootId}/replies`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  withdrawBoardMessage: (id, input) =>
+    request(`/v1/board/messages/${id}/withdraw`, {
+      method: 'POST',
+      body: JSON.stringify(input ?? {}),
+    }),
+  acceptBoardAnswer: (id, input) =>
+    request(`/v1/board/messages/${id}/accept`, { method: 'POST', body: JSON.stringify(input) }),
+  takeBoardFilingLease: (id, input) =>
+    request(`/v1/board/messages/${id}/filing-lease`, {
+      method: 'POST',
+      body: JSON.stringify(input ?? {}),
+    }),
+  completeBoardFilingLease: (id, input) =>
+    request(`/v1/board/messages/${id}/filing-lease/complete`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  failBoardFilingLease: (id, input) =>
+    request(`/v1/board/messages/${id}/filing-lease/fail`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  getBoardThread: (id) => request(`/v1/board/threads/${id}`),
+  getBoardStatus: (id) => request(`/v1/board/messages/${id}/status`),
+  putBoardReceipt: (input, signal) =>
+    request('/v1/board/receipts', { method: 'PUT', body: JSON.stringify(input), signal }),
+  listBoardChanges: listBoardChangesRequest,
+  takeBoardClaim: (input) =>
+    request('/v1/board/claims', { method: 'PUT', body: JSON.stringify(input) }),
+  renewBoardClaim: (id, input) =>
+    request(`/v1/board/claims/${id}/renew`, {
+      method: 'POST',
+      body: JSON.stringify(input ?? {}),
+    }),
+  releaseBoardClaim: (id, input) =>
+    request(`/v1/board/claims/${id}/release`, {
+      method: 'POST',
+      body: JSON.stringify(input ?? {}),
+    }),
+  listBoardClaims: (project, projectId) => request(boardClaimListPath(project, projectId)),
+})
+
 function recordIdentityAndSpaceClient(
   request = defaultRequest,
-): Pick<
-  RecordApiClient,
-  | 'whoami'
-  | 'sync'
-  | 'createOrganization'
-  | 'setActiveOrganization'
-  | 'listInvitations'
-  | 'acceptInvitation'
-  | 'inviteMember'
-> {
+): Pick<RecordApiClient, RecordIdentityAndSpaceMethod> {
   return {
     whoami: () => request('/v1/whoami', { schema: recordIdentityResponse }),
     sync: (input) => request('/v1/sync', { method: 'POST', body: JSON.stringify(input) }),
@@ -957,10 +977,7 @@ function listBoardChangesRequest(query: {
   )
 }
 
-function recordApiBoardWatchClient(): Pick<
-  RecordApiClient,
-  'releaseBoardTaskClaims' | 'openBoardStream'
-> {
+function recordApiBoardWatchClient(): Pick<RecordApiClient, RecordBoardWatchMethod> {
   return {
     releaseBoardTaskClaims: (input) =>
       defaultRequest('/v1/board/claims/release-task', {
