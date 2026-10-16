@@ -72,7 +72,7 @@ The project's review declaration decides the applicable lenses, and the always-o
 
 ## Admission
 
-Run the local gate on the reviewed branch, push it, and open a GitHub pull request. GitHub is the admission queue and squash-merge folds checkpoint commits. Merge conflicts, including migration-journal collisions, are resolved in the branch and gated again. Merge on GitHub; afterwards the main checkout pulls the landing branch and runs migrations. Carry a still-valid review pin rather than re-lensing it. Rebase a branch that has fallen behind trunk in the same breath as its resume or lens dispatch; the harness refuses a stale caller. A red gate is a real finding: fix it or report it, without a retry path that can turn the same failure green.
+Run the local gate on the reviewed branch, push it, and open a GitHub pull request. CI runs the suite and GitHub's merge queue admits the pull request, squash-merging so checkpoint commits fold. Merge conflicts, including migration-journal collisions, are resolved in the branch and gated again. Merge on GitHub; afterwards the main checkout pulls the landing branch and runs migrations. Carry a still-valid review pin rather than re-lensing it. Rebase a branch that has fallen behind trunk in the same breath as its resume or lens dispatch; the harness refuses a stale caller. A red gate is a real finding: fix it or report it, without a retry path that can turn the same failure green.
 
 ## End
 
