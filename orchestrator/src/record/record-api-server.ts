@@ -192,6 +192,7 @@ export async function startRecordApiServer(environment: ServerEnvironment = proc
   const boardStreamRegistry = createBoardStreamRegistry()
   const migrations = recordMigrationCount()
   const app = recordApi({
+    clientAddresses: { recordApiUrl: config.authUrl, hubHostedUrl: config.hubUrl },
     recordUrl: config.recordUrl,
     allowedOrigins: config.allowedOrigins,
     ...recordApiAccessDependencies(config, auth, migrations),

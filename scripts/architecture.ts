@@ -633,6 +633,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/setup/setup-facts.ts', [
     'node:fs',
     'bun',
+    '../../../shared/record-api-url.ts',
     '../agent/agent-auth.ts',
     '../agent/cli-version.ts',
     '../agent/model-host.ts',

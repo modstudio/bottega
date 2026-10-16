@@ -31,7 +31,7 @@ export function resolveConfigRoot(env: ConfigEnvironment): string {
   return join(home, '.config', PLATFORM_SLUG)
 }
 
-function resolvePlatformEnvFile(env: ConfigEnvironment): string {
+export function resolvePlatformEnvFile(env: ConfigEnvironment): string {
   return join(resolveConfigRoot(env), `${PLATFORM_SLUG}.env`)
 }
 

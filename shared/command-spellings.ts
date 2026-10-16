@@ -245,6 +245,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'record space move-project',
   'record space switch',
   'record sync',
+  'record use',
   'record whoami',
   'release',
   'release check',

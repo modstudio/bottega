@@ -97,6 +97,7 @@ type RecordDocMutationInput = {
 }
 type Deps = RecordSubjectRouteDeps & RecordReleaseRouteDeps & RecordSyncRouteDeps & RecordApiDeps
 type RecordApiDeps = RecordInvitationRouteDeps & {
+  clientAddresses: { recordApiUrl: string; hubHostedUrl: string }
   recordUrl: string
   allowedOrigins?: string[]
   auth: { handler(request: Request): Response | Promise<Response> }

@@ -25,8 +25,19 @@ import {
 } from '../record/record-command.ts'
 import { publishSnapshotsCommand } from '../record/record-publish.ts'
 import { pushDocsCommand } from '../record/record-push-docs.ts'
+import { useHostedRecord } from '../record/record-use.ts'
 import { requireHostedRecord } from '../record/record-write-authority.ts'
 import { log } from './support.ts'
+
+const presentation = { log }
+
+function httpAddress(value: string): string {
+  try {
+    const url = new URL(value)
+    if (url.protocol === 'http:' || url.protocol === 'https:') return value
+  } catch {}
+  throw new Error('address must be an http or https URL')
+}
 
 async function promptPassword(): Promise<string> {
   const terminal = createInterface({ input: process.stdin, output: process.stderr })
@@ -44,6 +55,14 @@ function hostedCommand<T>(command: string, action: () => T): T {
 
 function hostedRecord<T>(verb: string, action: () => T): T {
   return hostedCommand(`${PLATFORM_SLUG} record ${verb}`, action)
+}
+
+function registerUseCommand(record: Command): void {
+  record
+    .command('use')
+    .description('bind this machine to a hosted record')
+    .argument('<address>', 'public record API address', httpAddress)
+    .action((address) => useHostedRecord(String(address), { log, warn: console.warn }))
 }
 
 function registerIdentityCommands(record: Command): void {
@@ -113,7 +132,7 @@ function registerPublicDocCommands(record: Command): void {
 
 export function register(program: Command): void {
   const record = program.command('record').description('manage the hosted record and its outbox')
-  const presentation = { log }
+  registerUseCommand(record)
   registerIdentityCommands(record)
   registerPublicDocCommands(record)
   record

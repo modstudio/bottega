@@ -12,6 +12,12 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 })
 
 export const recordModules: RecordModule[] = [
+  module('orchestrator/src/record/record-use.ts', [
+    'node:fs',
+    'node:path',
+    '../../../shared/brand.ts',
+    '../../../shared/config-directory.ts',
+  ]),
   module('orchestrator/src/record/record-api-client-paths.ts', []),
   module('orchestrator/src/record/record-doc-command-check.ts', [
     '../doc/doc-command-check.ts',

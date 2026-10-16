@@ -18,6 +18,7 @@ export function registerRecordCors<E extends Env>(app: Hono<E>, origins?: string
 }
 
 type AccessRouteDeps = {
+  clientAddresses: { recordApiUrl: string; hubHostedUrl: string }
   auth: { handler(request: Request): Response | Promise<Response> }
   readHealth(): Promise<{ ok: boolean; migrations: number }>
   readVersion(): { status: 200 | 503; body: object }
@@ -35,6 +36,7 @@ export function registerRecordAccessRoutes<E extends Env>(
     const response = deps.readVersion()
     return context.json(response.body, response.status)
   })
+  app.get('/client-config', (context) => context.json(deps.clientAddresses))
   app.all('/api/auth/*', async (context) => {
     const response = await deps.auth.handler(context.req.raw)
     // A reset request never reveals whether mail was sent or the client-IP limit was reached.
