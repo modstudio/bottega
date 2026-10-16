@@ -30,8 +30,6 @@ const target = process.argv[2]
 const original = process.argv[3] ?? target
 const checkoutRoot = process.argv[4] ?? ROOT
 const pathOnly = process.argv[5] === '--path-only'
-// Safely shorter than hub-import-guard.py's 8-second outer backstop so cleanup can finish.
-const DEPENDENCY_CRUISE_TIMEOUT_MS = 6_000
 
 if (!target || !original) {
   console.error(
@@ -64,18 +62,7 @@ const cruise = await runArchitectureCruise({
   stdout: 'pipe',
   config,
   cwd: checkoutRoot,
-  timeoutMs: DEPENDENCY_CRUISE_TIMEOUT_MS,
 })
-if (cruise.timedOut) {
-  console.log(
-    JSON.stringify({
-      status: 'unchecked',
-      findings: [],
-      reason: `dependency cruise timed out after ${DEPENDENCY_CRUISE_TIMEOUT_MS}ms`,
-    }),
-  )
-  process.exit(0)
-}
 const result = JSON.parse(cruise.stdout) as ICruiseResult
 const rulesByName = new Map(config.forbidden.map((rule) => [rule.name, rule]))
 

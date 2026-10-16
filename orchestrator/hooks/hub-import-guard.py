@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 
 
 JUDGE_TIMEOUT_SECONDS = 8
@@ -58,6 +59,7 @@ def deny(findings):
 
 
 def main():
+    deadline_ms = int((time.time() + JUDGE_TIMEOUT_SECONDS) * 1000)
     try:
         payload = json.load(sys.stdin)
     except (json.JSONDecodeError, OSError) as error:
@@ -71,12 +73,20 @@ def main():
     binary = os.path.join(install_root, "bin", "bottega")
     try:
         result = subprocess.run(
-            [binary, "gate", "hub-import", "judge", "--tool-input"],
+            [
+                binary,
+                "gate",
+                "hub-import",
+                "judge",
+                "--tool-input",
+                "--deadline-ms",
+                str(deadline_ms),
+            ],
             input=json.dumps(payload),
             capture_output=True,
             env=judge_environment(),
             text=True,
-            timeout=JUDGE_TIMEOUT_SECONDS,
+            timeout=max(0.001, (deadline_ms / 1000) - time.time()),
         )
     except subprocess.TimeoutExpired:
         return unchecked(path, f"judge timed out after {JUDGE_TIMEOUT_SECONDS} seconds")

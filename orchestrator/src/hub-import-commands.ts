@@ -23,6 +23,9 @@ type HubImportJudgment = {
 
 type RegisteredProject = Pick<Project, 'name' | 'path'>
 
+// Must leave enough of the hook's absolute deadline for candidate and directory cleanup.
+const JUDGE_CLEANUP_MARGIN_MS = 500
+
 function object(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -99,17 +102,45 @@ async function runInstalledJudge(
   judge: string,
   args: string[],
   installedRoot: string,
+  deadlineMs: number,
 ): Promise<HubImportJudgment> {
+  const timeoutMs = deadlineMs - Date.now() - JUDGE_CLEANUP_MARGIN_MS
+  if (timeoutMs <= 0) {
+    return {
+      status: 'unchecked',
+      findings: [],
+      reason: 'judge deadline leaves no time before the cleanup margin',
+    }
+  }
   const child = Bun.spawn([process.execPath, '--no-env-file', judge, ...args], {
     cwd: installedRoot,
     stdout: 'pipe',
     stderr: 'pipe',
   })
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    child.kill()
+  }, timeoutMs)
+  let stdout: string
+  let stderr: string
+  let exitCode: number
+  try {
+    ;[stdout, stderr, exitCode] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
+  if (timedOut) {
+    return {
+      status: 'unchecked',
+      findings: [],
+      reason: 'judge child reached the hook deadline cleanup margin',
+    }
+  }
   if (exitCode !== 0) {
     return {
       status: 'unchecked',
@@ -140,6 +171,7 @@ async function judgeOriginalPath(
   checkout: string,
   judge: string,
   installedRoot: string,
+  deadlineMs: number,
 ): Promise<HubImportJudgment | null> {
   const original = relative(checkout, file).split(sep).join('/')
   try {
@@ -147,6 +179,7 @@ async function judgeOriginalPath(
       judge,
       [original, original, checkout, '--path-only'],
       installedRoot,
+      deadlineMs,
     )
     return judgment.status === 'ok' ? null : judgment
   } catch (error) {
@@ -160,6 +193,7 @@ async function judgeOriginalPath(
 
 export async function hubImportJudgeCommand(
   text: string,
+  deadlineMs: number,
   openDatabase: () => Database = openReadOnlyDatabase,
 ): Promise<HubImportJudgment> {
   let payload: ToolPayload
@@ -192,7 +226,7 @@ export async function hubImportJudgeCommand(
   const installedRoot = resolve(import.meta.dir, '../..')
   const judge = join(installedRoot, 'scripts/check-architecture-file.ts')
   const original = relative(checkout, file).split(sep).join('/')
-  const pathJudgment = await judgeOriginalPath(file, checkout, judge, installedRoot)
+  const pathJudgment = await judgeOriginalPath(file, checkout, judge, installedRoot, deadlineMs)
   if (pathJudgment) return pathJudgment
 
   let content: string
@@ -209,12 +243,20 @@ export async function hubImportJudgeCommand(
   const candidate = join(dirname(file), `.architecture-guard-${randomUUID()}${extname(file)}`)
   const createdDirectories: string[] = []
   try {
+    if (deadlineMs - Date.now() <= JUDGE_CLEANUP_MARGIN_MS) {
+      return {
+        status: 'unchecked',
+        findings: [],
+        reason: 'judge deadline leaves no time to write and clean up a candidate',
+      }
+    }
     createCandidateDirectories(dirname(candidate), createdDirectories)
     writeFileSync(candidate, content)
     return await runInstalledJudge(
       judge,
       [relative(checkout, candidate).split(sep).join('/'), original, checkout],
       installedRoot,
+      deadlineMs,
     )
   } catch (error) {
     return {
