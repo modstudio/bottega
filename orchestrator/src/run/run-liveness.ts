@@ -6,6 +6,7 @@
 import type { Database } from 'bun:sqlite'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { db, linkedWorktreeReadOnly, writeTransaction } from '../database/db.ts'
+import { machineId } from '../record/machine-identity.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import {
   closeRunChainQuestions,
@@ -18,6 +19,7 @@ import { auditRunMutation, runMutationAuthority } from './run-authority.ts'
 import { abandonedBootstrap, coordinatorSetupDeath, PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
 import { coordinatorSetupError } from './run-coordinator-log.ts'
 import { runLeaseState } from './run-lease.ts'
+import { enqueueRunRecord } from './run-outbox.ts'
 
 /**
  * The outer ceiling for a run and for callers waiting on one. Liveness itself
@@ -155,6 +157,60 @@ export function resolveRootFromLastTurn(database: Database, rootId: number): num
   return resolveRootFromLastTurnPreserving(database, rootId, null)
 }
 
+export function rollUpRootAndEnqueue(
+  database: Database,
+  rootId: number,
+  machine: string,
+  finishedAt: string,
+): number {
+  const changes = resolveRootFromLastTurnPreserving(database, rootId, null)
+  enqueueRunRecord(database, rootId, machine, finishedAt)
+  return changes
+}
+
+function rollUpRootPreservingAndEnqueue(
+  database: Database,
+  rootId: number,
+  preserveFailureKindForTurnId: number | null,
+  machine: string,
+  finishedAt: string,
+): number {
+  const changes = resolveRootFromLastTurnPreserving(database, rootId, preserveFailureKindForTurnId)
+  enqueueRunRecord(database, rootId, machine, finishedAt)
+  return changes
+}
+
+function rollUpReapedRoots(
+  database: Database,
+  ended: number[],
+  setupDeathIds: Set<number>,
+  machine: string,
+  finishedAt: string,
+): void {
+  const roots = database
+    .query(
+      `SELECT DISTINCT COALESCE(ended.parent_run_id, ended.id) AS id,
+        (SELECT last.id FROM run last
+          WHERE last.id = COALESCE(ended.parent_run_id, ended.id)
+             OR last.parent_run_id = COALESCE(ended.parent_run_id, ended.id)
+          ORDER BY last.turn DESC, last.id DESC LIMIT 1) AS last_id
+      FROM run ended WHERE ended.id IN (${ended.map(() => '?').join(',')})`,
+    )
+    .all(...ended) as { id: number; last_id: number }[]
+  for (const { id, last_id } of roots) {
+    writeTransaction(() => {
+      rollUpRootPreservingAndEnqueue(
+        database,
+        id,
+        preservedFailureKindTurnId(setupDeathIds, last_id),
+        machine,
+        finishedAt,
+      )
+      retireRunChainQuestionDeliveries(database, id, QUESTION_CLOSE_CHAIN_STALE)
+    }, database)
+  }
+}
+
 /**
  * A run only writes its terminal state on the normal path, so a process that is
  * killed — or whose session ends — leaves its row claiming to be live for ever.
@@ -260,6 +316,9 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
       ...setupDeaths.map((id) => ({ id, reason: coordinatorSetupError(id) })),
     ]
   }
+  const ended = [...dead, ...abandonedBootstraps, ...setupDeaths]
+  const localMachineId = ended.length ? machineId() : ''
+  const finishedAt = new Date(now).toISOString()
   if (abandonedBootstraps.length) {
     const update = d.query(
       `UPDATE run SET status='failed', failure_kind='harness',
@@ -272,6 +331,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
         const authority = runMutationAuthority(d, id)
         auditRunMutation(authority, 'reap', error, d)
         closeRunChainQuestions(d, authority.rootId, QUESTION_CLOSE_CHAIN_STALE)
+        enqueueRunRecord(d, id, localMachineId, finishedAt)
       }, d)
     }
   }
@@ -287,6 +347,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
         const authority = runMutationAuthority(d, id)
         auditRunMutation(authority, 'reap', error, d)
         closeRunChainQuestions(d, authority.rootId, QUESTION_CLOSE_CHAIN_STALE)
+        enqueueRunRecord(d, id, localMachineId, finishedAt)
       }, d)
     }
   }
@@ -316,26 +377,12 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
         const authority = runMutationAuthority(d, id)
         auditRunMutation(authority, 'reap', reason, d)
         closeRunChainQuestions(d, authority.rootId, QUESTION_CLOSE_CHAIN_STALE)
+        enqueueRunRecord(d, id, localMachineId, finishedAt)
       }, d)
     }
   }
-  const ended = [...dead, ...abandonedBootstraps, ...setupDeaths]
   if (ended.length) {
-    const roots = d
-      .query(
-        `SELECT DISTINCT COALESCE(ended.parent_run_id, ended.id) AS id,
-          (SELECT last.id FROM run last
-            WHERE last.id = COALESCE(ended.parent_run_id, ended.id)
-               OR last.parent_run_id = COALESCE(ended.parent_run_id, ended.id)
-            ORDER BY last.turn DESC, last.id DESC LIMIT 1) AS last_id
-        FROM run ended WHERE ended.id IN (${ended.map(() => '?').join(',')})`,
-      )
-      .all(...ended) as { id: number; last_id: number }[]
-    const setupDeathIds = new Set(setupDeaths)
-    for (const { id, last_id } of roots) {
-      resolveRootFromLastTurnPreserving(d, id, preservedFailureKindTurnId(setupDeathIds, last_id))
-      retireRunChainQuestionDeliveries(d, id, QUESTION_CLOSE_CHAIN_STALE)
-    }
+    rollUpReapedRoots(d, ended, new Set(setupDeaths), localMachineId, finishedAt)
     for (const id of ended) teardownTerminalRunResources(d, id)
   }
   return dead.length + abandonedBootstraps.length + setupDeaths.length

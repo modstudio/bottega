@@ -72,6 +72,24 @@ describe('reapStale', () => {
     })
   })
 
+  test('a reaped root is enqueued as a run record', () => {
+    const id = addRun({ agent: 'grok', job: 'craft', status: 'running' })
+    db().query('UPDATE run SET pid=?, agent_pid=? WHERE id=?').run(4194304, 4194304, id)
+
+    expect(reapStale(db())).toBe(1)
+    const outbox = db()
+      .query<{ payload: string }, [number]>(
+        `SELECT payload FROM outbox
+         WHERE kind='run' AND row_id=(SELECT record_id FROM run WHERE id=?)`,
+      )
+      .get(id)!
+    expect(JSON.parse(outbox.payload)).toMatchObject({
+      localId: id,
+      status: 'stale',
+      failureKind: 'interrupted',
+    })
+  })
+
   test('the reaper says WHY it swept, so routing can discount it', () => {
     // Without the kind these rows are indistinguishable from an agent that
     // simply failed, and the router charges them accordingly.

@@ -19,6 +19,7 @@ type LocalRun = Record<string, unknown> & {
 
 export type RunRecordBackfillResult = {
   enqueued: number
+  refreshedRoots: number
   skippedLive: number
 }
 
@@ -152,8 +153,29 @@ export function backfillRunRecords(database: Database, machineId: string): RunRe
     .all(HOOK_TREE_JOB, LANDING_TREE_JOB)
   for (const row of terminal) enqueueRunRecord(database, row.id, machineId, row.finished_at)
 
+  const refreshedRoots = database
+    .query<{ id: number; finished_at: string }, [string, string]>(
+      `SELECT r.id, COALESCE(r.last_event_at, r.started_at) AS finished_at
+         FROM run r
+         JOIN outbox latest ON latest.id = (
+           SELECT prior.id FROM outbox prior
+            WHERE prior.kind='run' AND prior.row_id=r.record_id
+            ORDER BY prior.id DESC LIMIT 1
+         )
+        WHERE r.parent_run_id IS NULL
+          AND r.status IN ('ok', 'failed', 'stale', 'stopped', 'asking')
+          AND r.job NOT IN (?,?)
+          AND CASE WHEN json_valid(latest.payload) THEN
+            json_extract(latest.payload, '$.status') IS NOT r.status
+            OR json_extract(latest.payload, '$.failureKind') IS NOT r.failure_kind
+          ELSE 1 END
+        ORDER BY r.id`,
+    )
+    .all(HOOK_TREE_JOB, LANDING_TREE_JOB)
+  for (const row of refreshedRoots) enqueueRunRecord(database, row.id, machineId, row.finished_at)
+
   const skippedLive = database
     .query<{ count: number }, []>(`SELECT count(*) AS count FROM run WHERE status='running'`)
     .get()!.count
-  return { enqueued: terminal.length, skippedLive }
+  return { enqueued: terminal.length, refreshedRoots: refreshedRoots.length, skippedLive }
 }
