@@ -1,8 +1,8 @@
 import { Link } from '@tanstack/react-router'
 import { DocOverflow } from '@/components/markdown/markdown-overflow'
+import type { ArticleListRow } from './article-list.ts'
 import { DOC_FORM_LABELS } from './filters.ts'
 import type { DocsLocation } from './location.ts'
-import type { ArticleListRow } from './article-list.ts'
 import type { DocsTreeItem } from './types.ts'
 
 export function ArticleList({
