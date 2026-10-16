@@ -17,7 +17,7 @@ import { Button } from '@bottega/hub-ui/button'
 import { toast } from '@bottega/hub-ui/toast'
 import { Link, useBlocker, useLocation, useMatch, useNavigate } from '@tanstack/react-router'
 import { Plus } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { recordSpaces } from '@/lib/record-spaces'
 import { editorChrome, useArticleEditor } from '../docs/article-editor.tsx'
 import { CreateDocDialog } from '../docs/create-dialog.tsx'
@@ -229,10 +229,10 @@ export function DocsPage() {
   const storedDocument = useStoredDocument(reading.document, source, editing || mayEdit, isScope)
   const saveAction = useArticleSave(source, reading.document, storedDocument?.revision, isScope)
   const fetchCurrentArticle = useCurrentArticle(source, reading.document, isScope)
-  const [leaveRequested, setLeaveRequested] = useState(false)
+  const leaveRequest = useRef<() => boolean>(() => false)
   const blocker = useBlocker({
-    shouldBlockFn: () => leaveRequested,
-    enableBeforeUnload: () => leaveRequested,
+    shouldBlockFn: () => leaveRequest.current(),
+    enableBeforeUnload: () => leaveRequest.current(),
     withResolver: true,
     disabled: !editing,
   })
@@ -243,7 +243,9 @@ export function DocsPage() {
     storedDocument,
     saveAction,
     fetchCurrentArticle,
-    onLeaveRequest: setLeaveRequested,
+    onLeaveRequest: (request) => {
+      leaveRequest.current = request
+    },
     leaveBlocker: {
       blocked: blocker.status === 'blocked',
       onKeep: () => blocker.reset?.(),

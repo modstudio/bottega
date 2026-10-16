@@ -456,7 +456,7 @@ export function useArticleEditor({
     conflict: boolean
   }
   fetchCurrentArticle: () => Promise<Draft | null>
-  onLeaveRequest: (needsConfirmation: boolean) => void
+  onLeaveRequest: (request: () => boolean) => void
   leaveBlocker: { blocked: boolean; onKeep: () => void; onDiscard: () => void }
 }) {
   const { title, setTitle, body, setBody, loaded, setLoaded, allowLeave, ready } = useArticleDraft(
@@ -470,10 +470,10 @@ export function useArticleEditor({
   const reasonRef = useRef<HTMLInputElement>(null)
   const draft = { title, body }
   const saveEnabled = ready && isDocSaveEnabled(loaded, draft)
-  const needsConfirmation = !allowLeave.current && docLeaveNeedsConfirmation(loaded, draft)
+  const needsConfirmation = docLeaveNeedsConfirmation(loaded, draft)
   useEffect(
-    () => onLeaveRequest(editing && needsConfirmation),
-    [editing, needsConfirmation, onLeaveRequest],
+    () => onLeaveRequest(() => editing && !allowLeave.current && needsConfirmation),
+    [editing, needsConfirmation, onLeaveRequest, allowLeave],
   )
   const saving = saveAction.pending
   const openSave = useCallback(() => {

@@ -42,11 +42,7 @@ export function CreateDocDialog({
     error: unknown
     refused?: string
   }
-  onCreated: (address: {
-    scope: DocScope
-    subject: string | null
-    slug: string
-  }) => Promise<void>
+  onCreated: (address: { scope: DocScope; subject: string | null; slug: string }) => Promise<void>
 }) {
   const [scope, setScope] = useState<DocScope>('global')
   const [subject, setSubject] = useState('')
