@@ -283,14 +283,12 @@ function resolvedReviewStages(
     state ? { state, floor: 'tracker-transition' } : { state: 'none', floor: 'recorded-artifact' }
   // A declared review-record command writes the review state after the review, so entering
   // review only records that; the state stays named for the steps that close out.
-  const inReview = stage(active)
-  return {
-    waitingReview: stage(waiting),
-    inReview:
-      inReview.state !== 'none' && review?.record
-        ? { ...inReview, floor: 'recorded-artifact' }
-        : inReview,
-  }
+  const declared = stage(active)
+  const inReview: ResolvedReviewStage =
+    declared.state !== 'none' && review?.record
+      ? { ...declared, floor: 'recorded-artifact' }
+      : declared
+  return { waitingReview: stage(waiting), inReview }
 }
 
 function resolvedTracker(
