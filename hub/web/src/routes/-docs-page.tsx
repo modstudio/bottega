@@ -10,8 +10,8 @@ import {
   useDocsIdentity,
   useRevisionView,
 } from '@bottega/hub-data/docs/actions'
-import { useReorderableDocsTree } from '@bottega/hub-data/docs/use-doc-reorder'
 import { useDocsMode } from '@bottega/hub-data/docs/mode'
+import { useReorderableDocsTree } from '@bottega/hub-data/docs/use-doc-reorder'
 import {
   type DocsSource,
   useDocsDocument,
@@ -44,11 +44,7 @@ import {
   resolveDocsReplacement,
 } from '../docs/model.ts'
 import { revisionComparison } from '../docs/revision-diff.ts'
-import {
-  type RevisionMode,
-  RevisionViewer,
-  revisionViewError,
-} from '../docs/revision-viewer.tsx'
+import { type RevisionMode, RevisionViewer, revisionViewError } from '../docs/revision-viewer.tsx'
 import { isScope } from '../docs/scope.ts'
 import { orderedIdsAfterDrag, siblingKey } from '../docs/tree.ts'
 import type { DocsDoc, DocsTreeItem } from '../docs/types.ts'
@@ -121,9 +117,10 @@ function useArticleActions(
   const saveAction = useArticleSave(source, doc, storedDocument?.revision, isScope)
   const fetchCurrentArticle = useCurrentArticle(source, doc, isScope, saveAction.reset)
   const leaveRequest = useRef<() => boolean>(() => false)
+  const shouldBlockLeave = useCallback(() => leaveRequest.current(), [])
   const blocker = useBlocker({
-    shouldBlockFn: () => leaveRequest.current(),
-    enableBeforeUnload: () => leaveRequest.current(),
+    shouldBlockFn: shouldBlockLeave,
+    enableBeforeUnload: shouldBlockLeave,
     withResolver: true,
     disabled: !editing,
   })
@@ -297,7 +294,7 @@ function useDocsRevision(
   return { revisionMode, setRevisionMode, revision }
 }
 
-function useDocsPageModel() {
+function useDocsEnvironment() {
   const { hosted, origin } = routeHubMode()
   const navigate = useNavigate()
   const atDocsRoot = useLocation({ select: (location) => location.pathname === '/docs' })
@@ -308,6 +305,12 @@ function useDocsPageModel() {
     (space) => space.id === whoami.data?.activeSpaceId,
   )?.name
   const mode = useDocsMode(hosted, signedIn, whoami.data?.memberships, activeSpaceName)
+  return { hosted, navigate, atDocsRoot, whoami, signedIn, identityResolved, mode }
+}
+
+function useDocsPageModel() {
+  const { hosted, navigate, atDocsRoot, whoami, signedIn, identityResolved, mode } =
+    useDocsEnvironment()
   const { source } = mode
   const detail = useMatch({ from: '/docs/$scope/$subject/$slug', shouldThrow: false })
   const search = detail?.search

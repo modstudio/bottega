@@ -12,5 +12,3 @@ export function docsLocation(item: DataTreeItem, source: DocsSource) {
     search: source === 'local' ? {} : { id: item.id },
   }
 }
-
-export type DocsLocation = ReturnType<typeof docsLocation>

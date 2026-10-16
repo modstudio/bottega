@@ -90,9 +90,7 @@ export function useDocsDocument<T extends DataTreeItem, D>(
   return { document, isPending: Boolean(selected) && result.isPending, error: result.error }
 }
 
-export function useDocsSearch<
-  T,
->(
+export function useDocsSearch<T>(
   source: DocsSource,
   query: string,
   audience: DocAudience | null,

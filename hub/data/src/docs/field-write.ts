@@ -120,6 +120,11 @@ export function fieldWriteInput(
     ...(stored.revision ? { expectedRevision: stored.revision } : {}),
   }
   return source === 'hosted'
-    ? { ...base, spaceId: doc.spaceId!, expectedRevision: stored.revision!, ...hostedFieldPatch(change) }
+    ? {
+        ...base,
+        spaceId: doc.spaceId!,
+        expectedRevision: stored.revision!,
+        ...hostedFieldPatch(change),
+      }
     : { ...base, ...localFieldPatch(change) }
 }

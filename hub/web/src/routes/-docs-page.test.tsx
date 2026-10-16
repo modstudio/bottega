@@ -1,8 +1,8 @@
 import { afterAll, afterEach, beforeAll, describe, expect, mock, test } from 'bun:test'
-import { GlobalRegistrator } from '@happy-dom/global-registrator'
 import { queryClient, trpc } from '@bottega/hub-data/client'
 import { useArticleSave, useCurrentArticle } from '@bottega/hub-data/docs/actions'
 import { useStoredDocument } from '@bottega/hub-data/docs/use-docs'
+import { GlobalRegistrator } from '@happy-dom/global-registrator'
 import { QueryClientProvider } from '@tanstack/react-query'
 import {
   createMemoryHistory,
@@ -21,14 +21,20 @@ import { DocsPage } from './-docs-page.tsx'
 
 mock.module('../docs/markdown-editor.tsx', () => ({
   MarkdownEditor: ({ value, onChange }: { value: string; onChange: (value: string) => void }) => (
-    <textarea aria-label="Article body" value={value} onChange={(event) => onChange(event.target.value)} />
+    <textarea
+      aria-label="Article body"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    />
   ),
 }))
 
 let testing: typeof TestingLibrary
 let userEvent: typeof userEventLibrary
 let registeredFetch: typeof globalThis.fetch
-let fetchHandler: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+let fetchHandler: (
+  ...args: Parameters<typeof globalThis.fetch>
+) => ReturnType<typeof globalThis.fetch>
 
 beforeAll(async () => {
   GlobalRegistrator.register({ url: 'http://localhost' })
@@ -133,31 +139,31 @@ async function renderEditedDocs() {
   }
 }
 
-test('Keep leaves an unsaved docs edit in place', async () => {
-  const page = await renderEditedDocs()
-  page.router.history.push('/destination')
-  expect(await page.view.findByText('Discard unsaved changes?')).toBeTruthy()
+test('unsaved docs edits require Keep or Discard before navigation', async () => {
+  const kept = await renderEditedDocs()
+  kept.router.history.push('/destination')
+  const dialog = (await kept.view.findByText('Discard unsaved changes?')).closest('dialog')
+  expect(dialog?.open).toBeTrue()
   await testing.act(async () => {
-    testing.fireEvent.click(page.view.getByRole('button', { name: 'Keep editing' }))
+    testing.fireEvent.click(kept.view.getByRole('button', { name: 'Keep editing' }))
     await Promise.resolve()
   })
-  await testing.waitFor(() =>
-    expect(page.view.queryByText('Discard unsaved changes?')).toBeNull(),
-  )
-  expect(page.router.state.location.pathname).toBe('/docs/project/workshop/article')
-})
+  await testing.waitFor(() => expect(dialog?.open).toBeFalse())
+  expect(kept.router.state.location.pathname).toBe('/docs/project/workshop/article')
 
-test('Discard completes navigation away from an unsaved docs edit', async () => {
-  const page = await renderEditedDocs()
-  page.router.history.push('/destination')
-  expect(await page.view.findByText('Discard unsaved changes?')).toBeTruthy()
-  expect(page.router.state.location.pathname).toBe('/docs/project/workshop/article')
+  testing.cleanup()
+  kept.router.history.destroy()
+  queryClient.clear()
+  const discarded = await renderEditedDocs()
+  discarded.router.history.push('/destination')
+  expect(await discarded.view.findByText('Discard unsaved changes?')).toBeTruthy()
+  expect(discarded.router.state.location.pathname).toBe('/docs/project/workshop/article')
   await testing.act(async () => {
-    testing.fireEvent.click(page.view.getByRole('button', { name: 'Discard' }))
+    testing.fireEvent.click(discarded.view.getByRole('button', { name: 'Discard' }))
     await Promise.resolve()
   })
-  expect(await page.view.findByText('Destination reached')).toBeTruthy()
-  expect(page.router.state.location.pathname).toBe('/destination')
+  expect(await discarded.view.findByText('Destination reached')).toBeTruthy()
+  expect(discarded.router.state.location.pathname).toBe('/destination')
 })
 
 const hostedDoc = {
@@ -185,10 +191,9 @@ function useHostedArticleActions() {
 describe('hosted conflict recovery', () => {
   test('reload clears the conflict and the next save uses the refreshed revision', async () => {
     seedQuery(trpc.record.doc.queryOptions({ id: hostedDoc.id }).queryKey, hostedDoc)
-    seedQuery(
-      trpc.record.docRevisions.queryOptions({ id: hostedDoc.id }).queryKey,
-      { items: [{ id: oldRevision }] },
-    )
+    seedQuery(trpc.record.docRevisions.queryOptions({ id: hostedDoc.id }).queryKey, {
+      items: [{ id: oldRevision }],
+    })
     const saveRevisions: string[] = []
     let saves = 0
     fetchHandler = async (input, init) => {
@@ -229,8 +234,7 @@ describe('hosted conflict recovery', () => {
           { status: 200, headers: { 'content-type': 'application/json' } },
         )
       }
-      if (url.includes('record.docRevisions'))
-        return trpcResponse({ items: [{ id: newRevision }] })
+      if (url.includes('record.docRevisions')) return trpcResponse({ items: [{ id: newRevision }] })
       if (url.includes('record.doc'))
         return trpcResponse({ ...hostedDoc, title: 'Current title', body: 'Current body' })
       throw new Error(`unexpected request ${url}`)

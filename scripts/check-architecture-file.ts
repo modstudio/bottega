@@ -10,6 +10,7 @@ import {
 } from './architecture.ts'
 import { runArchitectureCruise } from './architecture-cruise.ts'
 import {
+  hubDataPackageName,
   hubWebDocsModeLiteralLines,
   hubWebDocsModeLiteralRuleName,
 } from './architecture-hub-data.ts'
@@ -55,7 +56,7 @@ if (
   console.log(
     JSON.stringify({
       status: 'refused',
-      findings: [{ rule: hubWebDocsModeLiteralRuleName, dependency: '@bottega/hub-data' }],
+      findings: [{ rule: hubWebDocsModeLiteralRuleName, dependency: hubDataPackageName }],
     }),
   )
   process.exit(0)

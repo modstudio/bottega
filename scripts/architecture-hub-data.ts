@@ -1,4 +1,7 @@
 import ts from 'typescript'
+import { PLATFORM_SLUG } from '../shared/brand.ts'
+
+export const hubDataPackageName = `@${PLATFORM_SLUG}/hub-data`
 
 type ArchitectureRule = {
   name: string
@@ -20,7 +23,13 @@ const HUB_DATA_MODES = new Set(['local', 'hosted', 'public'])
 
 /** Lines where a production docs component names a data adapter mode. */
 export function hubWebDocsModeLiteralLines(source: string): number[] {
-  const file = ts.createSourceFile('candidate.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const file = ts.createSourceFile(
+    'candidate.tsx',
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  )
   const lines: number[] = []
   const visit = (node: ts.Node) => {
     if (
