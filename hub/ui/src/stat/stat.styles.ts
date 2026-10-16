@@ -17,9 +17,9 @@ export const statStyles = variant({
     slot8: '@container/stats mb-6',
   },
   variants: {
-    live: { true: 'text-status-text' },
-    wrapHint: { false: 'truncate' },
-    three: { true: '@3xl/stats:grid-cols-3' },
-    four: { true: '@5xl/stats:grid-cols-4' },
+    live: { true: { figure: 'text-status-text' } },
+    wrapHint: { false: { hint: 'truncate' } },
+    three: { true: { row: '@3xl/stats:grid-cols-3' } },
+    four: { true: { row: '@5xl/stats:grid-cols-4' } },
   },
 })

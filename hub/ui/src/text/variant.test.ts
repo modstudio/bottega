@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { mergeThemeClasses } from './variant.ts'
+import { mergeClasses } from './variant.ts'
 
 describe('theme-aware class merging', () => {
   test.each([
@@ -9,6 +9,6 @@ describe('theme-aware class merging', () => {
     ['shadow-raised border-border-default', 'shadow-raised border-border-default'],
     ['text-sm text-md', 'text-md'],
   ])('merges %s', (classes, expected) => {
-    expect(mergeThemeClasses(classes)).toBe(expected)
+    expect(mergeClasses(classes)).toBe(expected)
   })
 })

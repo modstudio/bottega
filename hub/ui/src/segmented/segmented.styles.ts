@@ -5,7 +5,7 @@ export const segmentedStyles = variant({
     root: 'm-0 inline-flex min-w-0 overflow-hidden border border-border-default p-0',
     slot1: 'sr-only',
   },
-  variants: { size: { sm: 'h-control-sm', md: 'h-control-md' } },
+  variants: { size: { sm: { root: 'h-control-sm' }, md: { root: 'h-control-md' } } },
   defaultVariants: { size: 'sm' },
 })
 

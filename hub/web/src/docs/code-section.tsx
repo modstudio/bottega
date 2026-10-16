@@ -1,4 +1,4 @@
-import { classes } from '@bottega/hub-ui/text/classes'
+import { mergeClasses as classes } from '@bottega/hub-ui/text/variant'
 import { ChevronDown } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
 

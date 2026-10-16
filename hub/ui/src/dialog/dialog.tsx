@@ -3,13 +3,6 @@ import { type ReactNode, useId, useLayoutEffect, useRef } from 'react'
 import { IconButton } from '../button/button'
 import { dialogStyles } from './dialog.styles.ts'
 
-const sizes = {
-  sm: 'w-[min(24rem,calc(100vw-2rem))]',
-  md: 'w-[min(32rem,calc(100vw-2rem))]',
-  lg: 'w-[min(40rem,calc(100vw-2rem))]',
-  full: 'h-dvh w-screen max-w-none',
-} as const
-
 /**
  * A decision the reader answers and dismisses. A modal `<dialog>`: the browser
  * traps focus, makes the page inert and closes on Escape; we add the scrim and
@@ -33,7 +26,7 @@ export function Dialog({
   description?: ReactNode
   /** Actions, right-aligned; the primary action last. */
   footer?: ReactNode
-  size?: keyof typeof sizes
+  size?: 'sm' | 'md' | 'lg' | 'full'
   variant?: 'default' | 'chromeless'
   /** Layout only: margin, size and placement. */
   className?: string

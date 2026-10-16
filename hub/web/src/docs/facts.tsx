@@ -1,5 +1,5 @@
 import { Tabs } from '@bottega/hub-ui/tabs'
-import { classes } from '@bottega/hub-ui/text/classes'
+import { mergeClasses as classes } from '@bottega/hub-ui/text/variant'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown } from 'lucide-react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'

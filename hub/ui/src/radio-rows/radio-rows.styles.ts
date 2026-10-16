@@ -13,8 +13,8 @@ export const radioRowsStyles = variant({
   },
   variants: {
     selected: {
-      true: 'border-accent-fill bg-surface-page text-text-primary',
-      false: 'border-border-default bg-surface-sunken text-text-secondary',
+      true: { option: 'border-accent-fill bg-surface-page text-text-primary' },
+      false: { option: 'border-border-default bg-surface-sunken text-text-secondary' },
     },
   },
 })

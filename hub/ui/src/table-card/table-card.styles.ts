@@ -21,5 +21,5 @@ export const tableCardStyles = variant({
     slot13: '@container/rows relative min-w-0 overflow-auto',
     slot14: 'border-border-default border-t px-3 py-2',
   },
-  variants: { panel: { true: 'border-r-0' } },
+  variants: { panel: { true: { card: 'border-r-0' } } },
 })

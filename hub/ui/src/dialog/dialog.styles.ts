@@ -13,14 +13,14 @@ export const dialogStyles = variant({
   },
   variants: {
     size: {
-      sm: 'w-[min(24rem,calc(100vw-2rem))]',
-      md: 'w-[min(32rem,calc(100vw-2rem))]',
-      lg: 'w-[min(40rem,calc(100vw-2rem))]',
-      full: 'h-dvh w-screen max-w-none',
+      sm: { root: 'w-[min(24rem,calc(100vw-2rem))]' },
+      md: { root: 'w-[min(32rem,calc(100vw-2rem))]' },
+      lg: { root: 'w-[min(40rem,calc(100vw-2rem))]' },
+      full: { root: 'h-dvh w-screen max-w-none' },
     },
     chromeless: {
-      true: 'fixed inset-x-0 mx-auto',
-      false: 'fixed inset-0 m-auto max-h-[calc(100dvh-2rem)]',
+      true: { root: 'fixed inset-x-0 mx-auto' },
+      false: { root: 'fixed inset-0 m-auto max-h-[calc(100dvh-2rem)]' },
     },
   },
   defaultVariants: { size: 'md', chromeless: false },

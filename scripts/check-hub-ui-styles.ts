@@ -4,12 +4,12 @@ import { basename, dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Glob } from 'bun'
 import ts from 'typescript'
-import { themeKeys } from '../hub/ui/src/text/variant.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const UI_SOURCE = join(ROOT, 'hub/ui/src')
 const GRIT_PATH = join(ROOT, 'hub/web/lint/layout-only-classname.grit')
 const violations: string[] = []
+const variantSource = readFileSync(join(UI_SOURCE, 'text/variant.ts'), 'utf8')
 
 const namespaces = {
   color: 'color',
@@ -33,8 +33,11 @@ for (const match of css.matchAll(
   if (!cssNamespace || !key || key === '*' || key.includes('--')) continue
   actualKeys[namespaces[cssNamespace as keyof typeof namespaces]].add(key)
 }
-for (const namespace of Object.keys(themeKeys) as Array<keyof typeof themeKeys>) {
-  const declared = new Set<string>(themeKeys[namespace])
+for (const namespace of Object.values(namespaces)) {
+  const match = variantSource.match(new RegExp(`\\b${namespace}: \\[(.*?)\\]`, 's'))
+  const declared = new Set<string>(
+    [...(match?.[1] ?? '').matchAll(/'([^']+)'/g)].map((entry) => entry[1]!),
+  )
   const actual = actualKeys[namespace]
   for (const key of actual) {
     if (!declared.has(key))

@@ -2,22 +2,8 @@ import type { ButtonHTMLAttributes, ReactElement, Ref } from 'react'
 import { renderAs } from '../dom/render'
 import { buttonStyles, iconButtonStyles, textButtonStyles } from './button.styles.ts'
 
-const variants = {
-  primary: 'bg-accent-fill text-accent-on-fill hover:bg-accent-fill-hover',
-  secondary:
-    'border border-border-default bg-surface-page text-text-primary hover:bg-control-hover active:bg-control-pressed',
-  ghost: 'text-text-primary hover:bg-control-hover active:bg-control-pressed',
-  danger: 'bg-status-fill text-status-on-fill hover:bg-status-fill-hover',
-} as const
-
-const sizes = {
-  sm: 'h-control-sm gap-1.5 px-2.5 text-sm [&_svg]:size-3.5',
-  md: 'h-control-md gap-2 px-3.5 text-base [&_svg]:size-4',
-  lg: 'h-control-lg gap-2 px-5 text-md [&_svg]:size-4',
-} as const
-
-type ButtonVariant = keyof typeof variants
-type ButtonSize = keyof typeof sizes
+type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
+type ButtonSize = 'sm' | 'md' | 'lg'
 
 type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'> & {
   ref?: Ref<HTMLButtonElement>

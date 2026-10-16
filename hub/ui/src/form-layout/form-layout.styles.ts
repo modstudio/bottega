@@ -15,5 +15,5 @@ export const formLayoutStyles = variant({
     slot10: 'min-w-0 break-words',
     slot11: 'min-w-0 flex-1 break-all font-mono',
   },
-  variants: { compact: { true: 'text-sm text-text-muted' } },
+  variants: { compact: { true: { copyable: 'text-sm text-text-muted' } } },
 })

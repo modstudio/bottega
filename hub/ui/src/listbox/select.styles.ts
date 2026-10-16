@@ -14,10 +14,13 @@ export const selectStyles = variant({
     slot4: 'text-sm text-text-muted',
   },
   variants: {
-    size: { sm: 'h-control-sm px-2 text-sm', md: 'h-control-md px-3' },
-    active: { true: 'bg-control-hover' },
-    disabled: { true: 'cursor-not-allowed text-text-disabled' },
-    selected: { true: 'opacity-100', false: 'opacity-0' },
+    size: {
+      sm: { trigger: 'h-control-sm px-2 text-sm' },
+      md: { trigger: 'h-control-md px-3' },
+    },
+    active: { true: { option: 'bg-control-hover' } },
+    disabled: { true: { option: 'cursor-not-allowed text-text-disabled' } },
+    selected: { true: { check: 'opacity-100' }, false: { check: 'opacity-0' } },
   },
   defaultVariants: { size: 'md' },
 })

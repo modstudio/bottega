@@ -10,10 +10,10 @@ export const toolbarBandStyles = variant({
     slot5: 'sr-only',
   },
   variants: {
-    search: { true: 'grow' },
+    search: { true: { cell: 'grow' } },
     searching: {
-      true: 'grow-0 border-x-0 opacity-0',
-      false: 'grow opacity-100',
+      true: { cell: 'grow-0 border-x-0 opacity-0' },
+      false: { cell: 'grow opacity-100' },
     },
   },
 })

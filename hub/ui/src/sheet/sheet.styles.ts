@@ -18,9 +18,9 @@ export const sheetStyles = variant({
   },
   variants: {
     size: {
-      default: 'w-(--sheet-w)',
-      wide: 'w-(--sheet-w-wide)',
-      document: 'w-(--sheet-w-document)',
+      default: { root: 'w-(--sheet-w)' },
+      wide: { root: 'w-(--sheet-w-wide)' },
+      document: { root: 'w-(--sheet-w-document)' },
     },
   },
   defaultVariants: { size: 'default' },

@@ -3,12 +3,6 @@ import { type ReactNode, useId, useLayoutEffect, useRef } from 'react'
 import { IconButton } from '../button/button'
 import { sheetStyles } from './sheet.styles.ts'
 
-const sizes = {
-  default: 'w-(--sheet-w)',
-  wide: 'w-(--sheet-w-wide)',
-  document: 'w-(--sheet-w-document)',
-} as const
-
 /**
  * A record's settings, edited and closed. It covers the page and makes it
  * inert, but draws no scrim, because the list beside it is what the record
@@ -40,7 +34,7 @@ export function Sheet({
   context?: ReactNode
   footer?: ReactNode
   destructive?: ReactNode
-  size?: keyof typeof sizes
+  size?: 'default' | 'wide' | 'document'
   children: ReactNode
 }) {
   const ref = useRef<HTMLDialogElement>(null)

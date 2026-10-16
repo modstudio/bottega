@@ -63,5 +63,5 @@ const mergeConfig = {
   },
 } satisfies TWMergeConfig
 
-export const mergeThemeClasses = extendTailwindMerge(mergeConfig)
+export const mergeClasses = extendTailwindMerge(mergeConfig)
 export const variant = createTV({ twMergeConfig: mergeConfig })

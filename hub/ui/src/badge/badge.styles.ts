@@ -9,10 +9,10 @@ export const badgeStyles = variant({
   },
   variants: {
     emphasis: {
-      subtle: 'border-status-border bg-status-surface text-status-text',
-      solid: 'border-transparent bg-status-fill text-status-on-fill',
+      subtle: { root: 'border-status-border bg-status-surface text-status-text' },
+      solid: { root: 'border-transparent bg-status-fill text-status-on-fill' },
     },
-    identifier: { true: 'font-mono' },
+    identifier: { true: { root: 'font-mono' } },
   },
   defaultVariants: { emphasis: 'subtle' },
 })

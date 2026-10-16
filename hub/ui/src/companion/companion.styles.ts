@@ -17,9 +17,10 @@ export const companionStyles = variant({
   },
   variants: {
     phone: {
-      true: 'fixed inset-0 z-(--z-sheet)',
-      false:
-        'relative sticky top-[calc(var(--topbar-h)+1rem)] max-h-[calc(100dvh-var(--topbar-h)-2rem)] shrink-0 self-start border border-border-default',
+      true: { root: 'fixed inset-0 z-(--z-sheet)' },
+      false: {
+        root: 'relative sticky top-[calc(var(--topbar-h)+1rem)] max-h-[calc(100dvh-var(--topbar-h)-2rem)] shrink-0 self-start border border-border-default',
+      },
     },
   },
 })

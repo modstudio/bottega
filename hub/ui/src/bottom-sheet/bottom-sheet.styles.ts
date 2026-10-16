@@ -12,6 +12,6 @@ export const bottomSheetStyles = variant({
       'flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4 [&_button[role=combobox]]:w-full',
   },
   variants: {
-    dragging: { false: 'transition-[translate,height] duration-(--duration-base)' },
+    dragging: { false: { root: 'transition-[translate,height] duration-(--duration-base)' } },
   },
 })

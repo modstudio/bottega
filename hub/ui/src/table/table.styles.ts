@@ -6,21 +6,17 @@ export const tableStyles = variant({
     slot1: 'sticky top-0 z-(--z-sticky) bg-surface-page',
     slot2: '[&>tr:last-child]:border-b-0',
   },
-  variants: {
-    nested: { true: 'bg-surface-raised text-text-secondary' },
-    interactive: {
-      true: 'cursor-pointer outline-none hover:bg-control-hover focus-visible:bg-control-hover focus-visible:shadow-[inset_2px_0_0_var(--focus-color)]',
-    },
-    selected: { true: 'bg-surface-sunken shadow-[inset_2px_0_0_var(--accent-fill)]' },
-    numeric: { true: 'whitespace-nowrap text-right tabular-nums' },
-    nowrap: { true: 'whitespace-nowrap' },
-    muted: { true: 'text-text-muted' },
-  },
 })
 
 export const tableRowStyles = variant({
   base: 'h-row border-border-subtle border-b',
-  variants: tableStyles.variants,
+  variants: {
+    selected: { true: 'bg-surface-sunken shadow-[inset_2px_0_0_var(--accent-fill)]' },
+    nested: { true: 'bg-surface-raised text-text-secondary' },
+    interactive: {
+      true: 'cursor-pointer outline-none hover:bg-control-hover focus-visible:bg-control-hover focus-visible:shadow-[inset_2px_0_0_var(--focus-color)]',
+    },
+  },
 })
 
 export const tableHeadStyles = variant({
