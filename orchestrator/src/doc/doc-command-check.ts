@@ -9,7 +9,6 @@ import { type UnknownCommandMention, unknownCommandMentions } from './doc-comman
 
 export type CustomerGuideCommandCheck = {
   findings: UnknownCommandMention[]
-  warning: string | null
 }
 
 export type CustomerGuideCommandInput = {
@@ -24,24 +23,15 @@ const loadGeneratedCommands = (): readonly string[] =>
 
 export function checkCustomerGuideCommands(
   input: CustomerGuideCommandInput,
-  loadCommands: () => readonly string[] = loadGeneratedCommands,
 ): CustomerGuideCommandCheck {
   if (
     input.kind !== 'article' ||
     input.form === 'reference' ||
     !input.audiences.includes('customer')
   ) {
-    return { findings: [], warning: null }
+    return { findings: [] }
   }
-  try {
-    return { findings: unknownCommandMentions(input.body, loadCommands()), warning: null }
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error)
-    return {
-      findings: [],
-      warning: `customer guide command check unavailable: ${detail}; the write was allowed`,
-    }
-  }
+  return { findings: unknownCommandMentions(input.body, loadGeneratedCommands()) }
 }
 
 export function customerGuideCommandRefusal(
@@ -55,27 +45,23 @@ export function customerGuideCommandRefusal(
   )
 }
 
-function assertCustomerGuideCommands(
-  input: CustomerGuideCommandInput,
-  loadCommands?: () => readonly string[],
-): string | null {
-  const checked = checkCustomerGuideCommands(input, loadCommands)
+function assertCustomerGuideCommands(input: CustomerGuideCommandInput): void {
+  const checked = checkCustomerGuideCommands(input)
   const refusal = customerGuideCommandRefusal(checked.findings)
   if (refusal) throw new Error(refusal)
-  return checked.warning
 }
 
 function assertDocCommands(
-  input: { body: string; loadKnownCommands?: () => readonly string[] },
+  input: { body: string },
   fields: Omit<CustomerGuideCommandInput, 'body' | 'audiences'> & { audiences: DocAudiences },
-): string | null {
-  return assertCustomerGuideCommands({ body: input.body, ...fields }, input.loadKnownCommands)
+): void {
+  assertCustomerGuideCommands({ body: input.body, ...fields })
 }
 
 export function assertDocBodyCommands(
-  input: { body: string; loadKnownCommands?: () => readonly string[] },
+  input: { body: string },
   fields: Omit<CustomerGuideCommandInput, 'body' | 'audiences'> & { audiences: DocAudiences },
-): string | null {
+): void {
   assertDocSections(input.body, fields.audiences)
-  return assertDocCommands(input, fields)
+  assertDocCommands(input, fields)
 }

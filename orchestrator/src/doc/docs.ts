@@ -11,6 +11,7 @@ import {
   DOC_SCOPE_SUBJECT_KIND,
   DOC_SCOPES,
   type DocAudience,
+  type DocAudiences,
   type DocScope,
   type DocStatus,
 } from '../../../shared/docs.ts'
@@ -88,6 +89,13 @@ import {
   executeLocalDocRestore,
   executeLocalDocSet,
 } from './local-doc-write.ts'
+
+function assertLocalRestoreCommands(revision: DocRevision, audiences: DocAudiences): void {
+  assertDocBodyCommands(
+    { body: revision.body },
+    { kind: revision.kind, form: revision.form, audiences },
+  )
+}
 
 export type { Doc, DocRevision, DocRevisionMetadata }
 
@@ -379,7 +387,7 @@ async function setDocWithOp(
   const { form, articleSubject, relatedSubjects, sourceFiles, checkedAgainstCommit } =
     resolveLocalDocArticleFields(input, prior, kind, projectName)
   const tree = localDocTreeFields(input, prior)
-  const commandWarning = assertDocBodyCommands(input, { kind, form, audiences: tree.audiences })
+  assertDocBodyCommands(input, { kind, form, audiences: tree.audiences })
   const lifecycle = localDocumentLifecycle(input, prior)
   assertLocalArticleDelivery(input, delivery, kind)
   assertDocWriteAllowed({ ...input, delivery })
@@ -462,7 +470,7 @@ async function setDocWithOp(
       })
     },
   })
-  return commandWarning ? { ...written, writeWarnings: [commandWarning] } : written
+  return written
 }
 
 export async function setDoc(input: DocWriteInput): Promise<Doc & { writeWarnings?: string[] }> {
@@ -935,7 +943,7 @@ export async function restoreDoc(
     },
     current,
   )
-  assertDocSections(revision.body, tree.audiences)
+  assertLocalRestoreCommands(revision, tree.audiences)
   return applyRecordWriteAuthority({
     // A removed local document has no live row retaining its document UUID. Restore mints a
     // new document UUID while its revision history remains continuous by address.

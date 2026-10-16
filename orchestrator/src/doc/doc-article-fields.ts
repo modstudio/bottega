@@ -31,7 +31,6 @@ export type DocWriteContext = {
   canonTree?: CanonWriteTree
   collectCanonLintInput?: CanonLintInputCollector
   generator?: DocGenerator
-  loadKnownCommands?: () => readonly string[]
 }
 
 export type DocWriteInput = {

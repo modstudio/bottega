@@ -12,8 +12,7 @@ export function checkRecordCommands(
   kind: string,
   form: string | null,
   audiences: readonly string[],
-): string | null {
+): void {
   const checked = checkCustomerGuideCommands({ body: input.body, kind, form, audiences })
   assertWrite(customerGuideCommandRefusal(checked.findings))
-  return checked.warning
 }

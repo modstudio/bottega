@@ -8,6 +8,7 @@ export type UnknownCommandMention = {
 }
 
 const COMMAND_PREFIXES = [PLATFORM_SLUG, 'orch', 'hub'] as const
+type Fence = { marker: '`' | '~'; length: number }
 
 function commandTokens(text: string): string[] {
   const tokens = text.trim().split(/\s+/)
@@ -18,7 +19,8 @@ function commandTokens(text: string): string[] {
       token.startsWith('-') ||
       token.startsWith('<') ||
       token.startsWith('[') ||
-      token.includes('=')
+      token.includes('=') ||
+      /^[A-Z][A-Z0-9_-]*$/.test(token)
     )
       break
     if (!/^\w[\w-]*$/.test(token)) break
@@ -27,20 +29,32 @@ function commandTokens(text: string): string[] {
   return command.length > 1 ? command : []
 }
 
+function fenceTransition(line: string, fence: Fence | null): Fence | null | undefined {
+  const marker = line.match(/^\s*(`{3,}|~{3,})/)?.[1]
+  if (!marker) return undefined
+  if (!fence) return { marker: marker[0] as Fence['marker'], length: marker.length }
+  if (marker[0] === fence.marker && marker.length >= fence.length) return null
+  return undefined
+}
+
+function fencedCommandLines(line: string): string[] {
+  return line
+    .split(/\|\||&&|[|;]/)
+    .map((segment) => segment.trimStart().replace(/^[$%]\s+/, ''))
+    .filter((text) => COMMAND_PREFIXES.some((prefix) => text.startsWith(`${prefix} `)))
+}
+
 function markdownCommandLines(body: string): string[] {
   const mentions: string[] = []
-  let fence = false
+  let fence: Fence | null = null
   for (const line of body.split('\n')) {
-    if (/^\s*```/.test(line)) {
-      fence = !fence
+    const transitioned = fenceTransition(line, fence)
+    if (transitioned !== undefined) {
+      fence = transitioned
       continue
     }
-    if (fence) {
-      const text = line.trimStart()
-      if (COMMAND_PREFIXES.some((prefix) => text.startsWith(`${prefix} `))) mentions.push(text)
-      continue
-    }
-    for (const match of line.matchAll(/`([^`\n]+)`/g)) mentions.push(match[1]!)
+    if (fence) mentions.push(...fencedCommandLines(line))
+    else for (const match of line.matchAll(/`([^`\n]+)`/g)) mentions.push(match[1]!)
   }
   return mentions
 }
