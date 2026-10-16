@@ -77,8 +77,8 @@ queue tests each pull request on top of the current trunk before it lands. The
 local gate, `bun run check`, runs the fast static checks; run it before opening
 the pull request.
 
-The pull-request rule is procedural rather than mechanically protected. Follow
-it regardless, and buy enforcement only after an observed violation.
+A ruleset on the landing branch requires the merge queue and the `ci` check, so
+no change reaches trunk outside a pull request.
 
 CI proves the commit; the merge queue admits it. A check that skips what it
 cannot provision is informational, not a gate, because running nothing proves
