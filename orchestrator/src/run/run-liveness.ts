@@ -1,6 +1,6 @@
 // concern: run-liveness
 /**
- * Knows process and chain liveness, stale transition, audit, and root roll-up. Must not know routing, transports, reviews, or CLI adapters.
+ * Knows process and chain liveness, stale transition, audit, root roll-up, and the paired run-record enqueue. Must not know routing, transports, reviews, or CLI adapters.
  */
 
 import type { Database } from 'bun:sqlite'

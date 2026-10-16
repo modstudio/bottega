@@ -849,7 +849,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       parentRunId: claimIdentity(opts.resume).parent_run_id,
       error,
       machineId: localMachineId,
-      finishedAt,
+      finishedAt: nowIso(),
     })
     teardownTerminalRunResources(db(), claim.id)
     console.error(`orch: ${error}`)
