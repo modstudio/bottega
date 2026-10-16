@@ -2,11 +2,12 @@
 /** Host-side execution of gate requests recorded by sandboxed repository workers. */
 
 import { spawn, spawnSync } from 'node:child_process'
-import { closeSync, mkdirSync, openSync, writeSync } from 'node:fs'
+import { closeSync, mkdirSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { workerGateEnvironment } from '../issue/issue-shell.ts'
+import { createNoFollowFile } from '../no-follow-file.ts'
 import type { MainStackConsumer } from '../project/project-settings.ts'
 import { ensureMainStackStarted } from '../resources/main-stack.ts'
 import { resolveReviewMergeBase } from '../review/review-target.ts'
@@ -125,6 +126,47 @@ async function waitForExit(child: ReturnType<typeof spawn>): Promise<void> {
   })
 }
 
+function createGateLog(path: string): number {
+  try {
+    return createNoFollowFile(path)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+      throw new Error(`gate log path is occupied: ${path}; gate did not run`)
+    }
+    throw error
+  }
+}
+
+function recordFinishedGate(input: {
+  requestId: number
+  finishedAt: string
+  exitCode: number
+  timedOut: boolean
+  elapsedMs: number
+  tail: string
+  artifactPath: string | null
+  cancelledReason: string | null
+  command: string | null
+}): void {
+  db()
+    .query(
+      `UPDATE gate_execution SET finished_at=?,exit_code=?,timed_out=?,elapsed_ms=?,
+       output_tail=?,output_artifact=?,cancelled_reason=?,resolved_command=COALESCE(resolved_command,?)
+       WHERE id=?`,
+    )
+    .run(
+      input.finishedAt,
+      input.exitCode,
+      input.timedOut ? 1 : 0,
+      input.elapsedMs,
+      input.tail,
+      input.artifactPath,
+      input.cancelledReason,
+      input.command,
+      input.requestId,
+    )
+}
+
 function startGateExecution(
   request: PendingGate,
   scratchDir: string,
@@ -153,18 +195,20 @@ function startGateExecution(
     mkdirSync(scratchDir, { recursive: true })
     const scratchPath = join(scratchDir, `gate-${request.id}.log`)
     const artifactPath = join(runArtifactsDir(request.run_id), `gate-${request.id}.log`)
-    const fd = openSync(scratchPath, 'w')
     const started = Date.now()
+    let fd: number | null = null
     let tail = ''
     let timedOut = false
     let exitCode = -1
     let command: string | null = null
     const record = (chunk: Buffer | string) => {
       const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+      if (fd === null) throw new Error('gate log is not open')
       writeSync(fd, bytes)
       tail = boundedGateOutputTail(tail + bytes.toString())
     }
     try {
+      fd = createGateLog(scratchPath)
       const plan = gatePlan(request.run_id)
       const mainCheckout = environment.ORCH_MAIN_CHECKOUT
       if (!mainCheckout) throw new Error(`run ${request.run_id} has no recorded main checkout`)
@@ -217,30 +261,24 @@ function startGateExecution(
       if (timedOut) record(`\ngate timed out after ${GATE_COMMAND_TIMEOUT_MS}ms\n`)
     } catch (error) {
       const line = `gate broker failed: ${String(error)}\n`
-      writeSync(fd, line)
+      if (fd !== null) writeSync(fd, line)
       tail = boundedGateOutputTail(tail + line)
       if (termination) throw error
     } finally {
-      closeSync(fd)
+      if (fd !== null) closeSync(fd)
     }
     finishedAt = nowIso()
-    db()
-      .query(
-        `UPDATE gate_execution SET finished_at=?,exit_code=?,timed_out=?,elapsed_ms=?,
-         output_tail=?,output_artifact=?,cancelled_reason=?,resolved_command=COALESCE(resolved_command,?)
-         WHERE id=?`,
-      )
-      .run(
-        finishedAt,
-        exitCode,
-        timedOut ? 1 : 0,
-        Date.now() - started,
-        tail,
-        artifactPath,
-        cancelledReason,
-        command,
-        request.id,
-      )
+    recordFinishedGate({
+      requestId: request.id,
+      finishedAt,
+      exitCode,
+      timedOut,
+      elapsedMs: Date.now() - started,
+      tail,
+      artifactPath: fd === null ? null : artifactPath,
+      cancelledReason,
+      command,
+    })
   })()
     .finally(() => onFinish?.({ executionId: request.id, at: finishedAt ?? nowIso() }))
     .finally(unregister)

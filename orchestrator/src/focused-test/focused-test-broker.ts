@@ -9,6 +9,7 @@ import { appendRunEvent } from '../events.ts'
 import { brokerGateEnvironment, GATE_COMMAND_TIMEOUT_MS } from '../gate/gate-decision.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { workerGateEnvironment } from '../issue/issue-shell.ts'
+import { createNoFollowFile } from '../no-follow-file.ts'
 import type { MainStackConsumer } from '../project/project-settings.ts'
 import { ensureMainStackStarted } from '../resources/main-stack.ts'
 import {
@@ -20,7 +21,6 @@ import {
   parseFocusedTestRunner,
 } from './focused-test-decision.ts'
 import {
-  createFocusedTestFile,
   ensureFocusedTestDirectory,
   focusedTestFileExists,
   readFocusedTestRegularFile,
@@ -146,7 +146,7 @@ function startFocusedTest(input: {
   completion = (async () => {
     const logName = `focused-test-${input.request.id}.log`
     const logPath = join(input.scratchDir, logName)
-    const fd = createFocusedTestFile(logPath)
+    const fd = createNoFollowFile(logPath)
     const started = Date.now()
     let outputTail = ''
     let exitCode = -1

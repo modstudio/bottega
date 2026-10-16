@@ -31,6 +31,7 @@ import {
 } from '../../../shared/state-directory.ts'
 import { ROOT } from '../database/db.ts'
 import { disabledProjectMcpServers } from '../mcp/mcp-probe.ts'
+import { createNoFollowFile } from '../no-follow-file.ts'
 import { type Project, projectAt } from '../project/projects.ts'
 import { launchWithSandboxRuntime, resetSandboxRuntime } from './sandbox-runtime.ts'
 
@@ -770,11 +771,7 @@ function secureCodexConfig(configSource: string, configTarget: string): void {
     const config = withoutRegisteredOrchAskServer(readFileSync(configSource, 'utf8'))
     let descriptor: number
     try {
-      descriptor = openSync(
-        configTarget,
-        fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW,
-        0o600,
-      )
+      descriptor = createNoFollowFile(configTarget)
     } catch {
       throw codexConfigRefusal(configTarget)
     }

@@ -15,7 +15,10 @@ export const focusedTestModules: ArchitectureModule[] = [
     'node:path',
     './focused-test-decision.ts',
   ]),
-  module('orchestrator/src/focused-test/focused-test-files.ts', ['node:fs']),
+  module('orchestrator/src/focused-test/focused-test-files.ts', [
+    'node:fs',
+    '../no-follow-file.ts',
+  ]),
   module('orchestrator/src/focused-test/focused-test-request.ts', [
     'node:crypto',
     'node:fs',
@@ -47,6 +50,7 @@ export const focusedTestModules: ArchitectureModule[] = [
     '../gate/gate-decision.ts',
     '../idle-kill.ts',
     '../issue/issue-shell.ts',
+    '../no-follow-file.ts',
     '../project/project-settings.ts',
     '../resources/main-stack.ts',
     './focused-test-decision.ts',
