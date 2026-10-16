@@ -293,6 +293,11 @@ function printFailedLegTails(results: LegResult[]) {
 
 if ((await inherit(['bun', 'install', '--silent'])) !== 0) process.exit(1)
 
+const dependencyAuditExitCode = await inherit(['bun', 'scripts/check-dependency-audit.ts'], root, {
+  check: 'dependency audit',
+})
+if (dependencyAuditExitCode !== 0) process.exit(1)
+
 const rootTests = [
   // Every .githooks test must be named here. The list is explicit rather than a
   // glob so this runs in a fixed order, and the cost of that is
@@ -301,6 +306,7 @@ const rootTests = [
   'bun',
   'test',
   './scripts/check-machine-state.test.ts',
+  './scripts/check-dependency-audit.test.ts',
   './scripts/check-runtime.test.ts',
   './scripts/check-ci-workflow.test.ts',
   './scripts/check-outcome.test.ts',

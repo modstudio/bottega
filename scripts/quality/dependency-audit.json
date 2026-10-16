@@ -1,0 +1,18 @@
+[
+  {
+    "id": 1241206,
+    "package": "katex"
+  },
+  {
+    "id": 1240912,
+    "package": "node-forge"
+  },
+  {
+    "id": 1241205,
+    "package": "smol-toml"
+  },
+  {
+    "id": 1241209,
+    "package": "source-map-js"
+  }
+]
