@@ -12,6 +12,7 @@ import {
   resolveHubDatabase,
   type StateEnvironment,
 } from '../../shared/state-directory.ts'
+import { assertTestHubDatabasePath } from '../../shared/test-hub-database.ts'
 import {
   applyMigrations,
   migrationRefusal,
@@ -49,7 +50,6 @@ export function resolveHubRuntime(
     ),
   }
 }
-
 const runtime = resolveHubRuntime(checkout, process.env)
 const linkedCheckout = runtime.linkedCheckout
 const livePath = runtime.livePath
@@ -70,23 +70,6 @@ function legacyDatabaseRefusal(): string | null {
       destinationStore: DB_PATH,
     },
   )
-}
-
-/** A test process never falls back to the live hub store; production still does. */
-export function decideHubDatabasePath(
-  isTestProcess: boolean,
-  hubDb: string | undefined,
-  liveStore: string | null,
-): string | null {
-  if (hubDb) return hubDb
-  if (isTestProcess) {
-    throw new Error(
-      `test process refuses hub database: HUB_DB resolved <unset>; live store is ${liveStore ?? '<none>'}\n` +
-        'invariant: A test suite never falls back to the live hub database.\n' +
-        'cleared by: set HUB_DB to a scratch store before importing hub/src/db.ts',
-    )
-  }
-  return liveStore
 }
 
 function authorizedHubInstallation(): boolean {
@@ -178,7 +161,7 @@ function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
 export function db(): Database {
   if (handle) return refuseOrReloadStaleSchema(handle, false)
   // bun test sets NODE_ENV=test; an unset HUB_DB must not fall back to the live store.
-  decideHubDatabasePath(process.env.NODE_ENV === 'test', process.env.HUB_DB, livePath)
+  assertTestHubDatabasePath()
   requireDatabase()
   const d = new Database(DB_PATH!, { readwrite: true, create: false })
   d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')

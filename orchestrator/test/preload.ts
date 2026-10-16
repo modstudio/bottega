@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../shared/config-directory.ts'
-import { createTestHubDatabaseGuard } from '../../shared/test-hub-database.ts'
+import { createTestHubDatabaseGuard, mintTestHubDatabase } from '../../shared/test-hub-database.ts'
 import { WORKER_ENVIRONMENT_MARKERS } from '../src/caller-classification.ts'
 
 const discoveryEnv = Object.fromEntries(
@@ -68,7 +68,7 @@ process.env[CONFIG_HOME_ENV] = configDir
 process.env[HARNESS_ENV_FILE_ENV] = ''
 delete process.env.ORCH_RECORD_API_URL
 process.env.ORCH_DB = store
-process.env.HUB_DB = join(dir, FROZEN_STATE_NAMES.hubDatabase)
+const { directory: hubDatabaseDir } = mintTestHubDatabase(FROZEN_STATE_NAMES.hubDatabase)
 process.env.ORCH_RUNS = join(dir, FROZEN_STATE_NAMES.runsDirectory)
 // A fixture landing runs a gate of its own. It must count only fixture gates:
 // with the machine's pid directory inherited, a landing spawned inside a gate
@@ -284,5 +284,6 @@ afterAll(() => {
   }
   Object.assign(process.env, inheritedGitConfig)
   rmSync(configDir, { recursive: true, force: true })
+  rmSync(hubDatabaseDir, { recursive: true, force: true })
   rmSync(dir, { recursive: true, force: true })
 })
