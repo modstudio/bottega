@@ -265,6 +265,7 @@ function resolvedReviewStages(
   projectName: string,
   tracker: TrackerSettings,
   protocol: TrackerProtocol,
+  review: ReviewSettings | undefined,
 ) {
   const reviewStates = Object.entries(tracker.states ?? {}).flatMap(([raw, category]) =>
     category === 'review' ? [raw] : [],
@@ -280,7 +281,14 @@ function resolvedReviewStages(
   const active = tracker.reviewStages?.active ?? reviewStates[0]
   const stage = (state: string | undefined): ResolvedReviewStage =>
     state ? { state, floor: 'tracker-transition' } : { state: 'none', floor: 'recorded-artifact' }
-  return { waitingReview: stage(waiting), inReview: stage(active) }
+  // A declared review-record command writes the review state after the review, so entering
+  // review only records that; the state stays named for the steps that close out.
+  const declared = stage(active)
+  const inReview: ResolvedReviewStage =
+    declared.state !== 'none' && review?.record
+      ? { ...declared, floor: 'recorded-artifact' }
+      : declared
+  return { waitingReview: stage(waiting), inReview }
 }
 
 function resolvedTracker(
@@ -304,7 +312,12 @@ function resolvedTracker(
       return raw ? [[category, raw]] : protocol === 'hub' ? [[category, category]] : []
     }),
   ) as ResolvedTracker['states']
-  const reviewStages = resolvedReviewStages(project.name, tracker, protocol)
+  const reviewStages = resolvedReviewStages(
+    project.name,
+    tracker,
+    protocol,
+    project.settings.review,
+  )
   if (reviewStages.inReview.state !== 'none') states.review = reviewStages.inReview.state
   return {
     kind: tracker.kind ?? protocol,
