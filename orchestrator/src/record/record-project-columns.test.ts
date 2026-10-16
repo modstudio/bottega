@@ -22,6 +22,11 @@ const samples = {
   mcp: { setting: { probe_tool: 'ping' }, column: 'mcpProbeTool', value: 'ping' },
   mcpServer: { setting: 'orch', column: 'mcpServer', value: 'orch' },
   productionBranch: { setting: 'production', column: 'productionBranch', value: 'production' },
+  reference: {
+    setting: { directory: 'docs/reference', publish: 'publish-reference' },
+    column: 'reference',
+    value: { directory: 'docs/reference', publish: 'publish-reference' },
+  },
   release: { setting: { depth: 'pr' }, column: 'release', value: { depth: 'pr' } },
   requireCleanMain: { setting: false, column: 'requireCleanMain', value: false },
   secretPaths: { setting: ['secret'], column: 'secretPaths', value: ['secret'] },

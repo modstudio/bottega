@@ -105,7 +105,7 @@ export async function upsertHostedProjectRow(
       id, space_id, name, key_prefixes, checkout_path, stack, canon, managed_context,
       landing_branch, production_branch, gate, focused_tests, require_clean_main, color,
       color_dark, env_prefix, mcp_server, worker_mcp_servers, secret_paths,
-      mcp_probe_tool, mcp_reader_tools, docs, signals, review, test_substance, mechanical_checks, release, states, tracker, worktree, retired_at, created_at
+      mcp_probe_tool, mcp_reader_tools, docs, reference, signals, review, test_substance, mechanical_checks, release, states, tracker, worktree, retired_at, created_at
     ) VALUES (
       ${id}::uuid, ${input.spaceId}::uuid, ${input.name}, ${tx.array(columns.keyPrefixes, 'text')},
       ${input.path}, ${input.stack}, ${input.canon}, ${columns.managedContext},
@@ -116,6 +116,7 @@ export async function upsertHostedProjectRow(
       ${postgresTextArray(tx, columns.secretPaths)}, ${columns.mcpProbeTool},
       ${bindJsonb(tx, columns.mcpReaderTools)},
       ${bindJsonb(tx, columns.docs)},
+      ${bindJsonb(tx, columns.reference)},
       ${bindJsonb(tx, columns.signals)},
       ${bindJsonb(tx, columns.review)},
       ${bindJsonb(tx, columns.testSubstance)},
@@ -147,6 +148,7 @@ export async function upsertHostedProjectRow(
       mcp_probe_tool = EXCLUDED.mcp_probe_tool,
       mcp_reader_tools = EXCLUDED.mcp_reader_tools,
       docs = EXCLUDED.docs,
+      reference = EXCLUDED.reference,
       signals = EXCLUDED.signals,
       review = EXCLUDED.review,
       test_substance = EXCLUDED.test_substance,

@@ -35,6 +35,7 @@ export type HostedProjectColumns = {
   mcpProbeTool: string | null
   mcpReaderTools: JsonObject | null
   docs: JsonObject | null
+  reference: JsonObject | null
   signals: JsonObject | null
   review: JsonObject | null
   testSubstance: JsonObject | null
@@ -62,6 +63,7 @@ export const PROJECT_SETTING_COLUMNS = {
   mcp: 'mcpProbeTool',
   mcpServer: 'mcpServer',
   productionBranch: 'productionBranch',
+  reference: 'reference',
   release: 'release',
   requireCleanMain: 'requireCleanMain',
   secretPaths: 'secretPaths',
@@ -185,6 +187,7 @@ export function hostedProjectColumns(
     [PROJECT_SETTING_COLUMNS.mcp]: mcpProbeTool(settings, project),
     mcpReaderTools: mcpReaderTools(settings, project),
     [PROJECT_SETTING_COLUMNS.docs]: settingDocument(settings, 'docs', project),
+    [PROJECT_SETTING_COLUMNS.reference]: settingDocument(settings, 'reference', project),
     [PROJECT_SETTING_COLUMNS.signals]: settingDocument(settings, 'signals', project),
     [PROJECT_SETTING_COLUMNS.review]: settingDocument(settings, 'review', project),
     [PROJECT_SETTING_COLUMNS.testSubstance]: settingDocument(settings, 'testSubstance', project),
