@@ -14,7 +14,7 @@ The worktree is the safety boundary. A repository agent gets workspace-write for
 
 **A registered main checkout stays clean.** Dispatch refreshes the main index and refuses tracked modifications, naming the dirty paths and the worktree (both anchored lines). Untracked files warn; ignored files are silent. Default on; opt out with `requireCleanMain` false. Resumes skip the check. Bare-main end state: `bottega doc show bare-main-end-state --scope project --subject bottega`.
 
-A review agent may edit and run tests to verify a hypothesis; those edits are scratch evidence, never landed, and a review agent never commits, pushes or merges. Implement and fix agents commit to their run branch; they never push, merge into trunk or rewrite history. Trunk admits work only by GitHub pull request after the local gate; after merging a reworked run, run `bottega tree branch landed`.
+Review agents may edit and test as unlanded scratch; they never commit, push or merge. Writers commit to run branches but never push, merge into trunk or rewrite history. Trunk admits work only by GitHub pull request through the merge queue; after merging a reworked run, run `bottega tree branch landed`.
 
 `hooks/protect-main-checkout.py` denies tracked-file `Write`/`Edit`/`NotebookEdit` in a registered main checkout, naming the worktree. Not on Bash. `requireCleanMain` false is exempt; fails open. `hooks/git-guard.py` asks before a destructive push and allows git in a project worktree, also via `bottega workflow exec`. `hooks/no-attribution.py` denies `git commit`/`git merge`/`gh pr create` crediting an AI, also `-F`/`--body-file`; `.githooks/commit-msg` does too. Enable with `git config core.hooksPath .githooks`.
 
@@ -112,7 +112,7 @@ It reports emptiness only after looking at the right data. Otherwise it exits no
 
 # The test gate
 
-`gate-load.ts` runs preloaded `bun test` in-process over `orchestrator/src`. `GATE_CONCURRENCY_LIMIT` bounds gates; others wait for acceptable load and RAM (macOS kernel pressure, else `FREE_MEM_FLOOR_BYTES`). Timing ratchet only moves down. `scripts/check-test-spawns.ts` rejects test files above `SPAWN_LIMIT` Bun spawn or spawnSync calls. No size classes, shards, subprocess leg or retry path.
+`gate-load.ts` runs `bun test` preloaded in-process on `orchestrator/src`. `GATE_CONCURRENCY_LIMIT` bounds gates; others wait for load and RAM (macOS kernel pressure, else `FREE_MEM_FLOOR_BYTES`), a wait CI skips. Timing only ratchets down. `scripts/check-test-spawns.ts` caps Bun spawns at `SPAWN_LIMIT`. CI runs one job per `bun test --shard`. `scripts/check-plan.ts` names its legs; `scripts/check-ci-workflow.ts` pins the workflow to them. No size classes, subprocess leg or retry path.
 
 # Prompts and replies age out
 
