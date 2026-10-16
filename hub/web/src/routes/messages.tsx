@@ -1,3 +1,5 @@
+import { queryClient, trpc } from '@bottega/hub-data/client'
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
 import { Badge } from '@bottega/hub-ui/badge'
 import { Button } from '@bottega/hub-ui/button'
 import { Checkbox } from '@bottega/hub-ui/checkbox'
@@ -16,8 +18,6 @@ import { useState } from 'react'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { useDetailPanel } from '@/lib/detail-panel'
 import { sendTimestamp } from '@/lib/format'
-import { isHostedMode } from '@bottega/hub-data/hub-mode'
-import { queryClient, trpc } from '@bottega/hub-data/client'
 import {
   BOARD_PURPOSES,
   type BoardPurpose,

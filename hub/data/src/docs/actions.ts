@@ -6,13 +6,6 @@ import { queryClient, trpc } from '../client.ts'
 import type { DataTreeItem, DocsSource, StoredDocument } from './use-docs.ts'
 
 type DataDoc = DataTreeItem & { body: string; title: string }
-export type DataAction<I, O = void> = {
-  run: (input: I) => Promise<O | undefined>
-  pending: boolean
-  error: unknown
-  refused?: string
-}
-
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
 export function useDocsIdentity(enabled: boolean) {

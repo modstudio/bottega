@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { renderToStaticMarkup } from 'react-dom/server'
 import type { MeasuresResponse } from '@bottega/hub-data/client'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { ProjectBreakdown } from './hosted-reports'
 
 const measures: MeasuresResponse = {

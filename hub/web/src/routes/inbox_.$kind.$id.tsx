@@ -1,3 +1,4 @@
+import { type OperatorWaitingItem, queryClient, trpc } from '@bottega/hub-data/client'
 import { Badge } from '@bottega/hub-ui/badge'
 import { Button } from '@bottega/hub-ui/button'
 import { Textarea } from '@bottega/hub-ui/field/textarea'
@@ -7,7 +8,6 @@ import { RadioRows } from '@bottega/hub-ui/radio-rows'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState } from 'react'
-import { type OperatorWaitingItem, queryClient, trpc } from '@bottega/hub-data/client'
 
 export const Route = createFileRoute('/inbox_/$kind/$id')({ component: InboxDetailPage })
 

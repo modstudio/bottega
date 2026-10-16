@@ -1,3 +1,4 @@
+import { type ProjectRow, queryClient, trpc } from '@bottega/hub-data/client'
 import { Button } from '@bottega/hub-ui/button'
 import { Checkbox } from '@bottega/hub-ui/checkbox'
 import { Input } from '@bottega/hub-ui/field/input'
@@ -9,7 +10,6 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Save, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import { type ProjectRow, queryClient, trpc } from '@bottega/hub-data/client'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../../shared/brand.ts'
 
 export const Route = createFileRoute('/projects/$name')({ component: ProjectEditPage })

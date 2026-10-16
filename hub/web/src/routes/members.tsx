@@ -1,3 +1,4 @@
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
 import { Button } from '@bottega/hub-ui/button'
 import { Input } from '@bottega/hub-ui/field/input'
 import { Select } from '@bottega/hub-ui/listbox/select'
@@ -24,7 +25,6 @@ import {
   removeOrganizationMember,
   updateOrganizationMemberRole,
 } from '@/lib/hosted-organization'
-import { isHostedMode } from '@bottega/hub-data/hub-mode'
 
 export const Route = createFileRoute('/members')({ component: MembersRoute })
 const roles: OrganizationRole[] = ['owner', 'admin', 'member']

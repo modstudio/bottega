@@ -1,3 +1,5 @@
+import { hostedTrpc, queryClient, trpc } from '@bottega/hub-data/client'
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
 import { Badge } from '@bottega/hub-ui/badge'
 import { Button, TextButton } from '@bottega/hub-ui/button'
 import { Input } from '@bottega/hub-ui/field/input'
@@ -13,8 +15,6 @@ import { useEffect, useState } from 'react'
 import { MachineOverride } from '@/components/machine-override'
 import { MachinePermissionEditor } from '@/components/machine-permission-editor'
 import { Markdown } from '@/components/markdown/markdown'
-import { isHostedMode } from '@bottega/hub-data/hub-mode'
-import { hostedTrpc, queryClient, trpc } from '@bottega/hub-data/client'
 import {
   AUTONOMY_PRESETS,
   AUTONOMY_VALUES,

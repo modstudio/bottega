@@ -1,3 +1,4 @@
+import { trpc } from '@bottega/hub-data/client'
 import { Button } from '@bottega/hub-ui/button'
 import { Select, type SelectOption } from '@bottega/hub-ui/listbox/select'
 import { ProjectName } from '@bottega/hub-ui/project-mark'
@@ -15,7 +16,6 @@ import {
   WINDOWS,
   type WindowHours,
 } from '@/lib/window'
-import { trpc } from '@bottega/hub-data/client'
 
 function Filter({
   kind,

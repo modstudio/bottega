@@ -442,6 +442,13 @@ function DocsSearchHost({
   )
 }
 
+function OptionalDocsFacts({
+  wide,
+  ...facts
+}: { wide: boolean } & Parameters<typeof DocsFacts>[0]) {
+  return wide ? null : <DocsFacts {...facts} />
+}
+
 export function DocsView({
   sourceLabel,
   items,
@@ -477,9 +484,6 @@ export function DocsView({
   bodyView,
   viewedRevision,
   canManage,
-  showHistory,
-  factsControls,
-  history,
   ...readingEdit
 }: DocsViewProps) {
   const [searchOpen, setSearchOpen] = useState(false)
@@ -600,19 +604,18 @@ export function DocsView({
           viewedRevision={viewedRevision}
           {...readingEdit}
         />
-        {wide ? null : (
-          <DocsFacts
-            doc={doc}
-            headings={doc ? model.headings : []}
-            signedIn={signedIn}
-            showHistory={showHistory}
-            controls={factsControls}
-            history={history}
-            revisionId={revisionId}
-            onRevision={onRevision}
-            canManage={canManage}
-          />
-        )}
+        <OptionalDocsFacts
+          wide={wide}
+          doc={doc}
+          headings={doc ? model.headings : []}
+          signedIn={signedIn}
+          showHistory={readingEdit.showHistory}
+          controls={readingEdit.factsControls}
+          history={readingEdit.history}
+          revisionId={revisionId}
+          onRevision={onRevision}
+          canManage={canManage}
+        />
       </div>
       <DocsSearchHost
         open={searchOpen}

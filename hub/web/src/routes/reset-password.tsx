@@ -1,6 +1,6 @@
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
 import { createFileRoute, Navigate } from '@tanstack/react-router'
 import { HostedResetPassword } from '@/components/hosted-password-reset'
-import { isHostedMode } from '@bottega/hub-data/hub-mode'
 
 export const Route = createFileRoute('/reset-password')({
   validateSearch: (search: Record<string, unknown>) => ({
