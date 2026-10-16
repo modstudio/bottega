@@ -44,6 +44,9 @@ const uiLayers: { name: string; folders: string[] }[] = [
   { name: 'layout', folders: ['shell', 'table-card', 'toolbar-band', 'companion'] },
 ]
 
+export const hubUiLayerFolders = uiLayers.flatMap((layer) => layer.folders)
+export const hubUiFolderLayerRuleName = 'hub-ui-folder-has-a-layer'
+
 const uiFolders = (folders: string[]) => `^hub/ui/src/(?:${folders.join('|')})/`
 
 type UiArchitectureRule = {
@@ -80,12 +83,12 @@ export function uiArchitectureRules(
       },
     },
     {
-      name: 'hub-ui-folder-has-a-layer',
+      name: hubUiFolderLayerRuleName,
       severity: 'error',
       comment: 'Every ui/ folder is declared in uiLayers in architecture-ui-layers.ts.',
       from: {
         path: '^hub/ui/src/',
-        pathNot: [uiFolders(uiLayers.flatMap((layer) => layer.folders))],
+        pathNot: [uiFolders(hubUiLayerFolders)],
       },
       to: {},
     },

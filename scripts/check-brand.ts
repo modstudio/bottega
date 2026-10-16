@@ -66,6 +66,7 @@ const ALLOWED = new Set([
   'orchestrator/hooks/git-guard.py',
   'orchestrator/hooks/heartbeat-guard.py',
   'orchestrator/hooks/heartbeat-remind.py',
+  'orchestrator/hooks/hub-import-guard.py',
   'orchestrator/hooks/orch-heartbeat.sh',
   'orchestrator/hooks/protect-main-checkout.py',
   'orchestrator/hooks/score-reminder.py',

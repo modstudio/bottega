@@ -22,6 +22,7 @@ type ArchitectureCruiseRequest = {
   extraArgs?: string[]
   stdout?: 'pipe' | 'inherit'
   config?: ReturnType<typeof dependencyCruiserConfig>
+  cwd?: string
 }
 
 export async function runArchitectureCruise(request: ArchitectureCruiseRequest) {
@@ -39,7 +40,7 @@ export async function runArchitectureCruise(request: ArchitectureCruiseRequest) 
         ...request.entries,
       ],
       {
-        cwd: ROOT,
+        cwd: request.cwd ?? ROOT,
         env: { ...process.env, ARCHITECTURE_CONFIG: generatedConfig },
         stdout,
         stderr: 'inherit',

@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { extname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Glob } from 'bun'
@@ -9,6 +9,7 @@ import {
   HUB_UI_ROOT,
   hubWorkspaceDependencies,
 } from './architecture-hub-packages.ts'
+import { hubUiLayerFolders } from './architecture-ui-layers.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const dependencyFields = [
@@ -35,17 +36,26 @@ function readPackage(path: string): PackageJson {
 const rootPackage = readPackage(join(ROOT, 'package.json')) as PackageJson & {
   workspaces?: string[]
 }
+const workspacePackagePaths = [
+  ...new Set(
+    (rootPackage.workspaces ?? []).flatMap((workspace) =>
+      [...new Glob(`${workspace}/package.json`).scanSync({ cwd: ROOT })].map((path) =>
+        path.split(sep).join('/'),
+      ),
+    ),
+  ),
+].sort()
 const workspaceNames = new Set(
-  (rootPackage.workspaces ?? [])
-    .map((workspace) => join(ROOT, workspace, 'package.json'))
-    .filter(existsSync)
-    .map((path) => readPackage(path).name)
+  workspacePackagePaths
+    .map((path) => readPackage(join(ROOT, path)).name)
     .filter((name): name is string => name !== undefined),
 )
 
-for (const relativePath of new Glob('hub/*/package.json').scanSync({ cwd: ROOT })) {
+const checkedPackages: string[] = []
+for (const relativePath of workspacePackagePaths) {
   const packageJson = readPackage(join(ROOT, relativePath))
   if (!packageJson.name?.startsWith(HUB_PACKAGE_PREFIX)) continue
+  checkedPackages.push(packageJson.name)
   if (!(packageJson.name in hubWorkspaceDependencies)) {
     violations.push(`${relativePath}: ${packageJson.name} is missing from hubWorkspaceDependencies`)
     continue
@@ -61,6 +71,19 @@ for (const relativePath of new Glob('hub/*/package.json').scanSync({ cwd: ROOT }
         )
       }
     }
+  }
+}
+
+const declaredLayerFolders = new Set(hubUiLayerFolders)
+for (const sourcePath of new Glob('**/*.{ts,tsx,css}').scanSync({
+  cwd: join(ROOT, HUB_UI_ROOT, 'src'),
+})) {
+  if (/\.(?:test|spec)\.[cm]?tsx?$/.test(sourcePath)) continue
+  const folder = sourcePath.split(sep)[0]
+  if (folder !== 'styles' && !declaredLayerFolders.has(folder!)) {
+    violations.push(
+      `${HUB_UI_ROOT}/src/${sourcePath.split(sep).join('/')}: ${folder} is not a declared hub-ui layer folder`,
+    )
   }
 }
 
@@ -107,5 +130,5 @@ if (violations.length) {
 }
 
 console.log(
-  `check-hub-packages: ok (${Object.keys(hubWorkspaceDependencies).length} packages, ${Object.keys(expectedExports).length} ui exports)`,
+  `check-hub-packages: ok (${checkedPackages.sort().join(', ')}; ${Object.keys(expectedExports).length} ui exports)`,
 )

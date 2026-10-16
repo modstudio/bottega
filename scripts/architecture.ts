@@ -17,6 +17,7 @@ import { docModules } from './architecture-doc-modules.ts'
 import { enforcementModules } from './architecture-enforcement-modules.ts'
 import { focusedTestModules } from './architecture-focused-test-modules.ts'
 import { gateModules } from './architecture-gate-modules.ts'
+import { hubImportModules } from './architecture-hub-import-modules.ts'
 import { hubModuleSpecs } from './architecture-hub-modules.ts'
 import { HUB_UI_PACKAGE } from './architecture-hub-packages.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
@@ -91,6 +92,7 @@ const concerns: ConcernManifest = {
 export const modules: ArchitectureModule[] = [
   ...enforcementModules.map((spec) => module(spec.file, [...spec.allowed])),
   ...testSubstanceModules.map((spec) => module(spec.file, [...spec.allowed])),
+  ...hubImportModules.map((spec) => module(spec.file, [...spec.allowed])),
   ...ratchetModules.map((spec) => module(spec.file, [...spec.allowed])),
   ...hubModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   ...boardModules,
@@ -803,7 +805,7 @@ type ArchitectureRule = {
   }
 }
 
-const hubWebViewDataRule: ArchitectureRule = {
+export const hubWebViewDataRule: ArchitectureRule = {
   name: 'hub-web-views-do-not-fetch-data-or-read-hub-mode',
   severity: 'error',
   comment:
@@ -822,6 +824,11 @@ const hubWebViewDataRule: ArchitectureRule = {
   },
 }
 const hubWebRouterException = concerns.exceptions[0]!
+
+/** The manifest-owned rule set enforced against every proposed hub source write. */
+export function writeTimeArchitectureRules(): ArchitectureRule[] {
+  return [...uiArchitectureRules(architectureDependencyPath, HUB_UI_PACKAGE), hubWebViewDataRule]
+}
 
 export function architectureRules() {
   const cycleFiles = [...new Set(allowedCycles.flatMap(({ cycle }) => cycle.slice(0, -1)))]
@@ -886,8 +893,7 @@ export function architectureRules() {
         },
       })),
     ),
-    ...uiArchitectureRules(architectureDependencyPath, HUB_UI_PACKAGE),
-    hubWebViewDataRule,
+    ...writeTimeArchitectureRules(),
     {
       name: 'import-cli-boundary',
       severity: 'error',
