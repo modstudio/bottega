@@ -13,16 +13,15 @@ export type RecordProjectFacts = {
 
 export type RecordProjectIdentityResult =
   | { status: 'found'; project: RecordProjectFacts; warnings: [] | ['name-mismatch'] }
-  | { status: 'missing' | 'ambiguous' | 'outside-space'; warnings: [] }
+  | { status: 'missing' | 'outside-space'; warnings: [] }
 
 export function recordProjectIdentityDecision(input: {
-  requestedId?: string | null
+  requestedId: string
   requestedName?: string | null
   requestedSpaceId?: string | null
   projects: RecordProjectFacts[]
 }): RecordProjectIdentityResult {
   if (input.projects.length === 0) return { status: 'missing', warnings: [] }
-  if (input.projects.length !== 1) return { status: 'ambiguous', warnings: [] }
   const project = input.projects[0]!
   if (input.requestedSpaceId && project.spaceId !== input.requestedSpaceId)
     return { status: 'outside-space', warnings: [] }
@@ -30,8 +29,6 @@ export function recordProjectIdentityDecision(input: {
     status: 'found',
     project,
     warnings:
-      input.requestedId && input.requestedName != null && input.requestedName !== project.name
-        ? ['name-mismatch']
-        : [],
+      input.requestedName != null && input.requestedName !== project.name ? ['name-mismatch'] : [],
   }
 }

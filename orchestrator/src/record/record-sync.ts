@@ -267,6 +267,8 @@ function sourceProjectRecordId(local: Database, row: OutboxRow): string | null |
     landing_triage_snapshot: `SELECT project.record_id FROM landing_triage_snapshot
       LEFT JOIN project ON project.id=landing_triage_snapshot.project_id
       WHERE landing_triage_snapshot.record_id=?`,
+    release: `SELECT project.record_id FROM release_ledger
+      LEFT JOIN project ON project.id=release_ledger.project_id WHERE release_ledger.record_id=?`,
   }
   const query = queries[row.kind]
   if (!query) return undefined

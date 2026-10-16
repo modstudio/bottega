@@ -159,24 +159,36 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
        INSERT INTO project (id,space_id,name,created_at)
        VALUES ('${deniedProjectId}','${deniedSpaceId}','foreign-project',now());`,
     )
-    const id = newRecordId()
+    const ids = [newRecordId(), newRecordId()]
     const local = localOutbox(
       runPayload({
-        id,
+        id: ids[0]!,
         machineId: input.machineId,
         projectName: input.writeProjectName,
         projectId: deniedProjectId,
         spaceId: input.writeSpaceId,
       }),
     )
+    const second = runPayload({
+      id: ids[1]!,
+      machineId: input.machineId,
+      projectName: input.writeProjectName,
+      projectId: deniedProjectId,
+      spaceId: input.writeSpaceId,
+    })
+    local
+      .query(
+        "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,2,'run',?,?,?)",
+      )
+      .run(newRecordId(), second.id, JSON.stringify(second), second.createdAt)
     try {
       const result = await withoutDirectRecordCredentials(() =>
         syncRecord({ local, identity: { id: input.machineId, name: 'proof-machine' } }),
       )
-      expect(result).toMatchObject({ pushed: 0, failed: 1, pending: 0 })
-      expect(result.quarantined).toHaveLength(1)
-      expect(result.quarantined[0]?.error).toContain('absent from request space')
-      expect(input.admin(`SELECT count(*) FROM run WHERE id='${id}';`)).toBe('0')
+      expect(result).toMatchObject({ pushed: 0, failed: 2, pending: 0 })
+      expect(result.quarantined).toHaveLength(2)
+      for (const row of result.quarantined) expect(row.error).toContain('absent from request space')
+      expect(input.admin(`SELECT count(*) FROM run WHERE id IN ('${ids.join("','")}');`)).toBe('0')
     } finally {
       local.close()
     }
