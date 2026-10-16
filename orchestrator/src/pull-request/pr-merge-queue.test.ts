@@ -29,8 +29,9 @@ const pullRequest: PullRequestMergeFacts = {
 
 function registerProject(requiredChecks: string[]): void {
   db()
-    .query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)')
+    .query('INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?)')
     .run(
+      newRecordId(),
       'merge-queue-fixture',
       cwd,
       'bun',

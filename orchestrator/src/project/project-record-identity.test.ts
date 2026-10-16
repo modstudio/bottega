@@ -63,11 +63,10 @@ test('registration stores the hosted project identity', async () => {
 
 test('project add and set JSON use the published contract and carry record_id', async () => {
   const addId = newRecordId()
-  const setId = newRecordId()
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     upsertProject: async (input) => ({
-      id: input.name === 'identity-json-add' ? addId : setId,
+      id: input.name === 'identity-json-add' ? addId : input.id!,
       name: input.name,
     }),
   })
@@ -79,105 +78,118 @@ test('project add and set JSON use the published contract and carry record_id', 
   )
   expect(added.record_id).toBe(addId)
 
-  upsertProject({ name: 'identity-json-set', path: '/w/identity-json-set' })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'identity-json-set',
+    path: '/w/identity-json-set',
+  })
+  const existingSetId = projectByName('identity-json-set')!.recordId
   const set = OrchProjectSchema.parse(
     JSON.parse(await runProject(['project', 'set', 'identity-json-set'], { json: true })),
   )
-  expect(set.record_id).toBe(setId)
+  expect(set.record_id).toBe(existingSetId)
 })
 
 test('the project identity decision is pure over local, hosted, and retirement facts', () => {
   const local = newRecordId()
   const hosted = newRecordId()
   expect(
-    decideProjectRecordId({ recordId: local, hostedRecordId: hosted, retired: false }),
+    decideProjectRecordId({
+      recordId: local,
+      hostedRecordId: hosted,
+      retired: false,
+      hostingConfigured: true,
+    }),
   ).toEqual({ kind: 'already-filled' })
-  expect(decideProjectRecordId({ recordId: null, hostedRecordId: hosted, retired: true })).toEqual({
+  expect(
+    decideProjectRecordId({
+      recordId: null,
+      hostedRecordId: hosted,
+      retired: true,
+      hostingConfigured: true,
+    }),
+  ).toEqual({
     kind: 'use-hosted',
     recordId: hosted,
   })
-  expect(decideProjectRecordId({ recordId: null, hostedRecordId: null, retired: false })).toEqual({
-    kind: 'create-hosted',
-  })
-  expect(decideProjectRecordId({ recordId: null, hostedRecordId: null, retired: true })).toEqual({
-    kind: 'mint-local',
-  })
+  expect(
+    decideProjectRecordId({
+      recordId: null,
+      hostedRecordId: null,
+      retired: false,
+      hostingConfigured: true,
+    }),
+  ).toEqual({ kind: 'create-hosted' })
+  expect(
+    decideProjectRecordId({
+      recordId: null,
+      hostedRecordId: null,
+      retired: true,
+      hostingConfigured: true,
+    }),
+  ).toEqual({ kind: 'mint-local' })
+  expect(
+    decideProjectRecordId({
+      recordId: null,
+      hostedRecordId: null,
+      retired: false,
+      hostingConfigured: false,
+    }),
+  ).toEqual({ kind: 'mint-local' })
 })
 
-test('fill-record-ids stores hosted identities and proposes a minted id for missing projects', async () => {
-  const hostedId = newRecordId()
-  upsertProject({ name: 'identity-hosted', path: '/w/identity-hosted' })
-  upsertProject({ name: 'identity-missing', path: '/w/identity-missing' })
-  const proposed = new Map<string, string>()
-  installRecordApiClient({
-    ...createMemoryRecordApiClient(),
-    listProjects: async () => [{ id: hostedId, name: 'identity-hosted', spaceId: 'space-active' }],
-    upsertProject: async (input) => {
-      expect(input.id).toBeString()
-      proposed.set(input.name, input.id!)
-      return { id: input.id!, name: input.name }
-    },
-  })
-  const output = await runProject(['project', 'fill-record-ids'])
-  expect(projectByName('identity-hosted')?.recordId).toBe(hostedId)
-  expect(projectByName('identity-missing')?.recordId).toBe(proposed.get('identity-missing'))
-  expect(output).toContain(`filled identity-hosted  ${hostedId}  hosted`)
-  expect(output).toContain('filled identity-missing')
-})
-
-test('fill-record-ids mints a local identity without upserting a missing retired project', async () => {
-  upsertProject({ name: 'identity-retired-missing', path: '/w/identity-retired-missing' })
-  expect(retireProject('identity-retired-missing')).toBe('retired')
-  const upserted: string[] = []
-  installRecordApiClient({
-    ...createMemoryRecordApiClient(),
-    listProjects: async () => [],
-    upsertProject: async (input) => {
-      upserted.push(input.name)
-      return { id: input.id ?? newRecordId(), name: input.name }
-    },
-  })
-
-  const output = await runProject(['project', 'fill-record-ids'])
-
-  const recordId = projectRowByName('identity-retired-missing')?.recordId
-  expect(recordId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
-  expect(upserted).not.toContain('identity-retired-missing')
-  expect(output).toContain(`filled identity-retired-missing  ${recordId}  local`)
-})
-
-test('project list JSON publishes nullable record_id beside the local id', async () => {
-  upsertProject({ name: 'identity-list', path: '/w/identity-list' })
+test('project list JSON publishes required record_id beside the local id', async () => {
+  upsertProject({ recordId: newRecordId(), name: 'identity-list', path: '/w/identity-list' })
   const rows = JSON.parse(await runProject(['project', 'list'], { json: true })) as Array<{
     id: number
-    record_id: string | null
+    record_id: string
     name: string
   }>
-  expect(rows.find((row) => row.name === 'identity-list')).toMatchObject({ record_id: null })
+  expect(rows.find((row) => row.name === 'identity-list')?.record_id).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+  )
 })
 
 test('project push stores returned identities without overwriting concurrent set or retire writes', async () => {
-  const setId = newRecordId()
-  const retiredId = newRecordId()
-  const alreadyRetiredId = newRecordId()
-  upsertProject({ name: 'identity-push-set', path: '/w/identity-push-set', stack: 'before' })
-  upsertProject({ name: 'identity-push-retire', path: '/w/identity-push-retire' })
-  upsertProject({ name: 'identity-push-already-retired', path: '/w/identity-push-already-retired' })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'identity-push-set',
+    path: '/w/identity-push-set',
+    stack: 'before',
+  })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'identity-push-retire',
+    path: '/w/identity-push-retire',
+  })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'identity-push-already-retired',
+    path: '/w/identity-push-already-retired',
+  })
+  const setId = projectByName('identity-push-set')!.recordId
+  const retiredId = projectByName('identity-push-retire')!.recordId
+  const alreadyRetiredId = projectByName('identity-push-already-retired')!.recordId
   retireProject('identity-push-already-retired')
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     upsertProject: async (input) => {
       if (input.name === 'identity-push-set') {
-        upsertProject({ name: input.name, path: '/w/identity-push-set-after', stack: 'after' })
-        return { id: setId, name: input.name }
+        upsertProject({
+          recordId: newRecordId(),
+          name: input.name,
+          path: '/w/identity-push-set-after',
+          stack: 'after',
+        })
+        return { id: input.id!, name: input.name }
       }
       if (input.name === 'identity-push-retire') {
         retireProject(input.name)
-        return { id: retiredId, name: input.name }
+        return { id: input.id!, name: input.name }
       }
       if (input.name === 'identity-push-already-retired') {
         expect(input.retiredAt).toBeString()
-        return { id: alreadyRetiredId, name: input.name }
+        return { id: input.id!, name: input.name }
       }
       return { id: input.id ?? newRecordId(), name: input.name }
     },

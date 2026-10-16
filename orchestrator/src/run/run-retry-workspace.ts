@@ -164,7 +164,6 @@ export function resolveWritingRetryWorkspace(input: {
     branch,
     conversationRootId: input.rootId,
     projectId: input.projectId,
-    projectName: input.repo,
     retryCommand: `${PLATFORM_SLUG} run retry ${input.id}`,
   })
   if (!liveTip) throw new Error(`run ${input.id} branch ${branch} has no live tip`)

@@ -2,6 +2,7 @@ import { afterEach, expect, mock, spyOn, test } from 'bun:test'
 import { mkdtempSync, renameSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { projectByName, upsertProject } from '../project/projects.ts'
@@ -17,8 +18,18 @@ test('a project-scoped sweep previews reclamation only for that project', () => 
   const bravoRun = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
   const alphaName = `docker-alpha-${alphaRun}`
   const bravoName = `docker-bravo-${bravoRun}`
-  upsertProject({ name: alphaName, path: join(dir, alphaName), settings: {} })
-  upsertProject({ name: bravoName, path: join(dir, bravoName), settings: {} })
+  upsertProject({
+    recordId: newRecordId(),
+    name: alphaName,
+    path: join(dir, alphaName),
+    settings: {},
+  })
+  upsertProject({
+    recordId: newRecordId(),
+    name: bravoName,
+    path: join(dir, bravoName),
+    settings: {},
+  })
   db().query('UPDATE run SET repo=? WHERE id=?').run(alphaName, alphaRun)
   db().query('UPDATE run SET repo=? WHERE id=?').run(bravoName, bravoRun)
   const commands: string[] = []
@@ -51,7 +62,7 @@ test('an unattributable worktree resource is an observation, not a sweep failure
   const run = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
   const name = `docker-observation-${run}`
   const path = join(dir, name)
-  upsertProject({ name, path, settings: {} })
+  upsertProject({ recordId: newRecordId(), name, path, settings: {} })
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     const command = args.join(' ')
     if (command.startsWith('docker ps -a --format'))
@@ -79,7 +90,7 @@ test('an orphan container pulls in its Compose network and volume while remnants
   Bun.spawnSync(['git', 'init', '--quiet'], { cwd: projectPath })
   const gone = join(projectPath, '.claude/worktrees/DEV-1053-gone')
   const name = `docker-orphan-group-${Date.now()}`
-  upsertProject({ name, path: projectPath, settings: {} })
+  upsertProject({ recordId: newRecordId(), name, path: projectPath, settings: {} })
   expect(projectByName(name)?.path).toBe(projectPath)
   const actualSpawnSync = Bun.spawnSync.bind(Bun)
   spyOn(Bun, 'spawnSync').mockImplementation(((
@@ -154,7 +165,7 @@ test('a recorded run worktree pointer keeps an otherwise orphan Compose project'
   Bun.spawnSync(['git', 'init', '--quiet'], { cwd: projectPath })
   const gone = join(projectPath, '.claude/worktrees/DEV-1053-recorded')
   const name = `docker-recorded-group-${Date.now()}`
-  upsertProject({ name, path: projectPath, settings: {} })
+  upsertProject({ recordId: newRecordId(), name, path: projectPath, settings: {} })
   const run = addRun({ agent: 'codex', job: 'implement', status: 'stopped' })
   db().query('UPDATE run SET worktree=? WHERE id=?').run(gone, run)
   const actualSpawnSync = Bun.spawnSync.bind(Bun)
@@ -196,8 +207,8 @@ test('a cleanup lock failure is isolated and a later orphan group is still remov
   const secondGone = join(secondPath, '.claude/worktrees/DEV-1053-second')
   const firstName = `docker-lock-first-${Date.now()}`
   const secondName = `docker-lock-second-${Date.now()}`
-  upsertProject({ name: firstName, path: firstPath, settings: {} })
-  upsertProject({ name: secondName, path: secondPath, settings: {} })
+  upsertProject({ recordId: newRecordId(), name: firstName, path: firstPath, settings: {} })
+  upsertProject({ recordId: newRecordId(), name: secondName, path: secondPath, settings: {} })
   const commands: string[] = []
   let hidFirstGit = false
   const actualSpawnSync = Bun.spawnSync.bind(Bun)

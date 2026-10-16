@@ -18,6 +18,7 @@ import { dir } from '../../test/fixtures/store.ts'
 import { db, enableSchemaReload, writeTransaction } from '../database/db.ts'
 import {
   applyMigrations,
+  applyMigrationsBefore,
   CONNECTION_SCHEMA_INVARIANT,
   canonicalSchemaHash,
   expectedSchemaHash,
@@ -438,15 +439,15 @@ describe('schema coexistence', () => {
 
   test('review project_id backfill requires aliased lens repos to collapse to one project', () => {
     const d = fresh()
-    d.query(`INSERT INTO project (name, path, canon, settings) VALUES (?, '/p', 1, '{}')`).run(
-      PLATFORM_SLUG,
-    )
     d.query(
-      `INSERT INTO project (name, path, canon, settings) VALUES ('starship', '/s', 1, '{}')`,
-    ).run()
+      `INSERT INTO project (record_id,name,path,canon,settings) VALUES (?, ?, '/p', 1, '{}')`,
+    ).run(newRecordId(), PLATFORM_SLUG)
     d.query(
-      `INSERT INTO project (name, path, canon, settings) VALUES ('alephbeis', '/a', 1, '{}')`,
-    ).run()
+      `INSERT INTO project (record_id,name,path,canon,settings) VALUES (?, 'starship', '/s', 1, '{}')`,
+    ).run(newRecordId())
+    d.query(
+      `INSERT INTO project (record_id,name,path,canon,settings) VALUES (?, 'alephbeis', '/a', 1, '{}')`,
+    ).run(newRecordId())
     const platformId = (
       d.query('SELECT id FROM project WHERE name=?').get(PLATFORM_SLUG) as { id: number }
     ).id
@@ -526,7 +527,10 @@ describe('schema coexistence', () => {
        VALUES ('t', 'a', 'implement', 'widget', 'sha', 1, 'h', 'ok')`,
     ).run()
     expect(d.query('SELECT project_id FROM run').get()).toEqual({ project_id: null })
-    expect(applyMigrations(d)).toEqual(
+    const before = applyMigrationsBefore(d, '0115_project_identity_contract')
+    d.query('UPDATE project SET record_id=? WHERE name=?').run(newRecordId(), 'widget')
+    const after = applyMigrations(d)
+    expect([...before, ...after]).toEqual(
       migrationJournal()
         .slice(6)
         .map((entry) => entry.tag),
@@ -646,7 +650,7 @@ describe('schema coexistence', () => {
     writeTransaction(() => {
       db()
         .query(
-          "INSERT INTO project (name, path, canon, settings) VALUES ('held-reload', '/held', 1, '{}')",
+          "INSERT INTO project (record_id,name,path,canon,settings) VALUES ('01990000-0000-7000-8000-000000001201','held-reload', '/held', 1, '{}')",
         )
         .run()
     }, held)
@@ -669,12 +673,12 @@ describe('schema coexistence', () => {
       .transaction(() => {
         held
           .query(
-            "INSERT INTO project (name, path, canon, settings) VALUES ('before-reload', '/before', 1, '{}')",
+            "INSERT INTO project (record_id,name,path,canon,settings) VALUES ('01990000-0000-7000-8000-000000001202','before-reload', '/before', 1, '{}')",
           )
           .run()
         db()
           .query(
-            "INSERT INTO project (name, path, canon, settings) VALUES ('after-reload', '/after', 1, '{}')",
+            "INSERT INTO project (record_id,name,path,canon,settings) VALUES ('01990000-0000-7000-8000-000000001203','after-reload', '/after', 1, '{}')",
           )
           .run()
       })
@@ -708,6 +712,7 @@ describe('stripSqlComments feeds exec text that keeps quoted comment markers', (
 describe('scoped operator docs', () => {
   test('project-subject document roots use the registered project and preserve canon selection', () => {
     upsertProject({
+      recordId: newRecordId(),
       name: 'doc-root-project',
       path: '/work/doc-root-project',
       stack: null,

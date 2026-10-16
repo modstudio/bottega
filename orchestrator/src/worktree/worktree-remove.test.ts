@@ -10,6 +10,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { upsertProject } from '../project/projects.ts'
 import { changesInIndex, readOnlyRemovalRefusal, removeFor } from './worktree-remove.ts'
 
@@ -172,6 +173,7 @@ describe('worktree removal safety', () => {
     directories.push(repoRoot)
     const git = fakeGit()
     upsertProject({
+      recordId: newRecordId(),
       name: 'remove-safety',
       path: repoRoot,
       settings: { worktree: { remove: 'exit 1' } },
@@ -201,6 +203,7 @@ describe('worktree removal safety', () => {
     directories.push(repoRoot)
     const git = fakeGit()
     upsertProject({
+      recordId: newRecordId(),
       name: 'teardown-safety',
       path: repoRoot,
       settings: {

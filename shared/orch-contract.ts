@@ -218,7 +218,7 @@ const OrchTrackerSettingsSchema = z
 export const OrchProjectSchema = z
   .object({
     id: z.number().int(),
-    record_id: z.string().uuid().nullable(),
+    record_id: z.string().uuid(),
     name: z.string(),
     path: z.string(),
     stack: nullableString,

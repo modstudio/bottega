@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { existsSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { setDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -20,12 +21,14 @@ test('an empty project canon store refuses publication and leaves other projects
       allowCanonBootstrap: true,
     })
     upsertProject({
+      recordId: newRecordId(),
       name: 'canon-mirror-empty-store',
       path: root,
       canon: true,
       settings: { managedContext: true, canonMirrorKey: 'DEV-1002', trunk: 'main' },
     })
     upsertProject({
+      recordId: newRecordId(),
       name: 'canon-mirror-empty-store-other',
       path: root,
       canon: true,

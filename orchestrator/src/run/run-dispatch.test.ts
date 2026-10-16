@@ -1,6 +1,7 @@
 import { afterEach, expect, mock, spyOn, test } from 'bun:test'
 import type { ChildProcess, spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -18,6 +19,7 @@ afterEach(() => {
 
 test('detached MCP preflight ensures the declared project stack before probing', async () => {
   upsertProject({
+    recordId: newRecordId(),
     name: 'detached-mcp-stack-fixture',
     path: import.meta.dir,
     settings: { mainStack: { consumers: ['mcp'], requiredServices: ['db'] } },

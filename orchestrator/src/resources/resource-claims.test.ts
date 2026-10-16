@@ -222,12 +222,18 @@ describe('resource claim decisions', () => {
   test('project indexes are stable per root and reusable after release', () => {
     const database = db()
     const projectOne = Number(
-      database.query("INSERT INTO project(name,path,canon) VALUES ('one','/one',1)").run()
-        .lastInsertRowid,
+      database
+        .query(
+          "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'one','/one',1)",
+        )
+        .run().lastInsertRowid,
     )
     const projectTwo = Number(
-      database.query("INSERT INTO project(name,path,canon) VALUES ('two','/two',1)").run()
-        .lastInsertRowid,
+      database
+        .query(
+          "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'two','/two',1)",
+        )
+        .run().lastInsertRowid,
     )
     const insertRun = database.query(
       `INSERT INTO run
@@ -263,8 +269,11 @@ describe('resource claim decisions', () => {
   test('string claims reuse by root and name and refuse another root holding the value', () => {
     const database = db()
     const projectId = Number(
-      database.query("INSERT INTO project(name,path,canon) VALUES ('strings','/strings',1)").run()
-        .lastInsertRowid,
+      database
+        .query(
+          "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'strings','/strings',1)",
+        )
+        .run().lastInsertRowid,
     )
     const insertRun = database.query(
       `INSERT INTO run
@@ -298,7 +307,9 @@ describe('resource claim decisions', () => {
     const database = db()
     const projectId = Number(
       database
-        .query("INSERT INTO project(name,path,canon) VALUES ('databases','/databases',1)")
+        .query(
+          "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'databases','/databases',1)",
+        )
         .run().lastInsertRowid,
     )
     const insertRun = database.query(

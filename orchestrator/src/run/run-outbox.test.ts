@@ -53,8 +53,8 @@ test('backfill resolves chains, enqueues finished turns once, and skips running 
   applyMigrations(database)
   database
     .query(
-      `INSERT INTO project (id, name, path, canon, settings)
-       VALUES (1, 'project', '/project', 1, '{}')`,
+      `INSERT INTO project (record_id,id, name, path, canon, settings)
+       VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),1, 'project', '/project', 1, '{}')`,
     )
     .run()
   const insert = database.query(

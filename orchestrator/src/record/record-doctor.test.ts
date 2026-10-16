@@ -165,10 +165,9 @@ describe('record doctor decisions', () => {
     applyMigrations(database)
     database
       .query(
-        `INSERT INTO project (id,name,path,settings) VALUES
-         (1,'default','/default','{}'),
-         (2,'other','/other','{}'),
-         (3,'unknown','/unknown','{}')`,
+        `INSERT INTO project (record_id,id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),1,'default','/default','{}'),
+         ('${newRecordId()}',2,'other','/other','{}'),
+         ('${newRecordId()}',3,'unknown','/unknown','{}')`,
       )
       .run()
     const addRun = database.query(

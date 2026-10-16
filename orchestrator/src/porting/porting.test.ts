@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { projects, upsertProject } from '../project/projects.ts'
 import {
@@ -25,11 +26,13 @@ const listPairs = () =>
 describe('porting data model', () => {
   test('stores pair progress and declined candidates with their reasons', () => {
     upsertProject({
+      recordId: newRecordId(),
       name: 'source-invented',
       path: '/w/source-invented',
       settings: { keyPrefixes: ['SRC'] },
     })
     upsertProject({
+      recordId: newRecordId(),
       name: 'target-invented',
       path: '/w/target-invented',
       settings: { keyPrefixes: ['TGT'] },
@@ -63,14 +66,26 @@ describe('porting data model', () => {
     }
   })
   test('keeps the same task label distinct in two target projects', () => {
-    upsertProject({ name: 'source-one-invented', path: '/w/source-one', settings: {} })
-    upsertProject({ name: 'source-two-invented', path: '/w/source-two', settings: {} })
     upsertProject({
+      recordId: newRecordId(),
+      name: 'source-one-invented',
+      path: '/w/source-one',
+      settings: {},
+    })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'source-two-invented',
+      path: '/w/source-two',
+      settings: {},
+    })
+    upsertProject({
+      recordId: newRecordId(),
       name: 'target-invented',
       path: '/w/target',
       settings: { keyPrefixes: ['TGT'] },
     })
     upsertProject({
+      recordId: newRecordId(),
       name: 'other-target-invented',
       path: '/w/other-target',
       settings: { keyPrefixes: ['TGT'] },
@@ -124,8 +139,14 @@ describe('porting data model', () => {
     expect(listLedgerRefs(true)).toHaveLength(2)
   })
   test('resolution preserves provenance and default listings omit completed refs', () => {
-    upsertProject({ name: 'source-invented', path: '/w/source', settings: {} })
     upsertProject({
+      recordId: newRecordId(),
+      name: 'source-invented',
+      path: '/w/source',
+      settings: {},
+    })
+    upsertProject({
+      recordId: newRecordId(),
       name: 'target-invented',
       path: '/w/target',
       settings: { keyPrefixes: ['TGT'] },

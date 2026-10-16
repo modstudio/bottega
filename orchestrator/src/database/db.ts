@@ -7,6 +7,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { storedMachineId } from '../../../shared/machine-config.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import {
   type CallerIdentityResolution,
   classifyCaller,
@@ -24,6 +25,7 @@ import {
 import { carryMachineIdentity } from './machine-identity-store.ts'
 import {
   applyMigrations,
+  applyMigrationsBefore,
   migrationRefusal,
   readUserVersion,
   staleWriteRefusal,
@@ -391,9 +393,9 @@ function seedProjects(d: Database): void {
     const path = at === -1 ? cwd : parts.slice(0, at + 1).join('/')
     try {
       d.query(
-        `INSERT INTO project (name, path, stack, canon, settings) VALUES (?,?,?,1,'{}')
+        `INSERT INTO project (record_id, name, path, stack, canon, settings) VALUES (?,?,?,?,1,'{}')
          ON CONFLICT(name) DO NOTHING`,
-      ).run(repo, path, null)
+      ).run(newRecordId(), repo, path, null)
     } catch {
       /* one malformed historical row does not block the remaining seed */
     }
@@ -401,7 +403,10 @@ function seedProjects(d: Database): void {
 }
 
 /** Main-checkout binary only: apply pending, ordered Drizzle migrations. */
-export function migrateDatabase(): { path: string; versions: string[] } {
+export function migrateDatabase(input: { beforeMigration?: string } = {}): {
+  path: string
+  versions: string[]
+} {
   const legacyRefusal = legacyDatabaseRefusal()
   if (legacyRefusal) throw new Error(legacyRefusal)
   const create = !existsSync(DB_PATH)
@@ -412,7 +417,9 @@ export function migrateDatabase(): { path: string; versions: string[] } {
   registeredOpenHooks()
   if (create) {
     const created = createDatabasePrivately(DB_PATH, (database) => {
-      const versions = applyMigrations(database)
+      const versions = input.beforeMigration
+        ? applyMigrationsBefore(database, input.beforeMigration)
+        : applyMigrations(database)
       writeTransaction(() => initializeDefaultLocalProject(database, true), database)
       seedProjects(database)
       runOpenHooks('afterInitialize', database)
@@ -436,13 +443,28 @@ export function migrateDatabase(): { path: string; versions: string[] } {
   const d = new Database(DB_PATH, { readwrite: true, create: false })
   try {
     d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
-    const versions = applyMigrations(d)
+    const versions = input.beforeMigration
+      ? applyMigrationsBefore(d, input.beforeMigration)
+      : applyMigrations(d)
     writeTransaction(() => initializeDefaultLocalProject(d, false), d)
     seedProjects(d)
     runOpenHooks('afterInitialize', d)
     return { path: DB_PATH, versions }
   } finally {
     d.close()
+  }
+}
+
+/** Give machine migrate a handle while the store is intentionally mid-journal. */
+export async function withDatabaseForMigrationStep<T>(
+  action: (database: Database) => Promise<T>,
+): Promise<T> {
+  const database = new Database(DB_PATH, { readwrite: true, create: false })
+  try {
+    database.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+    return await action(database)
+  } finally {
+    database.close()
   }
 }
 

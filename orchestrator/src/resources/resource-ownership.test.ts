@@ -1,5 +1,6 @@
 import { afterEach, expect, mock, spyOn, test } from 'bun:test'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -155,7 +156,7 @@ test('a registered project root resolves safety after the worktree is gone', () 
   const project = `registered-root-${terminal}`
   const repo = join(dir, project)
   const tree = join(repo, '.claude', 'worktrees', `orch-${terminal}`)
-  upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
+  upsertProject({ recordId: newRecordId(), name: project, path: repo, settings: { trunk: 'main' } })
   db()
     .query('UPDATE run SET repo=?,cwd=?,worktree=? WHERE id=?')
     .run(project, join(dir, 'also-gone'), tree, terminal)

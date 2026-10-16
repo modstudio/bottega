@@ -19,7 +19,7 @@ function insertProject(name: string): number {
   return (
     db()
       .query<{ id: number }, [string]>(
-        "INSERT INTO project (name, path, canon, settings) VALUES (?, '/tmp/p', 1, '{}') RETURNING id",
+        "INSERT INTO project (record_id,name, path, canon, settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?, '/tmp/p', 1, '{}') RETURNING id",
       )
       .get(name) as { id: number }
   ).id

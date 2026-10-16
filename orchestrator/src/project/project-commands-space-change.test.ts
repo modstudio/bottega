@@ -50,7 +50,7 @@ const identity = {
 }
 
 test('project set uses its hosted identity check for a non-member declaration', async () => {
-  upsertProject({ name: 'space-refusal', path: '/w/space-refusal' })
+  upsertProject({ recordId: newRecordId(), name: 'space-refusal', path: '/w/space-refusal' })
   let legacyValidationCalls = 0
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
@@ -71,7 +71,7 @@ test('project set uses its hosted identity check for a non-member declaration', 
 })
 
 test('project set attributes an existing hosted row to its own space slug', async () => {
-  upsertProject({ name: 'space-move', path: '/w/space-move' })
+  upsertProject({ recordId: newRecordId(), name: 'space-move', path: '/w/space-move' })
   const listed: string[] = []
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
@@ -93,7 +93,8 @@ test('project set attributes an existing hosted row to its own space slug', asyn
 })
 
 test('project set succeeds when no hosted row exists outside the destination', async () => {
-  upsertProject({ name: 'space-new', path: '/w/space-new' })
+  upsertProject({ recordId: newRecordId(), name: 'space-new', path: '/w/space-new' })
+  const localId = projectByName('space-new')?.recordId
   const hostedId = newRecordId()
   const writes: Array<string | undefined> = []
   installRecordApiClient({
@@ -110,11 +111,11 @@ test('project set succeeds when no hosted row exists outside the destination', a
   })
   expect(writes).toEqual(['space-next'])
   expect(projectByName('space-new')?.settings.space).toBe('next-team')
-  expect(projectByName('space-new')?.recordId).toBe(hostedId)
+  expect(projectByName('space-new')?.recordId).toBe(localId)
 })
 
 test('fill-absent refuses a hosted row elsewhere before writing hosted or local settings', async () => {
-  upsertProject({ name: 'fill-space-move', path: '/w/fill-space-move' })
+  upsertProject({ recordId: newRecordId(), name: 'fill-space-move', path: '/w/fill-space-move' })
   let writes = 0
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
@@ -140,7 +141,7 @@ test('fill-absent refuses a hosted row elsewhere before writing hosted or local 
 })
 
 test('fill-absent writes only to the declaration before its local commit', async () => {
-  upsertProject({ name: 'fill-space-new', path: '/w/fill-space-new' })
+  upsertProject({ recordId: newRecordId(), name: 'fill-space-new', path: '/w/fill-space-new' })
   const events: string[] = []
   installRecordApiClient({
     ...createMemoryRecordApiClient(),

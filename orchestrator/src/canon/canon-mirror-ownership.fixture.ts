@@ -1,6 +1,7 @@
 import { existsSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -22,6 +23,7 @@ export function mirrorRepository(prefix: string): string {
 export async function registerManagedMirror(root: string, name: string): Promise<void> {
   installRecordApiClient(createMemoryRecordApiClient())
   upsertProject({
+    recordId: newRecordId(),
     name,
     path: root,
     canon: true,

@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { Client } from '@modelcontextprotocol/client'
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { getDoc } from '../doc/docs.ts'
 import { projectByName, upsertProject } from '../project/projects.ts'
@@ -38,7 +39,13 @@ async function withDocClient(run: (client: Client) => Promise<void>): Promise<vo
 }
 
 async function canonFixture() {
-  upsertProject({ name: project, path: selectedTree, canon: true, settings: {} })
+  upsertProject({
+    recordId: newRecordId(),
+    name: project,
+    path: selectedTree,
+    canon: true,
+    settings: {},
+  })
   return setDoc({
     scope: 'canon',
     subject: project,

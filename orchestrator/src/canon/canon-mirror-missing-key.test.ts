@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { upsertProject } from '../project/projects.ts'
 import { mirrorRepositoryCanon } from './canon-mirror.ts'
@@ -21,6 +22,7 @@ test('a managed project without a standing key is skipped as a failure', async (
   const root = repository()
   try {
     upsertProject({
+      recordId: newRecordId(),
       name: 'canon-mirror-missing-key',
       path: root,
       canon: true,

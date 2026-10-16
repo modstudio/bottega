@@ -90,7 +90,9 @@ test('an unchanged clean comparison names the architect read', () => {
 test('live since-read sends the recorded tip through the service to the observed diff', async () => {
   const database = db()
   database
-    .query('INSERT INTO project (name,path,settings) VALUES (?,?,?)')
+    .query(
+      'INSERT INTO project (record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?)',
+    )
     .run('diff-service-fixture', '/repo', '{}')
   const run = database
     .query<{ id: number }, []>(

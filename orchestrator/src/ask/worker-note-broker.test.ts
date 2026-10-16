@@ -12,8 +12,8 @@ afterEach(() => mock.restore())
 test('host broker derives run facts and completes a requested note', async () => {
   const runId = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
   const project = db()
-    .query(`INSERT INTO project (name,path,settings) VALUES (?,?,?) RETURNING id`)
-    .get('worker-note-broker', '/projects/main', '{}') as { id: number }
+    .query(`INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?) RETURNING id`)
+    .get(newRecordId(), 'worker-note-broker', '/projects/main', '{}') as { id: number }
   db()
     .query(`UPDATE run SET project_id=?,worktree=?,branch=?,session_id=?,head_commit=? WHERE id=?`)
     .run(project.id, '/runs/tree', 'DEV-1029-worker', 'session-42', 'abc123', runId)
@@ -70,8 +70,8 @@ test('host broker derives run facts and completes a requested note', async () =>
 test('host broker retries a claim that throws on a later poll tick', async () => {
   const runId = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
   const project = db()
-    .query(`INSERT INTO project (name,path,settings) VALUES (?,?,?) RETURNING id`)
-    .get('worker-note-retry', '/projects/main', '{}') as { id: number }
+    .query(`INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?) RETURNING id`)
+    .get(newRecordId(), 'worker-note-retry', '/projects/main', '{}') as { id: number }
   db()
     .query(`UPDATE run SET project_id=?,worktree=? WHERE id=?`)
     .run(project.id, '/runs/tree', runId)

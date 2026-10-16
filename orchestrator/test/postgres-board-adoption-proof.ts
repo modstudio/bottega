@@ -66,7 +66,8 @@ function seedLocalBoard(input: ProofInput) {
       `INSERT INTO board_message
        (record_id,kind,author_kind,author_session,audience,title,body,ack_required,expires_at,created_at,
         author_harness,author_project)
-       VALUES (?,'notice','architect',?,?,'Adopt notice','Notice',0,?,?,'claude',?) RETURNING id`,
+       VALUES (?,'notice','architect',?,?,'Adopt notice','Notice',0,?,?,'claude',?)
+       RETURNING id,record_id`,
     )
     .get(
       newRecordId(),
@@ -75,7 +76,7 @@ function seedLocalBoard(input: ProofInput) {
       input.expiresAt,
       created,
       input.project,
-    ) as { id: number }
+    ) as { id: number; record_id: string }
   const receiptReader = input.caseSession('adopt-receipt')
   local
     .query(
@@ -96,7 +97,8 @@ function seedLocalBoard(input: ProofInput) {
       `INSERT INTO board_message
        (record_id,kind,author_kind,author_session,audience,title,body,ack_required,expires_at,created_at,
         author_harness,author_project)
-       VALUES (?,'question','architect',?,?,'Adopt question','Question',0,?,?,'claude',?) RETURNING id`,
+       VALUES (?,'question','architect',?,?,'Adopt question','Question',0,?,?,'claude',?)
+       RETURNING id,record_id`,
     )
     .get(
       newRecordId(),
@@ -105,31 +107,36 @@ function seedLocalBoard(input: ProofInput) {
       input.expiresAt,
       created,
       input.project,
-    ) as { id: number }
-  local
+    ) as { id: number; record_id: string }
+  const reply = local
     .query(
       `INSERT INTO board_message
        (record_id,kind,author_kind,author_session,audience,title,body,ack_required,expires_at,created_at,
         author_harness,author_project,thread_root_id)
-       VALUES (?,'reply','architect',?,NULL,NULL,'Answer',0,NULL,?,'claude',?,?)`,
+       VALUES (?,'reply','architect',?,NULL,NULL,'Answer',0,NULL,?,'claude',?,?)
+       RETURNING id,record_id`,
     )
-    .run(newRecordId(), input.caseSession('adopt-reply'), created, input.project, question.id)
-  local
+    .get(newRecordId(), input.caseSession('adopt-reply'), created, input.project, question.id) as {
+    id: number
+    record_id: string
+  }
+  const claim = local
     .query(
       `INSERT INTO board_claim
        (record_id,project,subject_kind,subject_value,holder_kind,holder_session,duration_ms,taken_at,
         renewed_at,lapses_at)
-       VALUES (?,?,'resource','adoption-proof','architect',?,3600000,?,?,?)`,
+       VALUES (?,?,'resource','adoption-proof','architect',?,3600000,?,?,?)
+       RETURNING id,record_id`,
     )
-    .run(
+    .get(
       newRecordId(),
       input.project,
       input.caseSession('adopt-claim'),
       created,
       created,
       new Date(Date.now() + 3_600_000).toISOString(),
-    )
-  return { local, notice, receiptReader }
+    ) as { id: number; record_id: string }
+  return { local, notice, question, reply, claim, receiptReader }
 }
 
 export function registerBoardAdoptionProof(input: ProofInput): void {
@@ -142,35 +149,52 @@ export function registerBoardAdoptionProof(input: ProofInput): void {
        VALUES ('${localMachineId}','${input.userId()}','adoption-machine',now(),now())
        ON CONFLICT (id) DO UPDATE SET user_id=excluded.user_id,last_seen=excluded.last_seen;`,
     )
-    const { local, notice, receiptReader } = seedLocalBoard(input)
+    const { local, notice, question, reply, claim, receiptReader } = seedLocalBoard(input)
     expect(
       await adoptHostedBoard({ confirm: 4, database: local, client: adoptionClient(input) }),
     ).toMatchObject({ status: 'adopted', uploaded: 4 })
-    const ids = local
-      .query<{ local_kind: string; hosted_id: string }, []>(
-        'SELECT local_kind,hosted_id FROM board_hosted_adoption_ledger',
+    const ledger = local
+      .query<{ local_kind: string; source_record_id: string; state: string }, []>(
+        `SELECT local_kind,source_record_id,state
+         FROM board_hosted_adoption_ledger ORDER BY local_kind`,
       )
       .all()
-    const hostedNotice = ids.find((row) => row.local_kind === 'notice')!.hosted_id
-    const hostedQuestion = ids.find((row) => row.local_kind === 'question')!.hosted_id
-    const noticeRead = await fetch(`${input.origin()}/v1/board/threads/${hostedNotice}`, {
+    expect(ledger).toEqual(
+      expect.arrayContaining([
+        { local_kind: 'claim', source_record_id: claim.record_id, state: 'uploaded' },
+        { local_kind: 'notice', source_record_id: notice.record_id, state: 'uploaded' },
+        { local_kind: 'question', source_record_id: question.record_id, state: 'uploaded' },
+        { local_kind: 'reply', source_record_id: reply.record_id, state: 'uploaded' },
+      ]),
+    )
+    const noticeRead = await fetch(`${input.origin()}/v1/board/threads/${notice.record_id}`, {
       headers: headers(input.token()),
     })
-    const questionRead = await fetch(`${input.origin()}/v1/board/threads/${hostedQuestion}`, {
+    const questionRead = await fetch(`${input.origin()}/v1/board/threads/${question.record_id}`, {
       headers: headers(input.token()),
     })
     const claimsRead = (await (
       await fetch(`${input.origin()}/v1/board/claims?project=${input.project}`, {
         headers: headers(input.token()),
       })
-    ).json()) as { claims: Array<{ subject: { value: string } }> }
+    ).json()) as { claims: Array<{ id: string; subject: { value: string } }> }
     expect(noticeRead.status).toBe(200)
-    expect(((await questionRead.json()) as { replies: unknown[] }).replies.length).toBe(1)
-    expect(claimsRead.claims.some((row) => row.subject.value === 'adoption-proof')).toBeTrue()
+    expect(((await noticeRead.json()) as { root: { id: string } }).root.id).toBe(notice.record_id)
+    const hostedQuestion = (await questionRead.json()) as {
+      root: { id: string }
+      replies: Array<{ id: string }>
+    }
+    expect(hostedQuestion.root.id).toBe(question.record_id)
+    expect(hostedQuestion.replies).toEqual([expect.objectContaining({ id: reply.record_id })])
+    expect(
+      claimsRead.claims.some(
+        (row) => row.id === claim.record_id && row.subject.value === 'adoption-proof',
+      ),
+    ).toBeTrue()
     const changes = await adoptionClient(input).listBoardChanges({ after: '0', limit: 100 })
     expect(
       changes.items
-        .find((item) => item.message.id === hostedNotice)
+        .find((item) => item.message.id === notice.record_id)
         ?.receipts.some((receipt) => receipt.readerSession === receiptReader),
     ).toBeTrue()
     expect(notice.id).toBeGreaterThan(0)

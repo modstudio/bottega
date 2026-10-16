@@ -49,7 +49,9 @@ describe('operator waiting decision', () => {
 
   test('effective user rulings mark an inserted question as waiting', async () => {
     db()
-      .query('INSERT INTO project (name,path,settings) VALUES (?,?,?)')
+      .query(
+        'INSERT INTO project (record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?)',
+      )
       .run('fixture', '/fixture', JSON.stringify({ autonomy: { rulings: 'user' } }))
     const owner = run('running')
     expect(await initialQuestionWaitingAt(owner.id, '2026-09-25')).toBe('2026-09-25')

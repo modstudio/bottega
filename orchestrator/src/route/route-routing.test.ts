@@ -430,7 +430,7 @@ describe('fan-out routing exclusions', () => {
   test('a known incompatible MCP catalogue excludes grok and refuses an explicit pin', () => {
     const project = db()
       .query(
-        "INSERT INTO project (name,path,settings) VALUES ('compat-fixture','/compat-fixture','{}') RETURNING id",
+        "INSERT INTO project (record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'compat-fixture','/compat-fixture','{}') RETURNING id",
       )
       .get() as { id: number }
     const run = addRun({ agent: 'codex', job: 'mcp-query', repo: 'compat-fixture' })

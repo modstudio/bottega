@@ -112,7 +112,12 @@ test('the read command records the branch and tip from --cwd', () => {
     )
     const tip = git(cwd, 'rev-parse', 'HEAD')
     expect(git(process.cwd(), 'branch', '--show-current')).not.toBe('DEV-1262-review-read-fixture')
-    upsertProject({ name: 'read-command-fixture', path: cwd, settings: { trunk: 'main' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'read-command-fixture',
+      path: cwd,
+      settings: { trunk: 'main' },
+    })
     db()
       .query(
         `INSERT INTO run
@@ -163,7 +168,9 @@ test('a tip unreachable from the checked-out branch is refused without a review 
   const d = new Database(':memory:')
   applyMigrations(d)
   const cwd = resolve(import.meta.dir, '../../..')
-  d.query('INSERT INTO project (name,path,settings) VALUES (?,?,?)').run('fixture', cwd, '{}')
+  d.query(
+    'INSERT INTO project (record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?)',
+  ).run('fixture', cwd, '{}')
   d.query(
     `INSERT INTO run
       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch,session_id)

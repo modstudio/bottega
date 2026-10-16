@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -20,7 +21,7 @@ afterEach(() => {
 })
 
 test('a hosted set that sends an article field refuses before the local commit', async () => {
-  upsertProject({ name: 'hosted-article', path: '/w/hosted-article' })
+  upsertProject({ recordId: newRecordId(), name: 'hosted-article', path: '/w/hosted-article' })
   installRecordApiClient(createMemoryRecordApiClient())
 
   await expect(

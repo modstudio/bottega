@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { DocAudience } from '../../../shared/docs.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -158,7 +159,7 @@ test('hosted order translates local ids and names a document without a record id
 })
 
 test('reorder refuses the children of a generated reference page', async () => {
-  upsertProject({ name: PLATFORM_SLUG, path: process.cwd(), settings: {} })
+  upsertProject({ recordId: newRecordId(), name: PLATFORM_SLUG, path: process.cwd(), settings: {} })
   const page = {
     kind: 'article' as const,
     delivery: 'demand' as const,

@@ -269,7 +269,7 @@ describe('operator MCP tools', () => {
     )
     const { upsertProject } = await import('../project/projects.ts')
     installRecordApiClient(createMemoryRecordApiClient())
-    upsertProject({ name: 'file-ruling-project', path: process.cwd() })
+    upsertProject({ recordId: newRecordId(), name: 'file-ruling-project', path: process.cwd() })
     const runId = addRun({
       agent: 'codex',
       job: 'file-question',

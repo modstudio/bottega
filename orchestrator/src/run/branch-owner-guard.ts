@@ -20,19 +20,15 @@ function aliveOwnerOnBranch(input: {
   branch: string
   conversationRootId: number | null
   projectId: number | null
-  projectName: string | null
 }): BranchConversationRow | null {
   const rows = db()
     .query(
       `SELECT id, parent_run_id, status, branch, job FROM run
        WHERE branch=? AND status IN ('running','asking')
-         AND (project_id=? OR (project_id IS NULL AND repo=?))
+         AND project_id=?
        ORDER BY id`,
     )
-    .all(input.branch, input.projectId, input.projectName) as Omit<
-    BranchConversationRow,
-    'writesRepo'
-  >[]
+    .all(input.branch, input.projectId) as Omit<BranchConversationRow, 'writesRepo'>[]
   const declaredRows = rows.map((row) => ({
     ...row,
     writesRepo: jobWritesRepo(row.job, JOBS),
@@ -44,7 +40,6 @@ export function assertBranchHasNoAliveOwner(input: {
   branch: string | undefined
   conversationRootId: number | null
   projectId: number | null
-  projectName: string | null
   retryCommand?: string
 }): void {
   const branch = input.branch

@@ -2,6 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -95,7 +96,13 @@ Read [the workflow](.github/workflows/workflows-sync.yml).
 
 test('a branch-only citation requires the subject worktree named by --cwd', async () => {
   const subject = repository()
-  upsertProject({ name: 'subject', path: subject.main, canon: true, settings: {} })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'subject',
+    path: subject.main,
+    canon: true,
+    settings: {},
+  })
   const base = [
     'doc',
     'set',

@@ -29,7 +29,9 @@ const hookRoots: string[] = []
 
 function ensurePostingProject() {
   db()
-    .query(`INSERT OR IGNORE INTO project(name,path,settings) VALUES ('push-project',?,'{}')`)
+    .query(
+      `INSERT OR IGNORE INTO project(record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'push-project',?,'{}')`,
+    )
     .run(postingCwd)
 }
 

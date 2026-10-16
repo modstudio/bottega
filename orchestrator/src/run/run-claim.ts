@@ -322,7 +322,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     branch: existingBranch,
     conversationRootId: resumePlan?.rootId ?? null,
     projectId: runProjectId,
-    projectName: runProjectName,
   })
   // A repository row has no artifact address until creation returns one.
   const claimedCwd = repoJob ? null : callerCwd
@@ -681,7 +680,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             branch: existingBranch,
             conversationRootId: resumePlan?.rootId ?? claim.id,
             projectId: runProjectId,
-            projectName: runProjectName,
           })
           prepareResumeBranchIfNeeded(repoRoot, resumePlan)
           // The PROJECT owns its worktrees. A bare `git worktree add` here would
@@ -843,7 +841,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
                   branch: inheritedWorktree.branch,
                   conversationRootId: claim.id,
                   projectId: resolvedTaskBranch!.projectId,
-                  projectName: resolvedTaskBranch!.projectName,
                 })
                 if (!worktreeExists(inheritedWorktree.path)) {
                   throw new Error(

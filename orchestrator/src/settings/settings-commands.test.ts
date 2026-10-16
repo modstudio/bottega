@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -53,6 +54,7 @@ function fixtureProject(name: string) {
     `${JSON.stringify({ permissions: { allow: [`Bash(${PLATFORM_SLUG} question inbox*)`], ask: ['Bash(git *)'] } }, null, 2)}\n`,
   )
   upsertProject({
+    recordId: newRecordId(),
     name,
     path: root,
     stack: null,
@@ -571,6 +573,7 @@ describe('settings permission', () => {
 
     const root = fixtureProject('unmanaged-permissions')
     upsertProject({
+      recordId: newRecordId(),
       name: 'unmanaged-permissions',
       path: root,
       stack: null,

@@ -173,6 +173,18 @@ export function storeMigrationState(
   return 'current'
 }
 
+/** Whether one exact journal entry is already recorded in this store. */
+export function migrationApplied(d: Database, tag: string, folder = MIGRATIONS_FOLDER): boolean {
+  if (!tableExists(d, MIGRATIONS_TABLE)) return false
+  const entry = migrationJournal(folder).find((candidate) => candidate.tag === tag)
+  if (!entry) throw new Error(`unknown migration ${tag}`)
+  return Boolean(
+    d
+      .query(`SELECT 1 FROM ${MIGRATIONS_TABLE} WHERE created_at=? AND hash=?`)
+      .get(entry.when, migrationHash(entry, folder)),
+  )
+}
+
 export function migrationRefusal(d: Database): string | null {
   const state = migrationState(d)
   if (state.ahead) {
@@ -450,8 +462,8 @@ function executeMigrationSource(d: Database, source: string): void {
   executeStatements(d, splitMigrationSource(source).ddl)
 }
 
-function applyBackfills(d: Database, folder: string): void {
-  for (const entry of migrationJournal(folder)) {
+function applyBackfills(d: Database, entries: JournalEntry[], folder: string): void {
+  for (const entry of entries) {
     const backfill = splitMigrationSource(migrationSource(entry, folder)).backfill
     if (backfill.trim()) executeStatements(d, backfill)
   }
@@ -465,9 +477,8 @@ export function expectedSchemaHash(folder = MIGRATIONS_FOLDER): string {
   if (cached) return cached
   const d = new Database(':memory:')
   try {
-    for (const entry of migrationJournal(folder)) {
-      executeMigrationSource(d, migrationSource(entry, folder))
-    }
+    d.exec('PRAGMA foreign_keys = ON')
+    applyMigrations(d, folder)
     const hash = canonicalSchemaHash(d)
     expectedSchemaHashes.set(folder, hash)
     return hash
@@ -589,11 +600,20 @@ function adoptBaseline(d: Database, folder: string): string[] {
   return [entry.tag]
 }
 
-/** Apply pending journal entries and re-run backfills under one IMMEDIATE lock. */
-export function applyMigrations(d: Database, folder = MIGRATIONS_FOLDER): string[] {
+function applyMigrationRange(d: Database, folder: string, beforeMigration?: string): string[] {
   d.exec('PRAGMA busy_timeout = 15000')
-  d.exec('BEGIN IMMEDIATE')
+  const journal = migrationJournal(folder)
+  const boundary = beforeMigration
+    ? journal.findIndex((entry) => entry.tag === beforeMigration)
+    : journal.length
+  if (boundary < 0) throw new Error(`unknown migration boundary ${beforeMigration}`)
+  const allowedEntries = journal.slice(0, boundary)
+  const legacyAlterTable = (
+    d.query('PRAGMA legacy_alter_table').get() as { legacy_alter_table: number }
+  ).legacy_alter_table
+  d.exec('PRAGMA foreign_keys = OFF; PRAGMA legacy_alter_table = OFF')
   try {
+    d.exec('BEGIN IMMEDIATE')
     ensureSchemaLock(d)
     d.exec(`UPDATE ${SCHEMA_LOCK_TABLE} SET id = 1 WHERE id = 1`)
     const versions = adoptBaseline(d, folder)
@@ -603,15 +623,35 @@ export function applyMigrations(d: Database, folder = MIGRATIONS_FOLDER): string
         `refusing to migrate a store ahead of this binary's migration journal: ${state.ahead}`,
       )
     }
-    for (const entry of state.pending) {
+    const allowed = new Set(allowedEntries.map((entry) => entry.tag))
+    for (const entry of state.pending.filter((entry) => allowed.has(entry.tag))) {
       createMigrationsTable(d)
       executeMigrationSource(d, migrationSource(entry, folder))
       recordMigration(d, entry, folder)
       stampUserVersion(d, entry.idx + 1)
       versions.push(entry.tag)
     }
-    applyBackfills(d, folder)
-    stampUserVersion(d, migrationJournal(folder).length)
+    applyBackfills(d, allowedEntries, folder)
+    const highestApplied = journal.reduce(
+      (highest, entry) =>
+        state.pending.some((pending) => pending.tag === entry.tag)
+          ? highest
+          : Math.max(highest, entry.idx + 1),
+      0,
+    )
+    stampUserVersion(d, Math.max(readUserVersion(d), highestApplied))
+    const broken = d.query('PRAGMA foreign_key_check').all() as Array<{
+      table: string
+      rowid: number | null
+      parent: string
+      fkid: number
+    }>
+    if (broken.length) {
+      const first = broken[0]!
+      throw new Error(
+        `refusing to commit migration with a dangling foreign key: table ${first.table}, rowid ${first.rowid ?? 'NULL'}, parent ${first.parent}, fkid ${first.fkid}`,
+      )
+    }
     d.exec('COMMIT')
     return versions
   } catch (error) {
@@ -621,5 +661,22 @@ export function applyMigrations(d: Database, folder = MIGRATIONS_FOLDER): string
       /* statement error already aborted the transaction */
     }
     throw error
+  } finally {
+    d.exec('PRAGMA foreign_keys = ON')
+    d.exec(`PRAGMA legacy_alter_table = ${legacyAlterTable}`)
   }
+}
+
+/** Apply the complete pending journal and re-run every shipped backfill. */
+export function applyMigrations(d: Database, folder = MIGRATIONS_FOLDER): string[] {
+  return applyMigrationRange(d, folder)
+}
+
+/** Apply pending entries up to, but not including, one named migration. */
+export function applyMigrationsBefore(
+  d: Database,
+  beforeMigration: string,
+  folder = MIGRATIONS_FOLDER,
+): string[] {
+  return applyMigrationRange(d, folder, beforeMigration)
 }

@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -34,7 +35,13 @@ test('project canon import refuses a tree-aware broken reference before the host
       '---\ndescription: Target\n---\n\nCurrent target.\n',
     )
     spawnFixtureGitSync(['add', '.'], { cwd: root })
-    upsertProject({ name: 'canon-import-reference', path: root, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'canon-import-reference',
+      path: root,
+      canon: true,
+      settings: {},
+    })
     const values = new Map([
       ['project', 'canon-import-reference'],
       ['cwd', root],

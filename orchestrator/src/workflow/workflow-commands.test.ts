@@ -78,6 +78,7 @@ const recordedArtifact = (project: string) => {
 
 const registerFixtureProject = (name: string) =>
   upsertProject({
+    recordId: newRecordId(),
     name,
     path: `/fixture/${name}`,
     stack: 'bun',
@@ -86,6 +87,7 @@ const registerFixtureProject = (name: string) =>
 
 const registerCurrentProject = (name: string) =>
   upsertProject({
+    recordId: newRecordId(),
     name,
     path: process.cwd(),
     stack: 'bun',
@@ -331,6 +333,7 @@ test('workflow exec service returns each child exit code after recording its row
     delete process.env.ORCH_DEPTH
     process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
     upsertProject({
+      recordId: newRecordId(),
       name: 'workflow-exec-status',
       path: process.cwd(),
       stack: 'bun',
@@ -381,6 +384,7 @@ test('command outcome maps a signal to its shell status and error line', () => {
 
 test('workflow probe service returns the recorded child exit code', async () => {
   upsertProject({
+    recordId: newRecordId(),
     name: 'workflow-probe-status',
     path: process.cwd(),
     stack: 'bun',
@@ -398,6 +402,7 @@ test('workflow probe service returns the recorded child exit code', async () => 
 
 test('workflow probe prints a failed command exit and stored output tail after the id', async () => {
   upsertProject({
+    recordId: newRecordId(),
     name: 'workflow-probe-presentation-failure',
     path: process.cwd(),
     stack: 'bun',

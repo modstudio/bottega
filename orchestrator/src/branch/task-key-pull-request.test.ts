@@ -8,12 +8,9 @@ const database = () => {
   const d = new Database(':memory:')
   d.exec('PRAGMA foreign_keys=ON')
   applyMigrations(d)
-  d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
-    'fixture',
-    '/fixture',
-    'bun',
-    '{}',
-  )
+  d.query(
+    'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
+  ).run('fixture', '/fixture', 'bun', '{}')
   return d
 }
 

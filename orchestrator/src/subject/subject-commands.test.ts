@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { upsertProject } from '../project/projects.ts'
 import { subjectCommand } from './subject-commands.ts'
 
@@ -10,7 +11,7 @@ const flags = {
 const presentation = { log: () => undefined }
 
 test('list presents an empty registered project as one line while JSON stays an array', async () => {
-  upsertProject({ name: 'alpha', path: '/w/alpha' })
+  upsertProject({ recordId: newRecordId(), name: 'alpha', path: '/w/alpha' })
   const lines: unknown[][] = []
   await subjectCommand('list', ['subject', 'list', 'alpha'], flags, {
     log: (...values) => lines.push(values),
@@ -32,7 +33,7 @@ test('list presents an empty registered project as one line while JSON stays an 
 })
 
 test('rename, define, and retire unknown subjects name the list command that clears them', async () => {
-  upsertProject({ name: 'alpha', path: '/w/alpha' })
+  upsertProject({ recordId: newRecordId(), name: 'alpha', path: '/w/alpha' })
   for (const [verb, tail] of [
     ['rename', ['Missing', 'New name']],
     ['define', ['Missing']],

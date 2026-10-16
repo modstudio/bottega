@@ -8,6 +8,7 @@ import { registerEmbeddedAssets } from '../../../shared/embedded-assets.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   applyMigrations,
+  applyMigrationsBefore,
   expectedSchemaHash,
   MIGRATIONS_FOLDER,
   migrationJournal,
@@ -921,7 +922,9 @@ test('project task identity migration backfills ledger project relationships', (
       )
       .run(source.id)
 
-    expect(applyMigrations(database)).toEqual(pendingMigrationsFrom('0047_project_task_identity'))
+    expect(applyMigrationsBefore(database, '0048_user_canon_owner')).toEqual([
+      '0047_project_task_identity',
+    ])
     expect(database.query('SELECT * FROM port_ref_source').get()).toMatchObject({
       task_key: 'SHARED-1',
       target_project_id: project.id,
@@ -966,7 +969,9 @@ test('user canon owner migration preserves docs and enforces owner addresses', (
       )
       .run()
 
-    expect(applyMigrations(database)).toEqual(pendingMigrationsFrom('0048_user_canon_owner'))
+    expect(applyMigrationsBefore(database, '0049_operator_waiting')).toEqual([
+      '0048_user_canon_owner',
+    ])
     expect(database.query('SELECT title, record_id, owner FROM doc WHERE id=1').get()).toEqual({
       title: 'Existing',
       record_id: 'record-doc',

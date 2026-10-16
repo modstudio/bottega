@@ -52,8 +52,8 @@ function postingProject() {
   const cwd = resolve(import.meta.dir, '../../..')
   db()
     .query(
-      `INSERT OR IGNORE INTO project(name,path,settings)
-       VALUES ('board-post-fixture',?,'{}')`,
+      `INSERT OR IGNORE INTO project(record_id,name,path,settings)
+       VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'board-post-fixture',?,'{}')`,
     )
     .run(cwd)
   const project = projectAt(cwd)
@@ -149,7 +149,7 @@ test('local architect audiences select the posting project, all projects, or one
   const clock = Date.now()
   db()
     .query(
-      `INSERT OR IGNORE INTO project(name,path,settings) VALUES ('board-other','/tmp/board-other','{}')`,
+      `INSERT OR IGNORE INTO project(record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'board-other','/tmp/board-other','{}')`,
     )
     .run()
   const presence = db().query(
@@ -658,7 +658,7 @@ test('plain architects duplicate identity includes the posting project', () => {
   const firstCwd = resolve(import.meta.dir)
   const secondCwd = resolve(import.meta.dir, '../record')
   const project = db().query(
-    `INSERT OR IGNORE INTO project(name,path,settings) VALUES (?,?, '{}') RETURNING id`,
+    `INSERT OR IGNORE INTO project(record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?, '{}') RETURNING id`,
   )
   project.get('board-duplicate-a', firstCwd)
   project.get('board-duplicate-b', secondCwd)

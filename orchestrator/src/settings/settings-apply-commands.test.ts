@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -171,6 +172,7 @@ describe('settings render write', () => {
     mkdirSync(join(root, '.claude'), { recursive: true })
     writeFileSync(join(root, '.claude', 'settings.json'), '{}\n')
     upsertProject({
+      recordId: newRecordId(),
       name: 'main-fixture',
       path: root,
       stack: null,

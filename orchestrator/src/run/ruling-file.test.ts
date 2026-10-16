@@ -85,8 +85,8 @@ describe('file ruling', () => {
   test('files a workflow ruling with workflow provenance and question audit', async () => {
     db()
       .query(
-        `INSERT OR IGNORE INTO project (name,path,canon,settings)
-       VALUES ('workflow-fixture','/fixture',1,'{}')`,
+        `INSERT OR IGNORE INTO project (record_id,name,path,canon,settings)
+       VALUES ('${newRecordId()}','workflow-fixture','/fixture',1,'{}')`,
       )
       .run()
     const cursor = db()
@@ -133,8 +133,8 @@ describe('file ruling', () => {
   test('workflow filing requires owner authority or operator override and audits the actual actor', async () => {
     db()
       .query(
-        `INSERT OR IGNORE INTO project (name,path,canon,settings)
-         VALUES ('workflow-fixture','/fixture',1,'{}')`,
+        `INSERT OR IGNORE INTO project (record_id,name,path,canon,settings)
+         VALUES ('${newRecordId()}','workflow-fixture','/fixture',1,'{}')`,
       )
       .run()
     const cursor = db()
@@ -426,7 +426,7 @@ describe('file ruling', () => {
   })
 
   test('files through the real setDoc when the question has a task key and the ruling has a numeral', async () => {
-    upsertProject({ name: PLATFORM_SLUG, path: process.cwd() })
+    upsertProject({ recordId: newRecordId(), name: PLATFORM_SLUG, path: process.cwd() })
     const run = addRun({
       agent: 'codex',
       job: 'implement',

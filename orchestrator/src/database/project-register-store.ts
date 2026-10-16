@@ -17,7 +17,7 @@ export const DEFAULT_LOCAL_PROJECT_SETTINGS: ProjectSettings = {
 }
 
 export type ProjectRegisterWrite = {
-  recordId?: string | null
+  recordId: string
   name: string
   path: string
   stack?: string | null
@@ -32,11 +32,11 @@ export function writeProjectRegisterRow(database: Database, project: ProjectRegi
       `INSERT INTO project (record_id, name, path, stack, canon, settings, retired_at) VALUES (?,?,?,?,?,?,NULL)
        ON CONFLICT(name) DO UPDATE SET path=excluded.path, stack=excluded.stack,
                                        canon=excluded.canon, settings=excluded.settings,
-                                       record_id=COALESCE(excluded.record_id, project.record_id),
+                                       record_id=COALESCE(project.record_id, excluded.record_id),
                                        retired_at=NULL`,
     )
     .run(
-      project.recordId ?? null,
+      project.recordId,
       project.name,
       project.path.replace(/\/$/, ''),
       project.stack ?? null,

@@ -21,7 +21,12 @@ const condition = (
 })
 function insertRun4177PackRows(): string {
   const root = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
-  upsertProject({ name: PLATFORM_SLUG, path: root, settings: { trunk: 'main' } })
+  upsertProject({
+    recordId: newRecordId(),
+    name: PLATFORM_SLUG,
+    path: root,
+    settings: { trunk: 'main' },
+  })
   const projectId = (
     db().query('SELECT id FROM project WHERE name=?').get(PLATFORM_SLUG) as { id: number }
   ).id
@@ -159,7 +164,12 @@ describe('operational monitor conditions', () => {
 
   test('a failed local branch inventory marks the monitor pass partial', async () => {
     const root = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
-    upsertProject({ name: PLATFORM_SLUG, path: root, settings: { trunk: 'main' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: PLATFORM_SLUG,
+      path: root,
+      settings: { trunk: 'main' },
+    })
     const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((
       command: string[] | { cmd: string[] },
     ) => {
@@ -187,7 +197,12 @@ describe('operational monitor conditions', () => {
   test('an absent terminal tree names close-out as the retained Docker resource remedy', async () => {
     const runId = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
     const project = `monitor-absent-${runId}`
-    upsertProject({ name: project, path: `/registered/${project}`, settings: { trunk: 'main' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: project,
+      path: `/registered/${project}`,
+      settings: { trunk: 'main' },
+    })
     db()
       .query(
         `UPDATE run SET repo=?,cwd=?,worktree=?,worktree_source='recipe',recipe_snapshot=?,
@@ -229,7 +244,12 @@ describe('operational monitor conditions', () => {
   test('a legacy absent recipe run does not offer close-out for Docker resources', async () => {
     const runId = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
     const project = `monitor-legacy-${runId}`
-    upsertProject({ name: project, path: `/registered/${project}`, settings: { trunk: 'main' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: project,
+      path: `/registered/${project}`,
+      settings: { trunk: 'main' },
+    })
     db()
       .query(
         `UPDATE run SET repo=?,cwd=?,worktree=?,worktree_source='recipe',recipe_snapshot=?,

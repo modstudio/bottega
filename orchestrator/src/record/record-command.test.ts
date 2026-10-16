@@ -9,7 +9,7 @@ import {
 
 const project = {
   id: 1,
-  recordId: null,
+  recordId: '01990000-0000-7000-8000-000000001214',
   name: 'alpha',
   path: '/tmp/alpha',
   stack: null,

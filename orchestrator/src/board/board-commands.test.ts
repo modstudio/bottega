@@ -11,7 +11,9 @@ import { suggestBoardPost } from './board-suggestions.ts'
 test('board presence validates and records the hook start instant', async () => {
   const cwd = process.cwd()
   db()
-    .query(`INSERT OR IGNORE INTO project(name,path,settings) VALUES ('board-presence-cli',?,'{}')`)
+    .query(
+      `INSERT OR IGNORE INTO project(record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'board-presence-cli',?,'{}')`,
+    )
     .run(cwd)
   const previous = process.env.CLAUDE_CODE_SESSION_ID
   process.env.CLAUDE_CODE_SESSION_ID = 'presence-cli-reader'
@@ -70,7 +72,9 @@ test('board reach refuses windows beyond retained history with a remedy', async 
 test('suggestion post CLI collects path overrides and preserves omitted suggestion tags', async () => {
   const cwd = resolve(import.meta.dir, '../../..')
   db()
-    .query(`INSERT OR IGNORE INTO project(name,path,settings) VALUES ('board-cli-project',?,'{}')`)
+    .query(
+      `INSERT OR IGNORE INTO project(record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'board-cli-project',?,'{}')`,
+    )
     .run(cwd)
   const createRun = db().query(
     `INSERT INTO run

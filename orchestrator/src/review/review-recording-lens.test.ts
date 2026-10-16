@@ -181,7 +181,9 @@ describe('review discipline', () => {
   test('a findings run without a branch records the same change measurement as a branch run', () => {
     const repository = resolve(import.meta.dir, '../../..')
     db()
-      .query('INSERT INTO project (name,path,settings) VALUES (?,?,?)')
+      .query(
+        'INSERT INTO project (record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?)',
+      )
       .run('measurement-fixture', repository, JSON.stringify({ trunk: 'main' }))
     const withoutBranch = addRun({
       agent: 'codex',

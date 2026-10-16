@@ -1,6 +1,7 @@
 import { spyOn } from 'bun:test'
 import { mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { git } from '../git/git-environment.ts'
@@ -58,7 +59,7 @@ export function closeOutFixture(options: { submodule?: boolean } = {}) {
     repo,
   )
   git(['checkout', '--detach', head], worktree)
-  upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
+  upsertProject({ recordId: newRecordId(), name: project, path: repo, settings: { trunk: 'main' } })
   db()
     .query(
       `UPDATE run SET repo=?,cwd=?,worktree=?,branch=NULL,minted_branch=NULL,base_commit=?,

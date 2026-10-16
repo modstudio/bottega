@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, mock, spyOn, test } from 'bun:test'
 import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { terminalCloseOutRuns } from '../monitor/monitor-conditions.ts'
@@ -46,7 +47,7 @@ function heldCleanup(id: number): { project: string; repo: string; tree: string;
   const repo = join(dir, project)
   const tree = join(repo, '.claude', 'worktrees', `orch-${id}`)
   mkdirSync(join(repo, '.git'), { recursive: true })
-  upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
+  upsertProject({ recordId: newRecordId(), name: project, path: repo, settings: { trunk: 'main' } })
   db()
     .query(
       `UPDATE run
@@ -303,7 +304,7 @@ test('force discard refuses a kept review subject and releases only the reader p
   const branch = `DEV-930-orch-${owner}`
   const commands: string[][] = []
   mkdirSync(join(repo, '.git'), { recursive: true })
-  upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
+  upsertProject({ recordId: newRecordId(), name: project, path: repo, settings: { trunk: 'main' } })
   db()
     .query('UPDATE run SET repo=?, branch=?, minted_branch=? WHERE id=?')
     .run(project, branch, branch, owner)

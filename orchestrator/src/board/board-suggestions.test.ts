@@ -13,7 +13,9 @@ import {
 function projectFixture() {
   const cwd = resolve(import.meta.dir, '../../..')
   db()
-    .query(`INSERT OR IGNORE INTO project(name,path,settings) VALUES ('suggestion-project',?,'{}')`)
+    .query(
+      `INSERT OR IGNORE INTO project(record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'suggestion-project',?,'{}')`,
+    )
     .run(cwd)
   return cwd
 }

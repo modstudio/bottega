@@ -311,7 +311,7 @@ describe('project workflow injection', () => {
   test('resolves every requested fact with its stored type', () => {
     const project: Project = {
       id: 1,
-      recordId: null,
+      recordId: '01990000-0000-7000-8000-000000001214',
       name: 'fixture',
       path: '/fixture',
       stack: 'node',
@@ -694,7 +694,7 @@ describe('project workflow injection', () => {
   test('one refusal names every missing fact and its project update command', () => {
     const project: Project = {
       id: 1,
-      recordId: null,
+      recordId: '01990000-0000-7000-8000-000000001214',
       name: 'fixture',
       path: '/fixture',
       stack: null,

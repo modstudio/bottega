@@ -611,6 +611,7 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/project/project-commands.ts',
     [
       '../../../shared/brand.ts',
+      '../../../shared/record-id.ts',
       'node:fs',
       '../database/db.ts',
       '../lens/lenses.ts',
@@ -699,6 +700,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../doc/doc-write-allowed.ts',
       '../verdict/verdict-payload.ts',
       './record-auth.ts',
+      './record-api-client-paths.ts',
       './record-session.ts',
       './record-snapshots.ts',
       './record-settings.ts',

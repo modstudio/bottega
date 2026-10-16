@@ -473,11 +473,11 @@ export function createPullRequest(
 
 function recordedRunBranches(database: Database, project: Project): string[] {
   const rows = database
-    .query<{ branch: string | null; minted_branch: string | null }, [number, string]>(
+    .query<{ branch: string | null; minted_branch: string | null }, [number]>(
       `SELECT branch,minted_branch FROM run
-        WHERE project_id=? OR (project_id IS NULL AND repo=?)`,
+        WHERE project_id=?`,
     )
-    .all(project.id, project.name)
+    .all(project.id)
   return [
     ...new Set(rows.flatMap((row) => [row.branch, row.minted_branch]).filter(Boolean)),
   ] as string[]

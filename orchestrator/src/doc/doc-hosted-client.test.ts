@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -8,6 +9,7 @@ import { hostedDocClient } from './doc-hosted-client.ts'
 
 test('a project-addressed document client binds every call to the declared space', async () => {
   upsertProject({
+    recordId: newRecordId(),
     name: 'routed-docs',
     path: '/repo/routed-docs',
     settings: { space: 'docs-team' },
@@ -134,6 +136,7 @@ test('a project-addressed document client binds every call to the declared space
 
 test('a retired project still supplies its declared document destination', async () => {
   upsertProject({
+    recordId: newRecordId(),
     name: 'retired-routed-docs',
     path: '/repo/retired-routed-docs',
     settings: { space: 'retired-team' },

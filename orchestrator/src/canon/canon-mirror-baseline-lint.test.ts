@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -30,6 +31,7 @@ test('a pre-existing canon lint finding does not stop publication', async () => 
   try {
     installRecordApiClient(createMemoryRecordApiClient())
     upsertProject({
+      recordId: newRecordId(),
       name: 'canon-mirror-baseline-lint',
       path: root,
       canon: true,

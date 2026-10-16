@@ -103,7 +103,7 @@ function returningQuestionSql(): string {
 
 const priorEnv: Record<string, string | undefined> = {}
 beforeEach(() => {
-  upsertProject({ name: 'continuation-fixture', path: dir })
+  upsertProject({ recordId: newRecordId(), name: 'continuation-fixture', path: dir })
   priorEnv.CLAUDE_CODE_SESSION_ID = process.env.CLAUDE_CODE_SESSION_ID
   priorEnv.ORCH_DEPTH = process.env.ORCH_DEPTH
   priorEnv.ORCH_EXEC_PATH = process.env.ORCH_EXEC_PATH
@@ -997,7 +997,7 @@ describe('retry command', () => {
   test('retry provisions a released reader from its recorded base', async () => {
     const id = failed()
     const registeredPath = process.cwd()
-    upsertProject({ name: 'continuation-fixture', path: registeredPath })
+    upsertProject({ recordId: newRecordId(), name: 'continuation-fixture', path: registeredPath })
     const baseCommit = gitContext(registeredPath, 'rev-parse', '--verify', 'HEAD')!
     const released = join(dir, `released-reader-${id}`)
     db()

@@ -97,7 +97,9 @@ describe('tracked recipe execution', () => {
     const database = db()
     const projectId = Number(
       database
-        .query("INSERT INTO project(name,path,canon) VALUES ('compose-owner',?,1)")
+        .query(
+          "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'compose-owner',?,1)",
+        )
         .run(repoRoot).lastInsertRowid,
     )
     const runId = Number(
@@ -186,7 +188,9 @@ describe('tracked recipe execution', () => {
     const database = db()
     const projectId = Number(
       database
-        .query("INSERT INTO project(name,path,canon) VALUES ('required-provision',?,1)")
+        .query(
+          "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'required-provision',?,1)",
+        )
         .run(repoRoot).lastInsertRowid,
     )
     const insertRun = database.query(
@@ -490,8 +494,11 @@ describe('tracked recipe execution', () => {
   test('shared declarations add no claims to the recipe allocation set', () => {
     const database = db()
     const projectId = Number(
-      database.query("INSERT INTO project(name,path,canon) VALUES ('shared','/shared',1)").run()
-        .lastInsertRowid,
+      database
+        .query(
+          "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'shared','/shared',1)",
+        )
+        .run().lastInsertRowid,
     )
     const runId = Number(
       database
@@ -563,8 +570,11 @@ describe('tracked recipe execution', () => {
   test('the worker environment uses the conversation root label for a resumed turn', () => {
     const database = db()
     const projectId = Number(
-      database.query("INSERT INTO project(name,path,canon) VALUES ('resume','/resume',1)").run()
-        .lastInsertRowid,
+      database
+        .query(
+          "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'resume','/resume',1)",
+        )
+        .run().lastInsertRowid,
     )
     const rootId = Number(
       database
@@ -603,8 +613,11 @@ describe('tracked recipe execution', () => {
   test('claims every database before a pre step can run and exposes their filled names', () => {
     const database = db()
     const projectId = Number(
-      database.query("INSERT INTO project(name,path,canon) VALUES ('tracked','/tracked',1)").run()
-        .lastInsertRowid,
+      database
+        .query(
+          "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'tracked','/tracked',1)",
+        )
+        .run().lastInsertRowid,
     )
     const runId = Number(
       database
@@ -761,8 +774,11 @@ describe('tracked recipe execution', () => {
   test('releases database claims only after every teardown result succeeds', () => {
     const database = db()
     const projectId = Number(
-      database.query("INSERT INTO project(name,path,canon) VALUES ('teardown','/teardown',1)").run()
-        .lastInsertRowid,
+      database
+        .query(
+          "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'teardown','/teardown',1)",
+        )
+        .run().lastInsertRowid,
     )
     const insertRun = database.query(
       `INSERT INTO run

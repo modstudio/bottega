@@ -15,7 +15,11 @@ import { claimNotices, postNotice, reapBoardMessages } from './board-service.ts'
 
 function fixtureProject() {
   const cwd = resolve(import.meta.dir, '../../..')
-  db().query("INSERT INTO project(name,path,settings) VALUES ('claims',?,'{}')").run(cwd)
+  db()
+    .query(
+      "INSERT INTO project(record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'claims',?,'{}')",
+    )
+    .run(cwd)
   return { cwd, project: 'claims' }
 }
 

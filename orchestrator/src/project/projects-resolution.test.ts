@@ -201,7 +201,7 @@ describe('projects are data, not code', () => {
 
   test('a directory belongs to the project that contains it', () => {
     const path = repository('alpha')
-    upsertProject({ name: 'alpha', path, stack: 'php-laravel' })
+    upsertProject({ recordId: newRecordId(), name: 'alpha', path, stack: 'php-laravel' })
     expect(projectAt(path)?.name).toBe('alpha')
     expect(projectAt(join(path, 'src/deep/file'))?.name).toBe('alpha')
     // The case the old path regex could never handle, and the reason
@@ -211,7 +211,7 @@ describe('projects are data, not code', () => {
   })
 
   test('an unregistered directory is null, not a guess', () => {
-    upsertProject({ name: 'alpha', path: '/w/alpha' })
+    upsertProject({ recordId: newRecordId(), name: 'alpha', path: '/w/alpha' })
     expect(projectAt('/somewhere/else')).toBeNull()
     // Not '/w/alphabet': containment must respect the path separator, or a
     // project named as a prefix of another would swallow it.
@@ -220,7 +220,7 @@ describe('projects are data, not code', () => {
 
   test('an arbitrarily named non-repository project never resolves from cwd', () => {
     projectDirectory = mkdtempSync(join(tmpdir(), 'orch-tasks-project-'))
-    upsertProject({ name: 'notes-only', path: projectDirectory })
+    upsertProject({ recordId: newRecordId(), name: 'notes-only', path: projectDirectory })
     expect(projectAt(projectDirectory)).toBeNull()
     expect(projectAt(join(projectDirectory, 'child'))).toBeNull()
     expect(projectRepositoryRefusal(projectByName('notes-only')!)).toBe(
@@ -230,6 +230,7 @@ describe('projects are data, not code', () => {
 
   test('code search refuses a caller checkout outside the selected project', async () => {
     upsertProject({
+      recordId: newRecordId(),
       name: 'alpha',
       path: '/w/alpha',
       settings: { search: { code: true } },
@@ -249,8 +250,8 @@ describe('projects are data, not code', () => {
   test('the longest matching path wins, so nesting resolves inward', () => {
     const outer = repository('outer')
     const inner = repository('outer/inner')
-    upsertProject({ name: 'outer', path: outer })
-    upsertProject({ name: 'inner', path: inner })
+    upsertProject({ recordId: newRecordId(), name: 'outer', path: outer })
+    upsertProject({ recordId: newRecordId(), name: 'inner', path: inner })
     expect(projectAt(join(inner, 'src'))?.name).toBe('inner')
     expect(projectAt(join(outer, 'other'))?.name).toBe('outer')
   })
@@ -258,6 +259,7 @@ describe('projects are data, not code', () => {
   test('settings survive a round trip', () => {
     const path = repository('alpha-settings')
     upsertProject({
+      recordId: newRecordId(),
       name: 'alpha',
       path,
       settings: { trunk: 'develop', states: { in_progress: 'active' } },
@@ -307,7 +309,7 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
   })
 
   test('a project with a run refuses removal and keeps the run attributed', () => {
-    upsertProject({ name: 'kept-run', path: '/w/kept-run' })
+    upsertProject({ recordId: newRecordId(), name: 'kept-run', path: '/w/kept-run' })
     const project = projectByName('kept-run')!
     writableDb()
     db()
@@ -331,14 +333,14 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
   })
 
   test('a project with nothing referencing it still removes', () => {
-    upsertProject({ name: 'ephemeral', path: '/w/ephemeral' })
+    upsertProject({ recordId: newRecordId(), name: 'ephemeral', path: '/w/ephemeral' })
     expect(removeProject('ephemeral')).toBe(true)
     expect(projectByName('ephemeral')).toBeNull()
   })
 
   test('retire stamps retired_at and hides the row from acting reads', () => {
     const path = repository('tombstoned')
-    upsertProject({ name: 'tombstoned', path })
+    upsertProject({ recordId: newRecordId(), name: 'tombstoned', path })
     expect(retireProject('tombstoned')).toBe('retired')
     const retired = projects({ retired: true }).find((project) => project.name === 'tombstoned')
     expect(retired?.retiredAt).toBeTruthy()
@@ -354,13 +356,18 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
   })
 
   test('undo and re-add restore a retired name', () => {
-    upsertProject({ name: 'restored', path: '/w/restored' })
+    upsertProject({ recordId: newRecordId(), name: 'restored', path: '/w/restored' })
     expect(retireProject('restored')).toBe('retired')
     expect(unretireProject('restored')).toBe(true)
     expect(projectByName('restored')?.path).toBe('/w/restored')
     expect(projectByName('restored')?.retiredAt).toBeNull()
     expect(retireProject('restored')).toBe('retired')
-    upsertProject({ name: 'restored', path: '/w/restored-next', stack: 'node' })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'restored',
+      path: '/w/restored-next',
+      stack: 'node',
+    })
     const live = projectByName('restored')
     expect(live?.path).toBe('/w/restored-next')
     expect(live?.stack).toBe('node')

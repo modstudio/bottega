@@ -51,8 +51,8 @@ afterAll(() => {
 
 describe(`${PLATFORM_SLUG} project retire`, () => {
   test('list omits retired rows unless --retired', async () => {
-    upsertProject({ name: 'listed-live', path: '/w/listed-live' })
-    upsertProject({ name: 'listed-retired', path: '/w/listed-retired' })
+    upsertProject({ recordId: newRecordId(), name: 'listed-live', path: '/w/listed-live' })
+    upsertProject({ recordId: newRecordId(), name: 'listed-retired', path: '/w/listed-retired' })
     expect(retireProject('listed-retired')).toBe('retired')
     const live = await runProject(['project', 'list'])
     expect(live).toContain('listed-live')
@@ -71,7 +71,7 @@ describe(`${PLATFORM_SLUG} project retire`, () => {
   })
 
   test('retire --undo clears the stamp', async () => {
-    upsertProject({ name: 'undo-me', path: '/w/undo-me' })
+    upsertProject({ recordId: newRecordId(), name: 'undo-me', path: '/w/undo-me' })
     expect(await runProject(['project', 'retire', 'undo-me'])).toBe('retired undo-me')
     expect(projectByName('undo-me')).toBeNull()
     expect(await runProject(['project', 'retire', 'undo-me'])).toBe('already retired undo-me')
@@ -83,7 +83,7 @@ describe(`${PLATFORM_SLUG} project retire`, () => {
 
   test('re-adding a retired name prints un-retired', async () => {
     const path = mkdtempSync(join(tmpdir(), 'orch-unretire-'))
-    upsertProject({ name: 'readded', path })
+    upsertProject({ recordId: newRecordId(), name: 'readded', path })
     expect(retireProject('readded')).toBe('retired')
     expect(projects().some((project) => project.name === 'readded')).toBe(false)
     const out = await runProject(['project', 'add', path], { name: 'readded' })
@@ -107,7 +107,7 @@ test('hosted failure leaves the local register unchanged', async () => {
 })
 
 test('hosted rename failure leaves hosted and local unchanged', async () => {
-  upsertProject({ name: 'rename-src', path: '/w/rename-src' })
+  upsertProject({ recordId: newRecordId(), name: 'rename-src', path: '/w/rename-src' })
   const hosted: string[] = []
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
@@ -128,14 +128,14 @@ test('hosted rename failure leaves hosted and local unchanged', async () => {
 })
 
 test('local rename collision makes no hosted call', async () => {
-  upsertProject({ name: 'taken-src', path: '/w/taken-src' })
-  upsertProject({ name: 'taken-dst', path: '/w/taken-dst' })
+  upsertProject({ recordId: newRecordId(), name: 'taken-src', path: '/w/taken-src' })
+  upsertProject({ recordId: newRecordId(), name: 'taken-dst', path: '/w/taken-dst' })
   let hosted = 0
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     upsertProject: async (input) => {
       hosted += 1
-      return { id: newRecordId(), name: input.name }
+      return { id: input.id!, name: input.name }
     },
     renameSubject: async () => {
       throw new Error('must not chain a second hosted rename')
@@ -150,13 +150,13 @@ test('local rename collision makes no hosted call', async () => {
 })
 
 test('empty rename target makes no hosted call', async () => {
-  upsertProject({ name: 'empty-src', path: '/w/empty-src' })
+  upsertProject({ recordId: newRecordId(), name: 'empty-src', path: '/w/empty-src' })
   let hosted = 0
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     upsertProject: async (input) => {
       hosted += 1
-      return { id: newRecordId(), name: input.name }
+      return { id: input.id!, name: input.name }
     },
   })
   await expect(runProject(['project', 'set', 'empty-src'], { name: '   ' })).rejects.toThrow(
@@ -167,7 +167,7 @@ test('empty rename target makes no hosted call', async () => {
 })
 
 test('rename writes hosted once and updates the local name and release ledger', async () => {
-  upsertProject({ name: 'once-src', path: '/w/once-src' })
+  upsertProject({ recordId: newRecordId(), name: 'once-src', path: '/w/once-src' })
   writableDb()
     .query(
       `INSERT INTO release_ledger
@@ -180,7 +180,7 @@ test('rename writes hosted once and updates the local name and release ledger', 
     ...createMemoryRecordApiClient(),
     upsertProject: async (input) => {
       hosted.push({ name: input.name, previousName: input.previousName })
-      return { id: newRecordId(), name: input.name }
+      return { id: input.id!, name: input.name }
     },
     renameSubject: async () => {
       throw new Error('must not chain a second hosted rename')
@@ -215,11 +215,12 @@ test('project push writes every registered project to the hosted record', async 
     upsertProject: async (input, destination) => {
       names.push(input.name)
       destinations.set(input.name, destination?.destinationSpaceId)
-      return { id: newRecordId(), name: input.name }
+      return { id: input.id!, name: input.name }
     },
   })
-  upsertProject({ name: 'push-live', path: '/w/push-live' })
+  upsertProject({ recordId: newRecordId(), name: 'push-live', path: '/w/push-live' })
   upsertProject({
+    recordId: newRecordId(),
     name: 'push-retired',
     path: '/w/push-retired',
     settings: { space: 'other' },
@@ -235,6 +236,7 @@ test('project push writes every registered project to the hosted record', async 
 
 test('fill absent settings refuses a stale snapshot without changing any field', async () => {
   upsertProject({
+    recordId: newRecordId(),
     name: 'setup-stale',
     path: '/w/setup-stale',
     settings: { trunk: 'written-elsewhere' },
