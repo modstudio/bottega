@@ -20,9 +20,11 @@ import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { contractConflicts } from '../contract/contract.ts'
 import { nowIso, sessionId } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
+import { branchOf } from '../git/git-environment.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
 import { effectiveMcpRequest, parseRequestedMcp, requiredMcpServer } from '../mcp/mcp-preflight.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
+import { reviewFindingMemoryRows } from '../review/rejected-finding-memory.ts'
 import { implicitReviewWarning } from '../review/review-target.ts'
 import {
   REVIEW_COVERAGE,
@@ -48,14 +50,31 @@ import {
   isWorktreeRelativeRef,
   resolveBase,
 } from '../worktree/worktree-caller.ts'
-import { dispatchCommand } from './dispatch-commands.ts'
+import { dispatchCommand, reviewMemoryBranch } from './dispatch-commands.ts'
 import { callerCheckoutFacts } from './dispatch-preflight.ts'
+import type { ReviewFindingMemory } from './review-memory.ts'
 import { lookupProjectTaskKey } from './task-key-lookup.ts'
 
 type Presentation = {
   error(...values: unknown[]): void
   printRunId(id: number): void
   cwd(): string
+}
+
+function earlierReviewRejections(
+  project: string,
+  cwd: string,
+  explicitBranch: string | null,
+): ReviewFindingMemory {
+  return {
+    project,
+    branch: reviewMemoryBranch(branchOf(cwd), explicitBranch),
+    rows: reviewFindingMemoryRows(project),
+  }
+}
+
+function recordRunWarning(runId: number, warning: string): void {
+  appendRunEvent(runId, { ts: nowIso(), type: 'text', text: warning })
 }
 
 type CallerCheckoutDecision = {
@@ -405,8 +424,8 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
         }
         return lookupProjectTaskKey(registered, key)
       },
-      recordRunWarning: (runId, warning) =>
-        appendRunEvent(runId, { ts: nowIso(), type: 'text', text: warning }),
+      recordRunWarning,
+      earlierReviewRejections,
       detach,
       follow: (id, quiet) =>
         followRun(id, quiet, true, {

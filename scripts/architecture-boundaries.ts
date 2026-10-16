@@ -251,6 +251,7 @@ export const importBoundaries: ImportBoundary[] = [
       './task-key-admission.ts',
     ],
     'Keep dispatch command adapters independent of transports, routing, worktrees, the CLI, and reviews.',
+    ['./review-memory.ts'],
   ),
 
   boundary(
@@ -303,6 +304,7 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/dispatch/review-lens-prompt.ts',
     [],
     'Keep review-lens prompt composition a pure decision over lens text and supplied prompt.',
+    ['./review-memory.ts'],
   ),
   boundary(
     'doc-commands-boundary',

@@ -487,7 +487,12 @@ export const modules: ArchitectureModule[] = [
   module('shared/record-session.ts', ['./brand.ts', './keychain.ts']),
   ...settingsModules,
   ...recordModules,
-  ...reviewModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
+  ...reviewModuleSpecs.map((spec) =>
+    module(spec.file, [
+      ...spec.allowed,
+      ...('typeOnlyAllowed' in spec ? spec.typeOnlyAllowed : []),
+    ]),
+  ),
   module('orchestrator/src/score/score-outbox.ts', [
     '../../../shared/record-id.ts',
     '../../../shared/record/schema.ts',

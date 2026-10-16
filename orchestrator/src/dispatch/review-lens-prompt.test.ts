@@ -1,18 +1,34 @@
 import { describe, expect, test } from 'bun:test'
-import { reviewLensPrompt } from './review-lens-prompt.ts'
+import {
+  MAX_EARLIER_ROUND_REJECTIONS,
+  renderEarlierRoundRejections,
+  reviewLensPrompt,
+} from './review-lens-prompt.ts'
+import type { ReviewFindingMemory } from './review-memory.ts'
 
 const lens = { question: 'Does the change actually hold?', excludes: 'taste and style nits' }
+const noEarlierRejections = { project: 'fixture', branch: null, rows: [] }
 
 describe('reviewLensPrompt', () => {
   test('no-prompt mutation: a lens question is the prompt', () => {
-    expect(reviewLensPrompt({ lens, mechanicallyEnforced: [], supplied: '' })).toBe(
-      `QUESTION\n${lens.question}\n\nEXCLUDES\n${lens.excludes}`,
-    )
+    expect(
+      reviewLensPrompt({
+        lens,
+        mechanicallyEnforced: [],
+        earlierRejections: noEarlierRejections,
+        supplied: '',
+      }),
+    ).toBe(`QUESTION\n${lens.question}\n\nEXCLUDES\n${lens.excludes}`)
   })
 
   test('supplied-prompt mutation: lens text first, supplied text after', () => {
     const supplied = 'focus on the new parser'
-    const prompt = reviewLensPrompt({ lens, mechanicallyEnforced: [], supplied })
+    const prompt = reviewLensPrompt({
+      lens,
+      mechanicallyEnforced: [],
+      earlierRejections: noEarlierRejections,
+      supplied,
+    })
     expect(prompt.startsWith(`QUESTION\n${lens.question}`)).toBe(true)
     expect(prompt.indexOf(lens.question)).toBeLessThan(prompt.indexOf(supplied))
     expect(prompt.endsWith(supplied)).toBe(true)
@@ -20,11 +36,21 @@ describe('reviewLensPrompt', () => {
   })
 
   test('no-lens mutation: review-lens without a lens is still refused as empty', () => {
-    expect(() => reviewLensPrompt({ lens: null, mechanicallyEnforced: [], supplied: '' })).toThrow(
-      'empty prompt',
-    )
     expect(() =>
-      reviewLensPrompt({ lens: null, mechanicallyEnforced: [], supplied: '  \n' }),
+      reviewLensPrompt({
+        lens: null,
+        mechanicallyEnforced: [],
+        earlierRejections: noEarlierRejections,
+        supplied: '',
+      }),
+    ).toThrow('empty prompt')
+    expect(() =>
+      reviewLensPrompt({
+        lens: null,
+        mechanicallyEnforced: [],
+        earlierRejections: noEarlierRejections,
+        supplied: '  \n',
+      }),
     ).toThrow('empty prompt')
   })
 
@@ -36,6 +62,7 @@ describe('reviewLensPrompt', () => {
         { title: 'Formatting', tool: 'biome format' },
         { title: 'Secrets', tool: 'gitleaks' },
       ],
+      earlierRejections: noEarlierRejections,
       supplied,
     })
 
@@ -48,4 +75,82 @@ describe('reviewLensPrompt', () => {
         supplied,
     )
   })
+})
+
+type MemoryRow = ReviewFindingMemory['rows'][number]
+
+function finding(overrides: Partial<MemoryRow> = {}): MemoryRow {
+  return {
+    project: 'fixture',
+    branch: 'DEV-1373',
+    reviewId: 10,
+    completedAt: '2026-10-15T12:00:00Z',
+    ordinal: 1,
+    disposition: 'rejected',
+    location: 'src/example.ts:4',
+    evidence: 'The first line\ncontinues on the second.',
+    rejectionCategory: 'incorrect',
+    triageReason: 'The API already guarantees this.',
+    lens: 'correctness',
+    reviewedCommit: 'abc123',
+    ...overrides,
+  }
+}
+
+test('carries only current same-branch completed rejections and reports the cap', () => {
+  const older = Array.from({ length: MAX_EARLIER_ROUND_REJECTIONS }, (_, index) =>
+    finding({
+      reviewId: 100 - index,
+      completedAt: `2026-10-${String(14 - Math.floor(index / 2)).padStart(2, '0')}T12:00:00Z`,
+      ordinal: index + 2,
+      location: `src/older-${index}.ts:1`,
+      triageReason: null,
+    }),
+  )
+  const rendered = renderEarlierRoundRejections({
+    project: 'fixture',
+    branch: 'DEV-1373',
+    rows: [
+      ...older,
+      finding(),
+      finding({ disposition: 'accepted', location: 'src/accepted.ts:1' }),
+      finding({
+        disposition: 'accepted',
+        location: 'src/amended.ts:1',
+        triageReason: 'Amended from rejected to accepted.',
+      }),
+      finding({ branch: 'DEV-other', location: 'src/foreign.ts:1' }),
+      finding({ completedAt: null, location: 'src/incomplete.ts:1' }),
+    ],
+  })
+
+  expect(rendered).toContain('RULED IN EARLIER ROUNDS')
+  expect(rendered).toContain(
+    'src/example.ts:4 — The first line continues on the second. [rejected: incorrect; reason: The API already guarantees this.; lens: correctness; reviewed commit: abc123]',
+  )
+  expect(rendered).not.toContain('src/accepted.ts')
+  expect(rendered).not.toContain('src/amended.ts')
+  expect(rendered).not.toContain('src/foreign.ts')
+  expect(rendered).not.toContain('src/incomplete.ts')
+  expect(rendered).toContain('1 earlier rejected finding(s) omitted by the carry cap.')
+})
+
+test('places earlier rulings after exclusions and tool enforcement', () => {
+  const prompt = reviewLensPrompt({
+    lens: { question: 'Is it correct?', excludes: 'Style.' },
+    mechanicallyEnforced: [{ title: 'Types', tool: 'bun run typecheck' }],
+    earlierRejections: {
+      project: 'fixture',
+      branch: 'DEV-1373',
+      rows: [finding()],
+    },
+    supplied: 'Inspect this change.',
+  })
+
+  expect(prompt.indexOf('EXCLUDES')).toBeLessThan(prompt.indexOf('ENFORCED BY TOOL'))
+  expect(prompt.indexOf('ENFORCED BY TOOL')).toBeLessThan(prompt.indexOf('RULED IN EARLIER ROUNDS'))
+  expect(prompt.indexOf('RULED IN EARLIER ROUNDS')).toBeLessThan(
+    prompt.indexOf('Inspect this change.'),
+  )
+  expect(prompt).toContain('unless the code at that location changed since the commit shown')
 })

@@ -1,7 +1,11 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveLens } from '../lens/lenses.ts'
-import { genericLensProfileNotices, lensDispatchNotices } from './dispatch-commands.ts'
+import {
+  genericLensProfileNotices,
+  lensDispatchNotices,
+  reviewMemoryBranch,
+} from './dispatch-commands.ts'
 
 test('generic lens resolution names the stack-profile write command', () => {
   const notices = genericLensProfileNotices(resolveLens('correctness', null), 'node')
@@ -21,4 +25,9 @@ test('unknown catalogue lens notice is omitted for the free-form inline job', ()
       stack: 'node',
     }),
   ).toEqual([])
+})
+
+test('explicit --review target keys memory independently of the caller checkout branch', () => {
+  expect(reviewMemoryBranch('main', 'DEV-1373-target')).toBe('DEV-1373-target')
+  expect(reviewMemoryBranch('DEV-1373-caller', null)).toBe('DEV-1373-caller')
 })
