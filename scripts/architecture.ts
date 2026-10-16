@@ -796,8 +796,27 @@ type ArchitectureRule = {
   }
 }
 
+const hubWebViewDataRule: ArchitectureRule = {
+  name: 'hub-web-views-do-not-fetch-data-or-read-hub-mode',
+  severity: 'error',
+  comment:
+    'Hub views may not fetch data or read hub mode; move the data access into the route and pass the data down as props.',
+  from: {
+    path: '^hub/web/src/',
+    pathNot: [
+      '^hub/web/src/(?:routes|trpc)/',
+      '^hub/web/src/lib/hub-mode\\.ts$',
+      '^hub/web/src/(?:main|router)\\.tsx$',
+      '^hub/web/src/.*\\.test\\.tsx?$',
+    ],
+  },
+  to: {
+    path: `(?:^@/trpc/|^@/lib/hub-mode$|^hub/web/src/trpc/|^hub/web/src/lib/hub-mode\\.ts$|${architectureDependencyPath('@tanstack/react-query')}|^@trpc/|(^|/)node_modules/@trpc/[^/]+(?:/|$))`,
+  },
+}
+const hubWebRouterException = concerns.exceptions[0]!
+
 export function architectureRules() {
-  const exception = concerns.exceptions[0]!
   const cycleFiles = [...new Set(allowedCycles.flatMap(({ cycle }) => cycle.slice(0, -1)))]
   const forbidden: ArchitectureRule[] = [
     concernIsolationRule(concerns.roots),
@@ -813,21 +832,21 @@ export function architectureRules() {
     {
       name: 'hub-web-imports-only-router-type',
       severity: 'error',
-      comment: exception.reason,
-      from: { path: `^${exception.from}/` },
+      comment: hubWebRouterException.reason,
+      from: { path: `^${hubWebRouterException.from}/` },
       to: {
         path: '^hub/(?!web/)',
-        pathNot: [exactArchitecturePath(exception.to)],
+        pathNot: [exactArchitecturePath(hubWebRouterException.to)],
       },
     },
     {
       name: 'hub-web-router-is-type-only',
       severity: 'error',
-      comment: exception.reason,
-      from: { path: `^${exception.from}/` },
+      comment: hubWebRouterException.reason,
+      from: { path: `^${hubWebRouterException.from}/` },
       to: {
-        path: exactArchitecturePath(exception.to),
-        dependencyTypesNot: exception.dependencyTypes,
+        path: exactArchitecturePath(hubWebRouterException.to),
+        dependencyTypesNot: hubWebRouterException.dependencyTypes,
       },
     },
     ...modules.map((entry) => ({
@@ -885,6 +904,7 @@ export function architectureRules() {
       from: { path: uiFolders(layer.folders) },
       to: { path: uiFolders(uiLayers.slice(index + 1).flatMap((higher) => higher.folders)) },
     })),
+    hubWebViewDataRule,
     {
       name: 'import-cli-boundary',
       severity: 'error',
