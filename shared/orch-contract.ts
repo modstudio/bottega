@@ -15,45 +15,62 @@ import {
   trackerSettingsShape,
 } from './trackers.ts'
 
+const DocSearchResultBaseSchema = z
+  .object({
+    scope: z.string(),
+    subject: z.string().nullable(),
+    slug: z.string(),
+    title: z.string(),
+    status: z.enum(DOC_STATUSES),
+    headingPath: z.array(z.string()),
+    snippet: z.string(),
+    truncated: z.boolean(),
+    embeddingScore: z.number().finite(),
+    rerankScore: z.number().finite(),
+  })
+  .strict()
+
+const DocSearchEnvelopeShape = {
+  query: z.string(),
+  k: z.number().int(),
+  contract: z
+    .object({
+      model: z.string(),
+      dimension: z.number().int(),
+      instructionVersion: z.string(),
+    })
+    .strict(),
+  refresh: z
+    .object({
+      embedded: z.number().int(),
+      deleted: z.number().int(),
+      unchanged: z.number().int(),
+      stale: z.number().int(),
+    })
+    .strict(),
+}
+
+export const RetrievalDocSearchOutputSchema = z
+  .object({
+    ...DocSearchEnvelopeShape,
+    results: z.array(DocSearchResultBaseSchema),
+  })
+  .strict()
+
 export const DocSearchOutputSchema = z
   .object({
-    query: z.string(),
-    k: z.number().int(),
-    contract: z
-      .object({
-        model: z.string(),
-        dimension: z.number().int(),
-        instructionVersion: z.string(),
-      })
-      .strict(),
-    refresh: z
-      .object({
-        embedded: z.number().int(),
-        deleted: z.number().int(),
-        unchanged: z.number().int(),
-        stale: z.number().int(),
-      })
-      .strict(),
+    ...DocSearchEnvelopeShape,
     results: z.array(
-      z
-        .object({
-          scope: z.string(),
-          subject: z.string().nullable(),
-          slug: z.string(),
-          title: z.string(),
-          status: z.enum(DOC_STATUSES),
-          headingPath: z.array(z.string()),
-          snippet: z.string(),
-          truncated: z.boolean(),
-          embeddingScore: z.number().finite(),
-          rerankScore: z.number().finite(),
-        })
-        .strict(),
+      DocSearchResultBaseSchema.extend({
+        summary: z.string(),
+        summarySource: z.enum(['written', 'derived']),
+      }).strict(),
     ),
   })
   .strict()
 
 export type DocSearchOutput = z.infer<typeof DocSearchOutputSchema>
+export type RetrievalDocSearchOutput = z.infer<typeof RetrievalDocSearchOutputSchema>
 
 export const CodeSearchOutputSchema = z
   .object({

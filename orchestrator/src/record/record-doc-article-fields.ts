@@ -137,7 +137,6 @@ export async function resolveHostedArticleFields(
       relatedSubjectIds,
       sourceFiles,
       checkedAgainstCommit,
-      summary,
     }),
   )
   const attached = new Set(
@@ -219,7 +218,6 @@ export async function importedArticleSubjectNames(
       relatedSubjectIds: doc.relatedSubjectIds,
       sourceFiles: doc.sourceFiles,
       checkedAgainstCommit: doc.checkedAgainstCommit,
-      summary: doc.summary,
     }),
   )
   const ids = [

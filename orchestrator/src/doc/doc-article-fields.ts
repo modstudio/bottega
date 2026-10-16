@@ -8,7 +8,6 @@ import {
   type DocStatus,
   normalizeDocCheckedAgainstCommit,
   normalizeDocSourceFiles,
-  normalizeDocSummary,
 } from '../../../shared/docs.ts'
 import type { CanonLintInputCollector } from '../canon/canon-files.ts'
 import type { CanonRow } from '../canon/canon-hydrate.ts'
@@ -81,7 +80,7 @@ function resolveArticleAttachment(
 
 function resolveSummary(input: ArticleFieldInput, prior: Doc | null): string | null {
   if (input.summary === undefined) return prior?.summary ?? null
-  return input.summary === null ? null : normalizeDocSummary(input.summary)
+  return input.summary
 }
 
 export function resolveLocalDocArticleFields(
@@ -126,7 +125,6 @@ export function resolveLocalDocArticleFields(
     relatedSubjectIds: relatedSubjects.map(({ id }) => id),
     sourceFiles,
     checkedAgainstCommit,
-    summary,
   })
   if (refusal) throw new Error(refusal)
   if (!prior && kind === 'article' && input.audiences === undefined) {

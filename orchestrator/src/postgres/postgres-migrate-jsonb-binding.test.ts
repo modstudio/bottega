@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { SQL } from 'bun'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
-import { getRecordDoc, upsertRecordDoc } from '../record/record-docs.ts'
+import { getRecordDoc, restoreRecordDoc, upsertRecordDoc } from '../record/record-docs.ts'
 
 const actorUrl = process.env.ORCH_RECORD_URL
 const adminUrl = process.env.ORCH_TEST_POSTGRES_URL
@@ -37,6 +37,7 @@ realPostgres('Bun SQL jsonb binding', () => {
   test('the document service stores and reads article lists as arrays', async () => {
     const admin = new SQL(adminUrl!)
     const checkedCommit = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    const writtenSummary = 'Written hosted summary.'
     try {
       await admin`
         INSERT INTO space (id,name,slug,created_at)
@@ -77,6 +78,7 @@ realPostgres('Bun SQL jsonb binding', () => {
         relatedSubjectIds: [RELATED_SUBJECT_ID],
         sourceFiles: ['src/article.ts'],
         checkedAgainstCommit: checkedCommit,
+        summary: writtenSummary,
         reason: 'prove JSONB binding',
         author: USER_ID,
       })
@@ -103,6 +105,7 @@ realPostgres('Bun SQL jsonb binding', () => {
       expect(read?.sourceFiles).toEqual(['src/article.ts'])
       expect(read?.relatedSubjects).toEqual([{ id: RELATED_SUBJECT_ID, name: 'Related' }])
       expect(read?.checkedAgainstCommit).toBe(checkedCommit)
+      expect(read).toMatchObject({ summary: writtenSummary, summarySource: 'written' })
 
       const kept = await upsertRecordDoc({
         url: actorUrl!,
@@ -125,6 +128,7 @@ realPostgres('Bun SQL jsonb binding', () => {
         id: written.id,
       })
       expect(readKept?.checkedAgainstCommit).toBe(checkedCommit)
+      expect(readKept).toMatchObject({ summary: writtenSummary, summarySource: 'written' })
       const keptRevisions = await admin`
         SELECT id, checked_against_commit
         FROM doc_revision
@@ -149,6 +153,7 @@ realPostgres('Bun SQL jsonb binding', () => {
         body: 'The checked commit is explicitly cleared.',
         delivery: 'demand',
         checkedAgainstCommit: null,
+        summary: null,
         reason: 'prove checked commit can be cleared',
         author: USER_ID,
         expectedRevision: kept.revisionId,
@@ -160,8 +165,12 @@ realPostgres('Bun SQL jsonb binding', () => {
         id: written.id,
       })
       expect(readCleared?.checkedAgainstCommit).toBeNull()
+      expect(readCleared).toMatchObject({
+        summary: 'The checked commit is explicitly cleared.',
+        summarySource: 'derived',
+      })
       const clearedRevisions = await admin`
-        SELECT id, checked_against_commit
+        SELECT id, checked_against_commit, summary
         FROM doc_revision
         WHERE id IN (
           ${written.revisionId}::uuid,
@@ -172,11 +181,33 @@ realPostgres('Bun SQL jsonb binding', () => {
       `
       expect([...clearedRevisions]).toEqual(
         [
-          { id: written.revisionId, checked_against_commit: checkedCommit },
-          { id: kept.revisionId, checked_against_commit: checkedCommit },
-          { id: cleared.revisionId, checked_against_commit: null },
+          {
+            id: written.revisionId,
+            checked_against_commit: checkedCommit,
+            summary: writtenSummary,
+          },
+          { id: kept.revisionId, checked_against_commit: checkedCommit, summary: writtenSummary },
+          { id: cleared.revisionId, checked_against_commit: null, summary: null },
         ].sort((left, right) => left.id.localeCompare(right.id)),
       )
+
+      await restoreRecordDoc({
+        url: actorUrl!,
+        spaceId: SPACE_ID,
+        userId: USER_ID,
+        id: written.id,
+        revisionId: written.revisionId,
+        reason: 'restore written summary revision',
+        author: USER_ID,
+        expectedRevision: cleared.revisionId,
+      })
+      const restored = await getRecordDoc({
+        url: actorUrl!,
+        spaceId: SPACE_ID,
+        userId: USER_ID,
+        id: written.id,
+      })
+      expect(restored).toMatchObject({ summary: writtenSummary, summarySource: 'written' })
     } finally {
       await admin`UPDATE doc SET latest_revision_id=NULL WHERE space_id=${SPACE_ID}::uuid`
       await admin`DELETE FROM doc_revision WHERE space_id=${SPACE_ID}::uuid`

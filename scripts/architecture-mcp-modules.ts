@@ -117,7 +117,7 @@ export const mcpModules: McpModule[] = [
     'zod',
     '../../../shared/docs.ts',
     '../code/code-search.ts',
-    '../doc/doc-search.ts',
+    '../doc/doc-search-service.ts',
     '../doc/docs.ts',
     '../project/projects.ts',
   ]),

@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test'
 import {
   DOC_SUMMARY_MAX_LENGTH,
   docSummary,
-  effectiveDocSummary,
   normalizeDocAudiences,
   normalizeDocSummary,
 } from './docs.ts'
@@ -40,19 +39,6 @@ describe('docSummary', () => {
     expect(summary.slice(0, -1).endsWith(' ')).toBe(false)
   })
   test('is empty without prose', () => expect(docSummary('# Heading\n\n- item\n')).toBe(''))
-})
-
-describe('effectiveDocSummary', () => {
-  test('written summary wins and empty falls back to the existing derivation', () => {
-    expect(effectiveDocSummary(' Written copy. ', 'Opening paragraph.')).toEqual({
-      summary: 'Written copy.',
-      summarySource: 'written',
-    })
-    expect(effectiveDocSummary('', 'Opening paragraph.')).toEqual({
-      summary: docSummary('Opening paragraph.'),
-      summarySource: 'derived',
-    })
-  })
 })
 
 describe('normalizeDocSummary', () => {

@@ -313,7 +313,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../record/record-session.ts',
       '../worker-store-write.ts',
       './doc-write-tree.ts',
-      './doc-search.ts',
+      './doc-search-service.ts',
       './local-doc-order.ts',
       './docs.ts',
     ],

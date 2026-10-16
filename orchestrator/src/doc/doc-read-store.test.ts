@@ -26,6 +26,13 @@ describe('document read store', () => {
     expect(
       listDocMetadataStore({ audience: 'internal', bodyMatch: 'Private margin' }),
     ).toHaveLength(1)
+    expect(listDocMetadataStore({ audience: 'customer' })).toContainEqual(
+      expect.objectContaining({
+        slug: created.slug,
+        summary: 'Everyone. After.',
+        summarySource: 'derived',
+      }),
+    )
     await expect(
       setDoc({
         scope: 'global',

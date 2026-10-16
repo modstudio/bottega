@@ -2,7 +2,7 @@
 /** Adapts the document corpus and compare-and-swap store to indexed search. */
 
 import { resolve } from 'node:path'
-import type { DocSearchOutput } from '../../shared/orch-contract.ts'
+import type { RetrievalDocSearchOutput } from '../../shared/orch-contract.ts'
 import { type Chunk, loadDocCorpus } from './corpus/chunks.ts'
 import { applyRefresh, indexedRows, storedRows } from './index-store.ts'
 import {
@@ -26,7 +26,7 @@ export async function search(
     subject?: string
     includeDrafts?: boolean
   } = {},
-): Promise<DocSearchOutput> {
+): Promise<RetrievalDocSearchOutput> {
   const repositoryRoot = options.repositoryRoot ?? resolve(import.meta.dir, '../..')
   let refreshPlan: ReturnType<typeof planRefresh> | undefined
   return indexedSearch(

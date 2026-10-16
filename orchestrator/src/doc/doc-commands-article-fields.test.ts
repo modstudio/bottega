@@ -99,6 +99,15 @@ test(`${PLATFORM_SLUG} doc commands preserve, clear, and list article fields by 
     definition: 'Strategy.',
   })
 
+  expect(
+    await command(setArgs('working-summary', '--summary', '  Summary for every doc.  '), 'Body.'),
+  ).toMatchObject({ code: 0 })
+  expect(await show('working-summary')).toMatchObject({
+    kind: 'working',
+    summary: 'Summary for every doc.',
+    summarySource: 'written',
+  })
+
   const created = await command(
     setArgs(
       'pricing-own',

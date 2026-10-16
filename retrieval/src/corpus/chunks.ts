@@ -4,7 +4,10 @@ import { readFile } from 'node:fs/promises'
 import { relative, resolve } from 'node:path'
 import { Glob } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { type DocSearchOutput, DocSearchOutputSchema } from '../../../shared/orch-contract.ts'
+import {
+  type RetrievalDocSearchOutput,
+  RetrievalDocSearchOutputSchema,
+} from '../../../shared/orch-contract.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 
 export type Chunk = {
@@ -19,7 +22,7 @@ export type Chunk = {
   docStatus?: DocStatus
 }
 
-type DocStatus = DocSearchOutput['results'][number]['status']
+type DocStatus = RetrievalDocSearchOutput['results'][number]['status']
 
 export type DocIdentity = { kind: 'doc'; scope: string; subject: string | null; slug: string }
 type CorpusIdentity = { kind: 'code'; path: string } | DocIdentity
@@ -215,7 +218,7 @@ function isDocRow(value: unknown): value is DocRow {
     typeof row.title === 'string' &&
     typeof row.body === 'string' &&
     (typeof row.revision === 'string' || row.revision === null) &&
-    DocSearchOutputSchema.shape.results.element.shape.status.safeParse(row.status).success
+    RetrievalDocSearchOutputSchema.shape.results.element.shape.status.safeParse(row.status).success
   )
 }
 

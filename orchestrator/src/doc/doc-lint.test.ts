@@ -30,10 +30,21 @@ const doc = (body: string, extra: Partial<Parameters<typeof lintDoc>[0]> = {}) =
   slug: 'guide',
   body,
   kind: 'working' as const,
+  summary: 'Written summary.',
   ...extra,
 })
 
 describe('stored document lint', () => {
+  test('an article without a written summary gets a non-refusing warning', () => {
+    expect(lintDoc(doc('Current prose.', { kind: 'article', summary: null }))).toContainEqual({
+      line: 1,
+      rule: 'doc/article-summary',
+      level: 'warning',
+      message: 'article has no written summary',
+      remedy: 'set one with bottega doc set <slug> --summary',
+    })
+  })
+
   test.each(['working', 'article'] as const)('%s warns for both used-to senses', (kind) => {
     for (const body of [
       'This field is used to compute the price.',

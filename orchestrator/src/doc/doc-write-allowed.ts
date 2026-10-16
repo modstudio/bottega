@@ -147,7 +147,6 @@ export function articleFieldRefusal(input: {
   relatedSubjectIds: readonly string[]
   sourceFiles: readonly string[]
   checkedAgainstCommit?: string | null
-  summary?: string | null
 }): string | null {
   const fieldNames = [
     input.form ? 'form' : null,
@@ -155,7 +154,6 @@ export function articleFieldRefusal(input: {
     input.relatedSubjectIds.length ? 'relatedSubjects' : null,
     input.sourceFiles.length ? 'sourceFiles' : null,
     input.checkedAgainstCommit ? 'checkedAgainstCommit' : null,
-    input.summary ? 'summary' : null,
   ].filter((value): value is string => value !== null)
   if (fieldNames.length && (input.scope !== 'project' || input.kind !== 'article')) {
     return `article fields may be set only when kind is article and scope is project; clear first: ${fieldNames.join(', ')}`

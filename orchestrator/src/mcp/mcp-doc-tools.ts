@@ -20,8 +20,8 @@ import {
   getDoc,
   getDocForAudience,
   getDocRevision,
+  listDocMetadata,
   listDocRevisions,
-  listDocs,
   removeDoc,
   setDoc,
   setDocStatus,
@@ -112,10 +112,6 @@ function setDocToolPayload(
   }
 }
 
-function docWithoutBodyWithSummary({ body, ...doc }: ReturnType<typeof listDocs>[number]) {
-  return { ...doc, ...effectiveDocSummary(doc.summary, body) }
-}
-
 async function docToolOwner(user: boolean | undefined, subject: string | null | undefined) {
   if (user && subject !== undefined) throw new Error('user cannot be used with subject')
   return user ? await signedInDocOwner() : null
@@ -170,7 +166,7 @@ export function registerDocTools(
     }) => {
       const owner = await docToolOwner(user, subject)
       return text(
-        listDocs({
+        listDocMetadata({
           scope: user ? 'canon' : scope,
           subject: user ? null : subject,
           scopes,
@@ -182,7 +178,7 @@ export function registerDocTools(
           status,
           kind,
           articleSubject: article_subject,
-        }).map(docWithoutBodyWithSummary),
+        }),
       )
     },
   )

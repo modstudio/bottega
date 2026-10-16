@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { effectiveDocSummary } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   installRecordApiClient,
@@ -110,6 +111,7 @@ function unused(): Promise<never> {
 function capturingClient(overrides: Partial<RecordApiClient> = {}): {
   client: RecordApiClient
   imports: RecordDocImportInput[]
+  hosted: Map<string, Record<string, unknown>>
 } {
   const imports: RecordDocImportInput[] = []
   const hosted = new Map<string, Record<string, unknown>>()
@@ -133,8 +135,20 @@ function capturingClient(overrides: Partial<RecordApiClient> = {}): {
       imports.push(structuredClone(input))
       const id = input.doc.id!
       const revisionIds = input.revisions.map(() => newRecordId())
-      hosted.set(id, { ...input.doc })
-      return { id, revisionIds }
+      hosted.set(id, {
+        ...input.doc,
+        ...effectiveDocSummary(input.doc.summary, input.doc.body),
+      })
+      return {
+        id,
+        revisionIds,
+        form: input.doc.form ?? null,
+        articleSubject: null,
+        relatedSubjects: [],
+        sourceFiles: input.doc.sourceFiles ?? [],
+        checkedAgainstCommit: input.doc.checkedAgainstCommit ?? null,
+        summary: input.doc.summary ?? null,
+      }
     },
     importCanon: unused,
     deleteDoc: unused,
@@ -164,7 +178,7 @@ function capturingClient(overrides: Partial<RecordApiClient> = {}): {
         memberships: [],
       })),
   }
-  return { client, imports }
+  return { client, imports, hosted }
 }
 
 describe('record push-docs grouping', () => {
@@ -274,7 +288,12 @@ describe('record push-docs command', () => {
     db()
       .query("UPDATE doc SET kind='article', source_files='[\"src/article.ts\"]' WHERE id=?")
       .run(docId)
-    const { client } = capturingClient()
+    const { client } = capturingClient({
+      importDoc: async (input) => ({
+        id: input.doc.id!,
+        revisionIds: input.revisions.map(() => newRecordId()),
+      }),
+    })
     installRecordApiClient(client)
 
     await expect(pushDocsCommand({ dryRun: false }, { log: () => undefined })).rejects.toThrow(
@@ -416,6 +435,12 @@ describe('record push-docs command', () => {
         return {
           id: input.doc.slug === 'parent' ? returnedParentId : input.doc.id!,
           revisionIds: input.revisions.map(() => newRecordId()),
+          form: null,
+          articleSubject: null,
+          relatedSubjects: [],
+          sourceFiles: [],
+          checkedAgainstCommit: null,
+          summary: null,
         }
       },
       getDoc: async (hostedId) => ({
@@ -700,5 +725,50 @@ describe('record push-docs command', () => {
     expect(lines.some((line) => line.includes('body hash'))).toBe(true)
     expect(lines.some((line) => line.includes('delivery inject != demand'))).toBe(true)
     expect(lines.some((line) => line.includes(`deleted_at ${NEW}`))).toBe(true)
+  })
+
+  test('push explicitly clears a hosted written summary from a local snapshot', async () => {
+    const liveId = insertDoc({
+      scope: 'machine',
+      subject: null,
+      slug: 'clear-summary',
+      title: 'Clear summary',
+      body: 'Derived local summary.',
+      delivery: 'inject',
+      createdAt: OLD,
+      updatedAt: NEW,
+    })
+    insertRevision({
+      docId: liveId,
+      scope: 'machine',
+      subject: null,
+      slug: 'clear-summary',
+      op: 'set',
+      title: 'Clear summary',
+      body: 'Derived local summary.',
+      delivery: 'inject',
+      reason: 'clear summary locally',
+      at: NEW,
+    })
+    const recordId = db()
+      .query<{ record_id: string }, [number]>('SELECT record_id FROM doc WHERE id=?')
+      .get(liveId)!.record_id
+    const { client, imports, hosted } = capturingClient()
+    hosted.set(recordId, {
+      id: recordId,
+      summary: 'Hosted written summary.',
+      summarySource: 'written',
+    })
+    installRecordApiClient(client)
+
+    await pushDocsCommand({ dryRun: false }, { log: () => undefined })
+
+    expect(imports).toHaveLength(1)
+    expect(imports[0]?.doc).toHaveProperty('summary', null)
+    expect(imports[0]?.revisions[0]).toHaveProperty('summary', null)
+    expect(await client.getDoc(recordId)).toMatchObject({
+      summary: 'Derived local summary.',
+      summarySource: 'derived',
+    })
   })
 })

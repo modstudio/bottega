@@ -121,7 +121,12 @@ export async function getRecordDoc(
     `
     if (!rows[0]) return null
     const doc = recordDocRow(rows[0] as Record<string, unknown>)
-    return { ...doc, body: hostedDocBodyForAudience(doc, input.audience) }
+    const body = hostedDocBodyForAudience(doc, input.audience)
+    return {
+      ...doc,
+      body,
+      ...effectiveDocSummary(doc.summarySource === 'written' ? doc.summary : null, body),
+    }
   })
 }
 

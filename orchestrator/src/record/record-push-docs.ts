@@ -43,7 +43,7 @@ function carriedArticleFields(input: {
     ...(input.relatedSubjectIds.length ? { relatedSubjectIds: input.relatedSubjectIds } : {}),
     ...(input.sourceFiles.length ? { sourceFiles: input.sourceFiles } : {}),
     ...(input.checkedAgainstCommit ? { checkedAgainstCommit: input.checkedAgainstCommit } : {}),
-    ...(input.summary ? { summary: input.summary } : {}),
+    ...(input.summary !== undefined ? { summary: input.summary } : {}),
   }
 }
 
@@ -401,7 +401,7 @@ async function compareLiveDocs(
 ): Promise<string[]> {
   const docs = local
     .query<LocalDoc, []>(
-      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, status, kind, replacement_slug, project_id, created_at, updated_at
+      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, status, kind, summary, replacement_slug, project_id, created_at, updated_at
        FROM doc ORDER BY id`,
     )
     .all()
@@ -450,6 +450,11 @@ function liveDocMismatches(
   }
   if (hosted.kind !== doc.kind) {
     mismatches.push(`${label}: kind ${doc.kind} != ${String(hosted.kind)}`)
+  }
+  if ((hosted.summarySource === 'written' ? hosted.summary : null) !== doc.summary) {
+    mismatches.push(
+      `${label}: summary ${doc.summary ?? 'null'} != ${String(hosted.summarySource === 'written' ? hosted.summary : null)}`,
+    )
   }
   if ((hosted.replacementSlug ?? null) !== doc.replacement_slug) {
     mismatches.push(

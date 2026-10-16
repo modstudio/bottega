@@ -105,8 +105,6 @@ export function mapDoc(row: Record<string, unknown>): DocsDoc {
         : typeof row.checkedAgainstCommit === 'string'
           ? row.checkedAgainstCommit
           : undefined,
-    writtenSummary:
-      row.summarySource === 'written' && typeof row.summary === 'string' ? row.summary : null,
   }
 }
 

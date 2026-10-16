@@ -1,7 +1,7 @@
 // concern: doc-search-adapter
 /** Spawns retrieval semantic search and validates its stable JSON contract. */
 
-import { DocSearchOutputSchema } from '../../../shared/orch-contract.ts'
+import { RetrievalDocSearchOutputSchema } from '../../../shared/orch-contract.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 
 type Runner = (argv: string[]) => Promise<{ stdout: string; stderr: string; exitCode: number }>
@@ -35,7 +35,7 @@ function parseDocSearchOutput(stdout: string) {
       `retrieval search returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
     )
   }
-  const parsed = DocSearchOutputSchema.safeParse(value)
+  const parsed = RetrievalDocSearchOutputSchema.safeParse(value)
   if (!parsed.success) {
     throw new Error('retrieval search returned an invalid JSON contract')
   }

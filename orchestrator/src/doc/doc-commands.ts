@@ -17,11 +17,12 @@ import {
   type DocStatus,
   effectiveDocSummary,
   normalizeDocAudiences,
+  normalizeDocSummary,
 } from '../../../shared/docs.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import type { CanonLintInputCollector } from '../canon/canon-files.ts'
 import { cachedSignedInRecordUser } from '../record/record-session.ts'
-import { searchDocs } from './doc-search.ts'
+import { searchDocs } from './doc-search-service.ts'
 import type { SelectedDocWriteTree } from './doc-write-tree.ts'
 import {
   consumeDoc,
@@ -390,6 +391,12 @@ function clearedListOption(flags: DocFlags, value: string, clear: string): strin
   return has(value) ? (flags.values?.(value) ?? []) : undefined
 }
 
+function summaryOption(flags: DocFlags): string | null | undefined {
+  if (flags.has('no-summary')) return null
+  if (!flags.has('summary')) return undefined
+  return normalizeDocSummary(flags.flag('summary') ?? '')
+}
+
 function articleTreeOptions(flags: DocFlags) {
   const { has, flag } = flags
   if (has('form') && has('no-form')) throw new Error('use --form or --no-form, not both')
@@ -408,7 +415,7 @@ function articleTreeOptions(flags: DocFlags) {
     relatedSubjects: clearedListOption(flags, 'related-subject', 'no-related-subjects'),
     sourceFiles: clearedListOption(flags, 'source-file', 'no-source-files'),
     checkedAgainstCommit: has('no-checked-at') ? null : flag('checked-at'),
-    summary: has('no-summary') ? null : flag('summary'),
+    summary: summaryOption(flags),
   }
 }
 
