@@ -2,10 +2,11 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { FROZEN_STATE_NAMES } from './brand.ts'
+import { FROZEN_STATE_NAMES, PLATFORM_SLUG } from './brand.ts'
 import {
   assertTestHubDatabasePath,
   mintTestHubDatabase,
+  testHubDatabaseAdoptionRefusal,
   testHubDatabasePathRefusal,
 } from './test-hub-database.ts'
 
@@ -27,7 +28,7 @@ describe('hub test database provenance rule', () => {
   test('refuses either live derivation even when it is the minted path', () => {
     const minted = '/canonical/private/tmp/live/hub.db'
     const overriddenLive = minted
-    const defaultLive = '/Users/operator/.local/state/bottega/hub/hub.db'
+    const defaultLive = `/Users/operator/.local/state/${PLATFORM_SLUG}/hub/hub.db`
     expect(testHubDatabasePathRefusal(minted, minted, [overriddenLive, defaultLive])).toContain(
       `HUB_DB resolved ${minted}`,
     )
@@ -39,6 +40,14 @@ describe('hub test database provenance rule', () => {
   test('accepts the matching minted path when it is not live', () => {
     const minted = '/canonical/private/tmp/hub-test-minted/hub.db'
     expect(testHubDatabasePathRefusal(minted, minted, ['/state/hub/hub.db'])).toBeNull()
+  })
+
+  test('refuses to adopt a live path even when it is under temporary storage', () => {
+    const temporaryDirectory = '/canonical/private/tmp'
+    const livePath = `${temporaryDirectory}/operator-state/hub/hub.db`
+    expect(testHubDatabaseAdoptionRefusal(livePath, temporaryDirectory, [livePath])).toContain(
+      `HUB_DB resolved ${livePath}`,
+    )
   })
 
   test('canonicalizes a symlinked ancestor before checking minted identity', () => {

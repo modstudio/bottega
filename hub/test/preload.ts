@@ -7,10 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../shared/config-directory.ts'
 import { machineId } from '../../shared/machine-config.ts'
-import {
-  createTestHubDatabaseGuard,
-  mintTestHubDatabase,
-} from '../../shared/test-hub-database.ts'
+import { createTestHubDatabaseGuard, mintTestHubDatabase } from '../../shared/test-hub-database.ts'
 import { HUB_MIGRATION_BACKFILL_VALUES } from './migration-values.ts'
 
 const fixture = fileURLToPath(new URL('./project-register.ts', import.meta.url))

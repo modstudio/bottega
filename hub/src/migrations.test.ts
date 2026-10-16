@@ -597,7 +597,7 @@ describe('hub migration journal', () => {
         process.execPath,
         '--no-env-file',
         '-e',
-        `import { collectFast } from './hub/src/collect.ts'; await collectFast({ transcripts: async () => ({ rows: 0, skipped: 0 }) })`,
+        `const { adoptTestHubDatabase } = await import('./shared/test-hub-database.ts'); adoptTestHubDatabase(process.env.HUB_DB); const { collectFast } = await import('./hub/src/collect.ts'); await collectFast({ transcripts: async () => ({ rows: 0, skipped: 0 }) })`,
       ],
       {
         env: { ...process.env, HUB_DB: path, HUB_ORCH: fakeOrch },
