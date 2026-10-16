@@ -8,7 +8,6 @@ const machineIdentity = () =>
   uuid('machine_id')
     .notNull()
     .references(() => machine.id)
-const localIdentity = () => bigint('local_id', { mode: 'bigint' })
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull()
 const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull()
 const recordedAt = (name: string) => timestamp(name, { withTimezone: true }).notNull()
@@ -20,7 +19,6 @@ export const landing = pgTable.withRLS(
     spaceId: spaceIdentity(),
     projectId: uuid('project_id').references(() => project.id),
     machineId: machineIdentity(),
-    localId: localIdentity(),
     branch: text().notNull(),
     tip: text(),
     trunkBefore: text('trunk_before'),
@@ -47,7 +45,6 @@ export const landingOverride = pgTable.withRLS(
     spaceId: spaceIdentity(),
     projectId: uuid('project_id').references(() => project.id),
     machineId: machineIdentity(),
-    localId: localIdentity(),
     branch: text().notNull(),
     tip: text().notNull(),
     tree: text().notNull(),
@@ -70,7 +67,6 @@ export const landingReviewCarry = pgTable.withRLS(
     spaceId: spaceIdentity(),
     projectId: uuid('project_id').references(() => project.id),
     machineId: machineIdentity(),
-    localId: localIdentity(),
     branch: text().notNull(),
     tip: text().notNull(),
     tree: text().notNull(),
@@ -95,7 +91,6 @@ export const landingTriageSnapshot = pgTable.withRLS(
     spaceId: spaceIdentity(),
     projectId: uuid('project_id').references(() => project.id),
     machineId: machineIdentity(),
-    localId: localIdentity(),
     branch: text().notNull(),
     tip: text().notNull(),
     tree: text().notNull(),
@@ -122,7 +117,6 @@ export const contention = pgTable.withRLS(
     id: recordIdentity(),
     spaceId: spaceIdentity(),
     machineId: machineIdentity(),
-    localId: localIdentity(),
     at: recordedAt('at'),
     sessionId: text('session_id'),
     resourceKind: text('resource_kind').notNull(),
@@ -146,7 +140,6 @@ export const testFlake = pgTable.withRLS(
     spaceId: spaceIdentity(),
     projectId: uuid('project_id').references(() => project.id),
     machineId: machineIdentity(),
-    localId: localIdentity(),
     test: text().notNull(),
     file: text().notNull(),
     loadAtFailure: jsonb('load_at_failure').notNull(),

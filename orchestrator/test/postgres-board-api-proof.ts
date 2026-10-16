@@ -728,11 +728,11 @@ export function registerBoardApiProofs(input: {
       `INSERT INTO machine (id, user_id, name, registered_at, last_seen)
          VALUES ('${machineId}', '${ownerUserId}', 'board-api-machine', now(), now());
        INSERT INTO run (
-         id, space_id, project_id, machine_id, local_id, started_by_user_id, started_at, agent, job,
+         id, space_id, project_id, machine_id, started_by_user_id, started_at, agent, job,
          prompt_sha, prompt_bytes, prompt_head, probe, status, turn, no_failover,
          automatic_failover, work_preserved, created_at, updated_at
        ) VALUES (
-         '${runId}', '${spaceA}', '${IDS.project}', '${machineId}', 1, '${ownerUserId}',
+         '${runId}', '${spaceA}', '${IDS.project}', '${machineId}', '${ownerUserId}',
          now(), 'proof', 'proof', 'a', 1, 'a', false, 'ok', 1, false, false, false, now(), now()
        );`,
     )
