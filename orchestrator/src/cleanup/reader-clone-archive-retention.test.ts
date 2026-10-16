@@ -60,10 +60,12 @@ test('reader clone archive retention deletes expired archives and keeps newer on
     expect(existsSync(newArchive)).toBe(true)
     expect(existsSync(oldStrayArchive)).toBe(false)
     expect(existsSync(newStrayArchive)).toBe(true)
-    expect(lines).toEqual([
-      `deleted expired reader clone archive ${oldArchive}`,
-      `deleted expired reader clone archive ${oldStrayArchive}`,
-    ])
+    expect(lines.sort()).toEqual(
+      [
+        `deleted expired reader clone archive ${oldArchive}`,
+        `deleted expired reader clone archive ${oldStrayArchive}`,
+      ].sort(),
+    )
   } finally {
     rmSync(join(dir, 'retention-fixture'), { recursive: true, force: true })
   }

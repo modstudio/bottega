@@ -20,7 +20,8 @@ function commandTokens(text: string): string[] {
       token.startsWith('<') ||
       token.startsWith('[') ||
       token.includes('=') ||
-      /^[A-Z][A-Z0-9_-]*$/.test(token)
+      /^[A-Z][A-Z0-9_-]*$/.test(token) ||
+      /^\d+$/.test(token)
     )
       break
     if (!/^\w[\w-]*$/.test(token)) break

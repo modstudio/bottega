@@ -30,6 +30,13 @@ function kindOf(value: unknown): DocKind {
   return value as DocKind
 }
 
+function formOf(value: unknown): DocsTreeItem['form'] {
+  if (value === null) return null
+  return DOC_FORMS.includes(value as (typeof DOC_FORMS)[number])
+    ? (value as (typeof DOC_FORMS)[number])
+    : undefined
+}
+
 function articleSubjectOf(value: unknown): DocArticleSubject | null | undefined {
   if (value === null) return null
   if (!value || typeof value !== 'object') return undefined
@@ -75,6 +82,7 @@ export function mapTreeItem(row: Record<string, unknown>): DocsTreeItem {
     audiences: audiencesOf(row.audiences),
     status: statusOf(row.status),
     kind: kindOf(row.kind),
+    form: formOf(row.form),
     replacementSlug: typeof row.replacementSlug === 'string' ? row.replacementSlug : null,
     delivery: deliveryOf(row.delivery),
     summary: typeof row.summary === 'string' ? row.summary : '',
@@ -88,12 +96,6 @@ export function mapDoc(row: Record<string, unknown>): DocsDoc {
   return {
     ...mapTreeItem(row),
     body: String(row.body ?? ''),
-    form:
-      row.form === null
-        ? null
-        : DOC_FORMS.includes(row.form as (typeof DOC_FORMS)[number])
-          ? (row.form as (typeof DOC_FORMS)[number])
-          : undefined,
     articleSubject: articleSubjectOf(row.articleSubject),
     relatedSubjects: relatedSubjectsOf(row.relatedSubjects),
     sourceFiles: Array.isArray(row.sourceFiles)

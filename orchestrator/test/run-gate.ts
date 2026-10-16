@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { resolveGateTimingDirectory } from '../../shared/gate-timing-directory.ts'
 import { mainCheckoutOf } from '../../shared/git.ts'
 import { withGateSlot } from '../src/gate-load.ts'
+import { gateShardArguments } from '../src/gate-shard.ts'
 import { publishTimingSummary } from './gate-timing-summary.ts'
 import { type GateTimings, mergeTimings } from './record-gate-timings.ts'
 
@@ -18,6 +19,7 @@ const timingDir = resolveGateTimingDirectory(
   tmpdir(),
 )
 const timingPath = join(timingDir, `${timingStamp}.json`)
+const shardArguments = gateShardArguments(Bun.argv.slice(2))
 mkdirSync(timingDir, { recursive: true })
 
 async function pump(stream: ReadableStream<Uint8Array>, error: boolean): Promise<void> {
@@ -39,7 +41,14 @@ async function pump(stream: ReadableStream<Uint8Array>, error: boolean): Promise
 async function runTests(): Promise<GateTimings> {
   const junitPath = join(timingDir, `${timingStamp}.unit.junit.xml`)
   const sidecarBase = join(timingDir, `${timingStamp}.unit.json`)
-  const command = ['bun', 'test', 'src', '--reporter=junit', `--reporter-outfile=${junitPath}`]
+  const command = [
+    'bun',
+    'test',
+    'src',
+    ...shardArguments,
+    '--reporter=junit',
+    `--reporter-outfile=${junitPath}`,
+  ]
   const started = Date.now()
   const child = Bun.spawn(command, {
     cwd: orchRoot,

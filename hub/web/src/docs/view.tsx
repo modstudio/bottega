@@ -503,11 +503,7 @@ export function DocsView({
     })
   }, [selectedId, model.tree])
   useSearchHotkey(() => setSearchOpen(true))
-  const detached =
-    selectedItem !== null &&
-    !model.tree.some(function contains(item): boolean {
-      return item.id === selectedItem.id || item.children.some(contains)
-    })
+  const detached = selectedItem !== null && treePath(model.tree, selectedItem.id).length === 0
   const readingCrumbs = detached ? breadcrumb(selectedItem, []) : model.crumbs
   const readingAround = detached ? { previous: null, next: null } : model.around
   const firstId = model.first?.id ?? null
@@ -580,6 +576,7 @@ export function DocsView({
         />
         <DocsReading
           doc={doc}
+          tree={model.tree}
           signedIn={signedIn}
           audience={selectedAudience(model.stale)}
           pending={!doc && (Boolean(model.selected) || detached || !ready)}

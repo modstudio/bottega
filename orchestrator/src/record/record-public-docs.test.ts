@@ -46,6 +46,7 @@ describe('record public docs', () => {
         subject: null,
         audiences: ['customer', 'technical'],
         kind: 'article',
+        form: 'overview',
       }),
     ).toEqual({
       id: 'doc-a',
@@ -62,6 +63,7 @@ describe('record public docs', () => {
       subject: null,
       audiences: ['technical', 'customer'],
       kind: 'article',
+      form: 'overview',
     })
     expect(
       recordDocSearchMatchRow({

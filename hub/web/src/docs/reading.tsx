@@ -1,9 +1,19 @@
 import { Link } from '@tanstack/react-router'
 import { CalendarDays, Maximize2, Minimize2 } from 'lucide-react'
-import { type ReactNode, type Ref, type RefObject, useEffect, useRef, useState } from 'react'
-import { Markdown } from '@/components/markdown/markdown'
+import {
+  type ReactNode,
+  type Ref,
+  type RefObject,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import { Markdown, MarkdownFenceRenderers } from '@/components/markdown/markdown'
 import { Button } from '@/ui/button/button'
 import { classes } from '@/ui/text/classes'
+import { articleListRows } from './article-list.ts'
+import { ArticleList } from './article-list.tsx'
 import { readingBody, viewedPaneTitle } from './body.ts'
 import { CodeSection } from './code-section.tsx'
 import { EditableSourceFiles, EditableStatus } from './doc-field-controls.tsx'
@@ -11,7 +21,7 @@ import { DOC_STATUS_LABELS } from './filters.ts'
 import type { DocsLocation } from './location.ts'
 import { DOC_STATUS_ICONS } from './status-icon.ts'
 import type { BreadcrumbPart } from './tree.ts'
-import type { DocsAudience, DocsDoc, DocsSource, DocsTreeItem } from './types.ts'
+import type { DocsAudience, DocsDoc, DocsSource, DocsTreeItem, TreeNode } from './types.ts'
 
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
 /** Characters past which a title is set at the smaller size. */
@@ -298,6 +308,7 @@ export function DocsReading({
   onWide,
   signedIn,
   audience,
+  tree,
   bodyView,
   viewedRevision,
   editing,
@@ -311,6 +322,7 @@ export function DocsReading({
   onWide: (wide: boolean) => void
   signedIn: boolean
   audience: DocsAudience | null
+  tree: readonly TreeNode[]
   bodyView?: ReactNode
   viewedRevision?: { title: string; body: string } | null
   /** A document is chosen and on its way, so the pane stays quiet rather than saying there is none. */
@@ -333,62 +345,69 @@ export function DocsReading({
   const shown = doc ? viewedPaneTitle(doc, viewedRevision ?? null) : { title: '', lede: null }
   const heading = useRef<HTMLElement>(null)
   const titleGone = useScrolledPast(heading, `${doc?.id ?? ''}:${editing ? '1' : '0'}`)
+  const rows = useMemo(() => (doc ? articleListRows(tree, doc.id) : []), [tree, doc])
+  const fenceRenderers = useMemo(
+    () => ({ articleList: () => <ArticleList rows={rows} locationFor={locationFor} /> }),
+    [rows, locationFor],
+  )
   return (
-    <main
-      className="min-w-0 border-border-default bg-surface-page px-6 pt-5 pb-8 md:px-15 md:pt-6 md:pb-9 lg:border-x [.site-docs-chrome_&]:border-b"
-      data-doc-wide={wide ? '' : undefined}
-    >
-      {error ? (
-        <p data-tone="error" className="text-status-text">
-          {error}
-        </p>
-      ) : null}
-      {doc ? (
-        <>
-          <ReadingTop
-            crumbs={crumbs}
-            title={shown.title}
-            titleGone={titleGone}
-            headerAction={headerAction}
-            wide={wide}
-            onWide={onWide}
-          />
-          {banner}
-          <ArticleHeading
-            shown={shown}
-            heading={heading}
-            titleView={titleView}
-            editing={editing}
-            doc={doc}
-            signedIn={signedIn}
-            replacement={replacement}
-            locationFor={locationFor}
-            fieldSource={fieldSource}
-            editBand={editBand}
-          />
-          {bodyView ?? (
-            <div className="mt-6">
-              <Markdown content={readingBody(doc.body)} />
-            </div>
-          )}
-          {fieldSource && doc.kind === 'article' && showsCode(signedIn, audience) ? (
-            <EditableSourceFiles key={doc.id} doc={doc} source={fieldSource} />
-          ) : showSourceFiles(signedIn, audience, doc.sourceFiles) ? (
-            <CodeSection key={doc.id} count={doc.sourceFiles?.length ?? 0}>
-              <ul>
-                {doc.sourceFiles?.map((path) => (
-                  <li key={path}>
-                    <code>{path}</code>
-                  </li>
-                ))}
-              </ul>
-            </CodeSection>
-          ) : null}
-          <ReadingAround around={around} onSelect={onSelect} />
-        </>
-      ) : pending ? null : (
-        <p className="text-md text-text-muted">No document to show.</p>
-      )}
-    </main>
+    <MarkdownFenceRenderers.Provider value={fenceRenderers}>
+      <main
+        className="min-w-0 border-border-default bg-surface-page px-6 pt-5 pb-8 md:px-15 md:pt-6 md:pb-9 lg:border-x [.site-docs-chrome_&]:border-b"
+        data-doc-wide={wide ? '' : undefined}
+      >
+        {error ? (
+          <p data-tone="error" className="text-status-text">
+            {error}
+          </p>
+        ) : null}
+        {doc ? (
+          <>
+            <ReadingTop
+              crumbs={crumbs}
+              title={shown.title}
+              titleGone={titleGone}
+              headerAction={headerAction}
+              wide={wide}
+              onWide={onWide}
+            />
+            {banner}
+            <ArticleHeading
+              shown={shown}
+              heading={heading}
+              titleView={titleView}
+              editing={editing}
+              doc={doc}
+              signedIn={signedIn}
+              replacement={replacement}
+              locationFor={locationFor}
+              fieldSource={fieldSource}
+              editBand={editBand}
+            />
+            {bodyView ?? (
+              <div className="mt-6">
+                <Markdown content={readingBody(doc.body)} />
+              </div>
+            )}
+            {fieldSource && doc.kind === 'article' && showsCode(signedIn, audience) ? (
+              <EditableSourceFiles key={doc.id} doc={doc} source={fieldSource} />
+            ) : showSourceFiles(signedIn, audience, doc.sourceFiles) ? (
+              <CodeSection key={doc.id} count={doc.sourceFiles?.length ?? 0}>
+                <ul>
+                  {doc.sourceFiles?.map((path) => (
+                    <li key={path}>
+                      <code>{path}</code>
+                    </li>
+                  ))}
+                </ul>
+              </CodeSection>
+            ) : null}
+            <ReadingAround around={around} onSelect={onSelect} />
+          </>
+        ) : pending ? null : (
+          <p className="text-md text-text-muted">No document to show.</p>
+        )}
+      </main>
+    </MarkdownFenceRenderers.Provider>
   )
 }

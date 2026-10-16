@@ -15,7 +15,7 @@ test('an empty project canon store refuses publication and leaves other projects
       subject: null,
       slug: '.agents/reference/global.md',
       title: '.agents/reference/global.md',
-      body: 'Global reference.\n',
+      body: '---\ndescription: Global fixture reference\n---\n\nGlobal reference.\n',
       reason: 'seed a global row',
       allowCanonBootstrap: true,
     })

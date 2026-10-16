@@ -8,6 +8,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -413,8 +414,9 @@ describe('Claude home canon files', () => {
       applyUserCanonHomePlans([plan], process.env, false, {
         afterMutation: () => {
           const body = readFileSync(entry, 'utf8')
-          rmSync(entry)
-          writeFileSync(entry, body)
+          const replacement = join(dirname(entry), 'same-bytes-replacement')
+          writeFileSync(replacement, body)
+          renameSync(replacement, entry)
           throw new Error('forced failure')
         },
       })

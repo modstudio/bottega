@@ -6,6 +6,7 @@ import { parseRichDocument, saveRichDocument } from './rich-save.ts'
 
 const table = '| Name | Price |\n| --- | --- |\n| Seat | 10 |\n'
 const mermaid = '```mermaid\nflowchart LR\nA-->B\n```\n'
+const articles = '```articles\n```\n'
 const alert = '> [!NOTE]\n> Keep the receipt.\n'
 const directive = ':::section{audience=technical}\nShown to builders.\n:::\n'
 const definition = 'See the [spec][foo].\n\n[foo]: /spec\n'
@@ -18,6 +19,7 @@ const blanks = 'First block.\n\n\n\nSecond block.\n'
 const fixtures: Record<string, string> = {
   table,
   mermaid,
+  articles,
   alert,
   directive,
   definition,
@@ -57,6 +59,16 @@ test("editing one paragraph changes only that paragraph's lines", () => {
   setParagraphText(nodes, 'Alpha line extra.')
   const saved = saveRichDocument(markdown, nodes)
   expect(saved).toBe(`Alpha line extra.\n\n${rest}`)
+})
+
+test('an articles fence is a locked block and survives a neighboring edit byte-for-byte', () => {
+  const fence = '```articles\n```'
+  const markdown = `Intro line.\n\n${fence}\n`
+  const nodes = clone(parseRichDocument(markdown))
+  expect(nodes[1]).toEqual({ type: 'lockedBlock', attrs: { source: fence } })
+
+  setParagraphText(nodes, 'Intro line changed.')
+  expect(saveRichDocument(markdown, nodes)).toBe(`Intro line changed.\n\n${fence}\n`)
 })
 
 test('deleting a block removes only it', () => {

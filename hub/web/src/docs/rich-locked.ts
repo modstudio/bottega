@@ -43,7 +43,11 @@ function isHtmlComment(raw: string): boolean {
 /** Whether a marked token is a construct the rich editor must not rewrite. */
 export function isLockedToken(token: MarkedToken): boolean {
   if (token.type === 'frontmatter' || token.type === 'directive') return true
-  if (token.type === 'code' && fenceUse(token.lang) === 'diagram') return true
+  if (
+    token.type === 'code' &&
+    (fenceUse(token.lang) === 'diagram' || fenceUse(token.lang) === 'article-list')
+  )
+    return true
   if (token.type === 'blockquote' && isGithubAlertBlock(token.raw)) return true
   if (token.type === 'html' && !isHtmlComment(token.raw)) return true
   return false

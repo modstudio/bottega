@@ -12,20 +12,10 @@ import { type CanonMirrorPort, systemCanonMirrorPort } from './canon-mirror.ts'
 
 export function mirrorRepository(prefix: string): string {
   const root = mkdtempSync(join(tmpdir(), `${prefix}-`))
-  spawnFixtureGitSync(['init'], { cwd: root })
-  spawnFixtureGitSync(
-    [
-      '-c',
-      'user.email=mirror@example.test',
-      '-c',
-      'user.name=Mirror Test',
-      'commit',
-      '--allow-empty',
-      '-m',
-      'fixture',
-    ],
-    { cwd: root },
-  )
+  spawnFixtureGitSync(['init', '-b', 'main'], { cwd: root })
+  spawnFixtureGitSync(['config', 'user.email', 'mirror@example.test'], { cwd: root })
+  spawnFixtureGitSync(['config', 'user.name', 'Mirror Test'], { cwd: root })
+  spawnFixtureGitSync(['commit', '--allow-empty', '-m', 'fixture'], { cwd: root })
   return root
 }
 
