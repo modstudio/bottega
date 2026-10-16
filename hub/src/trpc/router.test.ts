@@ -656,7 +656,6 @@ describe('doc router', () => {
 
 describe('project writes', () => {
   const row: RegisteredProject = {
-    id: 10,
     record_id: '01990000-0000-7000-8000-000000001204',
     name: 'new-project',
     path: '/tmp/new-project',
