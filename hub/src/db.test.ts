@@ -35,6 +35,11 @@ test('implicit creation refuses explicit, linked, and unauthorized resolutions',
   )
 })
 
+test('implicit creation allows a linked checkout to initialize temporary state', () => {
+  const path = join(tmpdir(), `hub-linked-scratch-${randomUUID()}`, 'hub.db')
+  expect(implicitHubDatabaseCreationRefusal(false, false, true, path)).toBeNull()
+})
+
 test('the migrate creation decision refuses an absent HUB_DB before touching its parent', () => {
   const parent = join(tmpdir(), `hub-explicit-${randomUUID()}`)
   const path = join(parent, 'hub.db')

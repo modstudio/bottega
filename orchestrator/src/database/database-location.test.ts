@@ -84,9 +84,12 @@ test('implicit creation uses the existing installation authority decision', () =
     mainStorePath: '/state/orch.db',
   }
   expect(implicitDatabaseCreationRefusal(authorized)).toBeNull()
-  expect(implicitDatabaseCreationRefusal({ ...authorized, linkedWorktreeBinary: true })).toBe(
-    linkedWorktreeDatabaseInitializationMessage(),
-  )
+  expect(
+    implicitDatabaseCreationRefusal(
+      { ...authorized, linkedWorktreeBinary: true },
+      '/installation/state/orch.db',
+    ),
+  ).toBe(linkedWorktreeDatabaseInitializationMessage())
   expect(implicitDatabaseCreationRefusal({ ...authorized, initializable: false })).toBe(
     unauthorizedDatabaseInitializationMessage('/state/orch.db'),
   )
@@ -111,6 +114,23 @@ test('migrating an existing store retains the linked-worktree refusal', () => {
     linkedWorktreeDatabaseInitializationMessage(),
   )
   expect(existingDatabaseMigrationRefusal({ ...existing, linkedWorktreeBinary: false })).toBeNull()
+})
+
+test('a linked-worktree binary may create and migrate a temporary store', () => {
+  const path = join(tmpdir(), `orch-linked-scratch-${randomUUID()}`, 'orch.db')
+  const scratch = {
+    path,
+    method: 'state-root' as const,
+    tried: [path],
+    registeredPath: null,
+    repositoryRoot: '/checkout',
+    initializable: false,
+    linkedWorktreeBinary: true,
+    mainStorePath: path,
+  }
+
+  expect(implicitDatabaseCreationRefusal(scratch)).toBeNull()
+  expect(existingDatabaseMigrationRefusal(scratch)).toBeNull()
 })
 
 test('the migrate and init-db creation decision refuses an absent ORCH_DB before touching its parent', () => {

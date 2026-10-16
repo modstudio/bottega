@@ -39,6 +39,9 @@ export const CHECK_LEGS = [
   },
 ] as const
 
+/** CI-only process checks that are intentionally outside the in-process local gate. */
+export const CI_ONLY_JOBS = ['hub-web-smoke'] as const
+
 export const STATIC_OMIT_GROUPS = {
   'machine-only': {
     reason: "CI runners do not have this machine's project register and canon store",

@@ -21,6 +21,7 @@ import {
   implicitDatabaseCreationRefusal,
   legacyDatabaseRefusal,
   linkedWorktreeDatabaseInitializationMessage,
+  linkedWorktreeMigrationAllowed,
 } from './database-location.ts'
 import { carryMachineIdentity } from './machine-identity-store.ts'
 import {
@@ -98,6 +99,7 @@ function sameStore(a: string, b: string): boolean {
  */
 export const linkedWorktreeReadOnly =
   DATABASE_RESOLUTION.linkedWorktreeBinary &&
+  !linkedWorktreeMigrationAllowed(DB_PATH) &&
   process.env.ORCH_DB_WRITE !== '1' &&
   (DATABASE_RESOLUTION.method !== 'ORCH_DB' ||
     sameStore(DB_PATH, DATABASE_RESOLUTION.mainStorePath))
@@ -470,7 +472,7 @@ export async function withDatabaseForMigrationStep<T>(
 
 /** One-time maintenance pass for roots whose original caller prompt remains on disk. */
 export function backfillSpecSha(): { updated: number; missing: number } {
-  if (DATABASE_RESOLUTION.linkedWorktreeBinary)
+  if (DATABASE_RESOLUTION.linkedWorktreeBinary && !linkedWorktreeMigrationAllowed(DB_PATH))
     throw new Error(linkedWorktreeDatabaseInitializationMessage())
   const database = writableDb()
   const roots = database

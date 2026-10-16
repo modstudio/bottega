@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { CHECK_LEGS } from './check-plan.ts'
+import { CHECK_LEGS, CI_ONLY_JOBS } from './check-plan.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 
@@ -14,7 +14,14 @@ function workflowJobNames(source: string): string[] {
 }
 
 export function expectedWorkflowJobNames(): string[] {
-  return ['secrets', 'static', ...CHECK_LEGS.map((leg) => leg.ciJob), 'root', 'ci'].sort()
+  return [
+    'secrets',
+    'static',
+    ...CHECK_LEGS.map((leg) => leg.ciJob),
+    ...CI_ONLY_JOBS,
+    'root',
+    'ci',
+  ].sort()
 }
 
 export function checkCiWorkflow(source: string): void {

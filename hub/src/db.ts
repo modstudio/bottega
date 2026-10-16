@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
@@ -9,8 +10,10 @@ import { isAuthorizedPlatformInstallation } from '../../shared/install-root.ts'
 import { machineId, storedMachineId } from '../../shared/machine-config.ts'
 import {
   legacyStoreRefusal,
+  realPathForPotentialPath,
   resolveHubDatabase,
   type StateEnvironment,
+  temporaryStateStoreMigrationAllowed,
 } from '../../shared/state-directory.ts'
 import { assertTestHubDatabasePath } from '../../shared/test-hub-database.ts'
 import {
@@ -91,6 +94,11 @@ export function implicitHubDatabaseCreationRefusal(
   path = DB_PATH,
 ): string | null {
   if (explicitPath) return missingHubDatabaseMessage(path)
+  const scratchAllowed = temporaryStateStoreMigrationAllowed(
+    realPathForPotentialPath(path),
+    realPathForPotentialPath(tmpdir()),
+  )
+  if (linked && scratchAllowed) return null
   if (linked) {
     return (
       `refusing to initialize the hub store from a linked worktree: ${path}\n` +
@@ -106,7 +114,17 @@ export function existingDefaultStoreMigrationRefusal(
   explicitPath: boolean,
   authorized: boolean,
   path = DB_PATH,
+  linked = linkedCheckout,
 ): string | null {
+  if (
+    linked &&
+    temporaryStateStoreMigrationAllowed(
+      realPathForPotentialPath(path),
+      realPathForPotentialPath(tmpdir()),
+    )
+  ) {
+    return null
+  }
   return explicitPath || authorized ? null : unauthorizedHubMigrationMessage(path)
 }
 
