@@ -281,16 +281,16 @@ function resolvedReviewStages(
   const active = tracker.reviewStages?.active ?? reviewStates[0]
   const stage = (state: string | undefined): ResolvedReviewStage =>
     state ? { state, floor: 'tracker-transition' } : { state: 'none', floor: 'recorded-artifact' }
-  return { waitingReview: stage(waiting), inReview: resolvedInReviewStage(active, review) }
-}
-
-/** Decide whether entering review is recorded now or by the project's post-review command. */
-function resolvedInReviewStage(
-  state: string | undefined,
-  review: ReviewSettings | undefined,
-): ResolvedReviewStage {
-  if (!state) return { state: 'none', floor: 'recorded-artifact' }
-  return { state, floor: review?.record ? 'recorded-artifact' : 'tracker-transition' }
+  // A declared review-record command writes the review state after the review, so entering
+  // review only records that; the state stays named for the steps that close out.
+  const inReview = stage(active)
+  return {
+    waitingReview: stage(waiting),
+    inReview:
+      inReview.state !== 'none' && review?.record
+        ? { ...inReview, floor: 'recorded-artifact' }
+        : inReview,
+  }
 }
 
 function resolvedTracker(
