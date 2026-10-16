@@ -300,4 +300,17 @@ describe('completed-reply process-ended live outcome', () => {
       }).error,
     ).toBe(`${endedNotice(1)}\nlast vendor event: turn.failed`)
   })
+
+  test('a non-JSON final stdout line does not reuse an earlier vendor event', () => {
+    expect(
+      outcome({
+        contractStatus: 'done',
+        replyFilePresent: true,
+        exitCode: 1,
+        stdout: '{"type":"turn.failed","error":{"message":"stale failure"}}\nnot-json\n',
+        stderr: '',
+        signal: null,
+      }).error,
+    ).toBe(endedNotice(1))
+  })
 })
