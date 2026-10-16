@@ -89,11 +89,14 @@ export function useDocsDocument<T extends DataTreeItem, D>(
   return { document, isPending: Boolean(selected) && result.isPending, error: result.error }
 }
 
-export function useDocsSearch<T, I extends {
-  local: Parameters<typeof trpc.doc.search.queryOptions>[0]
-  hosted: Parameters<typeof trpc.record.docSearch.queryOptions>[0]
-  public: Parameters<typeof hostedTrpc.publicDocs.search.queryOptions>[0]
-}>(
+export function useDocsSearch<
+  T,
+  I extends {
+    local: Parameters<typeof trpc.doc.search.queryOptions>[0]
+    hosted: Parameters<typeof trpc.record.docSearch.queryOptions>[0]
+    public: Parameters<typeof hostedTrpc.publicDocs.search.queryOptions>[0]
+  },
+>(
   source: DocsSource,
   query: string,
   audience: DocAudience | null,

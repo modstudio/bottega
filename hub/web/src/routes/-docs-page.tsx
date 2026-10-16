@@ -1,5 +1,3 @@
-import { Button } from '@bottega/hub-ui/button'
-import { Link } from '@tanstack/react-router'
 import {
   useArticleSave,
   useCreateDoc,
@@ -8,18 +6,16 @@ import {
   useDocDelete,
   useDocFieldSave,
   useDocHistory,
-  useDocsIdentity,
   useDocSubjects,
+  useDocsIdentity,
   useRevisionView,
 } from '@bottega/hub-data/docs/actions'
 import { useReorderableDocsTree } from '@bottega/hub-data/docs/use-doc-reorder'
-import {
-  useDocsDocument,
-  useDocsSearch,
-  useStoredDocument,
-} from '@bottega/hub-data/docs/use-docs'
+import { useDocsDocument, useDocsSearch, useStoredDocument } from '@bottega/hub-data/docs/use-docs'
 import { hostedOrigin, isHostedMode } from '@bottega/hub-data/hub-mode'
-import { useBlocker, useLocation, useMatch, useNavigate } from '@tanstack/react-router'
+import { Button } from '@bottega/hub-ui/button'
+import { toast } from '@bottega/hub-ui/toast'
+import { Link, useBlocker, useLocation, useMatch, useNavigate } from '@tanstack/react-router'
 import { Plus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { recordSpaces } from '@/lib/record-spaces'
@@ -38,16 +34,20 @@ import {
 import { DocsHome } from '../docs/home.tsx'
 import { docsLocation } from '../docs/location.ts'
 import { mapDoc, mapSearchMatch, mapTreeItem } from '../docs/map.ts'
-import { docsSearchIncludesWorking, docsVisibleByStatus, resolveDocsReplacement } from '../docs/model.ts'
+import {
+  docsSearchIncludesWorking,
+  docsVisibleByStatus,
+  resolveDocsReplacement,
+} from '../docs/model.ts'
 import { revisionComparison } from '../docs/revision-diff.ts'
 import {
-  revisionIdForSource,
   type RevisionMode,
   RevisionViewer,
+  revisionIdForSource,
   revisionViewError,
 } from '../docs/revision-viewer.tsx'
-import { docsSearchInputs } from '../docs/search-input.ts'
 import { isScope } from '../docs/scope.ts'
+import { docsSearchInputs } from '../docs/search-input.ts'
 import { orderedIdsAfterDrag, siblingKey } from '../docs/tree.ts'
 import type { DocsTreeItem } from '../docs/types.ts'
 import { docsSource, docsSourceLabel } from '../docs/types.ts'
@@ -135,6 +135,14 @@ export function DocsPage() {
     orderedIdsAfterDrag,
   )
   const includeDrafts = source !== 'public' && showDrafts
+  useEffect(() => {
+    if (catalog.reorderError)
+      toast.error(
+        catalog.reorderError instanceof Error
+          ? catalog.reorderError.message
+          : 'Could not save the document order',
+      )
+  }, [catalog.reorderError])
   const navigationItems = useMemo(
     () => docsVisibleByStatus(catalog.items, includeDrafts),
     [catalog.items, includeDrafts],
@@ -266,12 +274,7 @@ export function DocsPage() {
     Boolean(mayEdit && reading.document?.kind === 'article'),
   )
   const history = useDocHistory(source, reading.document, selectedAudience(filters))
-  const deleteAction = useDocDelete(
-    source,
-    reading.document,
-    storedDocument?.revision,
-    isScope,
-  )
+  const deleteAction = useDocDelete(source, reading.document, storedDocument?.revision, isScope)
   const createAction = useCreateDoc()
   const createSubjects = useCreateDocSubjects(creating)
   const enterEdit = useCallback(
@@ -344,8 +347,8 @@ export function DocsPage() {
                 remove: {
                   ...deleteAction,
                   async run(reason) {
-                    await deleteAction.run(reason)
-                    if (!deleteAction.refused) await navigate({ to: '/docs' })
+                    const removed = await deleteAction.run(reason)
+                    if (removed) await navigate({ to: '/docs' })
                   },
                 },
               }
@@ -395,8 +398,8 @@ export function DocsPage() {
           onOpenChange={setCreating}
           subjects={createSubjects.data}
           create={createAction}
-          onCreated={(address) => {
-            void navigate({
+          onCreated={async (address) => {
+            await navigate({
               to: '/docs/$scope/$subject/$slug',
               params: {
                 scope: address.scope,

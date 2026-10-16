@@ -815,7 +815,7 @@ export const hubWebViewDataRule: ArchitectureRule = {
     ],
   },
   to: {
-    path: `(?:${architectureDependencyPath(HUB_DATA_PACKAGE)}|${architectureDependencyPath('@tanstack/react-query')}|${architectureDependencyPath('@tanstack/react-router')}|^@trpc/|(^|/)node_modules/@trpc/[^/]+(?:/|$))`,
+    path: `(?:^hub/data/src/|${architectureDependencyPath(HUB_DATA_PACKAGE)}|${architectureDependencyPath('@tanstack/react-query')}|^@trpc/|(^|/)node_modules/@trpc/[^/]+(?:/|$))`,
   },
 }
 const hubWebRouterException = concerns.exceptions[0]!
@@ -827,7 +827,9 @@ const hubDataBoundaryRules: ArchitectureRule[] = [
     severity: 'error',
     comment: 'Hub data owns data access and may not import presentation or the web package.',
     from: { path: '^hub/data/src/' },
-    to: { path: `(?:${architectureDependencyPath(HUB_UI_PACKAGE)}|^hub/(?:ui|web)/)` },
+    to: {
+      path: `(?:^@bottega/hub-ui/|${architectureDependencyPath(HUB_UI_PACKAGE)}|^hub/(?:ui|web)/)`,
+    },
   },
   {
     name: 'hub-data-router-is-type-only',

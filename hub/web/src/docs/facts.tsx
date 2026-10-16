@@ -104,7 +104,13 @@ function DocHistory({
   onRevision,
 }: {
   history: {
-    items: readonly { id: number | string; at: string; reason: string; author: string; authorName?: string | null }[]
+    items: readonly {
+      id: number | string
+      at: string
+      reason: string
+      author: string
+      authorName?: string | null
+    }[]
     pending: boolean
     error: unknown
   }
@@ -119,7 +125,7 @@ function DocHistory({
     >
       {history.error ? (
         <p data-tone="error" className="mt-2 text-sm text-status-text">
-            {history.error instanceof Error ? history.error.message : String(history.error)}
+          {history.error instanceof Error ? history.error.message : String(history.error)}
         </p>
       ) : null}
       <div>
@@ -164,7 +170,15 @@ function Details({
     <>
       <FactsSection label="About" defaultOpen>
         {canManage ? (
-          controls ? <EditableAbout key={doc.id} doc={doc} field={controls.field} items={controls.items} subjects={controls.subjects} /> : null
+          controls ? (
+            <EditableAbout
+              key={doc.id}
+              doc={doc}
+              field={controls.field}
+              items={controls.items}
+              subjects={controls.subjects}
+            />
+          ) : null
         ) : (
           <ReadonlyAbout doc={doc} signedIn={signedIn} />
         )}

@@ -203,11 +203,9 @@ function DocLifecycle({
   return (
     <span>
       Replaced by{' '}
-      {replacement ? (
-        renderLink(locationFor(replacement), replacement.title, 'text-link hover:underline')
-      ) : (
-        doc.replacementSlug
-      )}
+      {replacement
+        ? renderLink(locationFor(replacement), replacement.title, 'text-link hover:underline')
+        : doc.replacementSlug}
     </span>
   )
 }
@@ -257,9 +255,7 @@ function ArticleHeading({
           replacement={replacement}
           locationFor={locationFor}
           renderLink={renderLink}
-          statusView={
-            field ? <EditableStatus key={doc.id} doc={doc} field={field} /> : undefined
-          }
+          statusView={field ? <EditableStatus key={doc.id} doc={doc} field={field} /> : undefined}
         />
       )}
       {shown.lede && !editing ? (

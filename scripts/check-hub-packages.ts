@@ -4,9 +4,9 @@ import { extname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Glob } from 'bun'
 import {
-  HUB_PACKAGE_PREFIX,
   HUB_DATA_PACKAGE,
   HUB_DATA_ROOT,
+  HUB_PACKAGE_PREFIX,
   HUB_UI_PACKAGE,
   HUB_UI_ROOT,
   hubWorkspaceDependencies,
@@ -160,7 +160,9 @@ for (const [subpath, source] of Object.entries(expectedDataExports)) {
 }
 for (const subpath of Object.keys(dataPackage.exports ?? {})) {
   if (!(subpath in expectedDataExports)) {
-    violations.push(`${relative(ROOT, dataPackagePath)}: export ${subpath} has no public source file`)
+    violations.push(
+      `${relative(ROOT, dataPackagePath)}: export ${subpath} has no public source file`,
+    )
   }
 }
 if (dataPackage.name !== HUB_DATA_PACKAGE) {

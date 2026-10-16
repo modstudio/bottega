@@ -471,7 +471,10 @@ export function useArticleEditor({
   const draft = { title, body }
   const saveEnabled = ready && isDocSaveEnabled(loaded, draft)
   const needsConfirmation = !allowLeave.current && docLeaveNeedsConfirmation(loaded, draft)
-  useEffect(() => onLeaveRequest(editing && needsConfirmation), [editing, needsConfirmation, onLeaveRequest])
+  useEffect(
+    () => onLeaveRequest(editing && needsConfirmation),
+    [editing, needsConfirmation, onLeaveRequest],
+  )
   const saving = saveAction.pending
   const openSave = useCallback(() => {
     if (!saveEnabled || saving) return
@@ -500,7 +503,8 @@ export function useArticleEditor({
       if (!doc || !saveEnabled || !isDocReasonReady(notice.reason) || saving) return
       notice.setConflict(false)
       notice.setErrorMessage(null)
-      await saveAction.run({ ...draft, reason: notice.reason })
+      const saved = await saveAction.run({ ...draft, reason: notice.reason })
+      if (!saved) return
       allowLeave.current = true
       onLeave()
     },

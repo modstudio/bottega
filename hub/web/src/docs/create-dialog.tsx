@@ -25,7 +25,9 @@ export function CreateDocDialog({
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  subjects: Partial<Record<(typeof DOC_SCOPE_SUBJECT_KIND)[DocScope] & string, string[]>> | undefined
+  subjects:
+    | Partial<Record<(typeof DOC_SCOPE_SUBJECT_KIND)[DocScope] & string, string[]>>
+    | undefined
   create: {
     run: (input: {
       scope: DocScope
@@ -40,7 +42,11 @@ export function CreateDocDialog({
     error: unknown
     refused?: string
   }
-  onCreated: (address: { scope: DocScope; subject: string | null; slug: string }) => void
+  onCreated: (address: {
+    scope: DocScope
+    subject: string | null
+    slug: string
+  }) => Promise<void>
 }) {
   const [scope, setScope] = useState<DocScope>('global')
   const [subject, setSubject] = useState('')
@@ -69,15 +75,16 @@ export function CreateDocDialog({
       slug,
     }
     if (create.refused) return
-    await create.run({
+    const created = await create.run({
       ...address,
       title,
       body: '',
       reason: 'created from hub',
       delivery,
     })
+    if (!created) return
     onOpenChange(false)
-    onCreated(address)
+    await onCreated(address)
   }
 
   return (
@@ -92,7 +99,13 @@ export function CreateDocDialog({
           <Button
             variant="primary"
             onClick={submitCreate}
-            disabled={create.pending || Boolean(create.refused) || !slug || !title || (needsSubject(scope) && !subject)}
+            disabled={
+              create.pending ||
+              Boolean(create.refused) ||
+              !slug ||
+              !title ||
+              (needsSubject(scope) && !subject)
+            }
           >
             Create
           </Button>
@@ -141,7 +154,8 @@ export function CreateDocDialog({
         </div>
         {create.error || create.refused ? (
           <p data-tone="error" className="text-status-text">
-            {create.refused ?? (create.error instanceof Error ? create.error.message : String(create.error))}
+            {create.refused ??
+              (create.error instanceof Error ? create.error.message : String(create.error))}
           </p>
         ) : null}
       </div>

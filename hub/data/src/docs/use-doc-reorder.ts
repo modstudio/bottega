@@ -1,7 +1,7 @@
 import { useMutation } from '@tanstack/react-query'
 import { useCallback, useMemo, useState } from 'react'
-import { queryClient, trpc } from '../client.ts'
 import type { DocScope } from '../../../../shared/docs.ts'
+import { queryClient, trpc } from '../client.ts'
 import { type DataTreeItem, type DocsSource, useDocsTree } from './use-docs.ts'
 
 export function useReorderableDocsTree<T extends DataTreeItem & { kind: string; position: number }>(
@@ -27,14 +27,14 @@ export function useReorderableDocsTree<T extends DataTreeItem & { kind: string; 
       const position = orders.get(siblingKey(item))?.indexOf(item.id) ?? -1
       return position < 0 ? item : { ...item, position }
     })
-  }, [catalog.items, orders])
+  }, [catalog.items, orders, siblingKey])
   const canReorder = useCallback(
     (item: T) =>
       !local.isPending &&
       !hosted.isPending &&
       item.kind === 'article' &&
       canEditDoc(source, memberships, item.spaceId),
-    [hosted.isPending, local.isPending, memberships, source],
+    [hosted.isPending, local.isPending, memberships, source, canEditDoc],
   )
   const onReorder = useCallback(
     async (activeId: string, overId: string) => {
@@ -70,7 +70,7 @@ export function useReorderableDocsTree<T extends DataTreeItem & { kind: string; 
         })
       }
     },
-    [canReorder, hosted, items, local, source],
+    [canReorder, hosted, items, local, source, orderedIdsAfterDrag, siblingKey],
   )
-  return { ...catalog, error: error ?? catalog.error, items, treeReorder: { canReorder, onReorder } }
+  return { ...catalog, reorderError: error, items, treeReorder: { canReorder, onReorder } }
 }

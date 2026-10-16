@@ -15,6 +15,13 @@ canonical hub operation rather than duplicating its query or write. A screen the
 adds a route, a procedure over the canonical operation, and navigation without defining a
 second data model in the browser.
 
+Data access and the hub mode live only in `@bottega/hub-data`. Route modules call its hooks
+and pass plain data and actions to components; an action has `run`, `pending`, `error`, and
+an optional refusal reason. Components never select a local or hosted procedure and never
+own router navigation. `scripts/check-hub-packages.ts` enforces package exports and workspace
+dependencies, `scripts/check-architecture.ts` enforces data and route import boundaries, and
+`orchestrator/hooks/hub-import-guard.py` refuses a violating import when the file is written.
+
 The selected window, filters and navigation counts share the external store in
 `hub/web/src/lib/window.ts`. Live-query polling pauses while redrawing would disrupt an
 open control, and it reads only completed collection state because collection has its

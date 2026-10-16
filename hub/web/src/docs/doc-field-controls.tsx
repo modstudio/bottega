@@ -36,8 +36,11 @@ type Field = DocFieldChange['field']
 export type FieldSave = {
   canAddress: boolean
   run: (change: DocFieldChange) => void
+  pending: boolean
+  error: unknown
+  refused?: string
   disabled: (field: Field) => boolean
-  error: (field: Field) => string | undefined
+  errorFor: (field: Field) => string | undefined
 }
 
 export type SubjectCatalog = {
@@ -281,12 +284,20 @@ export function EditableStatus({ doc, field }: { doc: DocsDoc; field: FieldSave 
           onSelect: choose(status),
         }))}
       />
-      <FieldError message={field.error('status')} />
+      <FieldError message={field.errorFor('status')} />
     </span>
   )
 }
 
-function ParentRow({ doc, items, field }: { doc: DocsDoc; items: readonly DocsTreeItem[]; field: FieldSave }) {
+function ParentRow({
+  doc,
+  items,
+  field,
+}: {
+  doc: DocsDoc
+  items: readonly DocsTreeItem[]
+  field: FieldSave
+}) {
   const choices = parentChoices(doc, items)
   const title = items.find(({ id }) => id === doc.parentId)?.title ?? 'Top level'
   return (
@@ -307,7 +318,7 @@ function ParentRow({ doc, items, field }: { doc: DocsDoc; items: readonly DocsTr
       ) : (
         title
       )}
-      <FieldError message={field.error('parent')} />
+      <FieldError message={field.errorFor('parent')} />
     </Row>
   )
 }
@@ -330,7 +341,7 @@ function AudienceRow({ doc, field }: { doc: DocsDoc; field: FieldSave }) {
       ) : (
         doc.audiences.map((audience) => DOC_AUDIENCE_LABELS[audience]).join(', ')
       )}
-      <FieldError message={field.error('audiences')} />
+      <FieldError message={field.errorFor('audiences')} />
     </Row>
   )
 }
@@ -372,7 +383,7 @@ function ArticleRows({
         ) : (
           'None'
         )}
-        <FieldError message={field.error('form')} />
+        <FieldError message={field.errorFor('form')} />
       </Row>
       <Row label="Subject">
         {catalog.ready ? (
@@ -394,7 +405,7 @@ function ArticleRows({
         ) : (
           (doc.articleSubject?.name ?? 'None')
         )}
-        <FieldError message={field.error('articleSubject') ?? catalog.error} />
+        <FieldError message={field.errorFor('articleSubject') ?? catalog.error} />
       </Row>
       <Row label="Related">
         {catalog.ready ? (
@@ -417,7 +428,7 @@ function ArticleRows({
         ) : (
           related.map(({ name }) => name).join(', ') || 'None'
         )}
-        <FieldError message={field.error('relatedSubjects')} />
+        <FieldError message={field.errorFor('relatedSubjects')} />
       </Row>
     </>
   )
@@ -468,7 +479,7 @@ function SummaryRow({ doc, field }: { doc: DocsDoc; field: FieldSave }) {
           <RowChevron />
         </button>
       )}
-      <FieldError message={field.error('summary')} />
+      <FieldError message={field.errorFor('summary')} />
     </Row>
   )
 }
@@ -493,7 +504,7 @@ function DeliveryRow({ doc, field }: { doc: DocsDoc; field: FieldSave }) {
       ) : (
         DOC_DELIVERY_LABELS[delivery]
       )}
-      <FieldError message={field.error('delivery')} />
+      <FieldError message={field.errorFor('delivery')} />
     </Row>
   )
 }
@@ -580,7 +591,7 @@ export function EditableSourceFiles({ doc, field }: { doc: DocsDoc; field: Field
           Add
         </Button>
       </form>
-      <FieldError message={field.error('sourceFiles')} />
+      <FieldError message={field.errorFor('sourceFiles')} />
     </CodeSection>
   )
 }

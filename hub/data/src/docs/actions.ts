@@ -23,9 +23,13 @@ export function useCreateDoc() {
   const mutation = useMutation(trpc.doc.set.mutationOptions())
   return {
     async run(input: Parameters<typeof mutation.mutateAsync>[0]) {
-      const row = await mutation.mutateAsync(input)
-      await queryClient.invalidateQueries()
-      return row
+      try {
+        await mutation.mutateAsync(input)
+        await queryClient.invalidateQueries()
+        return true
+      } catch {
+        return false
+      }
     },
     pending: mutation.isPending,
     error: mutation.error,
@@ -54,29 +58,34 @@ export function useArticleSave(
   return {
     async run(input: { title: string; body: string; reason: string }) {
       if (!doc || refused) return
-      if (source === 'hosted') {
-        await hosted.mutateAsync({
-          spaceId: doc.spaceId!,
-          scope: doc.scope,
-          subject: doc.subject,
-          slug: doc.slug,
-          title: input.title,
-          body: input.body,
-          reason: input.reason.trim(),
-          expectedRevision: expectedRevision!,
-        })
-      } else {
-        await local.mutateAsync({
-          scope: doc.scope as DocScope,
-          subject: doc.subject,
-          slug: doc.slug,
-          title: input.title,
-          body: input.body,
-          reason: input.reason.trim(),
-          expectedRevision: expectedRevision ?? undefined,
-        })
+      try {
+        if (source === 'hosted') {
+          await hosted.mutateAsync({
+            spaceId: doc.spaceId!,
+            scope: doc.scope,
+            subject: doc.subject,
+            slug: doc.slug,
+            title: input.title,
+            body: input.body,
+            reason: input.reason.trim(),
+            expectedRevision: expectedRevision!,
+          })
+        } else {
+          await local.mutateAsync({
+            scope: doc.scope as DocScope,
+            subject: doc.subject,
+            slug: doc.slug,
+            title: input.title,
+            body: input.body,
+            reason: input.reason.trim(),
+            expectedRevision: expectedRevision ?? undefined,
+          })
+        }
+        await queryClient.invalidateQueries()
+        return true
+      } catch {
+        return false
       }
-      await queryClient.invalidateQueries()
     },
     pending: mutation.isPending,
     error: mutation.error,
@@ -117,10 +126,9 @@ export function useDocDelete(
   const local = useMutation(trpc.doc.remove.mutationOptions())
   const hosted = useMutation(trpc.record.deleteDoc.mutationOptions())
   const mutation = source === 'hosted' ? hosted : local
-  const refused =
-    !doc
-      ? 'No document is selected.'
-      : source === 'hosted' && (!doc.spaceId || !expectedRevision)
+  const refused = !doc
+    ? 'No document is selected.'
+    : source === 'hosted' && (!doc.spaceId || !expectedRevision)
       ? 'The current hosted revision is not available.'
       : source === 'local' && !isScope(doc.scope)
         ? 'The document address is not valid.'
@@ -129,23 +137,28 @@ export function useDocDelete(
     async run(reason: string) {
       if (refused) return
       if (!doc) return
-      if (source === 'hosted') {
-        await hosted.mutateAsync({
-          id: doc.id,
-          spaceId: doc.spaceId!,
-          reason: reason.trim(),
-          expectedRevision: expectedRevision!,
-        })
-      } else {
-        await local.mutateAsync({
-          scope: doc.scope as DocScope,
-          subject: doc.subject,
-          slug: doc.slug,
-          reason: reason.trim(),
-          expectedRevision: expectedRevision ?? undefined,
-        })
+      try {
+        if (source === 'hosted') {
+          await hosted.mutateAsync({
+            id: doc.id,
+            spaceId: doc.spaceId!,
+            reason: reason.trim(),
+            expectedRevision: expectedRevision!,
+          })
+        } else {
+          await local.mutateAsync({
+            scope: doc.scope as DocScope,
+            subject: doc.subject,
+            slug: doc.slug,
+            reason: reason.trim(),
+            expectedRevision: expectedRevision ?? undefined,
+          })
+        }
+        await queryClient.invalidateQueries()
+        return true
+      } catch {
+        return false
       }
-      await queryClient.invalidateQueries()
     },
     pending: mutation.isPending,
     error: mutation.error,
@@ -153,7 +166,11 @@ export function useDocDelete(
   }
 }
 
-export function useDocHistory(source: DocsSource, doc: DataDoc | null, audience: DocAudience | null) {
+export function useDocHistory(
+  source: DocsSource,
+  doc: DataDoc | null,
+  audience: DocAudience | null,
+) {
   const local = useQuery({
     ...trpc.doc.history.queryOptions({
       scope: (doc?.scope ?? 'global') as DocScope,
@@ -163,13 +180,14 @@ export function useDocHistory(source: DocsSource, doc: DataDoc | null, audience:
     enabled: source === 'local' && Boolean(doc),
   })
   const hosted = useQuery({
-    ...trpc.record.docRevisions.queryOptions({ id: doc?.id ?? '00000000-0000-4000-8000-000000000000', audience: audience ?? undefined }),
+    ...trpc.record.docRevisions.queryOptions({
+      id: doc?.id ?? '00000000-0000-4000-8000-000000000000',
+      audience: audience ?? undefined,
+    }),
     enabled: source === 'hosted' && Boolean(doc),
   })
   const result = source === 'hosted' ? hosted : local
-  const items = [
-    ...(source === 'hosted' ? (hosted.data?.items ?? []) : (local.data ?? [])),
-  ].sort(
+  const items = [...(source === 'hosted' ? (hosted.data?.items ?? []) : (local.data ?? []))].sort(
     (left, right) =>
       new Date(right.at).getTime() - new Date(left.at).getTime() ||
       String(right.id).localeCompare(String(left.id)),
@@ -238,9 +256,7 @@ export function useRevisionView(
   const hostedItems = hostedHistory.data?.items
   const hostedIds = hostedItems?.map(({ id }) => id)
   const hostedComparison =
-    typeof revisionId === 'string' && hostedIds
-      ? revisionComparison(hostedIds, revisionId)
-      : null
+    typeof revisionId === 'string' && hostedIds ? revisionComparison(hostedIds, revisionId) : null
   const hostedSelected = hostedItems?.find(({ id }) => id === revisionId) ?? null
   const hostedNewer =
     hostedComparison?.kind === 'revision'
@@ -278,7 +294,8 @@ export function useRevisionView(
 }
 
 export function useDocSubjects(source: DocsSource, doc: DataDoc | null, enabled: boolean) {
-  const project = doc && 'projectName' in doc && typeof doc.projectName === 'string' ? doc.projectName : ''
+  const project =
+    doc && 'projectName' in doc && typeof doc.projectName === 'string' ? doc.projectName : ''
   const active = enabled && Boolean(project)
   const local = useQuery({
     ...trpc.subject.list.queryOptions({ project }),
@@ -315,7 +332,8 @@ export function useDocFieldSave<C>(
   return {
     canAddress,
     disabled: (field: string) => !ready || pending.has(field),
-    error: (field: string) => errors[field],
+    error: Object.values(errors).find(Boolean),
+    errorFor: (field: string) => errors[field],
     async run(change: C & { field: string }) {
       if (!canAddress || !stored) return
       const field = change.field

@@ -120,7 +120,11 @@ function view(partial: Partial<Parameters<typeof DocsView>[0]> = {}) {
         framed={false}
         showHistory
         history={{ items: [], pending: false, error: null }}
-        renderLink={(_location, children) => children}
+        renderLink={(_location, children, className) => (
+          <a href="/docs/example" className={className}>
+            {children}
+          </a>
+        )}
         {...partial}
       />
     </QueryClientProvider>

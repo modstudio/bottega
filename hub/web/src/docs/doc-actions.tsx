@@ -64,7 +64,8 @@ export function DocActions({
         </label>
         {remove.error || remove.refused ? (
           <p data-tone="error" className="mt-2 text-sm text-status-text">
-            {remove.refused ?? (remove.error instanceof Error ? remove.error.message : String(remove.error))}
+            {remove.refused ??
+              (remove.error instanceof Error ? remove.error.message : String(remove.error))}
           </p>
         ) : null}
       </Dialog>
