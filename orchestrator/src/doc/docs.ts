@@ -31,10 +31,12 @@ import {
   type DocWriteContext,
   type DocWriteInput,
   hostedArticleWriteFields,
+  hostedDocWriteFields,
   localRevisionArticleFields,
   localRevisionArticleReferences,
   resolveLocalDocArticleFields,
 } from './doc-article-fields.ts'
+import { assertCustomerGuideCommands } from './doc-command-check.ts'
 import { exportDocFiles, importDocFiles } from './doc-files.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
 import { storedDocLintRefusal } from './doc-lint-adapter.ts'
@@ -357,14 +359,10 @@ function referenceRestoreState(
   return [expectedCurrent, current]
 }
 
-function hostedDocWriteFields(
+async function setDocWithOp(
   input: DocWriteInput,
-  fields: ReturnType<typeof resolveLocalDocArticleFields>,
-) {
-  return { ...hostedArticleWriteFields(input, fields), generator: input.generator }
-}
-
-async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promise<Doc> {
+  requestedOp?: 'import',
+): Promise<Doc & { writeWarnings?: string[] }> {
   writableDb()
   const ownedAddress =
     refuseOwnedDocAddress(input.scope, input.subject, input.owner) ??
@@ -382,12 +380,16 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
     resolveLocalDocArticleFields(input, prior, kind, projectName)
   const tree = localDocTreeFields(input, prior)
   assertDocSections(input.body, tree.audiences)
+  const commandWarning = assertCustomerGuideCommands(
+    { body: input.body, kind, form, audiences: tree.audiences },
+    input.loadKnownCommands,
+  )
   const lifecycle = localDocumentLifecycle(input, prior)
   const articleDelivery = refuseArticleDelivery({ ...input, delivery, kind })
   if (articleDelivery) throw new Error(articleDelivery)
   assertDocWriteAllowed({ ...input, delivery })
   assertDocLint(input, prior)
-  return applyRecordWriteAuthority({
+  const written = await applyRecordWriteAuthority({
     local: () =>
       executeLocalDocSet({
         ...input,
@@ -465,9 +467,10 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
       })
     },
   })
+  return commandWarning ? { ...written, writeWarnings: [commandWarning] } : written
 }
 
-export async function setDoc(input: DocWriteInput): Promise<Doc> {
+export async function setDoc(input: DocWriteInput): Promise<Doc & { writeWarnings?: string[] }> {
   assertWorkerDocStoreWriteAllowed('setDoc')
   if (input.scope === 'resume') {
     const frontmatter = resumeFrontmatter(input.body)

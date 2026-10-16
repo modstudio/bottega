@@ -37,6 +37,8 @@ const { workspaces } = JSON.parse(readFileSync(`${ROOT}/package.json`, 'utf8')) 
 const ALLOWED = new Set([
   // The module whose entire job is to hold it.
   'shared/brand.ts',
+  // Generated command spellings are derived from the route authority and cannot import brand code.
+  'shared/command-spellings.ts',
   // This file, which has to mention it in order to look for it.
   'scripts/check-brand.ts',
   // The root manifest and each declared workspace manifest: read by tooling before any import exists.

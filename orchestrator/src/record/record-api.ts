@@ -154,7 +154,7 @@ type RecordApiDeps = RecordInvitationRouteDeps & {
       expectedRevision?: string
       generator?: DocGenerator
     },
-  ): Promise<{ id: string; revisionId: string }>
+  ): Promise<{ id: string; revisionId: string; writeWarnings?: string[] }>
   reorderDocs(input: Tenant & RecordDocOrderInput): Promise<{ orderedIds: string[] }>
   importDoc(input: Tenant & RecordDocImportInput): Promise<{ id: string; revisionIds: string[] }>
   importCanon(input: Tenant & RecordCanonImportInput): Promise<RecordCanonImportResult>

@@ -27,6 +27,7 @@ export type DocWriteContext = {
   canonTree?: CanonWriteTree
   collectCanonLintInput?: CanonLintInputCollector
   generator?: DocGenerator
+  loadKnownCommands?: () => readonly string[]
 }
 
 export type DocWriteInput = {
@@ -137,6 +138,13 @@ export function hostedArticleWriteFields(
       ? { checkedAgainstCommit: fields.checkedAgainstCommit }
       : {}),
   }
+}
+
+export function hostedDocWriteFields(
+  input: DocWriteInput,
+  fields: ReturnType<typeof resolveLocalDocArticleFields>,
+) {
+  return { ...hostedArticleWriteFields(input, fields), generator: input.generator }
 }
 
 export function localRevisionArticleFields(revision: DocRevision) {

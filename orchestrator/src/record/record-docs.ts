@@ -29,6 +29,7 @@ import {
   type HostedArticleResponse,
   hostedArticleProjectId,
   hostedArticleResponse,
+  hostedArticleResponseFromRows,
   importedArticleSubjectNames,
   replaceHostedRelatedSubjects,
   resolveHostedArticleFields,
@@ -37,6 +38,7 @@ import {
 } from './record-doc-article-fields.ts'
 import { bindRecordDocAudiences } from './record-doc-audience-sql.ts'
 import { recordDocAudiences } from './record-doc-audiences.ts'
+import { assertRecordCustomerGuideCommands } from './record-doc-command-check.ts'
 import { assertRevisionWrite, assertWrite, RecordDocError } from './record-doc-errors.ts'
 import { writeImportedRecordDoc } from './record-doc-import-write.ts'
 import {
@@ -228,9 +230,15 @@ export async function upsertRecordDoc(
       existing[0],
       resolvedProject,
     )
+    const audiences = storedDocAudiences(input, existing[0])
+    const commandWarning = assertRecordCustomerGuideCommands({
+      body: input.body,
+      kind,
+      form: articleFields.form,
+      audiences,
+    })
     const now = input.at ?? new Date().toISOString()
     const docId = existing[0] ? String(existing[0].id) : (input.id ?? newRecordId())
-    const audiences = storedDocAudiences(input, existing[0])
     assertDocSections(input.body, audiences)
     const parentId = storedDocParentId(input, existing[0])
     assertWrite(
@@ -303,13 +311,12 @@ export async function upsertRecordDoc(
       sessionId: input.sessionId ?? null,
       at: now,
     })
-    const names = new Map(
-      articleFields.subjectRows.map((row: Record<string, unknown>) => [
-        String(row.id),
-        String(row.name),
-      ]),
-    )
-    return { id: docId, revisionId, ...hostedArticleResponse(articleFields, names) }
+    const written = {
+      id: docId,
+      revisionId,
+      ...hostedArticleResponseFromRows(articleFields, articleFields.subjectRows),
+    }
+    return commandWarning ? { ...written, writeWarnings: [commandWarning] } : written
   })
 }
 
