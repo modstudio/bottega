@@ -180,7 +180,7 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       .query(
         "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,2,'run',?,?,?)",
       )
-      .run(newRecordId(), second.id, JSON.stringify(second), second.createdAt)
+      .run(newRecordId(), String(second.id), JSON.stringify(second), String(second.createdAt))
     try {
       const result = await withoutDirectRecordCredentials(() =>
         syncRecord({ local, identity: { id: input.machineId, name: 'proof-machine' } }),
