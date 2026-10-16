@@ -20,9 +20,11 @@ import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { contractConflicts } from '../contract/contract.ts'
 import { nowIso, sessionId } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
+import { branchOf } from '../git/git-environment.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
 import { effectiveMcpRequest, parseRequestedMcp, requiredMcpServer } from '../mcp/mcp-preflight.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
+import { reviewFindingMemoryRows } from '../review/rejected-finding-memory.ts'
 import { implicitReviewWarning } from '../review/review-target.ts'
 import {
   REVIEW_COVERAGE,
@@ -56,6 +58,14 @@ type Presentation = {
   error(...values: unknown[]): void
   printRunId(id: number): void
   cwd(): string
+}
+
+function earlierReviewRejections(project: string, cwd: string) {
+  return { project, branch: branchOf(cwd), rows: reviewFindingMemoryRows(project) }
+}
+
+function recordRunWarning(runId: number, warning: string): void {
+  appendRunEvent(runId, { ts: nowIso(), type: 'text', text: warning })
 }
 
 type CallerCheckoutDecision = {
@@ -405,8 +415,8 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
         }
         return lookupProjectTaskKey(registered, key)
       },
-      recordRunWarning: (runId, warning) =>
-        appendRunEvent(runId, { ts: nowIso(), type: 'text', text: warning }),
+      recordRunWarning,
+      earlierReviewRejections,
       detach,
       follow: (id, quiet) =>
         followRun(id, quiet, true, {

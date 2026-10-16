@@ -93,12 +93,28 @@ function lensPromptFor(
   findings: boolean | undefined,
   lensId: string | undefined,
   supplied: string,
+  earlierRejections: ReturnType<DispatchPresentation['earlierReviewRejections']>,
 ): string {
   return reviewLensPrompt({
     lens: resolvedFindingsLens(findings, lensId, project?.name ?? null),
     mechanicallyEnforced: projectMechanicalChecks(project),
+    earlierRejections,
     supplied,
   })
+}
+
+async function composedLensPrompt(
+  presentation: DispatchPresentation,
+  project: Project | null,
+  requested: ReturnType<typeof job>,
+  lens: string | undefined,
+  cwd: string,
+): Promise<string> {
+  const earlier =
+    requested.findings && project
+      ? presentation.earlierReviewRejections(project.name, cwd)
+      : { project: project?.name ?? '', branch: null, rows: [] }
+  return lensPromptFor(project, requested.findings, lens, await presentation.readPrompt(), earlier)
 }
 
 type DispatchOptions = {
@@ -145,6 +161,14 @@ type DispatchPresentation = {
   resolveDispatchOptions(jobName: string): Promise<DispatchOptions>
   lookupTaskKey: TaskKeyLookup
   recordRunWarning(runId: number, warning: string): void
+  earlierReviewRejections(
+    project: string,
+    cwd: string,
+  ): {
+    project: string
+    branch: string | null
+    rows: readonly import('./review-lens-prompt.ts').EarlierReviewFindingRow[]
+  }
   detach(jobName: string, prompt: string, spec: DetachSpec): Promise<number>
   follow(id: number, quiet: boolean): Promise<unknown>
 }
@@ -295,7 +319,6 @@ export async function dispatchCommand(
     doUsage,
     error,
     printRunId,
-    readPrompt,
     validateSchema,
     warnCallerDrift,
     warnTaskBranchBypass,
@@ -431,7 +454,7 @@ export async function dispatchCommand(
         '  pass --carry to send it with the run.',
     )
   }
-  const prompt = lensPromptFor(dispatchProject, requested.findings, lens, await readPrompt())
+  const prompt = await composedLensPrompt(presentation, dispatchProject, requested, lens, callerCwd)
   const keepTree = keepTreeExemptionFromOption(
     has('keep-tree'),
     flag('keep-tree'),

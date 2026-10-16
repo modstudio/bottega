@@ -35,6 +35,10 @@ export const reviewModuleSpecs = [
     file: 'orchestrator/src/review/review-record-findings-file.ts',
     allowed: ['node:fs', 'node:path', './review-record-findings.ts'],
   },
+  {
+    file: 'orchestrator/src/review/rejected-finding-memory.ts',
+    allowed: ['bun:sqlite', '../database/db.ts'],
+  },
 ] as const
 
 export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
