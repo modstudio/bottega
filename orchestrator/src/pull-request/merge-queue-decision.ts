@@ -13,6 +13,7 @@ export type MergeQueueState =
   | { state: 'merged'; mergeCommit: string }
   | { state: 'queued' }
   | { state: 'dequeued' }
+  | { state: 'closed' }
   | { state: 'failed' }
   | { state: 'unknown'; detail: string }
 
@@ -24,6 +25,7 @@ export type MergeQueueAction =
 
 const ACTIVE_ENTRY_STATES = new Set(['AWAITING_CHECKS', 'LOCKED', 'MERGEABLE', 'QUEUED'])
 export const MERGE_QUEUE_WAIT_MS = 30 * 60 * 1000
+export const MERGE_QUEUE_DEQUEUE_CONFIRM_MS = 60 * 1000
 const MERGE_QUEUE_POLL_MS = 10 * 1000
 
 export function interpretMergeQueue(observation: MergeQueueObservation): MergeQueueState {
@@ -32,7 +34,7 @@ export function interpretMergeQueue(observation: MergeQueueObservation): MergeQu
   if (pullRequestState === 'MERGED' && observation.mergeCommit) {
     return { state: 'merged', mergeCommit: observation.mergeCommit }
   }
-  if (pullRequestState === 'CLOSED') return { state: 'dequeued' }
+  if (pullRequestState === 'CLOSED') return { state: 'closed' }
   if (pullRequestState === 'OPEN' && entryState === 'UNMERGEABLE') return { state: 'failed' }
   if (pullRequestState === 'OPEN' && entryState && ACTIVE_ENTRY_STATES.has(entryState)) {
     return { state: 'queued' }
@@ -49,6 +51,7 @@ export function decideMergeQueueAction(
   queue: MergeQueueState,
   enqueueSubmitted: boolean,
   activeEntryObserved: boolean,
+  dequeueObservedAt: number | null,
   now: number,
   deadline: number,
 ): MergeQueueAction {
@@ -56,7 +59,7 @@ export function decideMergeQueueAction(
   if (queue.state === 'merged') {
     return { action: 'complete', mergeCommit: queue.mergeCommit }
   }
-  if (queue.state === 'dequeued' && activeEntryObserved) {
+  if (queue.state === 'closed') {
     return {
       action: 'refuse',
       refusal: `pull request #${number} left the merge queue without merging`,
@@ -84,6 +87,39 @@ export function decideMergeQueueAction(
       remedy: `re-run ${retry}, which will keep waiting if it is already queued`,
     }
   }
-  if (queue.state === 'dequeued' && !enqueueSubmitted) return { action: 'enqueue' }
-  return { action: 'wait', delay: Math.min(MERGE_QUEUE_POLL_MS, deadline - now) }
+  if (
+    queue.state === 'dequeued' &&
+    activeEntryObserved &&
+    dequeueObservedAt !== null &&
+    now - dequeueObservedAt >= MERGE_QUEUE_DEQUEUE_CONFIRM_MS
+  ) {
+    return {
+      action: 'refuse',
+      refusal: `pull request #${number} left the merge queue without merging`,
+      remedy: `fix the dequeue reason, then ${retry}`,
+    }
+  }
+  if (queue.state === 'dequeued' && !enqueueSubmitted && !activeEntryObserved) {
+    return { action: 'enqueue' }
+  }
+  const dequeueConfirmationRemaining =
+    queue.state === 'dequeued' && activeEntryObserved && dequeueObservedAt !== null
+      ? MERGE_QUEUE_DEQUEUE_CONFIRM_MS - (now - dequeueObservedAt)
+      : Number.POSITIVE_INFINITY
+  return {
+    action: 'wait',
+    delay: Math.min(MERGE_QUEUE_POLL_MS, deadline - now, dequeueConfirmationRemaining),
+  }
+}
+
+export function mergeQueueEnqueueFailureRemedy(number: number, message: string): string {
+  const retry = `${PLATFORM_SLUG} pr merge ${number}`
+  const normalized = message.toLowerCase()
+  if (
+    normalized.includes('enablepullrequestautomerge') ||
+    normalized.includes('auto merge is not allowed')
+  ) {
+    return `enable auto-merge on the repository (allow_auto_merge), then ${retry}`
+  }
+  return `fix the reported forge condition, then ${retry}`
 }
