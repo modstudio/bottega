@@ -15,11 +15,12 @@ export function boardPushDecision(input: {
   clock: number
 }): BoardPushDecision {
   if (input.expiresAt !== null && Date.parse(input.expiresAt) <= input.clock) return 'withheld'
-  const acknowledgementIsPending =
-    input.acknowledgementRequired &&
-    input.acknowledgementDeadline !== null &&
-    Date.parse(input.acknowledgementDeadline) > input.clock
-  if (acknowledgementIsPending) {
+  if (input.acknowledgementRequired) {
+    if (
+      input.acknowledgementDeadline !== null &&
+      Date.parse(input.acknowledgementDeadline) <= input.clock
+    )
+      return 'withheld'
     if (input.readerBeganAt !== null && input.readerBeganAt > input.postedAt) return 'withheld'
     return 'acknowledgement'
   }
@@ -56,7 +57,7 @@ export function selectPushNotices<
       clock,
     })
     if (decision === 'withheld') return []
-    return [{ ...notice, ackRequired: decision === 'acknowledgement' }]
+    return [notice]
   })
   return { notices, withheldOlderCount: candidates.length - notices.length }
 }

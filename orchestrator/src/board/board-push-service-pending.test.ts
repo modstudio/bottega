@@ -40,7 +40,7 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
     {},
     clock - 2_000,
   )
-  const olderStandingLocal = postNotice(
+  postNotice(
     {
       audience: 'project:push-project',
       title: 'Older standing local',
@@ -157,13 +157,7 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
     clock: clock + 30_001,
   })
   expect(afterDeadline.pendingAcknowledgements).toEqual([])
-  expect(afterDeadline.delivery.map((notice) => notice.id).sort()).toEqual(
-    [String(local.id), String(olderStandingLocal.id), hosted.id, olderStandingHosted.id].sort(),
-  )
-  expect(afterDeadline.delivery.every((notice) => !notice.requiresAcknowledgement)).toBeTrue()
-  expect(
-    afterDeadline.delivery.every((notice) => notice.text.includes('Acknowledgement: not required')),
-  ).toBeTrue()
+  expect(afterDeadline.delivery).toEqual([])
 })
 
 test('a hosted acknowledgement immediately clears delivery from verified or unverified cache state', async () => {
