@@ -108,7 +108,6 @@ export type RecordDocUpsertInput = {
   expectedRevision?: string
   generator?: DocGenerator
 }
-type RecordDocWriteResult = RecordDocWriteResponse<{ id: string; revisionId: string }>
 type RecordDocImportResult = RecordDocWriteResponse<{ id: string; revisionIds: string[] }>
 
 export type RecordDocImportInput = {
@@ -256,7 +255,7 @@ export type RecordApiClient = ProjectIdentityClient & {
   upsertDoc(
     input: RecordDocUpsertInput,
     destination?: RecordRequestDestination,
-  ): Promise<RecordDocWriteResult>
+  ): Promise<RecordDocWriteResponse<{ id: string; revisionId: string }>>
   reorderDocs(
     input: RecordDocOrderInput,
     destination?: RecordRequestDestination,
@@ -606,7 +605,7 @@ function docSearchParams(query: {
   return search.toString()
 }
 
-function ids(body: unknown): RecordDocWriteResult {
+function ids(body: unknown): RecordDocWriteResponse<{ id: string; revisionId: string }> {
   const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
   if (typeof record.id !== 'string' || typeof record.revisionId !== 'string') {
     throw recordApiUnreachable(new Error('record API returned an invalid body'))
