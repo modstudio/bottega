@@ -297,7 +297,7 @@ function persistNamedArtifact(
   worktreePath: string | null,
 ): string | null {
   const plan = namedArtifactPlan(id, RUNS_DIR, named, worktreePath)
-  if (plan.alreadyInPlace) return null
+  if (plan.alreadyInPlace && existsSync(plan.source)) return null
   try {
     if (!existsSync(plan.source)) throw new Error('source does not exist')
     const source = lstatSync(plan.source).isSymbolicLink() ? realpathSync(plan.source) : plan.source

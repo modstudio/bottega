@@ -223,6 +223,18 @@ test('all named artifacts are attempted before copy failures are reported togeth
     rmSync(tree, { recursive: true, force: true })
   }
 })
+test('a listed scratch or artifacts path that was never written is still a failure', () => {
+  const id = addRun({ agent: 'codex', job: 'diagnose' })
+  mkdirSync(runScratchDir(id), { recursive: true })
+  expect(() =>
+    persistRunArtifacts(
+      id,
+      [join(runScratchDir(id), 'never-written.json'), join(runArtifactsDir(id), 'absent.md')],
+      null,
+      null,
+    ),
+  ).toThrow(/never-written\.json[\s\S]*absent\.md/)
+})
 test('a reclaimed lens tree leaves its artifacts', () => {
   const id = addRun({ agent: 'codex', job: 'review-lens' })
   const tree = mkdtempSync(join(tmpdir(), 'orch-lens-tree-'))
