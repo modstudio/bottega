@@ -12,10 +12,10 @@ export function EmptyState({
   action?: ReactNode
 }) {
   return (
-    <div className={emptyStateStyles().slot1()}>
-      <div className={emptyStateStyles().slot2()}>{title}</div>
-      {hint ? <div className={emptyStateStyles().slot3()}>{hint}</div> : null}
-      {action ? <div className={emptyStateStyles().slot4()}>{action}</div> : null}
+    <div className={emptyStateStyles().root()}>
+      <div className={emptyStateStyles().title()}>{title}</div>
+      {hint ? <div className={emptyStateStyles().hint()}>{hint}</div> : null}
+      {action ? <div className={emptyStateStyles().action()}>{action}</div> : null}
     </div>
   )
 }

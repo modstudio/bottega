@@ -22,15 +22,15 @@ export function RadioRows({
 }) {
   const id = useId()
   return (
-    <fieldset className={radioRowsStyles().slot1()}>
-      <legend className={radioRowsStyles().slot2()}>{label}</legend>
-      <div className={radioRowsStyles().slot3()}>
+    <fieldset className={radioRowsStyles().fieldset()}>
+      <legend className={radioRowsStyles().legend()}>{label}</legend>
+      <div className={radioRowsStyles().options()}>
         {options.map((option) => {
           const selected = option.value === value
           return (
             <label key={option.value} className={radioRowsStyles({ selected }).option()}>
               <input
-                className={radioRowsStyles().slot4()}
+                className={radioRowsStyles().input()}
                 type="radio"
                 name={id}
                 value={option.value}
@@ -38,10 +38,10 @@ export function RadioRows({
                 onChange={() => onChange(option.value)}
               />
               <RadioIndicator selected={selected} />
-              <span className={radioRowsStyles().slot5()}>
+              <span className={radioRowsStyles().label()}>
                 {option.label}
                 {option.recommended ? (
-                  <span className={radioRowsStyles().slot6()}>recommended</span>
+                  <span className={radioRowsStyles().recommended()}>recommended</span>
                 ) : null}
               </span>
             </label>

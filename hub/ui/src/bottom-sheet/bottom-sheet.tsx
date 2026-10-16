@@ -54,11 +54,11 @@ export function BottomSheet({
       style={{ height: `${height}dvh` }}
       className={bottomSheetStyles({ dragging }).root()}
     >
-      <div className={bottomSheetStyles().slot1()}>
+      <div className={bottomSheetStyles().frame()}>
         <button
           type="button"
           aria-label="Resize sheet"
-          className={bottomSheetStyles().slot2()}
+          className={bottomSheetStyles().resizeHandle()}
           onPointerDown={(event) => {
             event.currentTarget.setPointerCapture(event.pointerId)
             setDragging(true)
@@ -69,15 +69,15 @@ export function BottomSheet({
           onPointerUp={release}
           onPointerCancel={release}
         >
-          <span aria-hidden className={bottomSheetStyles().slot3()} />
+          <span aria-hidden className={bottomSheetStyles().resizeGrip()} />
         </button>
-        <header className={bottomSheetStyles().slot4()}>
-          <h2 className={bottomSheetStyles().slot5()}>{title}</h2>
+        <header className={bottomSheetStyles().header()}>
+          <h2 className={bottomSheetStyles().title()}>{title}</h2>
           <IconButton size="sm" label="Close" onClick={onClose}>
             <X />
           </IconButton>
         </header>
-        <div className={bottomSheetStyles().slot6()}>{children}</div>
+        <div className={bottomSheetStyles().body()}>{children}</div>
       </div>
     </dialog>
   )

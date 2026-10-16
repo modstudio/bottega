@@ -31,9 +31,9 @@ export function Checkbox({ indeterminate = false, className, ref, ...props }: Ch
         }}
         type="checkbox"
         aria-checked={indeterminate ? 'mixed' : undefined}
-        className={checkboxStyles().slot1()}
+        className={checkboxStyles().input()}
       />
-      <Mark aria-hidden strokeWidth={3} className={checkboxStyles().slot2()} />
+      <Mark aria-hidden strokeWidth={3} className={checkboxStyles().mark()} />
     </span>
   )
 }

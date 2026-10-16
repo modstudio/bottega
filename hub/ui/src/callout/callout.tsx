@@ -16,9 +16,9 @@ export function Callout({
   children?: ReactNode
 }) {
   return (
-    <aside role="note" data-tone={tone} className={calloutStyles().slot1()}>
-      <div className={calloutStyles().slot2()}>{title}</div>
-      <div className={calloutStyles().slot3()}>{children}</div>
+    <aside role="note" data-tone={tone} className={calloutStyles().root()}>
+      <div className={calloutStyles().title()}>{title}</div>
+      <div className={calloutStyles().body()}>{children}</div>
     </aside>
   )
 }

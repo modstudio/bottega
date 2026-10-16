@@ -64,7 +64,7 @@ export function SearchSelect({
       }}
       trigger={trigger}
     >
-      <div className={searchSelectStyles().slot1()}>
+      <div className={searchSelectStyles().root()}>
         <Input
           ref={input}
           size="sm"
@@ -92,7 +92,7 @@ export function SearchSelect({
             }
           }}
         />
-        <div role="listbox" aria-label={label} className={searchSelectStyles().slot2()}>
+        <div role="listbox" aria-label={label} className={searchSelectStyles().options()}>
           {shown.map((option, index) => (
             <button
               type="button"
@@ -103,15 +103,15 @@ export function SearchSelect({
               title={option.label}
               onMouseEnter={() => setActive(index)}
               onClick={() => choose(option)}
-              className={searchSelectStyles().slot3()}
+              className={searchSelectStyles().option()}
             >
               {option.label}
             </button>
           ))}
           {none ? (
-            <p className={searchSelectStyles().slot4()}>No match</p>
+            <p className={searchSelectStyles().emptyMessage()}>No match</p>
           ) : more > 0 ? (
-            <p className={searchSelectStyles().slot5()}>{more} more; narrow the search</p>
+            <p className={searchSelectStyles().moreMessage()}>{more} more; narrow the search</p>
           ) : null}
         </div>
       </div>

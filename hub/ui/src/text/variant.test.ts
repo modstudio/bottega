@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { mergeClasses } from './variant.ts'
+import { mergeClasses, variant } from './variant.ts'
 
 describe('theme-aware class merging', () => {
   test.each([
@@ -10,5 +10,10 @@ describe('theme-aware class merging', () => {
     ['text-sm text-md', 'text-md'],
   ])('merges %s', (classes, expected) => {
     expect(mergeClasses(classes)).toBe(expected)
+  })
+
+  test('caller classes override a custom theme size through the configured variant function', () => {
+    const control = variant({ base: 'h-control-sm' })
+    expect(control({ class: 'h-control-lg' })).toBe('h-control-lg')
   })
 })

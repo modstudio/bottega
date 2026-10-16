@@ -17,7 +17,7 @@ export function Segmented({
 }) {
   return (
     <fieldset className={segmentedStyles({ size }).root()}>
-      <legend className={segmentedStyles().slot1()}>{label}</legend>
+      <legend className={segmentedStyles().legend()}>{label}</legend>
       {options.map(({ icon: Icon, ...option }) => (
         <button
           key={option.value}

@@ -4,7 +4,7 @@ import { variant } from '../text/variant.ts'
 export const menuStyles = variant({
   slots: {
     root: '',
-    slot1: 'mb-1 border-border-subtle border-b px-3 pt-1.5 pb-2',
+    header: 'mb-1 border-border-subtle border-b px-3 pt-1.5 pb-2',
   },
   variants: { danger: { true: 'text-status-text' } },
 })

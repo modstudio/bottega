@@ -3,8 +3,8 @@ import { variant } from '../text/variant.ts'
 export const tableStyles = variant({
   slots: {
     table: 'w-full border-collapse text-base',
-    slot1: 'sticky top-0 z-(--z-sticky) bg-surface-page',
-    slot2: '[&>tr:last-child]:border-b-0',
+    header: 'sticky top-0 z-(--z-sticky) bg-surface-page',
+    body: '[&>tr:last-child]:border-b-0',
   },
 })
 

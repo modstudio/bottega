@@ -102,11 +102,15 @@ export function uiArchitectureRules(
       severity: 'error',
       comment: 'Only the shared variant module imports tailwind-variants or tailwind-merge.',
       from: {
-        path: '^hub/ui/src/',
+        path: '^(?!hub/ui/src/text/variant\\.ts$)',
         pathNot: ['^hub/ui/src/text/variant\\.ts$'],
       },
       to: {
-        path: [dependencyPath('tailwind-variants'), dependencyPath('tailwind-merge')].join('|'),
+        path: [
+          dependencyPath('tailwind-variants'),
+          dependencyPath('tailwind-merge'),
+          '^tailwind-(?:variants|merge)$',
+        ].join('|'),
       },
     },
     {

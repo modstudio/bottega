@@ -18,8 +18,8 @@ export function ProjectName({
     ? ({ '--project-light': color, '--project-dark': colorDark ?? color } as CSSProperties)
     : undefined
   return (
-    <span data-project="" style={style} className={projectMarkStyles().slot1()}>
-      <span aria-hidden className={projectMarkStyles().slot2()} />
+    <span data-project="" style={style} className={projectMarkStyles().root()}>
+      <span aria-hidden className={projectMarkStyles().mark()} />
       {name}
     </span>
   )

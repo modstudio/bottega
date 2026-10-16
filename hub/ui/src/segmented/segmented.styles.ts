@@ -3,7 +3,7 @@ import { variant } from '../text/variant.ts'
 export const segmentedStyles = variant({
   slots: {
     root: 'm-0 inline-flex min-w-0 overflow-hidden border border-border-default p-0',
-    slot1: 'sr-only',
+    legend: 'sr-only',
   },
   variants: { size: { sm: { root: 'h-control-sm' }, md: { root: 'h-control-md' } } },
   defaultVariants: { size: 'sm' },

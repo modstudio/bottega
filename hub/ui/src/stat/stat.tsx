@@ -13,15 +13,15 @@ function BreakdownFigure({ items }: { items: Breakdown }) {
   if (!current) return <div className={statStyles().figure()}>-</div>
   return (
     <>
-      <div className={statStyles().slot1()}>
+      <div className={statStyles().figureHeading()}>
         <span className={statStyles().figure()} title={current.value}>
           {current.value}
         </span>
-        <span className={statStyles().slot2()}>{current.label}</span>
+        <span className={statStyles().figureLabel()}>{current.label}</span>
       </div>
       {items.length > 1 ? (
-        <fieldset className={statStyles().slot3()}>
-          <legend className={statStyles().slot4()}>Choose a figure</legend>
+        <fieldset className={statStyles().figurePicker()}>
+          <legend className={statStyles().figurePickerLegend()}>Choose a figure</legend>
           {items.map((item, i) => (
             <button
               key={item.label}
@@ -29,7 +29,7 @@ function BreakdownFigure({ items }: { items: Breakdown }) {
               aria-label={`${item.label}: ${item.value}`}
               aria-pressed={i === index}
               onClick={() => setIndex(i)}
-              className={statStyles().slot5()}
+              className={statStyles().figurePickerOption()}
             />
           ))}
         </fieldset>
@@ -60,8 +60,8 @@ export function StatTile({
   wrapHint?: boolean
 }) {
   return (
-    <div className={statStyles().slot6()}>
-      <div className={statStyles().slot7()}>{label}</div>
+    <div className={statStyles().card()}>
+      <div className={statStyles().cardLabel()}>{label}</div>
       {breakdown ? (
         <BreakdownFigure items={breakdown} />
       ) : (
@@ -85,7 +85,7 @@ export function StatTile({
 export function StatRow({ children }: { children: ReactNode }) {
   const count = Children.toArray(children).length
   return (
-    <div className={statStyles().slot8()}>
+    <div className={statStyles().group()}>
       <div className={statStyles({ three: count >= 3, four: count >= 4 }).row()}>{children}</div>
     </div>
   )

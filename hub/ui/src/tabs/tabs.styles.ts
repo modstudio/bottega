@@ -2,8 +2,8 @@ import { variant } from '../text/variant.ts'
 
 export const tabsStyles = variant({
   slots: {
-    slot1: 'flex min-w-0 gap-4 overflow-x-auto border-border-default border-b',
-    slot2: 'text-sm text-text-muted tabular-nums',
+    list: 'flex min-w-0 gap-4 overflow-x-auto border-border-default border-b',
+    count: 'text-sm text-text-muted tabular-nums',
   },
 })
 

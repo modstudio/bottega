@@ -15,10 +15,12 @@ export function FieldSection({
   children: ReactNode
 }) {
   return (
-    <section className={formLayoutStyles().slot1()}>
+    <section className={formLayoutStyles().section()}>
       <div>
-        <h2 className={formLayoutStyles().slot2()}>{title}</h2>
-        {description ? <p className={formLayoutStyles().slot3()}>{description}</p> : null}
+        <h2 className={formLayoutStyles().sectionTitle()}>{title}</h2>
+        {description ? (
+          <p className={formLayoutStyles().sectionDescription()}>{description}</p>
+        ) : null}
       </div>
       {children}
     </section>
@@ -41,10 +43,10 @@ export function SettingBlock({
   cli?: string
 }) {
   return (
-    <div className={formLayoutStyles().slot4()}>
-      <div className={formLayoutStyles().slot5()}>{label}</div>
+    <div className={formLayoutStyles().field()}>
+      <div className={formLayoutStyles().fieldLabel()}>{label}</div>
       <div>{control}</div>
-      {hint ? <div className={formLayoutStyles().slot6()}>{hint}</div> : null}
+      {hint ? <div className={formLayoutStyles().fieldHint()}>{hint}</div> : null}
       {cli ? <Copyable value={cli} compact /> : null}
     </div>
   )
@@ -53,10 +55,10 @@ export function SettingBlock({
 /** A fact that is read, not edited: label beside value when there is room. */
 export function DisplayRow({ label, value }: { label: ReactNode; value: ReactNode }) {
   return (
-    <div className={formLayoutStyles().slot7()}>
-      <div className={formLayoutStyles().slot8()}>
-        <div className={formLayoutStyles().slot9()}>{label}</div>
-        <div className={formLayoutStyles().slot10()}>{value ?? '-'}</div>
+    <div className={formLayoutStyles().displayRow()}>
+      <div className={formLayoutStyles().displayGrid()}>
+        <div className={formLayoutStyles().displayLabel()}>{label}</div>
+        <div className={formLayoutStyles().displayValue()}>{value ?? '-'}</div>
       </div>
     </div>
   )
@@ -70,7 +72,7 @@ export function Copyable({ value, compact = false }: { value: string; compact?: 
   }
   return (
     <div className={formLayoutStyles({ compact }).copyable()}>
-      <code className={formLayoutStyles().slot11()}>{value}</code>
+      <code className={formLayoutStyles().copyableValue()}>{value}</code>
       <IconButton size="sm" label="Copy value" onClick={copy}>
         <Copy />
       </IconButton>

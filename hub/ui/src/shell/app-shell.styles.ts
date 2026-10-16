@@ -2,30 +2,29 @@ import { variant } from '../text/variant.ts'
 
 export const appShellStyles = variant({
   slots: {
-    slot1: 'absolute top-2 left-9 size-1.5 shrink-0 rounded-full bg-status-fill',
-    slot2: '-m-3 flex min-w-48 flex-col gap-px p-1',
-    slot3: 'px-3 pt-2 pb-1 font-medium text-sm text-text-muted',
-    slot4: 'flex flex-col py-3',
-    slot5: 'flex flex-col gap-px',
-    slot6: 'px-3 pt-2 pb-1 font-medium text-sm text-text-muted',
-    slot7:
+    liveIndicator: 'absolute top-2 left-9 size-1.5 shrink-0 rounded-full bg-status-fill',
+    switcherPanel: '-m-3 flex min-w-48 flex-col gap-px p-1',
+    groupHeading: 'px-3 pt-2 pb-1 font-medium text-sm text-text-muted',
+    nav: 'flex flex-col py-3',
+    group: 'flex flex-col gap-px',
+    mobileDialog:
       'fixed inset-y-0 left-0 h-dvh max-h-none w-[min(17rem,82vw)] border-border-default border-r bg-surface-page text-text-primary shadow-overlay transition-[translate] duration-(--duration-base) backdrop:bg-scrim starting:-translate-x-full',
-    slot8: 'flex h-full flex-col',
-    slot9:
+    mobileFrame: 'flex h-full flex-col',
+    mobileHeader:
       'flex h-topbar shrink-0 items-center justify-between border-border-default border-b px-4',
-    slot10: 'min-h-0 flex-1 overflow-y-auto',
-    slot11: 'border-border-default border-t p-4',
-    slot12: 'sr-only',
-    slot13: 'flex items-center gap-3 whitespace-nowrap font-serif text-xl lowercase',
-    slot14: 'flex min-h-dvh bg-surface-page text-text-primary',
-    slot15: 'min-h-0 flex-1 overflow-y-auto overflow-x-hidden',
-    slot16: 'border-border-default border-t py-3',
-    slot17: 'flex min-w-0 flex-1 flex-col',
-    slot18:
+    mobileNav: 'min-h-0 flex-1 overflow-y-auto',
+    mobileFooter: 'border-border-default border-t p-4',
+    collapsedBrandName: 'sr-only',
+    mobileBrand: 'flex items-center gap-3 whitespace-nowrap font-serif text-xl lowercase',
+    shell: 'flex min-h-dvh bg-surface-page text-text-primary',
+    railNav: 'min-h-0 flex-1 overflow-y-auto overflow-x-hidden',
+    railFooter: 'border-border-default border-t py-3',
+    workspace: 'flex min-w-0 flex-1 flex-col',
+    topbar:
       'sticky top-0 z-(--z-rail) flex h-topbar shrink-0 items-center gap-3 border-border-default border-b bg-surface-page px-4 md:px-8',
-    slot19: 'flex min-w-0 flex-1 items-center',
-    slot20: 'flex shrink-0 items-center gap-2',
-    slot21: 'min-w-0 flex-1 px-4 pb-8 md:px-8 md:pt-6',
+    topbarPortal: 'flex min-w-0 flex-1 items-center',
+    topbarActions: 'flex shrink-0 items-center gap-2',
+    main: 'min-w-0 flex-1 px-4 pb-8 md:px-8 md:pt-6',
   },
 })
 
@@ -35,7 +34,13 @@ export const navLinkStyles = variant({
 })
 
 export const navLabelStyles = variant({
-  variants: { hidden: { true: 'sr-only', false: 'truncate' } },
+  variants: {
+    hidden: { true: 'sr-only', false: 'truncate' },
+    role: {
+      switcherLabel: 'flex-1 text-left',
+      switcherIcon: 'ml-auto !size-3.5',
+    },
+  },
 })
 
 export const navMarkStyles = variant({

@@ -61,11 +61,11 @@ export function ToolbarBand({
 
   return (
     <>
-      <div className={toolbarBandStyles().slot1()}>
+      <div className={toolbarBandStyles().root()}>
         {search ? (
           <div ref={searchRow} className={toolbarBandStyles({ search: true }).cell()}>
             {searching ? (
-              <div className={toolbarBandStyles().slot2()}>
+              <div className={toolbarBandStyles().search()}>
                 {search}
                 <IconButton size="sm" label="Close search" onClick={() => setSearching(false)}>
                   <X />
@@ -74,7 +74,7 @@ export function ToolbarBand({
             ) : (
               <button
                 type="button"
-                className={toolbarBandStyles().slot3()}
+                className={toolbarBandStyles().searchTrigger()}
                 onClick={() => setSearching(true)}
               >
                 <Search aria-hidden />
@@ -98,8 +98,12 @@ export function ToolbarBand({
               {section.label}
               {section.active ? (
                 <>
-                  <span aria-hidden data-tone="info" className={toolbarBandStyles().slot4()} />
-                  <span className={toolbarBandStyles().slot5()}>(applied)</span>
+                  <span
+                    aria-hidden
+                    data-tone="info"
+                    className={toolbarBandStyles().activeIndicator()}
+                  />
+                  <span className={toolbarBandStyles().activeLabel()}>(applied)</span>
                 </>
               ) : null}
             </button>

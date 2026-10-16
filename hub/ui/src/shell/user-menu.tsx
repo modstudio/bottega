@@ -58,9 +58,9 @@ export function UserMenu({
       side="right"
       align="end"
       header={
-        <div className={userMenuStyles().slot1()}>
-          <div className={userMenuStyles().slot2()}>{name}</div>
-          {detail ? <div className={userMenuStyles().slot3()}>{detail}</div> : null}
+        <div className={userMenuStyles().header()}>
+          <div className={userMenuStyles().name()}>{name}</div>
+          {detail ? <div className={userMenuStyles().detail()}>{detail}</div> : null}
         </div>
       }
       items={[
@@ -71,13 +71,17 @@ export function UserMenu({
         ...(onSignOut ? [{ label: 'Sign out', icon: LogOut, onSelect: onSignOut }] : []),
       ]}
       trigger={
-        <button type="button" aria-label={`Account: ${name}`} className={userMenuStyles().slot4()}>
-          <span aria-hidden className={userMenuStyles().slot5()}>
+        <button
+          type="button"
+          aria-label={`Account: ${name}`}
+          className={userMenuStyles().trigger()}
+        >
+          <span aria-hidden className={userMenuStyles().avatar()}>
             {initials(name)}
           </span>
-          <span className={userMenuStyles().slot6()}>
-            <span className={userMenuStyles().slot7()}>{name}</span>
-            {detail ? <span className={userMenuStyles().slot8()}>{detail}</span> : null}
+          <span className={userMenuStyles().triggerText()}>
+            <span className={userMenuStyles().triggerName()}>{name}</span>
+            {detail ? <span className={userMenuStyles().triggerDetail()}>{detail}</span> : null}
           </span>
         </button>
       }

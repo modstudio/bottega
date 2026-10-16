@@ -98,23 +98,23 @@ export function Companion({
             event.preventDefault()
             setWidth(next)
           }}
-          className={companionStyles().slot1()}
+          className={companionStyles().resizeHandle()}
         />
       )}
-      <header className={companionStyles().slot2()}>
-        <div className={companionStyles().slot3()}>
-          <h2 id={titleId} className={companionStyles().slot4()}>
+      <header className={companionStyles().header()}>
+        <div className={companionStyles().heading()}>
+          <h2 id={titleId} className={companionStyles().title()}>
             {title}
           </h2>
-          {subtitle ? <div className={companionStyles().slot5()}>{subtitle}</div> : null}
+          {subtitle ? <div className={companionStyles().subtitle()}>{subtitle}</div> : null}
         </div>
-        {actions ? <div className={companionStyles().slot6()}>{actions}</div> : null}
+        {actions ? <div className={companionStyles().actions()}>{actions}</div> : null}
         <IconButton size="sm" label="Close panel" onClick={onClose}>
           <X />
         </IconButton>
       </header>
-      <div className={companionStyles().slot7()}>{children}</div>
-      {footer ? <footer className={companionStyles().slot8()}>{footer}</footer> : null}
+      <div className={companionStyles().body()}>{children}</div>
+      {footer ? <footer className={companionStyles().footer()}>{footer}</footer> : null}
     </aside>
   )
 }
@@ -122,8 +122,8 @@ export function Companion({
 /** A page without a TableCard docks its companion here, beside its content. */
 export function Docked({ panel, children }: { panel?: ReactNode; children: ReactNode }) {
   return (
-    <div className={companionStyles().slot9()}>
-      <div className={companionStyles().slot10()}>{children}</div>
+    <div className={companionStyles().dockedLayout()}>
+      <div className={companionStyles().dockedContent()}>{children}</div>
       {panel}
     </div>
   )

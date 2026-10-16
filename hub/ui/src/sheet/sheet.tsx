@@ -59,30 +59,30 @@ export function Sheet({
       }}
       className={sheetStyles({ size }).root()}
     >
-      <div className={sheetStyles().slot1()}>
-        <header className={sheetStyles().slot2()}>
-          <div className={sheetStyles().slot3()}>
-            <h2 id={titleId} className={sheetStyles().slot4()}>
+      <div className={sheetStyles().frame()}>
+        <header className={sheetStyles().header()}>
+          <div className={sheetStyles().heading()}>
+            <h2 id={titleId} className={sheetStyles().title()}>
               {title}
             </h2>
-            {subtitle ? <div className={sheetStyles().slot5()}>{subtitle}</div> : null}
+            {subtitle ? <div className={sheetStyles().subtitle()}>{subtitle}</div> : null}
           </div>
-          {actions ? <div className={sheetStyles().slot6()}>{actions}</div> : null}
+          {actions ? <div className={sheetStyles().actions()}>{actions}</div> : null}
           <IconButton ref={close} label="Close" onClick={onClose}>
             <X />
           </IconButton>
         </header>
-        {tabs ? <div className={sheetStyles().slot7()}>{tabs}</div> : null}
-        {context ? <div className={sheetStyles().slot8()}>{context}</div> : null}
-        <div className={sheetStyles().slot9()}>
+        {tabs ? <div className={sheetStyles().tabs()}>{tabs}</div> : null}
+        {context ? <div className={sheetStyles().context()}>{context}</div> : null}
+        <div className={sheetStyles().body()}>
           {children}
           {destructive ? (
-            <div data-tone="error" className={sheetStyles().slot10()}>
+            <div data-tone="error" className={sheetStyles().destructive()}>
               {destructive}
             </div>
           ) : null}
         </div>
-        {footer ? <footer className={sheetStyles().slot11()}>{footer}</footer> : null}
+        {footer ? <footer className={sheetStyles().footer()}>{footer}</footer> : null}
       </div>
     </dialog>
   )

@@ -13,9 +13,9 @@ import { tableCardStyles } from './table-card.styles.ts'
  * the last band they always group. Classes are written out so Tailwind sees them.
  */
 const FILTER_BANDS = [
-  { max: 2, show: 'hidden @3xl/card:flex', hide: '@3xl/card:hidden' },
-  { max: 4, show: 'hidden @5xl/card:flex', hide: '@5xl/card:hidden' },
-  { max: 6, show: 'hidden @7xl/card:flex', hide: '@7xl/card:hidden' },
+  { max: 2, name: 'small' },
+  { max: 4, name: 'medium' },
+  { max: 6, name: 'large' },
 ] as const
 
 type ToolbarProps = {
@@ -39,12 +39,12 @@ function FiltersTrigger({ filters, active }: { filters: ReactNode; active: numbe
           <SlidersHorizontal />
           Filters
           {active ? (
-            <span className={tableCardStyles().slot1()}>{active > 9 ? '9+' : active}</span>
+            <span className={tableCardStyles().filterCount()}>{active > 9 ? '9+' : active}</span>
           ) : null}
         </Button>
       }
     >
-      <div className={tableCardStyles().slot2()}>{filters}</div>
+      <div className={tableCardStyles().filterPanel()}>{filters}</div>
     </Popover>
   )
 }
@@ -64,20 +64,22 @@ function DeskToolbar({
   const trigger = filters ? <FiltersTrigger filters={filters} active={filtersActive} /> : null
   const band = filterCount > 0 ? FILTER_BANDS.find((b) => filterCount <= b.max) : undefined
   return (
-    <div className={tableCardStyles().slot3()}>
-      {heading ? <div className={tableCardStyles().slot4()}>{heading}</div> : null}
-      {tabs ? <div className={tableCardStyles().slot5()}>{tabs}</div> : null}
-      {search ? <div className={tableCardStyles().slot6()}>{search}</div> : null}
+    <div className={tableCardStyles().desktopToolbar()}>
+      {heading ? <div className={tableCardStyles().desktopHeading()}>{heading}</div> : null}
+      {tabs ? <div className={tableCardStyles().tabs()}>{tabs}</div> : null}
+      {search ? <div className={tableCardStyles().search()}>{search}</div> : null}
       {band ? (
         <>
-          <div className={tableCardStyles().filters({ class: band.show })}>{filters}</div>
-          <div className={tableCardStyles().filterTrigger({ class: band.hide })}>{trigger}</div>
+          <div className={tableCardStyles({ filterBand: band.name }).filters()}>{filters}</div>
+          <div className={tableCardStyles({ filterBand: band.name }).filterTrigger()}>
+            {trigger}
+          </div>
         </>
       ) : (
-        <div className={tableCardStyles().slot7()}>{trigger}</div>
+        <div className={tableCardStyles().filtersButton()}>{trigger}</div>
       )}
-      {meta ? <div className={tableCardStyles().slot8()}>{meta}</div> : null}
-      <div className={tableCardStyles().slot9()}>
+      {meta ? <div className={tableCardStyles().meta()}>{meta}</div> : null}
+      <div className={tableCardStyles().actions()}>
         {view}
         {actions}
       </div>
@@ -105,7 +107,7 @@ function PhoneToolbar({
     ) : undefined
   return (
     <>
-      {heading ? <div className={tableCardStyles().slot10()}>{heading}</div> : null}
+      {heading ? <div className={tableCardStyles().phoneHeading()}>{heading}</div> : null}
       <ToolbarBand
         search={search}
         filters={filters}
@@ -154,13 +156,13 @@ export function TableCard({
   const phone = useMediaQuery(PHONE_QUERY)
   const Toolbar = phone ? PhoneToolbar : DeskToolbar
   return (
-    <section className={tableCardStyles().slot11()}>
+    <section className={tableCardStyles().root()}>
       <Toolbar {...toolbar} filtersActive={filtersActive} />
-      <div className={tableCardStyles().slot12()}>
+      <div className={tableCardStyles().body()}>
         <div className={tableCardStyles({ panel: Boolean(panel) }).card()}>
           {/* Positioned, so absolutely placed content (screen-reader labels) is clipped with the rows. */}
-          <div className={tableCardStyles().slot13()}>{children}</div>
-          {footer ? <div className={tableCardStyles().slot14()}>{footer}</div> : null}
+          <div className={tableCardStyles().rows()}>{children}</div>
+          {footer ? <div className={tableCardStyles().footer()}>{footer}</div> : null}
         </div>
         {panel}
       </div>

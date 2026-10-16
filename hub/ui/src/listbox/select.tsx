@@ -101,8 +101,8 @@ export function Select({
         onKeyDown={onTriggerKeyDown}
         className={selectStyles({ size }).trigger({ class: className })}
       >
-        <span className={selectStyles().slot1()}>{current?.label ?? 'Choose…'}</span>
-        <ChevronDown aria-hidden className={selectStyles().slot2()} />
+        <span className={selectStyles().triggerLabel()}>{current?.label ?? 'Choose…'}</span>
+        <ChevronDown aria-hidden className={selectStyles().triggerIcon()} />
       </button>
       <div
         ref={list}
@@ -137,8 +137,10 @@ export function Select({
             }).option()}
           >
             <Check aria-hidden className={selectStyles({ selected: index === selected }).check()} />
-            <span className={selectStyles().slot3()}>{option.label}</span>
-            {option.note ? <span className={selectStyles().slot4()}>{option.note}</span> : null}
+            <span className={selectStyles().optionLabel()}>{option.label}</span>
+            {option.note ? (
+              <span className={selectStyles().optionNote()}>{option.note}</span>
+            ) : null}
           </div>
         ))}
       </div>

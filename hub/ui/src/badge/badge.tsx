@@ -61,11 +61,11 @@ export function Badge({
       className={badgeStyles({ emphasis, identifier }).root({ class: className })}
     >
       {dot ? (
-        <span aria-hidden className={badgeStyles().slot1()} />
+        <span aria-hidden className={badgeStyles().dot()} />
       ) : Icon ? (
-        <Icon aria-hidden className={badgeStyles().slot2()} strokeWidth={2} />
+        <Icon aria-hidden className={badgeStyles().icon()} strokeWidth={2} />
       ) : null}
-      <span className={badgeStyles().slot3()}>{label}</span>
+      <span className={badgeStyles().label()}>{label}</span>
     </span>
   )
 }

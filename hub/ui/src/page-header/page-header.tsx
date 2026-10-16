@@ -20,31 +20,31 @@ export function PageHeader({ title, subtitle, subtitleTitle, actions }: PageHead
   const slot = useTopbarSlot()
   if (slot) {
     return createPortal(
-      <div className={pageHeaderStyles().slot1()}>
-        <div className={pageHeaderStyles().slot2()}>
-          <h1 className={pageHeaderStyles().slot3()}>{title}</h1>
+      <div className={pageHeaderStyles().portalRoot()}>
+        <div className={pageHeaderStyles().portalHeading()}>
+          <h1 className={pageHeaderStyles().portalTitle()}>{title}</h1>
           {subtitle ? (
-            <span className={pageHeaderStyles().slot4()} title={subtitleTitle}>
+            <span className={pageHeaderStyles().portalSubtitle()} title={subtitleTitle}>
               {subtitle}
             </span>
           ) : null}
         </div>
-        {actions ? <div className={pageHeaderStyles().slot5()}>{actions}</div> : null}
+        {actions ? <div className={pageHeaderStyles().portalActions()}>{actions}</div> : null}
       </div>,
       slot,
     )
   }
   return (
-    <header className={pageHeaderStyles().slot6()}>
-      <div className={pageHeaderStyles().slot7()}>
-        <h1 className={pageHeaderStyles().slot8()}>{title}</h1>
+    <header className={pageHeaderStyles().pageHeader()}>
+      <div className={pageHeaderStyles().pageHeading()}>
+        <h1 className={pageHeaderStyles().pageTitle()}>{title}</h1>
         {subtitle ? (
-          <div className={pageHeaderStyles().slot9()} title={subtitleTitle}>
+          <div className={pageHeaderStyles().pageSubtitle()} title={subtitleTitle}>
             {subtitle}
           </div>
         ) : null}
       </div>
-      {actions ? <div className={pageHeaderStyles().slot10()}>{actions}</div> : null}
+      {actions ? <div className={pageHeaderStyles().pageActions()}>{actions}</div> : null}
     </header>
   )
 }
@@ -52,9 +52,9 @@ export function PageHeader({ title, subtitle, subtitleTitle, actions }: PageHead
 /** A heading that opens a section of a page, with optional right-aligned detail. */
 export function SectionTitle({ children, detail }: { children: ReactNode; detail?: ReactNode }) {
   return (
-    <div className={pageHeaderStyles().slot11()}>
-      <h2 className={pageHeaderStyles().slot12()}>{children}</h2>
-      {detail ? <span className={pageHeaderStyles().slot13()}>{detail}</span> : null}
+    <div className={pageHeaderStyles().sectionHeader()}>
+      <h2 className={pageHeaderStyles().sectionHeading()}>{children}</h2>
+      {detail ? <span className={pageHeaderStyles().sectionDetail()}>{detail}</span> : null}
     </div>
   )
 }

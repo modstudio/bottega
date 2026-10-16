@@ -74,26 +74,26 @@ export function Toaster() {
   const latest = current.at(-1)
   return (
     <>
-      <div aria-live="polite" className={toastStyles().slot1()}>
+      <div aria-live="polite" className={toastStyles().liveRegion()}>
         {latest ? `${kindLabel[latest.kind]}: ${latest.message}` : ''}
       </div>
       <section
         ref={region}
         popover="manual"
         aria-label="Notifications"
-        className={toastStyles().slot2()}
+        className={toastStyles().viewport()}
       >
-        <ol className={toastStyles().slot3()}>
+        <ol className={toastStyles().list()}>
           {current.map((item) => (
             <li
               key={item.id}
               data-tone={item.kind}
               onPointerEnter={() => window.clearTimeout(timers.get(item.id))}
               onPointerLeave={() => schedule(item.id)}
-              className={toastStyles().slot4()}
+              className={toastStyles().item()}
             >
               <Badge tone={item.kind}>{kindLabel[item.kind]}</Badge>
-              <p className={toastStyles().slot5()}>{item.message}</p>
+              <p className={toastStyles().message()}>{item.message}</p>
               <IconButton size="sm" label="Dismiss" onClick={() => dismiss(item.id)}>
                 <X />
               </IconButton>

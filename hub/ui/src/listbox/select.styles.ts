@@ -8,10 +8,10 @@ export const selectStyles = variant({
     panel: [placementClasses('bottom', 'start'), panelClasses, 'max-h-80 overflow-y-auto py-1'],
     option: 'flex min-h-control-md cursor-pointer items-center gap-2 px-3 py-1.5',
     check: 'size-4 shrink-0',
-    slot1: 'truncate',
-    slot2: 'size-4 shrink-0 text-icon-muted',
-    slot3: 'min-w-0 flex-1 truncate',
-    slot4: 'text-sm text-text-muted',
+    triggerLabel: 'truncate',
+    triggerIcon: 'size-4 shrink-0 text-icon-muted',
+    optionLabel: 'min-w-0 flex-1 truncate',
+    optionNote: 'text-sm text-text-muted',
   },
   variants: {
     size: {

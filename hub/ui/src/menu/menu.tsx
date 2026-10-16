@@ -110,7 +110,7 @@ export function Menu({
         }}
         className={menuPanelStyles(side, align)()}
       >
-        {header ? <div className={menuStyles().slot1()}>{header}</div> : null}
+        {header ? <div className={menuStyles().header()}>{header}</div> : null}
         {items.map((item) => {
           const Icon = item.icon
           return (

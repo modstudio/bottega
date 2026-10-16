@@ -8,8 +8,8 @@ export function Spinner({ label, className }: { label?: string; className?: stri
       role={label ? 'status' : undefined}
       className={spinnerStyles().root({ class: className })}
     >
-      <LoaderCircle aria-hidden className={spinnerStyles().slot1()} />
-      {label ? <span className={spinnerStyles().slot2()}>{label}</span> : null}
+      <LoaderCircle aria-hidden className={spinnerStyles().icon()} />
+      {label ? <span className={spinnerStyles().label()}>{label}</span> : null}
     </span>
   )
 }

@@ -57,18 +57,18 @@ export function Dialog({
       }}
       className={dialogStyles({ size, chromeless }).root({ class: className })}
     >
-      <div className={dialogStyles().slot1()}>
+      <div className={dialogStyles().frame()}>
         {chromeless ? (
           children
         ) : (
           <>
-            <header className={dialogStyles().slot2()}>
-              <div className={dialogStyles().slot3()}>
-                <h2 id={titleId} className={dialogStyles().slot4()}>
+            <header className={dialogStyles().header()}>
+              <div className={dialogStyles().heading()}>
+                <h2 id={titleId} className={dialogStyles().title()}>
                   {title}
                 </h2>
                 {description ? (
-                  <div id={descriptionId} className={dialogStyles().slot5()}>
+                  <div id={descriptionId} className={dialogStyles().description()}>
                     {description}
                   </div>
                 ) : null}
@@ -77,8 +77,8 @@ export function Dialog({
                 <X />
               </IconButton>
             </header>
-            {children ? <div className={dialogStyles().slot6()}>{children}</div> : null}
-            {footer ? <footer className={dialogStyles().slot7()}>{footer}</footer> : null}
+            {children ? <div className={dialogStyles().body()}>{children}</div> : null}
+            {footer ? <footer className={dialogStyles().footer()}>{footer}</footer> : null}
           </>
         )}
       </div>

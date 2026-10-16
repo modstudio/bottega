@@ -42,7 +42,7 @@ export function Tabs({
       ?.focus()
   }
   return (
-    <div role="tablist" aria-label={label} onKeyDown={move} className={tabsStyles().slot1()}>
+    <div role="tablist" aria-label={label} onKeyDown={move} className={tabsStyles().list()}>
       {items.map((item) => {
         const selected = item.value === value
         return (
@@ -60,7 +60,7 @@ export function Tabs({
           >
             {item.label}
             {item.count !== undefined ? (
-              <span className={tabsStyles().slot2()}>{item.count}</span>
+              <span className={tabsStyles().count()}>{item.count}</span>
             ) : null}
           </button>
         )

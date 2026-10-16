@@ -33,18 +33,18 @@ export function Pagination({
   const canNext = pageCount === undefined ? Boolean(hasNext) : page < pageCount
   return (
     <nav aria-label="Pagination" className={paginationStyles().root({ class: className })}>
-      <span className={paginationStyles().slot1()}>
+      <span className={paginationStyles().summary()}>
         {total === undefined
           ? `Page ${page}`
           : `${first.toLocaleString()}–${last.toLocaleString()} of ${total.toLocaleString()}`}
       </span>
-      <div className={paginationStyles().slot2()}>
+      <div className={paginationStyles().controls()}>
         {onPageSizeChange ? (
-          <span className={paginationStyles().slot3()}>
+          <span className={paginationStyles().pageSizeLabel()}>
             <Select
               label="Rows per page"
               size="sm"
-              className={paginationStyles().slot4()}
+              className={paginationStyles().pageSizeSelect()}
               value={String(pageSize)}
               options={PAGE_SIZES.map((size) => ({ value: String(size), label: `${size} rows` }))}
               onChange={(value) => onPageSizeChange(Number(value) as PageSize)}
@@ -61,7 +61,7 @@ export function Pagination({
           <ChevronLeft />
         </IconButton>
         {pageCount !== undefined ? (
-          <span className={paginationStyles().slot5()}>
+          <span className={paginationStyles().pageCount()}>
             {page} / {pageCount}
           </span>
         ) : null}

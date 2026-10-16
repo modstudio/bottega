@@ -20,11 +20,11 @@ export function Table({
 }
 
 export function TableHeader(props: Omit<HTMLAttributes<HTMLTableSectionElement>, 'className'>) {
-  return <thead {...props} className={tableStyles().slot1()} />
+  return <thead {...props} className={tableStyles().header()} />
 }
 
 export function TableBody(props: Omit<HTMLAttributes<HTMLTableSectionElement>, 'className'>) {
-  return <tbody {...props} className={tableStyles().slot2()} />
+  return <tbody {...props} className={tableStyles().body()} />
 }
 
 export function TableRow({

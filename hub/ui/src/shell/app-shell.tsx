@@ -73,7 +73,7 @@ function Marks({ item, hidden }: { item: NavItem; hidden: boolean }) {
   return (
     <>
       {item.live ? (
-        <span aria-hidden data-tone="success" className={appShellStyles().slot1()} />
+        <span aria-hidden data-tone="success" className={appShellStyles().liveIndicator()} />
       ) : null}
       {item.count ? (
         <span className={navMarkStyles({ hidden })}>{item.count.toLocaleString()}</span>
@@ -118,18 +118,13 @@ function GroupEntry({
           className={navLinkStyles({ full: true })}
         >
           <Icon aria-hidden />
-          <span className={navLabelStyles({ hidden, class: 'flex-1 text-left' })}>
-            {group.label}
-          </span>
-          <ChevronRight
-            aria-hidden
-            className={navLabelStyles({ hidden, class: 'ml-auto !size-3.5' })}
-          />
+          <span className={navLabelStyles({ hidden, role: 'switcherLabel' })}>{group.label}</span>
+          <ChevronRight aria-hidden className={navLabelStyles({ hidden, role: 'switcherIcon' })} />
         </button>
       }
     >
-      <div className={appShellStyles().slot2()}>
-        <div className={appShellStyles().slot3()}>{group.label}</div>
+      <div className={appShellStyles().switcherPanel()}>
+        <div className={appShellStyles().groupHeading()}>{group.label}</div>
         {group.items.map((item) => (
           <div key={item.to}>
             {renderLink(item, {
@@ -169,15 +164,15 @@ function NavList({
     </div>
   )
   return (
-    <nav aria-label="Main" className={appShellStyles().slot4()}>
+    <nav aria-label="Main" className={appShellStyles().nav()}>
       {sections.map((section, index) => (
         <div key={section.id} className={navSectionStyles({ separated: index > 0 })}>
           {section.entries.map((entry) =>
             !isGroup(entry) ? (
               link(entry)
             ) : labeled === 'full' ? (
-              <div key={entry.label} className={appShellStyles().slot5()}>
-                <div className={appShellStyles().slot6()}>{entry.label}</div>
+              <div key={entry.label} className={appShellStyles().group()}>
+                <div className={appShellStyles().groupHeading()}>{entry.label}</div>
                 {entry.items.map(link)}
               </div>
             ) : (
@@ -227,16 +222,16 @@ function MobileMenu({
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) onClose()
       }}
-      className={appShellStyles().slot7()}
+      className={appShellStyles().mobileDialog()}
     >
-      <div className={appShellStyles().slot8()}>
-        <div className={appShellStyles().slot9()}>
+      <div className={appShellStyles().mobileFrame()}>
+        <div className={appShellStyles().mobileHeader()}>
           {brand}
           <IconButton label="Close menu" onClick={onClose}>
             <X />
           </IconButton>
         </div>
-        <div className={appShellStyles().slot10()}>
+        <div className={appShellStyles().mobileNav()}>
           <NavList
             sections={sections}
             renderLink={renderLink}
@@ -245,7 +240,7 @@ function MobileMenu({
             onNavigate={onClose}
           />
         </div>
-        {footer ? <div className={appShellStyles().slot11()}>{footer}</div> : null}
+        {footer ? <div className={appShellStyles().mobileFooter()}>{footer}</div> : null}
       </div>
     </dialog>
   )
@@ -286,7 +281,7 @@ function BrandCell({
     <div className={brandCellStyles({ collapsed })}>
       <span className={brandNameStyles({ hidden: collapsed && canToggle })}>
         {mark}
-        {collapsed ? <span className={appShellStyles().slot12()}>{name}</span> : name}
+        {collapsed ? <span className={appShellStyles().collapsedBrandName()}>{name}</span> : name}
       </span>
       {toggle}
     </div>
@@ -339,7 +334,7 @@ export function AppShell({
   const pinnedByPanel = forced || docked > 0
   const collapsed = pinnedByPanel || rail === 'collapsed'
   const brand = (
-    <span className={appShellStyles().slot13()}>
+    <span className={appShellStyles().mobileBrand()}>
       {mark}
       {name}
     </span>
@@ -347,7 +342,7 @@ export function AppShell({
 
   return (
     <DockedPanels.Provider value={changeDocked}>
-      <div className={appShellStyles().slot14()}>
+      <div className={appShellStyles().shell()}>
         {mobile ? null : (
           <aside
             aria-label="Navigation"
@@ -361,7 +356,7 @@ export function AppShell({
               canToggle={!pinnedByPanel}
               onToggle={() => setRail(collapsed ? 'open' : 'collapsed')}
             />
-            <div className={appShellStyles().slot15()}>
+            <div className={appShellStyles().railNav()}>
               <NavList
                 sections={nav}
                 renderLink={renderLink}
@@ -369,11 +364,11 @@ export function AppShell({
                 isActive={isActive}
               />
             </div>
-            {railFooter ? <div className={appShellStyles().slot16()}>{railFooter}</div> : null}
+            {railFooter ? <div className={appShellStyles().railFooter()}>{railFooter}</div> : null}
           </aside>
         )}
-        <div className={appShellStyles().slot17()}>
-          <header className={appShellStyles().slot18()}>
+        <div className={appShellStyles().workspace()}>
+          <header className={appShellStyles().topbar()}>
             {mobile ? (
               <>
                 <IconButton label="Open menu" onClick={() => setMenuOpen(true)}>
@@ -382,10 +377,10 @@ export function AppShell({
                 {mark}
               </>
             ) : null}
-            <div ref={setTopbarSlot} className={appShellStyles().slot19()} />
-            {topbar ? <div className={appShellStyles().slot20()}>{topbar}</div> : null}
+            <div ref={setTopbarSlot} className={appShellStyles().topbarPortal()} />
+            {topbar ? <div className={appShellStyles().topbarActions()}>{topbar}</div> : null}
           </header>
-          <main className={appShellStyles().slot21()}>
+          <main className={appShellStyles().main()}>
             <TopbarSlotProvider value={mobile ? null : topbarSlot}>{children}</TopbarSlotProvider>
           </main>
         </div>
