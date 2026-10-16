@@ -578,8 +578,7 @@ export function DocsView({
           emptyMessage={signedIn ? 'No docs here yet.' : 'No user docs here yet.'}
           treeReorder={readingEdit.treeReorder}
         />
-        <DocsReading
-          doc={doc}
+        <DocsReading doc={doc} tree={model.tree}
           signedIn={signedIn}
           audience={selectedAudience(model.stale)}
           pending={!doc && (Boolean(model.selected) || detached || !ready)}

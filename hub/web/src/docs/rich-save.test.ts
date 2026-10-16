@@ -6,6 +6,7 @@ import { parseRichDocument, saveRichDocument } from './rich-save.ts'
 
 const table = '| Name | Price |\n| --- | --- |\n| Seat | 10 |\n'
 const mermaid = '```mermaid\nflowchart LR\nA-->B\n```\n'
+const articles = '```articles\n```\n'
 const alert = '> [!NOTE]\n> Keep the receipt.\n'
 const directive = ':::section{audience=technical}\nShown to builders.\n:::\n'
 const definition = 'See the [spec][foo].\n\n[foo]: /spec\n'
@@ -18,6 +19,7 @@ const blanks = 'First block.\n\n\n\nSecond block.\n'
 const fixtures: Record<string, string> = {
   table,
   mermaid,
+  articles,
   alert,
   directive,
   definition,

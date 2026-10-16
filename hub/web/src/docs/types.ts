@@ -26,6 +26,7 @@ export type DocsTreeItem = {
   audiences: DocAudiences
   status: DocStatus
   kind: DocKind
+  form?: DocForm | null
   replacementSlug: string | null
   delivery?: DocsDelivery
   summary?: string
@@ -37,7 +38,6 @@ export type DocsTreeItem = {
 
 export type DocsDoc = DocsTreeItem & {
   body: string
-  form?: DocForm | null
   articleSubject?: DocArticleSubject | null
   relatedSubjects?: DocArticleSubject[]
   sourceFiles?: string[]
