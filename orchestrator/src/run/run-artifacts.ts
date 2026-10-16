@@ -6,6 +6,7 @@
  */
 import {
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -257,6 +258,54 @@ export function readDispatchState(id: number): DispatchState {
   }
 }
 
+function moveScratchArtifacts(scratch: string, artifacts: string): void {
+  if (!existsSync(scratch)) {
+    mkdirSync(artifacts, { recursive: true })
+    return
+  }
+  if (!existsSync(artifacts)) {
+    renameSync(scratch, artifacts)
+    return
+  }
+  for (const entry of readdirSync(scratch)) {
+    const destination = join(artifacts, entry)
+    rmSync(destination, { recursive: true, force: true })
+    renameSync(join(scratch, entry), destination)
+  }
+  rmSync(scratch, { recursive: true })
+}
+
+function isAtOrBelow(path: string, directory: string): boolean {
+  return path === directory || path.startsWith(`${directory}/`)
+}
+
+function persistNamedArtifact(
+  id: number,
+  named: string,
+  worktreePath: string | null,
+  scratch: string,
+  artifacts: string,
+): string | null {
+  const source = named.startsWith('/') ? named : worktreePath ? join(worktreePath, named) : named
+  const destination = persistedRunArtifactPath(id, RUNS_DIR, named, worktreePath)
+  const from = isAtOrBelow(source, scratch) ? join(artifacts, relative(scratch, source)) : source
+  if (isAtOrBelow(from, artifacts) && existsSync(from)) return null
+  try {
+    if (!existsSync(from)) throw new Error('source does not exist')
+    const sourceStat = statSync(from)
+    if (sourceStat.isDirectory()) {
+      cpSync(from, destination, { recursive: true, verbatimSymlinks: true, dereference: false })
+    } else if (sourceStat.isFile()) {
+      if (from !== destination) copyFileSync(from, destination)
+    } else {
+      throw new Error('source is not a file or directory')
+    }
+    return null
+  } catch (error) {
+    return `could not copy named file ${source} to ${destination}: ${error instanceof Error ? error.message : String(error)}`
+  }
+}
+
 export function persistRunArtifacts(
   id: number,
   filesWritten: string[] | null,
@@ -266,27 +315,12 @@ export function persistRunArtifacts(
   const scratch = runScratchDir(id)
   const artifacts = runArtifactsDir(id)
   mkdirSync(join(RUNS_DIR, String(id)), { recursive: true })
-  if (existsSync(scratch)) {
-    if (existsSync(artifacts)) rmSync(artifacts, { recursive: true, force: true })
-    renameSync(scratch, artifacts)
-  } else {
-    mkdirSync(artifacts, { recursive: true })
-  }
+  moveScratchArtifacts(scratch, artifacts)
   if (changes?.diff) writeFileSync(join(artifacts, 'worktree.diff'), changes.diff)
+  const failures: string[] = []
   for (const named of filesWritten ?? []) {
-    const source = named.startsWith('/') ? named : worktree ? join(worktree.path, named) : named
-    const destination = persistedRunArtifactPath(id, RUNS_DIR, named, worktree?.path ?? null)
-    // Scratch was renamed onto artifacts above. A files_written path that still
-    // names the old scratch location (reply.json is the usual case) already
-    // lives at the destination.
-    const from =
-      source === scratch || source.startsWith(`${scratch}/`)
-        ? join(artifacts, relative(scratch, source))
-        : source
-    if (from === destination && existsSync(destination) && statSync(destination).isFile()) continue
-    if (!existsSync(from) || !statSync(from).isFile()) {
-      throw new Error(`could not copy named file ${source} to ${destination}: source is not a file`)
-    }
-    copyFileSync(from, destination)
+    const failure = persistNamedArtifact(id, named, worktree?.path ?? null, scratch, artifacts)
+    if (failure) failures.push(failure)
   }
+  if (failures.length > 0) throw new Error(failures.join('\n'))
 }

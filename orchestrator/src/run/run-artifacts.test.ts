@@ -1,10 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   rmSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs'
@@ -107,6 +110,84 @@ test('artifacts are copied and listed', () => {
     expect(readFileSync(join(runArtifactsDir(id), 'worktree.diff'), 'utf8')).toContain(
       'fixture changed',
     )
+  } finally {
+    rmSync(tree, { recursive: true, force: true })
+  }
+})
+test('artifacts written before scratch persistence survive the run 12430 files_written shape', () => {
+  const id = addRun({ agent: 'codex', job: 'understand' })
+  const tree = mkdtempSync(join(tmpdir(), 'orch-artifact-evidence-tree-'))
+  const evidence = join(runArtifactsDir(id), 'exp-evidence')
+  mkdirSync(evidence, { recursive: true })
+  writeFileSync(join(evidence, 'report.md'), 'measurements\n')
+  writeFileSync(join(evidence, 'poster.png'), 'pixels\n')
+  mkdirSync(runScratchDir(id), { recursive: true })
+  writeFileSync(join(runScratchDir(id), 'reply.json'), '{}\n')
+  writeFileSync(join(tree, 'full-measurements.json'), '{}\n')
+  try {
+    expect(() =>
+      persistRunArtifacts(
+        id,
+        ['full-measurements.json', join(evidence, 'report.md'), evidence],
+        { path: tree },
+        null,
+      ),
+    ).not.toThrow()
+    expect(readFileSync(join(evidence, 'report.md'), 'utf8')).toBe('measurements\n')
+    expect(readFileSync(join(evidence, 'poster.png'), 'utf8')).toBe('pixels\n')
+    expect(readFileSync(join(runArtifactsDir(id), 'reply.json'), 'utf8')).toBe('{}\n')
+    expect(readFileSync(join(runArtifactsDir(id), 'full-measurements.json'), 'utf8')).toBe('{}\n')
+  } finally {
+    rmSync(tree, { recursive: true, force: true })
+  }
+})
+test('scratch entries replace collisions without removing other existing artifacts', () => {
+  const id = addRun({ agent: 'codex', job: 'understand' })
+  mkdirSync(runArtifactsDir(id), { recursive: true })
+  writeFileSync(join(runArtifactsDir(id), 'reply.json'), 'old\n')
+  writeFileSync(join(runArtifactsDir(id), 'evidence.txt'), 'preserved\n')
+  mkdirSync(runScratchDir(id), { recursive: true })
+  writeFileSync(join(runScratchDir(id), 'reply.json'), 'new\n')
+
+  persistRunArtifacts(id, null, null, null)
+
+  expect(readFileSync(join(runArtifactsDir(id), 'reply.json'), 'utf8')).toBe('new\n')
+  expect(readFileSync(join(runArtifactsDir(id), 'evidence.txt'), 'utf8')).toBe('preserved\n')
+  expect(existsSync(runScratchDir(id))).toBe(false)
+})
+test('a listed directory is copied recursively without following its symlinks', () => {
+  const id = addRun({ agent: 'codex', job: 'understand' })
+  const outside = mkdtempSync(join(tmpdir(), 'orch-artifact-directory-'))
+  const evidence = join(outside, 'evidence')
+  mkdirSync(evidence)
+  writeFileSync(join(evidence, 'target.txt'), 'target\n')
+  symlinkSync('target.txt', join(evidence, 'link.txt'))
+  try {
+    persistRunArtifacts(id, [evidence], null, null)
+    const copied = join(runArtifactsDir(id), 'evidence')
+    expect(readFileSync(join(copied, 'target.txt'), 'utf8')).toBe('target\n')
+    expect(lstatSync(join(copied, 'link.txt')).isSymbolicLink()).toBe(true)
+    expect(readlinkSync(join(copied, 'link.txt'))).toBe('target.txt')
+  } finally {
+    rmSync(outside, { recursive: true, force: true })
+  }
+})
+test('all named artifacts are attempted before copy failures are reported together', () => {
+  const id = addRun({ agent: 'codex', job: 'diagnose' })
+  const tree = mkdtempSync(join(tmpdir(), 'orch-multiple-artifact-failures-'))
+  writeFileSync(join(tree, 'first-good.txt'), 'first\n')
+  writeFileSync(join(tree, 'last-good.txt'), 'last\n')
+  try {
+    expect(() =>
+      persistRunArtifacts(
+        id,
+        ['first-good.txt', 'first-missing.txt', 'second-missing.txt', 'last-good.txt'],
+        { path: tree },
+        null,
+      ),
+    ).toThrow(/first-missing\.txt[\s\S]*second-missing\.txt/)
+    expect(readFileSync(join(runArtifactsDir(id), 'first-good.txt'), 'utf8')).toBe('first\n')
+    expect(readFileSync(join(runArtifactsDir(id), 'last-good.txt'), 'utf8')).toBe('last\n')
   } finally {
     rmSync(tree, { recursive: true, force: true })
   }

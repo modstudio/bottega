@@ -19,6 +19,9 @@ test('persisted artifact paths follow the scratch rename and named-file copies',
   expect(persistedRunArtifactPath(42, runs, join(scratch, 'nested', 'table.json'), worktree)).toBe(
     join(artifacts, 'nested', 'table.json'),
   )
+  expect(
+    persistedRunArtifactPath(42, runs, join(artifacts, 'nested', 'table.json'), worktree),
+  ).toBe(join(artifacts, 'nested', 'table.json'))
   expect(persistedRunArtifactPath(42, runs, '/tmp/elsewhere/evidence.json', worktree)).toBe(
     join(artifacts, 'evidence.json'),
   )

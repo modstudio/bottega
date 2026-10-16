@@ -13,8 +13,8 @@ export function runArtifactsDir(id: number, runsDir: string): string {
   return join(runsDir, String(id), 'artifacts')
 }
 
-function isRunScratchPath(path: string, scratch: string): boolean {
-  return path === scratch || path.startsWith(`${scratch}/`)
+function isPathAtOrBelow(path: string, directory: string): boolean {
+  return path === directory || path.startsWith(`${directory}/`)
 }
 
 export function persistedRunArtifactPath(
@@ -26,9 +26,8 @@ export function persistedRunArtifactPath(
   const scratch = runScratchDir(id, runsDir)
   const artifacts = runArtifactsDir(id, runsDir)
   const source = entry.startsWith('/') ? entry : worktreePath ? join(worktreePath, entry) : entry
-  return isRunScratchPath(source, scratch)
-    ? join(artifacts, relative(scratch, source))
-    : join(artifacts, basename(entry))
+  if (isPathAtOrBelow(source, scratch)) return join(artifacts, relative(scratch, source))
+  return isPathAtOrBelow(source, artifacts) ? source : join(artifacts, basename(entry))
 }
 
 function jsonStringEnd(text: string, start: number): number {
@@ -161,7 +160,7 @@ export function rewriteScratchDirPaths(text: string, id: number, runsDir: string
     const after = index + scratch.length
     const next = text[after]
     const occurrence = next === '"' || next === undefined ? scratch : `${scratch}${next}`
-    rewritten += isRunScratchPath(occurrence, scratch) ? artifacts : scratch
+    rewritten += isPathAtOrBelow(occurrence, scratch) ? artifacts : scratch
     cursor = after
   }
 }
