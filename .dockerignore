@@ -18,6 +18,10 @@
 !cli/package.json
 !retrieval/package.json
 !hub/deploy/site/package.json
+!hub/ui/package.json
+!hub/ui/tsconfig.json
+# The web build imports the shared UI workspace directly.
+!hub/ui/src/
 !hub/web/tsconfig.json
 !hub/web/vite.config.ts
 !hub/web/index.html
