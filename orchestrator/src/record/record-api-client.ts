@@ -1,7 +1,6 @@
 // concern: record-api-client
 /** HTTP client for the record API. Must not know SQL or local table shape. */
 
-import type { Database } from 'bun:sqlite'
 import type {
   DocAudience,
   DocAudiences,
@@ -16,6 +15,13 @@ import type { DocGenerator } from '../doc/doc-generator.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import { MISSING_HOSTED_REVISION_REMEDY, RECORD_WRITE_REMEDY } from '../doc/doc-write-allowed.ts'
 import type { VerdictInput } from '../verdict/verdict-payload.ts'
+import {
+  boardClaimListPath,
+  type ProjectIdentityClient,
+  projectIdentityClient,
+  type RecordRequestDestination,
+  subjectMutationBody,
+} from './record-api-client-paths.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import type {
   HostedBoardAcceptInput,
@@ -172,9 +178,9 @@ export type RecordCanonImportResult = {
   bootstrap: boolean
 }
 
-export type RecordRequestDestination = { destinationSpaceId?: string }
+export type { RecordRequestDestination } from './record-api-client-paths.ts'
 
-export type RecordApiClient = {
+export type RecordApiClient = ProjectIdentityClient & {
   whoami(): Promise<RecordIdentity>
   sync?(input: RecordSyncRequest): Promise<RecordSyncResponse>
   createOrganization(input: { name: string; slug: string }): Promise<{ id: string; slug: string }>
@@ -279,23 +285,6 @@ export type RecordApiClient = {
     },
     destination?: RecordRequestDestination,
   ): Promise<{ docs: number; revisions: number }>
-  upsertProject(
-    input: {
-      id?: string
-      name: string
-      previousName?: string
-      path: string
-      stack: string | null
-      canon: boolean
-      settings: Record<string, unknown>
-      retiredAt: string | null
-    },
-    destination?: RecordRequestDestination,
-  ): Promise<{ id: string; name: string }>
-  listProjects(
-    destination?: RecordRequestDestination,
-  ): Promise<Array<{ id: string; name: string; spaceId: string }>>
-  retireProject(name: string, destination?: RecordRequestDestination): Promise<{ name: string }>
   listProjectSubjects(
     query: {
       project?: string
@@ -556,12 +545,16 @@ export function recordApiBaseUrl(
 async function recordApiRequest<T>(
   path: string,
   init: RequestInit & { schema?: (body: unknown) => T; destinationSpaceId?: string } = {},
-  database?: Database,
+  authentication?: RecordApiAuthentication,
 ): Promise<T> {
   const baseUrl = recordApiBaseUrl()
   const token = init.signal
-    ? await storedRecordTokenAsync(database, init.signal)
-    : storedRecordToken(database)
+    ? await (authentication
+        ? authentication.tokenAsync(init.signal)
+        : storedRecordTokenAsync(undefined, init.signal))
+    : authentication
+      ? authentication.token()
+      : storedRecordToken()
   if (!token) throw new RecordApiRequestError(RECORD_SIGN_IN_REMEDY, 'refused')
   const headers = new Headers(init.headers)
   for (const [name, value] of bearerHeaders(token)) headers.set(name, value)
@@ -578,7 +571,7 @@ async function recordApiRequest<T>(
   return (init.schema ? init.schema(body) : (body as T)) as T
 }
 
-const request = recordApiRequest
+const defaultRequest = recordApiRequest
 
 async function publicRequest<T>(path: string): Promise<T> {
   let response: Response
@@ -679,24 +672,11 @@ function acceptedInvitationResponse(
   return { invitation: { organizationId: invitation.organizationId } }
 }
 
-function subjectMutationBody(
-  input: { project: string; projectId?: string | null },
-  change: Record<string, string>,
-): string {
-  return JSON.stringify({ project: input.project, projectId: input.projectId, ...change })
-}
-
-function boardClaimListPath(project: string, projectId?: string | null): string {
-  const search = new URLSearchParams({ project })
-  if (projectId) search.set('projectId', projectId)
-  return `/v1/board/claims?${search}`
-}
-
 async function listDocRevisionsRequest(
   id: string,
   destination?: RecordRequestDestination,
 ): Promise<Record<string, unknown>[]> {
-  const body = await request<{ items?: Record<string, unknown>[] }>(
+  const body = await defaultRequest<{ items?: Record<string, unknown>[] }>(
     `/v1/docs/${id}/revisions`,
     destination,
   )
@@ -704,24 +684,30 @@ async function listDocRevisionsRequest(
 }
 
 const reorderDocsRequest: RecordApiClient['reorderDocs'] = (input, destination) =>
-  request('/v1/docs/order', {
+  defaultRequest('/v1/docs/order', {
     method: 'PUT',
     body: JSON.stringify(input),
     ...destination,
   })
 
-export function recordApiClient(database?: Database): RecordApiClient {
+export type RecordApiAuthentication = {
+  token(): string | null
+  tokenAsync(signal: AbortSignal): Promise<string | null>
+}
+
+export function authenticatedRecordApiClient(
+  authentication: RecordApiAuthentication,
+): RecordApiClient {
+  return recordApiClient((path, init) => recordApiRequest(path, init, authentication))
+}
+
+export function recordApiClient(request = defaultRequest): RecordApiClient {
   const injected = injectedClient()
   if (injected) return injected
   if (process.env.NODE_ENV === 'test' && !process.env.ORCH_TEST_POSTGRES_CONTAINER)
     throw new Error(TEST_REFUSAL)
-  const migrationRequest = <T>(
-    path: string,
-    init: RequestInit & { schema?: (body: unknown) => T; destinationSpaceId?: string } = {},
-  ) => recordApiRequest<T>(path, init, database)
   return {
-    ...recordIdentityAndSpaceClient(),
-    whoami: () => migrationRequest('/v1/whoami', { schema: recordIdentityResponse }),
+    ...recordIdentityAndSpaceClient(request),
     putSnapshot: (kind, input) =>
       request(`/v1/snapshots/${kind}`, { method: 'PUT', body: JSON.stringify(input) }),
     listSnapshots: () => request('/v1/snapshots'),
@@ -797,18 +783,7 @@ export function recordApiClient(database?: Database): RecordApiClient {
         body: JSON.stringify(input),
         ...destination,
       }),
-    upsertProject: (input, destination) =>
-      migrationRequest('/v1/projects', {
-        method: 'PUT',
-        body: JSON.stringify(input),
-        ...destination,
-      }),
-    listProjects: (destination) => migrationRequest('/v1/projects', destination),
-    retireProject: (name, destination) =>
-      request(`/v1/projects/${encodeURIComponent(name)}/retire`, {
-        method: 'POST',
-        ...destination,
-      }),
+    ...projectIdentityClient(request),
     listProjectSubjects: (query, destination) => {
       const search = new URLSearchParams()
       if (query.project) search.set('project', query.project)
@@ -922,7 +897,9 @@ export function recordApiClient(database?: Database): RecordApiClient {
   }
 }
 
-function recordIdentityAndSpaceClient(): Pick<
+function recordIdentityAndSpaceClient(
+  request = defaultRequest,
+): Pick<
   RecordApiClient,
   | 'whoami'
   | 'sync'
@@ -974,7 +951,7 @@ function listBoardChangesRequest(query: {
   if (query.after) search.set('after', query.after)
   if (query.limit) search.set('limit', String(query.limit))
   const suffix = search.toString()
-  return request(
+  return defaultRequest(
     `/v1/board/changes${suffix ? `?${suffix}` : ''}`,
     query.signal ? { signal: query.signal } : {},
   )
@@ -986,7 +963,10 @@ function recordApiBoardWatchClient(): Pick<
 > {
   return {
     releaseBoardTaskClaims: (input) =>
-      request('/v1/board/claims/release-task', { method: 'POST', body: JSON.stringify(input) }),
+      defaultRequest('/v1/board/claims/release-task', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
     openBoardStream: (signal) => fetchBoardStream(signal),
   }
 }

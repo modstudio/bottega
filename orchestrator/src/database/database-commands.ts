@@ -1,9 +1,10 @@
 // concern: database
 /** Owns database maintenance command behavior. Must not know CLI grammar. */
 
+import { existsSync } from 'node:fs'
 import { fillProjectRecordIds } from '../project/project-record-identity.ts'
 import { reconcileRun } from '../run/run-artifacts.ts'
-import { backfillSpecSha, migrateDatabase, withDatabaseForMigrationStep } from './db.ts'
+import { backfillSpecSha, DB_PATH, migrateDatabase, withDatabaseForMigrationStep } from './db.ts'
 import { migrationApplied } from './migrations.ts'
 
 export type DatabaseCommandPresentation = { log(value: string): void }
@@ -21,9 +22,11 @@ export async function migrateCommand(
   actions: MigrateCommandActions = {
     migrate: migrateDatabase,
     contracted: () =>
-      withDatabaseForMigrationStep(async (database) =>
-        migrationApplied(database, PROJECT_IDENTITY_CONTRACT_MIGRATION),
-      ),
+      existsSync(DB_PATH)
+        ? withDatabaseForMigrationStep(async (database) =>
+            migrationApplied(database, PROJECT_IDENTITY_CONTRACT_MIGRATION),
+          )
+        : Promise.resolve(false),
     fill: () => withDatabaseForMigrationStep((database) => fillProjectRecordIds(database)),
     backfill: backfillSpecSha,
   },

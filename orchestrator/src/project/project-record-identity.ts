@@ -3,8 +3,9 @@
 
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { recordApiClient } from '../record/record-api-client.ts'
+import { authenticatedRecordApiClient, recordApiClient } from '../record/record-api-client.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
+import { storedRecordToken, storedRecordTokenAsync } from '../record/record-session.ts'
 import {
   BOUND_RECORD_WRITE_REFUSAL,
   currentRecordWriteDecision,
@@ -128,7 +129,14 @@ export async function fillProjectRecordIds(database?: Database): Promise<FilledP
   const authority = currentRecordWriteDecision(database)
   if (authority === 'refused') throw new Error(BOUND_RECORD_WRITE_REFUSAL)
   const hostingConfigured = authority === 'hosted'
-  const client = hostingConfigured ? recordApiClient(database) : null
+  const client = hostingConfigured
+    ? database
+      ? authenticatedRecordApiClient({
+          token: () => storedRecordToken(database),
+          tokenAsync: (signal) => storedRecordTokenAsync(database, signal),
+        })
+      : recordApiClient()
+    : null
   const filled: FilledProjectRecordId[] = []
   for (const row of rows) {
     const project = parseMissingProject(row)

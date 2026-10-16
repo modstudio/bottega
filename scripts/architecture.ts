@@ -514,6 +514,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/record-id.ts',
     '../record/record-api-client.ts',
     '../record/record-project-destination-client.ts',
+    '../record/record-session.ts',
     '../record/record-write-authority.ts',
     '../database/db.ts',
     './project-settings.ts',
