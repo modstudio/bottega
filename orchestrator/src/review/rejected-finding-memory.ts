@@ -2,25 +2,7 @@
 /** Reads the plain review rows used to carry earlier rejection rulings into later lenses. */
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
-
-export type ReviewFindingMemory = {
-  project: string
-  branch: string | null
-  rows: readonly {
-    project: string
-    branch: string | null
-    reviewId: number
-    completedAt: string | null
-    ordinal: number
-    disposition: string | null
-    location: string
-    evidence: string
-    rejectionCategory: string | null
-    triageReason: string | null
-    lens: string
-    reviewedCommit: string | null
-  }[]
-}
+import type { ReviewFindingMemory } from '../dispatch/review-memory.ts'
 
 /** Review findings for one project; branch, completion, disposition, and bounds are decided purely. */
 export function reviewFindingMemoryRows(

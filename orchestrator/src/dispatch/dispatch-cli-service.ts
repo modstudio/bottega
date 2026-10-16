@@ -20,13 +20,11 @@ import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { contractConflicts } from '../contract/contract.ts'
 import { nowIso, sessionId } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
+import { branchOf } from '../git/git-environment.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
 import { effectiveMcpRequest, parseRequestedMcp, requiredMcpServer } from '../mcp/mcp-preflight.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
-import {
-  reviewFindingMemoryRows,
-  type ReviewFindingMemory,
-} from '../review/rejected-finding-memory.ts'
+import { reviewFindingMemoryRows } from '../review/rejected-finding-memory.ts'
 import { implicitReviewWarning } from '../review/review-target.ts'
 import {
   REVIEW_COVERAGE,
@@ -52,8 +50,9 @@ import {
   isWorktreeRelativeRef,
   resolveBase,
 } from '../worktree/worktree-caller.ts'
-import { dispatchCommand } from './dispatch-commands.ts'
+import { dispatchCommand, reviewMemoryBranch } from './dispatch-commands.ts'
 import { callerCheckoutFacts } from './dispatch-preflight.ts'
+import type { ReviewFindingMemory } from './review-memory.ts'
 import { lookupProjectTaskKey } from './task-key-lookup.ts'
 
 type Presentation = {
@@ -62,8 +61,16 @@ type Presentation = {
   cwd(): string
 }
 
-function earlierReviewRejections(project: string, branch: string | null): ReviewFindingMemory {
-  return { project, branch, rows: reviewFindingMemoryRows(project) }
+function earlierReviewRejections(
+  project: string,
+  cwd: string,
+  explicitBranch: string | null,
+): ReviewFindingMemory {
+  return {
+    project,
+    branch: reviewMemoryBranch(branchOf(cwd), explicitBranch),
+    rows: reviewFindingMemoryRows(project),
+  }
 }
 
 function recordRunWarning(runId: number, warning: string): void {

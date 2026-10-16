@@ -38,6 +38,7 @@ export const reviewModuleSpecs = [
   {
     file: 'orchestrator/src/review/rejected-finding-memory.ts',
     allowed: ['bun:sqlite', '../database/db.ts'],
+    typeOnlyAllowed: ['../dispatch/review-memory.ts'],
   },
 ] as const
 

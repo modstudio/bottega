@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -40,7 +41,7 @@ function completedFinding(input: {
 
 test('reads and renders only the current same-project and same-branch rejection', () => {
   const matchingReview = completedFinding({
-    project: 'bottega',
+    project: PLATFORM_SLUG,
     branch: 'DEV-1373-target',
     lens: 'correctness',
     disposition: 'accepted',
@@ -61,7 +62,7 @@ test('reads and renders only the current same-project and same-branch rejection'
     .run('tree-hash-that-is-not-the-commit', matchingReview)
 
   completedFinding({
-    project: 'bottega',
+    project: PLATFORM_SLUG,
     branch: 'DEV-1373-other',
     lens: 'correctness',
     disposition: 'rejected',
@@ -77,7 +78,7 @@ test('reads and renders only the current same-project and same-branch rejection'
     location: 'app/other-project.ts:7',
   })
   const amendedAway = completedFinding({
-    project: 'bottega',
+    project: PLATFORM_SLUG,
     branch: 'DEV-1373-target',
     lens: 'safety',
     disposition: 'rejected',
@@ -95,9 +96,9 @@ test('reads and renders only the current same-project and same-branch rejection'
   )
 
   const rendered = renderEarlierRoundRejections({
-    project: 'bottega',
+    project: PLATFORM_SLUG,
     branch: 'DEV-1373-target',
-    rows: reviewFindingMemoryRows('bottega', db()),
+    rows: reviewFindingMemoryRows(PLATFORM_SLUG, db()),
   })
 
   expect(rendered).toContain('orchestrator/src/matching.ts:12')

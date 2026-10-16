@@ -4,7 +4,7 @@
  * and any supplied extra context. Must not know the store, CLI, or jobs.
  */
 
-import type { ReviewFindingMemory } from '../review/rejected-finding-memory.ts'
+import type { ReviewFindingMemory } from './review-memory.ts'
 
 type ReviewLensDefinition = {
   question: string

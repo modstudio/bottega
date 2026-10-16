@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import type { ReviewFindingMemory } from '../review/rejected-finding-memory.ts'
 import {
   MAX_EARLIER_ROUND_REJECTIONS,
   renderEarlierRoundRejections,
   reviewLensPrompt,
 } from './review-lens-prompt.ts'
+import type { ReviewFindingMemory } from './review-memory.ts'
 
 const lens = { question: 'Does the change actually hold?', excludes: 'taste and style nits' }
 const noEarlierRejections = { project: 'fixture', branch: null, rows: [] }
