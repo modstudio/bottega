@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, describe, expect, mock, test } from 'bun:test'
 import { GlobalRegistrator } from '@happy-dom/global-registrator'
 import { queryClient, trpc } from '@bottega/hub-data/client'
 import { useArticleSave, useCurrentArticle } from '@bottega/hub-data/docs/actions'
@@ -19,6 +19,12 @@ import { isScope } from '../docs/scope.ts'
 import type { DocsDoc } from '../docs/types.ts'
 import { DocsPage } from './-docs-page.tsx'
 
+mock.module('../docs/markdown-editor.tsx', () => ({
+  MarkdownEditor: ({ value, onChange }: { value: string; onChange: (value: string) => void }) => (
+    <textarea aria-label="Article body" value={value} onChange={(event) => onChange(event.target.value)} />
+  ),
+}))
+
 let testing: typeof TestingLibrary
 let userEvent: typeof userEventLibrary
 let registeredFetch: typeof globalThis.fetch
@@ -28,6 +34,7 @@ beforeAll(async () => {
   GlobalRegistrator.register({ url: 'http://localhost' })
   registeredFetch = globalThis.fetch
   globalThis.fetch = ((...args) => fetchHandler(...args)) as typeof globalThis.fetch
+  window.fetch = globalThis.fetch
   testing = await import('@testing-library/react/pure')
   userEvent = (await import('@testing-library/user-event')).default
 })
@@ -40,6 +47,7 @@ afterEach(() => {
 
 afterAll(async () => {
   globalThis.fetch = registeredFetch
+  window.fetch = registeredFetch
   await GlobalRegistrator.unregister()
 })
 
@@ -102,41 +110,54 @@ function docsRouter() {
   })
 }
 
-test('unsaved edits block navigation until the reader discards them', async () => {
+async function renderEditedDocs() {
   fetchHandler = (() => {
     throw new Error('the seeded docs route must not fetch')
   }) as typeof fetchHandler
   seedLocalDoc()
+  window.localStorage.setItem('hub-docs-editor-mode', 'markdown')
   const router = docsRouter()
   await router.load()
-  testing.render(
+  const view = testing.render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
     </QueryClientProvider>,
   )
   const user = userEvent.setup()
-  const title = await testing.screen.findByLabelText('Title')
-  console.log('leave:title')
+  const title = await view.findByLabelText('Title')
   await user.clear(title)
   await user.type(title, 'Changed title')
-  console.log('leave:changed')
+  return {
+    router,
+    view,
+  }
+}
 
-  const navigate = router.navigate as unknown as (options: { to: string }) => Promise<void>
-  void navigate({ to: '/destination' })
-  expect(await testing.screen.findByText('Discard unsaved changes?')).toBeTruthy()
-  console.log('leave:blocked')
-  expect(router.state.location.pathname).toBe('/docs/project/workshop/article')
+test('Keep leaves an unsaved docs edit in place', async () => {
+  const page = await renderEditedDocs()
+  page.router.history.push('/destination')
+  expect(await page.view.findByText('Discard unsaved changes?')).toBeTruthy()
+  await testing.act(async () => {
+    testing.fireEvent.click(page.view.getByRole('button', { name: 'Keep editing' }))
+    await Promise.resolve()
+  })
+  await testing.waitFor(() =>
+    expect(page.view.queryByText('Discard unsaved changes?')).toBeNull(),
+  )
+  expect(page.router.state.location.pathname).toBe('/docs/project/workshop/article')
+})
 
-  await user.click(testing.screen.getByRole('button', { name: 'Keep editing' }))
-  console.log('leave:kept')
-  expect(testing.screen.queryByText('Discard unsaved changes?')).toBeNull()
-  expect(router.state.location.pathname).toBe('/docs/project/workshop/article')
-
-  void navigate({ to: '/destination' })
-  await user.click(await testing.screen.findByRole('button', { name: 'Discard' }))
-  console.log('leave:discarded')
-  expect(await testing.screen.findByText('Destination reached')).toBeTruthy()
-  expect(router.state.location.pathname).toBe('/destination')
+test('Discard completes navigation away from an unsaved docs edit', async () => {
+  const page = await renderEditedDocs()
+  page.router.history.push('/destination')
+  expect(await page.view.findByText('Discard unsaved changes?')).toBeTruthy()
+  expect(page.router.state.location.pathname).toBe('/docs/project/workshop/article')
+  await testing.act(async () => {
+    testing.fireEvent.click(page.view.getByRole('button', { name: 'Discard' }))
+    await Promise.resolve()
+  })
+  expect(await page.view.findByText('Destination reached')).toBeTruthy()
+  expect(page.router.state.location.pathname).toBe('/destination')
 })
 
 const hostedDoc = {
@@ -148,7 +169,7 @@ const oldRevision = '01990000-0000-7000-8000-000000000003'
 const newRevision = '01990000-0000-7000-8000-000000000004'
 
 function trpcResponse(json: unknown, status = 200) {
-  return new Response(JSON.stringify([{ result: { data: { json } } }]), {
+  return new Response(JSON.stringify([{ result: { data: json } }]), {
     status,
     headers: { 'content-type': 'application/json' },
   })
@@ -173,19 +194,17 @@ describe('hosted conflict recovery', () => {
     fetchHandler = async (input, init) => {
       const url = String(input)
       if (url.includes('record.saveDoc')) {
-        const body = JSON.parse(String(init?.body)) as { 0: { json: { expectedRevision: string } } }
-        saveRevisions.push(body[0].json.expectedRevision)
+        const body = JSON.parse(String(init?.body)) as { 0: { expectedRevision: string } }
+        saveRevisions.push(body[0].expectedRevision)
         saves += 1
         if (saves === 1) {
           return new Response(
             JSON.stringify([
               {
                 error: {
-                  json: {
-                    message: 'revision conflict',
-                    code: -32009,
-                    data: { code: 'CONFLICT', httpStatus: 409, path: 'record.saveDoc' },
-                  },
+                  message: 'revision conflict',
+                  code: -32009,
+                  data: { code: 'CONFLICT', httpStatus: 409, path: 'record.saveDoc' },
                 },
               },
             ]),
@@ -193,6 +212,22 @@ describe('hosted conflict recovery', () => {
           )
         }
         return trpcResponse({ revision: newRevision })
+      }
+      const batchPaths = url.match(/\/trpc\/([^?]+)/)?.[1]?.split(',') ?? []
+      if (batchPaths.length > 1) {
+        return new Response(
+          JSON.stringify(
+            batchPaths.map((path) => ({
+              result: {
+                data:
+                  path === 'record.docRevisions'
+                    ? { items: [{ id: newRevision }] }
+                    : { ...hostedDoc, title: 'Current title', body: 'Current body' },
+              },
+            })),
+          ),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
       }
       if (url.includes('record.docRevisions'))
         return trpcResponse({ items: [{ id: newRevision }] })
@@ -206,16 +241,25 @@ describe('hosted conflict recovery', () => {
     )
     const rendered = testing.renderHook(useHostedArticleActions, { wrapper })
     expect(rendered.result.current.stored?.revision).toBe(oldRevision)
-    console.log('save refused', rendered.result.current.save.refused)
-    await testing.act(() =>
-      rendered.result.current.save.run({ title: 'Mine', body: 'Mine', reason: 'First save' }),
-    )
-    console.log(rendered.result.current.save.error, saveRevisions)
-    expect(rendered.result.current.save.conflict).toBeTrue()
+    let saved: unknown
+    await testing.act(async () => {
+      saved = await rendered.result.current.save.run({
+        title: 'Mine',
+        body: 'Mine',
+        reason: 'First save',
+      })
+    })
+    await testing.waitFor(() => expect(rendered.result.current.save.error).not.toBeNull())
+    expect({ saved, conflict: rendered.result.current.save.conflict }).toEqual({
+      saved: false,
+      conflict: true,
+    })
 
     await testing.act(() => rendered.result.current.reload())
-    expect(rendered.result.current.save.conflict).toBeFalse()
-    expect(rendered.result.current.stored?.revision).toBe(newRevision)
+    await testing.waitFor(() => {
+      expect(rendered.result.current.save.conflict).toBeFalse()
+      expect(rendered.result.current.stored?.revision).toBe(newRevision)
+    })
 
     await testing.act(() =>
       rendered.result.current.save.run({ title: 'Mine', body: 'Mine', reason: 'Second save' }),
