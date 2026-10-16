@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Glob } from 'bun'
@@ -63,55 +62,67 @@ if (violations.length) {
   process.exit(1)
 }
 
-type KnownViolation = {
+type ArchitectureViolation = {
   from: string
   to: string
   unresolvedTo?: string
-  rule: { name: string }
+  rule: { name: string; severity: string; comment?: string }
 }
 
-async function staleHubWebDataAccessViolations() {
-  const directory = mkdtempSync(join(tmpdir(), 'hub-web-data-access-baseline-'))
-  const candidate = join(directory, 'known-violations.json')
-  try {
-    copyFileSync(HUB_WEB_DATA_ACCESS_BASELINE, candidate)
-    const result = await runArchitectureCruise({
-      entries: ARCHITECTURE_CRUISE_ROOTS,
-      extraArgs: ['--baseline', candidate, '--baseline-mode', 'shrink-only'],
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    if (result.exitCode !== 0) {
-      process.stderr.write(result.stderr)
-      process.exit(result.exitCode)
-    }
-    const baseline = JSON.parse(
-      readFileSync(HUB_WEB_DATA_ACCESS_BASELINE, 'utf8'),
-    ) as KnownViolation[]
-    const current = JSON.parse(readFileSync(candidate, 'utf8')) as KnownViolation[]
-    const currentEntries = new Set(current.map((entry) => JSON.stringify(entry)))
-    return baseline.filter((entry) => !currentEntries.has(JSON.stringify(entry)))
-  } finally {
-    rmSync(directory, { recursive: true, force: true })
+function architectureViolations(stdout: string): ArchitectureViolation[] {
+  const result: unknown = JSON.parse(stdout)
+  if (
+    typeof result !== 'object' ||
+    result === null ||
+    !('summary' in result) ||
+    typeof result.summary !== 'object' ||
+    result.summary === null ||
+    !('violations' in result.summary) ||
+    !Array.isArray(result.summary.violations)
+  ) {
+    throw new Error('dependency-cruiser JSON has no summary.violations array')
   }
-}
-
-const staleViolations = await staleHubWebDataAccessViolations()
-if (staleViolations.length) {
-  for (const violation of staleViolations) {
-    console.error(
-      `${violation.from} -> ${violation.unresolvedTo ?? violation.to} (${violation.rule.name}): stale known violation; delete this stale entry from scripts/quality/hub-web-views-do-not-fetch-data-or-read-hub-mode-known-violations.json`,
-    )
-  }
-  process.exit(1)
+  return result.summary.violations as ArchitectureViolation[]
 }
 
 const startedAt = performance.now()
-const { exitCode } = await runArchitectureCruise({
+const cruise = await runArchitectureCruise({
   entries: ARCHITECTURE_CRUISE_ROOTS,
-  extraArgs: ['--ignore-known', HUB_WEB_DATA_ACCESS_BASELINE, '--output-type', 'err-long'],
+  extraArgs: ['--output-type', 'json'],
+  stdout: 'pipe',
 })
-if (exitCode !== 0) process.exit(exitCode)
+if (cruise.exitCode !== 0) process.exit(cruise.exitCode)
+
+const HUB_WEB_DATA_ACCESS_RULE = 'hub-web-views-do-not-fetch-data-or-read-hub-mode'
+const baseline = JSON.parse(readFileSync(HUB_WEB_DATA_ACCESS_BASELINE, 'utf8')) as string[]
+const baselineFiles = new Set(baseline)
+const current = architectureViolations(cruise.stdout)
+const currentBaselineFiles = new Set(
+  current.filter(({ rule }) => rule.name === HUB_WEB_DATA_ACCESS_RULE).map(({ from }) => from),
+)
+const staleBaselineFiles = baseline.filter((file) => !currentBaselineFiles.has(file))
+
+for (const file of staleBaselineFiles) {
+  console.error(
+    `${file} (${HUB_WEB_DATA_ACCESS_RULE}): stale known violation; delete this stale entry from scripts/quality/hub-web-views-do-not-fetch-data-or-read-hub-mode-known-violations.json`,
+  )
+}
+
+const unignored = current.filter(
+  ({ from, rule }) => rule.name !== HUB_WEB_DATA_ACCESS_RULE || !baselineFiles.has(from),
+)
+for (const violation of unignored) {
+  const dependency = violation.unresolvedTo ?? violation.to
+  if (violation.rule.name === HUB_WEB_DATA_ACCESS_RULE) {
+    console.error(
+      `${violation.from} -> ${dependency} (${violation.rule.name}): Hub views may not fetch data or read hub mode; move the data access into the route and pass the data down as props.`,
+    )
+  } else {
+    console.error(`${violation.from} -> ${dependency} (${violation.rule.name})`)
+  }
+}
+
+if (staleBaselineFiles.length || unignored.length) process.exit(1)
 
 console.log(
   `check-architecture: ok (${modules.length} manifest modules, depcruise ${((performance.now() - startedAt) / 1000).toFixed(2)}s)`,

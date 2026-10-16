@@ -20,7 +20,6 @@ export const ARCHITECTURE_CRUISE_ROOTS = [
 type ArchitectureCruiseRequest = {
   entries: readonly string[]
   extraArgs?: string[]
-  stderr?: 'pipe' | 'inherit'
   stdout?: 'pipe' | 'inherit'
 }
 
@@ -30,7 +29,6 @@ export async function runArchitectureCruise(request: ArchitectureCruiseRequest) 
   writeFileSync(generatedConfig, JSON.stringify(dependencyCruiserConfig()))
   try {
     const stdout = request.stdout ?? 'inherit'
-    const stderr = request.stderr ?? 'inherit'
     const child = Bun.spawn(
       [
         join(ROOT, 'node_modules/.bin/depcruise'),
@@ -43,12 +41,11 @@ export async function runArchitectureCruise(request: ArchitectureCruiseRequest) 
         cwd: ROOT,
         env: { ...process.env, ARCHITECTURE_CONFIG: generatedConfig },
         stdout,
-        stderr,
+        stderr: 'inherit',
       },
     )
     const output = stdout === 'pipe' ? await new Response(child.stdout).text() : ''
-    const errorOutput = stderr === 'pipe' ? await new Response(child.stderr).text() : ''
-    return { exitCode: await child.exited, stdout: output, stderr: errorOutput }
+    return { exitCode: await child.exited, stdout: output }
   } finally {
     rmSync(generatedDirectory, { recursive: true, force: true })
   }

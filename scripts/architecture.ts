@@ -811,7 +811,7 @@ const hubWebViewDataRule: ArchitectureRule = {
     ],
   },
   to: {
-    path: '^(?:@/trpc/|@/lib/hub-mode$|hub/web/src/trpc/|hub/web/src/lib/hub-mode\\.ts$|@tanstack/react-query|@trpc/|node_modules/@tanstack/react-query|node_modules/@trpc/|node_modules/\\.bun/(?:@tanstack\\+react-query|@trpc\\+)[^/]+/node_modules/(?:@tanstack/react-query|@trpc/))',
+    path: `(?:^@/trpc/|^@/lib/hub-mode$|^hub/web/src/trpc/|^hub/web/src/lib/hub-mode\\.ts$|${architectureDependencyPath('@tanstack/react-query')}|^@trpc/|(^|/)node_modules/@trpc/[^/]+(?:/|$))`,
   },
 }
 const hubWebRouterException = concerns.exceptions[0]!
