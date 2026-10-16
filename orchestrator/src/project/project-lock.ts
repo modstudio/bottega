@@ -87,13 +87,13 @@ function projectLockParticipant(path: string): ProjectLockParticipant | null {
   }
 }
 
-function staleProjectLockParticipant(participant: ProjectLockParticipant): string | null {
-  if (!pidAlive(participant.pid)) return `dead participant pid ${participant.pid}`
-  if (participant.startTime === null) return null
-  const actual = processStartTime(participant.pid)
+function staleProjectLockHolder(holder: ProjectLockParticipant): string | null {
+  if (!pidAlive(holder.pid)) return `dead holder pid ${holder.pid}`
+  if (holder.startTime === null) return null
+  const actual = processStartTime(holder.pid)
   if (actual === null) return null
-  if (actual !== participant.startTime) {
-    return `pid ${participant.pid} start time changed from ${participant.startTime} to ${actual}`
+  if (actual !== holder.startTime) {
+    return `pid ${holder.pid} start time changed from ${holder.startTime} to ${actual}`
   }
   return null
 }
@@ -192,7 +192,7 @@ function waiterEntries(
       const path = join(waitersDir, name)
       const participant = projectLockParticipant(path)
       if (!participant) return []
-      if (staleProjectLockParticipant(participant)) {
+      if (staleProjectLockHolder(participant)) {
         try {
           rmSync(path)
         } catch {
@@ -495,7 +495,7 @@ function withProjectLock<T>(
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
         const holder = projectLockParticipant(join(legacy, 'owner'))
-        const stale = holder && staleProjectLockParticipant(holder)
+        const stale = holder && staleProjectLockHolder(holder)
         if (holder && stale) {
           const gone = `${legacy}.stale-${process.pid}-${randomUUID()}`
           try {
@@ -510,19 +510,9 @@ function withProjectLock<T>(
           continue
         }
         if (Date.now() >= deadline) {
-          if (!holder) {
-            let ageMs: number
-            try {
-              ageMs = Math.max(0, Date.now() - statSync(legacy).mtimeMs)
-            } catch {
-              continue
-            }
-            const blocker = { kind: 'ownerless-directory', ageMs } as const
-            recordLegacyContention('timeout', holder, blocker)
-            throw lockTimeout(name, timeoutMs, legacy, holder, blocker)
-          }
-          recordLegacyContention('timeout', holder)
-          throw lockTimeout(name, timeoutMs, legacy, holder)
+          const blocker = legacyDirectoryBlocker(legacy, holder)
+          recordLegacyContention('timeout', holder, blocker)
+          throw lockTimeout(name, timeoutMs, legacy, holder, blocker)
         }
         waitedForLegacy = true
         onWait?.(holder, Math.max(0, deadline - Date.now()))
@@ -566,6 +556,17 @@ function headWaiterDescription(waiter: ProjectLockParticipant): string {
 
 function ownerlessDirectoryDescription(ageMs: number): string {
   return `legacy lock directory exists with no owner (age ${Math.round(ageMs / 1000)}s)`
+}
+
+function legacyDirectoryBlocker(
+  legacy: string,
+  holder: ProjectLockParticipant | null,
+): LegacyTimeoutBlocker | undefined {
+  if (holder) return undefined
+  return {
+    kind: 'ownerless-directory',
+    ageMs: Math.max(0, Date.now() - statSync(legacy).mtimeMs),
+  }
 }
 
 function legacyContentionRecorder(name: string, sessionId: string | null, waitStarted: number) {
