@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
-import { existsSync, readFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Glob } from 'bun'
@@ -9,6 +10,10 @@ import { ARCHITECTURE_CRUISE_ROOTS, runArchitectureCruise } from './architecture
 import { importSpecifiers } from './import-scanner.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
+const HUB_WEB_DATA_ACCESS_BASELINE = join(
+  ROOT,
+  'scripts/quality/hub-web-views-do-not-fetch-data-or-read-hub-mode-known-violations.json',
+)
 const CONCERN = /^\/\/ concern: ([a-z0-9-]+)$/
 const manifestFiles = new Set(modules.map(({ file }) => file))
 const manifestRules = new Set(architectureRules().forbidden.map(({ name }) => name))
@@ -58,8 +63,54 @@ if (violations.length) {
   process.exit(1)
 }
 
+type KnownViolation = {
+  from: string
+  to: string
+  unresolvedTo?: string
+  rule: { name: string }
+}
+
+async function staleHubWebDataAccessViolations() {
+  const directory = mkdtempSync(join(tmpdir(), 'hub-web-data-access-baseline-'))
+  const candidate = join(directory, 'known-violations.json')
+  try {
+    copyFileSync(HUB_WEB_DATA_ACCESS_BASELINE, candidate)
+    const result = await runArchitectureCruise({
+      entries: ARCHITECTURE_CRUISE_ROOTS,
+      extraArgs: ['--baseline', candidate, '--baseline-mode', 'shrink-only'],
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    if (result.exitCode !== 0) {
+      process.stderr.write(result.stderr)
+      process.exit(result.exitCode)
+    }
+    const baseline = JSON.parse(
+      readFileSync(HUB_WEB_DATA_ACCESS_BASELINE, 'utf8'),
+    ) as KnownViolation[]
+    const current = JSON.parse(readFileSync(candidate, 'utf8')) as KnownViolation[]
+    const currentEntries = new Set(current.map((entry) => JSON.stringify(entry)))
+    return baseline.filter((entry) => !currentEntries.has(JSON.stringify(entry)))
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+}
+
+const staleViolations = await staleHubWebDataAccessViolations()
+if (staleViolations.length) {
+  for (const violation of staleViolations) {
+    console.error(
+      `${violation.from} -> ${violation.unresolvedTo ?? violation.to} (${violation.rule.name}): stale known violation; delete this stale entry from scripts/quality/hub-web-views-do-not-fetch-data-or-read-hub-mode-known-violations.json`,
+    )
+  }
+  process.exit(1)
+}
+
 const startedAt = performance.now()
-const { exitCode } = await runArchitectureCruise({ entries: ARCHITECTURE_CRUISE_ROOTS })
+const { exitCode } = await runArchitectureCruise({
+  entries: ARCHITECTURE_CRUISE_ROOTS,
+  extraArgs: ['--ignore-known', HUB_WEB_DATA_ACCESS_BASELINE, '--output-type', 'err-long'],
+})
 if (exitCode !== 0) process.exit(exitCode)
 
 console.log(

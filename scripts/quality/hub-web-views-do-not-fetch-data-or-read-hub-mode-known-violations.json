@@ -1,0 +1,563 @@
+[
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/design-system.tsx",
+    "to": "@/trpc/client",
+    "unresolvedTo": "@/trpc/client",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/design-system.tsx",
+    "to": "node_modules/.bun/@tanstack+react-query@5.103.0+62547eec5a2188e3/node_modules/@tanstack/react-query/build/legacy/index.cjs",
+    "unresolvedTo": "@tanstack/react-query",
+    "dependencyTypes": ["npm", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/hosted-insights.tsx",
+    "to": "@/trpc/client",
+    "unresolvedTo": "@/trpc/client",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/hosted-insights.tsx",
+    "to": "node_modules/.bun/@tanstack+react-query@5.103.0+62547eec5a2188e3/node_modules/@tanstack/react-query/build/legacy/index.cjs",
+    "unresolvedTo": "@tanstack/react-query",
+    "dependencyTypes": ["npm", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/hosted-projects.tsx",
+    "to": "@/trpc/client",
+    "unresolvedTo": "@/trpc/client",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/hosted-projects.tsx",
+    "to": "node_modules/.bun/@tanstack+react-query@5.103.0+62547eec5a2188e3/node_modules/@tanstack/react-query/build/legacy/index.cjs",
+    "unresolvedTo": "@tanstack/react-query",
+    "dependencyTypes": ["npm", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/hosted-reports.tsx",
+    "to": "@/trpc/client",
+    "unresolvedTo": "@/trpc/client",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/hosted-reports.tsx",
+    "to": "node_modules/.bun/@tanstack+react-query@5.103.0+62547eec5a2188e3/node_modules/@tanstack/react-query/build/legacy/index.cjs",
+    "unresolvedTo": "@tanstack/react-query",
+    "dependencyTypes": ["npm", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/hosted-task-sheet.tsx",
+    "to": "@/trpc/client",
+    "unresolvedTo": "@/trpc/client",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/hosted-task-sheet.tsx",
+    "to": "node_modules/.bun/@tanstack+react-query@5.103.0+62547eec5a2188e3/node_modules/@tanstack/react-query/build/legacy/index.cjs",
+    "unresolvedTo": "@tanstack/react-query",
+    "dependencyTypes": ["npm", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/insight-view.tsx",
+    "to": "@/lib/hub-mode",
+    "unresolvedTo": "@/lib/hub-mode",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/insight-view.tsx",
+    "to": "@/trpc/client",
+    "unresolvedTo": "@/trpc/client",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/insight-view.tsx",
+    "to": "node_modules/.bun/@tanstack+react-query@5.103.0+62547eec5a2188e3/node_modules/@tanstack/react-query/build/legacy/index.cjs",
+    "unresolvedTo": "@tanstack/react-query",
+    "dependencyTypes": ["npm", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/insight-view.tsx",
+    "to": "node_modules/.bun/@trpc+server@11.18.0+7524df1edfed9f02/node_modules/@trpc/server/dist/index.cjs",
+    "unresolvedTo": "@trpc/server",
+    "dependencyTypes": ["npm", "type-only", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/machine-permission-editor.tsx",
+    "to": "@/trpc/client",
+    "unresolvedTo": "@/trpc/client",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/machine-permission-editor.tsx",
+    "to": "node_modules/.bun/@tanstack+react-query@5.103.0+62547eec5a2188e3/node_modules/@tanstack/react-query/build/legacy/index.cjs",
+    "unresolvedTo": "@tanstack/react-query",
+    "dependencyTypes": ["npm", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/machine-permission-editor.tsx",
+    "to": "node_modules/.bun/@trpc+server@11.18.0+7524df1edfed9f02/node_modules/@trpc/server/dist/index.cjs",
+    "unresolvedTo": "@trpc/server",
+    "dependencyTypes": ["npm", "type-only", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/measure-display.tsx",
+    "to": "@/trpc/client",
+    "unresolvedTo": "@/trpc/client",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/review-lenses.tsx",
+    "to": "@/trpc/client",
+    "unresolvedTo": "@/trpc/client",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/review-lenses.tsx",
+    "to": "node_modules/.bun/@tanstack+react-query@5.103.0+62547eec5a2188e3/node_modules/@tanstack/react-query/build/legacy/index.cjs",
+    "unresolvedTo": "@tanstack/react-query",
+    "dependencyTypes": ["npm", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/task-sheet.tsx",
+    "to": "@/lib/hub-mode",
+    "unresolvedTo": "@/lib/hub-mode",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/task-sheet.tsx",
+    "to": "@/trpc/client",
+    "unresolvedTo": "@/trpc/client",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/task-sheet.tsx",
+    "to": "node_modules/.bun/@tanstack+react-query@5.103.0+62547eec5a2188e3/node_modules/@tanstack/react-query/build/legacy/index.cjs",
+    "unresolvedTo": "@tanstack/react-query",
+    "dependencyTypes": ["npm", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/waiting-badge.tsx",
+    "to": "@/trpc/client",
+    "unresolvedTo": "@/trpc/client",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/work-view.tsx",
+    "to": "@/lib/hub-mode",
+    "unresolvedTo": "@/lib/hub-mode",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/work-view.tsx",
+    "to": "@/trpc/client",
+    "unresolvedTo": "@/trpc/client",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/components/work-view.tsx",
+    "to": "node_modules/.bun/@tanstack+react-query@5.103.0+62547eec5a2188e3/node_modules/@tanstack/react-query/build/legacy/index.cjs",
+    "unresolvedTo": "@tanstack/react-query",
+    "dependencyTypes": ["npm", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/docs/article-editor.tsx",
+    "to": "@/trpc/client",
+    "unresolvedTo": "@/trpc/client",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/docs/article-editor.tsx",
+    "to": "node_modules/.bun/@tanstack+react-query@5.103.0+62547eec5a2188e3/node_modules/@tanstack/react-query/build/legacy/index.cjs",
+    "unresolvedTo": "@tanstack/react-query",
+    "dependencyTypes": ["npm", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/docs/article-editor.tsx",
+    "to": "node_modules/.bun/@trpc+client@11.18.0+acc6907a906fa511/node_modules/@trpc/client/dist/index.cjs",
+    "unresolvedTo": "@trpc/client",
+    "dependencyTypes": ["npm", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/docs/create-dialog.tsx",
+    "to": "@/trpc/client",
+    "unresolvedTo": "@/trpc/client",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/docs/create-dialog.tsx",
+    "to": "node_modules/.bun/@tanstack+react-query@5.103.0+62547eec5a2188e3/node_modules/@tanstack/react-query/build/legacy/index.cjs",
+    "unresolvedTo": "@tanstack/react-query",
+    "dependencyTypes": ["npm", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/docs/doc-actions.tsx",
+    "to": "@/trpc/client",
+    "unresolvedTo": "@/trpc/client",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/docs/doc-actions.tsx",
+    "to": "node_modules/.bun/@tanstack+react-query@5.103.0+62547eec5a2188e3/node_modules/@tanstack/react-query/build/legacy/index.cjs",
+    "unresolvedTo": "@tanstack/react-query",
+    "dependencyTypes": ["npm", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/docs/doc-field-controls.tsx",
+    "to": "@/trpc/client",
+    "unresolvedTo": "@/trpc/client",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/docs/doc-field-controls.tsx",
+    "to": "node_modules/.bun/@tanstack+react-query@5.103.0+62547eec5a2188e3/node_modules/@tanstack/react-query/build/legacy/index.cjs",
+    "unresolvedTo": "@tanstack/react-query",
+    "dependencyTypes": ["npm", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/docs/facts.tsx",
+    "to": "@/trpc/client",
+    "unresolvedTo": "@/trpc/client",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/docs/facts.tsx",
+    "to": "node_modules/.bun/@tanstack+react-query@5.103.0+62547eec5a2188e3/node_modules/@tanstack/react-query/build/legacy/index.cjs",
+    "unresolvedTo": "@tanstack/react-query",
+    "dependencyTypes": ["npm", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/docs/page.tsx",
+    "to": "@/lib/hub-mode",
+    "unresolvedTo": "@/lib/hub-mode",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/docs/page.tsx",
+    "to": "@/trpc/client",
+    "unresolvedTo": "@/trpc/client",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/docs/page.tsx",
+    "to": "node_modules/.bun/@tanstack+react-query@5.103.0+62547eec5a2188e3/node_modules/@tanstack/react-query/build/legacy/index.cjs",
+    "unresolvedTo": "@tanstack/react-query",
+    "dependencyTypes": ["npm", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/docs/revision-viewer.tsx",
+    "to": "@/trpc/client",
+    "unresolvedTo": "@/trpc/client",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/docs/revision-viewer.tsx",
+    "to": "node_modules/.bun/@tanstack+react-query@5.103.0+62547eec5a2188e3/node_modules/@tanstack/react-query/build/legacy/index.cjs",
+    "unresolvedTo": "@tanstack/react-query",
+    "dependencyTypes": ["npm", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/docs/use-doc-reorder.ts",
+    "to": "@/trpc/client",
+    "unresolvedTo": "@/trpc/client",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/docs/use-doc-reorder.ts",
+    "to": "node_modules/.bun/@tanstack+react-query@5.103.0+62547eec5a2188e3/node_modules/@tanstack/react-query/build/legacy/index.cjs",
+    "unresolvedTo": "@tanstack/react-query",
+    "dependencyTypes": ["npm", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/docs/use-docs.ts",
+    "to": "@/trpc/client",
+    "unresolvedTo": "@/trpc/client",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/docs/use-docs.ts",
+    "to": "node_modules/.bun/@tanstack+react-query@5.103.0+62547eec5a2188e3/node_modules/@tanstack/react-query/build/legacy/index.cjs",
+    "unresolvedTo": "@tanstack/react-query",
+    "dependencyTypes": ["npm", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/lib/hosted-auth.ts",
+    "to": "hub/web/src/lib/hub-mode.ts",
+    "unresolvedTo": "./hub-mode.ts",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/lib/hosted-organization.ts",
+    "to": "hub/web/src/lib/hub-mode.ts",
+    "unresolvedTo": "./hub-mode.ts",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/lib/operator-waiting.ts",
+    "to": "@/trpc/client",
+    "unresolvedTo": "@/trpc/client",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "hub/web/src/site/route.ts",
+    "to": "@/lib/hub-mode",
+    "unresolvedTo": "@/lib/hub-mode",
+    "dependencyTypes": ["unknown"],
+    "rule": {
+      "severity": "error",
+      "name": "hub-web-views-do-not-fetch-data-or-read-hub-mode"
+    }
+  }
+]
