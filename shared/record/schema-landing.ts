@@ -1,6 +1,6 @@
 // concern: postgres-schema-landing
 /** Knows the hosted landing and operational-evidence record shape. Must not know local execution or synchronization. */
-import { bigint, integer, jsonb, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core'
+import { bigint, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
 import { machine, project, spaceIdentity, tenantPolicies } from './schema.ts'
 
 const recordIdentity = () => uuid().primaryKey()
@@ -8,7 +8,7 @@ const machineIdentity = () =>
   uuid('machine_id')
     .notNull()
     .references(() => machine.id)
-const localIdentity = () => bigint('local_id', { mode: 'bigint' }).notNull()
+const localIdentity = () => bigint('local_id', { mode: 'bigint' })
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull()
 const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull()
 const recordedAt = (name: string) => timestamp(name, { withTimezone: true }).notNull()
@@ -37,10 +37,7 @@ export const landing = pgTable.withRLS(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [
-    unique('landing_machine_local_unique').on(table.machineId, table.localId),
-    ...tenantPolicies('landing', table.spaceId),
-  ],
+  (table) => [...tenantPolicies('landing', table.spaceId)],
 )
 
 export const landingOverride = pgTable.withRLS(
@@ -63,10 +60,7 @@ export const landingOverride = pgTable.withRLS(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [
-    unique('landing_override_machine_local_unique').on(table.machineId, table.localId),
-    ...tenantPolicies('landing_override', table.spaceId),
-  ],
+  (table) => [...tenantPolicies('landing_override', table.spaceId)],
 )
 
 export const landingReviewCarry = pgTable.withRLS(
@@ -91,10 +85,7 @@ export const landingReviewCarry = pgTable.withRLS(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [
-    unique('landing_review_carry_machine_local_unique').on(table.machineId, table.localId),
-    ...tenantPolicies('landing_review_carry', table.spaceId),
-  ],
+  (table) => [...tenantPolicies('landing_review_carry', table.spaceId)],
 )
 
 export const landingTriageSnapshot = pgTable.withRLS(
@@ -122,10 +113,7 @@ export const landingTriageSnapshot = pgTable.withRLS(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [
-    unique('landing_triage_snapshot_machine_local_unique').on(table.machineId, table.localId),
-    ...tenantPolicies('landing_triage_snapshot', table.spaceId),
-  ],
+  (table) => [...tenantPolicies('landing_triage_snapshot', table.spaceId)],
 )
 
 export const contention = pgTable.withRLS(
@@ -148,10 +136,7 @@ export const contention = pgTable.withRLS(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [
-    unique('contention_machine_local_unique').on(table.machineId, table.localId),
-    ...tenantPolicies('contention', table.spaceId),
-  ],
+  (table) => [...tenantPolicies('contention', table.spaceId)],
 )
 
 export const testFlake = pgTable.withRLS(
@@ -171,8 +156,5 @@ export const testFlake = pgTable.withRLS(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [
-    unique('test_flake_machine_local_unique').on(table.machineId, table.localId),
-    ...tenantPolicies('test_flake', table.spaceId),
-  ],
+  (table) => [...tenantPolicies('test_flake', table.spaceId)],
 )

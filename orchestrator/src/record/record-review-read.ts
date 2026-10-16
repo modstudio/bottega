@@ -6,7 +6,6 @@ type CommonValues = {
   id: string
   spaceId: string
   machineId: string
-  localId: bigint
   createdAt: Date
   updatedAt: Date
 }

@@ -12,13 +12,12 @@ const nullableNumber = (value: unknown) => (value == null ? null : Number(value)
 const nullableString = (value: unknown) => (value == null ? null : String(value))
 const jsonString = (value: unknown) => (value == null ? null : JSON.stringify(value))
 
-function releaseValues(row: Payload, projectId: string | null) {
+export function releaseValues(row: Payload, projectId: string | null) {
   return {
     id: String(row.id),
     spaceId: String(row.spaceId),
     projectId,
     machineId: String(row.machineId),
-    localId: BigInt(String(row.localId)),
     rung: String(row.rung),
     candidateCommit: String(row.candidateCommit),
     liveCommitBefore: nullableString(row.liveCommitBefore),

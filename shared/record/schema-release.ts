@@ -9,7 +9,6 @@ import {
   pgTable,
   text,
   timestamp,
-  unique,
   uuid,
 } from 'drizzle-orm/pg-core'
 import { machine, project, spaceIdentity, tenantPolicies } from './schema.ts'
@@ -23,7 +22,7 @@ export const release = pgTable.withRLS(
     machineId: uuid('machine_id')
       .notNull()
       .references(() => machine.id),
-    localId: bigint('local_id', { mode: 'bigint' }).notNull(),
+    localId: bigint('local_id', { mode: 'bigint' }),
     rung: text().notNull(),
     candidateCommit: text('candidate_commit').notNull(),
     liveCommitBefore: text('live_commit_before'),
@@ -49,7 +48,6 @@ export const release = pgTable.withRLS(
       table.startedAt.desc(),
       table.id.desc(),
     ),
-    unique('release_machine_local_unique').on(table.machineId, table.localId),
     ...tenantPolicies('release', table.spaceId),
   ],
 )

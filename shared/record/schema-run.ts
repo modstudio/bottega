@@ -13,7 +13,6 @@ import {
   pgTable,
   text,
   timestamp,
-  unique,
   uuid,
 } from 'drizzle-orm/pg-core'
 import { machine, project, spaceIdentity, tenantPolicies, user } from './schema.ts'
@@ -27,7 +26,7 @@ export const run = pgTable.withRLS(
     machineId: uuid('machine_id')
       .notNull()
       .references(() => machine.id),
-    localId: bigint('local_id', { mode: 'bigint' }).notNull(),
+    localId: bigint('local_id', { mode: 'bigint' }),
     startedByUserId: uuid('started_by_user_id').references(() => user.id),
     startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
     finishedAt: timestamp('finished_at', { withTimezone: true }),
@@ -88,7 +87,6 @@ export const run = pgTable.withRLS(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
   (table) => [
-    unique('run_machine_local_unique').on(table.machineId, table.localId),
     index('run_space_started_id_idx').on(table.spaceId, table.startedAt.desc(), table.id.desc()),
     ...tenantPolicies('run', table.spaceId),
   ],

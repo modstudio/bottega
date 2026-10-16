@@ -118,6 +118,10 @@ test('release sender upserts the finished state by record id in the project spac
   expect(writes).toHaveLength(2)
   for (const statement of writes) {
     expect(statement).toMatch(/on conflict \("id"\) do update set/i)
+    const [, columns, values] = statement.match(/insert into [^(]+\(([^)]+)\) values \(([^)]+)\)/i)!
+    const localIdIndex = columns.split(', ').indexOf('"local_id"')
+    expect(values.split(', ')[localIdIndex]).toBe('default')
+    expect(statement.slice(statement.indexOf('do update set'))).not.toMatch(/local_id/i)
   }
   expect(remote.parameters.flat().filter((value) => value === started.record_id)).toHaveLength(2)
   expect(remote.parameters.flat()).toContain('candidate-sha')
