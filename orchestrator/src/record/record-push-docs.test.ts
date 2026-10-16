@@ -41,7 +41,7 @@ function insertDoc(row: {
   return (
     db()
       .query(
-        `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, audiences, created_at, updated_at, parent_id, record_id)
+        `INSERT INTO doc (scope, subject, project_record_id, slug, title, body, delivery, audiences, created_at, updated_at, parent_id, record_id)
          VALUES (?,?,?,?,?,?,?,'["technical"]',?,?,?,?) RETURNING id`,
       )
       .get(
@@ -81,7 +81,7 @@ function insertRevision(row: {
     db()
       .query(
         `INSERT INTO doc_revision
-         (doc_id, scope, subject, project_id, slug, op, title, body, delivery, audiences, author, reason, session_id, at, parent_id, record_id)
+         (doc_id, scope, subject, project_record_id, slug, op, title, body, delivery, audiences, author, reason, session_id, at, parent_id, record_id)
          VALUES (?,?,?,?,?,?,?,?,?,'["technical"]',?,?,?,?,?,?) RETURNING id`,
       )
       .get(

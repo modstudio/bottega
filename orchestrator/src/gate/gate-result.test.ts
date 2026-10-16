@@ -27,7 +27,7 @@ function insertProject(name: string, path: string): number {
 
 function insertRun(projectId: number, job: string, headCommit: string): number {
   const id = addRun({ agent: 'codex', job, status: 'running', headCommit })
-  db().query('UPDATE run SET project_id=? WHERE id=?').run(projectId, id)
+  db().query('UPDATE run SET project_record_id=? WHERE id=?').run(projectId, id)
   return id
 }
 

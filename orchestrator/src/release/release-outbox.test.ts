@@ -64,8 +64,8 @@ test('release writes and evolves one whole-row pending payload without deploy ou
   })
   expect(startedPayload).not.toHaveProperty('outputTail')
   expect(startedPayload).not.toHaveProperty('output_tail')
-  expect(database.query('SELECT project_id FROM release_ledger WHERE id=?').get(id)).toEqual({
-    project_id: RELEASE_PROJECT_LOCAL_ID,
+  expect(database.query('SELECT project_record_id FROM release_ledger WHERE id=?').get(id)).toEqual({
+    project_record_id: RELEASE_PROJECT_LOCAL_ID,
   })
 
   finishReleaseLedgerEntry(

@@ -59,7 +59,7 @@ test('backfill resolves chains, enqueues finished turns once, and skips running 
     .run()
   const insert = database.query(
     `INSERT INTO run (record_id,
-       id, started_at, last_event_at, agent, job, project_id, prompt_sha, prompt_bytes,
+       id, started_at, last_event_at, agent, job, project_record_id, prompt_sha, prompt_bytes,
        prompt_head, status, retry_of, parent_run_id
      ) VALUES (?, ?, ?, ?, 'codex', 'implement', ?, 'sha', 4, 'head', ?, ?, ?)`,
   )

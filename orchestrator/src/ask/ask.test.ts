@@ -299,7 +299,7 @@ describe('the live ask channel always answers', () => {
       .get('gate-wait-fixture', '/fixture', 'bun', JSON.stringify({ gate: 'bun run check' })) as {
       id: number
     }
-    db().query('UPDATE run SET project_id=? WHERE id=?').run(project.id, run)
+    db().query('UPDATE run SET project_record_id=? WHERE id=?').run(project.id, run)
     let nowMs = Date.now()
     let waits = 0
     const connection = await askClient(run, '', undefined, {
@@ -364,7 +364,7 @@ describe('the live ask channel always answers', () => {
       ) as {
       id: number
     }
-    db().query('UPDATE run SET project_id=? WHERE id=?').run(project.id, run)
+    db().query('UPDATE run SET project_record_id=? WHERE id=?').run(project.id, run)
     let nowMs = Date.now()
     const connection = await askClient(run, '', undefined, {
       fileWorkerNote: async () => ({
@@ -419,7 +419,7 @@ describe('the live ask channel always answers', () => {
       .get('gate-abort-fixture', '/fixture', 'bun', JSON.stringify({ gate: 'bun run check' })) as {
       id: number
     }
-    db().query('UPDATE run SET project_id=? WHERE id=?').run(project.id, run)
+    db().query('UPDATE run SET project_record_id=? WHERE id=?').run(project.id, run)
     const controller = new AbortController()
     let waitCalls = 0
     const connection = await askClient(run, '', undefined, {
@@ -486,7 +486,7 @@ describe('the live ask channel always answers', () => {
     const newerWriter = addRun({ agent: 'codex', job: 'implement', headCommit: 'reviewed-commit' })
     const otherWriter = addRun({ agent: 'codex', job: 'implement', headCommit: 'other-commit' })
     for (const run of [reader, olderWriter, newerWriter, otherWriter]) {
-      db().query('UPDATE run SET project_id=? WHERE id=?').run(project.id, run)
+      db().query('UPDATE run SET project_record_id=? WHERE id=?').run(project.id, run)
     }
     db()
       .query(
@@ -657,7 +657,7 @@ describe('the live ask channel always answers', () => {
       .get('worker-note-project', '/projects/worker-note', '{}') as { id: number; name: string }
     db()
       .query(
-        `UPDATE run SET project_id=?,worktree=?,branch=?,session_id=?,head_commit=? WHERE id=?`,
+        `UPDATE run SET project_record_id=?,worktree=?,branch=?,session_id=?,head_commit=? WHERE id=?`,
       )
       .run(project.id, '/runs/review-tree', 'DEV-1029-review', 'session-1029', 'abc123', run)
     const seen: unknown[] = []

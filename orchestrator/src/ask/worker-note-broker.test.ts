@@ -15,7 +15,7 @@ test('host broker derives run facts and completes a requested note', async () =>
     .query(`INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?) RETURNING id`)
     .get(newRecordId(), 'worker-note-broker', '/projects/main', '{}') as { id: number }
   db()
-    .query(`UPDATE run SET project_id=?,worktree=?,branch=?,session_id=?,head_commit=? WHERE id=?`)
+    .query(`UPDATE run SET project_record_id=?,worktree=?,branch=?,session_id=?,head_commit=? WHERE id=?`)
     .run(project.id, '/runs/tree', 'DEV-1029-worker', 'session-42', 'abc123', runId)
   const seen: unknown[] = []
   const broker = startWorkerNoteBroker(runId, async (run, input) => {
@@ -73,7 +73,7 @@ test('host broker retries a claim that throws on a later poll tick', async () =>
     .query(`INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?) RETURNING id`)
     .get(newRecordId(), 'worker-note-retry', '/projects/main', '{}') as { id: number }
   db()
-    .query(`UPDATE run SET project_id=?,worktree=? WHERE id=?`)
+    .query(`UPDATE run SET project_record_id=?,worktree=? WHERE id=?`)
     .run(project.id, '/runs/tree', runId)
   const request = db()
     .query(

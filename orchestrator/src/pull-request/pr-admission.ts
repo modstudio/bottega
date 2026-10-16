@@ -131,7 +131,8 @@ function triageDecision(change: PullRequestChange, database: Database): TriageDe
         [string, string]
       >(
         `SELECT id,tip,patch_id,path_set,recorded_at,session_id FROM review_read
-        WHERE project=? AND branch=? ORDER BY id DESC`,
+        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+          AND branch=? ORDER BY id DESC`,
       )
       .all(change.project.name, change.branch)
       .map((row) => ({
@@ -161,7 +162,8 @@ function overridesForChange(change: PullRequestChange, database: Database): Admi
     >(
       `SELECT id,project,branch,tip,tree,patch_id AS patchId,path_set AS pathSet
        FROM landing_override
-       WHERE project=? AND branch=? ORDER BY id DESC`,
+       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+         AND branch=? ORDER BY id DESC`,
     )
     .all(change.project.name, change.branch)
 }
@@ -363,7 +365,8 @@ function finalizeTriageIntentWrite(
   const row = database
     .query<{ id: number }, [string, string]>(
       `SELECT id FROM landing_triage_snapshot
-        WHERE project=? AND branch=? AND pr_number IS NULL ORDER BY id DESC LIMIT 1`,
+        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+          AND branch=? AND pr_number IS NULL ORDER BY id DESC LIMIT 1`,
     )
     .get(project, branch)
   if (!row) return null
@@ -382,7 +385,8 @@ export function recordMergeAdmission(
     const existing = database
       .query<{ id: number }, [string, string, string]>(
         `SELECT id FROM landing_triage_snapshot
-          WHERE project=? AND branch=? AND tip=? LIMIT 1`,
+          WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+            AND branch=? AND tip=? LIMIT 1`,
       )
       .get(change.project.name, change.branch, change.tip)
     if (existing) return null
@@ -421,7 +425,7 @@ function pendingIntent(database: Database, project: string, branch: string): boo
   return Boolean(
     database
       .query(
-        'SELECT 1 FROM landing_triage_snapshot WHERE project=? AND branch=? AND pr_number IS NULL LIMIT 1',
+        'SELECT 1 FROM landing_triage_snapshot WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND branch=? AND pr_number IS NULL LIMIT 1',
       )
       .get(project, branch),
   )

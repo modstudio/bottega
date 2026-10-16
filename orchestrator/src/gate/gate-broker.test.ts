@@ -88,7 +88,7 @@ test("a rebased writer runs the gate from its tree and records only a clean tree
     db()
       .query(
         `INSERT INTO run
-          (record_id,started_at,agent,job,project_id,prompt_sha,prompt_bytes,prompt_head,status,worktree,base_commit,head_commit,worktree_source)
+          (record_id,started_at,agent,job,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,worktree,base_commit,head_commit,worktree_source)
          VALUES ('${newRecordId()}',?,?,?,?,?,1,'fixture','running',?,?,?,'git') RETURNING id`,
       )
       .get(
@@ -214,7 +214,7 @@ test('an occupied gate log path fails the execution without following the path',
     db()
       .query(
         `INSERT INTO run
-          (record_id,started_at,agent,job,project_id,prompt_sha,prompt_bytes,prompt_head,status,worktree,base_commit,head_commit,worktree_source)
+          (record_id,started_at,agent,job,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,worktree,base_commit,head_commit,worktree_source)
          VALUES ('${newRecordId()}',?,?,?,?,?,1,'fixture','running',?,?,?,'git') RETURNING id`,
       )
       .get(

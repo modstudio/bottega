@@ -150,7 +150,7 @@ function checkoutFacts(path: string, branch: string) {
 export function newestSuccessfulReleasedCommit(project: string, rung: string): string | null {
   const row = writableDb()
     .query<{ candidate_commit: string }, [string, string]>(
-      'SELECT candidate_commit FROM release_ledger WHERE project=? AND rung=? AND exit_code=0 ORDER BY id DESC LIMIT 1',
+      'SELECT candidate_commit FROM release_ledger WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND rung=? AND exit_code=0 ORDER BY id DESC LIMIT 1',
     )
     .get(project, rung)
   return row?.candidate_commit ?? null
@@ -279,9 +279,13 @@ export function releaseLog(project: string, rung?: string): ReleaseLedgerRow[] {
   if (!projectByName(project)) throw new Error(`no project "${project}"`)
   return rung
     ? (db()
-        .query('SELECT * FROM release_ledger WHERE project=? AND rung=? ORDER BY id DESC')
+        .query(
+          'SELECT * FROM release_ledger WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND rung=? ORDER BY id DESC',
+        )
         .all(project, rung) as ReleaseLedgerRow[])
     : (db()
-        .query('SELECT * FROM release_ledger WHERE project=? ORDER BY id DESC')
+        .query(
+          'SELECT * FROM release_ledger WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) ORDER BY id DESC',
+        )
         .all(project) as ReleaseLedgerRow[])
 }

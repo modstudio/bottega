@@ -111,8 +111,8 @@ test('listing an unadopted board leaves its printed root unread for the session'
   const session = 'overview-reader'
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude','architect','machine','overview-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude','architect','machine','overview-project',(SELECT record_id FROM project WHERE name='overview-project'),'/tmp',NULL,?,?)`,
     )
     .run(session, '2026-10-05T11:00:00.000Z', '2026-10-05T12:00:00.000Z')
   const posted = postNotice(
@@ -228,8 +228,8 @@ test('a spent refresh budget keeps the failed store outcome for overview and pus
   const session = 'overview-push'
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude','architect','machine','overview-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude','architect','machine','overview-project',(SELECT record_id FROM project WHERE name='overview-project'),'/tmp',NULL,?,?)`,
     )
     .run(session, '2026-10-05T11:00:00.000Z', '2026-10-05T12:00:00.000Z')
   installRecordApiClient(hanging)

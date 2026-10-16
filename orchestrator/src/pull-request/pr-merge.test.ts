@@ -252,7 +252,7 @@ test('an admitted head records a snapshot with the pull request number before me
   registerProject(['test'])
   const database = db()
   const project = database
-    .query<{ id: number }, [string]>('SELECT id FROM project WHERE name=?')
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
     .get('merge-fixture')!
   const decision: AdmissionDecision = {
     complete: true,
@@ -288,8 +288,7 @@ test('an admitted head records a snapshot with the pull request number before me
         return {
           change: {
             project: {
-              id: project.id,
-              recordId: '01990000-0000-7000-8000-000000001214',
+              recordId: project.record_id,
               name: 'merge-fixture',
               path: admissionCwd,
               stack: 'bun',

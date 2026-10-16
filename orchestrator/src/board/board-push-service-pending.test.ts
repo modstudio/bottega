@@ -12,8 +12,8 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
   const clock = Date.parse('2026-10-07T12:00:00.000Z')
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-     VALUES ('push-reader','claude-code','architect','test','push-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+     VALUES ('push-reader','claude-code','architect','test','push-project',(SELECT record_id FROM project WHERE name='push-project'),'/tmp',NULL,?,?)`,
     )
     .run(new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
   const local = postNotice(
@@ -167,11 +167,12 @@ test('a hosted acknowledgement immediately clears delivery from verified or unve
   const messageId = newRecordId()
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude-code','architect','test',?,'/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude-code','architect','test',?,(SELECT record_id FROM project WHERE name=?),'/tmp',NULL,?,?)`,
     )
     .run(
       session,
+      PLATFORM_SLUG,
       PLATFORM_SLUG,
       new Date(clock - 1_000).toISOString(),
       new Date(clock).toISOString(),

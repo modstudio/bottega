@@ -26,8 +26,8 @@ function fixtureProject() {
 function presence(session: string, task: string | null, clock: number) {
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
-       VALUES (?,'claude-code','architect','test','claims','/tmp',?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+       VALUES (?,'claude-code','architect','test','claims',(SELECT record_id FROM project WHERE name='claims'),'/tmp',?,?)`,
     )
     .run(session, task, new Date(clock).toISOString())
 }
