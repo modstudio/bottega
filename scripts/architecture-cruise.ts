@@ -53,7 +53,7 @@ export async function runArchitectureCruise(request: ArchitectureCruiseRequest) 
         ? undefined
         : setTimeout(() => {
             timedOut = true
-            child.kill()
+            child.kill(9)
           }, request.timeoutMs)
     try {
       const [output, exitCode] = await Promise.all([

@@ -10,7 +10,19 @@ import time
 
 JUDGE_TIMEOUT_SECONDS = 8
 EDITOR_TOOLS = {"Write", "Edit", "MultiEdit"}
-JUDGE_ENVIRONMENT_KEYS = ("PATH", "HOME", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL", "LC_CTYPE")
+JUDGE_ENVIRONMENT_KEYS = (
+    "PATH",
+    "HOME",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "ORCH_DB",
+    "BOTTEGA_STATE_HOME",
+    "XDG_STATE_HOME",
+)
 
 
 def target_path(payload):

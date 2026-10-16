@@ -29,11 +29,16 @@ const VIEW_DATA_BASELINE = new Set<string>(
 const target = process.argv[2]
 const original = process.argv[3] ?? target
 const checkoutRoot = process.argv[4] ?? ROOT
-const pathOnly = process.argv[5] === '--path-only'
+const deadlineArgument = process.argv.indexOf('--deadline-ms')
+const deadlineMs = Number(process.argv[deadlineArgument + 1])
+const pathOnly = process.argv.includes('--path-only')
 
-if (!target || !original) {
+// This must exceed the command's cleanup margin so this process can remove cruise artifacts.
+const ARCHITECTURE_CRUISE_CLEANUP_MARGIN_MS = 1_750
+
+if (!target || !original || deadlineArgument === -1 || !Number.isFinite(deadlineMs)) {
   console.error(
-    'usage: bun scripts/check-architecture-file.ts <candidate> [original] [checkout-root]',
+    'usage: bun scripts/check-architecture-file.ts <candidate> [original] [checkout-root] --deadline-ms <epoch-ms>',
   )
   process.exit(2)
 }
@@ -56,13 +61,31 @@ if (pathOnly) {
   process.exit(0)
 }
 
+const cruiseTimeoutMs = deadlineMs - Date.now() - ARCHITECTURE_CRUISE_CLEANUP_MARGIN_MS
+if (cruiseTimeoutMs <= 0) {
+  console.log(
+    JSON.stringify({
+      status: 'unchecked',
+      reason: 'architecture cruise deadline leaves no time before the cleanup margin',
+    }),
+  )
+  process.exit(0)
+}
+
 const cruise = await runArchitectureCruise({
   entries: [target],
   extraArgs: ['--max-depth', '1', '--output-type', 'json'],
   stdout: 'pipe',
   config,
   cwd: checkoutRoot,
+  timeoutMs: cruiseTimeoutMs,
 })
+if (cruise.timedOut) {
+  console.log(
+    JSON.stringify({ status: 'unchecked', reason: 'architecture cruise reached its deadline' }),
+  )
+  process.exit(0)
+}
 const result = JSON.parse(cruise.stdout) as ICruiseResult
 const rulesByName = new Map(config.forbidden.map((rule) => [rule.name, rule]))
 

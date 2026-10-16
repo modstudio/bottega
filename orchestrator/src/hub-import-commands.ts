@@ -2,6 +2,7 @@
 /** Resolves registered Bottega checkouts and judges proposed hub edits with installed policy. */
 
 import type { Database } from 'bun:sqlite'
+import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -112,25 +113,37 @@ async function runInstalledJudge(
       reason: 'judge deadline leaves no time before the cleanup margin',
     }
   }
-  const child = Bun.spawn([process.execPath, '--no-env-file', judge, ...args], {
+  const child = spawn(process.execPath, ['--no-env-file', judge, ...args], {
     cwd: installedRoot,
-    stdout: 'pipe',
-    stderr: 'pipe',
+    detached: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let stdout = ''
+  let stderr = ''
+  child.stdout.setEncoding('utf8')
+  child.stderr.setEncoding('utf8')
+  child.stdout.on('data', (chunk) => {
+    stdout += chunk
+  })
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk
   })
   let timedOut = false
   const timer = setTimeout(() => {
     timedOut = true
-    child.kill()
+    if (child.pid === undefined) return
+    try {
+      process.kill(-child.pid, 'SIGKILL')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+    }
   }, timeoutMs)
-  let stdout: string
-  let stderr: string
-  let exitCode: number
+  let exitCode: number | null
   try {
-    ;[stdout, stderr, exitCode] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ])
+    exitCode = await new Promise<number | null>((resolveExit, reject) => {
+      child.once('error', reject)
+      child.once('close', resolveExit)
+    })
   } finally {
     clearTimeout(timer)
   }
@@ -145,7 +158,7 @@ async function runInstalledJudge(
     return {
       status: 'unchecked',
       findings: [],
-      reason: `judge failed (${stderr.trim().replaceAll('\n', ' ') || `exit ${exitCode}`})`,
+      reason: `judge failed (${stderr.trim().replaceAll('\n', ' ') || `exit ${exitCode ?? 'unknown'}`})`,
     }
   }
   return JSON.parse(stdout) as HubImportJudgment
@@ -177,7 +190,7 @@ async function judgeOriginalPath(
   try {
     const judgment = await runInstalledJudge(
       judge,
-      [original, original, checkout, '--path-only'],
+      [original, original, checkout, '--deadline-ms', String(deadlineMs), '--path-only'],
       installedRoot,
       deadlineMs,
     )
@@ -254,7 +267,13 @@ export async function hubImportJudgeCommand(
     writeFileSync(candidate, content)
     return await runInstalledJudge(
       judge,
-      [relative(checkout, candidate).split(sep).join('/'), original, checkout],
+      [
+        relative(checkout, candidate).split(sep).join('/'),
+        original,
+        checkout,
+        '--deadline-ms',
+        String(deadlineMs),
+      ],
       installedRoot,
       deadlineMs,
     )
