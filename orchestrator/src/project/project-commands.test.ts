@@ -106,6 +106,89 @@ test('hosted failure leaves the local register unchanged', async () => {
   expect(projectByName('hosted-fail')).toBeNull()
 })
 
+test('project add adopts a matching hosted project without writing it', async () => {
+  const hostedId = newRecordId()
+  const writes: string[] = []
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'space-a',
+      personalSpaceId: 'space-a',
+      memberships: [
+        { space_id: 'space-a', slug: 'alpha', permission: 'write' },
+        { space_id: 'space-b', slug: 'beta', permission: 'write' },
+      ],
+    }),
+    listProjects: async (destination) =>
+      destination?.destinationSpaceId === 'space-b'
+        ? [
+            {
+              id: hostedId,
+              name: 'adopted-project',
+              spaceId: 'space-b',
+              spaceName: 'Beta',
+              keyPrefixes: ['DEV'],
+              stack: 'hosted-stack',
+              managedContext: false,
+              landingBranch: null,
+              color: null,
+              colorDark: null,
+              canon: true,
+              settings: { keyPrefixes: ['DEV'] },
+              retiredAt: null,
+            },
+          ]
+        : [],
+    upsertProject: async (input) => {
+      writes.push(input.name)
+      return { id: input.id, name: input.name }
+    },
+  })
+  const path = mkdtempSync(join(tmpdir(), 'orch-adopt-project-'))
+  const output = await runProject(['project', 'add', path], {
+    name: 'adopted-project',
+    settings: JSON.stringify({ checks: { spelling: true } }),
+  })
+  expect(output).toContain('adopted adopted-project from record space beta')
+  expect(writes).toEqual([])
+  expect(projectByName('adopted-project')).toMatchObject({
+    recordId: hostedId,
+    stack: 'hosted-stack',
+    settings: {
+      keyPrefixes: ['DEV'],
+      checks: { spelling: true },
+      space: 'beta',
+    },
+  })
+})
+
+test('project add never mints when the hosted project list is unreachable', async () => {
+  let writes = 0
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'space-a',
+      personalSpaceId: 'space-a',
+      memberships: [{ space_id: 'space-a', slug: 'alpha', permission: 'write' }],
+    }),
+    listProjects: async () => {
+      throw new Error('record API unreachable')
+    },
+    upsertProject: async (input) => {
+      writes += 1
+      return { id: input.id, name: input.name }
+    },
+  })
+  const path = mkdtempSync(join(tmpdir(), 'orch-adopt-unreachable-'))
+  await expect(
+    runProject(['project', 'add', path], { name: 'unreachable-project' }),
+  ).rejects.toThrow('record API unreachable')
+  expect(writes).toBe(0)
+  expect(projectByName('unreachable-project')).toBeNull()
+})
+
 test('hosted rename failure leaves hosted and local unchanged', async () => {
   upsertProject({ recordId: newRecordId(), name: 'rename-src', path: '/w/rename-src' })
   const hosted: string[] = []

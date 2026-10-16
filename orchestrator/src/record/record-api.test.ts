@@ -837,15 +837,20 @@ describe('record API presentation routes', () => {
     expect(await missing.json()).toEqual({ error: 'run not found' })
   })
 
-  test('projects contain only the presentation allowlist', async () => {
+  test('projects carry the settings needed to adopt the hosted row', async () => {
     const project = {
       id,
+      spaceId: 'space-a',
+      spaceName: 'Space A',
       name: 'one',
       keyPrefixes: ['ONE'],
       stack: null,
+      managedContext: true,
       landingBranch: 'main',
       color: null,
       colorDark: null,
+      canon: true,
+      settings: { keyPrefixes: ['ONE'], trunk: 'main' },
       retiredAt: null,
     }
     const response = await appWith(identity, { readProjects: async () => [project] }).request(
@@ -853,27 +858,21 @@ describe('record API presentation routes', () => {
     )
     const rows = (await response.json()) as Record<string, unknown>[]
     expect(Object.keys(rows[0]!).sort()).toEqual([
+      'canon',
       'color',
       'colorDark',
       'id',
       'keyPrefixes',
       'landingBranch',
+      'managedContext',
       'name',
       'retiredAt',
+      'settings',
+      'spaceId',
+      'spaceName',
       'stack',
     ])
-    for (const forbidden of [
-      'checkoutPath',
-      'secretPaths',
-      'worktree',
-      'tracker',
-      'mcpServer',
-      'workerMcpServers',
-      'mcpProbeTool',
-      'envPrefix',
-      'gate',
-    ])
-      expect(forbidden in rows[0]!).toBe(false)
+    expect(rows[0]!.settings).toEqual({ keyPrefixes: ['ONE'], trunk: 'main' })
   })
 
   test('validates project upsert at the edge and passes the tenant', async () => {

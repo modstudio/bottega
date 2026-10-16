@@ -202,3 +202,27 @@ export function hostedProjectColumns(
     [PROJECT_SETTING_COLUMNS.worktree]: settingDocument(settings, 'worktree', project),
   }
 }
+
+function omitHostedSetting(setting: string, value: unknown): boolean {
+  if (setting === 'mcp' || value === null) return true
+  if (setting === 'keyPrefixes' && Array.isArray(value) && value.length === 0) return true
+  if (setting === 'managedContext' && value === false) return true
+  return setting === 'requireCleanMain' && value === true
+}
+
+export function hostedProjectSettings(columns: HostedProjectColumns): ProjectSettings {
+  const settings: Record<string, unknown> = {}
+  for (const [setting, column] of Object.entries(PROJECT_SETTING_COLUMNS)) {
+    const value = columns[column as keyof HostedProjectColumns]
+    if (!omitHostedSetting(setting, value)) settings[setting] = value
+  }
+  const probeTool = columns.mcpProbeTool
+  const readerTools = columns.mcpReaderTools
+  if (probeTool !== null || readerTools !== null) {
+    settings.mcp = {
+      ...(probeTool === null ? {} : { probe_tool: probeTool }),
+      ...(readerTools === null ? {} : { reader_tools: readerTools }),
+    }
+  }
+  return settings as ProjectSettings
+}

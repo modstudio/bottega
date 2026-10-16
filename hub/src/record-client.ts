@@ -17,6 +17,7 @@ import {
   OrchBlockersSchema,
   OrchStateSchema,
 } from '../../shared/orch-contract.ts'
+import { RecordProjectsSchema } from '../../shared/record-project-contract.ts'
 import { SubjectOutputSchema } from '../../shared/subjects.ts'
 import {
   BoardListResultSchema,
@@ -123,19 +124,6 @@ const whoamiSchema = z.object({
   activeSpaceId: z.string().nullable(),
   personalSpaceId: z.string().nullable(),
   memberships: z.array(z.record(z.string(), z.unknown())),
-})
-
-const projectSchema = z.object({
-  spaceId: z.string().uuid(),
-  spaceName: z.string(),
-  name: z.string(),
-  keyPrefixes: z.array(z.string()),
-  stack: z.string().nullable(),
-  managedContext: z.boolean(),
-  landingBranch: z.string().nullable(),
-  color: z.string().nullable(),
-  colorDark: z.string().nullable(),
-  retiredAt: z.string().nullable(),
 })
 
 const reviewListItemSchema = z
@@ -653,7 +641,7 @@ export function createRecordClient(options: RecordClientOptions) {
       ),
     latestReleases: (projectId: string) =>
       request(options, query('/v1/releases/latest', { projectId }), latestReleaseListSchema),
-    projects: () => request(options, '/v1/projects', z.array(projectSchema)),
+    projects: () => request(options, '/v1/projects', RecordProjectsSchema),
     snapshots: () => request(options, '/v1/snapshots', snapshotsSchema),
     boardList: (input: { kind?: 'notice' | 'question'; open?: boolean; includeEnded?: boolean }) =>
       request(

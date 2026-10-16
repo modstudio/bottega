@@ -19,7 +19,9 @@ export const recordModules: RecordModule[] = [
     '../../../shared/config-directory.ts',
     '../../../shared/record-client-addresses.ts',
   ]),
-  module('orchestrator/src/record/record-api-client-paths.ts', []),
+  module('orchestrator/src/record/record-api-client-paths.ts', [
+    '../../../shared/record-project-contract.ts',
+  ]),
   module('orchestrator/src/record/record-doc-command-check.ts', [
     '../doc/doc-command-check.ts',
     './record-doc-errors.ts',

@@ -619,6 +619,7 @@ export const importBoundaries: ImportBoundary[] = [
       'node:fs',
       '../database/db.ts',
       '../lens/lenses.ts',
+      './project-add-record.ts',
       './project-hosted-write.ts',
       './project-record-identity.ts',
       './project-rename.ts',
@@ -677,7 +678,13 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'record-api-projects-boundary',
     'orchestrator/src/record/record-api-projects.ts',
-    ['hono', 'zod', './record-auth.ts', './record-projects.ts'],
+    [
+      '../../../shared/record-project-contract.ts',
+      'hono',
+      'zod',
+      './record-auth.ts',
+      './record-projects.ts',
+    ],
     'Keep hosted project routes independent of SQL and local execution.',
   ),
   boundary(

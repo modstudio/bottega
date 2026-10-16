@@ -2,8 +2,9 @@
 /** Hosted project HTTP routes. Must not know SQL or local execution. */
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
+import type { RecordProject } from '../../../shared/record-project-contract.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import type { RecordProject, RecordProjectUpsertInput } from './record-projects.ts'
+import type { RecordProjectUpsertInput } from './record-projects.ts'
 
 type ApiEnvironment = { Variables: { identity: RecordIdentity } }
 type Tenant = {
