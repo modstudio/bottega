@@ -55,6 +55,12 @@ import {
   getDocStore,
 } from './doc-read-store.ts'
 import {
+  assertLocalReferenceRestore,
+  assertLocalReferenceWrite,
+  assertLocalStoredReferenceWrite,
+  skipsProseLint,
+} from './doc-reference-write.ts'
+import {
   docSubjects,
   validateDocSubject,
   validateHistoricDocAddress,
@@ -332,8 +338,30 @@ export {
 } from './doc-lint-adapter.ts'
 
 function assertDocLint(input: DocWriteInput, prior: Doc | null): void {
+  assertLocalReferenceWrite(prior, input)
+  if (skipsProseLint(prior, input)) return
   const refusal = storedDocLintRefusal(input, prior, input.canonTree)
   if (refusal) throw new Error(refusal)
+}
+
+function referenceRestoreState(
+  scope: string,
+  subject: string | null,
+  slug: string,
+  owner: string | null,
+  revision: DocRevision,
+): [string | null, Doc | null] {
+  const expectedCurrent = currentDocRevision(scope, subject, slug, owner)
+  const current = getDoc(scope, subject, slug, owner)
+  assertLocalReferenceRestore(current, revision)
+  return [expectedCurrent, current]
+}
+
+function hostedDocWriteFields(
+  input: DocWriteInput,
+  fields: ReturnType<typeof resolveLocalDocArticleFields>,
+) {
+  return { ...hostedArticleWriteFields(input, fields), generator: input.generator }
 }
 
 async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promise<Doc> {
@@ -398,7 +426,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         position: tree.position,
         featured: tree.featured,
         kind,
-        ...hostedArticleWriteFields(input, {
+        ...hostedDocWriteFields(input, {
           form,
           articleSubject,
           relatedSubjects,
@@ -556,6 +584,7 @@ export async function removeDoc(
   const identity = resolvedDocWriteIdentity(context)
   const doc = getDoc(scope, subject, slug, owner)
   if (!doc) return false
+  assertLocalStoredReferenceWrite(doc, context.generator)
   assertLocalRevisionWrite(
     { scope, expectedRevision: context.expectedRevision },
     doc.revision,
@@ -593,6 +622,7 @@ export async function removeDoc(
           author: identity.author,
           id: undefined,
           expectedRevision: context.expectedRevision,
+          generator: context.generator,
         })
         recordId = created.id
         hostedExpected = created.revisionId
@@ -601,6 +631,7 @@ export async function removeDoc(
         reason: identity.reason,
         author: identity.author,
         expectedRevision: hostedExpected,
+        generator: context.generator,
       })
       return commitDocRemove({
         scope,
@@ -632,6 +663,7 @@ export async function consumeDoc(
   const identity = resolvedDocWriteIdentity(context)
   const doc = getDoc(scope, subject, slug)
   if (!doc) throw new Error(`no ${scope} doc "${slug}"`)
+  assertLocalStoredReferenceWrite(doc)
   const consumedAt = nowIso()
   let patched: { body: string; alreadyConsumed: boolean }
   try {
@@ -848,7 +880,7 @@ export async function restoreDoc(
   ) {
     throw new Error(`no revision ${revisionId} for ${scope}/${subject ?? '_'}/${slug}`)
   }
-  const expectedCurrent = currentDocRevision(scope, subject, slug, owner)
+  const [expectedCurrent, current] = referenceRestoreState(scope, subject, slug, owner, revision)
   assertLocalRevisionWrite(
     { scope, expectedRevision: context.expectedRevision },
     expectedCurrent,
@@ -877,11 +909,11 @@ export async function restoreDoc(
       ...localRevisionArticleReferences(revision),
       ...context,
     },
-    getDoc(scope, subject, slug, owner),
+    current,
   )
   const projectName = docWriteProjectName(scope, subject)
   const projectId = projectName ? (projectByName(subject!)?.id ?? null) : null
-  const liveRecordId = getDoc(scope, subject, slug, owner)?.record_id
+  const liveRecordId = current?.record_id
   const restoredParentSlug = localRestoredParentSlug({
     scope,
     subject,
@@ -903,7 +935,7 @@ export async function restoreDoc(
       featured: revision.featured,
       ...context,
     },
-    getDoc(scope, subject, slug, owner),
+    current,
   )
   assertDocSections(revision.body, tree.audiences)
   return applyRecordWriteAuthority({

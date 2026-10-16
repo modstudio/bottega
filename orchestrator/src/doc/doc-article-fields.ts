@@ -1,4 +1,5 @@
 /** Resolves and validates article fields for a local document write. */
+
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type DocAudiences,
@@ -11,6 +12,7 @@ import {
 import type { CanonLintInputCollector } from '../canon/canon-files.ts'
 import type { CanonRow } from '../canon/canon-hydrate.ts'
 import { resolveSubject } from '../subject/subjects.ts'
+import type { DocGenerator } from './doc-generator.ts'
 import type { Doc, DocRevision } from './doc-read-store.ts'
 import { articleFieldRefusal, type CanonWriteTree } from './doc-write-allowed.ts'
 
@@ -24,6 +26,7 @@ export type DocWriteContext = {
   expectedRevision?: string
   canonTree?: CanonWriteTree
   collectCanonLintInput?: CanonLintInputCollector
+  generator?: DocGenerator
 }
 
 export type DocWriteInput = {

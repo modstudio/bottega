@@ -1,5 +1,6 @@
 // concern: doc-write-allowed
 /** Pure document write decisions. Must not know stores, filesystems, HTTP, or CLI. */
+
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   DOC_SCOPE_ALLOWS_OWNER,
@@ -12,6 +13,7 @@ import type { CanonFinding, CanonSourceText } from '../canon/canon-lint.ts'
 import { decideNextCanonSet } from '../canon/canon-write-gate.ts'
 import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from '../canon/pack-budget.ts'
 import { refuseSettingsBody } from '../settings/settings.ts'
+import { type DocGenerator, REFERENCE_GENERATOR } from './doc-generator.ts'
 import { docLintRefusal, introducedDocFindings, type LintableDoc, lintDoc } from './doc-lint.ts'
 
 export { refuseSettingsBody }
@@ -19,6 +21,37 @@ export { refuseSettingsBody }
 export const RECORD_WRITE_REMEDY = `cleared by: ${PLATFORM_SLUG} record doctor`
 export const MISSING_HOSTED_REVISION_REMEDY =
   'cleared by: repair the document revision state, then retry the write'
+
+export function isReferenceGeneratorWrite(input: {
+  storedForm?: string | null
+  requestedForm?: string | null
+  generator?: DocGenerator
+}): boolean {
+  return (
+    input.generator === REFERENCE_GENERATOR &&
+    // An omitted form keeps the stored one; an explicit null clears it, as the write itself resolves.
+    (input.requestedForm === undefined ? input.storedForm : input.requestedForm) === 'reference'
+  )
+}
+
+/** The children of a reference document are ordered by the publisher, never by hand. */
+export function referenceOrderRefusal(parentForm: string | null | undefined): string | null {
+  if (parentForm !== 'reference') return null
+  return `refusing reorder of generated reference pages\ncleared by: ${PLATFORM_SLUG} doc reference publish`
+}
+
+export function referenceWriteRefusal(input: {
+  storedForm?: string | null
+  requestedForm?: string | null
+  generator?: DocGenerator
+}): string | null {
+  if (input.generator === REFERENCE_GENERATOR) {
+    if (isReferenceGeneratorWrite(input)) return null
+    return 'refusing document write: the reference-publish generator marker is reserved for reference documents'
+  }
+  if (input.storedForm !== 'reference' && input.requestedForm !== 'reference') return null
+  return `refusing hand write of a generated reference document\ncleared by: ${PLATFORM_SLUG} doc reference publish`
+}
 
 export type DocDelivery = 'inject' | 'demand'
 export type DocRevisionOp =
@@ -377,7 +410,7 @@ export function consumeDocBody(
   if (!status) throw new Error('document has no status field in its YAML frontmatter')
   if (status.value === 'consumed') return { body, alreadyConsumed: true }
 
-  yaml = yaml.slice(0, status.valueStart) + 'consumed' + yaml.slice(status.valueEnd)
+  yaml = `${yaml.slice(0, status.valueStart)}consumed${yaml.slice(status.valueEnd)}`
   const stamps = [
     ['consumed', consumedAt],
     ['consumed_by', consumedBy],

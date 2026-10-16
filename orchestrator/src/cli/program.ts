@@ -15,6 +15,7 @@ import { register as registerLogic } from '../commands/logic.ts'
 import { register as registerPullRequest } from '../commands/pull-request.ts'
 import { register as registerRatchet } from '../commands/ratchet.ts'
 import { register as registerRecordAuth } from '../commands/record-auth.ts'
+import { register as registerReference } from '../commands/reference.ts'
 import { register as registerRelease } from '../commands/release.ts'
 import { register as registerReview } from '../commands/review.ts'
 import { register as registerRouting } from '../commands/routing.ts'
@@ -49,6 +50,7 @@ registerBoardCommands(program)
 registerRecordAuth(program)
 registerRelease(program)
 registerRatchet(program)
+registerReference(program)
 registerDocs(program)
 registerSubjects(program)
 registerRunListing(program)

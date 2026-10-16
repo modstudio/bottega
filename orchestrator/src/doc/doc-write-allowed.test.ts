@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { REFERENCE_GENERATOR } from './doc-generator.ts'
 import {
   articleFieldRefusal,
   canonRemovalRefusal,
   decideDocRevisionWrite,
   docWriteProjectName,
   globalCanonWriteTargets,
+  referenceWriteRefusal,
   refuseArticleDelivery,
   refuseCanonWrite,
   refuseMismatchedDocProject,
@@ -13,6 +15,45 @@ import {
   refuseSettingsAddress,
   userCanonWriteTargets,
 } from './doc-write-allowed.ts'
+
+test('reference writes require the explicit publisher marker for new and stored rows', () => {
+  expect(referenceWriteRefusal({ requestedForm: 'reference' })).toContain(
+    `${PLATFORM_SLUG} doc reference publish`,
+  )
+  expect(referenceWriteRefusal({ storedForm: 'reference' })).toContain(
+    `${PLATFORM_SLUG} doc reference publish`,
+  )
+  expect(
+    referenceWriteRefusal({
+      storedForm: 'reference',
+      requestedForm: 'reference',
+      generator: REFERENCE_GENERATOR,
+    }),
+  ).toBeNull()
+  expect(
+    referenceWriteRefusal({
+      requestedForm: 'overview',
+      generator: REFERENCE_GENERATOR,
+    }),
+  ).toContain('generator marker is reserved for reference documents')
+  expect(
+    referenceWriteRefusal({
+      storedForm: 'reference',
+      requestedForm: 'overview',
+      generator: REFERENCE_GENERATOR,
+    }),
+  ).toContain('generator marker is reserved for reference documents')
+  expect(
+    referenceWriteRefusal({
+      storedForm: 'reference',
+      requestedForm: null,
+      generator: REFERENCE_GENERATOR,
+    }),
+  ).toContain('generator marker is reserved for reference documents')
+  expect(
+    referenceWriteRefusal({ storedForm: 'reference', generator: REFERENCE_GENERATOR }),
+  ).toBeNull()
+})
 
 test('article fields require an article project and distinct subject attachments', () => {
   const valid = {

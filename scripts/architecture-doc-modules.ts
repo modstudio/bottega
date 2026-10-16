@@ -15,7 +15,21 @@ export const docModules: DocModule[] = [
   module('orchestrator/src/doc/local-doc-order.ts', [
     '../database/db.ts',
     './doc-order.ts',
+    './doc-write-allowed.ts',
     './doc-write-guard.ts',
+  ]),
+  module('orchestrator/src/doc/reference-publish.ts', [
+    'node:fs',
+    'node:path',
+    '../../../shared/brand.ts',
+    '../../../shared/git.ts',
+    './docs.ts',
+    './doc-generator.ts',
+  ]),
+  module('orchestrator/src/doc/doc-generator.ts', []),
+  module('orchestrator/src/doc/doc-reference-write.ts', [
+    './doc-generator.ts',
+    './doc-write-allowed.ts',
   ]),
   module('orchestrator/src/doc/doc-resume-frontmatter.ts', []),
   module('orchestrator/src/doc/doc-article-fields.ts', [
@@ -26,6 +40,7 @@ export const docModules: DocModule[] = [
     '../subject/subjects.ts',
     './doc-read-store.ts',
     './doc-write-allowed.ts',
+    './doc-generator.ts',
   ]),
   module('shared/doc-sections.ts', [
     'mdast-util-directive',

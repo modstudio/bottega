@@ -1,5 +1,6 @@
 // concern: record-doc-api-schemas
 /** Validates hosted document import payloads at the HTTP edge. */
+
 import { z } from 'zod'
 import {
   DOC_AUDIENCES,
@@ -11,7 +12,16 @@ import {
   normalizeDocSourceFiles,
 } from '../../../shared/docs.ts'
 import { isUserCanonSlug } from '../canon/user-canon-home.ts'
+import { REFERENCE_GENERATOR } from '../doc/doc-generator.ts'
 
+/** The reference publisher marker as the HTTP edge accepts it. */
+const docGeneratorSchema = z.literal(REFERENCE_GENERATOR).optional()
+export const docWriteContextSchema = z.object({
+  reason: z.string().trim().min(1),
+  author: z.string().trim().min(1),
+  expectedRevision: z.string().uuid().optional(),
+  generator: docGeneratorSchema,
+})
 const isoSchema = z.string().datetime({ offset: true })
 const deliverySchema = z.enum(['inject', 'demand'])
 const revisionOpSchema = z.enum([
@@ -70,6 +80,7 @@ export const recordDocUpsertSchema = z.object({
   id: z.string().uuid().optional(),
   revisionId: z.string().uuid().optional(),
   expectedRevision: z.string().uuid().optional(),
+  generator: docGeneratorSchema,
 })
 
 export const recordDocOrderSchema = z.object({

@@ -3,10 +3,18 @@
 
 import { db, writeTransaction } from '../database/db.ts'
 import { type DocOrderInput, docOrderRefusal, localDocId } from './doc-order.ts'
+import { referenceOrderRefusal } from './doc-write-allowed.ts'
 
 export function executeLocalDocOrder(input: DocOrderInput): { orderedIds: string[] } {
   const ordered = input.orderedIds.map(localDocId)
   return writeTransaction(() => {
+    if (input.parentId !== null) {
+      const parent = db()
+        .query<{ form: string | null }, [number]>('SELECT form FROM doc WHERE id=?')
+        .get(localDocId(input.parentId))
+      const referenceRefusal = referenceOrderRefusal(parent?.form)
+      if (referenceRefusal) throw new Error(referenceRefusal)
+    }
     const current = db()
       .query<{ id: number }, [string, string, number | null]>(
         `SELECT id FROM doc

@@ -44,6 +44,7 @@ documents, canon, code search, and ports
 - [bottega doc port skip](#bottega-doc-port-skip)
 - [bottega doc port skip add](#bottega-doc-port-skip-add)
 - [bottega doc port skip list](#bottega-doc-port-skip-list)
+- [bottega doc reference publish](#bottega-doc-reference-publish)
 - [bottega doc reorder](#bottega-doc-reorder)
 - [bottega doc restore](#bottega-doc-restore)
 - [bottega doc resumes](#bottega-doc-resumes)
@@ -82,6 +83,7 @@ documents, canon, code search, and ports
 - [bottega doc lint](./doc.md#bottega-doc-lint)
 - [bottega doc list](./doc.md#bottega-doc-list)
 - [bottega doc port](./doc.md#bottega-doc-port)
+- [bottega doc reference publish](./doc.md#bottega-doc-reference-publish)
 - [bottega doc reorder](./doc.md#bottega-doc-reorder)
 - [bottega doc restore](./doc.md#bottega-doc-restore)
 - [bottega doc resumes](./doc.md#bottega-doc-resumes)
@@ -713,6 +715,16 @@ list skipped candidates
 ### Related
 
 - [bottega doc port skip](./doc.md#bottega-doc-port-skip)
+
+## bottega doc reference publish
+
+**Synopsis:** `bottega doc reference publish`
+
+publish the generated command reference
+
+### Related
+
+- [bottega doc](./doc.md#bottega-doc)
 
 ## bottega doc reorder
 

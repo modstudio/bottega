@@ -7,11 +7,13 @@ import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { builtCommitResponse } from '../../../shared/built-commit.ts'
 import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, type DocAudience } from '../../../shared/docs.ts'
+import type { DocGenerator } from '../doc/doc-generator.ts'
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { registerRecordAccessRoutes, registerRecordCors } from './record-api-access.ts'
 import type { RecordBoardDeps } from './record-api-board.ts'
 import {
+  docWriteContextSchema,
   recordCanonImportSchema,
   recordDocImportSchema,
   recordDocUpsertSchema,
@@ -87,6 +89,13 @@ type ApiEnvironment = {
   Variables: { identity: RecordIdentity; destinationSpaceId?: string }
 }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
+type RecordDocMutationInput = {
+  id: string
+  reason: string
+  author: string
+  expectedRevision?: string
+  generator?: DocGenerator
+}
 type Deps = RecordSubjectRouteDeps & RecordReleaseRouteDeps & RecordSyncRouteDeps & RecordApiDeps
 type RecordApiDeps = RecordInvitationRouteDeps & {
   recordUrl: string
@@ -143,16 +152,15 @@ type RecordApiDeps = RecordInvitationRouteDeps & {
       id?: string
       revisionId?: string
       expectedRevision?: string
+      generator?: DocGenerator
     },
   ): Promise<{ id: string; revisionId: string }>
   reorderDocs(input: Tenant & RecordDocOrderInput): Promise<{ orderedIds: string[] }>
   importDoc(input: Tenant & RecordDocImportInput): Promise<{ id: string; revisionIds: string[] }>
   importCanon(input: Tenant & RecordCanonImportInput): Promise<RecordCanonImportResult>
-  deleteDoc(
-    input: Tenant & { id: string; reason: string; author: string; expectedRevision?: string },
-  ): Promise<{ id: string; revisionId: string }>
+  deleteDoc(input: Tenant & RecordDocMutationInput): Promise<{ id: string; revisionId: string }>
   consumeDoc(
-    input: Tenant & { id: string; reason: string; author: string; expectedRevision?: string },
+    input: Tenant & RecordDocMutationInput,
   ): Promise<{ id: string; revisionId: string; alreadyConsumed: boolean }>
   restoreDoc(
     input: Tenant & {
@@ -267,11 +275,6 @@ const wrapSchema = z.object({
   senderKeyId: keyIdSchema,
   enc: base64urlSchema,
   ciphertext: base64urlSchema,
-})
-const docWriteContextSchema = z.object({
-  reason: z.string().trim().min(1),
-  author: z.string().trim().min(1),
-  expectedRevision: z.string().uuid().optional(),
 })
 const activeSpaceRemedy = `run \`${PLATFORM_SLUG} record space switch <slug>\` to select an active space`
 

@@ -4,6 +4,7 @@
 import { SQL } from 'bun'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { docOrderRefusal } from '../doc/doc-order.ts'
+import { referenceOrderRefusal } from '../doc/doc-write-allowed.ts'
 import { RecordDocError } from './record-doc-errors.ts'
 
 export type RecordDocOrder = {
@@ -21,6 +22,16 @@ export async function reorderRecordDocRows(
   try {
     return await client.begin(async (tx) => {
       await bindTenant(tx, input)
+      if (input.parentId !== null) {
+        const parents = await tx`
+          SELECT form FROM doc
+          WHERE space_id=${input.spaceId}::uuid AND id=${input.parentId}::uuid
+        `
+        const referenceRefusal = referenceOrderRefusal(
+          parents[0]?.form == null ? null : String(parents[0].form),
+        )
+        if (referenceRefusal) throw new RecordDocError(referenceRefusal)
+      }
       const rows = await tx`
         SELECT id FROM doc
         WHERE space_id=${input.spaceId}::uuid

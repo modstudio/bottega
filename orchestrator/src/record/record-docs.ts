@@ -1,5 +1,6 @@
 // concern: record-docs
 /** Owns tenant-bound hosted document reads and writes. Must not know local cache, CLI, or HTTP. */
+
 import { SQL } from 'bun'
 import { assertDocSections } from '../../../shared/doc-sections.ts'
 import type { DocAudiences, DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
@@ -9,6 +10,7 @@ import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.
 import { planCanonImport } from '../canon/canon-import-policy.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
 import { nonCurrentCanonCollisionRefusal } from '../doc/canon-import-collision.ts'
+import type { DocGenerator } from '../doc/doc-generator.ts'
 import {
   canonFindingsRefusal,
   consumeDocBody,
@@ -49,6 +51,12 @@ import {
   recordDocRevisionIdentityRefusal,
 } from './record-doc-mapping.ts'
 import { type RecordDocOrder, reorderRecordDocRows } from './record-doc-order.ts'
+import {
+  assertHostedReferenceImportAllowed,
+  assertHostedReferenceLintAllowed,
+  assertHostedReferenceUpsertAllowed,
+  assertHostedStoredReferenceWriteAllowed,
+} from './record-doc-reference-write.ts'
 import { insertRecordDocRevision } from './record-doc-revision-write.ts'
 import {
   storedDocAudiences,
@@ -140,6 +148,7 @@ type RecordDocWriteInput = Tenant & {
   id?: string
   revisionId?: string
   expectedRevision?: string
+  generator?: DocGenerator
 }
 
 function assertUpsertAddress(input: RecordDocWriteInput): void {
@@ -174,6 +183,7 @@ export async function upsertRecordDoc(
         AND deleted_at IS NULL
       FOR UPDATE
     `
+    assertHostedReferenceUpsertAllowed(existing[0], input)
     assertRevisionWrite({
       expectedRevision: input.expectedRevision,
       current: existing[0]?.latest_revision_id,
@@ -210,20 +220,7 @@ export async function upsertRecordDoc(
       )
     }
     assertWrite(refuseArticleDelivery({ ...input, delivery, kind }))
-    assertWrite(
-      recordDocLintRefusal(
-        { ...input, kind },
-        existing[0]
-          ? {
-              scope: String(existing[0].scope),
-              subject: existing[0].subject == null ? null : String(existing[0].subject),
-              slug: String(existing[0].slug),
-              body: String(existing[0].body),
-              kind: (existing[0].kind == null ? 'working' : String(existing[0].kind)) as DocKind,
-            }
-          : undefined,
-      ),
-    )
+    assertHostedReferenceLintAllowed(existing[0], input, kind)
     const resolvedProject = await resolvedDocProjectId(tx, input.spaceId, input)
     const articleFields = await resolveHostedArticleFields(
       tx,
@@ -557,6 +554,7 @@ export async function deleteRecordDoc(
     author: string
     sessionId?: string | null
     expectedRevision?: string
+    generator?: DocGenerator
   },
 ): Promise<{ id: string; revisionId: string }> {
   return tenant(input, async (tx) => {
@@ -565,6 +563,7 @@ export async function deleteRecordDoc(
     `
     if (!rows[0]) throw new RecordDocError('doc not found', 404)
     const doc = rows[0] as Record<string, unknown>
+    assertHostedReferenceUpsertAllowed(doc, input)
     assertRevisionWrite({
       expectedRevision: input.expectedRevision,
       current: doc.latest_revision_id,
@@ -643,6 +642,7 @@ export async function consumeRecordDoc(
     `
     if (!rows[0]) throw new RecordDocError('doc not found', 404)
     const doc = rows[0] as Record<string, unknown>
+    assertHostedStoredReferenceWriteAllowed(doc)
     assertRevisionWrite({
       expectedRevision: input.expectedRevision,
       current: doc.latest_revision_id,
@@ -707,19 +707,19 @@ export async function restoreRecordDoc(
       WHERE space_id=${input.spaceId}::uuid AND id=${input.id}::uuid
       FOR UPDATE
     `
-    if (!existing[0]) throw new RecordDocError('doc not found', 404)
+    const live = storedReferenceWriteRow(existing[0])
     assertRevisionWrite({
       expectedRevision: input.expectedRevision,
-      current: existing[0].latest_revision_id,
+      current: live.latest_revision_id,
       isCreate: false,
-      scope: String(existing[0].scope),
+      scope: String(live.scope),
     })
     const revisionRows = await tx`
       SELECT * FROM doc_revision
       WHERE space_id=${input.spaceId}::uuid AND id=${input.revisionId}::uuid AND doc_id=${input.id}::uuid
     `
     if (!revisionRows[0]) throw new RecordDocError('revision not found', 404)
-    const [revision, live] = [revisionRows[0], existing[0]] as [StoredDocRow, StoredDocRow]
+    const revision = revisionRows[0] as StoredDocRow
     const scope = String(live.scope)
     const subject = live.subject == null ? null : String(live.subject)
     const owner = live.owner_user_id == null ? null : String(live.owner_user_id)
@@ -886,6 +886,22 @@ function assertImportedRevisions(
   assertDocSections(doc.body, recordDocAudiences(doc.audiences))
 }
 
+function storedReferenceWriteRow(row: Record<string, unknown> | undefined): StoredDocRow {
+  if (!row) throw new RecordDocError('doc not found', 404)
+  assertHostedStoredReferenceWriteAllowed(row)
+  return row as StoredDocRow
+}
+
+async function referenceImportExisting(
+  tx: SQL,
+  spaceId: string,
+  doc: ReturnType<typeof normalizeRecordDocImport>['doc'],
+): Promise<Record<string, unknown> | undefined> {
+  const existing = await existingDocAtAddress(tx, spaceId, doc)
+  assertHostedReferenceImportAllowed(existing, doc.form)
+  return existing
+}
+
 export async function importRecordDoc(
   input: Tenant & RecordDocImportInput,
 ): Promise<{ id: string; revisionIds: string[] } & HostedArticleResponse> {
@@ -899,7 +915,7 @@ export async function importRecordDoc(
   )
   assertImportedRevisions(importedDoc, revisions)
   return tenant(input, async (tx) => {
-    const existing = await existingDocAtAddress(tx, input.spaceId, importedDoc)
+    const existing = await referenceImportExisting(tx, input.spaceId, importedDoc)
     assertRevisionWrite({
       expectedRevision: input.expectedRevision,
       current: existing?.latest_revision_id,

@@ -1,7 +1,10 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { DocAudience } from '../../../shared/docs.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
+import { upsertProject } from '../project/projects.ts'
+import { REFERENCE_GENERATOR } from './doc-generator.ts'
 import { hostedDocOrder } from './doc-order.ts'
 import { reorderDocs } from './docs.ts'
 
@@ -152,4 +155,50 @@ test('hosted order translates local ids and names a document without a record id
   ).toThrow(
     `document "first" has no hosted record id; cleared by: run ${PLATFORM_SLUG} record push-docs`,
   )
+})
+
+test('reorder refuses the children of a generated reference page', async () => {
+  upsertProject({ name: PLATFORM_SLUG, path: process.cwd(), settings: {} })
+  const page = {
+    kind: 'article' as const,
+    delivery: 'demand' as const,
+    audiences: ['technical'] as [DocAudience],
+    form: 'reference' as const,
+    generator: REFERENCE_GENERATOR,
+  }
+  const parent = await setDoc({
+    scope: 'project',
+    subject: PLATFORM_SLUG,
+    slug: 'cli',
+    title: 'CLI',
+    body: 'Index',
+    ...page,
+  })
+  const first = await setDoc({
+    scope: 'project',
+    subject: PLATFORM_SLUG,
+    slug: 'cli-run',
+    title: 'run',
+    body: 'Run',
+    parentSlug: parent.slug,
+    ...page,
+  })
+  const second = await setDoc({
+    scope: 'project',
+    subject: PLATFORM_SLUG,
+    slug: 'cli-doc',
+    title: 'doc',
+    body: 'Doc',
+    parentSlug: parent.slug,
+    ...page,
+  })
+
+  await expect(
+    reorderDocs({
+      scope: 'project',
+      subject: PLATFORM_SLUG,
+      parentId: String(parent.id),
+      orderedIds: [String(second.id), String(first.id)],
+    }),
+  ).rejects.toThrow(`cleared by: ${PLATFORM_SLUG} doc reference publish`)
 })
