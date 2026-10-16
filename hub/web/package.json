@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test": "bun test",
+    "test": "bun test && bun run --cwd ../ui test",
     "build": "vite build",
     "smoke": "bun scripts/smoke.ts",
     "typecheck": "bun run --cwd ../ui typecheck && tsc --noEmit"

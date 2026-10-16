@@ -4,6 +4,7 @@ import { extname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Glob } from 'bun'
 import {
+  HUB_PACKAGE_PREFIX,
   HUB_UI_PACKAGE,
   HUB_UI_ROOT,
   hubWorkspaceDependencies,
@@ -44,13 +45,13 @@ const workspaceNames = new Set(
 
 for (const relativePath of new Glob('hub/*/package.json').scanSync({ cwd: ROOT })) {
   const packageJson = readPackage(join(ROOT, relativePath))
-  if (!packageJson.name?.startsWith('@bottega/hub-')) continue
+  if (!packageJson.name?.startsWith(HUB_PACKAGE_PREFIX)) continue
   if (!(packageJson.name in hubWorkspaceDependencies)) {
     violations.push(`${relativePath}: ${packageJson.name} is missing from hubWorkspaceDependencies`)
     continue
   }
   const allowed = new Set<string>(
-    hubWorkspaceDependencies[packageJson.name as keyof typeof hubWorkspaceDependencies],
+    hubWorkspaceDependencies[packageJson.name] ?? [],
   )
   for (const field of dependencyFields) {
     const dependencies = packageJson[field as keyof PackageJson]

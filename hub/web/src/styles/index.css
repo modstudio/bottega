@@ -1,8 +1,8 @@
 /* Order matters: the theme resets Tailwind's defaults before anything adds names. */
 @import "tailwindcss";
-@source "../../../ui/src";
 @import "@bottega/hub-ui/styles/tokens.css";
 @import "@bottega/hub-ui/styles/theme.css";
 @import "./markdown.css";
 @import "./doc-editor.css";
 @import "./doc-editor-rich.css";
+@source "../../../ui/src";

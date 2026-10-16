@@ -17,8 +17,8 @@ import { docModules } from './architecture-doc-modules.ts'
 import { enforcementModules } from './architecture-enforcement-modules.ts'
 import { focusedTestModules } from './architecture-focused-test-modules.ts'
 import { gateModules } from './architecture-gate-modules.ts'
-import { HUB_UI_PACKAGE, HUB_UI_ROOT } from './architecture-hub-packages.ts'
 import { hubModuleSpecs } from './architecture-hub-modules.ts'
+import { HUB_UI_PACKAGE } from './architecture-hub-packages.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
 import { metricModules } from './architecture-metric-modules.ts'
 import { monitorModules } from './architecture-monitor-modules.ts'
@@ -41,7 +41,7 @@ import { settingsModules } from './architecture-settings-modules.ts'
 import { setupModuleSpecs } from './architecture-setup-modules.ts'
 import { subjectModules } from './architecture-subject-modules.ts'
 import { testSubstanceModules } from './architecture-test-substance-modules.ts'
-import { uiFolders, uiLayers } from './architecture-ui-layers.ts'
+import { uiArchitectureRules } from './architecture-ui-layers.ts'
 import { workflowFloorModules } from './architecture-workflow-floor-modules.ts'
 import { worktreeModules } from './architecture-worktree-modules.ts'
 
@@ -758,7 +758,7 @@ const allowedCycles: ArchitectureCycle[] = [
 export const exactArchitecturePath = (path: string) =>
   `^${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`
 
-export function architectureDependencyPath(target: string) {
+function architectureDependencyPath(target: string) {
   if (target.startsWith('node:')) return exactArchitecturePath(target.slice('node:'.length))
   if (target === 'bun') return '(^|/)node_modules/\\.bun/[^/]+/node_modules/@types/bun/'
   if (target.includes(':')) return exactArchitecturePath(target)
@@ -886,57 +886,7 @@ export function architectureRules() {
         },
       })),
     ),
-    {
-      name: 'hub-ui-is-a-leaf',
-      severity: 'error',
-      comment:
-        'The component library knows nothing of data, routing or hub mode and imports its own modules through relative paths.',
-      from: { path: `^${HUB_UI_ROOT}/` },
-      to: {
-        path: [
-          '^hub/(?:web|src)/',
-          '^@/(?:trpc|lib/hub-mode)',
-          '^@tanstack/(?:react-query|react-router)$',
-          '^@trpc/',
-          architectureDependencyPath('@tanstack/react-query'),
-          architectureDependencyPath('@tanstack/react-router'),
-          architectureDependencyPath('@trpc/client'),
-          architectureDependencyPath('@trpc/server'),
-          architectureDependencyPath('@trpc/tanstack-react-query'),
-        ].join('|'),
-      },
-    },
-    {
-      name: 'hub-ui-folder-has-a-layer',
-      severity: 'error',
-      comment: 'Every ui/ folder is declared in uiLayers in architecture-ui-layers.ts.',
-      from: {
-        path: '^hub/ui/src/',
-        pathNot: uiFolders(uiLayers.flatMap((layer) => layer.folders)),
-      },
-      to: {},
-    },
-    ...uiLayers.slice(0, -1).map((layer, index) => ({
-      name: `hub-ui-${layer.name}-imports-no-higher-layer`,
-      severity: 'error' as const,
-      comment: `A ${layer.name} folder may import only its own or a lower ui layer.`,
-      from: { path: uiFolders(layer.folders) },
-      to: { path: uiFolders(uiLayers.slice(index + 1).flatMap((higher) => higher.folders)) },
-    })),
-    {
-      name: 'hub-ui-source-imports-use-package-exports',
-      severity: 'error',
-      comment: 'Code outside hub-ui imports it through package exports, never source paths.',
-      from: { path: '^(?!hub/ui/)' },
-      to: { path: '^hub/ui/src/', dependencyTypes: ['local'] },
-    },
-    {
-      name: 'hub-ui-package-imports-resolve-declared-exports',
-      severity: 'error',
-      comment: 'Every hub-ui package import names a declared export subpath.',
-      from: { path: '^(?!hub/ui/)' },
-      to: { path: `^${HUB_UI_PACKAGE}/`, couldNotResolve: true },
-    },
+    ...uiArchitectureRules(architectureDependencyPath, HUB_UI_PACKAGE),
     hubWebViewDataRule,
     {
       name: 'import-cli-boundary',
