@@ -178,6 +178,19 @@ function namedRunAlive(lookup: NamedRunLookup): boolean {
   return lookup.outcome === 'owned' && lookup.run.alive
 }
 
+function observeNamedRunForSweep(
+  name: string,
+  branchTemplate: string | undefined,
+  project: Project,
+  label: string,
+  presentation: CleanupPresentation,
+): { alive: boolean; failed: boolean } {
+  const lookup = namedRun(name, branchTemplate, project)
+  if (lookup.outcome !== 'unknown') return { alive: namedRunAlive(lookup), failed: false }
+  presentation.error(`could not reclaim ${label}: ${lookup.reason}`)
+  return { alive: true, failed: true }
+}
+
 function conversationProjectOwnershipIssue(rootId: number): string | null {
   const members = db()
     .query(
@@ -675,19 +688,20 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       if (remembered.has(realpathSync(path))) continue
 
       const label = `orphan  ${path}`
-      const named = namedRun(entry.name, p.settings.worktree?.branch, p)
-      if (named.outcome === 'unknown') {
-        cleanupFailed = true
-        keep(`${label}  ownership unknown: ${named.reason}`, 'project ownership unknown')
-        options.presentation.error(`could not reclaim ${label}: ${named.reason}`)
-        continue
-      }
+      const named = observeNamedRunForSweep(
+        entry.name,
+        p.settings.worktree?.branch,
+        p,
+        label,
+        options.presentation,
+      )
+      cleanupFailed ||= named.failed
       const trunk =
         typeof p.settings.trunk === 'string' && p.settings.trunk.trim() ? p.settings.trunk : 'HEAD'
       const safe = orphanSafety(path, p.path, trunk)
       const eligibilityRuling = decideFilesystemOrphanEligibility({
         orchOwned: isOrchWorktree(path, p.settings.worktree?.branch),
-        alive: namedRunAlive(named),
+        alive: named.alive,
         safe,
         dry,
       })
