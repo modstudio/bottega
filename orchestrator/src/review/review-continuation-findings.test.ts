@@ -19,6 +19,11 @@ const group = {
 function fixture(): Database {
   const database = new Database(':memory:')
   applyMigrations(database)
+  database
+    .query(
+      "INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture','/fixture','{}')",
+    )
+    .run(newRecordId())
   return database
 }
 
@@ -36,8 +41,9 @@ function addReview(
   const run = database
     .query<{ id: number }, []>(
       `INSERT INTO run
-         (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch)
-       VALUES ('${newRecordId()}','2026-10-12','codex','review-lens','sha',1,'head','ok','fixture','DEV-1258')
+         (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_record_id,branch)
+       VALUES ('${newRecordId()}','2026-10-12','codex','review-lens','sha',1,'head','ok','fixture',
+               (SELECT record_id FROM project WHERE name='fixture'),'DEV-1258')
        RETURNING id`,
     )
     .get()!
