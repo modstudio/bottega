@@ -18,20 +18,26 @@ test('a project-scoped sweep previews reclamation only for that project', () => 
   const bravoRun = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
   const alphaName = `docker-alpha-${alphaRun}`
   const bravoName = `docker-bravo-${bravoRun}`
+  const alphaRecordId = newRecordId()
+  const bravoRecordId = newRecordId()
   upsertProject({
-    recordId: newRecordId(),
+    recordId: alphaRecordId,
     name: alphaName,
     path: join(dir, alphaName),
     settings: {},
   })
   upsertProject({
-    recordId: newRecordId(),
+    recordId: bravoRecordId,
     name: bravoName,
     path: join(dir, bravoName),
     settings: {},
   })
-  db().query('UPDATE run SET repo=? WHERE id=?').run(alphaName, alphaRun)
-  db().query('UPDATE run SET repo=? WHERE id=?').run(bravoName, bravoRun)
+  db()
+    .query('UPDATE run SET repo=?,project_record_id=? WHERE id=?')
+    .run(alphaName, alphaRecordId, alphaRun)
+  db()
+    .query('UPDATE run SET repo=?,project_record_id=? WHERE id=?')
+    .run(bravoName, bravoRecordId, bravoRun)
   const commands: string[] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     const command = args.join(' ')
@@ -56,6 +62,35 @@ test('a project-scoped sweep previews reclamation only for that project', () => 
   expect(lines).toContain(`would tear down disposable Docker resources for run ${alphaRun}`)
   expect(lines.join('\n')).not.toContain(`run ${bravoRun}`)
   expect(commands.filter((command) => command.startsWith('docker '))).toHaveLength(3)
+})
+
+test('a project-scoped sweep still finds Docker resources after the project is renamed', () => {
+  const run = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+  const oldName = `docker-before-rename-${run}`
+  const newName = `docker-after-rename-${run}`
+  const recordId = newRecordId()
+  upsertProject({ recordId, name: oldName, path: join(dir, oldName), settings: {} })
+  db().query('UPDATE run SET repo=?,project_record_id=? WHERE id=?').run(oldName, recordId, run)
+  db().query('UPDATE project SET name=? WHERE record_id=?').run(newName, recordId)
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    const command = args.join(' ')
+    if (command.startsWith('docker ps -a --format')) return result(`app-orch-${run}-web`)
+    if (command.startsWith('docker volume ls --format')) return result('')
+    if (command === 'docker network ls --format {{.Name}}') return result('')
+    return result('', 1, `unexpected command: ${command}`)
+  }) as typeof Bun.spawnSync)
+  const lines: string[] = []
+
+  const failed = reclaimSweptDockerResources({
+    dryRun: true,
+    selectedProject: projectByName(newName)!,
+    presentation: presentation(lines),
+    inventoryErrors: new Set(),
+    leaked: new Map(),
+  })
+
+  expect(failed).toBeFalse()
+  expect(lines).toContain(`would tear down disposable Docker resources for run ${run}`)
 })
 
 test('an unattributable worktree resource is an observation, not a sweep failure', () => {

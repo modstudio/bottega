@@ -36,6 +36,7 @@ import type { CleanupPresentation } from './cleanup.ts'
 type DockerOwner = {
   id: number
   repo: string | null
+  project_record_id: string | null
   worktree: string | null
   status: string
   worktree_source: Worktree['source'] | null
@@ -48,7 +49,9 @@ type DockerOwner = {
 function dockerOwners(ownerIds: Set<number>): DockerOwner[] {
   const rows = db()
     .query(
-      `SELECT r.id,COALESCE(root.repo,r.repo) repo,r.worktree,r.status,
+      `SELECT r.id,COALESCE(root.repo,r.repo) repo,
+              COALESCE(root.project_record_id,r.project_record_id) project_record_id,
+              r.worktree,r.status,
               COALESCE(root.worktree_source,r.worktree_source) worktree_source,
               COALESCE(root.recipe_snapshot,r.recipe_snapshot) recipe_snapshot,
               COALESCE(root.resource_teardown,r.resource_teardown) resource_teardown
@@ -106,7 +109,7 @@ function terminalOwnerInScope(
   return (
     ownerIds.has(owner.id) &&
     ['ok', 'failed', 'stale', 'stopped'].includes(owner.status) &&
-    (!selectedProject || owner.repo === selectedProject.name)
+    (!selectedProject || owner.project_record_id === selectedProject.recordId)
   )
 }
 
@@ -474,10 +477,12 @@ export function reclaimSweptDockerResources(input: {
     selectedProject,
   })
   failed ||= reclaimedResult.failed
+  const projectRecordIdByRun = new Map(owners.map((owner) => [owner.id, owner.project_record_id]))
   const classified = classifiedDockerResources(resources, owners).filter(
     (item) =>
       !reclaimedResult.reclaimed.has(item.resource.runId) &&
-      (!selectedProject || item.project === selectedProject.name),
+      (!selectedProject ||
+        projectRecordIdByRun.get(item.resource.runId) === selectedProject.recordId),
   )
   for (const { resource, project, condition } of classified) {
     if (condition === 'retained-worktree-resources') continue
