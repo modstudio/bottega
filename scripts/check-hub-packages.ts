@@ -9,6 +9,8 @@ import {
   HUB_PACKAGE_PREFIX,
   HUB_UI_PACKAGE,
   HUB_UI_ROOT,
+  HUB_VIEWS_PACKAGE,
+  HUB_VIEWS_ROOT,
   hubWorkspaceDependencies,
 } from './architecture-hub-packages.ts'
 import { isDeclaredHubUiSourceLocation } from './architecture-ui-layers.ts'
@@ -140,6 +142,53 @@ for (const subpath of Object.keys(actualExports)) {
 
 if (uiPackage.name !== HUB_UI_PACKAGE) {
   violations.push(`${relative(ROOT, uiPackagePath)}: package name must be ${HUB_UI_PACKAGE}`)
+}
+
+const viewsPackagePath = join(ROOT, HUB_VIEWS_ROOT, 'package.json')
+const viewsPackage = readPackage(viewsPackagePath)
+const viewExportSources = new Map<string, string[]>()
+for (const path of new Glob('**/*.{ts,tsx,css}').scanSync({
+  cwd: join(ROOT, HUB_VIEWS_ROOT, 'src'),
+})) {
+  if (/\.(?:test|spec|stories)\.[cm]?tsx?$/.test(path)) continue
+  const normalized = path.split(sep).join('/')
+  const subpath = exportSubpath(normalized)
+  const sources = viewExportSources.get(subpath) ?? []
+  sources.push(`${HUB_VIEWS_ROOT}/src/${normalized}`)
+  viewExportSources.set(subpath, sources)
+}
+for (const [subpath, sources] of viewExportSources) {
+  if (sources.length > 1) {
+    violations.push(
+      `${relative(ROOT, viewsPackagePath)}: export ${subpath} is derived from ${sources.join(' and ')}`,
+    )
+  }
+}
+const expectedViewExports = Object.fromEntries(
+  [...viewExportSources.entries()]
+    .map(([subpath, sources]) => [
+      subpath,
+      `./src/${sources[0].slice(`${HUB_VIEWS_ROOT}/src/`.length)}`,
+    ])
+    .sort(([left], [right]) => left.localeCompare(right)),
+)
+const actualViewExports = viewsPackage.exports ?? {}
+for (const [subpath, source] of Object.entries(expectedViewExports)) {
+  if (actualViewExports[subpath] !== source) {
+    violations.push(
+      `${relative(ROOT, viewsPackagePath)}: export ${subpath} must point to ${source}`,
+    )
+  }
+}
+for (const subpath of Object.keys(actualViewExports)) {
+  if (!(subpath in expectedViewExports)) {
+    violations.push(
+      `${relative(ROOT, viewsPackagePath)}: export ${subpath} has no public source file`,
+    )
+  }
+}
+if (viewsPackage.name !== HUB_VIEWS_PACKAGE) {
+  violations.push(`${relative(ROOT, viewsPackagePath)}: package name must be ${HUB_VIEWS_PACKAGE}`)
 }
 
 const dataPackagePath = join(ROOT, HUB_DATA_ROOT, 'package.json')

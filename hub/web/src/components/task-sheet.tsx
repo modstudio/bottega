@@ -8,13 +8,13 @@ import { Textarea } from '@bottega/hub-ui/field/textarea'
 import { DisplayRow, FieldSection, SettingBlock } from '@bottega/hub-ui/form-layout'
 import { Identifier } from '@bottega/hub-ui/identifier'
 import { Select } from '@bottega/hub-ui/listbox/select'
+import { Markdown } from '@bottega/hub-views/markdown'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { relativeTime } from '@/lib/format'
 import { taskStatusLook } from '@/lib/task-status'
 import { ProjectMark, SourceMark } from './design-system'
 import { HostedTaskSheet } from './hosted-task-sheet'
-import { Markdown } from './markdown/markdown'
 
 function reasonRows(capabilities: TaskRecordResponse['capabilities']) {
   const entries = [

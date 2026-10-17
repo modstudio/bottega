@@ -6,8 +6,7 @@ import { Glob } from 'bun'
 import ts from 'typescript'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
-const PREVIEW = join(ROOT, 'hub/ui/.storybook/preview.tsx')
-const STORIES = join(ROOT, 'hub/ui/src')
+const PACKAGES = ['hub/ui', 'hub/views'] as const
 
 function propertyName(node: ts.PropertyName | undefined) {
   return node && (ts.isIdentifier(node) || ts.isStringLiteral(node)) ? node.text : undefined
@@ -55,7 +54,7 @@ function variableDeclarations(source: ts.SourceFile) {
   return declarations
 }
 
-export function analyzePreview(sourceText: string) {
+export function analyzePreview(sourceText: string, path = 'hub/ui/.storybook/preview.tsx') {
   const source = ts.createSourceFile(
     'preview.tsx',
     sourceText,
@@ -76,7 +75,7 @@ export function analyzePreview(sourceText: string) {
       )
     : undefined
   if (preview && nestedTestValue(preview)?.text === 'error') return []
-  return ["hub/ui/.storybook/preview.tsx: global parameters.a11y.test must be 'error'"]
+  return [`${path}: global parameters.a11y.test must be 'error'`]
 }
 
 export function analyzeStoryTodos(sourceText: string, path: string) {
@@ -117,15 +116,21 @@ export function analyzeStoryTodos(sourceText: string, path: string) {
 }
 
 function checkStorybook() {
-  const violations = analyzePreview(readFileSync(PREVIEW, 'utf8'))
+  const violations: string[] = []
   let todoCount = 0
-  for (const relativePath of new Glob('**/*.stories.tsx').scanSync({ cwd: STORIES })) {
-    const analysis = analyzeStoryTodos(
-      readFileSync(join(STORIES, relativePath), 'utf8'),
-      `hub/ui/src/${relativePath}`,
-    )
-    todoCount += analysis.count
-    violations.push(...analysis.violations)
+  for (const packageRoot of PACKAGES) {
+    const preview = `${packageRoot}/.storybook/preview.tsx`
+    violations.push(...analyzePreview(readFileSync(join(ROOT, preview), 'utf8'), preview))
+    for (const relativePath of new Glob('**/*.stories.tsx').scanSync({
+      cwd: join(ROOT, packageRoot, 'src'),
+    })) {
+      const analysis = analyzeStoryTodos(
+        readFileSync(join(ROOT, packageRoot, 'src', relativePath), 'utf8'),
+        `${packageRoot}/src/${relativePath}`,
+      )
+      todoCount += analysis.count
+      violations.push(...analysis.violations)
+    }
   }
   return { violations, todoCount }
 }

@@ -1,12 +1,21 @@
 import type { JSONContent } from '@tiptap/core'
 import { Node } from '@tiptap/pm/model'
-import { splitLeadingHeading } from './body.ts'
 import { richMarkdownManager, richSchema } from './rich-extensions.ts'
 import { isLockedToken, isSilentToken, lockedNode } from './rich-locked.ts'
 
 type Json = JSONContent
 type MarkedToken = { type: string; raw: string; lang?: string; depth?: number }
 type Block = { raw: string; sep: string; nodes: Json[] }
+
+export type DocumentBodyTransform = {
+  split: (source: string) => { editable: string; retained: string }
+  join: (editable: string, retained: string) => string
+}
+
+export type RichDocumentOptions = {
+  bodyTransform?: DocumentBodyTransform
+  lockedFences?: Record<string, string>
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -50,16 +59,19 @@ function restoreAmpersands(markdown: string): string {
   return markdown.replace(/&amp;(?![a-zA-Z][a-zA-Z0-9]*;)/g, '&')
 }
 
-function parseBlock(token: MarkedToken, raw: string): Json[] {
+function parseBlock(token: MarkedToken, raw: string, lockedFences: Record<string, string>): Json[] {
   if (isSilentToken(token)) return []
-  if (isLockedToken(token)) return [lockedNode(raw)]
+  if (isLockedToken(token, lockedFences)) {
+    const language = token.lang?.toLowerCase() ?? ''
+    return [lockedNode(raw, lockedFences[language])]
+  }
   // Filled through the schema so a block compares equal to the editor's own JSON for it,
   // which carries every attribute default (cell spans, link target, list start).
   const parsed = richMarkdownManager().parse(raw)
   return (Node.fromJSON(richSchema(), parsed).toJSON().content ?? []) as Json[]
 }
 
-function blocks(markdown: string): Block[] {
+function blocks(markdown: string, lockedFences: Record<string, string> = {}): Block[] {
   const out: Block[] = []
   const tokens = richMarkdownManager().instance.lexer(markdown) as MarkedToken[]
   let at = 0
@@ -69,7 +81,11 @@ function blocks(markdown: string): Block[] {
     at += token.raw.length
     if (token.type === 'space') continue
     const raw = token.raw.replace(/\n+$/, '')
-    out.push({ raw, sep: markdown.slice(prevEnd, start), nodes: parseBlock(token, raw) })
+    out.push({
+      raw,
+      sep: markdown.slice(prevEnd, start),
+      nodes: parseBlock(token, raw, lockedFences),
+    })
     prevEnd = start + raw.length
   }
   return out
@@ -131,20 +147,25 @@ function stitch(bs: Block[], edited: Json[]): string {
 }
 
 /** Visible top-level nodes the rich editor loads, without a leading ATX h1. */
-export function parseRichDocument(markdown: string): Json[] {
-  return dropTrailingEmptyParagraph(
-    blocks(splitLeadingHeading(markdown).rest).flatMap((b) => b.nodes),
-  )
+export function parseRichDocument(markdown: string, options: RichDocumentOptions = {}): Json[] {
+  const editable = options.bodyTransform?.split(markdown).editable ?? markdown
+  return dropTrailingEmptyParagraph(blocks(editable, options.lockedFences).flatMap((b) => b.nodes))
 }
 
 /**
  * Markdown for the edited document: untouched blocks keep their original source,
  * and only edited or new runs are serialized.
  */
-export function saveRichDocument(original: string, edited: Json[]): string {
+export function saveRichDocument(
+  original: string,
+  edited: Json[],
+  options: RichDocumentOptions = {},
+): string {
   const prepared = dropTrailingEmptyParagraph(edited)
-  const { prefix, rest } = splitLeadingHeading(original)
-  const restBlocks = blocks(rest)
-  if (nodesMatchBlocks(restBlocks, prepared)) return original
-  return `${prefix}${stitch(restBlocks, prepared)}`
+  const split = options.bodyTransform?.split(original)
+  const editable = split?.editable ?? original
+  const editableBlocks = blocks(editable, options.lockedFences)
+  if (nodesMatchBlocks(editableBlocks, prepared)) return original
+  const saved = stitch(editableBlocks, prepared)
+  return split && options.bodyTransform ? options.bodyTransform.join(saved, split.retained) : saved
 }

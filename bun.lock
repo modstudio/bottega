@@ -24,6 +24,7 @@
       },
       "devDependencies": {
         "@biomejs/biome": "2.5.13",
+        "@bottega/hub-views": "workspace:*",
         "@electric-sql/pglite": "0.5.8",
         "@types/bun": "latest",
         "commander": "15.0.0",
@@ -107,11 +108,10 @@
         "vitest": "5.0.3",
       },
     },
-    "hub/web": {
-      "name": "@bottega/hub-web",
+    "hub/views": {
+      "name": "@bottega/hub-views",
       "version": "0.1.0",
       "dependencies": {
-        "@bottega/hub-data": "workspace:*",
         "@bottega/hub-ui": "workspace:*",
         "@codemirror/commands": "6.11.1",
         "@codemirror/lang-markdown": "6.5.2",
@@ -119,17 +119,8 @@
         "@codemirror/language-data": "6.5.2",
         "@codemirror/state": "6.7.6",
         "@codemirror/view": "6.43.14",
-        "@dnd-kit/core": "6.3.1",
-        "@dnd-kit/sortable": "10.0.0",
-        "@fontsource-variable/inter": "^5.3.0",
-        "@fontsource/geist-mono": "^5.3.0",
-        "@fontsource/hedvig-letters-sans": "^5.3.0",
-        "@fontsource/hedvig-letters-serif": "^5.3.0",
-        "@fontsource/ibm-plex-mono": "^5.3.0",
         "@lezer/highlight": "1.2.5",
         "@lezer/markdown": "1.8.0",
-        "@tanstack/react-query": "^5.100.9",
-        "@tanstack/react-router": "^1.170.8",
         "@tiptap/core": "3.32.0",
         "@tiptap/extension-list": "3.32.0",
         "@tiptap/extension-table": "3.32.0",
@@ -137,9 +128,7 @@
         "@tiptap/pm": "3.32.0",
         "@tiptap/react": "3.32.0",
         "@tiptap/starter-kit": "3.32.0",
-        "@trpc/server": "^11.17.0",
         "codemirror-lang-mermaid": "0.5.0",
-        "diff": "^9.0.0",
         "dompurify": "^3.4.16",
         "lucide-react": "^1.14.0",
         "mermaid": "^12.1.0",
@@ -150,6 +139,45 @@
         "rehype-highlight": "^7.0.2",
         "remark-directive": "^4.0.0",
         "remark-gfm": "^4.0.1",
+      },
+      "devDependencies": {
+        "@storybook/addon-a11y": "10.6.1",
+        "@storybook/addon-vitest": "10.6.1",
+        "@storybook/react-vite": "10.6.1",
+        "@tailwindcss/vite": "4.2.4",
+        "@types/react": "^19.2.14",
+        "@types/react-dom": "^19.2.3",
+        "@vitest/browser-playwright": "5.0.3",
+        "playwright": "1.63.0",
+        "storybook": "10.6.1",
+        "typescript": "^6.0.3",
+        "vite": "8.3.0",
+        "vitest": "5.0.3",
+      },
+    },
+    "hub/web": {
+      "name": "@bottega/hub-web",
+      "version": "0.1.0",
+      "dependencies": {
+        "@bottega/hub-data": "workspace:*",
+        "@bottega/hub-ui": "workspace:*",
+        "@bottega/hub-views": "workspace:*",
+        "@dnd-kit/core": "6.3.1",
+        "@dnd-kit/sortable": "10.0.0",
+        "@fontsource-variable/inter": "^5.3.0",
+        "@fontsource/geist-mono": "^5.3.0",
+        "@fontsource/hedvig-letters-sans": "^5.3.0",
+        "@fontsource/hedvig-letters-serif": "^5.3.0",
+        "@fontsource/ibm-plex-mono": "^5.3.0",
+        "@tanstack/react-query": "^5.100.9",
+        "@tanstack/react-router": "^1.170.8",
+        "@tiptap/core": "3.32.0",
+        "@tiptap/pm": "3.32.0",
+        "@trpc/server": "^11.17.0",
+        "diff": "^9.0.0",
+        "lucide-react": "^1.14.0",
+        "react": "^19.2.6",
+        "react-dom": "^19.2.6",
       },
       "devDependencies": {
         "@happy-dom/global-registrator": "20.14.5",
@@ -360,6 +388,8 @@
     "@bottega/hub-site": ["@bottega/hub-site@workspace:hub/deploy/site"],
 
     "@bottega/hub-ui": ["@bottega/hub-ui@workspace:hub/ui"],
+
+    "@bottega/hub-views": ["@bottega/hub-views@workspace:hub/views"],
 
     "@bottega/hub-web": ["@bottega/hub-web@workspace:hub/web"],
 
@@ -2080,6 +2110,8 @@
     "@bottega/hub-data/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
 
     "@bottega/hub-ui/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
+
+    "@bottega/hub-views/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
 
     "@bottega/hub-web/@tailwindcss/vite": ["@tailwindcss/vite@4.3.3", "", { "dependencies": { "@tailwindcss/node": "4.3.3", "@tailwindcss/oxide": "4.3.3", "tailwindcss": "4.3.3" }, "peerDependencies": { "vite": "^5.2.0 || ^6 || ^7 || ^8" } }, "sha512-yYU8cogLeSh/ms2jh8Fj7jaba/EWa7Ja6GoUqYZaraEuCI5YS6ms6ObZgjjedm+jm6XZjdNRWBpPP6Z86oOxcw=="],
 

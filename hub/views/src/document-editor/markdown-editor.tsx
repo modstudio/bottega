@@ -7,6 +7,7 @@ import { EditorView, keymap } from '@codemirror/view'
 import { styleTags, Tag, tags as t } from '@lezer/highlight'
 import { GFM } from '@lezer/markdown'
 import { useEffect, useRef } from 'react'
+import { markdownEditorStyles } from './markdown-editor.styles.ts'
 
 const mermaidLanguage = LanguageDescription.of({
   name: 'Mermaid',
@@ -53,7 +54,11 @@ const highlight = HighlightStyle.define([
   { tag: t.strikethrough, class: 'doc-ed-mark' },
 ])
 
-function editorExtensions(onChange: (value: string) => void, onModSave: () => void) {
+function editorExtensions(
+  onChange: (value: string) => void,
+  onModSave: () => void,
+  bodyLabel: string,
+) {
   return [
     history(),
     Prec.highest(
@@ -78,7 +83,7 @@ function editorExtensions(onChange: (value: string) => void, onModSave: () => vo
     EditorView.updateListener.of((update) => {
       if (update.docChanged) onChange(update.state.doc.toString())
     }),
-    EditorView.contentAttributes.of({ 'aria-label': 'Article body' }),
+    EditorView.contentAttributes.of({ 'aria-label': bodyLabel }),
   ]
 }
 
@@ -86,10 +91,12 @@ export function MarkdownEditor({
   value,
   onChange,
   onModSave,
+  bodyLabel = 'Body',
 }: {
   value: string
   onChange: (value: string) => void
   onModSave: () => void
+  bodyLabel?: string
 }) {
   const parent = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -108,6 +115,7 @@ export function MarkdownEditor({
         extensions: editorExtensions(
           (next) => onChangeRef.current(next),
           () => onModSaveRef.current(),
+          bodyLabel,
         ),
       }),
     })
@@ -128,5 +136,5 @@ export function MarkdownEditor({
     })
   }, [value])
 
-  return <div ref={parent} className="doc-editor" />
+  return <div ref={parent} className={markdownEditorStyles()} />
 }

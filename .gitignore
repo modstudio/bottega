@@ -31,6 +31,8 @@ hub/node_modules
 hub/bun.lock
 hub/web/dist/
 hub/ui/storybook-static/
+hub/views/storybook-static/
+test-results/
 hub/web/node_modules
 hub/web/bun.lock
 

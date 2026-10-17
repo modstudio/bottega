@@ -7,6 +7,7 @@ import ts from 'typescript'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const UI_SOURCE = join(ROOT, 'hub/ui/src')
+const VIEWS_SOURCE = join(ROOT, 'hub/views/src')
 const VARIANT_PATH = join(UI_SOURCE, 'text/variant.ts')
 const GRIT_PATH = join(ROOT, 'hub/web/lint/layout-only-classname.grit')
 
@@ -30,7 +31,11 @@ function variantImportNames(source: ts.SourceFile, path: string) {
   for (const statement of source.statements) {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier))
       continue
-    if (resolve(dirname(path), statement.moduleSpecifier.text) !== VARIANT_PATH) continue
+    if (
+      resolve(dirname(path), statement.moduleSpecifier.text) !== VARIANT_PATH &&
+      statement.moduleSpecifier.text !== '@bottega/hub-ui/text/variant'
+    )
+      continue
     const bindings = statement.importClause?.namedBindings
     if (!bindings || !ts.isNamedImports(bindings)) continue
     for (const element of bindings.elements) {
@@ -260,11 +265,11 @@ function themeInventory() {
   return { actualKeys, violations }
 }
 
-function styleInventory() {
+function styleInventory(sourceRoot = UI_SOURCE) {
   const violations: string[] = []
   const styleAnalyses = new Map<string, ReturnType<typeof analyzeStyleModule>>()
-  for (const relativePath of new Glob('**/*.styles.ts').scanSync({ cwd: UI_SOURCE })) {
-    const path = join(UI_SOURCE, relativePath)
+  for (const relativePath of new Glob('**/*.styles.ts').scanSync({ cwd: sourceRoot })) {
+    const path = join(sourceRoot, relativePath)
     const analysis = analyzeStyleModule(readFileSync(path, 'utf8'), path)
     styleAnalyses.set(path, analysis)
     violations.push(...analysis.violations.map((violation) => violation.replace(`${ROOT}/`, '')))
@@ -359,10 +364,15 @@ function storySubjectImports(story: ts.SourceFile, stem: string) {
   return subjectImports
 }
 
-function containsIdentifier(node: ts.Node, identifiers: ReadonlySet<string>) {
+function containsRenderedSubject(node: ts.Node, identifiers: ReadonlySet<string>) {
   let found = false
   const visit = (child: ts.Node) => {
-    if (ts.isIdentifier(child) && identifiers.has(child.text)) found = true
+    if (
+      (ts.isJsxOpeningElement(child) || ts.isJsxSelfClosingElement(child)) &&
+      ts.isIdentifier(child.tagName) &&
+      identifiers.has(child.tagName.text)
+    )
+      found = true
     if (!found) ts.forEachChild(child, visit)
   }
   visit(node)
@@ -388,16 +398,24 @@ function playPositions(node: ts.Node, story: ts.SourceFile) {
 }
 
 function analyzeStory(story: ts.SourceFile, subjectImports: ReadonlySet<string>) {
-  let coversSubject = false
+  let metaSubject = false
+  let rendersSubject = false
+  let hasRender = false
+  let storyWithoutRender = false
   let hasPlay = false
   let invalidPlay = false
   const inspectStory = (node: ts.Node) => {
     if (
       ts.isPropertyAssignment(node) &&
-      (propertyName(node.name) === 'component' || propertyName(node.name) === 'render') &&
-      containsIdentifier(node.initializer, subjectImports)
+      propertyName(node.name) === 'component' &&
+      ts.isIdentifier(node.initializer) &&
+      subjectImports.has(node.initializer.text)
     )
-      coversSubject = true
+      metaSubject = true
+    if (ts.isPropertyAssignment(node) && propertyName(node.name) === 'render') {
+      hasRender = true
+      if (containsRenderedSubject(node.initializer, subjectImports)) rendersSubject = true
+    }
     if (ts.isPropertyAssignment(node) && propertyName(node.name) === 'play') {
       hasPlay = true
       const positions = playPositions(node.initializer, story)
@@ -407,7 +425,29 @@ function analyzeStory(story: ts.SourceFile, subjectImports: ReadonlySet<string>)
     ts.forEachChild(node, inspectStory)
   }
   inspectStory(story)
-  return { coversSubject, hasPlay, invalidPlay }
+  if (hasRender && containsRenderedSubject(story, subjectImports)) rendersSubject = true
+  for (const statement of story.statements) {
+    if (!ts.isVariableStatement(statement)) continue
+    if (!statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword))
+      continue
+    for (const declaration of statement.declarationList.declarations) {
+      if (
+        declaration.initializer &&
+        ts.isObjectLiteralExpression(declaration.initializer) &&
+        !declaration.initializer.properties.some(
+          (property) =>
+            (ts.isPropertyAssignment(property) || ts.isMethodDeclaration(property)) &&
+            propertyName(property.name) === 'render',
+        )
+      )
+        storyWithoutRender = true
+    }
+  }
+  return {
+    coversSubject: rendersSubject || (metaSubject && storyWithoutRender),
+    hasPlay,
+    invalidPlay,
+  }
 }
 
 export function analyzeComponentStory(
@@ -460,12 +500,13 @@ export function analyzeComponentStory(
 
 function componentInventory(
   styleAnalyses: ReadonlyMap<string, ReturnType<typeof analyzeStyleModule>>,
+  sourceRoot = UI_SOURCE,
 ) {
   const violations: string[] = []
   const classNameComponents = new Set<string>()
-  for (const relativePath of new Glob('**/*.tsx').scanSync({ cwd: UI_SOURCE })) {
+  for (const relativePath of new Glob('**/*.tsx').scanSync({ cwd: sourceRoot })) {
     if (/\.(?:test|spec)\.tsx$/.test(relativePath)) continue
-    const path = join(UI_SOURCE, relativePath)
+    const path = join(sourceRoot, relativePath)
     const sourceText = readFileSync(path, 'utf8')
     const source = ts.createSourceFile(
       path,
@@ -498,11 +539,55 @@ function componentInventory(
   return { classNameComponents, violations }
 }
 
+export function analyzeHubViewDomainTerms(sourceText: string, path: string) {
+  const source = ts.createSourceFile(
+    path,
+    sourceText,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  )
+  const violations: string[] = []
+  const visit = (node: ts.Node) => {
+    const text =
+      ts.isIdentifier(node) || ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)
+        ? node.text
+        : undefined
+    if (text && /articles?/i.test(text)) {
+      violations.push(
+        `${relative(ROOT, path)}:${lineOf(source, node)}: hub-views production source may not name the docs domain`,
+      )
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return violations
+}
+
+function viewDomainTermInventory() {
+  const violations: string[] = []
+  for (const relativePath of new Glob('**/*.{ts,tsx}').scanSync({ cwd: VIEWS_SOURCE })) {
+    if (/\.(?:stories|test|spec)\.[cm]?tsx?$/.test(relativePath)) continue
+    const path = join(VIEWS_SOURCE, relativePath)
+    violations.push(...analyzeHubViewDomainTerms(readFileSync(path, 'utf8'), path))
+  }
+  return violations
+}
+
 function checkHubUiStyles() {
   const theme = themeInventory()
   const styles = styleInventory()
   const components = componentInventory(styles.styleAnalyses)
-  const violations = [...theme.violations, ...styles.violations, ...components.violations]
+  const viewStyles = styleInventory(VIEWS_SOURCE)
+  const viewComponents = componentInventory(viewStyles.styleAnalyses, VIEWS_SOURCE)
+  const violations = [
+    ...theme.violations,
+    ...styles.violations,
+    ...components.violations,
+    ...viewStyles.violations,
+    ...viewComponents.violations,
+    ...viewDomainTermInventory(),
+  ]
   const classNameComponents = components.classNameComponents
   const names = [...classNameComponents].sort().join('|')
   const expectedLine = `  $element <: r"(?:${names})",`

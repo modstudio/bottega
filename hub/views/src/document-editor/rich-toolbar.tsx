@@ -20,6 +20,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { type FormEvent, useEffect, useState } from 'react'
+import { richToolbarStyles } from './rich-toolbar.styles.ts'
 
 const BLOCKS = [
   { value: 'paragraph', label: 'Paragraph' },
@@ -71,7 +72,7 @@ function MarkButton({
   )
 }
 
-function LinkControl({ editor }: { editor: Editor }) {
+function LinkControl({ editor, hint }: { editor: Editor; hint: string }) {
   const [href, setHref] = useState('')
   const active = editor.isActive('link')
   return (
@@ -96,8 +97,8 @@ function LinkControl({ editor }: { editor: Editor }) {
           else editor.chain().focus().setLink({ href: next }).run()
         }}
       >
-        <label htmlFor="doc-edit-link" className="grid gap-1 text-sm">
-          <span className="text-text-muted">URL or article slug</span>
+        <label htmlFor="doc-edit-link" className={richToolbarStyles().label()}>
+          <span className={richToolbarStyles().hint()}>{hint}</span>
           <Input
             id="doc-edit-link"
             value={href}
@@ -185,12 +186,18 @@ function useEditorTick(editor: Editor) {
   }, [editor])
 }
 
-export function RichToolbar({ editor }: { editor: Editor }) {
+export function RichToolbar({
+  editor,
+  linkHint = 'URL or slug',
+}: {
+  editor: Editor
+  linkHint?: string
+}) {
   useEditorTick(editor)
   return (
-    <div className="flex h-control-sm min-w-0 items-center gap-1 overflow-x-auto overflow-y-hidden">
+    <div className={richToolbarStyles().root()}>
       {/* The toolbar row is tight: the block menu takes less than a select's usual minimum. */}
-      <div className="shrink-0 [&>button]:min-w-28">
+      <div className={richToolbarStyles().block()}>
         <Select
           size="sm"
           label="Block type"
@@ -241,7 +248,7 @@ export function RichToolbar({ editor }: { editor: Editor }) {
         icon={Quote}
         run={() => editor.chain().focus().toggleBlockquote().run()}
       />
-      <LinkControl editor={editor} />
+      <LinkControl editor={editor} hint={linkHint} />
       <MarkButton
         editor={editor}
         mark="codeBlock"

@@ -1,5 +1,6 @@
 import DOMPurify from 'dompurify'
 import { useEffect, useRef, useState } from 'react'
+import { markdownMermaidStyles } from './markdown-mermaid.styles.ts'
 import { DocOverflow } from './markdown-overflow'
 
 type DrawState =
@@ -52,7 +53,7 @@ export function MermaidBlock({ source }: { source: string }) {
         <code>{source}</code>
       </pre>
       {status.kind === 'failed' ? (
-        <p data-tone="error" className="doc-mermaid-error">
+        <p data-tone="error" className={markdownMermaidStyles().error()}>
           {status.reason}
         </p>
       ) : null}
@@ -91,7 +92,7 @@ function MermaidDrawing({ svg }: { svg: string }) {
     observer.observe(column)
     return () => observer.disconnect()
   }, [svg])
-  return <div className="doc-mermaid" ref={ref} />
+  return <div className={markdownMermaidStyles().drawing()} ref={ref} />
 }
 
 /** The gap between a box's name and the description lines under it. */

@@ -35,42 +35,45 @@ can hide matching rows behind another project's traffic.
 
 # Design system
 
-Build screens from `@bottega/hub-ui`, and leave no control wearing the browser's own
-appearance. A hub package depends only on the workspace packages its entry in
+Presentation has three layers. `@bottega/hub-ui` owns generic controls,
+`@bottega/hub-views` owns domain-free document and feature surfaces, and `@bottega/hub-web`
+owns routes and the screens that still know hub domains. Leave no control wearing the browser's
+own appearance. A hub package depends only on the workspace packages its entry in
 `hubWorkspaceDependencies` allows, and code outside a package imports it only through a
-declared export subpath. Every non-test source file in `hub/ui/src` has exactly one export
-entry, derived from its path. `scripts/check-hub-packages.ts` enforces the dependency table
-and the export map; `scripts/check-architecture.ts` enforces imports, and
-`orchestrator/hooks/hub-import-guard.py` refuses a violating import when the file is
-written.
+declared export subpath. Every non-test source file in `hub/ui/src` and `hub/views/src` has
+exactly one export entry derived from its path. `scripts/check-hub-packages.ts` enforces the
+dependency table and export maps; `scripts/check-architecture.ts` enforces package imports,
+layer folders, and the hub-views data and router boundary; and
+`orchestrator/hooks/hub-import-guard.py` refuses the same violations when a file is written.
 
-The UI package knows nothing of data access, routing or the hub mode, and its internal
-imports stay relative; `scripts/check-architecture.ts` enforces this boundary and the
-layers declared in `scripts/architecture-ui-layers.ts`. UI source filenames are
-kebab-case and use named exports without barrels or export-all declarations; the
-`hub/ui` override in `biome.jsonc` enforces these rules. `hub/web/lint/layout-only-classname.grit`
+The UI and views packages know nothing of data access, routing or the hub mode, and their
+internal imports stay relative; `scripts/check-architecture.ts` enforces this boundary and the
+layers declared in `scripts/architecture-ui-layers.ts`. UI and views source filenames are
+kebab-case and use named exports without barrels or export-all declarations; the package
+overrides in `biome.jsonc` enforce these rules. `hub/web/lint/layout-only-classname.grit`
 refuses appearance classes passed to UI components: change a component's look through a
 variant it owns and pass it margin, size and placement only. Browser behavior, such as the
 dialog element, the popover attribute and anchor positioning, is used beneath our own
 styling; no component library is added, and a component's keyboard behavior follows its
 WAI-ARIA APG pattern.
 
-Every hub-ui component has stories beside it. The preview fails on accessibility
+Every hub-ui and hub-views component has stories beside it. Each preview fails on accessibility
 violations, with reasoned per-story exceptions only. Story tests run in CI as part of the
 aggregate `ci` check. `scripts/check-hub-ui-styles.ts` enforces story coverage,
 `scripts/check-storybook.ts` enforces the accessibility default and reasoned exceptions,
 and `scripts/check-ci-workflow.ts` enforces the CI job.
 
-A component's appearance is defined only in its sibling styles file through
+A hub-ui or hub-views component's appearance is defined only in its sibling styles file through
 `hub/ui/src/text/variant.ts`. Nothing else imports `tailwind-variants` or
 `tailwind-merge`, and the shared merge knows the design system's theme keys.
 `scripts/check-architecture.ts` enforces the variant dependency boundary;
 `scripts/check-hub-ui-styles.ts` enforces styles-file use, theme-key synchronization and
 the generated component list in `hub/web/lint/layout-only-classname.grit`.
 
-Presentation that knows no domain belongs in `hub/ui`, while a component that knows what a
-project, run or tracker is belongs beside the screens using it. `ProjectName` renders a
-name and a color; `ProjectMark` knows where a project's color comes from.
+A reusable control belongs in `hub/ui`; a domain-free document or feature composition belongs
+in `hub/views`; a component that knows what a project, run or tracker is belongs beside the
+screens using it. `ProjectName` renders a name and a color; `ProjectMark` knows where a
+project's color comes from.
 
 Color, type and measurement come from `hub/ui/src/styles/tokens.css` through the
 Tailwind bridge in `hub/ui/src/styles/theme.css`: raw values, then the meanings the
