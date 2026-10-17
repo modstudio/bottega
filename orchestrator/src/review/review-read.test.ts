@@ -48,11 +48,15 @@ test('worker sessions cannot record an architect read', () => {
 test('only the root run session owns architect reads for its branch', () => {
   const d = new Database(':memory:')
   applyMigrations(d)
+  const projectId = newRecordId()
+  d.query(
+    "INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture','/fixture','{}')",
+  ).run(projectId)
   d.query(
     `INSERT INTO run
-      (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch,session_id)
-     VALUES ('${newRecordId()}','2026-09-27','codex','implementation','sha',1,'head','running','fixture','DEV-977-work','owner-session')`,
-  ).run()
+      (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_record_id,branch,session_id)
+     VALUES ('${newRecordId()}','2026-09-27','codex','implementation','sha',1,'head','running','fixture',?,'DEV-977-work','owner-session')`,
+  ).run(projectId)
   expect(requireBranchRunOwner(d, 'fixture', 'DEV-977-work', 'owner-session')).toBe('owner-session')
   expect(() => requireBranchRunOwner(d, 'fixture', 'DEV-977-work', 'foreign-session')).toThrow(
     'calling session does not own DEV-977-work',
@@ -125,10 +129,16 @@ test('the read command records the branch and tip from --cwd', () => {
     db()
       .query(
         `INSERT INTO run
-          (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch,session_id)
-         VALUES ('${newRecordId()}','2026-10-12','codex','implementation','sha',1,'head','running',?,?,?)`,
+          (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_record_id,branch,session_id)
+         VALUES ('${newRecordId()}','2026-10-12','codex','implementation','sha',1,'head','running',?,
+                 (SELECT record_id FROM project WHERE name=?),?,?)`,
       )
-      .run('read-command-fixture', 'DEV-1262-review-read-fixture', 'owner-session')
+      .run(
+        'read-command-fixture',
+        'read-command-fixture',
+        'DEV-1262-review-read-fixture',
+        'owner-session',
+      )
 
     const relativeCwd = relative(process.cwd(), cwd)
     recordArchitectReadCommand(
@@ -177,8 +187,9 @@ test('a tip unreachable from the checked-out branch is refused without a review 
   ).run('fixture', cwd, '{}')
   d.query(
     `INSERT INTO run
-      (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch,session_id)
-     VALUES ('${newRecordId()}','2026-10-02','codex','implementation','sha',1,'head','running','fixture','DEV-1068-work','owner-session')`,
+      (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_record_id,branch,session_id)
+     VALUES ('${newRecordId()}','2026-10-02','codex','implementation','sha',1,'head','running','fixture',
+             (SELECT record_id FROM project WHERE name='fixture'),'DEV-1068-work','owner-session')`,
   ).run()
   const runGit = (_cwd: string, args: string[]): string => {
     if (args[0] === 'branch') return 'DEV-1068-work'

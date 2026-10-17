@@ -201,6 +201,11 @@ describe('review discipline', () => {
       repo: 'measurement-fixture',
       headCommit: 'tip',
     })
+    db()
+      .query(
+        "UPDATE run SET project_record_id=(SELECT record_id FROM project WHERE name='measurement-fixture') WHERE id IN (?,?)",
+      )
+      .run(withoutBranch, withBranch)
     db().query("UPDATE run SET branch='DEV-977' WHERE id=?").run(withBranch)
     const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
       const args = command[1] === '-C' ? command.slice(3) : command.slice(1)

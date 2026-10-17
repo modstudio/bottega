@@ -37,9 +37,9 @@ function insertRun4177PackRows(): string {
   })
   const projectId = (
     db().query('SELECT record_id AS id FROM project WHERE name=?').get(PLATFORM_SLUG) as {
-      record_id: string
+      id: string
     }
-  ).record_id
+  ).id
   const docs = JSON.stringify([
     {
       revisionId: 4177,
