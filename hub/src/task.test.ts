@@ -534,7 +534,8 @@ describe('local task tracker', () => {
   })
 
   test('task body compare-and-swap writes only the matching version and honors capability refusal', async () => {
-    const id = seed(`BODY-${crypto.randomUUID()}`, 'beta')
+    resetFixtureStore()
+    const id = seed(`BODY-${crypto.randomUUID()}`, 'epsilon')
     await setTaskBody('ignored', { recordId: id }, 'first', taskBodyVersion(null))
     const firstVersion = taskBodyVersion('first')
     await setTaskBody('ignored', { recordId: id }, 'second', firstVersion)
