@@ -412,10 +412,7 @@ function analyzeStory(story: ts.SourceFile, subjectImports: ReadonlySet<string>)
       subjectImports.has(node.initializer.text)
     )
       metaSubject = true
-    if (
-      ts.isPropertyAssignment(node) &&
-      propertyName(node.name) === 'render'
-    ) {
+    if (ts.isPropertyAssignment(node) && propertyName(node.name) === 'render') {
       hasRender = true
       if (containsRenderedSubject(node.initializer, subjectImports)) rendersSubject = true
     }
