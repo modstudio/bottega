@@ -53,6 +53,15 @@ function threadRoot(id: number): MessageRow {
   return row.kind === 'reply' ? message(row.thread_root_id!) : row
 }
 
+function replyingProject(actor: ReturnType<typeof boardActor>, cwd: string) {
+  const project = actor.kind === 'architect' ? projectAt(cwd) : null
+  if (actor.kind === 'architect' && !project)
+    throw new Error(
+      `architect replying project is unknown for ${cwd}; reply from a registered project or run ${PLATFORM_SLUG} project add first`,
+    )
+  return project
+}
+
 export function askQuestion(
   input: Omit<PostNoticeInput, 'ackRequired' | 'deadlineMs' | 'suggestingRunId'>,
   env: Environment = process.env,
@@ -123,11 +132,7 @@ export function replyToThread(
     if (decision === 'rate-limited')
       throw new Error('board post rate limit reached; retry after the ten-minute author window')
     const identity = actor.kind === 'architect' ? architectIdentity(env) : null
-    const project = actor.kind === 'architect' ? projectAt(cwd) : null
-    if (actor.kind === 'architect' && !project)
-      throw new Error(
-        `architect replying project is unknown for ${cwd}; reply from a registered project or run ${PLATFORM_SLUG} project add first`,
-      )
+    const project = replyingProject(actor, cwd)
     const createdAt = new Date(clock).toISOString()
     const inserted = database
       .query(
