@@ -173,6 +173,11 @@ function namedRun(
   }
 }
 
+function namedRunAlive(lookup: NamedRunLookup): boolean {
+  if (lookup.outcome === 'unknown') throw new Error(lookup.reason)
+  return lookup.outcome === 'owned' && lookup.run.alive
+}
+
 function conversationProjectOwnershipIssue(rootId: number): string | null {
   const members = db()
     .query(
@@ -190,6 +195,17 @@ function conversationProjectOwnershipIssue(rootId: number): string | null {
   )
   if (conflicts.length === 0) return null
   return `conversation root ${rootId} project UUID ${root.project_record_id} conflicts with ${conflicts.map(({ id, project_record_id }) => `run ${id} UUID ${project_record_id ?? 'missing'}`).join(', ')}`
+}
+
+function sweepCandidateInProject(row: SweepCandidate, selectedProject: Project | null): boolean {
+  if (!selectedProject) return true
+  const members = db()
+    .query('SELECT project_record_id FROM run WHERE id=? OR parent_run_id=?')
+    .all(row.root_id, row.root_id) as { project_record_id: string | null }[]
+  return members.some(
+    ({ project_record_id }) =>
+      project_record_id === selectedProject.recordId || project_record_id === null,
+  )
 }
 
 function printSweepKept(
@@ -586,16 +602,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     .filter(
       (row) => !row.worktree || shouldSweepHookTree(row as SweepCandidate & { worktree: string }),
     )
-    .filter((row) => {
-      if (!selectedProject) return true
-      const members = db()
-        .query('SELECT project_record_id FROM run WHERE id=? OR parent_run_id=?')
-        .all(row.root_id, row.root_id) as { project_record_id: string | null }[]
-      return (
-        members.some(({ project_record_id }) => project_record_id === selectedProject.recordId) ||
-        members.some(({ project_record_id }) => project_record_id === null)
-      )
-    })
+    .filter((row) => sweepCandidateInProject(row, selectedProject))
 
   const { removeFor, sweepWithTool } = await import('../worktree/worktree-remove.ts')
 
@@ -680,7 +687,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       const safe = orphanSafety(path, p.path, trunk)
       const eligibilityRuling = decideFilesystemOrphanEligibility({
         orchOwned: isOrchWorktree(path, p.settings.worktree?.branch),
-        alive: named.outcome === 'owned' && named.run.alive,
+        alive: namedRunAlive(named),
         safe,
         dry,
       })
@@ -714,15 +721,9 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
           const worktreeRow = { id: runId ?? -1, worktree: path }
           const sharersBefore = liveWorktreeSharers(db(), worktreeRow)
           const lockedRun = namedRun(entry.name, p.settings.worktree?.branch, p)
-          if (lockedRun.outcome === 'unknown') {
-            cleanupFailed = true
-            keep(`${label}  ownership unknown: ${lockedRun.reason}`, 'project ownership unknown')
-            options.presentation.error(`could not reclaim ${label}: ${lockedRun.reason}`)
-            return
-          }
           const lockedRuling = decideFilesystemOrphanUnderLock({
             sharers: sharersBefore.length,
-            lockedAlive: lockedRun.outcome === 'owned' && lockedRun.run.alive,
+            lockedAlive: namedRunAlive(lockedRun),
           })
           if (lockedRuling.action === 'shared-before') {
             const owners = sharersBefore.map((owner) => `${owner.id} (${owner.status})`).join(', ')
@@ -910,5 +911,4 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     sandboxCounts,
   )
   if (cleanupFailed) options.presentation.setExitCode(1)
-  return
 }
