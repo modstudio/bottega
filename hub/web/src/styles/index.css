@@ -2,8 +2,8 @@
 @import "tailwindcss";
 @import "@bottega/hub-ui/styles/tokens.css";
 @import "@bottega/hub-ui/styles/theme.css";
-@import "./markdown.css";
-@import "./doc-editor.css";
-@import "./doc-editor-rich.css";
+@import "@bottega/hub-views/styles/markdown";
+@import "@bottega/hub-views/styles/doc-editor";
+@import "@bottega/hub-views/styles/doc-editor-rich";
 @source "../../../ui/src";
 @source "../../../views/src";

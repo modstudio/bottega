@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { UserMenu } from './user-menu'
 
 const meta: Meta = {
@@ -35,6 +35,6 @@ export const Keyboard: StoryObj<typeof meta> = {
     const trigger = canvas.getByRole('button', { name: /Ada Lovelace.*Workshop/ })
     trigger.focus()
     await userEvent.keyboard('{ArrowDown}')
-    await expect(canvas.getByRole('menuitem', { name: 'Atelier' })).toBeVisible()
+    await waitFor(() => expect(canvas.getByRole('menuitem', { name: 'Atelier' })).toBeVisible())
   },
 }

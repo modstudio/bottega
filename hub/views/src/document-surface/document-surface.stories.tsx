@@ -47,7 +47,19 @@ const meta = {
 } satisfies Meta<typeof DocumentSurface>
 export default meta
 type Story = StoryObj<typeof meta>
-export const Light: Story = {}
+export const Light: Story = {
+  play: async ({ canvasElement }) => {
+    const surface = canvasElement.querySelector('main')
+    const expected = document.createElement('span')
+    expected.style.backgroundColor = 'var(--color-surface-page)'
+    canvasElement.append(expected)
+    await expect(surface).not.toBeNull()
+    const background = getComputedStyle(surface as HTMLElement).backgroundColor
+    await expect(background).not.toBe('rgba(0, 0, 0, 0)')
+    await expect(background).toBe(getComputedStyle(expected).backgroundColor)
+    expected.remove()
+  },
+}
 export const TitleBehindBar: Story = {
   play: async ({ canvasElement }) => {
     const heading = canvasElement.querySelector('h1')

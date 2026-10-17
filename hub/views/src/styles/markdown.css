@@ -1,4 +1,4 @@
-/* Document body: serif headings, sans paragraphs, mono figures, matching the docs page scale. */
+/* Document body: serif headings, sans paragraphs, and mono figures. */
 .markdown,
 .doc-measure {
   max-width: var(--docs-measure);

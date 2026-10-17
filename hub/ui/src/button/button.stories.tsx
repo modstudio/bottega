@@ -14,6 +14,16 @@ export const Variants: StoryObj<typeof meta> = {
       ))}
     </>
   ),
+  play: async ({ canvasElement }) => {
+    const button = within(canvasElement).getByRole('button', { name: 'primary' })
+    const expected = document.createElement('span')
+    expected.style.backgroundColor = 'var(--color-accent-fill)'
+    canvasElement.append(expected)
+    await expect(getComputedStyle(button).backgroundColor).toBe(
+      getComputedStyle(expected).backgroundColor,
+    )
+    expected.remove()
+  },
 }
 export const Sizes: StoryObj<typeof meta> = {
   render: () => (

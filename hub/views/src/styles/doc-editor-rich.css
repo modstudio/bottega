@@ -1,4 +1,4 @@
-/* Rich article editor chrome. Text styling lives in markdown.css. */
+/* Rich document editor chrome. Text styling lives in markdown.css. */
 
 .markdown.doc-editor-rich {
   caret-color: var(--text-primary);

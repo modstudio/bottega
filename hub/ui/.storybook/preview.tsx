@@ -1,6 +1,5 @@
 import type { Preview } from '@storybook/react-vite'
-import '@bottega/hub-ui/styles/tokens.css'
-import '@bottega/hub-ui/styles/theme.css'
+import './preview.css'
 
 const preview: Preview = {
   parameters: {

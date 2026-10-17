@@ -24,7 +24,7 @@ export function forbiddenRichEditorDeclarations(css: string): string[] {
     const property = declarationProperty(line)
     if (!property || !FORBIDDEN.test(property)) continue
     findings.push(
-      `${property}: text styling belongs in hub/web/src/styles/markdown.css, not the rich editor chrome`,
+      `${property}: text styling belongs in hub/views/src/styles/markdown.css, not the rich editor chrome`,
     )
   }
   return findings

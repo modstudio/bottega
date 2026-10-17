@@ -49,6 +49,7 @@ export const Keyboard: StoryObj<typeof meta> = {
     const toggle = canvas.getByRole('button', { name: 'Collapse navigation' })
     toggle.focus()
     await userEvent.keyboard('{Enter}')
-    await expect(canvas.getByRole('button', { name: 'Expand navigation' })).toBeVisible()
+    const expand = canvas.getByRole('button', { name: 'Expand navigation' })
+    await expect(expand).toHaveAttribute('aria-expanded', 'false')
   },
 }
