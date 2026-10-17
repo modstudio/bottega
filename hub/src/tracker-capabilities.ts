@@ -1,5 +1,4 @@
 import {
-  CURSOR_CREATE_REFUSAL,
   cursorProjectRefusal,
   TASK_STATUSES,
   type TrackerProject,
@@ -19,7 +18,6 @@ export type Capabilities = {
   keyFormat: string | null
 }
 
-export { CURSOR_CREATE_REFUSAL }
 export const TRACKER_STATUS_WRITE_REFUSAL =
   'No adapter has proven a status write to this tracker; hub refuses to guess a payload.'
 export const TRACKER_TITLE_WRITE_REFUSAL =

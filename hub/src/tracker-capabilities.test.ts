@@ -1,8 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { TASK_STATUSES, type TrackerProject } from '../../shared/trackers.ts'
+import { CURSOR_CREATE_REFUSAL, TASK_STATUSES, type TrackerProject } from '../../shared/trackers.ts'
 import {
-  CURSOR_CREATE_REFUSAL,
   documentsRefusal,
   GIT_WRITE_REFUSAL,
   TRACKER_BODY_WRITE_REFUSAL,

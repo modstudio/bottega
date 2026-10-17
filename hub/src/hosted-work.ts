@@ -1,5 +1,5 @@
-import { engagedMs, human } from '../../shared/interval.ts'
 import { z } from 'zod'
+import { engagedMs, human } from '../../shared/interval.ts'
 import { selectHostedReportSubscriptions } from './hosted-reports.ts'
 import { hostedTaskJoin } from './hosted-task-reference.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
@@ -396,93 +396,106 @@ export async function hostedTaskDetail(
         vendor_tokens,vendor_cost_usd,open,user_id FROM hub_interval
       WHERE space_id=${spaceId}::uuid AND task_key=${key} ORDER BY start_at DESC`,
     )
-    const shapedTask: HostedTaskDetailRows['task'] = {
-      record_id: task.id,
-      id: task.id,
-      key: task.key,
-      project: task.project,
-      title: task.title,
-      status: task.status,
-      status_category: task.status_category,
-      parent_key: task.parent_key,
-      body: task.body,
-      assignee: task.assignee,
-      source: task.source,
-      source_protocol: null,
-      updated_at: iso(task.updated_at),
-      space_name: task.space_name,
-    }
-    const shapedIntervals: HostedTaskDetailRows['runs'] = intervals.map((row) => ({
-      id: row.id,
-      source: row.source,
-      agent: row.agent,
-      job: row.job,
-      start_at: iso(row.start_at)!,
-      end_at: iso(row.end_at)!,
-      open: number(row.open),
-    }))
-    const firstRecorded = intervals.reduce<string | null>((first, row) => {
-      const value = iso(row.start_at)!
-      return first === null || value < first ? value : first
-    }, null)
-    const from = firstRecorded ?? iso(task.first_seen)!
-    const closedAt = task.closed_at ? new Date(task.closed_at).getTime() : null
-    const to = new Date(closedAt === null ? Date.now() : closedAt + 1).toISOString()
-    const measureIntervals: MeasureInterval[] = intervals.map((row) => ({
-      source: row.source,
-      startAt: iso(row.start_at)!,
-      endAt: iso(row.end_at)!,
-      open: number(row.open),
-      userId: row.user_id,
-      taskId: task.id,
-      taskKey: key,
-      project: task.project,
-      vendorTokens: number(row.vendor_tokens),
-      vendorCostUsd: row.vendor_cost_usd == null ? null : Number(row.vendor_cost_usd),
-    }))
-    const measureEvents: MeasureStatusEvent[] =
-      closedAt === null
-        ? []
-        : statusHistory.map((row) => ({
-            taskId: String(shapedTask.id),
-            taskKey: key,
-            project: String(shapedTask.project),
-            at: iso(row.at as SqlTime)!,
-            toStatus: String(row.to_status),
-          }))
-    return hostedTaskDetailFromRows({
-      task: shapedTask,
-      comments: comments.map((comment) => ({
-        id: comment.id,
-        body: comment.body,
-        created_at: iso(comment.created_at)!,
-      })),
-      documents: documents.map((document) => ({
-        id: document.id,
-        number: Number(document.number),
-        label: formatTaskDocumentLabel(key, Number(document.number)),
-        role: document.role,
-        title: document.title,
-        body: document.body,
-        version: document.version,
-        created_at: iso(document.created_at)!,
-        updated_at: iso(document.updated_at)!,
-      })),
-      statusEvents: statusHistory.map((event) => ({
-        id: event.id,
-        at: iso(event.at)!,
-        from_status: event.from_status,
-        to_status: event.to_status,
-      })),
-      runs: shapedIntervals,
-      measures: computeMeasures(
-        { intervals: measureIntervals, events: measureEvents },
-        { from, to },
-        { kind: 'space' },
-      ),
-      measureCoverage: { hasRecordedTime: intervals.length > 0, from, to },
-    })
+    return hostedTaskDetailFromRows(
+      hostedDetailRows(task, comments, documents, statusHistory, intervals, key),
+    )
   })
+}
+
+function hostedDetailRows(
+  task: z.infer<typeof hostedTaskRowSchema>,
+  comments: z.infer<typeof hostedCommentRowSchema>[],
+  documents: z.infer<typeof hostedDocumentRowSchema>[],
+  statusHistory: z.infer<typeof hostedStatusEventRowSchema>[],
+  intervals: z.infer<typeof hostedIntervalRowSchema>[],
+  key: string,
+): HostedTaskDetailRows {
+  const shapedTask: HostedTaskDetailRows['task'] = {
+    record_id: task.id,
+    id: task.id,
+    key: task.key,
+    project: task.project,
+    title: task.title,
+    status: task.status,
+    status_category: task.status_category,
+    parent_key: task.parent_key,
+    body: task.body,
+    assignee: task.assignee,
+    source: task.source,
+    source_protocol: null,
+    updated_at: iso(task.updated_at),
+    space_name: task.space_name,
+  }
+  const shapedIntervals: HostedTaskDetailRows['runs'] = intervals.map((row) => ({
+    id: row.id,
+    source: row.source,
+    agent: row.agent,
+    job: row.job,
+    start_at: iso(row.start_at)!,
+    end_at: iso(row.end_at)!,
+    open: number(row.open),
+  }))
+  const firstRecorded = intervals.reduce<string | null>((first, row) => {
+    const value = iso(row.start_at)!
+    return first === null || value < first ? value : first
+  }, null)
+  const from = firstRecorded ?? iso(task.first_seen)!
+  const closedAt = task.closed_at ? new Date(task.closed_at).getTime() : null
+  const to = new Date(closedAt === null ? Date.now() : closedAt + 1).toISOString()
+  const measureIntervals: MeasureInterval[] = intervals.map((row) => ({
+    source: row.source,
+    startAt: iso(row.start_at)!,
+    endAt: iso(row.end_at)!,
+    open: number(row.open),
+    userId: row.user_id,
+    taskId: task.id,
+    taskKey: key,
+    project: task.project,
+    vendorTokens: number(row.vendor_tokens),
+    vendorCostUsd: row.vendor_cost_usd == null ? null : Number(row.vendor_cost_usd),
+  }))
+  const measureEvents: MeasureStatusEvent[] =
+    closedAt === null
+      ? []
+      : statusHistory.map((row) => ({
+          taskId: String(shapedTask.id),
+          taskKey: key,
+          project: String(shapedTask.project),
+          at: iso(row.at as SqlTime)!,
+          toStatus: String(row.to_status),
+        }))
+  return {
+    task: shapedTask,
+    comments: comments.map((comment) => ({
+      id: comment.id,
+      body: comment.body,
+      created_at: iso(comment.created_at)!,
+    })),
+    documents: documents.map((document) => ({
+      id: document.id,
+      number: Number(document.number),
+      label: formatTaskDocumentLabel(key, Number(document.number)),
+      role: document.role,
+      title: document.title,
+      body: document.body,
+      version: document.version,
+      created_at: iso(document.created_at)!,
+      updated_at: iso(document.updated_at)!,
+    })),
+    statusEvents: statusHistory.map((event) => ({
+      id: event.id,
+      at: iso(event.at)!,
+      from_status: event.from_status,
+      to_status: event.to_status,
+    })),
+    runs: shapedIntervals,
+    measures: computeMeasures(
+      { intervals: measureIntervals, events: measureEvents },
+      { from, to },
+      { kind: 'space' },
+    ),
+    measureCoverage: { hasRecordedTime: intervals.length > 0, from, to },
+  }
 }
 
 export async function hostedNotes(

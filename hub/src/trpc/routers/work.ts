@@ -2,7 +2,7 @@ import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { TASK_STATUSES } from '../../../../shared/trackers.ts'
 import { strip, view } from '../../serve.ts'
-import { commentTask, setTask, setTaskBody, StaleTaskBodyError, taskRecord } from '../../task.ts'
+import { commentTask, StaleTaskBodyError, setTask, setTaskBody, taskRecord } from '../../task.ts'
 import { getTaskDocument, updateTaskDocument } from '../../task-document.ts'
 import type { Context } from '../context.ts'
 

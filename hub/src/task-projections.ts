@@ -1,5 +1,5 @@
 import { DEFAULT_IDLE_CAP_MS, engagedMs, human, type Span } from '../../shared/interval.ts'
-import { type TrackerProject, type TrackerRowSource } from '../../shared/trackers.ts'
+import type { TrackerProject, TrackerRowSource } from '../../shared/trackers.ts'
 import { runRef } from './run-ref.ts'
 import { type Capabilities, trackerCapabilities } from './tracker-capabilities.ts'
 

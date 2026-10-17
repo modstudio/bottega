@@ -34,8 +34,8 @@ import {
   registeredTaskProject,
   taskWriteMode,
 } from './task-write-destination.ts'
-import { taskCreationDestination } from './tracker-new.ts'
 import { trackerCapabilities } from './tracker-capabilities.ts'
+import { taskCreationDestination } from './tracker-new.ts'
 
 export type TaskRow = {
   record_id: string
