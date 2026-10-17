@@ -113,7 +113,7 @@ function TaskSheet({
       ? 'hub'
       : record.data?.task.source === 'git'
         ? 'git'
-        : `${record.data?.task.project ?? 'external'} · ${record.data?.task.source ?? 'tracker protocol unknown'}`
+        : `${record.data?.task.project ?? 'external'} · ${record.data?.task.sourceProtocol ?? 'tracker protocol unknown'}`
   return (
     <Companion
       onClose={onClose}
@@ -132,7 +132,11 @@ function TaskSheet({
           <>
             <div>{record.data.task.title}</div>
             <div className="mt-1 inline-flex items-center gap-2 text-xs">
-              <SourceMark source={record.data.task.source} project={record.data.task.project} />
+              <SourceMark
+                source={record.data.task.source}
+                project={record.data.task.project}
+                protocol={record.data.task.sourceProtocol}
+              />
               {sourceLine}
             </div>
           </>

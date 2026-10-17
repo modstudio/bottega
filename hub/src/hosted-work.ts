@@ -1,4 +1,5 @@
 import { engagedMs, human } from '../../shared/interval.ts'
+import { z } from 'zod'
 import { selectHostedReportSubscriptions } from './hosted-reports.ts'
 import { hostedTaskJoin } from './hosted-task-reference.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
@@ -31,6 +32,60 @@ type SqlTime = string | Date
 const iso = (value: SqlTime | null) => (value == null ? null : new Date(value).toISOString())
 const number = (value: string | number | bigint | null | undefined) => Number(value ?? 0)
 const HOSTED_STARTED_AT = new Date().toISOString()
+const sqlTimeSchema = z.union([z.string(), z.date()])
+const sqlNumberSchema = z.union([z.string(), z.number(), z.bigint()])
+const hostedTaskRowSchema = z.object({
+  id: z.string(),
+  key: z.string(),
+  project: z.string(),
+  title: z.string().nullable(),
+  status: z.string().nullable(),
+  status_category: z.string().nullable(),
+  parent_key: z.string().nullable(),
+  body: z.string().nullable(),
+  assignee: z.string().nullable(),
+  source: z.string(),
+  updated_at: sqlTimeSchema.nullable(),
+  first_seen: sqlTimeSchema,
+  closed_at: sqlTimeSchema.nullable(),
+  space_name: z.string(),
+})
+const hostedCommentRowSchema = z.object({
+  id: z.string(),
+  body: z.string(),
+  created_at: sqlTimeSchema,
+})
+const hostedDocumentRowSchema = z.object({
+  id: z.string(),
+  number: sqlNumberSchema,
+  role: z.string().nullable(),
+  title: z.string(),
+  body: z.string(),
+  version: z.string(),
+  created_at: sqlTimeSchema,
+  updated_at: sqlTimeSchema,
+})
+const hostedStatusEventRowSchema = z.object({
+  id: z.string(),
+  at: sqlTimeSchema,
+  from_status: z.string().nullable(),
+  to_status: z.string(),
+})
+const hostedIntervalRowSchema = z.object({
+  id: z.string().nullable(),
+  task_key: z.string().nullable(),
+  project: z.string(),
+  source: z.string(),
+  agent: z.string().nullable(),
+  job: z.string().nullable(),
+  start_at: sqlTimeSchema,
+  end_at: sqlTimeSchema,
+  claude_tokens: sqlNumberSchema,
+  vendor_tokens: sqlNumberSchema,
+  vendor_cost_usd: sqlNumberSchema.nullable(),
+  open: sqlNumberSchema,
+  user_id: z.string().nullable(),
+})
 
 type ProjectInput = {
   spaceId: string
@@ -308,63 +363,70 @@ export async function hostedTaskDetail(
   spaceId = identity.spaceId,
 ): Promise<TaskDetail | null> {
   return withHostedTenant(databaseUrl, identity, async (tx) => {
-    const task = rows<Record<string, unknown>>(
+    const task = z.array(hostedTaskRowSchema).parse(
       await tx`
       SELECT t.*,s.name AS space_name FROM hub_task t JOIN space s ON s.id=t.space_id
       WHERE t.space_id=${spaceId}::uuid AND key=${key}
         AND deleted_at IS NULL`,
     )[0]
     if (!task) return null
-    const comments = rows<Record<string, unknown>>(
+    const comments = z.array(hostedCommentRowSchema).parse(
       await tx`
       SELECT c.id,c.body,c.created_at FROM hub_task_comment c JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_comment', 'c')}
         WHERE t.id=${String(task.id)}::uuid AND c.space_id=${spaceId}::uuid
         AND c.deleted_at IS NULL ORDER BY c.created_at,c.id`,
     )
-    const documents = rows<{
-      id: string
-      number: string | number
-      role: string | null
-      title: string
-      body: string
-      version: string
-      created_at: SqlTime
-      updated_at: SqlTime
-    }>(
+    const documents = z.array(hostedDocumentRowSchema).parse(
       await tx`
       SELECT d.id,d.number,d.role,d.title,d.body,d.version,d.created_at,d.updated_at
       FROM hub_task_document d JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_document', 'd')}
       WHERE t.id=${String(task.id)}::uuid AND d.space_id=${spaceId}::uuid AND d.deleted_at IS NULL
       ORDER BY d.number`,
     )
-    const statusHistory = rows<Record<string, unknown>>(
+    const statusHistory = z.array(hostedStatusEventRowSchema).parse(
       await tx`
       SELECT e.id,e.at,e.from_status,e.to_status FROM hub_task_status_event e
       JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_status_event', 'e')}
       WHERE t.id=${String(task.id)}::uuid AND e.space_id=${spaceId}::uuid AND e.deleted_at IS NULL
       ORDER BY e.at,e.id`,
     )
-    const intervals = rows<RawInterval & { id: string | null; user_id: string | null }>(
+    const intervals = z.array(hostedIntervalRowSchema).parse(
       await tx`
       SELECT id::text,task_key,project_name AS project,source,agent,job,start_at,end_at,claude_tokens,
         vendor_tokens,vendor_cost_usd,open,user_id FROM hub_interval
       WHERE space_id=${spaceId}::uuid AND task_key=${key} ORDER BY start_at DESC`,
     )
-    const timeFields = (row: Record<string, unknown>) =>
-      Object.fromEntries(
-        Object.entries(row).map(([name, value]) => [
-          name,
-          name.endsWith('_at') && value ? iso(value as SqlTime) : value,
-        ]),
-      )
-    const shapedTask = timeFields(task)
-    const shapedIntervals = intervals.map(interval)
+    const shapedTask: HostedTaskDetailRows['task'] = {
+      record_id: task.id,
+      id: task.id,
+      key: task.key,
+      project: task.project,
+      title: task.title,
+      status: task.status,
+      status_category: task.status_category,
+      parent_key: task.parent_key,
+      body: task.body,
+      assignee: task.assignee,
+      source: task.source,
+      source_protocol: null,
+      updated_at: iso(task.updated_at),
+      space_name: task.space_name,
+    }
+    const shapedIntervals: HostedTaskDetailRows['runs'] = intervals.map((row) => ({
+      id: row.id,
+      source: row.source,
+      agent: row.agent,
+      job: row.job,
+      start_at: iso(row.start_at)!,
+      end_at: iso(row.end_at)!,
+      open: number(row.open),
+    }))
     const firstRecorded = intervals.reduce<string | null>((first, row) => {
       const value = iso(row.start_at)!
       return first === null || value < first ? value : first
     }, null)
-    const from = firstRecorded ?? String(shapedTask.first_seen)
-    const closedAt = shapedTask.closed_at ? new Date(String(shapedTask.closed_at)).getTime() : null
+    const from = firstRecorded ?? iso(task.first_seen)!
+    const closedAt = task.closed_at ? new Date(task.closed_at).getTime() : null
     const to = new Date(closedAt === null ? Date.now() : closedAt + 1).toISOString()
     const measureIntervals: MeasureInterval[] = intervals.map((row) => ({
       source: row.source,
@@ -372,9 +434,9 @@ export async function hostedTaskDetail(
       endAt: iso(row.end_at)!,
       open: number(row.open),
       userId: row.user_id,
-      taskId: String(shapedTask.id),
+      taskId: task.id,
       taskKey: key,
-      project: String(shapedTask.project),
+      project: task.project,
       vendorTokens: number(row.vendor_tokens),
       vendorCostUsd: row.vendor_cost_usd == null ? null : Number(row.vendor_cost_usd),
     }))
@@ -389,8 +451,12 @@ export async function hostedTaskDetail(
             toStatus: String(row.to_status),
           }))
     return hostedTaskDetailFromRows({
-      task: shapedTask as HostedTaskDetailRows['task'],
-      comments: comments.map(timeFields),
+      task: shapedTask,
+      comments: comments.map((comment) => ({
+        id: comment.id,
+        body: comment.body,
+        created_at: iso(comment.created_at)!,
+      })),
       documents: documents.map((document) => ({
         id: document.id,
         number: Number(document.number),
@@ -402,7 +468,12 @@ export async function hostedTaskDetail(
         created_at: iso(document.created_at)!,
         updated_at: iso(document.updated_at)!,
       })),
-      statusEvents: statusHistory.map(timeFields),
+      statusEvents: statusHistory.map((event) => ({
+        id: event.id,
+        at: iso(event.at)!,
+        from_status: event.from_status,
+        to_status: event.to_status,
+      })),
       runs: shapedIntervals,
       measures: computeMeasures(
         { intervals: measureIntervals, events: measureEvents },
@@ -410,7 +481,7 @@ export async function hostedTaskDetail(
         { kind: 'space' },
       ),
       measureCoverage: { hasRecordedTime: intervals.length > 0, from, to },
-    } as unknown as HostedTaskDetailRows)
+    })
   })
 }
 

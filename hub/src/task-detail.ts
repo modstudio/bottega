@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
-import type { Capabilities } from '../../shared/trackers.ts'
 import type { Measures } from './measures.ts'
+import type { Capabilities } from './tracker-capabilities.ts'
 
 export type TaskDetail = {
   task: {
@@ -14,6 +14,7 @@ export type TaskDetail = {
     body: string | null
     assignee: string | null
     source: string
+    sourceProtocol: string | null
     updatedAt: string | null
     spaceName: string | null
   }
@@ -32,6 +33,7 @@ export type TaskDetail = {
   statusEvents: { id: string; at: string; fromStatus: string | null; toStatus: string }[]
   runs: {
     id: string | null
+    source: string | null
     agent: string | null
     job: string | null
     startedAt: string
@@ -64,6 +66,7 @@ export type LocalTaskDetailRows = {
     body: string | null
     assignee: string | null
     source: string
+    source_protocol: string | null
     updated_at: string | null
   }
   comments: { id: string; body: string; created_at: string }[]
@@ -85,6 +88,7 @@ export type LocalTaskDetailRows = {
   }>
   runs: Array<{
     id: string | number | null
+    source: string | null
     agent: string | null
     job: string | null
     started_at: string
@@ -108,6 +112,7 @@ export function localTaskDetail(rows: LocalTaskDetailRows): TaskDetail {
       body: task.body,
       assignee: task.assignee,
       source: task.source,
+      sourceProtocol: task.source_protocol,
       updatedAt: task.updated_at,
       spaceName: null,
     },
@@ -135,6 +140,7 @@ export function localTaskDetail(rows: LocalTaskDetailRows): TaskDetail {
     })),
     runs: rows.runs.map((row) => ({
       id: row.id === null ? null : String(row.id),
+      source: row.source,
       agent: row.agent,
       job: row.job,
       startedAt: row.started_at,
@@ -172,6 +178,7 @@ export function hostedTaskDetailFromRows(rows: HostedTaskDetailRows): TaskDetail
       task: { ...rows.task, record_id: rows.task.id },
       runs: rows.runs.map((row) => ({
         id: row.id ?? null,
+        source: row.source,
         agent: row.agent,
         job: row.job,
         started_at: row.start_at,
@@ -198,6 +205,7 @@ export function hostedTaskDetailFromRows(rows: HostedTaskDetailRows): TaskDetail
       body: rows.task.body,
       assignee: rows.task.assignee,
       source: rows.task.source,
+      sourceProtocol: rows.task.source_protocol,
       updatedAt: rows.task.updated_at,
       spaceName: rows.task.space_name,
     },

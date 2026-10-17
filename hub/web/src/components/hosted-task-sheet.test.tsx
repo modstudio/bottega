@@ -18,6 +18,7 @@ test('hosted task detail renders all history without mutation controls', () => {
       body: 'Read only body',
       assignee: null,
       source: 'local',
+      sourceProtocol: null,
       updatedAt: '2026-09-17T12:00:00.000Z',
       spaceName: 'Workshop',
     },
@@ -37,6 +38,12 @@ test('hosted task detail renders all history without mutation controls', () => {
     ],
     statusEvents: [
       {
+        id: 'event-older',
+        at: '2026-09-17T11:00:00.000Z',
+        fromStatus: 'open',
+        toStatus: 'active',
+      },
+      {
         id: 'event',
         at: '2026-09-17T12:00:00.000Z',
         fromStatus: 'active',
@@ -46,7 +53,8 @@ test('hosted task detail renders all history without mutation controls', () => {
     runs: [
       {
         id: null,
-        agent: 'codex',
+        source: 'orch',
+        agent: null,
         job: 'implementation',
         startedAt: '2026-09-17T10:00:00.000Z',
         endedAt: '2026-09-17T11:00:00.000Z',
@@ -110,6 +118,10 @@ test('hosted task detail renders all history without mutation controls', () => {
   expect(html).toContain('DEV-701/3')
   expect(html).toContain('Status history')
   expect(html).toContain('Intervals')
+  expect(html).toContain('<strong>orch</strong>')
+  expect(html.indexOf('<strong>active</strong>')).toBeLessThan(
+    html.indexOf('<strong>open</strong>'),
+  )
   expect(html).toContain('No time was recorded for this task')
   expect(html).toContain('100 agent tokens')
   expect(html).not.toContain('Save document')

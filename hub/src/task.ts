@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
-import { TASK_STATUSES, trackerCapabilities } from '../../shared/trackers.ts'
+import { TASK_STATUSES } from '../../shared/trackers.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import type { HostedTask } from './hosted-tasks.ts'
 import { persistInstallBinding } from './install-binding.ts'
@@ -35,6 +35,7 @@ import {
   taskWriteMode,
 } from './task-write-destination.ts'
 import { taskCreationDestination } from './tracker-new.ts'
+import { trackerCapabilities } from './tracker-capabilities.ts'
 
 export type TaskRow = {
   record_id: string
@@ -79,6 +80,20 @@ export class DuplicateTaskError extends Error {
   constructor(candidates: DuplicateCandidate[]) {
     super('possible duplicate tasks')
     this.candidates = candidates
+  }
+}
+
+export class StaleTaskBodyError extends Error {
+  readonly expectedVersion: string
+  readonly currentVersion: string
+
+  constructor(key: string, expectedVersion: string, currentVersion: string) {
+    super(
+      `task ${key} body changed since version ${expectedVersion}; current version is ${currentVersion}`,
+    )
+    this.name = 'StaleTaskBodyError'
+    this.expectedVersion = expectedVersion
+    this.currentVersion = currentVersion
   }
 }
 
@@ -466,6 +481,7 @@ export function showTask(
 
 type TaskRun = {
   id: number
+  source: string | null
   agent: string | null
   job: string | null
   started_at: string
@@ -519,6 +535,7 @@ export function taskRecord(key: string, scope: TaskScope = {}): TaskDetail {
       return [
         {
           id: parsed.turn ?? parsed.root,
+          source: 'orch',
           agent: run.agent,
           job: run.job,
           started_at: run.started_at,
@@ -536,7 +553,11 @@ export function taskRecord(key: string, scope: TaskScope = {}): TaskDetail {
     )
     .all(record.task.record_id)
   return localTaskDetail({
-    task: record.task,
+    task: {
+      ...record.task,
+      source_protocol:
+        record.task.source === 'mcp' ? (project?.settings.tracker?.protocol ?? null) : null,
+    },
     capabilities: trackerCapabilities({ source: record.task.source, project }),
     runs,
     comments: record.comments,
@@ -568,9 +589,7 @@ export async function setTaskBody(
     if (!capability.allowed) throw new Error(capability.reason)
     const currentVersion = taskBodyVersion(current.body)
     if (currentVersion !== expectedVersion) {
-      throw new Error(
-        `task ${current.key} body changed since version ${expectedVersion}; current version is ${currentVersion}`,
-      )
+      throw new StaleTaskBodyError(current.key, expectedVersion, currentVersion)
     }
     const row = applyLocalTaskPatch(conn, recordId, { body }, { force: true }, at)
     if (hosted) queueHostedChange(conn, HOSTED_TASK_TABLE, row.record_id, 'upsert', at, ['body'])

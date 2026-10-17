@@ -22,17 +22,35 @@ const base = {
     parent_key: null,
     body: 'Body',
     assignee: null,
-    source: 'local',
+    source: 'mcp',
+    source_protocol: 'workspace-mcp',
     updated_at: '2026-10-16T12:00:00.000Z',
   },
   comments: [{ id: 'comment-1', body: 'Note', created_at: '2026-10-16T11:00:00.000Z' }],
-  documents: [],
+  documents: [
+    {
+      id: 'document-1',
+      number: 3,
+      label: 'DEV-1/doc/3',
+      role: 'handoff',
+      title: 'Handoff',
+      body: 'Document body',
+      version: 'document-version',
+      updated_at: '2026-10-16T11:30:00.000Z',
+    },
+  ],
   statusEvents: [
     {
       id: 'event-1',
       at: '2026-10-16T10:00:00.000Z',
       from_status: null,
       to_status: 'open',
+    },
+    {
+      id: 'event-2',
+      at: '2026-10-16T10:30:00.000Z',
+      from_status: 'open',
+      to_status: 'active',
     },
   ],
 }
@@ -44,6 +62,7 @@ test('local task rows map to the shared detail contract', () => {
     runs: [
       {
         id: 42,
+        source: 'orch',
         agent: 'codex',
         job: 'implementation',
         started_at: '2026-10-16T10:00:00.000Z',
@@ -52,11 +71,60 @@ test('local task rows map to the shared detail contract', () => {
       },
     ],
   })
-  expect(detail.task).toMatchObject({ recordId: 'task-1', statusCategory: 'open' })
-  expect(detail.bodyVersion).toBe(taskBodyVersion('Body'))
-  expect(detail.comments[0]?.createdAt).toBe('2026-10-16T11:00:00.000Z')
-  expect(detail.runs[0]).toMatchObject({ id: '42', startedAt: '2026-10-16T10:00:00.000Z' })
-  expect(detail.measures).toBeNull()
+  expect(detail).toEqual({
+    task: {
+      key: 'DEV-1',
+      recordId: 'task-1',
+      project: 'workshop',
+      title: 'Detail',
+      status: 'open',
+      statusCategory: 'open',
+      parentKey: null,
+      body: 'Body',
+      assignee: null,
+      source: 'mcp',
+      sourceProtocol: 'workspace-mcp',
+      updatedAt: '2026-10-16T12:00:00.000Z',
+      spaceName: null,
+    },
+    bodyVersion: taskBodyVersion('Body'),
+    comments: [{ id: 'comment-1', body: 'Note', createdAt: '2026-10-16T11:00:00.000Z' }],
+    documents: [
+      {
+        id: 'document-1',
+        number: 3,
+        label: 'DEV-1/doc/3',
+        role: 'handoff',
+        title: 'Handoff',
+        body: 'Document body',
+        version: 'document-version',
+        updatedAt: '2026-10-16T11:30:00.000Z',
+      },
+    ],
+    statusEvents: [
+      { id: 'event-1', at: '2026-10-16T10:00:00.000Z', fromStatus: null, toStatus: 'open' },
+      {
+        id: 'event-2',
+        at: '2026-10-16T10:30:00.000Z',
+        fromStatus: 'open',
+        toStatus: 'active',
+      },
+    ],
+    runs: [
+      {
+        id: '42',
+        source: 'orch',
+        agent: 'codex',
+        job: 'implementation',
+        startedAt: '2026-10-16T10:00:00.000Z',
+        endedAt: '2026-10-16T11:00:00.000Z',
+        running: false,
+      },
+    ],
+    measures: null,
+    measureCoverage: null,
+    capabilities,
+  })
 })
 
 test('hosted task rows map absent bodies and intervals to shared runs', () => {
@@ -94,12 +162,19 @@ test('hosted task rows map absent bodies and intervals to shared runs', () => {
   }
   const detail = hostedTaskDetailFromRows({
     ...base,
-    task: { ...base.task, id: 'task-1', space_name: 'Team', body: null },
+    task: {
+      ...base.task,
+      id: 'task-1',
+      space_name: 'Team',
+      body: null,
+      source: 'hosted',
+      source_protocol: null,
+    },
     runs: [
       {
         id: null,
         source: 'orch',
-        agent: 'codex',
+        agent: null,
         job: 'implementation',
         start_at: '2026-10-16T10:00:00.000Z',
         end_at: '2026-10-16T11:00:00.000Z',
@@ -109,18 +184,69 @@ test('hosted task rows map absent bodies and intervals to shared runs', () => {
     measures,
     measureCoverage: { hasRecordedTime: true, from: 'a', to: 'b' },
   })
-  expect(detail.task).toMatchObject({ body: null, spaceName: 'Team' })
-  expect(detail.bodyVersion).toBe(taskBodyVersion(null))
-  expect(detail.runs).toEqual([
-    expect.objectContaining({
-      id: null,
-      agent: 'codex',
-      startedAt: '2026-10-16T10:00:00.000Z',
-      running: true,
-    }),
-  ])
-  expect(detail.capabilities.setBody).toEqual({
-    allowed: false,
+  const refused = {
+    allowed: false as const,
     reason: 'The hosted record does not accept task writes from the dashboard.',
+  }
+  expect(detail).toEqual({
+    task: {
+      key: 'DEV-1',
+      recordId: 'task-1',
+      project: 'workshop',
+      title: 'Detail',
+      status: 'open',
+      statusCategory: 'open',
+      parentKey: null,
+      body: null,
+      assignee: null,
+      source: 'hosted',
+      sourceProtocol: null,
+      updatedAt: '2026-10-16T12:00:00.000Z',
+      spaceName: 'Team',
+    },
+    bodyVersion: taskBodyVersion(null),
+    comments: [{ id: 'comment-1', body: 'Note', createdAt: '2026-10-16T11:00:00.000Z' }],
+    documents: [
+      {
+        id: 'document-1',
+        number: 3,
+        label: 'DEV-1/doc/3',
+        role: 'handoff',
+        title: 'Handoff',
+        body: 'Document body',
+        version: 'document-version',
+        updatedAt: '2026-10-16T11:30:00.000Z',
+      },
+    ],
+    statusEvents: [
+      { id: 'event-1', at: '2026-10-16T10:00:00.000Z', fromStatus: null, toStatus: 'open' },
+      {
+        id: 'event-2',
+        at: '2026-10-16T10:30:00.000Z',
+        fromStatus: 'open',
+        toStatus: 'active',
+      },
+    ],
+    runs: [
+      {
+        id: null,
+        source: 'orch',
+        agent: null,
+        job: 'implementation',
+        startedAt: '2026-10-16T10:00:00.000Z',
+        endedAt: '2026-10-16T11:00:00.000Z',
+        running: true,
+      },
+    ],
+    measures,
+    measureCoverage: { hasRecordedTime: true, from: 'a', to: 'b' },
+    capabilities: {
+      setTitle: refused,
+      setStatus: refused,
+      setBody: refused,
+      comment: refused,
+      documents: refused,
+      statusVocabulary: null,
+    },
   })
 })

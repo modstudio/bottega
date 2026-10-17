@@ -7,27 +7,11 @@ type Refusal = { allowed: true } | { allowed: false; reason: string }
 const refusal = (capability: Refusal | undefined) =>
   capability && !capability.allowed ? capability.reason : undefined
 
-export const isTaskBodyConflict = (error: unknown): boolean =>
+const isTaskBodyConflict = (error: unknown): boolean =>
   typeof error === 'object' &&
   error !== null &&
   'data' in error &&
   (error as { data?: { code?: string } }).data?.code === 'CONFLICT'
-
-export const taskBodySaveInput = (
-  identity: { key: string; scope: { recordId?: string } },
-  body: string,
-  bodyVersion: string,
-) => ({ ...identity, body, expectedVersion: bodyVersion })
-
-export async function reloadTaskBody(
-  fetchCurrent: () => Promise<unknown>,
-  invalidate: () => Promise<unknown>,
-  clearConflict: () => void,
-) {
-  await fetchCurrent()
-  await invalidate()
-  clearConflict()
-}
 
 export function useTask(key: string, recordId?: string) {
   const hostedMode = isHostedMode()
@@ -77,7 +61,11 @@ export function useTask(key: string, recordId?: string) {
         run: async (body: string) => {
           if (!detail || refusal(capability?.setBody)) return
           try {
-            await setBody.mutateAsync(taskBodySaveInput(localInput, body, detail.bodyVersion))
+            await setBody.mutateAsync({
+              ...localInput,
+              body,
+              expectedVersion: detail.bodyVersion,
+            })
             await refresh()
           } catch {
             return
@@ -88,20 +76,17 @@ export function useTask(key: string, recordId?: string) {
         refused: refusal(capability?.setBody),
         conflict: isTaskBodyConflict(setBody.error),
         async reload() {
-          await reloadTaskBody(
-            () =>
-              hostedMode
-                ? queryClient.fetchQuery({
-                    ...trpc.record.task.queryOptions(hostedInput),
-                    staleTime: 0,
-                  })
-                : queryClient.fetchQuery({
-                    ...trpc.work.task.queryOptions(localInput),
-                    staleTime: 0,
-                  }),
-            refresh,
-            () => setBody.reset(),
-          )
+          await (hostedMode
+            ? queryClient.fetchQuery({
+                ...trpc.record.task.queryOptions(hostedInput),
+                staleTime: 0,
+              })
+            : queryClient.fetchQuery({
+                ...trpc.work.task.queryOptions(localInput),
+                staleTime: 0,
+              }))
+          await refresh()
+          setBody.reset()
         },
       },
       comment: {

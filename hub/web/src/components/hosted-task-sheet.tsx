@@ -36,7 +36,7 @@ function Comments({ rows }: { rows: TaskSheetDetail['comments'] }) {
 
 function StatusHistory({ rows }: { rows: TaskSheetDetail['statusEvents'] }) {
   if (!rows.length) return <p className="text-text-muted">No status history.</p>
-  return rows.map((event) => (
+  return [...rows].reverse().map((event) => (
     <div key={event.id} className="border-b border-border-default py-2">
       <strong>{event.fromStatus ?? 'unknown'}</strong> → <strong>{event.toStatus}</strong>
       <span className="ml-2 text-xs text-text-muted">{relativeTime(event.at)}</span>
@@ -51,7 +51,7 @@ function Intervals({ rows }: { rows: TaskSheetDetail['runs'] }) {
       key={`${item.id}:${item.startedAt}:${item.agent ?? ''}`}
       className="border-b border-border-default py-2"
     >
-      <strong>{item.agent ?? '-'}</strong>
+      <strong>{item.agent ?? item.source ?? '-'}</strong>
       {item.job ? ` · ${item.job}` : ''}
       <span className="ml-2 text-xs text-text-muted">
         {item.running ? 'running' : relativeTime(item.endedAt)}

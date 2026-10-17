@@ -1,32 +1,44 @@
-import { expect, test } from 'bun:test'
+import { beforeAll, beforeEach, expect, test } from 'bun:test'
+import { resetFixtureStore } from '../../../test/run-fixtures.ts'
+import { db, writeTransaction } from '../../db.ts'
+import { taskBodyVersion } from '../../task-detail.ts'
 import { createWorkRouter } from './work.ts'
 
-test('setBody maps a stale compare-and-swap to CONFLICT and does not retry', async () => {
-  let body = 'current'
-  let writes = 0
+beforeAll(resetFixtureStore)
+beforeEach(resetFixtureStore)
+
+test('setBody maps the service stale-body error to CONFLICT and leaves the body unchanged', async () => {
+  const recordId = Bun.randomUUIDv7()
+  const stamp = new Date().toISOString()
+  writeTransaction((conn) =>
+    conn
+      .query(
+        `INSERT INTO task
+         (record_id,key,project,title,status,status_category,body,source,first_seen,last_seen)
+         VALUES (?, 'DEV-1', 'workshop', 'Task', 'open', 'open', 'current', 'local', ?, ?)`,
+      )
+      .run(recordId, stamp, stamp),
+  )
   const router = createWorkRouter({
     strip: (() => ({})) as never,
     view: (async () => ({})) as never,
-    setTaskBody: (async (_key: string, _scope: unknown, next: string, expectedVersion: string) => {
-      writes++
-      if (expectedVersion !== 'current-version') {
-        throw new Error(`task DEV-1 body changed since version ${expectedVersion}`)
-      }
-      body = next
-      return {} as never
-    }) as never,
   })
   const caller = router.createCaller({})
   await caller.setBody({
     key: 'DEV-1',
-    scope: {},
+    scope: { recordId },
     body: 'saved',
-    expectedVersion: 'current-version',
+    expectedVersion: taskBodyVersion('current'),
   })
-  expect(body).toBe('saved')
   await expect(
-    caller.setBody({ key: 'DEV-1', scope: {}, body: 'stale', expectedVersion: 'old-version' }),
+    caller.setBody({
+      key: 'DEV-1',
+      scope: { recordId },
+      body: 'stale',
+      expectedVersion: taskBodyVersion('current'),
+    }),
   ).rejects.toMatchObject({ code: 'CONFLICT' })
-  expect(body).toBe('saved')
-  expect(writes).toBe(2)
+  expect(
+    db().query<{ body: string }, [string]>('SELECT body FROM task WHERE record_id=?').get(recordId),
+  ).toEqual({ body: 'saved' })
 })

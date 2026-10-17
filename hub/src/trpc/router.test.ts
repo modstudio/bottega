@@ -341,25 +341,6 @@ describe('work.task', () => {
   const fakeStrip = (() => ({})) as never
   const fakeView = (async () => ({})) as never
 
-  test('returns the canonical task record', async () => {
-    const record = {
-      task: { key: 'DEV-1' },
-      source: 'local',
-      project: null,
-      runs: [],
-      comments: [],
-      documents: [],
-    }
-    const router = createWorkRouter({
-      strip: fakeStrip,
-      view: fakeView,
-      taskRecord: () => record as never,
-    })
-    const result = await router.createCaller({}).task({ key: 'DEV-1', scope: {} })
-    expect(result.task.key).toBe('DEV-1')
-    expect(result.task.source).toBe('local')
-  })
-
   test('passes record id and project identity to local task reads', async () => {
     const seen: unknown[] = []
     const router = createWorkRouter({
