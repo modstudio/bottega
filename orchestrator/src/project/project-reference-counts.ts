@@ -1,10 +1,6 @@
 import type { Database } from 'bun:sqlite'
-import type { ProjectReferenceCounts } from './projects.ts'
 
-export function projectReferenceCounts(
-  database: Database,
-  projectRecordId: string,
-): ProjectReferenceCounts {
+export function projectReferenceCounts(database: Database, projectRecordId: string) {
   const count = (table: string, column = 'project_record_id') =>
     (
       database
