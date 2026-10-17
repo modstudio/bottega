@@ -29,7 +29,7 @@ export const PROJECT_REFERENCES = [
   ['subject', 'subject', 'project_record_id'],
 ] as const
 
-export type ProjectReferenceKey = (typeof PROJECT_REFERENCES)[number][0]
+type ProjectReferenceKey = (typeof PROJECT_REFERENCES)[number][0]
 export type ProjectReferenceCounts = Record<ProjectReferenceKey, number>
 
 export function projectReferenceCounts(
