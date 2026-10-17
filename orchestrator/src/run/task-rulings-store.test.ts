@@ -77,11 +77,11 @@ describe('task ruling candidate query', () => {
                '2026-10-05T12:00:00.000Z','agent','workflow')`,
       )
       .run(cursor.id)
-    db().query("UPDATE project SET name='renamed-bottega' WHERE name=?").run(PLATFORM_SLUG)
+    db().query("UPDATE project SET name='renamed-fixture' WHERE name=?").run(PLATFORM_SLUG)
 
     const selected = taskRulingsForDispatch({
       resume: false,
-      project: 'renamed-bottega',
+      project: 'renamed-fixture',
       launchKey: 'DEV-960',
     })
 

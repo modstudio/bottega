@@ -123,7 +123,9 @@ test('operator authority covers answer, continue, tell, review read, and sweep l
     expect(adoptRunMutation(authorizeRunMutation(id, action), action).actor).toBe(owner)
   }
   db()
-    .query("INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture','/fixture','{}')")
+    .query(
+      "INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture','/fixture','{}')",
+    )
     .run(newRecordId())
   const reviewId = addRun({ agent: 'codex', job: 'implement', session: owner, repo: 'fixture' })
   db()
