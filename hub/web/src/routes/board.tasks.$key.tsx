@@ -1,3 +1,4 @@
+import { useTask } from '@bottega/hub-data/use-task'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { TaskSheet } from '@/components/task-sheet'
 
@@ -12,10 +13,11 @@ function BoardTask() {
   const { key } = Route.useParams()
   const { id } = Route.useSearch()
   const navigate = useNavigate()
+  const result = useTask(key, id)
   return (
     <TaskSheet
       taskKey={key}
-      recordId={id}
+      result={result}
       onClose={() => void navigate({ to: '/board', resetScroll: false })}
     />
   )

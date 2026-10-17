@@ -18,6 +18,7 @@ import {
 import { runRef } from './reconcile.ts'
 import { hostedCreateTask } from './task-client.ts'
 import { decideTaskClose, landingCheck } from './task-close-decision.ts'
+import { localTaskDetail, type TaskDetail, taskBodyVersion } from './task-detail.ts'
 import { getTaskDocument, listTaskDocuments, type TaskDocumentSummary } from './task-document.ts'
 import {
   resolveTask,
@@ -463,7 +464,7 @@ export function showTask(
   return { task, comments, documents: listTaskDocuments(upper, { recordId }) }
 }
 
-export type TaskRun = {
+type TaskRun = {
   id: number
   agent: string | null
   job: string | null
@@ -475,7 +476,7 @@ export type TaskRun = {
 }
 
 /** The complete read-only task record used by the dashboard detail sheet. */
-export function taskRecord(key: string, scope: TaskScope = {}) {
+export function taskRecord(key: string, scope: TaskScope = {}): TaskDetail {
   const record = showTask(key, scope)
   const project = projects().find((candidate) => candidate.name === record.task.project) ?? null
   const documents = record.documents
@@ -528,17 +529,55 @@ export function taskRecord(key: string, scope: TaskScope = {}) {
         },
       ]
     })
-  return {
+  const statusEvents = db()
+    .query<{ id: string; at: string; from_status: string | null; to_status: string }, [string]>(
+      `SELECT record_id AS id, at, from_status, to_status FROM task_status_event
+       WHERE task_record_id = ? ORDER BY at, record_id`,
+    )
+    .all(record.task.record_id)
+  return localTaskDetail({
     task: record.task,
-    source: record.task.source,
-    sourceProtocol:
-      record.task.source === 'mcp' ? (project?.settings.tracker?.protocol ?? null) : null,
-    project,
     capabilities: trackerCapabilities({ source: record.task.source, project }),
     runs,
     comments: record.comments,
     documents,
-  }
+    statusEvents,
+  })
+}
+
+export async function setTaskBody(
+  key: string,
+  scope: TaskScope,
+  body: string,
+  expectedVersion: string,
+  options: { hosted?: HostedOptions } = {},
+): Promise<TaskRow> {
+  const upper = key.toUpperCase()
+  const recordId = taskRecordId(upper, scope)
+  const initial = taskByRecordId<TaskRow>(recordId)
+  const mode = writeMode(initial.project, options.hosted)
+  const hosted = mode === 'hosted-configured'
+  const at = nowIso()
+  const result = writeTransaction((conn) => {
+    const current = conn
+      .query<TaskRow, [string]>(`SELECT * FROM task WHERE record_id=?`)
+      .get(recordId)
+    if (!current) throw new Error(`no task ${upper}`)
+    const project = projects().find((candidate) => candidate.name === current.project) ?? null
+    const capability = trackerCapabilities({ source: current.source, project }).setBody
+    if (!capability.allowed) throw new Error(capability.reason)
+    const currentVersion = taskBodyVersion(current.body)
+    if (currentVersion !== expectedVersion) {
+      throw new Error(
+        `task ${current.key} body changed since version ${expectedVersion}; current version is ${currentVersion}`,
+      )
+    }
+    const row = applyLocalTaskPatch(conn, recordId, { body }, { force: true }, at)
+    if (hosted) queueHostedChange(conn, HOSTED_TASK_TABLE, row.record_id, 'upsert', at, ['body'])
+    return row
+  })
+  if (hosted) await drainHostedEditOutbox(at, options.hosted)
+  return result
 }
 
 function assertLocalTaskBodyOverwrite(task: TaskRow, body: string | undefined, force?: boolean) {

@@ -357,7 +357,7 @@ describe('work.task', () => {
     })
     const result = await router.createCaller({}).task({ key: 'DEV-1', scope: {} })
     expect(result.task.key).toBe('DEV-1')
-    expect(result.source).toBe('local')
+    expect(result.task.source).toBe('local')
   })
 
   test('passes record id and project identity to local task reads', async () => {

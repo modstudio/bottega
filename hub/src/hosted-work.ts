@@ -4,6 +4,11 @@ import { hostedTaskJoin } from './hosted-task-reference.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
 import { computeMeasures, type MeasureInterval, type MeasureStatusEvent } from './measures.ts'
 import { formatNoteLabel } from './note-label.ts'
+import {
+  type HostedTaskDetailRows,
+  hostedTaskDetailFromRows,
+  type TaskDetail,
+} from './task-detail.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
 import {
   type BoardSourceRow,
@@ -301,7 +306,7 @@ export async function hostedTaskDetail(
   identity: TaskIdentity,
   key: string,
   spaceId = identity.spaceId,
-) {
+): Promise<TaskDetail | null> {
   return withHostedTenant(databaseUrl, identity, async (tx) => {
     const task = rows<Record<string, unknown>>(
       await tx`
@@ -337,11 +342,11 @@ export async function hostedTaskDetail(
       SELECT e.id,e.at,e.from_status,e.to_status FROM hub_task_status_event e
       JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_status_event', 'e')}
       WHERE t.id=${String(task.id)}::uuid AND e.space_id=${spaceId}::uuid AND e.deleted_at IS NULL
-      ORDER BY e.at DESC,e.id`,
+      ORDER BY e.at,e.id`,
     )
-    const intervals = rows<RawInterval & { user_id: string | null }>(
+    const intervals = rows<RawInterval & { id: string | null; user_id: string | null }>(
       await tx`
-      SELECT task_key,project_name AS project,source,agent,job,start_at,end_at,claude_tokens,
+      SELECT id::text,task_key,project_name AS project,source,agent,job,start_at,end_at,claude_tokens,
         vendor_tokens,vendor_cost_usd,open,user_id FROM hub_interval
       WHERE space_id=${spaceId}::uuid AND task_key=${key} ORDER BY start_at DESC`,
     )
@@ -383,8 +388,8 @@ export async function hostedTaskDetail(
             at: iso(row.at as SqlTime)!,
             toStatus: String(row.to_status),
           }))
-    return {
-      task: shapedTask,
+    return hostedTaskDetailFromRows({
+      task: shapedTask as HostedTaskDetailRows['task'],
       comments: comments.map(timeFields),
       documents: documents.map((document) => ({
         id: document.id,
@@ -397,15 +402,15 @@ export async function hostedTaskDetail(
         created_at: iso(document.created_at)!,
         updated_at: iso(document.updated_at)!,
       })),
-      statusHistory: statusHistory.map(timeFields),
-      intervals: shapedIntervals,
+      statusEvents: statusHistory.map(timeFields),
+      runs: shapedIntervals,
       measures: computeMeasures(
         { intervals: measureIntervals, events: measureEvents },
         { from, to },
         { kind: 'space' },
       ),
       measureCoverage: { hasRecordedTime: intervals.length > 0, from, to },
-    }
+    } as unknown as HostedTaskDetailRows)
   })
 }
 

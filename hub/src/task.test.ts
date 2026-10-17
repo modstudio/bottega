@@ -13,9 +13,11 @@ import {
   duplicateCandidates,
   duplicateScore,
   setTask,
+  setTaskBody,
   showTask,
   taskRecord,
 } from './task.ts'
+import { taskBodyVersion } from './task-detail.ts'
 
 beforeAll(resetFixtureStore)
 
@@ -511,22 +513,40 @@ describe('local task tracker', () => {
 
     const result = taskRecord(task.key.toLowerCase())
     expect(result.task).toMatchObject({ key: task.key, title: 'Inspectable task' })
-    expect(result.source).toBe('local')
-    expect(result.project?.name).toBe('workshop')
+    expect(result.task.source).toBe('local')
     expect(result.capabilities).toMatchObject({
       setStatus: { allowed: true },
       setTitle: { allowed: true },
+      setBody: { allowed: true },
       comment: { allowed: true },
       documents: { allowed: true },
     })
-    expect(result.comments).toEqual([comment])
+    expect(result.comments).toEqual([
+      { id: comment.id, body: comment.body, createdAt: comment.created_at },
+    ])
     expect(result.documents.map((document) => document.id)).toEqual([handoffId, ordinaryId])
     expect(result.documents[0]?.body).toBe('# Handoff')
     expect(result.runs).toEqual([
-      expect.objectContaining({ id: 1813, agent: 'codex', vendor_tokens: 45 }),
-      expect.objectContaining({ id: 1812, agent: 'codex', vendor_tokens: 123 }),
+      expect.objectContaining({ id: '1813', agent: 'codex' }),
+      expect.objectContaining({ id: '1812', agent: 'codex' }),
     ])
     expect(taskRecord(task.key).task.key).toBe(task.key)
+  })
+
+  test('task body compare-and-swap writes only the matching version and honors capability refusal', async () => {
+    const id = seed(`BODY-${crypto.randomUUID()}`, 'beta')
+    await setTaskBody('ignored', { recordId: id }, 'first', taskBodyVersion(null))
+    const firstVersion = taskBodyVersion('first')
+    await setTaskBody('ignored', { recordId: id }, 'second', firstVersion)
+    await expect(setTaskBody('ignored', { recordId: id }, 'stale', firstVersion)).rejects.toThrow(
+      'body changed since version',
+    )
+    expect(showTask('ignored', { recordId: id }).task.body).toBe('second')
+
+    const external = seed(`EXT-${crypto.randomUUID()}`, 'alpha', 'mcp')
+    await expect(
+      setTaskBody('ignored', { recordId: external }, 'no', taskBodyVersion(null)),
+    ).rejects.toThrow('No adapter has proven a task description write')
   })
 
   test('task detail joins comments by task identity and orders equal timestamps by UUID', () => {

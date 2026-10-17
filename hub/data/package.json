@@ -18,6 +18,7 @@
     "./docs/use-doc-reorder": "./src/docs/use-doc-reorder.ts",
     "./docs/use-docs": "./src/docs/use-docs.ts",
     "./hub-mode": "./src/hub-mode.ts",
+    "./use-task": "./src/use-task.ts",
     "./transport": "./src/transport.ts"
   },
   "dependencies": {

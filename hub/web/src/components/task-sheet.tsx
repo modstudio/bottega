@@ -1,5 +1,3 @@
-import { queryClient, type TaskRecordResponse, trpc } from '@bottega/hub-data/client'
-import { isHostedMode } from '@bottega/hub-data/hub-mode'
 import { Badge } from '@bottega/hub-ui/badge'
 import { Button } from '@bottega/hub-ui/button'
 import { Companion } from '@bottega/hub-ui/companion'
@@ -9,14 +7,14 @@ import { DisplayRow, FieldSection, SettingBlock } from '@bottega/hub-ui/form-lay
 import { Identifier } from '@bottega/hub-ui/identifier'
 import { Select } from '@bottega/hub-ui/listbox/select'
 import { Markdown } from '@bottega/hub-views/markdown'
-import { useMutation, useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { relativeTime } from '@/lib/format'
 import { taskStatusLook } from '@/lib/task-status'
+import type { TaskSheetDetail, TaskSheetResult } from '@/routes/-task-sheet-data'
 import { ProjectMark, SourceMark } from './design-system'
 import { HostedTaskSheet } from './hosted-task-sheet'
 
-function reasonRows(capabilities: TaskRecordResponse['capabilities']) {
+function reasonRows(capabilities: TaskSheetDetail['capabilities']) {
   const entries = [
     ['Change status', 'setStatus'],
     ['Edit title', 'setTitle'],
@@ -32,19 +30,19 @@ function reasonRows(capabilities: TaskRecordResponse['capabilities']) {
   )
 }
 
-function DocumentEditor({ document }: { document: TaskRecordResponse['documents'][number] }) {
+function DocumentEditor({
+  document,
+  action,
+}: {
+  document: TaskSheetDetail['documents'][number]
+  action: TaskSheetResult['actions']['setDocument']
+}) {
   const [title, setTitle] = useState(document.title)
   const [body, setBody] = useState(document.body)
   useEffect(() => {
     setTitle(document.title)
     setBody(document.body)
   }, [document.title, document.body])
-  const save = useMutation({
-    ...trpc.work.setDocument.mutationOptions(),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries()
-    },
-  })
   return (
     <article className="space-y-3 border border-border-default p-3">
       <div className="flex items-center gap-2">
@@ -62,18 +60,18 @@ function DocumentEditor({ document }: { document: TaskRecordResponse['documents'
         value={body}
         onChange={(event) => setBody(event.target.value)}
       />
-      {save.error ? (
+      {action.error ? (
         <p data-tone="error" className="text-status-text">
-          {save.error.message}
+          {action.error.message}
         </p>
       ) : null}
       <Button
         variant="primary"
         size="sm"
-        disabled={save.isPending || !title.trim()}
-        onClick={() => save.mutate({ id: document.id, title, body, version: document.version })}
+        disabled={action.pending || !title.trim()}
+        onClick={() => void action.run({ id: document.id, title, body, version: document.version })}
       >
-        {save.isPending ? 'Saving...' : 'Save document'}
+        {action.pending ? 'Saving...' : 'Save document'}
       </Button>
     </article>
   )
@@ -81,58 +79,41 @@ function DocumentEditor({ document }: { document: TaskRecordResponse['documents'
 
 function HostedAwareTaskSheet({
   taskKey,
-  recordId,
+  result,
   onClose,
 }: {
   taskKey: string
-  recordId?: string
+  result: TaskSheetResult
   onClose: () => void
 }) {
-  if (isHostedMode()) return <HostedTaskSheet taskKey={taskKey} onClose={onClose} />
-  return <TaskSheet taskKey={taskKey} recordId={recordId} onClose={onClose} />
-}
-
-function taskIdentity(taskKey: string, recordId?: string) {
-  return { key: taskKey, scope: recordId ? { recordId } : {} }
+  if (result.detail?.task.spaceName)
+    return <HostedTaskSheet taskKey={taskKey} result={result} onClose={onClose} />
+  return <TaskSheet taskKey={taskKey} result={result} onClose={onClose} />
 }
 
 function TaskSheet({
   taskKey,
-  recordId,
+  result,
   onClose,
 }: {
   taskKey: string
-  recordId?: string
+  result: TaskSheetResult
   onClose: () => void
 }) {
-  const identity = taskIdentity(taskKey, recordId)
-  const record = useQuery(trpc.work.task.queryOptions(identity))
+  const record = { data: result.detail, error: result.error }
   const [title, setTitle] = useState('')
   const [comment, setComment] = useState('')
   const taskTitle = record.data?.task.title
   useEffect(() => {
     if (taskTitle !== undefined) setTitle(taskTitle ?? '')
   }, [taskTitle])
-  const refresh = async () => {
-    await queryClient.invalidateQueries()
-  }
-  const saveTitle = useMutation({ ...trpc.work.setTitle.mutationOptions(), onSuccess: refresh })
-  const saveStatus = useMutation({ ...trpc.work.setStatus.mutationOptions(), onSuccess: refresh })
-  const addComment = useMutation({
-    ...trpc.work.comment.mutationOptions(),
-    onSuccess: async () => {
-      setComment('')
-      await refresh()
-    },
-  })
-  const project = record.data?.project
-  const protocol = record.data?.sourceProtocol
+  const { setTitle: saveTitle, setStatus: saveStatus, comment: addComment } = result.actions
   const sourceLine =
-    record.data?.source === 'local'
+    record.data?.task.source === 'local'
       ? 'hub'
-      : record.data?.source === 'git'
+      : record.data?.task.source === 'git'
         ? 'git'
-        : `${project?.name ?? record.data?.task.project ?? 'external'} · ${protocol ?? 'tracker protocol unknown'}`
+        : `${record.data?.task.project ?? 'external'} · ${record.data?.task.source ?? 'tracker protocol unknown'}`
   return (
     <Companion
       onClose={onClose}
@@ -151,11 +132,7 @@ function TaskSheet({
           <>
             <div>{record.data.task.title}</div>
             <div className="mt-1 inline-flex items-center gap-2 text-xs">
-              <SourceMark
-                source={record.data.source}
-                project={record.data.task.project}
-                protocol={protocol}
-              />
+              <SourceMark source={record.data.task.source} project={record.data.task.project} />
               {sourceLine}
             </div>
           </>
@@ -174,14 +151,14 @@ function TaskSheet({
           <DisplayRow
             label="Status"
             value={
-              record.data.task.status_category ? (
+              record.data.task.statusCategory ? (
                 <Badge
-                  {...taskStatusLook(record.data.task.status_category)}
-                  title={`Hub status: ${record.data.task.status_category}`}
+                  {...taskStatusLook(record.data.task.statusCategory)}
+                  title={`Hub status: ${record.data.task.statusCategory}`}
                 >
-                  {record.data.source === 'local'
-                    ? record.data.task.status_category
-                    : (record.data.task.status ?? record.data.task.status_category)}
+                  {record.data.task.source === 'local'
+                    ? record.data.task.statusCategory
+                    : (record.data.task.status ?? record.data.task.statusCategory)}
                 </Badge>
               ) : (
                 (record.data.task.status ?? 'unknown')
@@ -189,10 +166,10 @@ function TaskSheet({
             }
           />
           <DisplayRow label="Assignee" value={record.data.task.assignee ?? 'unassigned'} />
-          <DisplayRow label="Parent" value={record.data.task.parent_key ?? '-'} />
+          <DisplayRow label="Parent" value={record.data.task.parentKey ?? '-'} />
           <DisplayRow
             label="Updated"
-            value={record.data.task.updated_at ? relativeTime(record.data.task.updated_at) : '-'}
+            value={record.data.task.updatedAt ? relativeTime(record.data.task.updatedAt) : '-'}
           />
           {reasonRows(record.data.capabilities)}
           <div className="mt-6 space-y-6">
@@ -205,8 +182,8 @@ function TaskSheet({
                       <Input value={title} onChange={(event) => setTitle(event.target.value)} />
                       <Button
                         variant="primary"
-                        disabled={saveTitle.isPending || !title.trim()}
-                        onClick={() => saveTitle.mutate({ ...identity, title })}
+                        disabled={saveTitle.pending || !title.trim()}
+                        onClick={() => void saveTitle.run(title)}
                       >
                         Save
                       </Button>
@@ -229,16 +206,15 @@ function TaskSheet({
                   control={
                     <Select
                       label="Task status"
-                      value={record.data.task.status_category ?? 'open'}
+                      value={record.data.task.statusCategory ?? 'open'}
                       options={(record.data.capabilities.statusVocabulary ?? []).map((status) => ({
                         value: status,
                         label: status,
                       }))}
                       onChange={(status) =>
-                        saveStatus.mutate({
-                          ...identity,
-                          status: status as 'open' | 'active' | 'review' | 'done' | 'dropped',
-                        })
+                        void saveStatus.run(
+                          status as 'open' | 'active' | 'review' | 'done' | 'dropped',
+                        )
                       }
                     />
                   }
@@ -256,7 +232,11 @@ function TaskSheet({
               <FieldSection title="Documents">
                 {record.data.documents.length ? (
                   record.data.documents.map((document) => (
-                    <DocumentEditor key={document.id} document={document} />
+                    <DocumentEditor
+                      key={document.id}
+                      document={document}
+                      action={result.actions.setDocument}
+                    />
                   ))
                 ) : (
                   <p className="text-text-muted">No documents.</p>
@@ -274,7 +254,7 @@ function TaskSheet({
                   <article key={item.id} className="border-b border-border-default py-3">
                     <Markdown content={item.body} />
                     <div className="mt-2 text-xs text-text-muted">
-                      {relativeTime(item.created_at)}
+                      {relativeTime(item.createdAt)}
                     </div>
                   </article>
                 ))
@@ -297,8 +277,8 @@ function TaskSheet({
                   <Button
                     variant="primary"
                     size="sm"
-                    disabled={addComment.isPending || !comment.trim()}
-                    onClick={() => addComment.mutate({ ...identity, body: comment })}
+                    disabled={addComment.pending || !comment.trim()}
+                    onClick={() => void addComment.run(comment).then(() => setComment(''))}
                   >
                     Add comment
                   </Button>
@@ -309,7 +289,7 @@ function TaskSheet({
               {record.data.runs.length ? (
                 record.data.runs.map((run) => (
                   <div
-                    key={`${run.id}:${run.agent}:${run.started_at}`}
+                    key={`${run.id}:${run.agent}:${run.startedAt}`}
                     className="grid grid-cols-[4rem_1fr_auto] gap-3 border-b border-border-default py-2"
                   >
                     <strong>#{run.id}</strong>
@@ -320,7 +300,7 @@ function TaskSheet({
                       data-tone={run.running ? 'success' : undefined}
                       className={run.running ? 'text-status-text' : 'text-text-muted'}
                     >
-                      {run.running ? 'running' : relativeTime(run.ended_at)}
+                      {run.running ? 'running' : relativeTime(run.endedAt)}
                     </span>
                   </div>
                 ))

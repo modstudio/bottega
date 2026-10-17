@@ -1,60 +1,15 @@
-import type { MeasuresResponse } from '@bottega/hub-data/client'
-import { trpc } from '@bottega/hub-data/client'
 import { Badge } from '@bottega/hub-ui/badge'
 import { Companion } from '@bottega/hub-ui/companion'
 import { DisplayRow, FieldSection } from '@bottega/hub-ui/form-layout'
 import { Identifier } from '@bottega/hub-ui/identifier'
 import { Markdown } from '@bottega/hub-views/markdown'
-import { useQuery } from '@tanstack/react-query'
 import { relativeTime } from '@/lib/format'
 import { taskStatusLook } from '@/lib/task-status'
+import type { TaskSheetDetail, TaskSheetResult } from '@/routes/-task-sheet-data'
 import { ProjectMark, SourceMark } from './design-system'
 import { MeasuresSummary } from './measure-display'
 
-type HostedDetail = {
-  task: {
-    space_name: string
-    key: string
-    project: string
-    title: string | null
-    status: string | null
-    status_category: string | null
-    parent_key: string | null
-    body: string | null
-    assignee: string | null
-    source: string
-    updated_at: string
-  }
-  comments: { id: string; body: string; created_at: string }[]
-  documents: {
-    id: string
-    number: number
-    label: string
-    role: string | null
-    title: string
-    body: string
-    version: string
-    updated_at: string
-  }[]
-  statusHistory: {
-    id: string
-    at: string
-    from_status: string | null
-    to_status: string
-  }[]
-  intervals: {
-    source: string
-    agent: string | null
-    job: string | null
-    start_at: string
-    end_at: string
-    open: number
-  }[]
-  measures: MeasuresResponse
-  measureCoverage: { hasRecordedTime: boolean; from: string; to: string }
-}
-
-function Documents({ rows }: { rows: HostedDetail['documents'] }) {
+function Documents({ rows }: { rows: TaskSheetDetail['documents'] }) {
   if (!rows.length) return <p className="text-text-muted">No documents.</p>
   return rows.map((document) => (
     <article key={document.id} className="border-b border-border-default py-3">
@@ -69,48 +24,63 @@ function Documents({ rows }: { rows: HostedDetail['documents'] }) {
   ))
 }
 
-function Comments({ rows }: { rows: HostedDetail['comments'] }) {
+function Comments({ rows }: { rows: TaskSheetDetail['comments'] }) {
   if (!rows.length) return <p className="text-text-muted">No comments.</p>
   return rows.map((comment) => (
     <article key={comment.id} className="border-b border-border-default py-3">
       <Markdown content={comment.body} />
-      <div className="mt-2 text-xs text-text-muted">{relativeTime(comment.created_at)}</div>
+      <div className="mt-2 text-xs text-text-muted">{relativeTime(comment.createdAt)}</div>
     </article>
   ))
 }
 
-function StatusHistory({ rows }: { rows: HostedDetail['statusHistory'] }) {
+function StatusHistory({ rows }: { rows: TaskSheetDetail['statusEvents'] }) {
   if (!rows.length) return <p className="text-text-muted">No status history.</p>
   return rows.map((event) => (
     <div key={event.id} className="border-b border-border-default py-2">
-      <strong>{event.from_status ?? 'unknown'}</strong> → <strong>{event.to_status}</strong>
+      <strong>{event.fromStatus ?? 'unknown'}</strong> → <strong>{event.toStatus}</strong>
       <span className="ml-2 text-xs text-text-muted">{relativeTime(event.at)}</span>
     </div>
   ))
 }
 
-function Intervals({ rows }: { rows: HostedDetail['intervals'] }) {
+function Intervals({ rows }: { rows: TaskSheetDetail['runs'] }) {
   if (!rows.length) return <p className="text-text-muted">No intervals.</p>
   return rows.map((item) => (
     <div
-      key={`${item.source}:${item.start_at}:${item.agent ?? ''}`}
+      key={`${item.id}:${item.startedAt}:${item.agent ?? ''}`}
       className="border-b border-border-default py-2"
     >
-      <strong>{item.agent ?? item.source}</strong>
+      <strong>{item.agent ?? '-'}</strong>
       {item.job ? ` · ${item.job}` : ''}
       <span className="ml-2 text-xs text-text-muted">
-        {item.open ? 'running' : relativeTime(item.end_at)}
+        {item.running ? 'running' : relativeTime(item.endedAt)}
       </span>
     </div>
   ))
 }
 
-export function HostedTaskSheet({ taskKey, onClose }: { taskKey: string; onClose: () => void }) {
+function HostedStatus({ detail }: { detail: TaskSheetDetail }) {
+  if (!detail.task.statusCategory) return detail.task.status ?? 'unknown'
+  return (
+    <Badge {...taskStatusLook(detail.task.statusCategory)}>
+      {detail.task.status ?? detail.task.statusCategory}
+    </Badge>
+  )
+}
+
+export function HostedTaskSheet({
+  taskKey,
+  result,
+  onClose,
+}: {
+  taskKey: string
+  result: TaskSheetResult
+  onClose: () => void
+}) {
   const separator = taskKey.indexOf(':')
-  const spaceId = separator > 0 ? taskKey.slice(0, separator) : undefined
   const key = separator > 0 ? taskKey.slice(separator + 1) : taskKey
-  const query = useQuery(trpc.record.task.queryOptions({ key, spaceId }))
-  const detail = query.data as HostedDetail | undefined
+  const detail = result.detail
   return (
     <Companion
       onClose={onClose}
@@ -126,29 +96,21 @@ export function HostedTaskSheet({ taskKey, onClose }: { taskKey: string; onClose
       }
       subtitle={detail?.task.title ?? 'Loading task...'}
     >
-      {query.error ? (
+      {result.error ? (
         <p data-tone="error" className="text-status-text">
-          {query.error.message}
+          {result.error.message}
         </p>
       ) : null}
       {detail ? (
         <>
-          <DisplayRow
-            label="Status"
-            value={
-              detail.task.status_category ? (
-                <Badge {...taskStatusLook(detail.task.status_category)}>
-                  {detail.task.status ?? detail.task.status_category}
-                </Badge>
-              ) : (
-                (detail.task.status ?? 'unknown')
-              )
-            }
-          />
-          <DisplayRow label="Space" value={String(detail.task.space_name)} />
+          <DisplayRow label="Status" value={<HostedStatus detail={detail} />} />
+          <DisplayRow label="Space" value={String(detail.task.spaceName)} />
           <DisplayRow label="Assignee" value={detail.task.assignee ?? 'unassigned'} />
-          <DisplayRow label="Parent" value={detail.task.parent_key ?? '-'} />
-          <DisplayRow label="Updated" value={relativeTime(detail.task.updated_at)} />
+          <DisplayRow label="Parent" value={detail.task.parentKey ?? '-'} />
+          <DisplayRow
+            label="Updated"
+            value={detail.task.updatedAt ? relativeTime(detail.task.updatedAt) : '-'}
+          />
           <DisplayRow
             label="Source"
             value={
@@ -160,12 +122,14 @@ export function HostedTaskSheet({ taskKey, onClose }: { taskKey: string; onClose
           />
           <div className="mt-6 space-y-6">
             <FieldSection title="Measures">
-              {!detail.measureCoverage.hasRecordedTime ? (
+              {detail.measureCoverage && !detail.measureCoverage.hasRecordedTime ? (
                 <p className="mb-3 text-text-muted">
                   No time was recorded for this task; the zero measures reflect missing coverage.
                 </p>
               ) : null}
-              <MeasuresSummary measures={detail.measures} showShipped={false} />
+              {detail.measures ? (
+                <MeasuresSummary measures={detail.measures} showShipped={false} />
+              ) : null}
             </FieldSection>
             {detail.task.body ? (
               <FieldSection title="Description">
@@ -179,10 +143,10 @@ export function HostedTaskSheet({ taskKey, onClose }: { taskKey: string; onClose
               <Comments rows={detail.comments} />
             </FieldSection>
             <FieldSection title="Status history">
-              <StatusHistory rows={detail.statusHistory} />
+              <StatusHistory rows={detail.statusEvents} />
             </FieldSection>
             <FieldSection title="Intervals">
-              <Intervals rows={detail.intervals} />
+              <Intervals rows={detail.runs} />
             </FieldSection>
           </div>
         </>

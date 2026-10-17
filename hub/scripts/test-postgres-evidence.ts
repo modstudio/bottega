@@ -556,7 +556,7 @@ try {
     if (!hostedDone.data.rows.some((row) => row.key === created.key && row.runs.length === 1))
       throw new Error('hosted done adapter did not return the seeded task and interval')
     const detail = await hostedTaskDetail(actorUrl, identity, created.key)
-    if (detail?.statusHistory.length !== 1 || detail.intervals.length !== 1)
+    if (detail?.statusEvents.length !== 1 || detail.runs.length !== 1)
       throw new Error('hosted task detail did not return status history and intervals')
 
     const legacyCommentId = '01990000-0000-7000-8000-000000000680'
