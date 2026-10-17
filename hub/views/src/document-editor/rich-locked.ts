@@ -1,6 +1,6 @@
 import { Node } from '@tiptap/core'
-import { isGithubAlertBlock } from '@/components/markdown/markdown-alerts'
-import { fenceUse } from '@/components/markdown/markdown-fences'
+import { isGithubAlertBlock } from '../markdown/markdown-alerts.ts'
+import { fenceUse } from '../markdown/markdown-fences.ts'
 
 export const LOCKED_BLOCK_NAME = 'lockedBlock'
 

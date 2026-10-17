@@ -62,6 +62,8 @@ export function checkCiWorkflow(source: string): void {
     throw new Error('CI aggregate job must need hub-ui-stories')
   if (!workflowJob(source, 'hub-ui-stories').includes('bun run --cwd hub/ui storybook:test'))
     throw new Error('hub-ui-stories job must run the hub-ui story-test script')
+  if (!workflowJob(source, 'hub-ui-stories').includes('bun run --cwd hub/views storybook:test'))
+    throw new Error('hub-ui-stories job must run the hub-views story-test script')
 }
 
 if (import.meta.main) {

@@ -21,7 +21,7 @@ import { gateModules } from './architecture-gate-modules.ts'
 import { hubDataArchitectureRules } from './architecture-hub-data.ts'
 import { hubImportModules } from './architecture-hub-import-modules.ts'
 import { hubModuleSpecs } from './architecture-hub-modules.ts'
-import { HUB_DATA_PACKAGE, HUB_UI_PACKAGE } from './architecture-hub-packages.ts'
+import { HUB_DATA_PACKAGE, HUB_UI_PACKAGE, HUB_VIEWS_PACKAGE } from './architecture-hub-packages.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
 import { metricModules } from './architecture-metric-modules.ts'
 import { monitorModules } from './architecture-monitor-modules.ts'
@@ -44,7 +44,7 @@ import { settingsModules } from './architecture-settings-modules.ts'
 import { setupModuleSpecs } from './architecture-setup-modules.ts'
 import { subjectModules } from './architecture-subject-modules.ts'
 import { testSubstanceModules } from './architecture-test-substance-modules.ts'
-import { uiArchitectureRules } from './architecture-ui-layers.ts'
+import { uiArchitectureRules, viewArchitectureRules } from './architecture-ui-layers.ts'
 import { workflowFloorModules } from './architecture-workflow-floor-modules.ts'
 import { worktreeModules } from './architecture-worktree-modules.ts'
 
@@ -808,6 +808,7 @@ const hubWebAllowedConcernImports = [
   exactArchitecturePath(hubWebRouterException.to),
   '^hub/ui/src/',
   '^hub/data/src/',
+  '^hub/views/src/',
 ]
 const { viewDataRule: hubWebViewDataRule, boundaryRules: hubDataBoundaryRules } =
   hubDataArchitectureRules(
@@ -824,6 +825,7 @@ export { hubWebViewDataRule }
 export function writeTimeArchitectureRules(): ArchitectureRule[] {
   return [
     ...uiArchitectureRules(architectureDependencyPath, HUB_UI_PACKAGE),
+    ...viewArchitectureRules(architectureDependencyPath, HUB_VIEWS_PACKAGE),
     ...hubDataBoundaryRules,
     hubWebViewDataRule,
   ]

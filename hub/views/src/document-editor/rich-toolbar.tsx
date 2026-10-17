@@ -20,6 +20,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { type FormEvent, useEffect, useState } from 'react'
+import { richToolbarStyles } from './rich-toolbar.styles.ts'
 
 const BLOCKS = [
   { value: 'paragraph', label: 'Paragraph' },
@@ -96,8 +97,8 @@ function LinkControl({ editor }: { editor: Editor }) {
           else editor.chain().focus().setLink({ href: next }).run()
         }}
       >
-        <label htmlFor="doc-edit-link" className="grid gap-1 text-sm">
-          <span className="text-text-muted">URL or article slug</span>
+        <label htmlFor="doc-edit-link" className={richToolbarStyles().label()}>
+          <span className={richToolbarStyles().hint()}>URL or article slug</span>
           <Input
             id="doc-edit-link"
             value={href}
@@ -188,9 +189,9 @@ function useEditorTick(editor: Editor) {
 export function RichToolbar({ editor }: { editor: Editor }) {
   useEditorTick(editor)
   return (
-    <div className="flex h-control-sm min-w-0 items-center gap-1 overflow-x-auto overflow-y-hidden">
+    <div className={richToolbarStyles().root()}>
       {/* The toolbar row is tight: the block menu takes less than a select's usual minimum. */}
-      <div className="shrink-0 [&>button]:min-w-28">
+      <div className={richToolbarStyles().block()}>
         <Select
           size="sm"
           label="Block type"

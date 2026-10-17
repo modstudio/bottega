@@ -7,6 +7,7 @@ import ts from 'typescript'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const UI_SOURCE = join(ROOT, 'hub/ui/src')
+const VIEWS_SOURCE = join(ROOT, 'hub/views/src')
 const VARIANT_PATH = join(UI_SOURCE, 'text/variant.ts')
 const GRIT_PATH = join(ROOT, 'hub/web/lint/layout-only-classname.grit')
 
@@ -30,7 +31,11 @@ function variantImportNames(source: ts.SourceFile, path: string) {
   for (const statement of source.statements) {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier))
       continue
-    if (resolve(dirname(path), statement.moduleSpecifier.text) !== VARIANT_PATH) continue
+    if (
+      resolve(dirname(path), statement.moduleSpecifier.text) !== VARIANT_PATH &&
+      statement.moduleSpecifier.text !== '@bottega/hub-ui/text/variant'
+    )
+      continue
     const bindings = statement.importClause?.namedBindings
     if (!bindings || !ts.isNamedImports(bindings)) continue
     for (const element of bindings.elements) {
@@ -260,11 +265,11 @@ function themeInventory() {
   return { actualKeys, violations }
 }
 
-function styleInventory() {
+function styleInventory(sourceRoot = UI_SOURCE) {
   const violations: string[] = []
   const styleAnalyses = new Map<string, ReturnType<typeof analyzeStyleModule>>()
-  for (const relativePath of new Glob('**/*.styles.ts').scanSync({ cwd: UI_SOURCE })) {
-    const path = join(UI_SOURCE, relativePath)
+  for (const relativePath of new Glob('**/*.styles.ts').scanSync({ cwd: sourceRoot })) {
+    const path = join(sourceRoot, relativePath)
     const analysis = analyzeStyleModule(readFileSync(path, 'utf8'), path)
     styleAnalyses.set(path, analysis)
     violations.push(...analysis.violations.map((violation) => violation.replace(`${ROOT}/`, '')))
@@ -460,12 +465,13 @@ export function analyzeComponentStory(
 
 function componentInventory(
   styleAnalyses: ReadonlyMap<string, ReturnType<typeof analyzeStyleModule>>,
+  sourceRoot = UI_SOURCE,
 ) {
   const violations: string[] = []
   const classNameComponents = new Set<string>()
-  for (const relativePath of new Glob('**/*.tsx').scanSync({ cwd: UI_SOURCE })) {
+  for (const relativePath of new Glob('**/*.tsx').scanSync({ cwd: sourceRoot })) {
     if (/\.(?:test|spec)\.tsx$/.test(relativePath)) continue
-    const path = join(UI_SOURCE, relativePath)
+    const path = join(sourceRoot, relativePath)
     const sourceText = readFileSync(path, 'utf8')
     const source = ts.createSourceFile(
       path,
@@ -502,7 +508,15 @@ function checkHubUiStyles() {
   const theme = themeInventory()
   const styles = styleInventory()
   const components = componentInventory(styles.styleAnalyses)
-  const violations = [...theme.violations, ...styles.violations, ...components.violations]
+  const viewStyles = styleInventory(VIEWS_SOURCE)
+  const viewComponents = componentInventory(viewStyles.styleAnalyses, VIEWS_SOURCE)
+  const violations = [
+    ...theme.violations,
+    ...styles.violations,
+    ...components.violations,
+    ...viewStyles.violations,
+    ...viewComponents.violations,
+  ]
   const classNameComponents = components.classNameComponents
   const names = [...classNameComponents].sort().join('|')
   const expectedLine = `  $element <: r"(?:${names})",`

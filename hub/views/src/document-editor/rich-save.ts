@@ -1,6 +1,6 @@
 import type { JSONContent } from '@tiptap/core'
 import { Node } from '@tiptap/pm/model'
-import { splitLeadingHeading } from './body.ts'
+import { splitLeadingHeading } from './editor-body.ts'
 import { richMarkdownManager, richSchema } from './rich-extensions.ts'
 import { isLockedToken, isSilentToken, lockedNode } from './rich-locked.ts'
 

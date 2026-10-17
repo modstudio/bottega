@@ -12,9 +12,8 @@ import {
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkDirective from 'remark-directive'
 import remarkGfm from 'remark-gfm'
-import { DOC_AUDIENCE_LABELS } from '@/docs/filters'
-import { secondLevelHeadings } from '@/docs/headings'
-import { docSectionAudiences } from '../../../../../shared/doc-sections.ts'
+import { secondLevelHeadings } from './headings.ts'
+import { markdownStyles } from './markdown.styles.ts'
 import { githubAlertPlugin, isTone } from './markdown-alerts'
 import { fenceUse } from './markdown-fences'
 import { DocOverflow } from './markdown-overflow'
@@ -116,11 +115,12 @@ function DocCallout({
   if (typeof sectionAudiences === 'string') {
     const labels = sectionAudiences
       .split(',')
-      .map((audience) => DOC_AUDIENCE_LABELS[audience as keyof typeof DOC_AUDIENCE_LABELS])
+      .map((audience) => audience.trim())
       .filter(Boolean)
+      .map((audience) => audience[0]!.toLocaleUpperCase() + audience.slice(1))
     return (
       <div {...props}>
-        <span className="font-mono text-text-muted text-xs">{labels.join(', ')}</span>
+        <span className={markdownStyles().audience()}>{labels.join(', ')}</span>
         {children}
       </div>
     )
@@ -147,7 +147,13 @@ function docSectionDirective() {
         data?: Record<string, unknown>
       }
       if (item.type === 'containerDirective' && item.name === 'section') {
-        const audiences = docSectionAudiences(item.attributes)
+        const audiences =
+          typeof item.attributes?.audience === 'string'
+            ? item.attributes.audience
+                .split(',')
+                .map((audience) => audience.trim())
+                .filter(Boolean)
+            : []
         item.data = {
           ...item.data,
           hName: 'div',
@@ -187,7 +193,7 @@ export function Markdown({ content }: { content: string }) {
   )
   let heading = 0
   return (
-    <div className="markdown">
+    <div className={markdownStyles().root()}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkDirective, docSectionDirective]}
         rehypePlugins={[

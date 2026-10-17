@@ -8,13 +8,13 @@ import { Copyable, DisplayRow, FieldSection, SettingBlock } from '@bottega/hub-u
 import { Select } from '@bottega/hub-ui/listbox/select'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { Segmented } from '@bottega/hub-ui/segmented'
+import { Markdown } from '@bottega/hub-views/markdown'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { Plus, Save, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { MachineOverride } from '@/components/machine-override'
 import { MachinePermissionEditor } from '@/components/machine-permission-editor'
-import { Markdown } from '@/components/markdown/markdown'
 import {
   AUTONOMY_PRESETS,
   AUTONOMY_VALUES,

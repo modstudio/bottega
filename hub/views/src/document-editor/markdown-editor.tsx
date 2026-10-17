@@ -7,6 +7,7 @@ import { EditorView, keymap } from '@codemirror/view'
 import { styleTags, Tag, tags as t } from '@lezer/highlight'
 import { GFM } from '@lezer/markdown'
 import { useEffect, useRef } from 'react'
+import { markdownEditorStyles } from './markdown-editor.styles.ts'
 
 const mermaidLanguage = LanguageDescription.of({
   name: 'Mermaid',
@@ -128,5 +129,5 @@ export function MarkdownEditor({
     })
   }, [value])
 
-  return <div ref={parent} className="doc-editor" />
+  return <div ref={parent} className={markdownEditorStyles()} />
 }

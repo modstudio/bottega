@@ -1,16 +1,8 @@
-import { Button } from '@bottega/hub-ui/button'
-import { mergeClasses as classes } from '@bottega/hub-ui/text/variant'
-import { CalendarDays, Maximize2, Minimize2 } from 'lucide-react'
-import {
-  type ReactNode,
-  type Ref,
-  type RefObject,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
-import { Markdown, MarkdownFenceRenderers } from '@/components/markdown/markdown'
+import { DocumentSurface, DocumentTitle } from '@bottega/hub-views/document-surface'
+import { KeyLine } from '@bottega/hub-views/key-line'
+import { Markdown, MarkdownFenceRenderers } from '@bottega/hub-views/markdown'
+import { CalendarDays } from 'lucide-react'
+import { type ReactNode, type Ref, type RefObject, useMemo } from 'react'
 import { articleListRows } from './article-list.ts'
 import { ArticleList } from './article-list.tsx'
 import { readingBody, viewedPaneTitle } from './body.ts'
@@ -21,10 +13,6 @@ import type { DocsLocation } from './location.ts'
 import { DOC_STATUS_ICONS } from './status-icon.ts'
 import type { BreadcrumbPart } from './tree.ts'
 import type { DocsAudience, DocsDoc, DocsTreeItem, TreeNode } from './types.ts'
-
-const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
-/** Characters past which a title is set at the smaller size. */
-export const LONG_TITLE = 40
 
 export function savedVersionAuthor(author: string, authorName?: string | null): string {
   const name = authorName?.trim()
@@ -64,91 +52,6 @@ function StatusLine({ status }: { status: DocsDoc['status'] }) {
       <Icon size={14} />
       {DOC_STATUS_LABELS[status]}
     </span>
-  )
-}
-
-/** Whether the element has scrolled up behind the article's sticky header. */
-function useScrolledPast(target: RefObject<HTMLElement | null>, watch: unknown): boolean {
-  const [past, setPast] = useState(false)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a new document mounts a new title to watch.
-  useEffect(() => {
-    const node = target.current
-    if (!node) {
-      setPast(false)
-      return
-    }
-    const sticky = node.previousElementSibling
-    const line = sticky ? Number.parseFloat(getComputedStyle(sticky).top) || 0 : 0
-    // The header's own height, so the title counts as gone once it is behind it.
-    const header = sticky ? sticky.getBoundingClientRect().height : 0
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry) setPast(!entry.isIntersecting && entry.boundingClientRect.top < line + 200)
-      },
-      { rootMargin: `-${line + header}px 0px 0px 0px` },
-    )
-    observer.observe(node)
-    return () => observer.disconnect()
-  }, [target, watch])
-  return past
-}
-
-/**
- * The article's own header: it stays at the top of the pane while the article scrolls, and
- * once the title has scrolled away it carries the title as the last crumb.
- */
-function ReadingTop({
-  crumbs,
-  title,
-  titleGone,
-  headerAction,
-  wide,
-  onWide,
-}: {
-  crumbs: readonly BreadcrumbPart[]
-  title: string
-  titleGone: boolean
-  headerAction?: ReactNode
-  wide: boolean
-  onWide: (wide: boolean) => void
-}) {
-  return (
-    <div
-      className={classes(
-        '-mx-6 md:-mx-15 z-10 flex lg:sticky lg:top-(--docs-stick) items-center justify-between gap-4 border-b bg-surface-page px-6 py-2.5 md:px-15',
-        titleGone ? 'border-border-default' : 'border-transparent',
-      )}
-    >
-      <div
-        className={classes(
-          eyebrow,
-          'flex min-w-0 items-baseline gap-2 overflow-hidden whitespace-nowrap',
-        )}
-      >
-        {crumbs.map((crumb, index) => (
-          <span key={crumb.key} className="contents">
-            {index > 0 ? <span>/</span> : null}
-            <span>{crumb.label}</span>
-          </span>
-        ))}
-        {titleGone ? (
-          <>
-            <span>/</span>
-            <span className="min-w-0 truncate text-text-primary">{title}</span>
-          </>
-        ) : null}
-      </div>
-      {/* For an article of wide tables: the pane takes the room of the facts column too. */}
-      <div className="flex shrink-0 items-center gap-2">
-        {headerAction}
-        <span className="hidden lg:inline-flex">
-          <Button size="sm" variant="secondary" onClick={() => onWide(!wide)}>
-            {wide ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-            {wide ? 'Reading width' : 'Wide'}
-          </Button>
-        </span>
-      </div>
-    </div>
   )
 }
 
@@ -240,13 +143,7 @@ function ArticleHeading({
       {titleView ? (
         titleView(heading)
       ) : (
-        <h1
-          ref={heading as Ref<HTMLHeadingElement>}
-          className="doc-title"
-          data-long={shown.title.length > LONG_TITLE ? '' : undefined}
-        >
-          {shown.title}
-        </h1>
+        <DocumentTitle title={shown.title} ref={heading as Ref<HTMLHeadingElement>} />
       )}
       {editBand ?? (
         <DocKeyInfo
@@ -281,21 +178,33 @@ function DocKeyInfo({
   renderLink: (location: DocsLocation, children: ReactNode, className?: string) => ReactNode
 }) {
   return (
-    <div className="doc-measure mt-3 flex min-h-control-sm flex-wrap items-center gap-x-4 gap-y-2 text-md text-text-muted">
-      {signedIn ? (statusView ?? <StatusLine status={doc.status} />) : null}
-      <span className="inline-flex items-center gap-1.5">
-        <CalendarDays size={14} />
-        Updated {updatedLabel(doc.updatedAt)}
-      </span>
-      {signedIn ? (
-        <DocLifecycle
-          doc={doc}
-          replacement={replacement}
-          locationFor={locationFor}
-          renderLink={renderLink}
-        />
-      ) : null}
-    </div>
+    <KeyLine
+      items={[
+        ...(signedIn
+          ? [{ key: 'status', content: statusView ?? <StatusLine status={doc.status} /> }]
+          : []),
+        {
+          key: 'updated',
+          icon: <CalendarDays size={14} />,
+          content: <>Updated {updatedLabel(doc.updatedAt)}</>,
+        },
+        ...(signedIn
+          ? [
+              {
+                key: 'lifecycle',
+                content: (
+                  <DocLifecycle
+                    doc={doc}
+                    replacement={replacement}
+                    locationFor={locationFor}
+                    renderLink={renderLink}
+                  />
+                ),
+              },
+            ]
+          : []),
+      ]}
+    />
   )
 }
 
@@ -350,8 +259,6 @@ export function DocsReading({
   renderLink: (location: DocsLocation, children: ReactNode, className?: string) => ReactNode
 }) {
   const shown = doc ? viewedPaneTitle(doc, viewedRevision ?? null) : { title: '', lede: null }
-  const heading = useRef<HTMLElement>(null)
-  const titleGone = useScrolledPast(heading, `${doc?.id ?? ''}:${editing ? '1' : '0'}`)
   const rows = useMemo(() => (doc ? articleListRows(tree, doc.id) : []), [tree, doc])
   const fenceRenderers = useMemo(
     () => ({
@@ -363,29 +270,14 @@ export function DocsReading({
   )
   return (
     <MarkdownFenceRenderers.Provider value={fenceRenderers}>
-      <main
-        className="min-w-0 border-border-default bg-surface-page px-6 pt-5 pb-8 md:px-15 md:pt-6 md:pb-9 lg:border-x [.site-docs-chrome_&]:border-b"
-        data-doc-wide={wide ? '' : undefined}
-      >
-        {error ? (
-          <p data-tone="error" className="text-status-text">
-            {error}
-          </p>
-        ) : null}
-        {doc ? (
-          <>
-            <ReadingTop
-              crumbs={crumbs}
-              title={shown.title}
-              titleGone={titleGone}
-              headerAction={headerAction}
-              wide={wide}
-              onWide={onWide}
-            />
-            {banner}
+      {doc ? (
+        <DocumentSurface
+          crumbs={[...crumbs]}
+          title={shown.title}
+          heading={(heading) => (
             <ArticleHeading
               shown={shown}
-              heading={heading}
+              heading={heading as RefObject<HTMLElement | null>}
               titleView={titleView}
               editing={editing}
               doc={doc}
@@ -396,30 +288,46 @@ export function DocsReading({
               renderLink={renderLink}
               editBand={editBand}
             />
-            {bodyView ?? (
-              <div className="mt-6">
-                <Markdown content={readingBody(doc.body)} />
-              </div>
-            )}
-            {field && doc.kind === 'article' && showsCode(signedIn, audience) ? (
-              <EditableSourceFiles key={doc.id} doc={doc} field={field} />
-            ) : showSourceFiles(signedIn, audience, doc.sourceFiles) ? (
-              <CodeSection key={doc.id} count={doc.sourceFiles?.length ?? 0}>
-                <ul>
-                  {doc.sourceFiles?.map((path) => (
-                    <li key={path}>
-                      <code>{path}</code>
-                    </li>
-                  ))}
-                </ul>
-              </CodeSection>
-            ) : null}
-            <ReadingAround around={around} onSelect={onSelect} />
-          </>
-        ) : pending ? null : (
-          <p className="text-md text-text-muted">No document to show.</p>
-        )}
-      </main>
+          )}
+          headerActions={headerAction}
+          wide={wide}
+          onWideChange={onWide}
+          banner={banner}
+          error={error}
+          body={
+            <>
+              {bodyView ?? (
+                <div className="mt-6">
+                  <Markdown content={readingBody(doc.body)} />
+                </div>
+              )}
+              {field && doc.kind === 'article' && showsCode(signedIn, audience) ? (
+                <EditableSourceFiles key={doc.id} doc={doc} field={field} />
+              ) : showSourceFiles(signedIn, audience, doc.sourceFiles) ? (
+                <CodeSection key={doc.id} count={doc.sourceFiles?.length ?? 0}>
+                  <ul>
+                    {doc.sourceFiles?.map((path) => (
+                      <li key={path}>
+                        <code>{path}</code>
+                      </li>
+                    ))}
+                  </ul>
+                </CodeSection>
+              ) : null}
+            </>
+          }
+          footer={<ReadingAround around={around} onSelect={onSelect} />}
+        />
+      ) : (
+        <DocumentSurface
+          crumbs={[]}
+          title=""
+          heading={() => null}
+          body={<p className="text-md text-text-muted">No document to show.</p>}
+          pending={pending}
+          error={error}
+        />
+      )}
     </MarkdownFenceRenderers.Provider>
   )
 }

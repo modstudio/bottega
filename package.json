@@ -10,6 +10,7 @@
     "hub/deploy/site",
     "hub/data",
     "hub/ui",
+    "hub/views",
     "hub/web",
     "retrieval"
   ],
@@ -29,6 +30,7 @@
     "hub": "bun --no-env-file hub/src/cli.ts"
   },
   "devDependencies": {
+    "@bottega/hub-views": "workspace:*",
     "@biomejs/biome": "2.5.13",
     "@electric-sql/pglite": "0.5.8",
     "@types/bun": "latest",

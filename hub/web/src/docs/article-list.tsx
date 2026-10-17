@@ -1,5 +1,5 @@
+import { DocTable } from '@bottega/hub-views/markdown'
 import type { ReactNode } from 'react'
-import { DocTable } from '@/components/markdown/markdown'
 import type { ArticleListRow } from './article-list.ts'
 import { DOC_FORM_LABELS } from './filters.ts'
 import type { DocsLocation } from './location.ts'

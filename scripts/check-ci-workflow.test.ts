@@ -5,7 +5,7 @@ test('refuses a workflow with a missing or extra job', () => {
   const workflow = `jobs:\n${expectedWorkflowJobNames()
     .map((job) => {
       if (job === 'hub-ui-stories')
-        return `  ${job}:\n    steps:\n      - run: bun run --cwd hub/ui storybook:test`
+        return `  ${job}:\n    steps:\n      - run: bun run --cwd hub/ui storybook:test\n      - run: bun run --cwd hub/views storybook:test`
       if (job === 'ci') return `  ${job}:\n    needs: [hub-ui-stories]`
       return `  ${job}:\n    runs-on: ubuntu-latest`
     })
@@ -36,7 +36,7 @@ function readWorkflowFixture() {
   return `jobs:\n${expectedWorkflowJobNames()
     .map((job) => {
       if (job === 'hub-ui-stories')
-        return `  ${job}:\n    steps:\n      - run: bun run --cwd hub/ui storybook:test`
+        return `  ${job}:\n    steps:\n      - run: bun run --cwd hub/ui storybook:test\n      - run: bun run --cwd hub/views storybook:test`
       if (job === 'ci') return `  ${job}:\n    needs: [hub-ui-stories]`
       return `  ${job}:\n    runs-on: ubuntu-latest`
     })

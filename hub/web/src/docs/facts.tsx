@@ -1,18 +1,13 @@
-import { Tabs } from '@bottega/hub-ui/tabs'
-import { mergeClasses as classes } from '@bottega/hub-ui/text/variant'
-import { ChevronDown } from 'lucide-react'
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { ContentsList } from '@bottega/hub-views/contents-list'
+import { DetailRail } from '@bottega/hub-views/detail-rail'
+import type { DocHeading } from '@bottega/hub-views/markdown/headings'
+import { RailSection as FactsSection } from '@bottega/hub-views/rail-section'
 import { relativeTime } from '@/lib/format'
 import { DocActions } from './doc-actions.tsx'
 import { EditableAbout, type FieldSave, type SubjectCatalog } from './doc-field-controls.tsx'
 import { DOC_AUDIENCE_LABELS, DOC_FORM_LABELS } from './filters.ts'
-import type { DocHeading } from './headings.ts'
 import { savedVersionAuthor } from './reading.tsx'
 import type { DocsDoc, DocsTreeItem } from './types.ts'
-import { useHeldPanel } from './use-held-panel.ts'
-
-const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
-type FactsTab = 'contents' | 'details'
 
 export type DocsFactsControls = {
   field: FieldSave
@@ -36,65 +31,14 @@ function exactTime(value: string): string {
 }
 
 function Contents({ headings }: { headings: readonly DocHeading[] }) {
-  if (!headings.length) return null
   return (
-    <section>
-      <span className={eyebrow}>On this page</span>
-      <ul className="mt-2.5 flex list-none flex-col gap-1.5 p-0">
-        {headings.map((heading) => (
-          <li key={heading.id}>
-            <a href={`#${heading.id}`} className="text-md text-text-muted hover:text-text-primary">
-              {heading.title.replace(/[`*]/g, '')}
-            </a>
-          </li>
-        ))}
-      </ul>
-    </section>
-  )
-}
-
-/**
- * A collapsible group of the Details tab. Collapsed, its label sits between equal space above and
- * below; sections after the first are divided by a rule.
- */
-function FactsSection({
-  label,
-  count,
-  defaultOpen,
-  children,
-}: {
-  label: string
-  count?: ReactNode
-  defaultOpen: boolean
-  children: ReactNode
-}) {
-  const [open, setOpen] = useState(defaultOpen)
-  return (
-    <section className="border-border-default [&:not(:first-child)]:border-t">
-      <button
-        type="button"
-        className={classes(
-          eyebrow,
-          'flex w-full cursor-pointer items-center gap-2 py-3 text-left hover:text-text-primary',
-        )}
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <span>{label}</span>
-        {count !== undefined ? (
-          <span className="ml-auto tabular-nums tracking-normal">{count}</span>
-        ) : null}
-        <ChevronDown
-          size={14}
-          className={classes(
-            count === undefined && 'ml-auto',
-            'transition-transform duration-(--duration-fast)',
-            open && 'rotate-180',
-          )}
-        />
-      </button>
-      {open ? <div className="pb-4">{children}</div> : null}
-    </section>
+    <ContentsList
+      items={headings.map((heading) => ({
+        id: heading.id,
+        href: `#${heading.id}`,
+        label: heading.title.replace(/[`*]/g, ''),
+      }))}
+    />
   )
 }
 
@@ -262,49 +206,40 @@ export function DocsFacts({
   onRevision?: (id: number | string) => void
   canManage?: boolean
 }) {
-  const panel = useRef<HTMLElement>(null)
-  useHeldPanel(panel)
-  const [tab, setTab] = useState<FactsTab>(headings.length ? 'contents' : 'details')
-  useEffect(() => {
-    if (!headings.length) setTab('details')
-  }, [headings.length])
   return (
-    <aside
-      ref={panel}
-      className="hidden px-5 pb-8 lg:sticky lg:top-(--docs-stick) lg:block lg:max-h-[calc(100dvh-var(--docs-stick))] lg:self-start lg:overflow-y-auto"
-    >
-      <div className="sticky top-0 z-10 bg-surface-page pt-4">
-        <Tabs
-          label="Article information"
-          value={tab}
-          onChange={(value) => setTab(value as FactsTab)}
-          items={[
-            { value: 'contents', label: 'Contents' },
-            { value: 'details', label: 'Details' },
-          ]}
-        />
-      </div>
-      <div role="tabpanel" className="pt-5">
-        {tab === 'contents' ? (
-          <Contents headings={headings} />
-        ) : (
-          <Details
-            doc={doc}
-            signedIn={signedIn}
-            canManage={canManage && Boolean(doc)}
-            showHistory={signedIn && showHistory}
-            controls={controls}
-            history={history}
-            revisionId={revisionId}
-            onRevision={onRevision}
-          />
-        )}
-        {canManage && controls && doc && tab === 'details' ? (
-          <FactsSection label="Actions" defaultOpen>
-            <DocActions key={doc.id} remove={controls!.remove} />
-          </FactsSection>
-        ) : null}
-      </div>
-    </aside>
+    <DetailRail
+      label="Article information"
+      defaultTab={headings.length ? 'contents' : 'details'}
+      tabs={[
+        {
+          value: 'contents',
+          label: 'Contents',
+          content: <Contents headings={headings} />,
+        },
+        {
+          value: 'details',
+          label: 'Details',
+          content: (
+            <>
+              <Details
+                doc={doc}
+                signedIn={signedIn}
+                canManage={canManage && Boolean(doc)}
+                showHistory={signedIn && showHistory}
+                controls={controls}
+                history={history}
+                revisionId={revisionId}
+                onRevision={onRevision}
+              />
+              {canManage && controls && doc ? (
+                <FactsSection label="Actions" defaultOpen>
+                  <DocActions key={doc.id} remove={controls.remove} />
+                </FactsSection>
+              ) : null}
+            </>
+          ),
+        },
+      ]}
+    />
   )
 }

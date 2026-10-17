@@ -2,6 +2,7 @@ import { Button } from '@bottega/hub-ui/button'
 import { Dialog } from '@bottega/hub-ui/dialog'
 import { Maximize2 } from 'lucide-react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { markdownOverflowStyles } from './markdown-overflow.styles.ts'
 
 /**
  * Content that scrolls inside the reading measure. When it is wider than the
@@ -30,16 +31,16 @@ export function DocOverflow({
     return () => observer.disconnect()
   }, [])
   return (
-    <div className="doc-overflow">
+    <div className={markdownOverflowStyles().root()}>
       {wide ? (
-        <div className="doc-overflow-actions">
+        <div className={markdownOverflowStyles().actions()}>
           <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
             <Maximize2 size={13} />
             {expandLabel}
           </Button>
         </div>
       ) : null}
-      <div className="doc-overflow-scroll" ref={scroller}>
+      <div className={markdownOverflowStyles().scroll()} ref={scroller}>
         {children}
       </div>
       {open ? (
@@ -47,9 +48,9 @@ export function DocOverflow({
           open
           onOpenChange={setOpen}
           title={title}
-          className="w-[min(96rem,calc(100vw-3rem))] max-w-none"
+          className={markdownOverflowStyles().dialog()}
         >
-          <div className="markdown doc-overflow-full">{children}</div>
+          <div className={markdownOverflowStyles().full()}>{children}</div>
         </Dialog>
       ) : null}
     </div>

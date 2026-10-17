@@ -4,6 +4,7 @@ import { Select } from '@bottega/hub-ui/listbox/select'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { Popover } from '@bottega/hub-ui/popover'
 import { mergeClasses as classes } from '@bottega/hub-ui/text/variant'
+import { useHeldPanel } from '@bottega/hub-views/detail-rail/use-held-panel'
 import { type ReactNode, type Ref, useEffect, useMemo, useRef, useState } from 'react'
 import type { FieldSave } from './doc-field-controls.tsx'
 import { DocsFacts, type DocsFactsControls } from './facts.tsx'
@@ -21,7 +22,6 @@ import { SearchDialog } from './search.tsx'
 import { breadcrumb, treePath } from './tree.ts'
 import { GroupedTree, TreeList } from './tree-view.tsx'
 import type * as Docs from './types.ts'
-import { useHeldPanel } from './use-held-panel.ts'
 
 export type DocsViewProps = {
   sourceLabel: string

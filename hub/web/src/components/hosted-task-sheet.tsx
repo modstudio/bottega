@@ -4,11 +4,11 @@ import { Badge } from '@bottega/hub-ui/badge'
 import { Companion } from '@bottega/hub-ui/companion'
 import { DisplayRow, FieldSection } from '@bottega/hub-ui/form-layout'
 import { Identifier } from '@bottega/hub-ui/identifier'
+import { Markdown } from '@bottega/hub-views/markdown'
 import { useQuery } from '@tanstack/react-query'
 import { relativeTime } from '@/lib/format'
 import { taskStatusLook } from '@/lib/task-status'
 import { ProjectMark, SourceMark } from './design-system'
-import { Markdown } from './markdown/markdown'
 import { MeasuresSummary } from './measure-display'
 
 type HostedDetail = {

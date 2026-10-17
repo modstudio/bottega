@@ -1,8 +1,8 @@
 import type { Editor } from '@tiptap/core'
 import { EditorContent, ReactNodeViewRenderer, useEditor } from '@tiptap/react'
 import { useEffect, useRef } from 'react'
-import { Markdown } from '@/components/markdown/markdown'
-import { readingBody } from './body.ts'
+import { Markdown } from '../markdown/markdown.tsx'
+import { readingBody } from './editor-body.ts'
 import { RichEditContext } from './rich-edit-context.ts'
 import { richExtensions } from './rich-extensions.ts'
 import { LOCKED_BLOCK_NAME, LockedBlock } from './rich-locked.ts'
@@ -75,5 +75,3 @@ export function RichEditor({
     </RichEditContext.Provider>
   )
 }
-
-export { RichToolbar } from './rich-toolbar.tsx'

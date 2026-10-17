@@ -1,3 +1,4 @@
+import { secondLevelHeadings } from '@bottega/hub-views/markdown/headings'
 import {
   activeFilterCount,
   applyFilters,
@@ -8,7 +9,6 @@ import {
   projectSubjects,
   selectedAudience,
 } from './filters.ts'
-import { secondLevelHeadings } from './headings.ts'
 import {
   breadcrumb,
   groupRootsBySubject,

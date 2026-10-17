@@ -163,3 +163,72 @@ export function uiArchitectureRules(
     },
   ]
 }
+
+const hubViewFolders = [
+  'markdown',
+  'document-surface',
+  'key-line',
+  'detail-rail',
+  'rail-section',
+  'contents-list',
+  'document-editor',
+]
+
+const hubViewsFolderLayerRuleName = 'hub-views-folder-has-a-layer'
+
+export function viewArchitectureRules(
+  dependencyPath: (target: string) => string,
+  packageName: string,
+): UiArchitectureRule[] {
+  const folders = `^hub/views/src/(?:${hubViewFolders.join('|')})/`
+  return [
+    {
+      name: hubViewsFolderLayerRuleName,
+      severity: 'error',
+      comment: 'Every hub-views module folder is declared.',
+      from: { path: '^hub/views/src/', pathNot: [folders] },
+      to: {},
+    },
+    {
+      name: 'hub-views-is-domain-and-router-independent',
+      severity: 'error',
+      comment: 'Document surfaces know no hub data, routes, router, query, or tRPC.',
+      from: { path: '^hub/views/' },
+      to: {
+        path: [
+          '^hub/(?:data|web)/',
+          '^@tanstack/(?:react-query|react-router)$',
+          '^@trpc/',
+          dependencyPath('@tanstack/react-query'),
+          dependencyPath('@tanstack/react-router'),
+          dependencyPath('@trpc/client'),
+          dependencyPath('@trpc/server'),
+        ].join('|'),
+      },
+    },
+    {
+      name: 'hub-views-does-not-import-unresolved-hub-data',
+      severity: 'error',
+      comment: 'Hub views cannot import hub-data, including undeclared package subpaths.',
+      from: { path: '^hub/views/' },
+      to: { path: '^@bottega/hub-data(?:/|$)', couldNotResolve: true },
+    },
+    {
+      name: 'hub-views-source-imports-use-package-exports',
+      severity: 'error',
+      comment: 'Code outside hub-views imports it through package exports.',
+      from: {
+        path: '^(?!hub/views/)',
+        pathNot: ['^scripts/check-doc-editor-rich-style\\.ts$'],
+      },
+      to: { path: '^hub/views/src/', dependencyTypes: ['local'] },
+    },
+    {
+      name: 'hub-views-package-imports-resolve-declared-exports',
+      severity: 'error',
+      comment: 'Every hub-views package import names a declared export subpath.',
+      from: { path: '^(?!hub/views/)' },
+      to: { path: `^${packageName}/`, couldNotResolve: true },
+    },
+  ]
+}

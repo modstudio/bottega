@@ -124,8 +124,12 @@ jobs:
         run: bun run --cwd hub/ui playwright install --with-deps chromium
       - name: Build stories
         run: bun run --cwd hub/ui storybook:build
+      - name: Build view stories
+        run: bun run --cwd hub/views storybook:build
       - name: Test stories
         run: bun run --cwd hub/ui storybook:test
+      - name: Test view stories
+        run: bun run --cwd hub/views storybook:test
 
   hub-deploy-site:
     runs-on: ubuntu-latest

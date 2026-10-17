@@ -6,3 +6,4 @@
 @import "./doc-editor.css";
 @import "./doc-editor-rich.css";
 @source "../../../ui/src";
+@source "../../../views/src";

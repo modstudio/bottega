@@ -51,6 +51,8 @@ const ALLOWED = new Set([
   'orchestrator/src/run/run-mcp-attachment.test.ts',
   // The architecture manifest must name the platform-derived release entry by its exact path.
   'scripts/architecture-release.ts',
+  // The UI architecture manifest names workspace packages to enforce their boundaries.
+  'scripts/architecture-ui-layers.ts',
   // Shell recipes invoke the front-door executable by its PATH name and cannot import the slug.
   'local-stack/bin/gx10-install.sh',
   'ops/bin/projects-morning-refresh.sh',
@@ -96,7 +98,7 @@ for (const rel of new Glob('**/*.{ts,tsx,js,mjs,json,py,sh}').scanSync({ cwd: RO
     if (!NAME.test(line)) return
     // A workspace import names the package protocol declared in package.json; source cannot
     // interpolate an imported brand constant into a module specifier.
-    if (/from ['"]@bottega\/hub-(?:data|ui)\//.test(line.trim())) return
+    if (/['"]@bottega\/hub-(?:data|ui|views)\//.test(line.trim())) return
     // A comment is prose: see the header. `*` covers block-comment
     // continuation lines, which is how most of these are written.
     const t = line.trim()
