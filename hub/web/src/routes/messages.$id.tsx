@@ -1,3 +1,5 @@
+import { queryClient, trpc } from '@bottega/hub-data/client'
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
 import { Badge } from '@bottega/hub-ui/badge'
 import { Button } from '@bottega/hub-ui/button'
 import { Companion } from '@bottega/hub-ui/companion'
@@ -9,9 +11,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import type { inferRouterOutputs } from '@trpc/server'
 import { useRef, useState } from 'react'
 import { sendTimestamp } from '@/lib/format'
-import { isHostedMode } from '@/lib/hub-mode'
 import { originText } from '@/routes/messages'
-import { queryClient, trpc } from '@/trpc/client'
 import type { AppRouter } from '../../../src/trpc/router.ts'
 
 type BoardOutputs = inferRouterOutputs<AppRouter>['board']

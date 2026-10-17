@@ -5,10 +5,8 @@ import { Input } from '@bottega/hub-ui/field/input'
 import { SearchSelect } from '@bottega/hub-ui/listbox/search-select'
 import { Menu } from '@bottega/hub-ui/menu'
 import { Popover } from '@bottega/hub-ui/popover'
-import { useMutation, useQuery } from '@tanstack/react-query'
 import { ChevronDown, X } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
-import { queryClient, trpc } from '@/trpc/client'
 import {
   DOC_AUDIENCES,
   DOC_FORMS,
@@ -20,7 +18,6 @@ import { CodeSection } from './code-section.tsx'
 import {
   audiencesFrom,
   type DocFieldChange,
-  fieldWriteInput,
   parentChoices,
   subjectsExcept,
   withCurrentSubjects,
@@ -31,98 +28,25 @@ import {
   DOC_FORM_LABELS,
   DOC_STATUS_LABELS,
 } from './filters.ts'
-import { isScope } from './scope.ts'
 import { DOC_STATUS_ICONS } from './status-icon.ts'
-import type { DocsDoc, DocsSource } from './types.ts'
-import { useDocsTree, useStoredDocument } from './use-docs.ts'
+import type { DocsDoc, DocsTreeItem } from './types.ts'
 
 type Field = DocFieldChange['field']
 
-/**
- * Saves one field of a document at once, as its own revision carrying the stored title and body.
- * Each field keeps its own in-flight state and refusal, so controls can live wherever the field is
- * shown.
- */
-function useDocFieldSave(doc: DocsDoc, source: DocsSource) {
-  const storedDocument = useStoredDocument(doc, source, true)
-  const [pending, setPending] = useState<Set<Field>>(() => new Set())
-  const [errors, setErrors] = useState<Partial<Record<Field, string>>>({})
-  const canAddress = source === 'local' ? isScope(doc.scope) : Boolean(doc.spaceId)
-  const ready = Boolean(storedDocument && (source === 'local' || storedDocument.revision))
-  const localSave = useMutation(trpc.doc.set.mutationOptions())
-  const hostedSave = useMutation(trpc.record.saveDoc.mutationOptions())
-
-  const settled = (field: Field) =>
-    setPending((current) => {
-      const next = new Set(current)
-      next.delete(field)
-      return next
-    })
-  const callbacks = (field: Field) => ({
-    onSuccess: async () => {
-      await queryClient.invalidateQueries()
-      settled(field)
-    },
-    onError: (cause: unknown) => {
-      setErrors((current) => ({
-        ...current,
-        [field]: cause instanceof Error ? cause.message : String(cause),
-      }))
-      settled(field)
-    },
-  })
-
-  function save(change: DocFieldChange) {
-    if (!canAddress || !storedDocument) return
-    setErrors((current) => ({ ...current, [change.field]: undefined }))
-    setPending((current) => new Set(current).add(change.field))
-    if (source === 'hosted') {
-      if (!doc.spaceId || !storedDocument.revision) return
-      hostedSave.mutate(
-        fieldWriteInput(
-          'hosted',
-          { ...doc, spaceId: doc.spaceId },
-          { ...storedDocument, revision: storedDocument.revision },
-          change,
-        ),
-        callbacks(change.field),
-      )
-      return
-    }
-    localSave.mutate(fieldWriteInput('local', doc, storedDocument, change), callbacks(change.field))
-  }
-
-  return {
-    canAddress,
-    save,
-    disabled: (field: Field) => !ready || pending.has(field),
-    error: (field: Field) => errors[field],
-  }
+export type FieldSave = {
+  canAddress: boolean
+  run: (change: DocFieldChange) => void
+  pending: boolean
+  error: unknown
+  refused?: string
+  disabled: (field: Field) => boolean
+  errorFor: (field: Field) => string | undefined
 }
 
-type FieldSave = ReturnType<typeof useDocFieldSave>
-
-function useSubjects(doc: DocsDoc, source: DocsSource, canAddress: boolean) {
-  const project = doc.projectName ?? ''
-  const enabled = doc.kind === 'article' && canAddress && Boolean(project)
-  const local = useQuery({
-    ...trpc.subject.list.queryOptions({ project }),
-    enabled: source === 'local' && enabled,
-  })
-  const hosted = useQuery({
-    ...trpc.record.subjects.queryOptions({
-      spaceId: doc.spaceId ?? '00000000-0000-4000-8000-000000000000',
-      project,
-    }),
-    enabled: source === 'hosted' && enabled,
-  })
-  const query = source === 'hosted' ? hosted : local
-  return {
-    // Until the catalog has arrived, a menu built from it would offer only "None".
-    ready: enabled && query.isSuccess,
-    error: enabled ? query.error?.message : undefined,
-    subjects: (query.data ?? []).map(({ id, name }): DocArticleSubject => ({ id, name })),
-  }
+export type SubjectCatalog = {
+  ready: boolean
+  error?: string
+  subjects: DocArticleSubject[]
 }
 
 function FieldError({ message }: { message?: string }) {
@@ -328,8 +252,7 @@ function SearchChoice({
 }
 
 /** The status on the line under the title. An editor clicks it to choose another. */
-export function EditableStatus({ doc, source }: { doc: DocsDoc; source: DocsSource }) {
-  const field = useDocFieldSave(doc, source)
+export function EditableStatus({ doc, field }: { doc: DocsDoc; field: FieldSave }) {
   const Icon = DOC_STATUS_ICONS[doc.status]
   const label = (
     <>
@@ -340,7 +263,7 @@ export function EditableStatus({ doc, source }: { doc: DocsDoc; source: DocsSour
   const fixed = !field.canAddress || doc.status === 'superseded' || doc.status === 'archived'
   if (fixed) return <span className="inline-flex items-center gap-1.5">{label}</span>
   const choose = (status: 'draft' | 'current') => () => {
-    if (status !== doc.status) field.save({ field: 'status', value: status })
+    if (status !== doc.status) field.run({ field: 'status', value: status })
   }
   return (
     <span className="inline-flex items-center gap-1.5">
@@ -361,15 +284,22 @@ export function EditableStatus({ doc, source }: { doc: DocsDoc; source: DocsSour
           onSelect: choose(status),
         }))}
       />
-      <FieldError message={field.error('status')} />
+      <FieldError message={field.errorFor('status')} />
     </span>
   )
 }
 
-function ParentRow({ doc, source, field }: { doc: DocsDoc; source: DocsSource; field: FieldSave }) {
-  const tree = useDocsTree(source)
-  const choices = parentChoices(doc, tree.items)
-  const title = tree.items.find(({ id }) => id === doc.parentId)?.title ?? 'Top level'
+function ParentRow({
+  doc,
+  items,
+  field,
+}: {
+  doc: DocsDoc
+  items: readonly DocsTreeItem[]
+  field: FieldSave
+}) {
+  const choices = parentChoices(doc, items)
+  const title = items.find(({ id }) => id === doc.parentId)?.title ?? 'Top level'
   return (
     <Row label="Parent">
       {field.canAddress ? (
@@ -382,13 +312,13 @@ function ParentRow({ doc, source, field }: { doc: DocsDoc; source: DocsSource; f
           ]}
           disabled={field.disabled('parent')}
           onChoose={(id) =>
-            field.save({ field: 'parent', value: choices.find((item) => item.id === id) ?? null })
+            field.run({ field: 'parent', value: choices.find((item) => item.id === id) ?? null })
           }
         />
       ) : (
         title
       )}
-      <FieldError message={field.error('parent')} />
+      <FieldError message={field.errorFor('parent')} />
     </Row>
   )
 }
@@ -405,27 +335,26 @@ function AudienceRow({ doc, field }: { doc: DocsDoc; field: FieldSave }) {
           required
           onSave={(values) => {
             const value = audiencesFrom(values)
-            if (value) field.save({ field: 'audiences', value })
+            if (value) field.run({ field: 'audiences', value })
           }}
         />
       ) : (
         doc.audiences.map((audience) => DOC_AUDIENCE_LABELS[audience]).join(', ')
       )}
-      <FieldError message={field.error('audiences')} />
+      <FieldError message={field.errorFor('audiences')} />
     </Row>
   )
 }
 
 function ArticleRows({
   doc,
-  source,
   field,
+  catalog,
 }: {
   doc: DocsDoc
-  source: DocsSource
   field: FieldSave
+  catalog: SubjectCatalog
 }) {
-  const catalog = useSubjects(doc, source, field.canAddress)
   const related = doc.relatedSubjects ?? []
   const known = withCurrentSubjects(catalog.subjects, [
     ...(doc.articleSubject ? [doc.articleSubject] : []),
@@ -446,7 +375,7 @@ function ArticleRows({
             ]}
             disabled={field.disabled('form')}
             onChoose={(value) =>
-              field.save({ field: 'form', value: (value || null) as DocForm | null })
+              field.run({ field: 'form', value: (value || null) as DocForm | null })
             }
           />
         ) : doc.form ? (
@@ -454,7 +383,7 @@ function ArticleRows({
         ) : (
           'None'
         )}
-        <FieldError message={field.error('form')} />
+        <FieldError message={field.errorFor('form')} />
       </Row>
       <Row label="Subject">
         {catalog.ready ? (
@@ -467,7 +396,7 @@ function ArticleRows({
             ]}
             disabled={field.disabled('articleSubject')}
             onChoose={(id) =>
-              field.save({
+              field.run({
                 field: 'articleSubject',
                 value: subjectChoices.find((item) => item.id === id) ?? null,
               })
@@ -476,7 +405,7 @@ function ArticleRows({
         ) : (
           (doc.articleSubject?.name ?? 'None')
         )}
-        <FieldError message={field.error('articleSubject') ?? catalog.error} />
+        <FieldError message={field.errorFor('articleSubject') ?? catalog.error} />
       </Row>
       <Row label="Related">
         {catalog.ready ? (
@@ -488,7 +417,7 @@ function ArticleRows({
             selected={related.map(({ id }) => id)}
             disabled={field.disabled('relatedSubjects')}
             onSave={(ids) =>
-              field.save({
+              field.run({
                 field: 'relatedSubjects',
                 value: known
                   .filter(({ id }) => ids.includes(id))
@@ -499,7 +428,7 @@ function ArticleRows({
         ) : (
           related.map(({ name }) => name).join(', ') || 'None'
         )}
-        <FieldError message={field.error('relatedSubjects')} />
+        <FieldError message={field.errorFor('relatedSubjects')} />
       </Row>
     </>
   )
@@ -512,7 +441,7 @@ function SummaryRow({ doc, field }: { doc: DocsDoc; field: FieldSave }) {
     setEditing(false)
     const next = draft.trim() || null
     const current = doc.summarySource === 'written' ? (doc.summary ?? '') : null
-    if (next !== current) field.save({ field: 'summary', value: next })
+    if (next !== current) field.run({ field: 'summary', value: next })
   }
   return (
     <Row label="Summary">
@@ -550,7 +479,7 @@ function SummaryRow({ doc, field }: { doc: DocsDoc; field: FieldSave }) {
           <RowChevron />
         </button>
       )}
-      <FieldError message={field.error('summary')} />
+      <FieldError message={field.errorFor('summary')} />
     </Row>
   )
 }
@@ -569,26 +498,35 @@ function DeliveryRow({ doc, field }: { doc: DocsDoc; field: FieldSave }) {
           }))}
           disabled={field.disabled('delivery')}
           onChoose={(value) =>
-            field.save({ field: 'delivery', value: value as 'inject' | 'demand' })
+            field.run({ field: 'delivery', value: value as 'inject' | 'demand' })
           }
         />
       ) : (
         DOC_DELIVERY_LABELS[delivery]
       )}
-      <FieldError message={field.error('delivery')} />
+      <FieldError message={field.errorFor('delivery')} />
     </Row>
   )
 }
 
 /** The About rows for a reader who may edit: each field is changed where it is shown. */
-export function EditableAbout({ doc, source }: { doc: DocsDoc; source: DocsSource }) {
-  const field = useDocFieldSave(doc, source)
+export function EditableAbout({
+  doc,
+  field,
+  items,
+  subjects,
+}: {
+  doc: DocsDoc
+  field: FieldSave
+  items: readonly DocsTreeItem[]
+  subjects: SubjectCatalog
+}) {
   return (
     <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2.5 text-md">
-      <ParentRow doc={doc} source={source} field={field} />
+      <ParentRow doc={doc} items={items} field={field} />
       <AudienceRow doc={doc} field={field} />
       {doc.kind === 'article' ? (
-        <ArticleRows doc={doc} source={source} field={field} />
+        <ArticleRows doc={doc} field={field} catalog={subjects} />
       ) : (
         <DeliveryRow doc={doc} field={field} />
       )}
@@ -597,8 +535,7 @@ export function EditableAbout({ doc, source }: { doc: DocsDoc; source: DocsSourc
 }
 
 /** The article's source files under "In the code", added and removed in place. */
-export function EditableSourceFiles({ doc, source }: { doc: DocsDoc; source: DocsSource }) {
-  const field = useDocFieldSave(doc, source)
+export function EditableSourceFiles({ doc, field }: { doc: DocsDoc; field: FieldSave }) {
   const [path, setPath] = useState('')
   const files = doc.sourceFiles ?? []
   const disabled = !field.canAddress || field.disabled('sourceFiles')
@@ -616,7 +553,7 @@ export function EditableSourceFiles({ doc, source }: { doc: DocsDoc; source: Doc
                   disabled={disabled}
                   aria-label={`Remove ${file}`}
                   onClick={() =>
-                    field.save({
+                    field.run({
                       field: 'sourceFiles',
                       value: files.filter((value) => value !== file),
                       action: 'removed',
@@ -637,7 +574,7 @@ export function EditableSourceFiles({ doc, source }: { doc: DocsDoc; source: Doc
           event.preventDefault()
           const next = path.trim()
           if (!next || disabled) return
-          field.save({ field: 'sourceFiles', value: [...files, next], action: 'added', path: next })
+          field.run({ field: 'sourceFiles', value: [...files, next], action: 'added', path: next })
           setPath('')
         }}
       >
@@ -654,7 +591,7 @@ export function EditableSourceFiles({ doc, source }: { doc: DocsDoc; source: Doc
           Add
         </Button>
       </form>
-      <FieldError message={field.error('sourceFiles')} />
+      <FieldError message={field.errorFor('sourceFiles')} />
     </CodeSection>
   )
 }

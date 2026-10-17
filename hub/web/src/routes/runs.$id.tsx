@@ -1,3 +1,5 @@
+import { type OperatorWaitingItem, queryClient, trpc } from '@bottega/hub-data/client'
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
 import { Badge } from '@bottega/hub-ui/badge'
 import { Button, IconButton } from '@bottega/hub-ui/button'
 import { Companion } from '@bottega/hub-ui/companion'
@@ -11,9 +13,7 @@ import { useEffect, useState } from 'react'
 import { type ReviewLens, ReviewLensList } from '@/components/review-lenses'
 import { WaitingBadge } from '@/components/waiting-badge'
 import { duration, relativeTime } from '@/lib/format'
-import { isHostedMode } from '@/lib/hub-mode'
 import { waitingByRun } from '@/lib/operator-waiting'
-import { type OperatorWaitingItem, queryClient, trpc } from '@/trpc/client'
 
 const DELIVERIES = ['none', 'partial', 'full'] as const
 const QUALITIES = ['wrong', 'mixed', 'right'] as const

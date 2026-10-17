@@ -58,19 +58,6 @@ export type DocsSearchMatch = {
   highlights: DocSnippetHighlight[]
 }
 
-export type DocsSource = 'local' | 'hosted' | 'public'
-
 export type TreeNode = DocsTreeItem & { children: TreeNode[]; navigationDisabled: boolean }
 
 export type DocsTreeGroup = { heading: string; children: TreeNode[] }
-
-export function docsSource(hosted: boolean, signedIn: boolean): DocsSource {
-  if (!hosted) return 'local'
-  return signedIn ? 'hosted' : 'public'
-}
-
-export function docsSourceLabel(source: DocsSource, activeSpaceName?: string): string {
-  if (source === 'local') return 'Local store'
-  if (source === 'public') return 'Public'
-  return activeSpaceName ? `Hosted record · ${activeSpaceName}` : 'Hosted record'
-}

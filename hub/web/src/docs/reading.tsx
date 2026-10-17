@@ -1,6 +1,5 @@
 import { Button } from '@bottega/hub-ui/button'
 import { mergeClasses as classes } from '@bottega/hub-ui/text/variant'
-import { Link } from '@tanstack/react-router'
 import { CalendarDays, Maximize2, Minimize2 } from 'lucide-react'
 import {
   type ReactNode,
@@ -16,12 +15,12 @@ import { articleListRows } from './article-list.ts'
 import { ArticleList } from './article-list.tsx'
 import { readingBody, viewedPaneTitle } from './body.ts'
 import { CodeSection } from './code-section.tsx'
-import { EditableSourceFiles, EditableStatus } from './doc-field-controls.tsx'
+import { EditableSourceFiles, EditableStatus, type FieldSave } from './doc-field-controls.tsx'
 import { DOC_STATUS_LABELS } from './filters.ts'
 import type { DocsLocation } from './location.ts'
 import { DOC_STATUS_ICONS } from './status-icon.ts'
 import type { BreadcrumbPart } from './tree.ts'
-import type { DocsAudience, DocsDoc, DocsSource, DocsTreeItem, TreeNode } from './types.ts'
+import type { DocsAudience, DocsDoc, DocsTreeItem, TreeNode } from './types.ts'
 
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
 /** Characters past which a title is set at the smaller size. */
@@ -193,22 +192,20 @@ function DocLifecycle({
   doc,
   replacement,
   locationFor,
+  renderLink,
 }: {
   doc: DocsDoc
   replacement: DocsTreeItem | null
   locationFor: (item: DocsTreeItem) => DocsLocation
+  renderLink: (location: DocsLocation, children: ReactNode, className?: string) => ReactNode
 }) {
   if (doc.status !== 'superseded' || !doc.replacementSlug) return null
   return (
     <span>
       Replaced by{' '}
-      {replacement ? (
-        <Link {...locationFor(replacement)} className="text-link hover:underline">
-          {replacement.title}
-        </Link>
-      ) : (
-        doc.replacementSlug
-      )}
+      {replacement
+        ? renderLink(locationFor(replacement), replacement.title, 'text-link hover:underline')
+        : doc.replacementSlug}
     </span>
   )
 }
@@ -222,7 +219,8 @@ function ArticleHeading({
   signedIn,
   replacement,
   locationFor,
-  fieldSource,
+  field,
+  renderLink,
   editBand,
 }: {
   shown: { title: string; lede: string | null }
@@ -233,7 +231,8 @@ function ArticleHeading({
   signedIn: boolean
   replacement: DocsTreeItem | null
   locationFor: (item: DocsTreeItem) => DocsLocation
-  fieldSource?: DocsSource
+  field?: FieldSave
+  renderLink: (location: DocsLocation, children: ReactNode, className?: string) => ReactNode
   editBand?: ReactNode
 }) {
   return (
@@ -255,9 +254,8 @@ function ArticleHeading({
           signedIn={signedIn}
           replacement={replacement}
           locationFor={locationFor}
-          statusView={
-            fieldSource ? <EditableStatus key={doc.id} doc={doc} source={fieldSource} /> : undefined
-          }
+          renderLink={renderLink}
+          statusView={field ? <EditableStatus key={doc.id} doc={doc} field={field} /> : undefined}
         />
       )}
       {shown.lede && !editing ? (
@@ -272,6 +270,7 @@ function DocKeyInfo({
   signedIn,
   replacement,
   locationFor,
+  renderLink,
   statusView,
 }: {
   doc: DocsDoc
@@ -279,6 +278,7 @@ function DocKeyInfo({
   statusView?: ReactNode
   replacement: DocsTreeItem | null
   locationFor: (item: DocsTreeItem) => DocsLocation
+  renderLink: (location: DocsLocation, children: ReactNode, className?: string) => ReactNode
 }) {
   return (
     <div className="doc-measure mt-3 flex min-h-control-sm flex-wrap items-center gap-x-4 gap-y-2 text-md text-text-muted">
@@ -288,7 +288,12 @@ function DocKeyInfo({
         Updated {updatedLabel(doc.updatedAt)}
       </span>
       {signedIn ? (
-        <DocLifecycle doc={doc} replacement={replacement} locationFor={locationFor} />
+        <DocLifecycle
+          doc={doc}
+          replacement={replacement}
+          locationFor={locationFor}
+          renderLink={renderLink}
+        />
       ) : null}
     </div>
   )
@@ -315,7 +320,8 @@ export function DocsReading({
   editBand,
   banner,
   titleView,
-  fieldSource,
+  field,
+  renderLink,
 }: {
   doc: DocsDoc | null
   wide: boolean
@@ -340,15 +346,20 @@ export function DocsReading({
   banner?: ReactNode
   titleView?: (headingRef: Ref<HTMLElement | null>) => ReactNode
   /** Where the article's fields are saved, set only when this reader may edit them in place. */
-  fieldSource?: DocsSource
+  field?: FieldSave
+  renderLink: (location: DocsLocation, children: ReactNode, className?: string) => ReactNode
 }) {
   const shown = doc ? viewedPaneTitle(doc, viewedRevision ?? null) : { title: '', lede: null }
   const heading = useRef<HTMLElement>(null)
   const titleGone = useScrolledPast(heading, `${doc?.id ?? ''}:${editing ? '1' : '0'}`)
   const rows = useMemo(() => (doc ? articleListRows(tree, doc.id) : []), [tree, doc])
   const fenceRenderers = useMemo(
-    () => ({ articleList: () => <ArticleList rows={rows} locationFor={locationFor} /> }),
-    [rows, locationFor],
+    () => ({
+      articleList: () => (
+        <ArticleList rows={rows} locationFor={locationFor} renderLink={renderLink} />
+      ),
+    }),
+    [rows, locationFor, renderLink],
   )
   return (
     <MarkdownFenceRenderers.Provider value={fenceRenderers}>
@@ -381,7 +392,8 @@ export function DocsReading({
               signedIn={signedIn}
               replacement={replacement}
               locationFor={locationFor}
-              fieldSource={fieldSource}
+              field={field}
+              renderLink={renderLink}
               editBand={editBand}
             />
             {bodyView ?? (
@@ -389,8 +401,8 @@ export function DocsReading({
                 <Markdown content={readingBody(doc.body)} />
               </div>
             )}
-            {fieldSource && doc.kind === 'article' && showsCode(signedIn, audience) ? (
-              <EditableSourceFiles key={doc.id} doc={doc} source={fieldSource} />
+            {field && doc.kind === 'article' && showsCode(signedIn, audience) ? (
+              <EditableSourceFiles key={doc.id} doc={doc} field={field} />
             ) : showSourceFiles(signedIn, audience, doc.sourceFiles) ? (
               <CodeSection key={doc.id} count={doc.sourceFiles?.length ?? 0}>
                 <ul>

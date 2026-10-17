@@ -1,8 +1,8 @@
+import { trpc } from '@bottega/hub-data/client'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { SnapshotEmpty, SnapshotHeader } from '@/components/hosted-snapshot'
 import { HealthView, RoutingView } from '@/components/insight-view'
-import { trpc } from '@/trpc/client'
 
 export function HostedRouting() {
   const [machineId, setMachineId] = useState<string>()

@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router'
+import type { ReactNode } from 'react'
 import { DocTable } from '@/components/markdown/markdown'
 import type { ArticleListRow } from './article-list.ts'
 import { DOC_FORM_LABELS } from './filters.ts'
@@ -8,9 +8,11 @@ import type { DocsTreeItem } from './types.ts'
 export function ArticleList({
   rows,
   locationFor,
+  renderLink,
 }: {
   rows: readonly ArticleListRow[]
   locationFor: (item: DocsTreeItem) => DocsLocation
+  renderLink: (location: DocsLocation, children: ReactNode, className?: string) => ReactNode
 }) {
   if (!rows.length) return <div className="mt-3 text-md text-text-muted">No articles yet.</div>
   return (
@@ -29,9 +31,10 @@ export function ArticleList({
             <td>
               {depth === 1 ? '↳ ' : null}
               {linked ? (
-                <Link {...locationFor(item)}>
-                  {depth === 0 ? <strong>{item.title}</strong> : item.title}
-                </Link>
+                renderLink(
+                  locationFor(item),
+                  depth === 0 ? <strong>{item.title}</strong> : item.title,
+                )
               ) : (
                 <strong>{item.title}</strong>
               )}

@@ -18,9 +18,10 @@ import { docModules } from './architecture-doc-modules.ts'
 import { enforcementModules } from './architecture-enforcement-modules.ts'
 import { focusedTestModules } from './architecture-focused-test-modules.ts'
 import { gateModules } from './architecture-gate-modules.ts'
+import { hubDataArchitectureRules } from './architecture-hub-data.ts'
 import { hubImportModules } from './architecture-hub-import-modules.ts'
 import { hubModuleSpecs } from './architecture-hub-modules.ts'
-import { HUB_UI_PACKAGE } from './architecture-hub-packages.ts'
+import { HUB_DATA_PACKAGE, HUB_UI_PACKAGE } from './architecture-hub-packages.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
 import { metricModules } from './architecture-metric-modules.ts'
 import { monitorModules } from './architecture-monitor-modules.ts'
@@ -80,6 +81,12 @@ const concerns: ConcernManifest = {
       to: 'hub/src/trpc/router.ts',
       dependencyTypes: ['type-only'],
       reason: 'The web client imports only the hub router type across the web boundary.',
+    },
+    {
+      from: 'hub/data',
+      to: 'hub/src/trpc/router.ts',
+      dependencyTypes: ['type-only'],
+      reason: 'The hub data client imports only the hub router type across the package boundary.',
     },
     ...cliConcernEntries.map((to) => ({
       from: 'cli',
@@ -795,29 +802,31 @@ type ArchitectureRule = {
   }
 }
 
-export const hubWebViewDataRule: ArchitectureRule = {
-  name: 'hub-web-views-do-not-fetch-data-or-read-hub-mode',
-  severity: 'error',
-  comment:
-    'Hub views may not fetch data or read hub mode; move the data access into the route and pass the data down as props.',
-  from: {
-    path: '^hub/web/src/',
-    pathNot: [
-      '^hub/web/src/(?:routes|trpc)/',
-      '^hub/web/src/lib/hub-mode\\.ts$',
-      '^hub/web/src/(?:main|router)\\.tsx$',
-      '^hub/web/src/.*\\.test\\.tsx?$',
-    ],
-  },
-  to: {
-    path: `(?:^@/trpc/|^@/lib/hub-mode$|^hub/web/src/trpc/|^hub/web/src/lib/hub-mode\\.ts$|${architectureDependencyPath('@tanstack/react-query')}|^@trpc/|(^|/)node_modules/@trpc/[^/]+(?:/|$))`,
-  },
-}
 const hubWebRouterException = concerns.exceptions[0]!
+const hubDataRouterException = concerns.exceptions[1]!
+const hubWebAllowedConcernImports = [
+  exactArchitecturePath(hubWebRouterException.to),
+  '^hub/ui/src/',
+  '^hub/data/src/',
+]
+const { viewDataRule: hubWebViewDataRule, boundaryRules: hubDataBoundaryRules } =
+  hubDataArchitectureRules(
+    architectureDependencyPath,
+    exactArchitecturePath,
+    HUB_UI_PACKAGE,
+    HUB_DATA_PACKAGE,
+    hubDataRouterException,
+  )
+
+export { hubWebViewDataRule }
 
 /** The manifest-owned rule set enforced against every proposed hub source write. */
 export function writeTimeArchitectureRules(): ArchitectureRule[] {
-  return [...uiArchitectureRules(architectureDependencyPath, HUB_UI_PACKAGE), hubWebViewDataRule]
+  return [
+    ...uiArchitectureRules(architectureDependencyPath, HUB_UI_PACKAGE),
+    ...hubDataBoundaryRules,
+    hubWebViewDataRule,
+  ]
 }
 
 export function architectureRules() {
@@ -840,7 +849,7 @@ export function architectureRules() {
       from: { path: `^${hubWebRouterException.from}/` },
       to: {
         path: '^hub/(?!web/)',
-        pathNot: [exactArchitecturePath(hubWebRouterException.to), '^hub/ui/src/'],
+        pathNot: hubWebAllowedConcernImports,
       },
     },
     {

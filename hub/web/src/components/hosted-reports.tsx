@@ -1,3 +1,4 @@
+import { type MeasuresResponse, trpc } from '@bottega/hub-data/client'
 import { Select } from '@bottega/hub-ui/listbox/select'
 import { PageHeader, SectionTitle } from '@bottega/hub-ui/page-header'
 import {
@@ -19,7 +20,6 @@ import {
   SessionDetail,
 } from '@/components/measure-display'
 import { useWindowState } from '@/lib/window'
-import { type MeasuresResponse, trpc } from '@/trpc/client'
 
 type ScopeKind = 'space' | 'project' | 'person'
 

@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test'
+import { queryClient, trpc } from '@bottega/hub-data/client'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { SettingsPage } from '@/routes/settings'
-import { queryClient, trpc } from '@/trpc/client'
 
 const member = {
   user_id: '01990000-0000-7000-8000-000000000701',

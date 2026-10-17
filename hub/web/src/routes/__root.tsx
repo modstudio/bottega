@@ -1,3 +1,14 @@
+import { queryClient, trpc } from '@bottega/hub-data/client'
+import {
+  hostedOrigin,
+  isDocsPath,
+  isHostedMode,
+  isHostedPath,
+  isHostedSignInFramePath,
+  isMarketingPath,
+  navForMode,
+  sameLocationOn,
+} from '@bottega/hub-data/hub-mode'
 import {
   AppShell,
   type NavItem,
@@ -18,21 +29,10 @@ import {
 import { useEffect } from 'react'
 import { AppMark } from '@/components/app-mark'
 import { signOutFromRecord } from '@/lib/hosted-auth'
-import {
-  hostedOrigin,
-  isDocsPath,
-  isHostedMode,
-  isHostedPath,
-  isHostedSignInFramePath,
-  isMarketingPath,
-  navForMode,
-  sameLocationOn,
-} from '@/lib/hub-mode'
 import { waitingInboxEntries } from '@/lib/operator-waiting'
 import { recordSpaces } from '@/lib/record-spaces'
 import { useWindowState } from '@/lib/window'
 import { SiteFrame } from '@/site/chrome'
-import { queryClient, trpc } from '@/trpc/client'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 
 const THEME_KEY = 'hub:theme'

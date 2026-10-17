@@ -1,0 +1,37 @@
+{
+  "name": "@bottega/hub-data",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "exports": {
+    "./client": "./src/client.ts",
+    "./docs/actions": "./src/docs/actions.ts",
+    "./docs/edit-permission": "./src/docs/edit-permission.ts",
+    "./docs/field-write": "./src/docs/field-write.ts",
+    "./docs/location": "./src/docs/location.ts",
+    "./docs/mode": "./src/docs/mode.ts",
+    "./docs/search-input": "./src/docs/search-input.ts",
+    "./docs/use-doc-reorder": "./src/docs/use-doc-reorder.ts",
+    "./docs/use-docs": "./src/docs/use-docs.ts",
+    "./hub-mode": "./src/hub-mode.ts",
+    "./transport": "./src/transport.ts"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.100.9",
+    "@trpc/client": "^11.17.0",
+    "@trpc/server": "^11.17.0",
+    "@trpc/tanstack-react-query": "^11.17.0",
+    "lucide-react": "^1.14.0",
+    "react": "^19.2.6"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/react": "^19.2.14",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.14"
+  }
+}

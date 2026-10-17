@@ -79,7 +79,7 @@ export type NavSection = { id: string; entries: (NavLink | NavGroup)[] }
 
 // Pages opened daily stay one click away; the rest sit behind a group that
 // opens beside the rail.
-export const LOCAL_NAV: NavSection[] = [
+const LOCAL_NAV: NavSection[] = [
   {
     id: 'work',
     entries: [

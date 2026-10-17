@@ -1,3 +1,4 @@
+import { trpc } from '@bottega/hub-data/client'
 import { Badge } from '@bottega/hub-ui/badge'
 import { Identifier } from '@bottega/hub-ui/identifier'
 import { PageHeader } from '@bottega/hub-ui/page-header'
@@ -7,7 +8,6 @@ import { ChevronRight } from 'lucide-react'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { relativeTime } from '@/lib/format'
 import { type WaitingInboxEntry, waitingInboxEntries } from '@/lib/operator-waiting'
-import { trpc } from '@/trpc/client'
 
 export const Route = createFileRoute('/inbox')({ component: InboxPage })
 

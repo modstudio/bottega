@@ -1,3 +1,4 @@
+import { trpc } from '@bottega/hub-data/client'
 import { Badge } from '@bottega/hub-ui/badge'
 import { Button } from '@bottega/hub-ui/button'
 import { Companion } from '@bottega/hub-ui/companion'
@@ -12,7 +13,6 @@ import { ProjectMark } from '@/components/design-system'
 import { hostedProjectColors } from '@/components/hosted-projects'
 import { useDetailPanel } from '@/lib/detail-panel'
 import { runEasternTime } from '@/lib/format'
-import { trpc } from '@/trpc/client'
 
 type HostedReview = {
   id: string

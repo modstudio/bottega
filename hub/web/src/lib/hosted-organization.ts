@@ -1,4 +1,4 @@
-import { recordApiUrl } from './hub-mode.ts'
+import { recordApiUrl } from '@bottega/hub-data/hub-mode'
 
 export type OrganizationRole = 'owner' | 'admin' | 'member'
 export type OrganizationMember = {

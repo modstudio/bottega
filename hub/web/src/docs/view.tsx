@@ -5,7 +5,8 @@ import { PageHeader } from '@bottega/hub-ui/page-header'
 import { Popover } from '@bottega/hub-ui/popover'
 import { mergeClasses as classes } from '@bottega/hub-ui/text/variant'
 import { type ReactNode, type Ref, useEffect, useMemo, useRef, useState } from 'react'
-import { DocsFacts } from './facts.tsx'
+import type { FieldSave } from './doc-field-controls.tsx'
+import { DocsFacts, type DocsFactsControls } from './facts.tsx'
 import { FilterPanel } from './filter-panel.tsx'
 import {
   DOC_AUDIENCE_LABELS,
@@ -24,7 +25,6 @@ import { useHeldPanel } from './use-held-panel.ts'
 
 export type DocsViewProps = {
   sourceLabel: string
-  source: Docs.DocsSource
   items: readonly Docs.DocsTreeItem[]
   selectedId: string | null
   filters: FilterSelection
@@ -36,11 +36,13 @@ export type DocsViewProps = {
   showDrafts: boolean
   onShowDrafts: (show: boolean) => void
   canShowDrafts: boolean
+  canShowWorking: boolean
   showWorking: boolean
   onShowWorking: (show: boolean) => void
   doc: Docs.DocsDoc | null
   replacement: Docs.DocsTreeItem | null
   locationFor: (item: Docs.DocsTreeItem) => DocsLocation
+  renderLink: (location: DocsLocation, children: ReactNode, className?: string) => ReactNode
   onSelect: (item: Docs.DocsTreeItem) => void
   onOpenFirst: (item: Docs.DocsTreeItem) => void
   ready: boolean
@@ -60,8 +62,10 @@ export type DocsViewProps = {
   editBand?: ReactNode
   banner?: ReactNode
   titleView?: (headingRef: Ref<HTMLElement | null>) => ReactNode
-  /** Where the article's fields are saved, when this reader may edit them in place. */
-  fieldSource?: Docs.DocsSource
+  field?: FieldSave
+  showHistory: boolean
+  factsControls?: DocsFactsControls
+  history: Parameters<typeof DocsFacts>[0]['history']
   canManage?: boolean
   treeReorder?: {
     canReorder: (item: Docs.DocsTreeItem) => boolean
@@ -295,9 +299,9 @@ function DocsViewControls({
   showDrafts,
   onShowDrafts,
   canShowDrafts,
+  canShowWorking,
   showWorking,
   onShowWorking,
-  source,
   doc,
   signedIn,
   onOpenFirst,
@@ -318,7 +322,7 @@ function DocsViewControls({
   | 'canShowDrafts'
   | 'showWorking'
   | 'onShowWorking'
-  | 'source'
+  | 'canShowWorking'
   | 'doc'
   | 'signedIn'
   | 'onOpenFirst'
@@ -354,7 +358,7 @@ function DocsViewControls({
       canShowDrafts={canShowDrafts}
       showWorking={showWorking}
       onShowWorking={onShowWorking}
-      canShowWorking={source !== 'public' && model.canShowWorking}
+      canShowWorking={canShowWorking && model.canShowWorking}
     />
   )
 }
@@ -438,9 +442,15 @@ function DocsSearchHost({
   )
 }
 
+function OptionalDocsFacts({
+  wide,
+  ...facts
+}: { wide: boolean } & Parameters<typeof DocsFacts>[0]) {
+  return wide ? null : <DocsFacts {...facts} />
+}
+
 export function DocsView({
   sourceLabel,
-  source,
   items,
   selectedId,
   filters: chosen,
@@ -452,6 +462,7 @@ export function DocsView({
   showDrafts,
   onShowDrafts,
   canShowDrafts,
+  canShowWorking,
   showWorking,
   onShowWorking,
   doc,
@@ -526,9 +537,9 @@ export function DocsView({
       showDrafts={showDrafts}
       onShowDrafts={onShowDrafts}
       canShowDrafts={canShowDrafts}
+      canShowWorking={canShowWorking}
       showWorking={showWorking}
       onShowWorking={onShowWorking}
-      source={source}
       doc={doc}
       signedIn={signedIn}
       onOpenFirst={onOpenFirst}
@@ -593,18 +604,18 @@ export function DocsView({
           viewedRevision={viewedRevision}
           {...readingEdit}
         />
-        {wide ? null : (
-          <DocsFacts
-            doc={doc}
-            headings={doc ? model.headings : []}
-            signedIn={signedIn}
-            source={source}
-            audience={selectedAudience(model.stale)}
-            revisionId={revisionId}
-            onRevision={onRevision}
-            canManage={canManage}
-          />
-        )}
+        <OptionalDocsFacts
+          wide={wide}
+          doc={doc}
+          headings={doc ? model.headings : []}
+          signedIn={signedIn}
+          showHistory={readingEdit.showHistory}
+          controls={readingEdit.factsControls}
+          history={readingEdit.history}
+          revisionId={revisionId}
+          onRevision={onRevision}
+          canManage={canManage}
+        />
       </div>
       <DocsSearchHost
         open={searchOpen}

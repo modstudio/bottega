@@ -1,3 +1,5 @@
+import { type BoardResponse, type FlightResponse, trpc } from '@bottega/hub-data/client'
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
 import { Badge } from '@bottega/hub-ui/badge'
 import { LiveDot } from '@bottega/hub-ui/badge/live-dot'
 import { TextButton } from '@bottega/hub-ui/button'
@@ -42,11 +44,9 @@ import { WaitingBadge } from '@/components/waiting-badge'
 import { useNow } from '@/lib/clock'
 import { useDetailPanel } from '@/lib/detail-panel'
 import { compactTokens, duration, relativeTime, vendorFigures } from '@/lib/format'
-import { isHostedMode } from '@/lib/hub-mode'
 import { waitingByRun } from '@/lib/operator-waiting'
 import { taskStatusLook } from '@/lib/task-status'
 import { setWorkCounts, useWindowState } from '@/lib/window'
-import { type BoardResponse, type FlightResponse, trpc } from '@/trpc/client'
 
 type WorkName = 'flight' | 'done'
 type TaskData = FlightResponse['data']

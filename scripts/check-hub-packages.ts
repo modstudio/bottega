@@ -4,6 +4,8 @@ import { extname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Glob } from 'bun'
 import {
+  HUB_DATA_PACKAGE,
+  HUB_DATA_ROOT,
   HUB_PACKAGE_PREFIX,
   HUB_UI_PACKAGE,
   HUB_UI_ROOT,
@@ -140,11 +142,38 @@ if (uiPackage.name !== HUB_UI_PACKAGE) {
   violations.push(`${relative(ROOT, uiPackagePath)}: package name must be ${HUB_UI_PACKAGE}`)
 }
 
+const dataPackagePath = join(ROOT, HUB_DATA_ROOT, 'package.json')
+const dataPackage = readPackage(dataPackagePath)
+const expectedDataExports = Object.fromEntries(
+  [...new Glob('**/*.{ts,tsx}').scanSync({ cwd: join(ROOT, HUB_DATA_ROOT, 'src') })]
+    .filter((path) => !/\.(?:test|spec)\.[cm]?tsx?$/.test(path))
+    .map((path) => {
+      const normalized = path.split(sep).join('/')
+      return [exportSubpath(normalized), `./src/${normalized}`]
+    })
+    .sort(([left], [right]) => left.localeCompare(right)),
+)
+for (const [subpath, source] of Object.entries(expectedDataExports)) {
+  if (dataPackage.exports?.[subpath] !== source) {
+    violations.push(`${relative(ROOT, dataPackagePath)}: export ${subpath} must point to ${source}`)
+  }
+}
+for (const subpath of Object.keys(dataPackage.exports ?? {})) {
+  if (!(subpath in expectedDataExports)) {
+    violations.push(
+      `${relative(ROOT, dataPackagePath)}: export ${subpath} has no public source file`,
+    )
+  }
+}
+if (dataPackage.name !== HUB_DATA_PACKAGE) {
+  violations.push(`${relative(ROOT, dataPackagePath)}: package name must be ${HUB_DATA_PACKAGE}`)
+}
+
 if (violations.length) {
   for (const violation of violations) console.error(violation)
   process.exit(1)
 }
 
 console.log(
-  `check-hub-packages: ok (${checkedPackages.sort().join(', ')}; ${Object.keys(expectedExports).length} ui exports)`,
+  `check-hub-packages: ok (${checkedPackages.sort().join(', ')}; ${Object.keys(expectedExports).length} ui exports; ${Object.keys(expectedDataExports).length} data exports)`,
 )

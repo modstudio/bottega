@@ -1,3 +1,4 @@
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
 import { Button } from '@bottega/hub-ui/button'
 import { Input } from '@bottega/hub-ui/field/input'
 import { PageHeader } from '@bottega/hub-ui/page-header'
@@ -14,7 +15,6 @@ import {
   setActiveOrganization,
   signUpForRecord,
 } from '@/lib/hosted-organization'
-import { isHostedMode } from '@/lib/hub-mode'
 
 export const Route = createFileRoute('/accept-invitation/$id')({ component: InvitationRoute })
 

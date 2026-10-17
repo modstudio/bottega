@@ -3,17 +3,18 @@ import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { navForMode } from '@bottega/hub-data/hub-mode'
 import { type Browser, chromium, type Page } from 'playwright'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
-import { LOCAL_NAV } from '../src/lib/hub-mode.ts'
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const executable = join(repoRoot, 'bin', PLATFORM_SLUG)
 const distribution = join(repoRoot, 'hub', 'web', 'dist', 'index.html')
 const stateRoot = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-dashboard-smoke-`))
 const startedAt = performance.now()
+const LOCAL_NAV = navForMode('local')
 
 function smokeEnvironment(): Record<string, string | undefined> {
   const env = {

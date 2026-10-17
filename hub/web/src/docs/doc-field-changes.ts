@@ -3,7 +3,6 @@ import {
   type DocAudience,
   type DocAudiences,
   type DocForm,
-  type DocScope,
   type DocStatus,
   normalizeDocAudiences,
 } from '../../../../shared/docs.ts'
@@ -25,42 +24,6 @@ export type DocFieldChange =
   | { field: 'sourceFiles'; value: string[]; action: 'added' | 'removed'; path: string }
   | { field: 'delivery'; value: 'inject' | 'demand' }
   | { field: 'summary'; value: string | null }
-
-type WriteBase = {
-  scope: DocScope
-  subject: string | null
-  slug: string
-  title: string
-  body: string
-  reason: string
-  expectedRevision?: string
-}
-
-export type LocalFieldWrite = WriteBase & {
-  status?: 'draft' | 'current'
-  parentSlug?: string | null
-  audiences?: DocAudiences
-  form?: DocForm | null
-  articleSubject?: string | null
-  relatedSubjects?: string[]
-  sourceFiles?: string[]
-  delivery?: 'inject' | 'demand'
-  summary?: string | null
-}
-
-export type HostedFieldWrite = WriteBase & {
-  spaceId: string
-  expectedRevision: string
-  status?: 'draft' | 'current'
-  parentRecordId?: string | null
-  audiences?: DocAudiences
-  form?: DocForm | null
-  articleSubjectId?: string | null
-  relatedSubjectIds?: string[]
-  sourceFiles?: string[]
-  delivery?: 'inject' | 'demand'
-  summary?: string | null
-}
 
 /** Same-project, same-scope parents, excluding the document and everything below it. */
 export function parentChoices(doc: DocsDoc, items: readonly DocsTreeItem[]): DocsTreeItem[] {
@@ -133,88 +96,6 @@ export function withCurrentSubjects(
 ): DocArticleSubject[] {
   const listed = new Set(catalog.map(({ id }) => id))
   return [...catalog, ...current.filter(({ id }) => !listed.has(id))]
-}
-
-type LocalFieldPatch = Omit<LocalFieldWrite, keyof WriteBase>
-type HostedFieldPatch = Omit<HostedFieldWrite, keyof WriteBase | 'spaceId'>
-
-function localFieldPatch(change: DocFieldChange): LocalFieldPatch {
-  switch (change.field) {
-    case 'parent':
-      return { parentSlug: change.value?.slug ?? null }
-    case 'articleSubject':
-      return { articleSubject: change.value?.name ?? null }
-    case 'relatedSubjects':
-      return { relatedSubjects: change.value.map(({ name }) => name) }
-    default:
-      return sharedFieldPatch(change)
-  }
-}
-
-function hostedFieldPatch(change: DocFieldChange): HostedFieldPatch {
-  switch (change.field) {
-    case 'parent':
-      return { parentRecordId: change.value?.id ?? null }
-    case 'articleSubject':
-      return { articleSubjectId: change.value?.id ?? null }
-    case 'relatedSubjects':
-      return { relatedSubjectIds: change.value.map(({ id }) => id) }
-    default:
-      return sharedFieldPatch(change)
-  }
-}
-
-/** Fields both sources address the same way. */
-function sharedFieldPatch(
-  change: Exclude<DocFieldChange, { field: 'parent' | 'articleSubject' | 'relatedSubjects' }>,
-): LocalFieldPatch & HostedFieldPatch {
-  switch (change.field) {
-    case 'status':
-      return { status: change.value }
-    case 'audiences':
-      return { audiences: change.value }
-    case 'form':
-      return { form: change.value }
-    case 'sourceFiles':
-      return { sourceFiles: change.value }
-    case 'delivery':
-      return { delivery: change.value }
-    case 'summary':
-      return { summary: change.value }
-  }
-}
-
-/** A one-field write carrying the stored article text and the source's address form. */
-export function fieldWriteInput(
-  source: 'local',
-  doc: DocsDoc,
-  stored: { title: string; body: string; revision: string | null },
-  change: DocFieldChange,
-): LocalFieldWrite
-export function fieldWriteInput(
-  source: 'hosted',
-  doc: DocsDoc & { spaceId: string },
-  stored: { title: string; body: string; revision: string },
-  change: DocFieldChange,
-): HostedFieldWrite
-export function fieldWriteInput(
-  source: 'local' | 'hosted',
-  doc: DocsDoc,
-  stored: { title: string; body: string; revision: string | null },
-  change: DocFieldChange,
-): LocalFieldWrite | HostedFieldWrite {
-  const base = {
-    scope: doc.scope as DocScope,
-    subject: doc.subject,
-    slug: doc.slug,
-    title: stored.title,
-    body: stored.body,
-    reason: fieldChangeReason(change),
-    ...(stored.revision ? { expectedRevision: stored.revision } : {}),
-  }
-  return source === 'hosted'
-    ? { ...base, spaceId: doc.spaceId!, ...hostedFieldPatch(change) }
-    : { ...base, ...localFieldPatch(change) }
 }
 
 /** The audiences ticked in a list, in their canonical order; none at all is not a valid choice. */

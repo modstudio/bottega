@@ -1,6 +1,6 @@
+import type { OperatorWaitingItem } from '@bottega/hub-data/client'
 import { Badge } from '@bottega/hub-ui/badge'
 import { Link } from '@tanstack/react-router'
-import type { OperatorWaitingItem } from '@/trpc/client'
 import { operatorInboxPath } from '../../../../shared/operator-inbox.ts'
 
 export function WaitingBadge({ item }: { item: OperatorWaitingItem }) {

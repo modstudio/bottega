@@ -1,21 +1,30 @@
 import { Tabs } from '@bottega/hub-ui/tabs'
 import { mergeClasses as classes } from '@bottega/hub-ui/text/variant'
-import { useQuery } from '@tanstack/react-query'
 import { ChevronDown } from 'lucide-react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { relativeTime } from '@/lib/format'
-import { trpc } from '@/trpc/client'
-import type { DocScope } from '../../../../shared/docs.ts'
 import { DocActions } from './doc-actions.tsx'
-import { EditableAbout } from './doc-field-controls.tsx'
+import { EditableAbout, type FieldSave, type SubjectCatalog } from './doc-field-controls.tsx'
 import { DOC_AUDIENCE_LABELS, DOC_FORM_LABELS } from './filters.ts'
 import type { DocHeading } from './headings.ts'
 import { savedVersionAuthor } from './reading.tsx'
-import type { DocsAudience, DocsDoc, DocsSource } from './types.ts'
+import type { DocsDoc, DocsTreeItem } from './types.ts'
 import { useHeldPanel } from './use-held-panel.ts'
 
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
 type FactsTab = 'contents' | 'details'
+
+export type DocsFactsControls = {
+  field: FieldSave
+  items: readonly DocsTreeItem[]
+  subjects: SubjectCatalog
+  remove: {
+    run: (reason: string) => Promise<unknown>
+    pending: boolean
+    error: unknown
+    refused?: string
+  }
+}
 
 function exactTime(value: string): string {
   const date = new Date(value)
@@ -90,54 +99,37 @@ function FactsSection({
 }
 
 function DocHistory({
-  doc,
-  source,
-  audience,
+  history,
   revisionId,
   onRevision,
 }: {
-  doc: DocsDoc
-  source: DocsSource
-  audience: DocsAudience | null
+  history: {
+    items: readonly {
+      id: number | string
+      at: string
+      reason: string
+      author: string
+      authorName?: string | null
+    }[]
+    pending: boolean
+    error: unknown
+  }
   revisionId?: string
   onRevision: (id: number | string) => void
 }) {
-  const localHistory = useQuery({
-    ...trpc.doc.history.queryOptions({
-      scope: doc.scope as DocScope,
-      subject: doc.subject,
-      slug: doc.slug,
-    }),
-    enabled: source === 'local',
-  })
-  const hostedHistory = useQuery({
-    ...trpc.record.docRevisions.queryOptions({
-      id: doc.id,
-      audience: audience ?? undefined,
-    }),
-    enabled: source === 'hosted',
-  })
-  const history = source === 'hosted' ? hostedHistory : localHistory
-  const revisions = [
-    ...(source === 'hosted' ? (hostedHistory.data?.items ?? []) : (localHistory.data ?? [])),
-  ].sort(
-    (left, right) =>
-      new Date(right.at).getTime() - new Date(left.at).getTime() ||
-      String(right.id).localeCompare(String(left.id)),
-  )
   return (
     <FactsSection
       label="History"
       defaultOpen={false}
-      count={history.isPending ? '…' : history.isSuccess ? revisions.length : undefined}
+      count={history.pending ? '…' : history.error ? undefined : history.items.length}
     >
       {history.error ? (
         <p data-tone="error" className="mt-2 text-sm text-status-text">
-          {history.error.message}
+          {history.error instanceof Error ? history.error.message : String(history.error)}
         </p>
       ) : null}
       <div>
-        {revisions.map((revision) => (
+        {history.items.map((revision) => (
           <button
             type="button"
             key={revision.id}
@@ -159,8 +151,8 @@ function Details({
   signedIn,
   canManage,
   showHistory,
-  source,
-  audience,
+  controls,
+  history,
   revisionId,
   onRevision,
 }: {
@@ -168,8 +160,8 @@ function Details({
   signedIn: boolean
   canManage: boolean
   showHistory: boolean
-  source: DocsSource
-  audience: DocsAudience | null
+  controls?: DocsFactsControls
+  history: Parameters<typeof DocHistory>[0]['history']
   revisionId?: string
   onRevision: (id: number | string) => void
 }) {
@@ -178,7 +170,15 @@ function Details({
     <>
       <FactsSection label="About" defaultOpen>
         {canManage ? (
-          <EditableAbout key={doc.id} doc={doc} source={source} />
+          controls ? (
+            <EditableAbout
+              key={doc.id}
+              doc={doc}
+              field={controls.field}
+              items={controls.items}
+              subjects={controls.subjects}
+            />
+          ) : null
         ) : (
           <ReadonlyAbout doc={doc} signedIn={signedIn} />
         )}
@@ -186,9 +186,7 @@ function Details({
       {showHistory ? (
         <DocHistory
           key={doc.id}
-          doc={doc}
-          source={source}
-          audience={audience}
+          history={history}
           revisionId={revisionId}
           onRevision={onRevision}
         />
@@ -247,8 +245,9 @@ export function DocsFacts({
   doc,
   headings,
   signedIn,
-  source,
-  audience,
+  showHistory,
+  controls,
+  history,
   revisionId,
   onRevision = () => {},
   canManage = false,
@@ -256,8 +255,9 @@ export function DocsFacts({
   doc: DocsDoc | null
   headings: readonly DocHeading[]
   signedIn: boolean
-  source: DocsSource
-  audience: DocsAudience | null
+  showHistory: boolean
+  controls?: DocsFactsControls
+  history: Parameters<typeof DocHistory>[0]['history']
   revisionId?: string
   onRevision?: (id: number | string) => void
   canManage?: boolean
@@ -292,16 +292,16 @@ export function DocsFacts({
             doc={doc}
             signedIn={signedIn}
             canManage={canManage && Boolean(doc)}
-            showHistory={signedIn && source !== 'public'}
-            source={source}
-            audience={audience}
+            showHistory={signedIn && showHistory}
+            controls={controls}
+            history={history}
             revisionId={revisionId}
             onRevision={onRevision}
           />
         )}
-        {canManage && doc && tab === 'details' ? (
+        {canManage && controls && doc && tab === 'details' ? (
           <FactsSection label="Actions" defaultOpen>
-            <DocActions key={doc.id} doc={doc} source={source} />
+            <DocActions key={doc.id} remove={controls!.remove} />
           </FactsSection>
         ) : null}
       </div>

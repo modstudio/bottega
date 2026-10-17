@@ -4,10 +4,7 @@ import { useStoredState } from '@bottega/hub-ui/dom/use-stored-state'
 import { Input } from '@bottega/hub-ui/field/input'
 import { Popover } from '@bottega/hub-ui/popover'
 import { Segmented } from '@bottega/hub-ui/segmented'
-import { useMutation } from '@tanstack/react-query'
-import { useBlocker } from '@tanstack/react-router'
 import type { Editor } from '@tiptap/core'
-import { TRPCClientError } from '@trpc/client'
 import { Pencil, Save, X } from 'lucide-react'
 import {
   type FormEvent,
@@ -21,8 +18,6 @@ import {
   useState,
 } from 'react'
 import { Markdown } from '@/components/markdown/markdown'
-import { queryClient, trpc } from '@/trpc/client'
-import type { DocScope } from '../../../../shared/docs.ts'
 import { readingBody } from './body.ts'
 import { docLeaveNeedsConfirmation, isDocReasonReady, isDocSaveEnabled } from './edit-state.ts'
 import { LONG_TITLE } from './reading.tsx'
@@ -32,13 +27,9 @@ import {
   DOC_EDITOR_MODES,
   type DocEditorMode,
 } from './rich-mode.ts'
-import { isScope } from './scope.ts'
-import type { DocsDoc, DocsSource } from './types.ts'
-import { type StoredDocument, useStoredDocument } from './use-docs.ts'
+import type { DocsDoc } from './types.ts'
 
-function isConflictError(error: unknown): boolean {
-  return error instanceof TRPCClientError && error.data?.code === 'CONFLICT'
-}
+export type StoredDocument = { title: string; body: string; revision: string | null }
 
 type MarkdownEditorProps = {
   value: string
@@ -333,93 +324,6 @@ function ArticleEditOverlays({
   )
 }
 
-function useArticleLeave(editing: boolean, needsConfirm: boolean, allowLeave: RefObject<boolean>) {
-  const shouldBlockFn = useCallback(() => {
-    if (allowLeave.current) return false
-    return needsConfirm
-  }, [needsConfirm, allowLeave])
-  return useBlocker({
-    shouldBlockFn,
-    enableBeforeUnload: () => needsConfirm,
-    withResolver: true,
-    disabled: !editing,
-  })
-}
-
-function writeArticle(
-  source: DocsSource,
-  doc: DocsDoc,
-  draft: Draft,
-  reason: string,
-  expectedRevision: string | null | undefined,
-  saveLocal: (input: {
-    scope: DocScope
-    subject: string | null
-    slug: string
-    title: string
-    body: string
-    reason: string
-    expectedRevision?: string
-  }) => void,
-  saveHosted: (input: {
-    spaceId: string
-    scope: string
-    subject: string | null
-    slug: string
-    title: string
-    body: string
-    reason: string
-    expectedRevision: string
-  }) => void,
-) {
-  const trimmed = reason.trim()
-  if (source === 'hosted') {
-    if (!doc.spaceId || !expectedRevision) return
-    saveHosted({
-      spaceId: doc.spaceId,
-      scope: doc.scope,
-      subject: doc.subject,
-      slug: doc.slug,
-      title: draft.title,
-      body: draft.body,
-      reason: trimmed,
-      expectedRevision,
-    })
-    return
-  }
-  if (!isScope(doc.scope)) return
-  saveLocal({
-    scope: doc.scope,
-    subject: doc.subject,
-    slug: doc.slug,
-    title: draft.title,
-    body: draft.body,
-    reason: trimmed,
-    expectedRevision: expectedRevision ?? undefined,
-  })
-}
-
-async function fetchCurrentArticle(source: DocsSource, doc: DocsDoc): Promise<Draft | null> {
-  if (source === 'hosted') {
-    // A conflict means the cached copy is out of date, so both reads go to the server.
-    const next = await queryClient.fetchQuery({
-      ...trpc.record.doc.queryOptions({ id: doc.id }),
-      staleTime: 0,
-    })
-    return { title: next.title, body: next.body }
-  }
-  if (!isScope(doc.scope)) return null
-  const next = await queryClient.fetchQuery({
-    ...trpc.doc.get.queryOptions({
-      scope: doc.scope,
-      subject: doc.subject,
-      slug: doc.slug,
-    }),
-    staleTime: 0,
-  })
-  return { title: next.title, body: next.body }
-}
-
 function useArticleDraft(
   doc: DocsDoc | null,
   storedDocument: StoredDocument | undefined,
@@ -448,44 +352,33 @@ function useArticleDraft(
 
 function useReloadArticle(
   doc: DocsDoc | null,
-  source: DocsSource,
   editing: boolean,
+  fetchCurrentArticle: () => Promise<Draft | null>,
   setTitle: (title: string) => void,
   setBody: (body: string) => void,
   setLoaded: (draft: Draft) => void,
 ) {
   const [reason, setReason] = useState('')
-  const [conflict, setConflict] = useState(false)
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [confirmingReload, setConfirmingReload] = useState(false)
   // biome-ignore lint/correctness/useExhaustiveDependencies: notices reset when edit starts on a document.
   useEffect(() => {
     setReason('')
-    setConflict(false)
-    setErrorMessage(null)
     setConfirmingReload(false)
   }, [doc?.id, editing])
   const reload = useCallback(async () => {
     if (!doc) return
     setConfirmingReload(false)
-    const next = await fetchCurrentArticle(source, doc)
+    const next = await fetchCurrentArticle()
     if (next) {
       setTitle(next.title)
       setBody(next.body)
       setLoaded(next)
     }
-    await queryClient.invalidateQueries()
-    setConflict(false)
-    setErrorMessage(null)
     setReason('')
-  }, [doc, source, setTitle, setBody, setLoaded])
+  }, [doc, fetchCurrentArticle, setTitle, setBody, setLoaded])
   return {
     reason,
     setReason,
-    conflict,
-    setConflict,
-    errorMessage,
-    setErrorMessage,
     confirmingReload,
     setConfirmingReload,
     reload,
@@ -533,57 +426,46 @@ function useModSaveHotkey(editing: boolean, openSave: () => void) {
 
 export function useArticleEditor({
   doc,
-  source,
   editing,
   onLeave,
+  storedDocument,
+  saveAction,
+  fetchCurrentArticle,
+  onLeaveRequest,
+  leaveBlocker,
 }: {
   doc: DocsDoc | null
-  source: DocsSource
   editing: boolean
   onLeave: () => void
+  storedDocument: StoredDocument | undefined
+  saveAction: {
+    run: (input: { title: string; body: string; reason: string }) => Promise<unknown>
+    pending: boolean
+    error: unknown
+    refused?: string
+    conflict: boolean
+  }
+  fetchCurrentArticle: () => Promise<Draft | null>
+  onLeaveRequest: (request: () => boolean) => void
+  leaveBlocker: { blocked: boolean; onKeep: () => void; onDiscard: () => void }
 }) {
-  const storedDocument = useStoredDocument(doc, source, editing)
   const { title, setTitle, body, setBody, loaded, setLoaded, allowLeave, ready } = useArticleDraft(
     doc,
     storedDocument,
     editing,
   )
-  const notice = useReloadArticle(doc, source, editing, setTitle, setBody, setLoaded)
+  const notice = useReloadArticle(doc, editing, fetchCurrentArticle, setTitle, setBody, setLoaded)
   const editorMode = useEditorMode(editing)
   const popoverRef = useRef<HTMLDivElement>(null)
   const reasonRef = useRef<HTMLInputElement>(null)
-  const expectedRevision = storedDocument?.revision
   const draft = { title, body }
   const saveEnabled = ready && isDocSaveEnabled(loaded, draft)
-  const blocker = useArticleLeave(editing, docLeaveNeedsConfirmation(loaded, draft), allowLeave)
-
-  function failed(error: unknown) {
-    if (isConflictError(error)) {
-      notice.setConflict(true)
-      notice.setErrorMessage(null)
-      return
-    }
-    notice.setConflict(false)
-    notice.setErrorMessage(error instanceof Error ? error.message : String(error))
-  }
-
-  async function saved() {
-    allowLeave.current = true
-    await queryClient.invalidateQueries()
-    onLeave()
-  }
-
-  const localSave = useMutation({
-    ...trpc.doc.set.mutationOptions(),
-    onSuccess: saved,
-    onError: failed,
-  })
-  const hostedSave = useMutation({
-    ...trpc.record.saveDoc.mutationOptions(),
-    onSuccess: saved,
-    onError: failed,
-  })
-  const saving = source === 'hosted' ? hostedSave.isPending : localSave.isPending
+  const needsConfirmation = docLeaveNeedsConfirmation(loaded, draft)
+  useEffect(
+    () => onLeaveRequest(() => editing && !allowLeave.current && needsConfirmation),
+    [editing, needsConfirmation, onLeaveRequest, allowLeave],
+  )
+  const saving = saveAction.pending
   const openSave = useCallback(() => {
     if (!saveEnabled || saving) return
     popoverRef.current?.showPopover()
@@ -591,7 +473,6 @@ export function useArticleEditor({
   useModSaveHotkey(editing, openSave)
 
   return {
-    source,
     title,
     setTitle,
     body,
@@ -601,31 +482,25 @@ export function useArticleEditor({
     saving,
     reason: notice.reason,
     setReason: notice.setReason,
-    conflict: notice.conflict,
-    errorMessage: notice.errorMessage,
+    conflict: saveAction.conflict,
+    errorMessage:
+      saveAction.refused ?? (saveAction.error instanceof Error ? saveAction.error.message : null),
     popoverRef,
     reasonRef,
     openSave,
-    save() {
+    async save() {
       if (!doc || !saveEnabled || !isDocReasonReady(notice.reason) || saving) return
-      notice.setConflict(false)
-      notice.setErrorMessage(null)
-      writeArticle(
-        source,
-        doc,
-        draft,
-        notice.reason,
-        expectedRevision,
-        (input) => localSave.mutate(input),
-        (input) => hostedSave.mutate(input),
-      )
+      const saved = await saveAction.run({ ...draft, reason: notice.reason })
+      if (!saved) return
+      allowLeave.current = true
+      onLeave()
     },
     leave: onLeave,
     overlays: (
       <ArticleEditOverlays
-        blocked={blocker.status === 'blocked'}
-        onKeep={() => blocker.reset?.()}
-        onDiscard={() => blocker.proceed?.()}
+        blocked={leaveBlocker.blocked}
+        onKeep={leaveBlocker.onKeep}
+        onDiscard={leaveBlocker.onDiscard}
         confirmingReload={notice.confirmingReload}
         onConfirmingReload={notice.setConfirmingReload}
         onReload={() => void notice.reload()}
@@ -652,7 +527,6 @@ export function editorChrome(
   return {
     editing: activeEditing,
     canManage: mayEdit,
-    fieldSource: mayEdit ? editor.source : undefined,
     viewedRevision: activeEditing ? null : viewedRevision,
     bodyView: activeEditing ? (
       <ArticleEditBody
