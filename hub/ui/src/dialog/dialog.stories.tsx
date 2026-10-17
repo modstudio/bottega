@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { Dialog } from './dialog'
 
 const meta: Meta = {
@@ -41,7 +41,7 @@ export const Keyboard: StoryObj<typeof meta> = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     const dialog = canvas.getByRole('dialog', { name: 'Discard run?' })
-    await expect(dialog).toBeVisible()
+    await waitFor(() => expect(dialog).toBeVisible())
     const close = canvas.getByRole('button', { name: 'Close' })
     close.focus()
     await userEvent.keyboard('{Enter}')

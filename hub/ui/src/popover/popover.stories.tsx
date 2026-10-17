@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { Popover } from './popover'
 
 const meta: Meta = { title: 'Overlays/Popover', component: Popover }
@@ -31,6 +31,6 @@ export const Keyboard: StoryObj<typeof meta> = {
     const trigger = canvas.getByRole('button', { name: 'Open filters' })
     trigger.focus()
     await userEvent.keyboard('{Enter}')
-    await expect(canvas.getByRole('dialog', { name: 'Filters' })).toBeVisible()
+    await waitFor(() => expect(canvas.getByRole('dialog', { name: 'Filters' })).toBeVisible())
   },
 }

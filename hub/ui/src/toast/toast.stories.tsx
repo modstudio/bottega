@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { Toaster, toast } from './toast'
 
 const meta: Meta = { title: 'Overlays/Toast', component: Toaster }
@@ -34,7 +34,7 @@ export const Keyboard: StoryObj<typeof meta> = {
     const button = canvas.getByRole('button', { name: 'Notify' })
     button.focus()
     await userEvent.keyboard('{Enter}')
-    await expect(canvas.getByText('Run queued')).toBeVisible()
+    await waitFor(() => expect(canvas.getByText('Run queued')).toBeVisible())
     const dismiss = canvas.getByRole('button', { name: 'Dismiss' })
     dismiss.focus()
     await userEvent.keyboard('{Enter}')

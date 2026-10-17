@@ -3,6 +3,17 @@ import { type Ref, useState } from 'react'
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 import { DocumentSurface, DocumentTitle } from './document-surface'
 
+function colorToRgba(color: string) {
+  const canvas = document.createElement('canvas')
+  canvas.width = 1
+  canvas.height = 1
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('Canvas 2D context is unavailable')
+  context.fillStyle = color
+  context.fillRect(0, 0, 1, 1)
+  return Array.from(context.getImageData(0, 0, 1, 1).data)
+}
+
 function SwappingHeadingSurface() {
   const [editing, setEditing] = useState(false)
   const title = 'A document title'
@@ -47,7 +58,20 @@ const meta = {
 } satisfies Meta<typeof DocumentSurface>
 export default meta
 type Story = StoryObj<typeof meta>
-export const Light: Story = {}
+export const Light: Story = {
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole('button', { name: 'Wide' }))
+    const surface = canvasElement.querySelector('main')
+    const expected = document.createElement('span')
+    expected.style.backgroundColor = 'var(--color-surface-page)'
+    canvasElement.append(expected)
+    await expect(surface).not.toBeNull()
+    const background = colorToRgba(getComputedStyle(surface as HTMLElement).backgroundColor)
+    await expect(background[3]).toBeGreaterThan(0)
+    await expect(background).toEqual(colorToRgba(getComputedStyle(expected).backgroundColor))
+    expected.remove()
+  },
+}
 export const TitleBehindBar: Story = {
   play: async ({ canvasElement }) => {
     const heading = canvasElement.querySelector('h1')

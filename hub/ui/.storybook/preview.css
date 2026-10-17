@@ -1,0 +1,5 @@
+/* Order matters: the theme resets Tailwind's defaults before anything adds names. */
+@import "tailwindcss";
+@import "@bottega/hub-ui/styles/tokens.css";
+@import "@bottega/hub-ui/styles/theme.css";
+@source "../src";

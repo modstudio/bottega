@@ -44,7 +44,10 @@
     "./markdown/markdown.styles": "./src/markdown/markdown.styles.ts",
     "./markdown/headings": "./src/markdown/headings.ts",
     "./rail-section": "./src/rail-section/rail-section.tsx",
-    "./rail-section/rail-section.styles": "./src/rail-section/rail-section.styles.ts"
+    "./rail-section/rail-section.styles": "./src/rail-section/rail-section.styles.ts",
+    "./styles/doc-editor-rich": "./src/styles/doc-editor-rich.css",
+    "./styles/doc-editor": "./src/styles/doc-editor.css",
+    "./styles/markdown": "./src/styles/markdown.css"
   },
   "dependencies": {
     "@bottega/hub-ui": "workspace:*",
@@ -85,6 +88,7 @@
     "@vitest/browser-playwright": "5.0.3",
     "playwright": "1.63.0",
     "storybook": "10.6.1",
+    "tailwindcss": "4.2.4",
     "typescript": "^6.0.3",
     "vite": "8.3.0",
     "vitest": "5.0.3"
