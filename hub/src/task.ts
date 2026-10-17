@@ -576,6 +576,12 @@ export async function setTaskBody(
   const upper = key.toUpperCase()
   const recordId = taskRecordId(upper, scope)
   const initial = taskByRecordId<TaskRow>(recordId)
+  const initialProject = projects().find((candidate) => candidate.name === initial.project) ?? null
+  const initialCapability = trackerCapabilities({
+    source: initial.source,
+    project: initialProject,
+  }).setBody
+  if (!initialCapability.allowed) throw new Error(initialCapability.reason)
   const mode = writeMode(initial.project, options.hosted)
   const hosted = mode === 'hosted-configured'
   const at = nowIso()

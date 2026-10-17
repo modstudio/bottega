@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
@@ -533,21 +533,36 @@ describe('local task tracker', () => {
     expect(taskRecord(task.key).task.key).toBe(task.key)
   })
 
-  test('task body compare-and-swap writes only the matching version and honors capability refusal', async () => {
-    resetFixtureStore()
-    const id = seed(`BODY-${crypto.randomUUID()}`, 'epsilon')
-    await setTaskBody('ignored', { recordId: id }, 'first', taskBodyVersion(null))
-    const firstVersion = taskBodyVersion('first')
-    await setTaskBody('ignored', { recordId: id }, 'second', firstVersion)
-    await expect(setTaskBody('ignored', { recordId: id }, 'stale', firstVersion)).rejects.toThrow(
-      'body changed since version',
-    )
-    expect(showTask('ignored', { recordId: id }).task.body).toBe('second')
+  describe('task body compare-and-swap', () => {
+    const previousHostedUrl = process.env.HUB_HOSTED_URL
+    beforeEach(() => {
+      delete process.env.HUB_HOSTED_URL
+    })
+    afterEach(() => {
+      if (previousHostedUrl === undefined) delete process.env.HUB_HOSTED_URL
+      else process.env.HUB_HOSTED_URL = previousHostedUrl
+    })
 
-    const external = seed(`EXT-${crypto.randomUUID()}`, 'alpha', 'mcp')
-    await expect(
-      setTaskBody('ignored', { recordId: external }, 'no', taskBodyVersion(null)),
-    ).rejects.toThrow('No adapter has proven a task description write')
+    test('writes only the matching version and honors capability refusal', async () => {
+      resetFixtureStore()
+      const id = seed(`BODY-${crypto.randomUUID()}`, 'epsilon')
+      await setTaskBody('ignored', { recordId: id }, 'first', taskBodyVersion(null))
+      const firstVersion = taskBodyVersion('first')
+      await setTaskBody('ignored', { recordId: id }, 'second', firstVersion)
+      await expect(setTaskBody('ignored', { recordId: id }, 'stale', firstVersion)).rejects.toThrow(
+        'body changed since version',
+      )
+      expect(showTask('ignored', { recordId: id }).task.body).toBe('second')
+
+      for (const hostedUrl of [undefined, 'https://hub.example.test']) {
+        if (hostedUrl === undefined) delete process.env.HUB_HOSTED_URL
+        else process.env.HUB_HOSTED_URL = hostedUrl
+        const external = seed(`EXT-${crypto.randomUUID()}`, 'alpha', 'mcp')
+        await expect(
+          setTaskBody('ignored', { recordId: external }, 'no', taskBodyVersion(null)),
+        ).rejects.toThrow('No adapter has proven a task description write')
+      }
+    })
   })
 
   test('task detail joins comments by task identity and orders equal timestamps by UUID', () => {
