@@ -28,7 +28,6 @@ type InboxQuestion = {
   job: string
   agent: string
   repo: string | null
-  project_record_id: string | null
   asked_at: string
   session_live: true | null
   session_liveness: 'live' | 'unknown'
@@ -89,6 +88,7 @@ type QueriedInboxQuestion = {
   agent: string
   job: string
   repo: string | null
+  project_record_id: string | null
   status: string
   session_id: string | null
   root_status: string
@@ -96,6 +96,15 @@ type QueriedInboxQuestion = {
   root_id: number
   root_record_id: string
   session_recent: number
+}
+
+type RecoverableInboxRow = {
+  id: number
+  agent: string
+  job: string
+  repo: string | null
+  project_record_id: string | null
+  session_id: string | null
 }
 
 const shellWord = (value: string) =>
@@ -406,7 +415,6 @@ export async function runInboxCommand(
   const scopedProject = scoped ? projectAt(requestedCwd) : null
   const scopedFilter = scopedProjectFilter(scoped, scopedProject)
   const project = scoped ? scopedProject : mine ? projectAt(process.cwd()) : null
-  const scopedProjectName = scoped ? (scopedProject?.name ?? null) : undefined
   const header = await rulingsHeader(project)
   const cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString()
   const hasSessionSeen = Boolean(
@@ -457,6 +465,7 @@ export async function runInboxCommand(
     agent: string
     job: string
     repo: string | null
+    project_record_id: string | null
     status: string
     session_id: string | null
     root_status: string
@@ -520,14 +529,9 @@ export async function runInboxCommand(
         )
       ORDER BY root.id`,
     )
-    .all(...(!scoped && mine ? (project ? [project.recordId, sid] : [sid]) : [])) as {
-    id: number
-    agent: string
-    job: string
-    repo: string | null
-    project_record_id: string | null
-    session_id: string | null
-  }[]
+    .all(
+      ...(!scoped && mine ? (project ? [project.recordId, sid] : [sid]) : []),
+    ) as RecoverableInboxRow[]
   const recoverable = rowsForInboxView(queriedRecoverable, scopedFilter, null, false, sid)
 
   if (!rows.length && !recoverable.length && !workflowRows.length) {
