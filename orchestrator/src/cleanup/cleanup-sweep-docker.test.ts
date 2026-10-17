@@ -1,5 +1,5 @@
 import { afterEach, expect, mock, spyOn, test } from 'bun:test'
-import { mkdtempSync, renameSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, renameSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
@@ -49,7 +49,6 @@ test('a project-scoped sweep previews reclamation only for that project', () => 
     return result('', 1, `unexpected command: ${command}`)
   }) as typeof Bun.spawnSync)
   const lines: string[] = []
-
   const failed = reclaimSweptDockerResources({
     dryRun: true,
     selectedProject: projectByName(alphaName)!,
@@ -91,6 +90,141 @@ test('a project-scoped sweep still finds Docker resources after the project is r
 
   expect(failed).toBeFalse()
   expect(lines).toContain(`would tear down disposable Docker resources for run ${run}`)
+})
+
+test('a NULL-root chain with a UUID child retains Docker resources and fails visibly', () => {
+  const root = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+  const child = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'failed',
+    parent: root,
+    turn: 2,
+  })
+  const name = `docker-null-root-${root}`
+  const recordId = newRecordId()
+  upsertProject({ recordId, name, path: join(dir, name), settings: {} })
+  db().query('UPDATE run SET repo=?,project_record_id=NULL WHERE id=?').run(name, root)
+  db().query('UPDATE run SET repo=?,project_record_id=? WHERE id=?').run(name, recordId, child)
+  const commands: string[] = []
+  mockDockerForRun(root, commands)
+  const lines: string[] = []
+
+  const failed = reclaimSweptDockerResources({
+    dryRun: false,
+    selectedProject: projectByName(name)!,
+    presentation: presentation(lines),
+    inventoryErrors: new Set(),
+    leaked: new Map(),
+  })
+
+  expect(failed).toBeTrue()
+  expect(commands.some((command) => command.startsWith('docker rm'))).toBeFalse()
+  expect(lines.join('\n')).toContain(`conversation root ${root} project UUID is missing`)
+})
+
+test('a cross-project root and child chain retains Docker resources and fails visibly', () => {
+  const root = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+  const child = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'failed',
+    parent: root,
+    turn: 2,
+  })
+  const alphaName = `docker-conflict-alpha-${root}`
+  const bravoName = `docker-conflict-bravo-${root}`
+  const alphaId = newRecordId()
+  const bravoId = newRecordId()
+  upsertProject({ recordId: alphaId, name: alphaName, path: join(dir, alphaName), settings: {} })
+  upsertProject({ recordId: bravoId, name: bravoName, path: join(dir, bravoName), settings: {} })
+  db().query('UPDATE run SET repo=?,project_record_id=? WHERE id=?').run(alphaName, alphaId, root)
+  db().query('UPDATE run SET repo=?,project_record_id=? WHERE id=?').run(bravoName, bravoId, child)
+  const commands: string[] = []
+  mockDockerForRun(root, commands)
+  const lines: string[] = []
+
+  const failed = reclaimSweptDockerResources({
+    dryRun: false,
+    selectedProject: projectByName(bravoName)!,
+    presentation: presentation(lines),
+    inventoryErrors: new Set(),
+    leaked: new Map(),
+  })
+
+  expect(failed).toBeTrue()
+  expect(commands.some((command) => command.startsWith('docker rm'))).toBeFalse()
+  expect(lines.join('\n')).toContain(
+    `run ${child} project UUID ${bravoId} conflicts with root ${root} project UUID ${alphaId}`,
+  )
+})
+
+test('a fully NULL chain is reported instead of disappearing from project-scoped cleanup', () => {
+  const root = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+  const child = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'failed',
+    parent: root,
+    turn: 2,
+  })
+  const name = `docker-null-chain-${root}`
+  upsertProject({ recordId: newRecordId(), name, path: join(dir, name), settings: {} })
+  db()
+    .query('UPDATE run SET repo=?,project_record_id=NULL WHERE id IN (?,?)')
+    .run(name, root, child)
+  const commands: string[] = []
+  mockDockerForRun(root, commands)
+  const lines: string[] = []
+
+  const failed = reclaimSweptDockerResources({
+    dryRun: false,
+    selectedProject: projectByName(name)!,
+    presentation: presentation(lines),
+    inventoryErrors: new Set(),
+    leaked: new Map(),
+  })
+
+  expect(failed).toBeTrue()
+  expect(commands.some((command) => command.startsWith('docker rm'))).toBeFalse()
+  expect(lines.join('\n')).toContain(`conversation root ${root} project UUID is missing`)
+})
+
+test('a matching root and child chain reclaims Docker resources', () => {
+  const root = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+  const child = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'failed',
+    parent: root,
+    turn: 2,
+  })
+  const name = `docker-matching-chain-${root}`
+  const recordId = newRecordId()
+  const projectPath = mkdtempSync(join(tmpdir(), 'orch-docker-matching-'))
+  mkdirSync(join(projectPath, '.git'))
+  upsertProject({ recordId, name, path: projectPath, settings: {} })
+  db()
+    .query('UPDATE run SET repo=?,project_record_id=? WHERE id IN (?,?)')
+    .run(name, recordId, root, child)
+  const commands: string[] = []
+  mockDockerForRun(root, commands)
+  const lines: string[] = []
+
+  try {
+    const failed = reclaimSweptDockerResources({
+      dryRun: false,
+      selectedProject: projectByName(name)!,
+      presentation: presentation(lines),
+      inventoryErrors: new Set(),
+      leaked: new Map(),
+    })
+
+    expect(failed).toBeFalse()
+    expect(commands).toContain(`docker rm -f app-orch-${root}-web`)
+  } finally {
+    rmSync(projectPath, { recursive: true, force: true })
+  }
 })
 
 test('an unattributable worktree resource is an observation, not a sweep failure', () => {
@@ -304,6 +438,24 @@ function presentation(lines: string[]): CleanupPresentation {
     setExitCode: () => undefined,
     keptBranchLine: () => '',
   }
+}
+
+function mockDockerForRun(runId: number, commands: string[]): void {
+  let removed = false
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    const command = args.join(' ')
+    commands.push(command)
+    if (command.startsWith('docker ps -a --format'))
+      return result(removed ? '' : `app-orch-${runId}-web`)
+    if (command.startsWith('docker volume ls --format')) return result('')
+    if (command === 'docker network ls --format {{.Name}}') return result('')
+    if (command === `docker rm -f app-orch-${runId}-web`) {
+      removed = true
+      return result('')
+    }
+    if (command.startsWith('git rev-parse --git-common-dir')) return result('.git')
+    return result('', 1, `unexpected command: ${command}`)
+  }) as typeof Bun.spawnSync)
 }
 
 function result(stdout: string, exitCode = 0, stderr = ''): ReturnType<typeof Bun.spawnSync> {

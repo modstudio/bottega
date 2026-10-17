@@ -37,6 +37,8 @@ type DockerOwner = {
   id: number
   repo: string | null
   project_record_id: string | null
+  member_project_record_id: string | null
+  root_id: number
   worktree: string | null
   status: string
   worktree_source: Worktree['source'] | null
@@ -50,12 +52,14 @@ function dockerOwners(ownerIds: Set<number>): DockerOwner[] {
   const rows = db()
     .query(
       `SELECT r.id,COALESCE(root.repo,r.repo) repo,
-              COALESCE(root.project_record_id,r.project_record_id) project_record_id,
+              root.project_record_id project_record_id,
+              r.project_record_id member_project_record_id,
+              root.id root_id,
               r.worktree,r.status,
               COALESCE(root.worktree_source,r.worktree_source) worktree_source,
               COALESCE(root.recipe_snapshot,r.recipe_snapshot) recipe_snapshot,
               COALESCE(root.resource_teardown,r.resource_teardown) resource_teardown
-       FROM run r LEFT JOIN run root ON root.id=r.parent_run_id`,
+       FROM run r JOIN run root ON root.id=COALESCE(r.parent_run_id,r.id)`,
     )
     .all() as Omit<DockerOwner, 'absentTreeTeardown' | 'retentionReason'>[]
   return rows.map((owner) => ({
@@ -90,7 +94,13 @@ function reclaimTerminalOwners(input: {
   const reclaimed = new Set<number>()
   let failed = false
   for (const owner of owners) {
-    if (!terminalOwnerInScope(owner, ownerIds, selectedProject)) continue
+    const ownershipIssue = dockerOwnershipIssue(owner, owners)
+    if (ownershipIssue && dockerOwnerCouldBeInScope(owner, owners, ownerIds, selectedProject)) {
+      failed = true
+      presentation.error(`retained Docker resources for run ${owner.id}: ${ownershipIssue}`)
+      continue
+    }
+    if (!terminalOwnerInScope(owner, owners, ownerIds, selectedProject)) continue
     const teardown = teardownTerminalRunResources(db(), owner.id, inventory, { dryRun })
     if (teardown.complete && !teardown.skipped) reclaimed.add(owner.id)
     else failed = true
@@ -101,13 +111,45 @@ function reclaimTerminalOwners(input: {
   return { failed, reclaimed }
 }
 
+function dockerOwnershipIssue(owner: DockerOwner, owners: DockerOwner[]): string | null {
+  const members = owners.filter((member) => member.root_id === owner.root_id)
+  if (owner.project_record_id === null)
+    return `conversation root ${owner.root_id} project UUID is missing; members ${members.map((member) => `${member.id}=${member.member_project_record_id ?? 'missing'}`).join(', ')}`
+  const conflicts = members.filter(
+    (member) => member.member_project_record_id !== owner.project_record_id,
+  )
+  if (conflicts.length)
+    return `${conflicts.map((member) => `run ${member.id} project UUID ${member.member_project_record_id ?? 'missing'}`).join(', ')} conflicts with root ${owner.root_id} project UUID ${owner.project_record_id}`
+  return null
+}
+
+function dockerOwnerCouldBeInScope(
+  owner: DockerOwner,
+  owners: DockerOwner[],
+  ownerIds: Set<number>,
+  selectedProject: Project | null,
+): boolean {
+  const chainProjectRecordIds = owners
+    .filter((member) => member.root_id === owner.root_id)
+    .map((member) => member.member_project_record_id)
+  return (
+    ownerIds.has(owner.id) &&
+    (!selectedProject ||
+      owner.project_record_id === selectedProject.recordId ||
+      chainProjectRecordIds.includes(selectedProject.recordId) ||
+      owner.project_record_id === null)
+  )
+}
+
 function terminalOwnerInScope(
   owner: DockerOwner,
+  owners: DockerOwner[],
   ownerIds: Set<number>,
   selectedProject: Project | null,
 ): boolean {
   return (
-    ownerIds.has(owner.id) &&
+    dockerOwnerCouldBeInScope(owner, owners, ownerIds, selectedProject) &&
+    dockerOwnershipIssue(owner, owners) === null &&
     ['ok', 'failed', 'stale', 'stopped'].includes(owner.status) &&
     (!selectedProject || owner.project_record_id === selectedProject.recordId)
   )
@@ -477,13 +519,12 @@ export function reclaimSweptDockerResources(input: {
     selectedProject,
   })
   failed ||= reclaimedResult.failed
-  const projectRecordIdByRun = new Map(owners.map((owner) => [owner.id, owner.project_record_id]))
-  const classified = classifiedDockerResources(resources, owners).filter(
-    (item) =>
-      !reclaimedResult.reclaimed.has(item.resource.runId) &&
-      (!selectedProject ||
-        projectRecordIdByRun.get(item.resource.runId) === selectedProject.recordId),
-  )
+  const ownerByRun = new Map(owners.map((owner) => [owner.id, owner]))
+  const classified = classifiedDockerResources(resources, owners).filter((item) => {
+    if (reclaimedResult.reclaimed.has(item.resource.runId)) return false
+    const owner = ownerByRun.get(item.resource.runId)
+    return Boolean(owner && dockerOwnerCouldBeInScope(owner, owners, ownerIds, selectedProject))
+  })
   for (const { resource, project, condition } of classified) {
     if (condition === 'retained-worktree-resources') continue
     const key = `${resource.kind}:${resource.name}`
