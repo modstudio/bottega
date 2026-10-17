@@ -3,6 +3,17 @@ import { type Ref, useState } from 'react'
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 import { DocumentSurface, DocumentTitle } from './document-surface'
 
+function colorToRgba(color: string) {
+  const canvas = document.createElement('canvas')
+  canvas.width = 1
+  canvas.height = 1
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('Canvas 2D context is unavailable')
+  context.fillStyle = color
+  context.fillRect(0, 0, 1, 1)
+  return Array.from(context.getImageData(0, 0, 1, 1).data)
+}
+
 function SwappingHeadingSurface() {
   const [editing, setEditing] = useState(false)
   const title = 'A document title'
@@ -55,9 +66,9 @@ export const Light: Story = {
     expected.style.backgroundColor = 'var(--color-surface-page)'
     canvasElement.append(expected)
     await expect(surface).not.toBeNull()
-    const background = getComputedStyle(surface as HTMLElement).backgroundColor
-    await expect(background).not.toBe('rgba(0, 0, 0, 0)')
-    await expect(background).toBe(getComputedStyle(expected).backgroundColor)
+    const background = colorToRgba(getComputedStyle(surface as HTMLElement).backgroundColor)
+    await expect(background[3]).toBeGreaterThan(0)
+    await expect(background).toEqual(colorToRgba(getComputedStyle(expected).backgroundColor))
     expected.remove()
   },
 }
