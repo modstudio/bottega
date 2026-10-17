@@ -1,6 +1,6 @@
 /** Cleanup sweep knows worktree ownership, leases and the cleanup lock, resource reclamation, and branch retention. It must not know transports, routing, reviews, contracts, the CLI, or durable execution. */
 import { existsSync, lstatSync, readdirSync, realpathSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { stampEndedClaims } from '../board/board-claim-service.ts'
@@ -11,7 +11,13 @@ import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { expireUnjudgedRun, unjudgedRuns } from '../evidence/unjudged-expiry.ts'
 import { shouldSweepHookTree } from '../hook-tree/hook-tree.ts'
 import { observeLandingTreeRelease } from '../landing-tree/release-observation.ts'
-import { isProjectRepository, projectAt, projectByName, projects } from '../project/projects.ts'
+import {
+  isProjectRepository,
+  type Project,
+  projectAt,
+  projectByName,
+  projects,
+} from '../project/projects.ts'
 import { type DockerResource, orchRunId } from '../resources/docker-resources.ts'
 import { sweepIdleMainStacks } from '../resources/main-stack.ts'
 import { liveWorktreeSharers } from '../resources/resource-ownership.ts'
@@ -85,6 +91,7 @@ type SweepCandidate = {
   id: number
   root_id: number
   repo: string | null
+  project_record_id: string | null
   worktree: string | null
   branch: string | null
   base_commit: string | null
@@ -99,34 +106,25 @@ type SweepCandidate = {
 }
 type ClosedSweepCounts = Record<ClosedSweepOutcome, number>
 
-function pathIsUnder(path: string | null, root: string): boolean {
-  if (!path) return false
-  const candidate = resolve(path)
-  const project = resolve(root)
-  return candidate === project || candidate.startsWith(`${project}/`)
-}
-
 function namedRun(
   name: string,
   branchTemplate: string | undefined,
-  project: { name: string; path: string },
+  project: Project,
 ): NamedRun | null {
   const runId = worktreeNameRunId(name, branchTemplate)
   if (runId === null) return null
   const member = db()
-    .query('SELECT id, parent_run_id, repo, cwd, worktree FROM run WHERE id=?')
+    .query('SELECT id, parent_run_id, repo, project_record_id, cwd, worktree FROM run WHERE id=?')
     .get(runId) as {
     id: number
     parent_run_id: number | null
     repo: string | null
+    project_record_id: string | null
     cwd: string | null
     worktree: string | null
   } | null
   if (!member) return null
-  const belongs =
-    member.repo === project.name ||
-    (member.repo === null &&
-      (pathIsUnder(member.cwd, project.path) || pathIsUnder(member.worktree, project.path)))
+  const belongs = member.project_record_id === project.recordId
   if (!belongs) return null
 
   const rootId = member.parent_run_id ?? member.id
@@ -515,7 +513,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     db()
       .query(
         `SELECT r.id, COALESCE(r.parent_run_id, r.id) root_id,
-              r.repo, r.worktree, r.branch, r.base_commit, r.worktree_source, r.status, r.job,
+              r.repo, r.project_record_id, r.worktree, r.branch, r.base_commit, r.worktree_source, r.status, r.job,
               r.pid, r.agent_pid, r.session_id, seen.last_seen AS session_last_seen,
               r.launch_key, r.close_out_outcome
          FROM run r
@@ -538,8 +536,8 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     .filter(
       (row) =>
         !selectedProject ||
-        row.repo === selectedProject.name ||
-        Boolean(row.worktree && projectAt(row.worktree)?.name === selectedProject.name),
+        row.project_record_id === selectedProject.recordId ||
+        Boolean(row.worktree && projectAt(row.worktree)?.recordId === selectedProject.recordId),
     )
 
   const { removeFor, sweepWithTool } = await import('../worktree/worktree-remove.ts')

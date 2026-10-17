@@ -28,6 +28,7 @@ type InboxQuestion = {
   job: string
   agent: string
   repo: string | null
+  project_record_id: string | null
   asked_at: string
   session_live: true | null
   session_liveness: 'live' | 'unknown'
@@ -108,7 +109,7 @@ function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
   const defaultProject = !scoped && !input.all ? projectAt(process.cwd()) : null
   const rows = db()
     .query(
-      `SELECT q.id,q.record_id,q.asked_at,q.question,c.id cursor_id,c.project,c.workflow_slug,c.mode_slug,c.args,
+      `SELECT q.id,q.record_id,q.asked_at,q.question,c.id cursor_id,c.project,c.project_record_id,c.workflow_slug,c.mode_slug,c.args,
               c.ordinal,c.step_slug,c.session_id
          FROM question q JOIN workflow_cursor c ON c.id=q.workflow_cursor_id
         WHERE c.state='awaiting-ruling' AND ${questionOpenSql('q')}
@@ -121,6 +122,7 @@ function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
     question: string
     cursor_id: number
     project: string
+    project_record_id: string | null
     workflow_slug: string
     mode_slug: string
     args: string
@@ -129,9 +131,10 @@ function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
     session_id: string | null
   }>
   const visible = rows.filter((row) => {
-    if (scoped) return scopedProject !== null && row.project === scopedProject.name
+    if (scoped) return scopedProject !== null && row.project_record_id === scopedProject.recordId
     if (input.all) return true
-    if (defaultProject) return row.project === defaultProject.name || row.session_id === sid
+    if (defaultProject)
+      return row.project_record_id === defaultProject.recordId || row.session_id === sid
     return sid !== null && row.session_id === sid
   })
   return visible.map((row) => {
@@ -169,6 +172,13 @@ export type InboxQuery = {
   requestedCwd?: string
 }
 
+function scopedProjectFilter(
+  scoped: boolean,
+  project: ReturnType<typeof projectAt>,
+): ReturnType<typeof projectAt> | undefined {
+  return scoped ? project : undefined
+}
+
 export async function queryInbox(
   input: InboxQuery,
 ): Promise<{ questions: Array<InboxQuestion | WorkflowInboxQuestion> }> {
@@ -176,9 +186,9 @@ export async function queryInbox(
   const mine = input.scope === 'session' || !input.all
   const scoped = input.scope === 'cli-default' && input.requestedCwd !== undefined
   const scopedProject = scoped ? projectAt(input.requestedCwd!) : null
+  const scopedFilter = scopedProjectFilter(scoped, scopedProject)
   const defaultProject =
     input.scope === 'cli-default' && !scoped && mine ? projectAt(process.cwd()) : null
-  const scopedProjectName = scoped ? (scopedProject?.name ?? null) : undefined
   const cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString()
   const hasSessionSeen = Boolean(
     db().query(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_seen'`).get(),
@@ -195,7 +205,7 @@ export async function queryInbox(
             q.asked_at, q.question, q.options, q.recommendation, q.why,
             q.answered_at, q.overturned_at, q.overturned_by, q.overturn_reason, q.replacement,
             q.filed_as, q.filed_ref, q.filed_record_id, q.filed_label, q.filed_at,
-            r.agent, r.job, r.repo, r.status, r.session_id,
+            r.agent, r.job, r.repo, root.project_record_id, r.status, r.session_id,
             root.status root_status, root.record_id root_record_id,
             ${voidedSql('root')} root_voided,
             COALESCE(r.parent_run_id, r.id) root_id, ${sessionRecent} session_recent
@@ -223,7 +233,7 @@ export async function queryInbox(
             isLive(question) &&
             (question.session_id === null || (sid !== null && question.session_id === sid)),
         )
-      : rowsForInboxView(selected, scopedProjectName, defaultProject?.name ?? null, mine, sid)
+      : rowsForInboxView(selected, scopedFilter, defaultProject, mine, sid)
   return {
     questions: [
       ...visible.map(
@@ -264,25 +274,31 @@ export async function queryInbox(
   }
 }
 
-export function rowsForInboxProject<T extends { repo: string | null }>(
+export function rowsForInboxProject<T extends { project_record_id: string | null }>(
   rows: T[],
-  project: string | null,
+  projectRecordId: string | null,
 ): T[] {
-  return project === null ? [] : rows.filter((row) => row.repo === project)
+  return projectRecordId === null
+    ? []
+    : rows.filter((row) => row.project_record_id === projectRecordId)
 }
 
-function rowsForInboxView<T extends { repo: string | null; session_id: string | null }>(
+function rowsForInboxView<
+  T extends { project_record_id: string | null; session_id: string | null },
+>(
   rows: T[],
-  scopedProject: string | null | undefined,
-  defaultProject: string | null,
+  scopedProject: ReturnType<typeof projectAt> | undefined,
+  defaultProject: ReturnType<typeof projectAt>,
   mine: boolean,
   sid: string | null,
 ): T[] {
-  if (scopedProject !== undefined) return rowsForInboxProject(rows, scopedProject)
+  if (scopedProject !== undefined) return rowsForInboxProject(rows, scopedProject?.recordId ?? null)
   if (!mine) return rows
   if (defaultProject)
     return rows.filter(
-      (row) => row.repo === defaultProject || (sid !== null && row.session_id === sid),
+      (row) =>
+        row.project_record_id === defaultProject.recordId ||
+        (sid !== null && row.session_id === sid),
     )
   return rows.filter((row) => sid !== null && row.session_id === sid)
 }
@@ -388,6 +404,7 @@ export async function runInboxCommand(
   const activeOnly = has('active')
   const scoped = requestedCwd !== undefined
   const scopedProject = scoped ? projectAt(requestedCwd) : null
+  const scopedFilter = scopedProjectFilter(scoped, scopedProject)
   const project = scoped ? scopedProject : mine ? projectAt(process.cwd()) : null
   const scopedProjectName = scoped ? (scopedProject?.name ?? null) : undefined
   const header = await rulingsHeader(project)
@@ -407,7 +424,7 @@ export async function runInboxCommand(
             q.answered_at,
             q.answer, q.overturned_at, q.overturned_by, q.overturn_reason, q.replacement,
             q.filed_as, q.filed_ref, q.filed_record_id, q.filed_label, q.filed_at,
-            r.agent, r.job, r.repo, r.status, r.session_id,
+            r.agent, r.job, r.repo, root.project_record_id, r.status, r.session_id,
             root.status root_status,
             ${voidedSql('root')} root_voided,
             COALESCE(r.parent_run_id, r.id) root_id,
@@ -463,7 +480,7 @@ export async function runInboxCommand(
   // Inside a registered project, the default view is the union of questions in
   // that project and questions owned by this session. Visibility does not make
   // a question owned by another session answerable.
-  const rows = rowsForInboxView(allRows, scopedProjectName, project?.name ?? null, mine, sid)
+  const rows = rowsForInboxView(allRows, scopedFilter, project, mine, sid)
   const workflowRows = workflowInboxQuestions({
     scope: 'cli-default',
     all: has('all'),
@@ -482,7 +499,7 @@ export async function runInboxCommand(
 
   const queriedRecoverable = db()
     .query(
-      `SELECT root.id, root.agent, root.job, root.repo, root.session_id
+      `SELECT root.id, root.agent, root.job, root.repo, root.project_record_id, root.session_id
        FROM run root
       WHERE root.parent_run_id IS NULL
         AND (root.status = 'asking' OR EXISTS (
@@ -508,9 +525,10 @@ export async function runInboxCommand(
     agent: string
     job: string
     repo: string | null
+    project_record_id: string | null
     session_id: string | null
   }[]
-  const recoverable = rowsForInboxView(queriedRecoverable, scopedProjectName, null, false, sid)
+  const recoverable = rowsForInboxView(queriedRecoverable, scopedFilter, null, false, sid)
 
   if (!rows.length && !recoverable.length && !workflowRows.length) {
     log(emptyInboxMessage(project, mine))

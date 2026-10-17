@@ -50,11 +50,11 @@ async function inbox(
 
 test('explicit project scope keeps only that project and an unregistered cwd keeps nothing', () => {
   const rows = [
-    { repo: 'here', id: 1 },
-    { repo: 'elsewhere', id: 2 },
-    { repo: null, id: 3 },
+    { project_record_id: 'here', id: 1 },
+    { project_record_id: 'elsewhere', id: 2 },
+    { project_record_id: null, id: 3 },
   ]
-  expect(rowsForInboxProject(rows, 'here')).toEqual([{ repo: 'here', id: 1 }])
+  expect(rowsForInboxProject(rows, 'here')).toEqual([{ project_record_id: 'here', id: 1 }])
   expect(rowsForInboxProject(rows, null)).toEqual([])
 })
 
@@ -261,7 +261,8 @@ test('inbox gives no answer command for a foreign-owned workflow question', asyn
   )
 })
 test('project inbox exposes a foreign question without adopting it', async () => {
-  upsertProject({ recordId: newRecordId(), name: 'inbox-project', path: process.cwd() })
+  const projectRecordId = newRecordId()
+  upsertProject({ recordId: projectRecordId, name: 'inbox-project', path: process.cwd() })
   const id = addRun({
     agent: 'codex',
     job: 'implement',
@@ -269,6 +270,7 @@ test('project inbox exposes a foreign question without adopting it', async () =>
     session: 'foreign',
     repo: 'inbox-project',
   })
+  db().query('UPDATE run SET project_record_id=? WHERE id=?').run(projectRecordId, id)
   question(id, 'foreign?')
   const shown = await inbox()
   expect(shown).toContain('project default: rulings=agent')
@@ -279,7 +281,8 @@ test('project inbox exposes a foreign question without adopting it', async () =>
   )
 })
 test('project inbox reports a recently-seen foreign owner as live, without authority', async () => {
-  upsertProject({ recordId: newRecordId(), name: 'live-project', path: process.cwd() })
+  const projectRecordId = newRecordId()
+  upsertProject({ recordId: projectRecordId, name: 'live-project', path: process.cwd() })
   const id = addRun({
     agent: 'codex',
     job: 'implement',
@@ -287,6 +290,7 @@ test('project inbox reports a recently-seen foreign owner as live, without autho
     session: 'foreign',
     repo: 'live-project',
   })
+  db().query('UPDATE run SET project_record_id=? WHERE id=?').run(projectRecordId, id)
   question(id, 'live?')
   db()
     .query('INSERT OR REPLACE INTO session_seen (session_id,last_seen) VALUES (?,?)')
