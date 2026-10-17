@@ -18,6 +18,7 @@
 !cli/package.json
 !retrieval/package.json
 !hub/deploy/site/package.json
+!hub/data/package.json
 !hub/ui/package.json
 !hub/ui/tsconfig.json
 # The web build imports the shared UI workspace directly.
