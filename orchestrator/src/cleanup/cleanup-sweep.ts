@@ -180,12 +180,11 @@ function namedRunAlive(lookup: NamedRunLookup): boolean {
 
 function observeNamedRunForSweep(
   name: string,
-  branchTemplate: string | undefined,
   project: Project,
   label: string,
   presentation: CleanupPresentation,
 ): { alive: boolean; failed: boolean } {
-  const lookup = namedRun(name, branchTemplate, project)
+  const lookup = namedRun(name, project.settings.worktree?.branch, project)
   if (lookup.outcome !== 'unknown') return { alive: namedRunAlive(lookup), failed: false }
   presentation.error(`could not reclaim ${label}: ${lookup.reason}`)
   return { alive: true, failed: true }
@@ -688,13 +687,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       if (remembered.has(realpathSync(path))) continue
 
       const label = `orphan  ${path}`
-      const named = observeNamedRunForSweep(
-        entry.name,
-        p.settings.worktree?.branch,
-        p,
-        label,
-        options.presentation,
-      )
+      const named = observeNamedRunForSweep(entry.name, p, label, options.presentation)
       cleanupFailed ||= named.failed
       const trunk =
         typeof p.settings.trunk === 'string' && p.settings.trunk.trim() ? p.settings.trunk : 'HEAD'
