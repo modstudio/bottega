@@ -534,16 +534,7 @@ describe('local task tracker', () => {
   })
 
   describe('task body compare-and-swap', () => {
-    const previousHostedUrl = process.env.HUB_HOSTED_URL
-    beforeEach(() => {
-      delete process.env.HUB_HOSTED_URL
-    })
-    afterEach(() => {
-      if (previousHostedUrl === undefined) delete process.env.HUB_HOSTED_URL
-      else process.env.HUB_HOSTED_URL = previousHostedUrl
-    })
-
-    test('writes only the matching version and honors capability refusal', async () => {
+    test('writes only the matching version', async () => {
       resetFixtureStore()
       const id = seed(`BODY-${crypto.randomUUID()}`, 'epsilon')
       await setTaskBody('ignored', { recordId: id }, 'first', taskBodyVersion(null))
@@ -553,15 +544,46 @@ describe('local task tracker', () => {
         'body changed since version',
       )
       expect(showTask('ignored', { recordId: id }).task.body).toBe('second')
+    })
 
-      for (const hostedUrl of [undefined, 'https://hub.example.test']) {
-        if (hostedUrl === undefined) delete process.env.HUB_HOSTED_URL
-        else process.env.HUB_HOSTED_URL = hostedUrl
-        const external = seed(`EXT-${crypto.randomUUID()}`, 'alpha', 'mcp')
-        await expect(
-          setTaskBody('ignored', { recordId: external }, 'no', taskBodyVersion(null)),
-        ).rejects.toThrow('No adapter has proven a task description write')
-      }
+    const expectCapabilityRefusal = async () => {
+      resetFixtureStore()
+      const external = seed(`EXT-${crypto.randomUUID()}`, 'alpha', 'mcp')
+      await expect(
+        setTaskBody('ignored', { recordId: external }, 'no', taskBodyVersion(null)),
+      ).rejects.toThrow('No adapter has proven a task description write')
+    }
+
+    describe('without a hosted URL', () => {
+      let previousHostedUrl: string | undefined
+
+      beforeEach(() => {
+        previousHostedUrl = process.env.HUB_HOSTED_URL
+        delete process.env.HUB_HOSTED_URL
+      })
+
+      afterEach(() => {
+        if (previousHostedUrl === undefined) delete process.env.HUB_HOSTED_URL
+        else process.env.HUB_HOSTED_URL = previousHostedUrl
+      })
+
+      test('honors capability refusal', expectCapabilityRefusal)
+    })
+
+    describe('with a hosted URL', () => {
+      let previousHostedUrl: string | undefined
+
+      beforeEach(() => {
+        previousHostedUrl = process.env.HUB_HOSTED_URL
+        process.env.HUB_HOSTED_URL = 'https://hub.example.test'
+      })
+
+      afterEach(() => {
+        if (previousHostedUrl === undefined) delete process.env.HUB_HOSTED_URL
+        else process.env.HUB_HOSTED_URL = previousHostedUrl
+      })
+
+      test('honors capability refusal', expectCapabilityRefusal)
     })
   })
 
