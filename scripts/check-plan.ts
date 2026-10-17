@@ -11,7 +11,10 @@ export const CHECK_LEGS = [
     directory: 'hub',
     ciJob: 'hub',
     typecheck: ['bun', 'run', 'typecheck'],
-    suite: [['bun', 'run', 'test']],
+    suite: [
+      ['bun', 'run', 'test'],
+      ['bun', 'run', '--cwd', 'data', 'test'],
+    ],
   },
   {
     name: 'hub/web',

@@ -9,7 +9,7 @@
     "hub": "bun --no-env-file src/cli.ts",
     "report-deliver": "bun src/report-delivery-cli.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test",
+    "test": "bun test --path-ignore-patterns 'data/**'",
     "test:postgres": "bun scripts/test-postgres-evidence.ts"
   },
   "dependencies": {

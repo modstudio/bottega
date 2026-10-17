@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
@@ -13,9 +13,11 @@ import {
   duplicateCandidates,
   duplicateScore,
   setTask,
+  setTaskBody,
   showTask,
   taskRecord,
 } from './task.ts'
+import { taskBodyVersion } from './task-detail.ts'
 
 beforeAll(resetFixtureStore)
 
@@ -511,22 +513,78 @@ describe('local task tracker', () => {
 
     const result = taskRecord(task.key.toLowerCase())
     expect(result.task).toMatchObject({ key: task.key, title: 'Inspectable task' })
-    expect(result.source).toBe('local')
-    expect(result.project?.name).toBe('workshop')
+    expect(result.task.source).toBe('local')
     expect(result.capabilities).toMatchObject({
       setStatus: { allowed: true },
       setTitle: { allowed: true },
+      setBody: { allowed: true },
       comment: { allowed: true },
       documents: { allowed: true },
     })
-    expect(result.comments).toEqual([comment])
+    expect(result.comments).toEqual([
+      { id: comment.id, body: comment.body, createdAt: comment.created_at },
+    ])
     expect(result.documents.map((document) => document.id)).toEqual([handoffId, ordinaryId])
     expect(result.documents[0]?.body).toBe('# Handoff')
     expect(result.runs).toEqual([
-      expect.objectContaining({ id: 1813, agent: 'codex', vendor_tokens: 45 }),
-      expect.objectContaining({ id: 1812, agent: 'codex', vendor_tokens: 123 }),
+      expect.objectContaining({ id: '1813', agent: 'codex' }),
+      expect.objectContaining({ id: '1812', agent: 'codex' }),
     ])
     expect(taskRecord(task.key).task.key).toBe(task.key)
+  })
+
+  describe('task body compare-and-swap', () => {
+    test('writes only the matching version', async () => {
+      resetFixtureStore()
+      const id = seed(`BODY-${crypto.randomUUID()}`, 'epsilon')
+      await setTaskBody('ignored', { recordId: id }, 'first', taskBodyVersion(null))
+      const firstVersion = taskBodyVersion('first')
+      await setTaskBody('ignored', { recordId: id }, 'second', firstVersion)
+      await expect(setTaskBody('ignored', { recordId: id }, 'stale', firstVersion)).rejects.toThrow(
+        'body changed since version',
+      )
+      expect(showTask('ignored', { recordId: id }).task.body).toBe('second')
+    })
+
+    const expectCapabilityRefusal = async () => {
+      resetFixtureStore()
+      const external = seed(`EXT-${crypto.randomUUID()}`, 'alpha', 'mcp')
+      await expect(
+        setTaskBody('ignored', { recordId: external }, 'no', taskBodyVersion(null)),
+      ).rejects.toThrow('No adapter has proven a task description write')
+    }
+
+    describe('without a hosted URL', () => {
+      let previousHostedUrl: string | undefined
+
+      beforeEach(() => {
+        previousHostedUrl = process.env.HUB_HOSTED_URL
+        delete process.env.HUB_HOSTED_URL
+      })
+
+      afterEach(() => {
+        if (previousHostedUrl === undefined) delete process.env.HUB_HOSTED_URL
+        else process.env.HUB_HOSTED_URL = previousHostedUrl
+      })
+
+      test('honors capability refusal', expectCapabilityRefusal)
+    })
+
+    describe('with a hosted URL', () => {
+      let previousHostedUrl: string | undefined
+
+      beforeEach(() => {
+        previousHostedUrl = process.env.HUB_HOSTED_URL
+        process.env.HUB_HOSTED_URL = 'https://hub.example.test'
+      })
+
+      afterEach(() => {
+        if (previousHostedUrl === undefined) delete process.env.HUB_HOSTED_URL
+        else process.env.HUB_HOSTED_URL = previousHostedUrl
+      })
+
+      test('honors capability refusal', expectCapabilityRefusal)
+    })
   })
 
   test('task detail joins comments by task identity and orders equal timestamps by UUID', () => {

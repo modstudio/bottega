@@ -2,7 +2,7 @@ import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { TASK_STATUSES } from '../../../../shared/trackers.ts'
 import { strip, view } from '../../serve.ts'
-import { commentTask, setTask, taskRecord } from '../../task.ts'
+import { commentTask, StaleTaskBodyError, setTask, setTaskBody, taskRecord } from '../../task.ts'
 import { getTaskDocument, updateTaskDocument } from '../../task-document.ts'
 import type { Context } from '../context.ts'
 
@@ -57,9 +57,31 @@ type WorkDeps = {
   view: typeof view
   taskRecord: typeof taskRecord
   setTask: typeof setTask
+  setTaskBody: typeof setTaskBody
   commentTask: typeof commentTask
   getTaskDocument: typeof getTaskDocument
   updateTaskDocument: typeof updateTaskDocument
+}
+
+function setBodyProcedure(deps: WorkDeps) {
+  return t.procedure
+    .input(
+      z.object({
+        ...taskIdentityInput,
+        body: z.string(),
+        expectedVersion: z.string().min(1),
+      }),
+    )
+    .mutation(async ({ input: value }) => {
+      try {
+        return await deps.setTaskBody(value.key, value.scope, value.body, value.expectedVersion)
+      } catch (cause) {
+        if (cause instanceof StaleTaskBodyError) {
+          throw new TRPCError({ code: 'CONFLICT', message: cause.message, cause })
+        }
+        throw asWriteError(cause)
+      }
+    })
 }
 
 export function createWorkRouter(given: Partial<WorkDeps> = {}) {
@@ -68,6 +90,7 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
     view,
     taskRecord,
     setTask,
+    setTaskBody,
     commentTask,
     getTaskDocument,
     updateTaskDocument,
@@ -109,6 +132,7 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
       .mutation(({ input: value }) =>
         write(() => deps.setTask(value.key, value.scope, { title: value.title })),
       ),
+    setBody: setBodyProcedure(deps),
     comment: t.procedure
       .input(
         z.object({
