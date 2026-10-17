@@ -1,8 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { queryClient, type TaskDetail, trpc } from './client.ts'
+import { queryClient, type TaskRecordResponse, trpc } from './client.ts'
 import { isHostedMode } from './hub-mode.ts'
-
-export type { TaskDetail } from './client.ts'
 
 type Refusal = { allowed: true } | { allowed: false; reason: string }
 
@@ -41,7 +39,7 @@ export function useTask(key: string, recordId?: string) {
   const local = useQuery({ ...trpc.work.task.queryOptions(localInput), enabled: !hostedMode })
   const hosted = useQuery({ ...trpc.record.task.queryOptions(hostedInput), enabled: hostedMode })
   const query = hostedMode ? hosted : local
-  const detail = (query.data ?? null) as TaskDetail | null
+  const detail = (query.data ?? null) as TaskRecordResponse | null
 
   const setTitle = useMutation(trpc.work.setTitle.mutationOptions())
   const setStatus = useMutation(trpc.work.setStatus.mutationOptions())

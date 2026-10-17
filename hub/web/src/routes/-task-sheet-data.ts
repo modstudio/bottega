@@ -1,4 +1,4 @@
-import type { TaskDetail, UseTaskResult } from '@bottega/hub-data/use-task'
+import type { UseTaskResult } from '@bottega/hub-data/use-task'
 
-export type TaskSheetDetail = TaskDetail
+export type TaskSheetDetail = NonNullable<UseTaskResult['detail']>
 export type TaskSheetResult = UseTaskResult

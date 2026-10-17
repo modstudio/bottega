@@ -1,12 +1,12 @@
 import { expect, test } from 'bun:test'
 import { queryClient } from '@bottega/hub-data/client'
-import type { TaskDetail, UseTaskResult } from '@bottega/hub-data/use-task'
+import type { UseTaskResult } from '@bottega/hub-data/use-task'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { HostedTaskSheet } from './hosted-task-sheet'
 
 test('hosted task detail renders all history without mutation controls', () => {
-  const detail: TaskDetail = {
+  const detail: NonNullable<UseTaskResult['detail']> = {
     task: {
       key: 'DEV-701',
       recordId: 'task-1',
