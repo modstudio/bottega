@@ -67,7 +67,7 @@ function toolingRows(database: Database): ToolingRow[] {
               p.record_id project_record_id,p.name project_name,COALESCE(r.minted_branch,r.branch) branch,
               CASE WHEN latest_gate.finished_at IS NOT NULL AND EXISTS (
                 SELECT 1 FROM landing_triage_snapshot snapshot
-                 WHERE snapshot.project=p.name
+                 WHERE snapshot.project_record_id=p.record_id
                    AND snapshot.branch=COALESCE(r.minted_branch,r.branch)
                    AND snapshot.at>=latest_gate.finished_at
               ) THEN 1 ELSE 0 END admitted
@@ -75,10 +75,7 @@ function toolingRows(database: Database): ToolingRow[] {
        JOIN latest_tooling latest ON latest.run_id=g.run_id
        JOIN gate_execution latest_gate ON latest_gate.id=latest.gate_id
        JOIN run r ON r.id=g.run_id
-       LEFT JOIN project p ON p.record_id=COALESCE(
-         r.project_record_id,
-         (SELECT legacy.record_id FROM project legacy WHERE legacy.name=r.repo LIMIT 1)
-       )
+       LEFT JOIN project p ON p.record_id=r.project_record_id
        WHERE g.run_id IS NOT NULL AND g.tooling_paths <> '[]' ORDER BY g.run_id,g.id`,
     )
     .all() as ToolingRow[]

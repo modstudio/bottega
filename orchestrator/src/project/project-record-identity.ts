@@ -157,12 +157,12 @@ export async function fillProjectRecordIds(database?: Database): Promise<FilledP
     })
     if (localDecision.kind === 'mint-local') {
       const recordId = newRecordId()
-      storeProjectRecordId(project.id, recordId, database)
+      storeProjectRecordId(project.name, recordId, database)
       filled.push({ name: project.name, recordId, source: 'local' })
       continue
     }
     const { recordId, source } = await hostedProjectIdentity(project, client!)
-    storeProjectRecordId(project.id, recordId, database)
+    storeProjectRecordId(project.name, recordId, database)
     filled.push({ name: project.name, recordId, source })
   }
   return filled

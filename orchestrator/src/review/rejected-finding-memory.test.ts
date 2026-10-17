@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -15,18 +16,25 @@ function completedFinding(input: {
   commit: string
   location: string
 }): number {
+  db()
+    .query("INSERT OR IGNORE INTO project (record_id,name,path,settings) VALUES (?,?,?,'{}')")
+    .run(newRecordId(), input.project, `/fixture/${input.project}`)
   const runId = addRun({
     agent: 'codex',
     job: 'review-lens',
     lens: input.lens,
     repo: input.project,
-    headCommit: input.commit,
   })
-  db().query('UPDATE run SET branch=? WHERE id=?').run(input.branch, runId)
+  db()
+    .query(
+      'UPDATE run SET branch=?,project_record_id=(SELECT record_id FROM project WHERE name=?) WHERE id=?',
+    )
+    .run(input.branch, input.project, runId)
   const reply = reviewReply(1, 'high')
   reply.findings[0]!.location = input.location
   reply.findings[0]!.evidence = `evidence at ${input.location}`
   const reviewId = recordReview(runId, reply, db())
+  db().query('UPDATE run SET head_commit=? WHERE id=?').run(input.commit, runId)
   triageFinding(
     reviewId,
     1,

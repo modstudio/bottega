@@ -38,6 +38,10 @@ function addEvidence(input: {
   excluded?: boolean
   deliveryNone?: boolean
 }): void {
+  const project = input.project ?? 'fixture'
+  db()
+    .query("INSERT OR IGNORE INTO project (record_id,name,path,settings) VALUES (?,?,?,'{}')")
+    .run(newRecordId(), project, `/fixture/${project}`)
   const review = db()
     .query<{ id: number }, [string, string, number | null, string | null, string]>(
       `INSERT INTO review (record_id,recorded_at,tier,patch_id,path_set)
@@ -56,11 +60,13 @@ function addEvidence(input: {
     lens: 'correctness',
     probe: input.probe ? 1 : 0,
     startedAt: input.at,
-    repo: input.project ?? 'fixture',
+    repo: project,
   })
   db()
-    .query('UPDATE run SET branch=?,launch_key=? WHERE id=?')
-    .run(input.branch, input.launchKey === undefined ? 'DEV-1256' : input.launchKey, run)
+    .query(
+      'UPDATE run SET branch=?,launch_key=?,project_record_id=(SELECT record_id FROM project WHERE name=?) WHERE id=?',
+    )
+    .run(input.branch, input.launchKey === undefined ? 'DEV-1256' : input.launchKey, project, run)
   if (input.excluded) db().query("UPDATE run SET evidence_excluded='void' WHERE id=?").run(run)
   if (input.deliveryNone) score(run, 'none')
   db()

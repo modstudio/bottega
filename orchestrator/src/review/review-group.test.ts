@@ -9,14 +9,20 @@ import type { ReviewTier } from './review-tier.ts'
 test('change-group lookup carries the same patch after rebase and rejects a different patch', () => {
   const database = new Database(':memory:')
   applyMigrations(database)
+  const projectId = newRecordId()
+  database
+    .query(
+      "INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture','/fixture','{}')",
+    )
+    .run(projectId)
   const run = database
-    .query<{ id: number }, []>(
+    .query<{ id: number }, [string]>(
       `INSERT INTO run
-         (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch)
-       VALUES ('${newRecordId()}','2026-09-25','codex','review-lens','sha',1,'head','ok','fixture','DEV-977')
+         (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_record_id,branch)
+       VALUES ('${newRecordId()}','2026-09-25','codex','review-lens','sha',1,'head','ok','fixture',?,'DEV-977')
        RETURNING id`,
     )
-    .get()!
+    .get(projectId)!
   const review = database
     .query<{ id: number }, []>(
       `INSERT INTO review (record_id,recorded_at,completed_at,patch_id,path_set,tier)
@@ -30,10 +36,11 @@ test('change-group lookup carries the same patch after rebase and rejects a diff
        VALUES ('${newRecordId()}',?,?,'correctness','codex','model','[]','["a.ts"]','[]','[]')`,
     )
     .run(review.id, run.id)
+  database.query("UPDATE project SET name='renamed-fixture' WHERE record_id=?").run(projectId)
 
   expect(
     reviewsForTriage(database, {
-      project: 'fixture',
+      project: 'renamed-fixture',
       branch: 'DEV-977',
       patchId: 'stable-patch',
       pathSet: ['a.ts'],
@@ -41,7 +48,7 @@ test('change-group lookup carries the same patch after rebase and rejects a diff
   ).toHaveLength(1)
   expect(
     reviewsForTriage(database, {
-      project: 'fixture',
+      project: 'renamed-fixture',
       branch: 'DEV-977',
       patchId: 'changed-patch',
       pathSet: ['a.ts'],
@@ -52,15 +59,21 @@ test('change-group lookup carries the same patch after rebase and rejects a diff
 test('a rebase credits the complete round from the same branch and never another branch', () => {
   const database = new Database(':memory:')
   applyMigrations(database)
+  const projectId = newRecordId()
+  database
+    .query(
+      "INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture','/fixture','{}')",
+    )
+    .run(projectId)
   const addReview = (branch: string, reviewId: number, lens: string) => {
     const run = database
-      .query<{ id: number }, [string]>(
+      .query<{ id: number }, [string, string]>(
         `INSERT INTO run
-           (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch)
-         VALUES ('${newRecordId()}','2026-09-25','codex','review-lens','sha',1,'head','ok','fixture',?)
+           (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_record_id,branch)
+         VALUES ('${newRecordId()}','2026-09-25','codex','review-lens','sha',1,'head','ok','fixture',?,?)
          RETURNING id`,
       )
-      .get(branch)!
+      .get(projectId, branch)!
     database
       .query(
         `INSERT INTO review (id,record_id,recorded_at,completed_at,patch_id,path_set,tier)

@@ -29,7 +29,7 @@ function loadQuestion(database: Database, questionId: number): QuestionRow {
          LEFT JOIN run r ON r.id=q.run_id
          LEFT JOIN project run_project ON run_project.record_id=r.project_record_id
          LEFT JOIN workflow_cursor cursor ON cursor.id=q.workflow_cursor_id
-         LEFT JOIN project cursor_project ON cursor_project.name=cursor.project
+         LEFT JOIN project cursor_project ON cursor_project.record_id=cursor.project_record_id
         WHERE q.id=?`,
     )
     .get(questionId)

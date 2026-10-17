@@ -427,6 +427,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'blocker.record_id',
     'board_claim.record_id',
     'board_claim.project_record_id',
+    'board_message.author_project_record_id',
     'board_hosted_adoption_ledger.source_record_id',
     'board_hosted_adoption_receipt.message_record_id',
     'board_message.note_record_id',

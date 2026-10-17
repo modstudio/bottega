@@ -139,8 +139,15 @@ test('a failed project command reports its output', () => {
 test('selects every review round on the branch and requires every selected lens to be graded and triaged', () => {
   const database = db()
   const addReview = (project: string, branch: string, lens: string, patchId: string) => {
+    database
+      .query("INSERT OR IGNORE INTO project (record_id,name,path,settings) VALUES (?,?,?,'{}')")
+      .run(newRecordId(), project, `/fixture/${project}`)
     const run = addRun({ agent: 'codex', job: 'review-lens', lens, repo: project })
-    database.query('UPDATE run SET branch=? WHERE id=?').run(branch, run)
+    database
+      .query(
+        'UPDATE run SET branch=?,project_record_id=(SELECT record_id FROM project WHERE name=?) WHERE id=?',
+      )
+      .run(branch, project, run)
     const review = database
       .query<{ id: number }, [string, string]>(
         `INSERT INTO review

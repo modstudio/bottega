@@ -27,7 +27,8 @@ export function taskRulingsForDispatch(input: {
            FROM question q
            JOIN run owner ON owner.id=q.run_id
            JOIN run root ON root.id=COALESCE(owner.parent_run_id,owner.id)
-          WHERE root.repo=? AND root.launch_key=?
+          WHERE root.project_record_id=(SELECT record_id FROM project WHERE name=?)
+            AND root.launch_key=?
             AND q.answered_at IS NOT NULL
             AND NOT (q.overturned_at IS NOT NULL AND q.replacement IS NULL)
          UNION ALL

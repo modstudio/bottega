@@ -128,7 +128,12 @@ export function worktreePathSpellings(database: Database, worktree: string): str
 
 function terminalWorktreeSafety(
   database: Database,
-  row: { worktree: string | null; repo: string | null; cwd: string | null },
+  row: {
+    worktree: string | null
+    repo: string | null
+    project_record_id: string | null
+    cwd: string | null
+  },
 ): TerminalWorktreeSafety {
   const { worktree } = row
   let identity: string | null = null
@@ -141,8 +146,10 @@ function terminalWorktreeSafety(
   }
   let repoRoot: string | null
   try {
-    const registered = row.repo
-      ? (database.query('SELECT path FROM project WHERE name=?').get(row.repo) as {
+    const registered = row.project_record_id
+      ? (database
+          .query('SELECT path FROM project WHERE record_id=?')
+          .get(row.project_record_id) as {
           path: string
         } | null)
       : null
@@ -162,7 +169,12 @@ function terminalWorktreeSafety(
 
 function terminalDockerRetentionReason(
   database: Database,
-  row: { worktree: string | null; repo: string | null; cwd: string | null },
+  row: {
+    worktree: string | null
+    repo: string | null
+    project_record_id: string | null
+    cwd: string | null
+  },
 ): TerminalDockerRetentionReason | null {
   const safety = terminalWorktreeSafety(database, row)
   return safety.safe ? null : safety.reason
@@ -175,13 +187,18 @@ export function terminalDockerRetentionReasonForRun(
 ): TerminalDockerRetentionReason | null {
   const rows = database
     .query(
-      `SELECT worktree,repo,cwd FROM run
+      `SELECT worktree,repo,project_record_id,cwd FROM run
       WHERE COALESCE(parent_run_id, id) =
         (SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?)
         AND status IN ('ok','failed','stale','stopped')
       ORDER BY id DESC`,
     )
-    .all(runId) as { worktree: string | null; repo: string | null; cwd: string | null }[]
+    .all(runId) as {
+    worktree: string | null
+    repo: string | null
+    project_record_id: string | null
+    cwd: string | null
+  }[]
   for (const row of rows) {
     const reason = terminalDockerRetentionReason(database, row)
     if (reason) return reason
@@ -215,6 +232,7 @@ type TerminalRunRow = {
   status: string
   worktree: string | null
   repo: string | null
+  project_record_id: string | null
   cwd: string | null
 }
 
@@ -400,7 +418,7 @@ function terminalTeardownTarget(
   inventorySupplied: boolean,
 ): { row: TerminalRunRow; ids: { id: number; worktree: string | null }[] } | null {
   const row = database
-    .query('SELECT status, worktree,repo,cwd FROM run WHERE id=?')
+    .query('SELECT status,worktree,repo,project_record_id,cwd FROM run WHERE id=?')
     .get(runId) as TerminalRunRow | null
   if (!row || !['ok', 'failed', 'stale', 'stopped'].includes(row.status)) return null
   const ids = database

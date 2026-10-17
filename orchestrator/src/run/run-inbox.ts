@@ -491,7 +491,7 @@ export async function runInboxCommand(
              AND pending.answered_at IS NOT NULL
              AND pending.delivery_pending_at IS NOT NULL
         ))
-        ${!scoped && mine ? (project ? 'AND (root.repo = ? OR root.session_id = ?)' : 'AND root.session_id = ?') : ''}
+        ${!scoped && mine ? (project ? 'AND (root.project_record_id = ? OR root.session_id = ?)' : 'AND root.session_id = ?') : ''}
         AND NOT EXISTS (
           SELECT 1 FROM question q JOIN run owner ON owner.id = q.run_id
            WHERE (owner.id = root.id OR owner.parent_run_id = root.id)
@@ -503,7 +503,7 @@ export async function runInboxCommand(
         )
       ORDER BY root.id`,
     )
-    .all(...(!scoped && mine ? (project ? [project.name, sid] : [sid]) : [])) as {
+    .all(...(!scoped && mine ? (project ? [project.recordId, sid] : [sid]) : [])) as {
     id: number
     agent: string
     job: string

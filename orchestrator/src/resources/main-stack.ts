@@ -236,7 +236,7 @@ function latestActivity(
        JOIN run r ON r.id=g.run_id WHERE r.project_record_id=?`,
     )
     .get(projectId) as { value: string | null }
-  const project = database.query('SELECT name FROM project WHERE id=?').get(projectId) as {
+  const project = database.query('SELECT name FROM project WHERE record_id=?').get(projectId) as {
     name: string
   }
   const sessionCutoff = new Date(nowMs - SESSION_LIVE_MS).toISOString()
