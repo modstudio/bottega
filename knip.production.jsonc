@@ -112,6 +112,12 @@
       "entry": ["src/cli.ts!", "src/hosted.ts!"],
       "project": ["src/**/*.ts!", "!src/**/*.test.ts", "!src/**/*.fixture*.ts", "!test/**/*.ts"]
     },
+    "hub/ui": {
+      "entry": [".storybook/preview.css!"]
+    },
+    "hub/views": {
+      "entry": [".storybook/preview.css!"]
+    },
     "retrieval": {
       "entry": ["src/benchmark/benchmark.ts!", "src/search-cli.ts!"],
       "project": ["src/**/*.ts!", "!src/**/*.test.ts"]

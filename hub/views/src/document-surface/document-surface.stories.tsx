@@ -49,6 +49,7 @@ export default meta
 type Story = StoryObj<typeof meta>
 export const Light: Story = {
   play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole('button', { name: 'Wide' }))
     const surface = canvasElement.querySelector('main')
     const expected = document.createElement('span')
     expected.style.backgroundColor = 'var(--color-surface-page)'

@@ -16,6 +16,7 @@ export const Variants: StoryObj<typeof meta> = {
   ),
   play: async ({ canvasElement }) => {
     const button = within(canvasElement).getByRole('button', { name: 'primary' })
+    await userEvent.click(button)
     const expected = document.createElement('span')
     expected.style.backgroundColor = 'var(--color-accent-fill)'
     canvasElement.append(expected)
