@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, fn, userEvent, within } from 'storybook/test'
 import { ContentsList } from './contents-list'
 
 const meta = {
@@ -11,7 +11,7 @@ const meta = {
       {
         id: 'details',
         label: 'Details',
-        onSelect: () => {},
+        onSelect: fn(),
         children: [{ id: 'nested', label: 'Nested detail', href: '#nested', count: 2 }],
       },
     ],
@@ -23,7 +23,7 @@ export const Light: Story = {
   play: async ({ canvasElement }) => {
     const item = within(canvasElement).getByRole('button', { name: 'Details' })
     await userEvent.click(item)
-    await expect(item).toBeEnabled()
+    await expect(meta.args.items[1]!.onSelect).toHaveBeenCalledOnce()
   },
 }
 export const Dark: Story = { globals: { theme: 'dark' } }

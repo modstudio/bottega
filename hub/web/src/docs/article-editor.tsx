@@ -13,6 +13,7 @@ import {
 import type { Editor } from '@tiptap/core'
 import { Pencil } from 'lucide-react'
 import { type ReactNode, type Ref, useCallback, useEffect, useRef, useState } from 'react'
+import { docsBodyTransform } from './body.ts'
 import { docLeaveNeedsConfirmation, isDocReasonReady, isDocSaveEnabled } from './edit-state.ts'
 import type { DocsDoc } from './types.ts'
 
@@ -20,6 +21,7 @@ const DOC_EDITOR_MODES = ['rich', 'markdown'] as const
 type DocEditorMode = DocumentEditorMode
 const DOC_EDITOR_MODE_KEY = 'hub-docs-editor-mode'
 const DOC_EDITOR_MODE_DEFAULT: DocEditorMode = 'rich'
+const DOCS_LOCKED_FENCES = { articles: 'Article list (generated)' }
 
 export type StoredDocument = { title: string; body: string; revision: string | null }
 
@@ -100,9 +102,9 @@ function useEditorMode(editing: boolean) {
     DOC_EDITOR_MODES,
   )
   const [richEditor, setRichEditor] = useState<Editor | null>(null)
-  const [RichToolbar, setRichToolbar] = useState<null | ((props: { editor: Editor }) => ReactNode)>(
-    null,
-  )
+  const [RichToolbar, setRichToolbar] = useState<
+    null | ((props: { editor: Editor; linkHint?: string }) => ReactNode)
+  >(null)
   useEffect(() => {
     if (!editing || mode !== 'rich') {
       setRichEditor(null)
@@ -210,11 +212,13 @@ export function useArticleEditor({
           open={leaveBlocker.blocked}
           onKeep={leaveBlocker.onKeep}
           onDiscard={leaveBlocker.onDiscard}
+          subject="article"
         />
         <ReloadConfirmationDialog
           open={notice.confirmingReload}
           onOpenChange={notice.setConfirmingReload}
           onReload={() => void notice.reload()}
+          subject="article"
         />
       </>
     ),
@@ -248,6 +252,9 @@ export function editorChrome(
         onModeChange={editor.setMode}
         onSaveShortcut={editor.openSave}
         onRichEditorChange={editor.setRichEditor}
+        bodyLabel="Article body"
+        bodyTransform={docsBodyTransform}
+        lockedFences={DOCS_LOCKED_FENCES}
       />
     ) : (
       revisionBody
@@ -256,7 +263,7 @@ export function editorChrome(
       <EditorBand
         toolbar={
           editor.mode === 'rich' && Toolbar && editor.richEditor ? (
-            <Toolbar editor={editor.richEditor} />
+            <Toolbar editor={editor.richEditor} linkHint="URL or article slug" />
           ) : null
         }
         mode={editor.mode}
@@ -268,6 +275,7 @@ export function editorChrome(
         conflict={editor.conflict}
         message={editor.errorMessage}
         onReload={editor.askReload}
+        subject="article"
       />
     ) : null,
     titleView: activeEditing

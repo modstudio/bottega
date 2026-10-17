@@ -215,6 +215,7 @@ export function DocsFacts({
           value: 'contents',
           label: 'Contents',
           content: <Contents headings={headings} />,
+          hidden: !headings.length,
         },
         {
           value: 'details',

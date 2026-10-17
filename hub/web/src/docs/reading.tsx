@@ -262,9 +262,11 @@ export function DocsReading({
   const rows = useMemo(() => (doc ? articleListRows(tree, doc.id) : []), [tree, doc])
   const fenceRenderers = useMemo(
     () => ({
-      articleList: () => (
-        <ArticleList rows={rows} locationFor={locationFor} renderLink={renderLink} />
-      ),
+      fences: {
+        articles: () => (
+          <ArticleList rows={rows} locationFor={locationFor} renderLink={renderLink} />
+        ),
+      },
     }),
     [rows, locationFor, renderLink],
   )

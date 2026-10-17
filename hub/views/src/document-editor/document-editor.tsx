@@ -16,9 +16,10 @@ import {
   useRef,
   useState,
 } from 'react'
+import { LONG_TITLE } from '../document-surface/document-surface.tsx'
 import { Markdown } from '../markdown/markdown.tsx'
 import { documentEditorStyles } from './document-editor.styles.ts'
-import { readingBody } from './editor-body.ts'
+import type { DocumentBodyTransform } from './rich-save.ts'
 export type DocumentEditorMode = 'rich' | 'markdown'
 
 function singleLineTitle(title: string): string {
@@ -59,7 +60,7 @@ export function EditableTitle({
     <textarea
       ref={setHeadingRef}
       className={documentEditorStyles().title()}
-      data-long={title.length > 40 ? '' : undefined}
+      data-long={title.length > LONG_TITLE ? '' : undefined}
       rows={1}
       value={title}
       onChange={(event) => onChange(singleLineTitle(event.target.value))}
@@ -78,6 +79,9 @@ export function EditorBody({
   onModeChange,
   onSaveShortcut,
   onRichEditorChange,
+  bodyLabel = 'Body',
+  bodyTransform,
+  lockedFences,
 }: {
   value: string
   onChange: (value: string) => void
@@ -85,6 +89,9 @@ export function EditorBody({
   onModeChange: (mode: DocumentEditorMode) => void
   onSaveShortcut: () => void
   onRichEditorChange?: (editor: Editor | null) => void
+  bodyLabel?: string
+  bodyTransform?: DocumentBodyTransform
+  lockedFences?: Record<string, string>
 }) {
   const [MarkdownUi, setMarkdownUi] = useState<
     null | typeof import('./markdown-editor.tsx').MarkdownEditor
@@ -109,7 +116,12 @@ export function EditorBody({
     <div className={documentEditorStyles().body()}>
       {mode === 'markdown' ? (
         MarkdownUi ? (
-          <MarkdownUi value={value} onChange={onChange} onModSave={onSaveShortcut} />
+          <MarkdownUi
+            value={value}
+            onChange={onChange}
+            onModSave={onSaveShortcut}
+            bodyLabel={bodyLabel}
+          />
         ) : (
           <div className={documentEditorStyles().loading()}>{value}</div>
         )
@@ -119,9 +131,12 @@ export function EditorBody({
           onChange={onChange}
           onReady={onRichEditorChange ?? (() => {})}
           onSwitchToMarkdown={() => onModeChange('markdown')}
+          bodyLabel={bodyLabel}
+          bodyTransform={bodyTransform}
+          lockedFences={lockedFences}
         />
       ) : (
-        <Markdown content={readingBody(value)} />
+        <Markdown content={bodyTransform?.split(value).editable ?? value} />
       )}
     </div>
   )
@@ -159,17 +174,19 @@ export function EditorBanner({
   conflict,
   message,
   onReload,
+  subject = 'document',
 }: {
   conflict: boolean
   message: string | null
   onReload: () => void
+  subject?: string
 }) {
   if (!conflict && !message) return null
   return (
     <p data-tone="error" className={documentEditorStyles().banner()}>
       {conflict ? (
         <>
-          This article was saved by someone else since you opened it.{' '}
+          This {subject} was saved by someone else since you opened it.{' '}
           <TextButton onClick={onReload}>Reload</TextButton>
         </>
       ) : (
@@ -252,10 +269,12 @@ export function LeaveConfirmationDialog({
   open,
   onKeep,
   onDiscard,
+  subject = 'document',
 }: {
   open: boolean
   onKeep: () => void
   onDiscard: () => void
+  subject?: string
 }) {
   return (
     <Dialog
@@ -264,7 +283,7 @@ export function LeaveConfirmationDialog({
         if (!next) onKeep()
       }}
       title="Discard unsaved changes?"
-      description="Your edits to this article will be lost."
+      description={`Your edits to this ${subject} will be lost.`}
       footer={
         <>
           <Button onClick={onKeep}>Keep editing</Button>
@@ -281,16 +300,18 @@ export function ReloadConfirmationDialog({
   open,
   onOpenChange,
   onReload,
+  subject = 'document',
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   onReload: () => void
+  subject?: string
 }) {
   return (
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Reload this article?"
+      title={`Reload this ${subject}?`}
       description="Your unsaved changes will be discarded."
       footer={
         <>

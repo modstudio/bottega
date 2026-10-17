@@ -4,6 +4,17 @@ import { Node } from '@tiptap/pm/model'
 import { richSchema } from './rich-extensions.ts'
 import { parseRichDocument, saveRichDocument } from './rich-save.ts'
 
+const bodyTransform = {
+  split(source: string) {
+    const match = /^(# [^\n]+)([\s\S]*)$/.exec(source)
+    return match ? { retained: match[1]!, editable: match[2]! } : { retained: '', editable: source }
+  },
+  join(editable: string, retained: string) {
+    return `${retained}${editable}`
+  },
+}
+const lockedFences = { articles: 'Generated list' }
+
 const table = '| Name | Price |\n| --- | --- |\n| Seat | 10 |\n'
 const mermaid = '```mermaid\nflowchart LR\nA-->B\n```\n'
 const articles = '```articles\n```\n'
@@ -64,11 +75,16 @@ test("editing one paragraph changes only that paragraph's lines", () => {
 test('an articles fence is a locked block and survives a neighboring edit byte-for-byte', () => {
   const fence = '```articles\n```'
   const markdown = `Intro line.\n\n${fence}\n`
-  const nodes = clone(parseRichDocument(markdown))
-  expect(nodes[1]).toEqual({ type: 'lockedBlock', attrs: { source: fence } })
+  const nodes = clone(parseRichDocument(markdown, { lockedFences }))
+  expect(nodes[1]).toEqual({
+    type: 'lockedBlock',
+    attrs: { source: fence, label: 'Generated list' },
+  })
 
   setParagraphText(nodes, 'Intro line changed.')
-  expect(saveRichDocument(markdown, nodes)).toBe(`Intro line changed.\n\n${fence}\n`)
+  expect(saveRichDocument(markdown, nodes, { lockedFences })).toBe(
+    `Intro line changed.\n\n${fence}\n`,
+  )
 })
 
 test('deleting a block removes only it', () => {
@@ -94,11 +110,11 @@ test('an ampersand survives an edit as &', () => {
 })
 
 test('a leading title stays out of the editable nodes and is re-emitted on save', () => {
-  const nodes = parseRichDocument(leadingTitle)
+  const nodes = parseRichDocument(leadingTitle, { bodyTransform })
   expect(nodes.some((node) => node.type === 'heading' && node.attrs?.level === 1)).toBe(false)
   const edited = clone(nodes)
   setParagraphText(edited, 'The fare is public now.')
-  expect(saveRichDocument(leadingTitle, edited)).toBe(
+  expect(saveRichDocument(leadingTitle, edited, { bodyTransform })).toBe(
     '# Product pricing\n\nThe fare is public now.\n',
   )
 })

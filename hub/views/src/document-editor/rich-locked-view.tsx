@@ -2,19 +2,17 @@ import { NodeViewWrapper, type ReactNodeViewProps } from '@tiptap/react'
 import { Lock } from 'lucide-react'
 import { useContext } from 'react'
 import { Markdown } from '../markdown/markdown.tsx'
-import { fenceUse } from '../markdown/markdown-fences.ts'
 import { RichEditContext } from './rich-edit-context.ts'
 import { richLockedViewStyles } from './rich-locked-view.styles.ts'
 
 export function LockedBlockView({ node }: ReactNodeViewProps) {
   const { switchToMarkdown } = useContext(RichEditContext)
   const source = typeof node.attrs.source === 'string' ? node.attrs.source : ''
-  const language = /^```([^\n]*)/.exec(source)?.[1]
-  const generatedArticleList = fenceUse(language) === 'article-list'
+  const label = typeof node.attrs.label === 'string' ? node.attrs.label : null
   return (
     <NodeViewWrapper className={richLockedViewStyles().root()} contentEditable={false}>
-      {generatedArticleList ? (
-        <p className={richLockedViewStyles().generated()}>Article list (generated)</p>
+      {label ? (
+        <p className={richLockedViewStyles().generated()}>{label}</p>
       ) : (
         <Markdown content={source} />
       )}

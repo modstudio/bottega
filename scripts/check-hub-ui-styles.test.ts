@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import {
   analyzeComponentStory,
   analyzeComponentStyleCalls,
+  analyzeHubViewDomainTerms,
   analyzeStyleModule,
 } from './check-hub-ui-styles.ts'
 
@@ -62,6 +63,20 @@ describe('hub-ui styles decisions', () => {
     expect(
       analyzeComponentStory(
         component,
+        "import { Example } from './example'; export default { component: Example }; export const Default = { render: () => <p>{Example.name}</p> }",
+        componentPath,
+      ),
+    ).toContainEqual(expect.stringContaining('must name an imported subject'))
+    expect(
+      analyzeComponentStory(
+        component,
+        "import { Example } from './example'; export default {}; export const Default = { render: () => <Example /> }",
+        componentPath,
+      ),
+    ).toEqual([])
+    expect(
+      analyzeComponentStory(
+        component,
         "import './example'; export const Default = { render: () => <div /> }",
         componentPath,
       ),
@@ -96,5 +111,15 @@ describe('hub-ui styles decisions', () => {
         componentPath,
       ),
     ).toEqual([])
+  })
+
+  test('refuses docs-domain words in hub-views production source', () => {
+    expect(
+      analyzeHubViewDomainTerms(
+        "const label = 'Planted article'; const articleRenderer = () => label",
+        componentPath,
+      ),
+    ).toHaveLength(2)
+    expect(analyzeHubViewDomainTerms("const label = 'Document'", componentPath)).toEqual([])
   })
 })

@@ -24,7 +24,7 @@ const HIGHLIGHT_OPTIONS: { detect: boolean; plainText: string[] } = {
 }
 
 export const MarkdownFenceRenderers = createContext<{
-  articleList?: () => ReactNode
+  fences?: Record<string, () => ReactNode>
 }>({})
 
 /**
@@ -87,14 +87,16 @@ function DocPre({
 }) {
   const renderers = useContext(MarkdownFenceRenderers)
   const child = Array.isArray(children) ? children[0] : children
-  const use = fenceUse(nodeLanguage(child))
+  const language = nodeLanguage(child)?.toLowerCase()
+  const custom = language ? renderers.fences?.[language] : undefined
+  const use = fenceUse(language)
   useEffect(() => {
     if (use === 'highlight') onHighlightNeeded()
   }, [use, onHighlightNeeded])
   if (use === 'diagram' && isValidElement(child)) {
     return <MermaidSlot source={nodeText((child.props as { children?: ReactNode }).children)} />
   }
-  if (use === 'article-list') return renderers.articleList?.() ?? null
+  if (custom) return custom()
   return <pre {...props}>{children}</pre>
 }
 

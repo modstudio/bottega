@@ -364,10 +364,15 @@ function storySubjectImports(story: ts.SourceFile, stem: string) {
   return subjectImports
 }
 
-function containsIdentifier(node: ts.Node, identifiers: ReadonlySet<string>) {
+function containsRenderedSubject(node: ts.Node, identifiers: ReadonlySet<string>) {
   let found = false
   const visit = (child: ts.Node) => {
-    if (ts.isIdentifier(child) && identifiers.has(child.text)) found = true
+    if (
+      (ts.isJsxOpeningElement(child) || ts.isJsxSelfClosingElement(child)) &&
+      ts.isIdentifier(child.tagName) &&
+      identifiers.has(child.tagName.text)
+    )
+      found = true
     if (!found) ts.forEachChild(child, visit)
   }
   visit(node)
@@ -393,16 +398,27 @@ function playPositions(node: ts.Node, story: ts.SourceFile) {
 }
 
 function analyzeStory(story: ts.SourceFile, subjectImports: ReadonlySet<string>) {
-  let coversSubject = false
+  let metaSubject = false
+  let rendersSubject = false
+  let hasRender = false
+  let storyWithoutRender = false
   let hasPlay = false
   let invalidPlay = false
   const inspectStory = (node: ts.Node) => {
     if (
       ts.isPropertyAssignment(node) &&
-      (propertyName(node.name) === 'component' || propertyName(node.name) === 'render') &&
-      containsIdentifier(node.initializer, subjectImports)
+      propertyName(node.name) === 'component' &&
+      ts.isIdentifier(node.initializer) &&
+      subjectImports.has(node.initializer.text)
     )
-      coversSubject = true
+      metaSubject = true
+    if (
+      ts.isPropertyAssignment(node) &&
+      propertyName(node.name) === 'render'
+    ) {
+      hasRender = true
+      if (containsRenderedSubject(node.initializer, subjectImports)) rendersSubject = true
+    }
     if (ts.isPropertyAssignment(node) && propertyName(node.name) === 'play') {
       hasPlay = true
       const positions = playPositions(node.initializer, story)
@@ -412,7 +428,29 @@ function analyzeStory(story: ts.SourceFile, subjectImports: ReadonlySet<string>)
     ts.forEachChild(node, inspectStory)
   }
   inspectStory(story)
-  return { coversSubject, hasPlay, invalidPlay }
+  if (hasRender && containsRenderedSubject(story, subjectImports)) rendersSubject = true
+  for (const statement of story.statements) {
+    if (!ts.isVariableStatement(statement)) continue
+    if (!statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword))
+      continue
+    for (const declaration of statement.declarationList.declarations) {
+      if (
+        declaration.initializer &&
+        ts.isObjectLiteralExpression(declaration.initializer) &&
+        !declaration.initializer.properties.some(
+          (property) =>
+            (ts.isPropertyAssignment(property) || ts.isMethodDeclaration(property)) &&
+            propertyName(property.name) === 'render',
+        )
+      )
+        storyWithoutRender = true
+    }
+  }
+  return {
+    coversSubject: rendersSubject || (metaSubject && storyWithoutRender),
+    hasPlay,
+    invalidPlay,
+  }
 }
 
 export function analyzeComponentStory(
@@ -504,6 +542,41 @@ function componentInventory(
   return { classNameComponents, violations }
 }
 
+export function analyzeHubViewDomainTerms(sourceText: string, path: string) {
+  const source = ts.createSourceFile(
+    path,
+    sourceText,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  )
+  const violations: string[] = []
+  const visit = (node: ts.Node) => {
+    const text =
+      ts.isIdentifier(node) || ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)
+        ? node.text
+        : undefined
+    if (text && /articles?/i.test(text)) {
+      violations.push(
+        `${relative(ROOT, path)}:${lineOf(source, node)}: hub-views production source may not name the docs domain`,
+      )
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return violations
+}
+
+function viewDomainTermInventory() {
+  const violations: string[] = []
+  for (const relativePath of new Glob('**/*.{ts,tsx}').scanSync({ cwd: VIEWS_SOURCE })) {
+    if (/\.(?:stories|test|spec)\.[cm]?tsx?$/.test(relativePath)) continue
+    const path = join(VIEWS_SOURCE, relativePath)
+    violations.push(...analyzeHubViewDomainTerms(readFileSync(path, 'utf8'), path))
+  }
+  return violations
+}
+
 function checkHubUiStyles() {
   const theme = themeInventory()
   const styles = styleInventory()
@@ -516,6 +589,7 @@ function checkHubUiStyles() {
     ...components.violations,
     ...viewStyles.violations,
     ...viewComponents.violations,
+    ...viewDomainTermInventory(),
   ]
   const classNameComponents = components.classNameComponents
   const names = [...classNameComponents].sort().join('|')

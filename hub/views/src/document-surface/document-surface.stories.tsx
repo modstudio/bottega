@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { type Ref, useState } from 'react'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 import { DocumentSurface, DocumentTitle } from './document-surface'
 
 function SwappingHeadingSurface() {
@@ -42,7 +42,7 @@ const meta = {
     keyLine: <p>Updated today</p>,
     body: <div style={{ height: 900 }}>Document body</div>,
     wide: false,
-    onWideChange: () => {},
+    onWideChange: fn(),
   },
 } satisfies Meta<typeof DocumentSurface>
 export default meta
@@ -50,11 +50,15 @@ type Story = StoryObj<typeof meta>
 export const Light: Story = {}
 export const TitleBehindBar: Story = {
   play: async ({ canvasElement }) => {
-    canvasElement.querySelector('h1')?.scrollIntoView({ block: 'end' })
+    const heading = canvasElement.querySelector('h1')
+    heading?.scrollIntoView({ block: 'start' })
     window.scrollBy(0, 300)
+    await waitFor(() =>
+      expect(within(canvasElement).getAllByText('A document title')).toHaveLength(2),
+    )
     const wide = within(canvasElement).getByRole('button', { name: 'Wide' })
     await userEvent.click(wide)
-    await expect(wide).toBeEnabled()
+    await expect(meta.args.onWideChange).toHaveBeenCalledWith(true)
   },
 }
 export const Dark: Story = { globals: { theme: 'dark' } }

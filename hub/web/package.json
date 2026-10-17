@@ -8,7 +8,7 @@
     "test": "bun test && bun run --cwd ../ui test",
     "build": "vite build",
     "smoke": "bun scripts/smoke.ts",
-    "typecheck": "bun run --cwd ../ui typecheck && tsc --noEmit"
+    "typecheck": "bun run --cwd ../ui typecheck && bun run --cwd ../views typecheck && bun run --cwd ../data typecheck && tsc --noEmit"
   },
   "dependencies": {
     "@bottega/hub-data": "workspace:*",

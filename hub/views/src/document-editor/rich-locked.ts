@@ -41,11 +41,14 @@ function isHtmlComment(raw: string): boolean {
 }
 
 /** Whether a marked token is a construct the rich editor must not rewrite. */
-export function isLockedToken(token: MarkedToken): boolean {
+export function isLockedToken(
+  token: MarkedToken,
+  lockedFences: Record<string, string> = {},
+): boolean {
   if (token.type === 'frontmatter' || token.type === 'directive') return true
   if (
     token.type === 'code' &&
-    (fenceUse(token.lang) === 'diagram' || fenceUse(token.lang) === 'article-list')
+    (fenceUse(token.lang) === 'diagram' || Boolean(lockedFences[token.lang?.toLowerCase() ?? '']))
   )
     return true
   if (token.type === 'blockquote' && isGithubAlertBlock(token.raw)) return true
@@ -60,8 +63,8 @@ export function isSilentToken(token: MarkedToken): boolean {
   return false
 }
 
-export function lockedNode(source: string) {
-  return { type: LOCKED_BLOCK_NAME, attrs: { source } }
+export function lockedNode(source: string, label?: string) {
+  return { type: LOCKED_BLOCK_NAME, attrs: { source, label: label ?? null } }
 }
 
 export const LockedBlock = Node.create({
@@ -71,7 +74,7 @@ export const LockedBlock = Node.create({
   selectable: true,
   draggable: false,
   addAttributes() {
-    return { source: { default: '' } }
+    return { source: { default: '' }, label: { default: null } }
   },
   parseHTML() {
     return [{ tag: 'div[data-locked-block]' }]

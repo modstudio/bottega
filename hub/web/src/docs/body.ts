@@ -42,6 +42,16 @@ function splitLeadingHeading(body: string): { prefix: string; rest: string } {
   return { prefix, rest: body.slice(prefix.length) }
 }
 
+export const docsBodyTransform = {
+  split(body: string) {
+    const { prefix, rest } = splitLeadingHeading(body)
+    return { editable: rest, retained: prefix }
+  },
+  join(editable: string, retained: string) {
+    return `${retained}${editable}`
+  },
+}
+
 export function readingBody(body: string): string {
   const { prefix, rest } = splitLeadingHeading(body)
   return prefix ? rest.slice(1) : body

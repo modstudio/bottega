@@ -3,7 +3,7 @@ import { Maximize2, Minimize2 } from 'lucide-react'
 import { type ReactNode, type Ref, useCallback, useEffect, useState } from 'react'
 import { documentSurfaceStyles } from './document-surface.styles.ts'
 
-const LONG_TITLE = 40
+export const LONG_TITLE = 40
 
 function useScrolledPast(target: HTMLElement | null): boolean {
   const [past, setPast] = useState(false)

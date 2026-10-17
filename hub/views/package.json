@@ -18,7 +18,6 @@
     "./detail-rail/use-held-panel": "./src/detail-rail/use-held-panel.ts",
     "./document-editor": "./src/document-editor/document-editor.tsx",
     "./document-editor/document-editor.styles": "./src/document-editor/document-editor.styles.ts",
-    "./document-editor/editor-body": "./src/document-editor/editor-body.ts",
     "./document-editor/markdown-editor": "./src/document-editor/markdown-editor.tsx",
     "./document-editor/markdown-editor.styles": "./src/document-editor/markdown-editor.styles.ts",
     "./document-editor/rich-editor": "./src/document-editor/rich-editor.tsx",
