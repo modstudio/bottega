@@ -1,37 +1,48 @@
 import type { Database } from 'bun:sqlite'
 
-export function projectReferenceCounts(database: Database, projectRecordId: string) {
-  const count = (table: string, column = 'project_record_id') =>
-    (
-      database
+export const PROJECT_REFERENCES = [
+  ['run', 'run', 'project_record_id'],
+  ['resource_claim', 'claim', 'project_record_id'],
+  ['canon_pack', 'canon_pack', 'project_record_id'],
+  ['landing', 'landing', 'project_record_id'],
+  ['landing_override', 'landing_override', 'project_record_id'],
+  ['landing_review_carry', 'landing_review_carry', 'project_record_id'],
+  ['landing_triage_snapshot', 'landing_triage_snapshot', 'project_record_id'],
+  ['review_read', 'review_read', 'project_record_id'],
+  ['doc', 'doc', 'project_record_id'],
+  ['doc_revision', 'doc_revision', 'project_record_id'],
+  ['review', 'review', 'project_record_id'],
+  ['board_claim', 'board_claim', 'project_record_id'],
+  ['board_message', 'board_message', 'author_project_record_id'],
+  ['branch_landing_record', 'branch_landing_record', 'project_record_id'],
+  ['presence', 'presence', 'project_record_id'],
+  ['worker_note_request', 'worker_note_request', 'project_record_id'],
+  ['workflow_cursor', 'workflow_cursor', 'project_record_id'],
+  ['main_stack_activity', 'main_stack_activity', 'project_record_id'],
+  ['port_pair_source', 'port_pair source', 'source_project_record_id', 'port_pair'],
+  ['port_pair_target', 'port_pair target', 'target_project_record_id', 'port_pair'],
+  ['port_ref', 'port_ref', 'target_project_record_id'],
+  ['port_ref_source', 'port_ref_source source', 'source_project_record_id', 'port_ref_source'],
+  ['port_ref_target', 'port_ref_source target', 'target_project_record_id', 'port_ref_source'],
+  ['project_lens_profile', 'project_lens_profile', 'project_record_id'],
+  ['release_ledger', 'release_ledger', 'project_record_id'],
+  ['subject', 'subject', 'project_record_id'],
+] as const
+
+export type ProjectReferenceKey = (typeof PROJECT_REFERENCES)[number][0]
+export type ProjectReferenceCounts = Record<ProjectReferenceKey, number>
+
+export function projectReferenceCounts(
+  database: Database,
+  projectRecordId: string,
+): ProjectReferenceCounts {
+  return Object.fromEntries(
+    PROJECT_REFERENCES.map(([key, , column, explicitTable]) => {
+      const table = explicitTable ?? key
+      const row = database
         .query(`SELECT COUNT(*) AS n FROM ${table} WHERE ${column}=?`)
         .get(projectRecordId) as { n: number }
-    ).n
-  return {
-    run: count('run'),
-    resource_claim: count('resource_claim'),
-    canon_pack: count('canon_pack'),
-    landing: count('landing'),
-    landing_override: count('landing_override'),
-    landing_review_carry: count('landing_review_carry'),
-    landing_triage_snapshot: count('landing_triage_snapshot'),
-    review_read: count('review_read'),
-    doc: count('doc'),
-    doc_revision: count('doc_revision'),
-    review: count('review'),
-    board_claim: count('board_claim'),
-    branch_landing_record: count('branch_landing_record'),
-    presence: count('presence'),
-    worker_note_request: count('worker_note_request'),
-    workflow_cursor: count('workflow_cursor'),
-    main_stack_activity: count('main_stack_activity'),
-    port_pair_source: count('port_pair', 'source_project_record_id'),
-    port_pair_target: count('port_pair', 'target_project_record_id'),
-    port_ref: count('port_ref', 'target_project_record_id'),
-    port_ref_source: count('port_ref_source', 'source_project_record_id'),
-    port_ref_target: count('port_ref_source', 'target_project_record_id'),
-    project_lens_profile: count('project_lens_profile'),
-    release_ledger: count('release_ledger'),
-    subject: count('subject'),
-  }
+      return [key, row.n]
+    }),
+  ) as ProjectReferenceCounts
 }

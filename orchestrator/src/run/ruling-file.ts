@@ -215,7 +215,7 @@ function loadQuestion(questionId: number): QuestionRow {
               COALESCE(r.launch_key,q.workflow_key) launch_key,p.path project_path
          FROM question q LEFT JOIN run r ON r.id = q.run_id
          LEFT JOIN workflow_cursor c ON c.id=q.workflow_cursor_id
-         LEFT JOIN project p ON p.name=c.project AND p.retired_at IS NULL
+         LEFT JOIN project p ON p.record_id=c.project_record_id AND p.retired_at IS NULL
          WHERE q.id=?`,
     )
     .get(questionId) as QuestionRow | null

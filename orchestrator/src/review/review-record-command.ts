@@ -83,7 +83,7 @@ export function readProjectReview(
          FROM review_lens rl JOIN run ON run.id=rl.run_id
          JOIN review r ON r.id=rl.review_id
          LEFT JOIN review_finding rf ON rf.review_lens_id=rl.id
-        WHERE run.repo=? AND run.branch=?
+        WHERE run.project_record_id=(SELECT record_id FROM project WHERE name=?) AND run.branch=?
         ORDER BY rl.id,rf.id`,
     )
     .all(group.project, group.branch)

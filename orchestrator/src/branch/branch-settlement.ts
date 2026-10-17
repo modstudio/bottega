@@ -38,7 +38,8 @@ export function branchRows(project: string, branch: string): ReclaimRun[] {
             ${EVIDENCE_CLOSED_SQL} AS scored, r.keep_tree, r.keep_tree_until, r.started_at
        FROM run r ${chainScoreJoin('r', 's')}
        LEFT JOIN session_seen seen ON seen.session_id=r.session_id
-      WHERE r.repo=? AND r.minted_branch=? ORDER BY r.id`,
+      WHERE r.project_record_id=(SELECT record_id FROM project WHERE name=?)
+        AND r.minted_branch=? ORDER BY r.id`,
     )
     .all(project, branch) as ReclaimRun[]
 }
@@ -48,7 +49,10 @@ export function settleDeletedBranch(project: string, branch: string): void {
   const rows = branchRows(project, branch)
   writeTransaction(() => {
     db()
-      .query('UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE repo=? AND branch_kept=?')
+      .query(
+        `UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL
+          WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND branch_kept=?`,
+      )
       .run(project, branch)
     for (const row of rows) {
       settleClaims(db(), {

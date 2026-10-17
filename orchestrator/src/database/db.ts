@@ -385,8 +385,9 @@ function seedProjects(d: Database): void {
   const rows = d
     .query(
       `SELECT repo, cwd FROM run r
-      WHERE repo IS NOT NULL AND cwd IS NOT NULL
-        AND id = (SELECT MAX(id) FROM run x WHERE x.repo = r.repo AND x.cwd IS NOT NULL)`,
+      WHERE project_record_id IS NOT NULL AND cwd IS NOT NULL
+        AND id = (SELECT MAX(id) FROM run x
+                   WHERE x.project_record_id = r.project_record_id AND x.cwd IS NOT NULL)`,
     )
     .all() as { repo: string; cwd: string }[]
   for (const { repo, cwd } of rows) {

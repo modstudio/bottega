@@ -9,7 +9,11 @@ import { taskRulingsForDispatch } from './task-rulings-store.ts'
 
 function root(repo: string, launchKey: string): number {
   const id = addRun({ agent: 'codex', job: 'implement', repo })
-  db().query('UPDATE run SET launch_key=? WHERE id=?').run(launchKey, id)
+  db()
+    .query(
+      'UPDATE run SET launch_key=?,project_record_id=(SELECT record_id FROM project WHERE name=?) WHERE id=?',
+    )
+    .run(launchKey, repo, id)
   return id
 }
 
@@ -73,10 +77,11 @@ describe('task ruling candidate query', () => {
                '2026-10-05T12:00:00.000Z','agent','workflow')`,
       )
       .run(cursor.id)
+    db().query("UPDATE project SET name='renamed-bottega' WHERE name=?").run(PLATFORM_SLUG)
 
     const selected = taskRulingsForDispatch({
       resume: false,
-      project: PLATFORM_SLUG,
+      project: 'renamed-bottega',
       launchKey: 'DEV-960',
     })
 

@@ -609,6 +609,11 @@ CREATE UNIQUE INDEX subject_live_name ON subject(project_record_id, name) WHERE 
 CREATE INDEX subject_parent_id ON subject(parent_id);
 CREATE INDEX subject_project_position ON subject(project_record_id, position, id);
 --> statement-breakpoint
+ALTER TABLE board_message ADD COLUMN author_project_record_id TEXT REFERENCES project(record_id) ON DELETE RESTRICT;
+UPDATE board_message SET author_project_record_id=(SELECT record_id FROM project WHERE name=author_project)
+WHERE author_project IS NOT NULL;
+CREATE INDEX board_message_author_project_record_id ON board_message(author_project_record_id);
+--> statement-breakpoint
 CREATE TABLE project_project_uuid (
   record_id TEXT NOT NULL PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
@@ -657,5 +662,4 @@ UPDATE review SET project_record_id=(
     AND NOT EXISTS (SELECT 1 FROM review_lens rl JOIN run r ON r.id=rl.run_id
                      WHERE rl.review_id=review.id AND r.project_record_id IS NULL);
 -- /BACKFILL
-
 

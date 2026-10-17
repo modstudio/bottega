@@ -108,12 +108,15 @@ export function suggestBoardPost(
         .query(
           `INSERT INTO board_message
            (kind,purpose,author_kind,author_session,author_run_id,author_harness,author_project,
+            author_project_record_id,
             audience,title,body,ack_required,ack_deadline,expires_at,created_at,withdrawn_at,record_id)
-           VALUES ('suggestion','request','worker',NULL,?,NULL,?,?,?, ?,0,NULL,?,?,NULL,?)`,
+           VALUES ('suggestion','request','worker',NULL,?,NULL,?,
+                   (SELECT project_record_id FROM run WHERE id=?),?,?,?,0,NULL,?,?,NULL,?)`,
         )
         .run(
           run.id,
           run.repo,
+          run.id,
           audience,
           input.title,
           input.body,

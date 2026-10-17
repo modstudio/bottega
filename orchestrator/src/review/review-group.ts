@@ -83,7 +83,9 @@ export function branchRunOwnerSession(
   const row = database
     .query<{ session_id: string | null }, [string, string, string]>(
       `SELECT session_id FROM run
-        WHERE parent_run_id IS NULL AND repo=? AND (branch=? OR minted_branch=?)
+        WHERE parent_run_id IS NULL
+          AND project_record_id=(SELECT record_id FROM project WHERE name=?)
+          AND (branch=? OR minted_branch=?)
         ORDER BY id DESC LIMIT 1`,
     )
     .get(project, branch, branch)
@@ -193,7 +195,8 @@ function reviewsForBranch(
          FROM review r JOIN review_lens rl ON rl.review_id=r.id
          JOIN run ON run.id=rl.run_id
          LEFT JOIN review_finding rf ON rf.review_id=r.id
-        WHERE run.repo=? AND (run.branch=? OR r.id=?) ORDER BY r.id DESC,rl.id,rf.id`,
+        WHERE run.project_record_id=(SELECT record_id FROM project WHERE name=?)
+          AND (run.branch=? OR r.id=?) ORDER BY r.id DESC,rl.id,rf.id`,
     )
     .all(project, branch, includeReviewId ?? null)
   const reviews = new Map<number, TriageReviewRow>()

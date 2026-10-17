@@ -60,7 +60,11 @@ import {
   writeProjectToHostedRecord,
 } from './project-hosted-write.ts'
 import { validateProjectInjectionSettings } from './project-injection.ts'
-import { projectReferenceCounts } from './project-reference-counts.ts'
+import {
+  PROJECT_REFERENCES,
+  type ProjectReferenceCounts,
+  projectReferenceCounts,
+} from './project-reference-counts.ts'
 
 import type {
   MainStackConsumer,
@@ -277,21 +281,21 @@ export function upsertProject(p: {
 
 /** Store the hosted identity once on the exact snapshotted row. */
 export function storeProjectRecordId(
-  id: number,
+  name: string,
   recordId: string,
   database: Database = writableDb(),
 ): void {
   const result = database
-    .query('UPDATE project SET record_id=? WHERE id=? AND record_id IS NULL')
-    .run(recordId, id)
+    .query('UPDATE project SET record_id=? WHERE name=? AND record_id IS NULL')
+    .run(recordId, name)
   if (result.changes > 0) return
-  const project = database.query('SELECT name,record_id FROM project WHERE id=?').get(id) as {
+  const project = database.query('SELECT name,record_id FROM project WHERE name=?').get(name) as {
     name: string
     record_id: string | null
   } | null
   if (!project) {
     throw new Error(
-      `project row ${id} was removed while its hosted identity was being stored; inspect \`${PLATFORM_SLUG} project list --json\` and the hosted project before retrying`,
+      `project ${name} was removed while its hosted identity was being stored; inspect \`${PLATFORM_SLUG} project list --json\` and the hosted project before retrying`,
     )
   }
   if (project.record_id !== recordId) {
@@ -372,69 +376,15 @@ export function assertProjectRename(currentName: string, nextName: string): { re
   return { recordId: current.recordId }
 }
 
-export type ProjectReferenceCounts = {
-  run: number
-  resource_claim: number
-  canon_pack: number
-  landing: number
-  landing_override: number
-  landing_review_carry: number
-  landing_triage_snapshot: number
-  review_read: number
-  doc: number
-  doc_revision: number
-  review: number
-  board_claim: number
-  branch_landing_record: number
-  presence: number
-  worker_note_request: number
-  workflow_cursor: number
-  main_stack_activity: number
-  port_pair_source: number
-  port_pair_target: number
-  port_ref: number
-  port_ref_source: number
-  port_ref_target: number
-  project_lens_profile: number
-  release_ledger: number
-  subject: number
-}
-
-const REFERENCE_LABELS: { key: keyof ProjectReferenceCounts; label: string }[] = [
-  { key: 'run', label: 'run' },
-  { key: 'resource_claim', label: 'claim' },
-  { key: 'canon_pack', label: 'canon_pack' },
-  { key: 'landing', label: 'landing' },
-  { key: 'landing_override', label: 'landing_override' },
-  { key: 'landing_review_carry', label: 'landing_review_carry' },
-  { key: 'landing_triage_snapshot', label: 'landing_triage_snapshot' },
-  { key: 'review_read', label: 'review_read' },
-  { key: 'doc', label: 'doc' },
-  { key: 'doc_revision', label: 'doc_revision' },
-  { key: 'review', label: 'review' },
-  { key: 'board_claim', label: 'board_claim' },
-  { key: 'branch_landing_record', label: 'branch_landing_record' },
-  { key: 'presence', label: 'presence' },
-  { key: 'worker_note_request', label: 'worker_note_request' },
-  { key: 'workflow_cursor', label: 'workflow_cursor' },
-  { key: 'main_stack_activity', label: 'main_stack_activity' },
-  { key: 'port_pair_source', label: 'port_pair source' },
-  { key: 'port_pair_target', label: 'port_pair target' },
-  { key: 'port_ref', label: 'port_ref' },
-  { key: 'port_ref_source', label: 'port_ref_source source' },
-  { key: 'port_ref_target', label: 'port_ref_source target' },
-  { key: 'project_lens_profile', label: 'project_lens_profile' },
-  { key: 'release_ledger', label: 'release_ledger' },
-  { key: 'subject', label: 'subject' },
-]
+export type { ProjectReferenceCounts } from './project-reference-counts.ts'
 
 /** Two anchored lines, or null when the row may be deleted. */
 export function projectRemovalRefusal(
   name: string,
   counts: ProjectReferenceCounts,
 ): string[] | null {
-  const named = REFERENCE_LABELS.filter(({ key }) => counts[key] > 0).map(
-    ({ key, label }) => `${counts[key]} ${label}(s)`,
+  const named = PROJECT_REFERENCES.filter(([key]) => counts[key] > 0).map(
+    ([key, label]) => `${counts[key]} ${label}(s)`,
   )
   if (!named.length) return null
   return [

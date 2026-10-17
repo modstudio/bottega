@@ -1,10 +1,12 @@
 import { Database } from 'bun:sqlite'
 import { afterEach, expect, mock, spyOn, test } from 'bun:test'
+import { applyMigrations } from '../database/migrations.ts'
 import {
   ensureMainStackStarted,
   MAIN_STACK_IDLE_STOP_AFTER_MS_DEFAULT,
   mainStackExecInProgress,
   mainStackIdleStopAfterMs,
+  sweepIdleMainStacks,
 } from './main-stack.ts'
 
 afterEach(() => {
@@ -89,6 +91,57 @@ test.each([
       : commandResult('container-1')) as typeof Bun.spawnSync)
 
   expect(mainStackExecInProgress('/registered/fixture').value).toBe('unknown')
+})
+
+test('idle sweep reads project identity from a post-0117 store', () => {
+  const database = new Database(':memory:')
+  applyMigrations(database)
+  const recordId = '01990000-0000-7000-8000-000000001214'
+  database
+    .query(
+      "INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture','/registered/fixture','{}')",
+    )
+    .run(recordId)
+  database
+    .query(
+      "INSERT INTO main_stack_activity (project_record_id,last_ensured_at) VALUES (?,'2020-01-01T00:00:00.000Z')",
+    )
+    .run(recordId)
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) =>
+    commandResult(
+      args[0] === 'docker' && args[1] === 'ps' && args.includes('--format')
+        ? '/registered/fixture'
+        : '',
+    )) as typeof Bun.spawnSync)
+  const errors: string[] = []
+  const logs: string[] = []
+
+  try {
+    expect(
+      sweepIdleMainStacks({
+        database,
+        projects: [
+          {
+            recordId,
+            name: 'fixture',
+            path: '/registered/fixture',
+            stack: null,
+            canon: true,
+            retiredAt: null,
+            settings: {},
+          },
+        ],
+        dryRun: true,
+        nowMs: Date.parse('2026-01-01T00:00:00.000Z'),
+        log: (message) => logs.push(message),
+        error: (message) => errors.push(message),
+      }),
+    ).toBe(false)
+    expect(errors).toEqual([])
+    expect(logs).toEqual(['would stop idle main stack for fixture'])
+  } finally {
+    database.close()
+  }
 })
 
 function commandResult(stdout: string): ReturnType<typeof Bun.spawnSync> {

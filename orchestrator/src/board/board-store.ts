@@ -513,7 +513,9 @@ export function insertRootMessage(
     .query(
       `SELECT id FROM board_message
        WHERE kind=? AND purpose=? AND author_kind=? AND author_session IS ? AND author_run_id IS ?
-         AND author_project IS ? AND audience=? AND title=? AND body=?
+         AND author_project_record_id IS
+             (SELECT record_id FROM project WHERE name IS ?)
+         AND audience=? AND title=? AND body=?
          AND created_at>=? ORDER BY id DESC`,
     )
     .all(
@@ -604,9 +606,10 @@ function insertRootRow(
     database
       .query(
         `INSERT INTO board_message
-         (kind,purpose,author_kind,author_session,author_run_id,author_harness,author_project,audience,title,body,
+         (kind,purpose,author_kind,author_session,author_run_id,author_harness,author_project,
+          author_project_record_id,audience,title,body,
           ack_required,ack_deadline,expires_at,created_at,withdrawn_at,record_id)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,?)`,
+         VALUES (?,?,?,?,?,?,?,(SELECT record_id FROM project WHERE name IS ?),?,?,?,?,?,?,?,NULL,?)`,
       )
       .run(
         kind,
@@ -615,6 +618,7 @@ function insertRootRow(
         actor.session,
         input.suggestingRunId ?? null,
         origin.harness,
+        origin.project,
         origin.project,
         audienceExpression,
         input.title,

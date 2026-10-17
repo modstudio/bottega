@@ -133,15 +133,17 @@ export function replyToThread(
       .query(
         `INSERT INTO board_message
          (kind,author_kind,author_session,author_run_id,author_harness,author_project,
+          author_project_record_id,
           audience,title,body,ack_required,ack_deadline,expires_at,created_at,withdrawn_at,
           thread_root_id,record_id)
-         VALUES ('reply',?,?,NULL,?,?,NULL,NULL,?,0,NULL,NULL,?,NULL,?,?)`,
+         VALUES ('reply',?,?,NULL,?,?,?,NULL,NULL,?,0,NULL,NULL,?,NULL,?,?)`,
       )
       .run(
         actor.kind,
         actor.session,
         identity?.harness ?? null,
         project?.name ?? null,
+        project?.recordId ?? null,
         body,
         createdAt,
         root.id,

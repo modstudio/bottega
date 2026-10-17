@@ -124,6 +124,49 @@ test('project UUID migration preserves every project child relationship', () => 
         `INSERT INTO subject (project_id,name,definition,position,created_at,updated_at) VALUES (?,'subject','definition',0,'t','t')`,
       )
       .run(project.id)
+    database
+      .query(
+        `INSERT INTO board_claim
+         (project,subject_kind,subject_value,holder_kind,duration_ms,taken_at,renewed_at,lapses_at,record_id)
+         VALUES ('other-project','task','DEV-1214','operator',1000,'t','t','later','board-claim-record')`,
+      )
+      .run()
+    database
+      .query(
+        `INSERT INTO presence
+         (session_id,harness,role,machine,project,cwd,last_seen)
+         VALUES ('session','codex','architect','machine','project-closure','/project-closure','t')`,
+      )
+      .run()
+    database
+      .query(
+        `INSERT INTO worker_note_request
+         (run_id,text,requested_at,status,project,record_id)
+         VALUES (?,'note','t','requested','other-project','worker-note-record')`,
+      )
+      .run(run.id)
+    database
+      .query(
+        `INSERT INTO workflow_cursor
+         (id,project,workflow_slug,mode_slug,workflow_key,instance_id,workflow_version,catalogue_version,
+          args,total_steps,created_at,updated_at,record_id)
+         VALUES (71,'other-project','workflow','mode','key','instance',1,1,'{}',1,'t','t','cursor-record')`,
+      )
+      .run()
+    database
+      .query(
+        `INSERT INTO branch_landing_record
+         (project,branch,tip,pr_number,merged_at,recorded_at,record_id)
+         VALUES ('project-closure','main','tip',12,'t','t','branch-record')`,
+      )
+      .run()
+    database
+      .query(
+        `INSERT INTO board_message
+         (kind,author_kind,author_project,audience,title,body,ack_required,created_at,expires_at,record_id)
+         VALUES ('notice','operator','other-project','operator','title','body',0,'t','later','message-record')`,
+      )
+      .run()
 
     expect(applyMigrations(database)).toContain(MIGRATION)
     const columns = [
@@ -147,6 +190,12 @@ test('project UUID migration preserves every project child relationship', () => 
       ['review', 'project_record_id', RECORD_ID],
       ['review_read', 'project_record_id', RECORD_ID],
       ['subject', 'project_record_id', RECORD_ID],
+      ['board_claim', 'project_record_id', OTHER_RECORD_ID],
+      ['presence', 'project_record_id', RECORD_ID],
+      ['worker_note_request', 'project_record_id', OTHER_RECORD_ID],
+      ['workflow_cursor', 'project_record_id', OTHER_RECORD_ID],
+      ['branch_landing_record', 'project_record_id', RECORD_ID],
+      ['board_message', 'author_project_record_id', OTHER_RECORD_ID],
     ] as const
     for (const [table, column, expected] of columns)
       expect(database.query(`SELECT ${column} AS id FROM ${table}`).get()).toEqual({ id: expected })

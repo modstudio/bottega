@@ -6,6 +6,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { codeSearchCommand } from '../code/code-commands.ts'
 import { db, writableDb } from '../database/db.ts'
+import { PROJECT_REFERENCES } from './project-reference-counts.ts'
 import {
   type ProjectReferenceCounts,
   projectAt,
@@ -24,33 +25,9 @@ import {
   validateProjectSettings,
 } from './projects.ts'
 
-const none: ProjectReferenceCounts = {
-  run: 0,
-  resource_claim: 0,
-  canon_pack: 0,
-  landing: 0,
-  landing_override: 0,
-  landing_review_carry: 0,
-  landing_triage_snapshot: 0,
-  review_read: 0,
-  doc: 0,
-  doc_revision: 0,
-  review: 0,
-  board_claim: 0,
-  branch_landing_record: 0,
-  presence: 0,
-  worker_note_request: 0,
-  workflow_cursor: 0,
-  main_stack_activity: 0,
-  port_pair_source: 0,
-  port_pair_target: 0,
-  port_ref: 0,
-  port_ref_source: 0,
-  port_ref_target: 0,
-  project_lens_profile: 0,
-  release_ledger: 0,
-  subject: 0,
-}
+const none = Object.fromEntries(
+  PROJECT_REFERENCES.map(([key]) => [key, 0]),
+) as ProjectReferenceCounts
 
 let projectDirectory: string | null = null
 
