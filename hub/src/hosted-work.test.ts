@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { hostedDayRow, interval } from './hosted-work.ts'
+import { hostedDayRow, interval, parseHostedIntervalRows } from './hosted-work.ts'
 
 const DAY_TOKENS = 8_338_668_790
 const INTERVAL_TOKENS = 2_207_932_949
@@ -45,4 +45,26 @@ test('hosted work rows return token totals above the 32-bit range as numbers', (
   for (const tokens of [String(DAY_TOKENS), BigInt(DAY_TOKENS), DAY_TOKENS]) {
     expectNumber(hostedDayRow({ ...dayRow, claude_tokens: tokens }).claude_tokens, DAY_TOKENS)
   }
+})
+
+test('hosted task interval edge parser accepts an unattributed project', () => {
+  expect(
+    parseHostedIntervalRows([
+      {
+        id: null,
+        task_key: 'DEV-1385',
+        project: null,
+        source: 'codex',
+        agent: null,
+        job: null,
+        start_at: '2026-10-17T00:00:00.000Z',
+        end_at: '2026-10-17T01:00:00.000Z',
+        claude_tokens: 0,
+        vendor_tokens: 0,
+        vendor_cost_usd: null,
+        open: 0,
+        user_id: null,
+      },
+    ]),
+  ).toHaveLength(1)
 })

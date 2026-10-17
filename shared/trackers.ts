@@ -195,7 +195,6 @@ export type TrackerProject = {
   }
 }
 
-export type TrackerRowSource = 'local' | 'mcp' | 'git'
 export const CURSOR_CREATE_REFUSAL =
   'cursor-mcp create refused: required projectId has no value in the tracker register'
 export const workspaceTeamRefusal = (project: TrackerProject): string =>

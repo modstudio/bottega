@@ -1,7 +1,11 @@
 import { DEFAULT_IDLE_CAP_MS, engagedMs, human, type Span } from '../../shared/interval.ts'
-import type { TrackerProject, TrackerRowSource } from '../../shared/trackers.ts'
+import type { TrackerProject } from '../../shared/trackers.ts'
 import { runRef } from './run-ref.ts'
-import { type Capabilities, trackerCapabilities } from './tracker-capabilities.ts'
+import {
+  type Capabilities,
+  type TrackerRowSource,
+  trackerCapabilities,
+} from './tracker-capabilities.ts'
 
 export type ProjectionProject = TrackerProject & { spaceId?: string; spaceName?: string }
 

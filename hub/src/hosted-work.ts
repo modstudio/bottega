@@ -74,7 +74,7 @@ const hostedStatusEventRowSchema = z.object({
 const hostedIntervalRowSchema = z.object({
   id: z.string().nullable(),
   task_key: z.string().nullable(),
-  project: z.string(),
+  project: z.string().nullable(),
   source: z.string(),
   agent: z.string().nullable(),
   job: z.string().nullable(),
@@ -86,6 +86,8 @@ const hostedIntervalRowSchema = z.object({
   open: sqlNumberSchema,
   user_id: z.string().nullable(),
 })
+export const parseHostedIntervalRows = (rows: unknown) =>
+  z.array(hostedIntervalRowSchema).parse(rows)
 
 type ProjectInput = {
   spaceId: string
@@ -390,7 +392,7 @@ export async function hostedTaskDetail(
       WHERE t.id=${String(task.id)}::uuid AND e.space_id=${spaceId}::uuid AND e.deleted_at IS NULL
       ORDER BY e.at,e.id`,
     )
-    const intervals = z.array(hostedIntervalRowSchema).parse(
+    const intervals = parseHostedIntervalRows(
       await tx`
       SELECT id::text,task_key,project_name AS project,source,agent,job,start_at,end_at,claude_tokens,
         vendor_tokens,vendor_cost_usd,open,user_id FROM hub_interval

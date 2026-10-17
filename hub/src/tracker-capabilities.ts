@@ -2,10 +2,10 @@ import {
   cursorProjectRefusal,
   TASK_STATUSES,
   type TrackerProject,
-  type TrackerRowSource,
   workspaceTeamRefusal,
 } from '../../shared/trackers.ts'
 
+export type TrackerRowSource = 'local' | 'mcp' | 'git'
 type Capability = { allowed: true } | { allowed: false; reason: string }
 export type Capabilities = {
   create: Capability
