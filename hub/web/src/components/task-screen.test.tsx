@@ -3,9 +3,9 @@ import { queryClient } from '@bottega/hub-data/client'
 import type { UseTaskResult } from '@bottega/hub-data/use-task'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { HostedTaskSheet } from './hosted-task-sheet'
+import { TaskScreen } from './task-screen'
 
-test('hosted task detail renders all history without mutation controls', () => {
+test('a hosted task renders its history, documents and measures without edit controls', () => {
   const detail: NonNullable<UseTaskResult['detail']> = {
     task: {
       key: 'DEV-701',
@@ -123,25 +123,46 @@ test('hosted task detail renders all history without mutation controls', () => {
       statusVocabulary: null,
     },
   }
-  const refused = { run: () => undefined, pending: false, error: null, refused: 'Read only' }
+  const refused = {
+    run: () => undefined,
+    pending: false,
+    error: null,
+    refused: 'Read only',
+    conflict: false,
+    reload: () => undefined,
+  }
   const result = {
     detail,
     error: null,
-    actions: { comment: refused, editComment: refused, deleteComment: refused },
+    actions: {
+      setTitle: refused,
+      setStatus: refused,
+      setBody: refused,
+      saveDraft: refused,
+      comment: refused,
+      editComment: refused,
+      deleteComment: refused,
+    },
   } as unknown as UseTaskResult
   const html = renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
-      <HostedTaskSheet taskKey="DEV-701" result={result} onClose={() => undefined} />
+      <TaskScreen
+        taskKey="DEV-701"
+        result={result}
+        openDoc={null}
+        onOpenDoc={() => undefined}
+        onClose={() => undefined}
+      />
     </QueryClientProvider>,
   )
   expect(html).toContain('A comment')
-  expect(html).toContain('DEV-701/3')
+  expect(html).toContain('Plan')
   expect(html).toContain('aria-label="History"')
   expect(html).toContain(' · orch</span> · implementation')
   expect(html).toContain('Read only')
   expect(html).toContain('No time was recorded for this task')
   expect(html).toContain('100 agent tokens')
-  expect(html).not.toContain('Save document')
+  expect(html).not.toContain('Edit</button>')
   expect(html).not.toContain('Add a comment')
   expect(html).not.toContain('Task status')
 })

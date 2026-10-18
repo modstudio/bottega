@@ -121,3 +121,47 @@ test('task body conflict reload clears conflict and the next save uses the refre
   await testing.act(() => rendered.result.current.actions.setBody.run('second edit'))
   expect(versions).toEqual(['old-version', 'new-version'])
 })
+
+test('a draft whose body conflicts saves no title', async () => {
+  const writes: string[] = []
+  fetchHandler = (async (input) => {
+    const url = String(input)
+    if (url.includes('work.task')) return trpcResponse(detail('old-version'))
+    if (url.includes('work.setTitle')) {
+      writes.push('title')
+      return trpcResponse({})
+    }
+    if (url.includes('work.setBody')) {
+      writes.push('body')
+      return new Response(
+        JSON.stringify([
+          {
+            error: {
+              message: 'body conflict',
+              code: -32009,
+              data: { code: 'CONFLICT', httpStatus: 409, path: 'work.setBody' },
+            },
+          },
+        ]),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }
+    throw new Error(`unexpected request ${url}`)
+  }) as typeof globalThis.fetch
+
+  const wrapper = ({ children }: { children: ReactNode }) =>
+    createElement(QueryClientProvider, { client: queryClient }, children)
+  const rendered = testing.renderHook(() => useTask('DEV-1', 'record-1'), { wrapper })
+  await testing.waitFor(() => expect(rendered.result.current.detail).not.toBeNull())
+
+  let saved: boolean | undefined
+  await testing.act(async () => {
+    saved = await rendered.result.current.actions.saveDraft.run({
+      title: 'Renamed',
+      body: 'edited body',
+    })
+  })
+  expect(saved).toBeFalse()
+  expect(writes).toEqual(['body'])
+  await testing.waitFor(() => expect(rendered.result.current.actions.saveDraft.conflict).toBeTrue())
+})

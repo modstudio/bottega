@@ -55,6 +55,58 @@ function useCommentActions(
   }
 }
 
+type TaskMutation<Input> = {
+  mutateAsync: (input: Input) => Promise<unknown>
+  isPending: boolean
+  error: { message: string } | null
+}
+
+/**
+ * The task page saves its title and description as one draft. The body goes first because it
+ * carries the version check, so a conflict writes nothing; the title follows only once it lands.
+ */
+function draftAction(
+  detail: TaskRecordResponse | null,
+  localInput: { key: string; scope: { recordId?: string } },
+  setTitle: TaskMutation<{ key: string; scope: { recordId?: string }; title: string }>,
+  setBody: TaskMutation<{
+    key: string
+    scope: { recordId?: string }
+    body: string
+    expectedVersion: string
+  }>,
+  capability: TaskRecordResponse['capabilities'] | undefined,
+  refresh: () => Promise<unknown>,
+) {
+  const titleRefused = refusal(capability?.setTitle)
+  const bodyRefused = refusal(capability?.setBody)
+  return {
+    run: async (draft: { title: string; body: string }): Promise<boolean> => {
+      if (!detail) return false
+      const title = draft.title.trim()
+      try {
+        if (draft.body !== (detail.task.body ?? '') && !bodyRefused)
+          await setBody.mutateAsync({
+            ...localInput,
+            body: draft.body,
+            expectedVersion: detail.bodyVersion,
+          })
+        if (title !== (detail.task.title ?? '').trim() && !titleRefused)
+          await setTitle.mutateAsync({ ...localInput, title })
+      } catch {
+        return false
+      } finally {
+        await refresh()
+      }
+      return true
+    },
+    pending: setTitle.isPending || setBody.isPending,
+    error: setBody.error ?? setTitle.error,
+    refused: titleRefused && bodyRefused ? bodyRefused : undefined,
+    conflict: isTaskBodyConflict(setBody.error),
+  }
+}
+
 export function useTask(key: string, recordId?: string) {
   const hostedMode = isHostedMode()
   const separator = key.indexOf(':')
@@ -70,7 +122,6 @@ export function useTask(key: string, recordId?: string) {
   const setTitle = useMutation(trpc.work.setTitle.mutationOptions())
   const setStatus = useMutation(trpc.work.setStatus.mutationOptions())
   const setBody = useMutation(trpc.work.setBody.mutationOptions())
-  const setDocument = useMutation(trpc.work.setDocument.mutationOptions())
   const refresh = () => queryClient.invalidateQueries()
   const capability = detail?.capabilities
   const commentActions = useCommentActions(localInput, refusal(capability?.comment), refresh)
@@ -100,8 +151,9 @@ export function useTask(key: string, recordId?: string) {
         refused: refusal(capability?.setStatus),
       },
       setBody: {
-        run: async (body: string) => {
-          if (!detail || refusal(capability?.setBody)) return
+        /** Whether the body was saved; a refusal or failure leaves its reason on the action. */
+        run: async (body: string): Promise<boolean> => {
+          if (!detail || refusal(capability?.setBody)) return false
           try {
             await setBody.mutateAsync({
               ...localInput,
@@ -109,16 +161,18 @@ export function useTask(key: string, recordId?: string) {
               expectedVersion: detail.bodyVersion,
             })
             await refresh()
+            return true
           } catch {
-            return
+            return false
           }
         },
         pending: setBody.isPending,
         error: setBody.error,
         refused: refusal(capability?.setBody),
         conflict: isTaskBodyConflict(setBody.error),
-        async reload() {
-          await (hostedMode
+        /** Fetches the stored task afresh and returns it, so a draft can restart from it. */
+        async reload(): Promise<TaskRecordResponse> {
+          const fresh = (await (hostedMode
             ? queryClient.fetchQuery({
                 ...trpc.record.task.queryOptions(hostedInput),
                 staleTime: 0,
@@ -126,22 +180,14 @@ export function useTask(key: string, recordId?: string) {
             : queryClient.fetchQuery({
                 ...trpc.work.task.queryOptions(localInput),
                 staleTime: 0,
-              }))
+              }))) as TaskRecordResponse
           await refresh()
           setBody.reset()
+          return fresh
         },
       },
       ...commentActions,
-      setDocument: {
-        run: async (input: { id: string; title: string; body: string; version: string }) => {
-          if (refusal(capability?.documents)) return
-          await setDocument.mutateAsync(input)
-          await refresh()
-        },
-        pending: setDocument.isPending,
-        error: setDocument.error,
-        refused: refusal(capability?.documents),
-      },
+      saveDraft: draftAction(detail, localInput, setTitle, setBody, capability, refresh),
     },
   }
 }

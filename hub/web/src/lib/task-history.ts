@@ -1,8 +1,8 @@
 import type { HistoryEntry } from '@bottega/hub-views/task-history/history-model'
-import type { TaskSheetDetail } from '@/routes/-task-sheet-data'
+import type { TaskScreenDetail } from '@/routes/-task-screen-data'
 
 /** A task's comments, status changes and runs in the shape the history feed draws. */
-export function taskHistoryEntries(detail: TaskSheetDetail): HistoryEntry[] {
+export function taskHistoryEntries(detail: TaskScreenDetail): HistoryEntry[] {
   return [
     ...detail.comments.map(
       (comment): HistoryEntry => ({

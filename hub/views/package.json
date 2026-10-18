@@ -37,6 +37,7 @@
     "./markdown": "./src/markdown/markdown.tsx",
     "./markdown/headings": "./src/markdown/headings.ts",
     "./markdown/markdown-alerts": "./src/markdown/markdown-alerts.ts",
+    "./markdown/markdown-directives": "./src/markdown/markdown-directives.ts",
     "./markdown/markdown-fences": "./src/markdown/markdown-fences.ts",
     "./markdown/markdown-mermaid": "./src/markdown/markdown-mermaid.tsx",
     "./markdown/markdown-mermaid.styles": "./src/markdown/markdown-mermaid.styles.ts",
@@ -52,7 +53,11 @@
     "./task-history/history-comment": "./src/task-history/history-comment.tsx",
     "./task-history/history-comment.styles": "./src/task-history/history-comment.styles.ts",
     "./task-history/history-model": "./src/task-history/history-model.ts",
-    "./task-history/task-history.styles": "./src/task-history/task-history.styles.ts"
+    "./task-history/task-history.styles": "./src/task-history/task-history.styles.ts",
+    "./task-page": "./src/task-page/task-page.tsx",
+    "./task-page/task-page.styles": "./src/task-page/task-page.styles.ts",
+    "./task-page/task-rail": "./src/task-page/task-rail.tsx",
+    "./task-page/task-rail.styles": "./src/task-page/task-rail.styles.ts"
   },
   "dependencies": {
     "@bottega/hub-ui": "workspace:*",

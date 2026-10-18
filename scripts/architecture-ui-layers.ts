@@ -174,6 +174,7 @@ const hubViewFolders = [
   'contents-list',
   'document-editor',
   'task-history',
+  'task-page',
 ]
 
 const hubViewsFolderLayerRuleName = 'hub-views-folder-has-a-layer'

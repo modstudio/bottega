@@ -15,6 +15,7 @@ import remarkGfm from 'remark-gfm'
 import { secondLevelHeadings } from './headings.ts'
 import { markdownStyles } from './markdown.styles.ts'
 import { githubAlertPlugin, isTone } from './markdown-alerts'
+import { docDirectives } from './markdown-directives.ts'
 import { fenceUse } from './markdown-fences'
 import { DocOverflow } from './markdown-overflow'
 
@@ -137,37 +138,6 @@ function DocCallout({
   return <div {...props}>{children}</div>
 }
 
-function docSectionDirective() {
-  return (tree: { children?: unknown[] }) => {
-    const visit = (node: unknown) => {
-      if (!node || typeof node !== 'object') return
-      const item = node as {
-        type?: string
-        name?: string
-        attributes?: Record<string, string | null>
-        children?: unknown[]
-        data?: Record<string, unknown>
-      }
-      if (item.type === 'containerDirective' && item.name === 'section') {
-        const audiences =
-          typeof item.attributes?.audience === 'string'
-            ? item.attributes.audience
-                .split(',')
-                .map((audience) => audience.trim())
-                .filter(Boolean)
-            : []
-        item.data = {
-          ...item.data,
-          hName: 'div',
-          hProperties: { 'data-doc-section-audiences': audiences.join(',') },
-        }
-      }
-      for (const child of item.children ?? []) visit(child)
-    }
-    visit(tree)
-  }
-}
-
 function useHighlight(needed: boolean) {
   const [plugin, setPlugin] = useState<null | typeof import('rehype-highlight').default>(null)
   useEffect(() => {
@@ -197,7 +167,7 @@ export function Markdown({ content }: { content: string }) {
   return (
     <div className={markdownStyles().root()}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkDirective, docSectionDirective]}
+        remarkPlugins={[remarkGfm, remarkDirective, docDirectives]}
         rehypePlugins={[
           githubAlertPlugin,
           ...(highlight

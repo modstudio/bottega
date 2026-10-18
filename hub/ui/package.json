@@ -27,6 +27,7 @@
     "./companion/companion.styles": "./src/companion/companion.styles.ts",
     "./dialog": "./src/dialog/dialog.tsx",
     "./dialog/dialog.styles": "./src/dialog/dialog.styles.ts",
+    "./dom/dialog-dismiss": "./src/dom/dialog-dismiss.ts",
     "./dom/render": "./src/dom/render.tsx",
     "./dom/render.styles": "./src/dom/render.styles.ts",
     "./dom/topbar-slot": "./src/dom/topbar-slot.tsx",
