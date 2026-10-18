@@ -25,7 +25,7 @@ const iso = z.string().datetime({ offset: true })
 const axis = z.enum(['framework', 'architecture'])
 const common = { id: uuid, spaceId: uuid }
 export const recordLensTableSchema = z.enum(RECORD_LENS_TABLES)
-export const recordLensRowSchemas = {
+const recordLensRowSchemas = {
   lens: z.object({
     ...common,
     key: z.string().min(1),

@@ -1,12 +1,17 @@
-import { expect, test } from 'bun:test'
+import { afterEach, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { resolveLens } from '../lens/lenses.ts'
 import { upsertProject } from '../project/projects.ts'
-import {
-  applyLensCatalogueRow,
-  rememberProjectLensSpaces,
-} from './record-cache-lens.ts'
+import { pullRecordCache } from './record-cache.ts'
+import { applyLensCatalogueRow, rememberProjectLensSpaces } from './record-cache-lens.ts'
+import { encodeRecordCursor } from './record-cursor.ts'
+
+afterEach(() => installRecordApiClient(createMemoryRecordApiClient()))
 
 const row = (key: string, id = newRecordId()) => ({
   id,
@@ -33,6 +38,71 @@ const profileRow = (spaceId: string, lensId: string, body: string, id = newRecor
   enabled: true,
   updatedAt: new Date().toISOString(),
 })
+
+type CatalogueIds = {
+  extraLens: string
+  lens: string
+  lensRevision: string
+  profile: string
+  profileRevision: string
+  selection: string
+  selectionRevision: string
+}
+
+function catalogueItem(
+  table: string,
+  space: string,
+  ids: CatalogueIds,
+  projectId: string,
+  at: string,
+): Record<string, unknown> {
+  if (table === 'lens') return { ...row('pulled-lens', ids.lens), spaceId: space, updatedAt: at }
+  if (table === 'lens_revision')
+    return {
+      id: ids.lensRevision,
+      spaceId: space,
+      lensId: ids.lens,
+      version: 1,
+      priorBody: '{}',
+      reason: 'pull',
+      sessionId: null,
+      at,
+    }
+  if (table === 'lens_profile') return profileRow(space, ids.lens, '{}', ids.profile)
+  if (table === 'lens_profile_revision')
+    return {
+      id: ids.profileRevision,
+      spaceId: space,
+      profileId: ids.profile,
+      version: 1,
+      priorBody: '{}',
+      reason: 'pull',
+      sessionId: null,
+      at,
+    }
+  if (table === 'project_lens_profile')
+    return {
+      id: ids.selection,
+      spaceId: space,
+      projectId,
+      lensId: ids.lens,
+      axis: 'framework',
+      profileName: 'default',
+      selectedVersion: null,
+      selectionVersion: 1,
+      updatedAt: at,
+    }
+  return {
+    id: ids.selectionRevision,
+    spaceId: space,
+    selectionId: ids.selection,
+    priorProfileName: null,
+    priorSelectedVersion: null,
+    reason: 'pull',
+    sessionId: null,
+    at,
+  }
+}
 
 test('lens cache reconciles by record id, natural key, insert, and seeded key', () => {
   const local = db()
@@ -112,4 +182,137 @@ test('two spaces keep the same lens key isolated after later hosted revisions', 
     title: 'Space B later',
     body: 'GUIDANCE\nB later',
   })
+})
+
+test('pullRecordCache pages six parent-first streams with independent space and table cursors', async () => {
+  const local = db()
+  const spaceA = '01990000-0000-7000-8000-0000000000a1'
+  const spaceB = '01990000-0000-7000-8000-0000000000b1'
+  const projectA = newRecordId()
+  const projectB = newRecordId()
+  upsertProject({ recordId: projectA, name: 'pull-a', path: '/tmp/pull-a', settings: {} })
+  upsertProject({
+    recordId: projectB,
+    name: 'pull-b',
+    path: '/tmp/pull-b',
+    settings: { space: 'b' },
+  })
+  const ids = new Map<string, CatalogueIds>()
+  for (const space of [spaceA, spaceB])
+    ids.set(space, {
+      extraLens: newRecordId(),
+      lens: newRecordId(),
+      lensRevision: newRecordId(),
+      profile: newRecordId(),
+      profileRevision: newRecordId(),
+      selection: newRecordId(),
+      selectionRevision: newRecordId(),
+    })
+  const calls: string[] = []
+  const at = '2026-10-18T12:00:00.000Z'
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: newRecordId(), email: 'pull@example.test' },
+      activeSpaceId: spaceA,
+      personalSpaceId: spaceA,
+      memberships: [
+        { space_id: spaceA, slug: 'a', permission: 'write' },
+        { space_id: spaceB, slug: 'b', permission: 'write' },
+      ],
+    }),
+    listLensCatalogue: async (table, query, destination) => {
+      const space = destination?.destinationSpaceId ?? ''
+      const key = `${space}:${table}`
+      calls.push(`${key}:${query.cursor ? 'resume' : 'start'}`)
+      const rowIds = ids.get(space)!
+      const projectId = space === spaceA ? projectA : projectB
+      if (table === 'lens' && space === spaceA && !query.cursor)
+        return {
+          items: [
+            {
+              ...row('page-one', rowIds.extraLens),
+              spaceId: space,
+              updatedAt: at,
+            },
+          ],
+          nextCursor: encodeRecordCursor({ at, id: rowIds.extraLens }),
+          endCursor: encodeRecordCursor({ at, id: rowIds.extraLens }),
+        }
+      const item = catalogueItem(table, space, rowIds, projectId, at)
+      return {
+        items: [item],
+        nextCursor: null,
+        endCursor: encodeRecordCursor({ at, id: String(item.id) }),
+      }
+    },
+  })
+
+  expect((await pullRecordCache(local)).lensCatalogue).toBe(13)
+  expect(calls).toEqual([
+    `${spaceA}:lens:start`,
+    `${spaceA}:lens:resume`,
+    ...[
+      'lens_revision',
+      'lens_profile',
+      'lens_profile_revision',
+      'project_lens_profile',
+      'project_lens_profile_revision',
+    ].map((table) => `${spaceA}:${table}:start`),
+    ...[
+      'lens',
+      'lens_revision',
+      'lens_profile',
+      'lens_profile_revision',
+      'project_lens_profile',
+      'project_lens_profile_revision',
+    ].map((table) => `${spaceB}:${table}:start`),
+  ])
+  expect(
+    local
+      .query<{ n: number }, []>(
+        "SELECT COUNT(*) AS n FROM schema_meta WHERE key LIKE 'record_lens_cursor:%'",
+      )
+      .get()!.n,
+  ).toBe(12)
+})
+
+test('an unresolved child rolls back its stream cursor', async () => {
+  const local = db()
+  const space = '01990000-0000-7000-8000-0000000000c1'
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: newRecordId(), email: 'pull@example.test' },
+      activeSpaceId: space,
+      personalSpaceId: space,
+      memberships: [{ space_id: space, slug: 'c', permission: 'write' }],
+    }),
+    listLensCatalogue: async (table) => ({
+      items:
+        table === 'lens_revision'
+          ? [
+              {
+                id: newRecordId(),
+                spaceId: space,
+                lensId: newRecordId(),
+                version: 1,
+                priorBody: '{}',
+                reason: 'unresolved',
+                sessionId: null,
+                at: '2026-10-18T12:00:00.000Z',
+              },
+            ]
+          : [],
+      nextCursor: null,
+    }),
+  })
+  await expect(pullRecordCache(local)).rejects.toThrow('could not resolve lens parent')
+  expect(
+    local
+      .query(
+        "SELECT value FROM schema_meta WHERE key='record_lens_cursor:01990000-0000-7000-8000-0000000000c1:lens_revision'",
+      )
+      .get(),
+  ).toBeNull()
 })

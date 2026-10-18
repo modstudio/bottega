@@ -3,17 +3,17 @@
 
 import { lensCataloguePath, type RecordRequestDestination } from './record-api-client-paths.ts'
 import {
+  type RecordLensProfileWriteInput,
   type RecordLensProfileWriteResponse,
+  type RecordLensTable,
+  type RecordLensWriteInput,
   type RecordLensWriteResponse,
+  type RecordProjectLensSelectionInput,
   type RecordProjectLensSelectionResponse,
   recordLensPageSchema,
   recordLensProfileWriteResponseSchema,
   recordLensWriteResponseSchema,
   recordProjectLensSelectionResponseSchema,
-  type RecordLensProfileWriteInput,
-  type RecordLensTable,
-  type RecordLensWriteInput,
-  type RecordProjectLensSelectionInput,
 } from './record-lens-contract.ts'
 
 type Request = <T>(

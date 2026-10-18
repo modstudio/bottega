@@ -3,16 +3,13 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
+import { effectiveProjectLensSpace, rememberProjectLensSpace } from '../record/record-cache-lens.ts'
 import type {
   RecordLensProfileWriteResponse,
   RecordLensWriteResponse,
   RecordProjectLensSelectionResponse,
 } from '../record/record-lens-contract.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
-import {
-  effectiveProjectLensSpace,
-  rememberProjectLensSpace,
-} from '../record/record-cache-lens.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 
 const LENS_AXES = ['framework', 'architecture'] as const
@@ -42,6 +39,54 @@ type ProfileRow = {
 
 export type LensProfileSource = 'project' | 'stack' | 'generic'
 type ProfileSelection = { name: string; version: number | null }
+type SetLensInput = {
+  id: string
+  title: string
+  question: string
+  excludes: string
+  slots: string
+  enabled: boolean
+  requiresExecution: boolean
+  reason: string
+}
+type SetProfileInput = {
+  lensId: string
+  axis: string
+  name: string
+  body: string
+  enabled: boolean
+  reason: string
+}
+type SelectProjectProfileInput = {
+  project: string
+  axis: string
+  name: string
+  lensId?: string
+  version?: number
+  reason: string
+}
+
+function validateLensInput(input: SetLensInput): void {
+  stableId(input.id, 'lens')
+  nonempty(input.title, 'title')
+  nonempty(input.question, 'question')
+  nonempty(input.excludes, 'excludes')
+  nonempty(input.reason, 'reason')
+  slotNames(input.slots)
+}
+
+function validateProfileInput(input: SetProfileInput): LensAxis {
+  nonempty(input.name, 'name')
+  nonempty(input.reason, 'reason')
+  return axisValue(input.axis)
+}
+
+function validateSelectionInput(input: SelectProjectProfileInput): LensAxis {
+  nonempty(input.reason, 'reason')
+  if (input.version !== undefined && (!Number.isInteger(input.version) || input.version < 1))
+    throw new Error('version must be a positive integer')
+  return axisValue(input.axis)
+}
 
 /** Decide one axis's profile without consulting the store. */
 export function chooseLensProfile(input: {
@@ -161,9 +206,11 @@ const profileSnapshot = (row: ProfileRow) =>
   JSON.stringify({ body: JSON.parse(row.body), enabled: !!row.enabled })
 
 export function listLenses(database: Database = db()): NonNullable<ReturnType<typeof showLens>>[] {
-  return (database.query('SELECT id FROM lens WHERE space_id IS NULL ORDER BY id').all() as { id: string }[]).map(
-    ({ id }) => showLens(id, database)!,
-  )
+  return (
+    database.query('SELECT id FROM lens WHERE space_id IS NULL ORDER BY id').all() as {
+      id: string
+    }[]
+  ).map(({ id }) => showLens(id, database)!)
 }
 const LENS_COLUMNS =
   'id,title,question,excludes,slots,version,enabled,requires_execution,space_id' as const
@@ -187,23 +234,9 @@ export function showLens(id: string, database: Database = db(), spaceId: string 
     profiles: profiles.map((p) => ({ ...p, enabled: !!p.enabled, body: JSON.parse(p.body) })),
   }
 }
-export async function setLens(input: {
-  id: string
-  title: string
-  question: string
-  excludes: string
-  slots: string
-  enabled: boolean
-  requiresExecution: boolean
-  reason: string
-}) {
+export async function setLens(input: SetLensInput) {
   writableDb()
-  stableId(input.id, 'lens')
-  nonempty(input.title, 'title')
-  nonempty(input.question, 'question')
-  nonempty(input.excludes, 'excludes')
-  nonempty(input.reason, 'reason')
-  slotNames(input.slots)
+  validateLensInput(input)
   const d = db()
   const writeLocal = (spaceId: string | null, hosted?: RecordLensWriteResponse) => {
     const prior = d
@@ -242,7 +275,9 @@ export async function setLens(input: {
         ).run(
           hosted?.lens.id ??
             (
-              d.query('SELECT record_id FROM lens WHERE id=? AND space_id IS ?').get(input.id, spaceId) as {
+              d
+                .query('SELECT record_id FROM lens WHERE id=? AND space_id IS ?')
+                .get(input.id, spaceId) as {
                 record_id: string
               }
             ).record_id,
@@ -310,18 +345,9 @@ export function showProfile(
     .get(lensId, axisValue(axis), name, spaceId) as ProfileRow | null
   return row ? { ...row, enabled: !!row.enabled, body: JSON.parse(row.body) } : null
 }
-export async function setProfile(input: {
-  lensId: string
-  axis: string
-  name: string
-  body: string
-  enabled: boolean
-  reason: string
-}) {
+export async function setProfile(input: SetProfileInput) {
   writableDb()
-  nonempty(input.name, 'name')
-  nonempty(input.reason, 'reason')
-  const axis = axisValue(input.axis)
+  const axis = validateProfileInput(input)
   const d = db()
   const writeLocal = (spaceId: string | null, hosted?: RecordLensProfileWriteResponse) => {
     const core = d
@@ -474,26 +500,13 @@ function validateSelectedProfile(
     )
 }
 
-export async function selectProjectProfile(input: {
-  project: string
-  axis: string
-  name: string
-  lensId?: string
-  version?: number
-  reason: string
-}) {
+export async function selectProjectProfile(input: SelectProjectProfileInput) {
   writableDb()
-  nonempty(input.reason, 'reason')
-  const axis = axisValue(input.axis)
+  const axis = validateSelectionInput(input)
   const d = db()
   const project = projectByName(input.project)
   if (!project) throw new Error(`no project "${input.project}"`)
-  if (input.version !== undefined && (!Number.isInteger(input.version) || input.version < 1))
-    throw new Error('version must be a positive integer')
-  const writeLocal = (
-    spaceId: string | null,
-    hosted?: RecordProjectLensSelectionResponse,
-  ) => {
+  const writeLocal = (spaceId: string | null, hosted?: RecordProjectLensSelectionResponse) => {
     validateSelectedProfile(d, axis, input.name, input.lensId, input.version, spaceId)
     const prior = d
       .query(
@@ -554,14 +567,7 @@ export async function selectProjectProfile(input: {
         project.settings,
         client,
       )
-      validateSelectedProfile(
-        d,
-        axis,
-        input.name,
-        input.lensId,
-        input.version,
-        destinationSpaceId,
-      )
+      validateSelectedProfile(d, axis, input.name, input.lensId, input.version, destinationSpaceId)
       const prior = d
         .query(
           'SELECT selection_version FROM project_lens_profile WHERE project_record_id=? AND lens_id IS ? AND axis=? AND space_id IS ?',

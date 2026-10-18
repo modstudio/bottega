@@ -2,30 +2,30 @@
 /** Exposes validated tenant-bound lens catalogue routes. */
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
-import {
-  recordLensProfileUpsertSchema,
-  recordLensTableSchema,
-  recordLensUpsertSchema,
-  recordProjectLensSelectionSchema,
-} from './record-lens-contract.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { decodeRecordCursor, pageRecordItems, type RecordCursor } from './record-cursor.ts'
 import {
   RecordLensError,
   type RecordLensProfileWriteInput,
   type RecordLensTable,
   type RecordLensWriteInput,
   type RecordProjectLensSelectionInput,
+  recordLensProfileUpsertSchema,
+  recordLensTableSchema,
+  recordLensUpsertSchema,
+  recordProjectLensSelectionSchema,
 } from './record-lens-contract.ts'
-import { decodeRecordCursor, pageRecordItems, type RecordCursor } from './record-cursor.ts'
 
 type Environment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
 export type RecordLensRouteDeps = {
-  listLensCatalogue(input: Tenant & {
-    table: RecordLensTable
-    limit: number
-    cursor: RecordCursor | null
-  }): Promise<Record<string, unknown>[]>
+  listLensCatalogue(
+    input: Tenant & {
+      table: RecordLensTable
+      limit: number
+      cursor: RecordCursor | null
+    },
+  ): Promise<Record<string, unknown>[]>
   upsertLens(input: Tenant & RecordLensWriteInput): Promise<unknown>
   upsertLensProfile(input: Tenant & RecordLensProfileWriteInput): Promise<unknown>
   selectProjectLensProfile(input: Tenant & RecordProjectLensSelectionInput): Promise<unknown>

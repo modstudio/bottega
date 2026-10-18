@@ -26,7 +26,7 @@ function writeCursor(local: Database, key: string, value: string): void {
     .run(key, value)
 }
 function readRecordCursor(local: Database, key: string): RecordCursor | undefined {
-  const value = readCursor(local,key)
+  const value = readCursor(local, key)
   if (value === undefined) return undefined
   const parsed = parseStoredRecordCursor(value, false)
   if ('cursor' in parsed) return parsed.cursor
@@ -59,10 +59,7 @@ export function rememberProjectLensSpace(
   writeCursor(local, PROJECT_LENS_SPACES, JSON.stringify(spaces))
 }
 
-export function effectiveProjectLensSpace(
-  local: Database,
-  project: string | null,
-): string | null {
+export function effectiveProjectLensSpace(local: Database, project: string | null): string | null {
   if (!project) return null
   const stored = readCursor(local, PROJECT_LENS_SPACES)
   if (!stored) return null
@@ -74,7 +71,10 @@ export function effectiveProjectLensSpace(
   }
 }
 
-export async function pullLensCatalogue(local: Database, spaces: readonly string[]): Promise<number> {
+export async function pullLensCatalogue(
+  local: Database,
+  spaces: readonly string[],
+): Promise<number> {
   let count = 0
   for (const spaceId of spaces)
     for (const table of RECORD_LENS_TABLES) count += await pullLensTable(local, spaceId, table)
@@ -173,9 +173,7 @@ function applyLensRevisionRow(local: Database, item: Record<string, unknown>): v
   const recordId = String(item.id)
   const spaceId = String(item.spaceId)
   const parent = local
-    .query<{ id: string }, [string, string]>(
-      'SELECT id FROM lens WHERE record_id=? AND space_id=?',
-    )
+    .query<{ id: string }, [string, string]>('SELECT id FROM lens WHERE record_id=? AND space_id=?')
     .get(String(item.lensId), spaceId)
   if (!parent) throw new Error(`record cache could not resolve lens parent ${String(item.lensId)}`)
   const found =
@@ -222,9 +220,7 @@ function applyLensProfileRow(local: Database, item: Record<string, unknown>): vo
   const recordId = String(item.id)
   const spaceId = String(item.spaceId)
   const lens = local
-    .query<{ id: string }, [string, string]>(
-      'SELECT id FROM lens WHERE record_id=? AND space_id=?',
-    )
+    .query<{ id: string }, [string, string]>('SELECT id FROM lens WHERE record_id=? AND space_id=?')
     .get(String(item.lensId), spaceId)
   if (!lens) throw new Error(`record cache could not resolve lens parent ${String(item.lensId)}`)
   const found =
@@ -438,5 +434,3 @@ const lensRowApplicators: Record<
   project_lens_profile: applyProjectLensProfileRow,
   project_lens_profile_revision: applyProjectLensProfileRevisionRow,
 }
-
-

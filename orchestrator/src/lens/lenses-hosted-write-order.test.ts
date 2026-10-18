@@ -5,8 +5,8 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
-import { rememberHostedRecord } from '../record/install-binding.ts'
 import { upsertProject } from '../project/projects.ts'
+import { rememberHostedRecord } from '../record/install-binding.ts'
 import { BOUND_RECORD_WRITE_REFUSAL } from '../record/record-write-authority.ts'
 import { selectProjectProfile, setLens, setProfile, showLens, showProfile } from './lenses.ts'
 
@@ -131,9 +131,7 @@ test('hosted profile failure is inert and success adopts hosted identities and v
       record_id: profileId,
     })
     expect(
-      db()
-        .query('SELECT record_id FROM lens_profile_revision WHERE space_id=?')
-        .get(HOSTED_SPACE),
+      db().query('SELECT record_id FROM lens_profile_revision WHERE space_id=?').get(HOSTED_SPACE),
     ).toEqual({ record_id: revisionId })
   } finally {
     delete process.env.ORCH_RECORD_API_URL

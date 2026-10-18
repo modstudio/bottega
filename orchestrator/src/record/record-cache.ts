@@ -10,6 +10,7 @@ import { projects } from '../project/projects.ts'
 import { applySubjectRecord } from '../subject/subjects.ts'
 import { recordApiClient } from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { pullLensCatalogue, rememberProjectLensSpaces } from './record-cache-lens.ts'
 import { recordCacheSpaceOwnsAddress } from './record-cache-ownership.ts'
 import {
   decodeRecordCursor,
@@ -18,7 +19,6 @@ import {
   type RecordCursor,
 } from './record-cursor.ts'
 import { recordDocList } from './record-doc-list-shape.ts'
-import { pullLensCatalogue, rememberProjectLensSpaces } from './record-cache-lens.ts'
 import {
   declaredRecordSpace,
   noActiveRecordSpaceRefusal,

@@ -11,6 +11,7 @@ import type {
   RecordProjectLensSelectionInput,
 } from './record-lens-contract.ts'
 import { RecordLensError } from './record-lens-contract.ts'
+
 type Tenant = { url: string } & TenantPrincipal
 
 async function tenant<T>(input: Tenant, use: (tx: SQL) => Promise<T>): Promise<T> {
@@ -139,11 +140,7 @@ export async function listRecordLensCatalogue(
   })
 }
 
-export const assertRecordLensVersion = (
-  what: string,
-  expected: number | null,
-  current: number | null,
-) => {
+const assertRecordLensVersion = (what: string, expected: number | null, current: number | null) => {
   if (expected !== current)
     throw new RecordLensError(
       `refusing stale ${what} update: expected version ${expected ?? 'none'}, current version ${current ?? 'none'}`,
@@ -227,6 +224,73 @@ export async function upsertRecordLensProfile(input: Tenant & RecordLensProfileW
   })
 }
 
+async function selectionCandidateLenses(
+  tx: SQL,
+  input: Tenant & RecordProjectLensSelectionInput,
+  lensId: string | null,
+): Promise<Record<string, unknown>[]> {
+  const candidateLenses = lensId
+    ? await tx`SELECT id,key FROM lens
+        WHERE space_id=${input.spaceId}::uuid AND id=${lensId}::uuid AND enabled=true`
+    : await tx`SELECT id,key FROM lens l
+        WHERE space_id=${input.spaceId}::uuid AND enabled=true AND EXISTS (
+          SELECT 1 FROM lens_profile declared WHERE declared.space_id=l.space_id
+            AND declared.lens_id=l.id AND declared.axis=${input.axis}
+        )
+        ORDER BY key`
+  if (!candidateLenses.length)
+    throw new RecordLensError(
+      lensId
+        ? `no enabled hosted lens "${input.lensKey}"`
+        : `no enabled hosted lenses declare axis ${input.axis}`,
+      422,
+    )
+  return candidateLenses
+}
+
+async function selectionProfileExists(
+  tx: SQL,
+  input: Tenant & RecordProjectLensSelectionInput,
+  lensId: string,
+): Promise<boolean> {
+  const profiles = await tx`SELECT id,version,enabled FROM lens_profile
+    WHERE space_id=${input.spaceId}::uuid AND lens_id=${lensId}::uuid
+      AND axis=${input.axis} AND name=${input.profileName}
+    FOR UPDATE`
+  const profile = profiles[0]
+  if (!profile?.enabled) return false
+  if (input.selectedVersion === null || number(profile.version) === input.selectedVersion)
+    return true
+  const revision = await tx`SELECT id FROM lens_profile_revision
+    WHERE space_id=${input.spaceId}::uuid AND profile_id=${text(profile.id)}::uuid
+      AND version=${input.selectedVersion}`
+  return Boolean(revision[0])
+}
+
+async function validatedSelectionLensId(
+  tx: SQL,
+  input: Tenant & RecordProjectLensSelectionInput,
+): Promise<string | null> {
+  let lensId: string | null = null
+  if (input.lensKey) {
+    const found =
+      await tx`SELECT id FROM lens WHERE space_id=${input.spaceId}::uuid AND key=${input.lensKey}`
+    if (!found[0]) throw new RecordLensError(`no hosted lens "${input.lensKey}"`, 404)
+    lensId = text(found[0].id)
+  }
+  const candidateLenses = await selectionCandidateLenses(tx, input, lensId)
+  const invalid: string[] = []
+  for (const lens of candidateLenses) {
+    if (!(await selectionProfileExists(tx, input, text(lens.id)))) invalid.push(text(lens.key))
+  }
+  if (invalid.length)
+    throw new RecordLensError(
+      `profile ${input.axis}/${input.profileName}${input.selectedVersion ? ` version ${input.selectedVersion}` : ''} is missing or disabled for hosted lenses: ${invalid.join(', ')}`,
+      422,
+    )
+  return lensId
+}
+
 export async function selectRecordProjectLensProfile(
   input: Tenant & RecordProjectLensSelectionInput,
 ) {
@@ -235,53 +299,7 @@ export async function selectRecordProjectLensProfile(
     const project =
       await tx`SELECT id FROM project WHERE id=${input.projectId}::uuid AND space_id=${input.spaceId}::uuid`
     if (!project[0]) throw new RecordLensError('project is not in the destination space', 404)
-    let lensId: string | null = null
-    if (input.lensKey) {
-      const found =
-        await tx`SELECT id FROM lens WHERE space_id=${input.spaceId}::uuid AND key=${input.lensKey}`
-      if (!found[0]) throw new RecordLensError(`no hosted lens "${input.lensKey}"`, 404)
-      lensId = text(found[0].id)
-    }
-    const candidateProfiles = lensId
-      ? await tx`SELECT p.id,p.version,p.enabled,l.key
-          FROM lens l
-          LEFT JOIN lens_profile p ON p.space_id=l.space_id AND p.lens_id=l.id
-            AND p.axis=${input.axis} AND p.name=${input.profileName}
-          WHERE l.space_id=${input.spaceId}::uuid AND l.id=${lensId}::uuid AND l.enabled=true
-          FOR UPDATE OF p`
-      : await tx`SELECT p.id,p.version,p.enabled,l.key
-          FROM lens l
-          LEFT JOIN lens_profile p ON p.space_id=l.space_id AND p.lens_id=l.id
-            AND p.axis=${input.axis} AND p.name=${input.profileName}
-          WHERE l.space_id=${input.spaceId}::uuid AND l.enabled=true AND EXISTS (
-            SELECT 1 FROM lens_profile declared WHERE declared.space_id=l.space_id
-              AND declared.lens_id=l.id AND declared.axis=${input.axis}
-          )
-          ORDER BY l.key
-          FOR UPDATE OF p`
-    if (!candidateProfiles.length)
-      throw new RecordLensError(
-        lensId ? `no enabled hosted lens "${input.lensKey}"` : `no enabled hosted lenses declare axis ${input.axis}`,
-        422,
-      )
-    const invalid: string[] = []
-    for (const profile of candidateProfiles) {
-      if (!profile.id || !profile.enabled) {
-        invalid.push(text(profile.key))
-        continue
-      }
-      if (input.selectedVersion !== null && number(profile.version) !== input.selectedVersion) {
-        const revision = await tx`SELECT id FROM lens_profile_revision
-          WHERE space_id=${input.spaceId}::uuid AND profile_id=${text(profile.id)}::uuid
-            AND version=${input.selectedVersion}`
-        if (!revision[0]) invalid.push(text(profile.key))
-      }
-    }
-    if (invalid.length)
-      throw new RecordLensError(
-        `profile ${input.axis}/${input.profileName}${input.selectedVersion ? ` version ${input.selectedVersion}` : ''} is missing or disabled for hosted lenses: ${invalid.join(', ')}`,
-        422,
-      )
+    const lensId = await validatedSelectionLensId(tx, input)
     const rows =
       await tx`SELECT * FROM project_lens_profile WHERE space_id=${input.spaceId}::uuid AND project_id=${input.projectId}::uuid AND lens_id IS NOT DISTINCT FROM ${lensId}::uuid AND axis=${input.axis} FOR UPDATE`
     const prior = rows[0] as Record<string, unknown> | undefined
