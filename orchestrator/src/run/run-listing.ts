@@ -19,6 +19,12 @@ import type {
 import { classifyRunIdentifier, resolveRunIdentifierOrNull } from './run-identifier.ts'
 import { agentWorkValue } from './synthetic-lifecycle-job.ts'
 
+export function runIdentityMap(): { id: number; record_id: string }[] {
+  return db()
+    .query<{ id: number; record_id: string }, []>('SELECT id, record_id FROM run ORDER BY id')
+    .all()
+}
+
 function questionDeliveries(questionId: number) {
   return db()
     .query(

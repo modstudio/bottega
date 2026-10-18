@@ -382,6 +382,15 @@ export const OrchRunEnvelopeSchema = z
   })
   .strict()
 
+const RunIdentitySchema = z
+  .object({
+    id: z.number().int().positive(),
+    record_id: z.string().uuid(),
+  })
+  .strict()
+export const RunIdentityListSchema = z.array(RunIdentitySchema)
+export type RunIdentity = z.infer<typeof RunIdentitySchema>
+
 const guideCandidate = z
   .object({
     agent: z.string(),

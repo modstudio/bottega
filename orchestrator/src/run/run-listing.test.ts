@@ -7,7 +7,7 @@ import { db } from '../database/db.ts'
 import type { ProcessSample } from '../idle-kill.ts'
 import { job } from '../jobs/jobs.ts'
 import { runDetail } from '../state/serve.ts'
-import { runListingCommand } from './run-listing.ts'
+import { runIdentityMap, runListingCommand } from './run-listing.ts'
 
 function command(
   args: Record<string, string[] | boolean> = {},
@@ -53,6 +53,17 @@ function insert(status: string, job = 'implement') {
 }
 
 describe('run listing', () => {
+  test('run identity mapping includes roots and turns', () => {
+    const root = insert('asking')
+    const turn = insert('running')
+    db().query('UPDATE run SET parent_run_id=?,turn=2 WHERE id=?').run(root, turn)
+
+    expect(runIdentityMap().filter((row) => row.id === root || row.id === turn)).toEqual([
+      { id: root, record_id: expect.any(String) },
+      { id: turn, record_id: expect.any(String) },
+    ])
+  })
+
   test('human runs renders lifecycle rows without resolving a dispatch job or warning', async () => {
     const id = insert('ok', 'landing-tree')
     let warningCalls = 0

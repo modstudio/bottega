@@ -10,6 +10,7 @@ dispatch and inspect runs
 - [bottega run continue](#bottega-run-continue)
 - [bottega run diff](#bottega-run-diff)
 - [bottega run discard](#bottega-run-discard)
+- [bottega run identity-map](#bottega-run-identity-map)
 - [bottega run list](#bottega-run-list)
 - [bottega run peek](#bottega-run-peek)
 - [bottega run reconcile](#bottega-run-reconcile)
@@ -39,6 +40,7 @@ dispatch and inspect runs
 - [bottega run continue](./run.md#bottega-run-continue)
 - [bottega run diff](./run.md#bottega-run-diff)
 - [bottega run discard](./run.md#bottega-run-discard)
+- [bottega run identity-map](./run.md#bottega-run-identity-map)
 - [bottega run list](./run.md#bottega-run-list)
 - [bottega run peek](./run.md#bottega-run-peek)
 - [bottega run reconcile](./run.md#bottega-run-reconcile)
@@ -123,6 +125,20 @@ remove a run worktree and discard its branch
 ### Options
 
 - `--force`: discard a branch with unique commits
+
+### Related
+
+- [bottega run](./run.md#bottega-run)
+
+## bottega run identity-map
+
+**Synopsis:** `bottega run identity-map [--json]`
+
+list numeric run identities and their durable record ids
+
+### Options
+
+- `--json`: write the identity map as JSON
 
 ### Related
 

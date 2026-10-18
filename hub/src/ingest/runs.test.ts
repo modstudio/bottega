@@ -18,6 +18,10 @@ beforeAll(resetFixtureStore)
 
 const ref = (id: number) => `orch:${fixtureRecordId(id)}`
 const turnRef = (root: number, turn: number) => `${ref(root)}:turn:${fixtureRecordId(turn)}`
+const identityMap = (run: ReturnType<typeof runFixture>) => [
+  { id: run.id, record_id: run.record_id },
+  ...(run.turns ?? []).map((turn) => ({ id: turn.id, record_id: turn.record_id })),
+]
 
 describe('run ingest', () => {
   test('numeric refs convert across every hub table and one unmapped value rolls back', async () => {
@@ -55,7 +59,7 @@ describe('run ingest', () => {
       conn
         .query('UPDATE question_delivery SET run_ref=? WHERE question_id=?')
         .run('orch:9080:turn:9081', 9080)
-      return convertLegacyRunRefs(conn, [run])
+      return convertLegacyRunRefs(conn, identityMap(run))
     })
     expect(report).toEqual({ interval: 1, question: 2, question_delivery: 1 })
     expect(
@@ -74,7 +78,7 @@ describe('run ingest', () => {
       writeTransaction((conn) => {
         conn.query('UPDATE interval SET ref=? WHERE ref=?').run('orch:9080:turn:9081', intervalRef)
         conn.query('UPDATE question SET root_ref=? WHERE question_id=?').run('orch:99999', 9080)
-        return convertLegacyRunRefs(conn, [run])
+        return convertLegacyRunRefs(conn, identityMap(run))
       }),
     ).toThrow('numeric run refs have no orchestrator UUID mapping')
     expect(
@@ -88,6 +92,35 @@ describe('run ingest', () => {
     writeTransaction((conn) => {
       conn.query('DELETE FROM question WHERE question_id=?').run(9080)
       conn.query('DELETE FROM interval WHERE ref LIKE ?').run(`${ref(9080)}%`)
+    })
+  })
+  test('legacy conversion is fed by the narrow run identity mapping', async () => {
+    const run = runFixture({
+      id: 9082,
+      turns: [runFixture({ id: 9083, turn: 2 })],
+      questions: [questionFixture({ id: 9082, run_id: 9083 })],
+    })
+    await ingestRunFixtures(run)
+    writeTransaction((conn) => {
+      conn
+        .query('UPDATE interval SET ref=? WHERE ref=?')
+        .run('orch:9082:turn:9083', turnRef(9082, 9083))
+      conn
+        .query('UPDATE question SET run_ref=?,root_ref=? WHERE question_id=?')
+        .run('orch:9082:turn:9083', 'orch:9082', 9082)
+    })
+
+    await ingestStdout(JSON.stringify(run), '[]', JSON.stringify(identityMap(run)))
+
+    expect(
+      db().query('SELECT run_ref,root_ref FROM question WHERE question_id=?').get(9082),
+    ).toEqual({
+      run_ref: turnRef(9082, 9083),
+      root_ref: ref(9082),
+    })
+    writeTransaction((conn) => {
+      conn.query('DELETE FROM question WHERE question_id=?').run(9082)
+      conn.query('DELETE FROM interval WHERE ref LIKE ?').run(`${ref(9082)}%`)
     })
   })
   test('the interval writer and UUID ref parser round-trip root and turn identities', async () => {

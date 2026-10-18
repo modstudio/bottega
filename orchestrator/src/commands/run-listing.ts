@@ -8,7 +8,7 @@ import { db } from '../database/db.ts'
 import { sampleProcesses } from '../idle-kill.ts'
 import { job } from '../jobs/jobs.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
-import { runListingCommand } from '../run/run-listing.ts'
+import { runIdentityMap, runListingCommand } from '../run/run-listing.ts'
 import { collect, duration, log, optionFlags } from './support.ts'
 
 function chainHasPendingDelivery(rootId: number): boolean {
@@ -27,6 +27,13 @@ const strandedRecovery = (id: number) =>
   `stranded — ${PLATFORM_SLUG} run retry ${id} --agent … with the recorded ruling, or ${PLATFORM_SLUG} run abandon ${id}`
 
 export function register(program: Command): void {
+  program
+    .command('run-identities')
+    .description('list numeric run identities and their durable record ids')
+    .option('--json', 'write the identity map as JSON')
+    .allowExcessArguments(false)
+    .action(() => log(JSON.stringify(runIdentityMap())))
+
   program
     .command('run <run-id>')
     .description('show the complete record for a run')

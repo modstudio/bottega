@@ -1,10 +1,10 @@
 import type { Database } from 'bun:sqlite'
-import type { OrchRun, RulingListRow } from '../../../shared/orch-contract.ts'
+import type { OrchRun, RulingListRow, RunIdentity } from '../../../shared/orch-contract.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { attributeRun, refreshKeyPrefixes } from '../attribute.ts'
 import { db, nowIso, writeTransaction } from '../db.ts'
 import { intervalOwningProject } from '../interval-project-correction.ts'
-import { readRuns, readWorkflowRulings } from '../orch.ts'
+import { readRunIdentityMap, readRuns, readWorkflowRulings } from '../orch.ts'
 import { projectRecordIdFor } from '../project-record-id.ts'
 import { projects } from '../projects.ts'
 import { decideCollectorReplace, type ExistingIntervalRow } from './interval-replace.ts'
@@ -94,18 +94,14 @@ function convertIntervalRefs(
 /** Convert the three durable Hub columns that mirror orchestrator run identity. */
 export function convertLegacyRunRefs(
   conn: Database,
-  runs: readonly OrchRun[],
+  identities: readonly RunIdentity[],
 ): RunRefConversionReport {
-  const identities = new Map<string, string>()
-  for (const run of runs) {
-    identities.set(String(run.id), run.record_id)
-    for (const turn of run.turns ?? []) identities.set(String(turn.id), turn.record_id)
-  }
+  const identityByNumber = new Map(identities.map((run) => [String(run.id), run.record_id]))
   const convert = (value: string): string | null => {
     const parsed = legacyRunRef(value)
     if (!parsed) return value
-    const root = identities.get(parsed.root)
-    const turn = parsed.turn ? identities.get(parsed.turn) : null
+    const root = identityByNumber.get(parsed.root)
+    const turn = parsed.turn ? identityByNumber.get(parsed.turn) : null
     if (!root || (parsed.turn && !turn)) return null
     return parsed.turn ? `orch:${root}:turn:${turn}` : `orch:${root}`
   }
@@ -552,12 +548,12 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
   // Snapshot time, not completion: anything that happens during the read is
   // re-fetched next time. Overlap is cheap; a missed answer is not.
   const snapshot = nowIso()
-  let [runs, workflowQuestions] = await Promise.all([readRuns(since), readWorkflowRulings(since)])
+  const [runs, workflowQuestions] = await Promise.all([readRuns(since), readWorkflowRulings(since)])
   const legacyRefs = hasLegacyRunRefs(db())
-  if (legacyRefs) runs = await readRuns('1970-01-01T00:00:00.000Z')
+  const identities = legacyRefs ? await readRunIdentityMap() : []
   const now = Date.now()
   return writeTransaction((conn) => {
-    if (legacyRefs) convertLegacyRunRefs(conn, runs)
+    if (legacyRefs) convertLegacyRunRefs(conn, identities)
     return ingestRunRows(conn, runs, workflowQuestions, now, snapshot)
   })
 }
