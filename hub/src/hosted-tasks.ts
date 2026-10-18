@@ -529,13 +529,17 @@ export async function mirrorCommentRow(
   if (decision.action === 'update-same-row') {
     await tx`UPDATE hub_task_comment SET
       project_id=${projectId}::uuid,task_key=${row.task_key},task_id=${taskId}::uuid,body=${row.body},
-      updated_at=${row.updated_at}::timestamptz,deleted_at=${row.deleted_at}::timestamptz
+      actor_user_id=COALESCE(${row.actor_user_id},actor_user_id),
+      actor_name=COALESCE(${row.actor_name},actor_name),agent=COALESCE(${row.agent},agent),
+      run_id=COALESCE(${row.run_id},run_id),
+      updated_at=${row.updated_at}::timestamptz,
+      deleted_at=COALESCE(${row.deleted_at}::timestamptz,deleted_at)
       WHERE id=${row.id}::uuid`
     return
   }
   await tx`INSERT INTO hub_task_comment
-    (id,space_id,project_name,project_id,task_key,task_id,body,created_at,updated_at,deleted_at)
-    VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${projectId}::uuid,${row.task_key},${taskId}::uuid,${row.body},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
+    (id,space_id,project_name,project_id,task_key,task_id,body,actor_user_id,actor_name,agent,run_id,created_at,updated_at,deleted_at)
+    VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${projectId}::uuid,${row.task_key},${taskId}::uuid,${row.body},${row.actor_user_id},${row.actor_name},${row.agent},${row.run_id},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
 }
 
 export async function mirrorDocumentRow(
@@ -628,14 +632,22 @@ export async function mirrorStatusEventRow(
       projectId: row.projectId,
       projectName: row.project_name,
     }))
-  if (decision.action === 'adopt') return { id: decision.id }
+  if (decision.action === 'adopt') {
+    await tx`UPDATE hub_task_status_event SET
+      actor_user_id=COALESCE(${row.actor_user_id},actor_user_id),actor_name=COALESCE(${row.actor_name},actor_name),
+      agent=COALESCE(${row.agent},agent),run_id=COALESCE(${row.run_id},run_id)
+      WHERE id=${decision.id}::uuid`
+    return { id: decision.id }
+  }
   if (decision.action === 'idempotent-duplicate') {
-    await tx`UPDATE hub_task_status_event SET project_id=${projectId}::uuid,task_key=${row.task_key},task_id=${taskId}::uuid
+    await tx`UPDATE hub_task_status_event SET project_id=${projectId}::uuid,task_key=${row.task_key},task_id=${taskId}::uuid,
+      actor_user_id=COALESCE(${row.actor_user_id},actor_user_id),actor_name=COALESCE(${row.actor_name},actor_name),
+      agent=COALESCE(${row.agent},agent),run_id=COALESCE(${row.run_id},run_id)
       WHERE id=${row.id}::uuid`
     return null
   }
   await tx`INSERT INTO hub_task_status_event
-    (id,space_id,project_name,project_id,task_key,task_id,at,from_status,to_status,created_at,updated_at,deleted_at)
-    VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${projectId}::uuid,${row.task_key},${taskId}::uuid,${row.at}::timestamptz,${row.from_status},${row.to_status},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
+    (id,space_id,project_name,project_id,task_key,task_id,at,from_status,to_status,actor_user_id,actor_name,agent,run_id,created_at,updated_at,deleted_at)
+    VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${projectId}::uuid,${row.task_key},${taskId}::uuid,${row.at}::timestamptz,${row.from_status},${row.to_status},${row.actor_user_id},${row.actor_name},${row.agent},${row.run_id},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
   return null
 }

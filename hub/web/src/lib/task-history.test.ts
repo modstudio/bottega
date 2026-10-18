@@ -14,8 +14,27 @@ const run = (id: string | null, job: string): TaskSheetDetail['runs'][number] =>
 
 test('every comment, status change and run becomes one entry with its own id', () => {
   const detail = {
-    comments: [{ id: '1', body: 'A comment', createdAt: '2026-09-17T11:00:00.000Z' }],
-    statusEvents: [{ id: '1', at: '2026-09-17T09:00:00.000Z', fromStatus: null, toStatus: 'open' }],
+    comments: [
+      {
+        id: '1',
+        body: 'A comment',
+        createdAt: '2026-09-17T11:00:00.000Z',
+        actorName: 'Person',
+        agent: 'codex',
+        canEdit: true,
+        canDelete: true,
+      },
+    ],
+    statusEvents: [
+      {
+        id: '1',
+        at: '2026-09-17T09:00:00.000Z',
+        fromStatus: null,
+        toStatus: 'open',
+        actorName: 'Person',
+        agent: 'codex',
+      },
+    ],
     runs: [run(null, 'implement'), run(null, 'review'), run('7', 'fix'), run('7', 'fix')],
   } as TaskSheetDetail
   const entries = taskHistoryEntries(detail)
@@ -28,4 +47,12 @@ test('every comment, status change and run becomes one entry with its own id', (
     'run',
   ])
   expect(new Set(entries.map((entry) => entry.id)).size).toBe(entries.length)
+  expect(entries[0]).toMatchObject({
+    actor: 'Person',
+    agent: 'codex',
+    canEdit: true,
+    canDelete: true,
+  })
+  expect(entries[1]).toMatchObject({ actor: 'Person', agent: 'codex' })
+  expect(entries[2]).toMatchObject({ actor: null })
 })

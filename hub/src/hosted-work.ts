@@ -54,6 +54,10 @@ const hostedCommentRowSchema = z.object({
   id: z.string(),
   body: z.string(),
   created_at: sqlTimeSchema,
+  updated_at: sqlTimeSchema.nullable(),
+  actor_user_id: z.string().nullable(),
+  actor_name: z.string().nullable(),
+  agent: z.string().nullable(),
 })
 const hostedDocumentRowSchema = z.object({
   id: z.string(),
@@ -70,6 +74,8 @@ const hostedStatusEventRowSchema = z.object({
   at: sqlTimeSchema,
   from_status: z.string().nullable(),
   to_status: z.string(),
+  actor_name: z.string().nullable(),
+  agent: z.string().nullable(),
 })
 const hostedIntervalRowSchema = z.object({
   id: z.string().nullable(),
@@ -374,7 +380,7 @@ export async function hostedTaskDetail(
     if (!task) return null
     const comments = z.array(hostedCommentRowSchema).parse(
       await tx`
-      SELECT c.id,c.body,c.created_at FROM hub_task_comment c JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_comment', 'c')}
+      SELECT c.id,c.body,c.created_at,c.updated_at,c.actor_user_id,c.actor_name,c.agent FROM hub_task_comment c JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_comment', 'c')}
         WHERE t.id=${String(task.id)}::uuid AND c.space_id=${spaceId}::uuid
         AND c.deleted_at IS NULL ORDER BY c.created_at,c.id`,
     )
@@ -387,7 +393,7 @@ export async function hostedTaskDetail(
     )
     const statusHistory = z.array(hostedStatusEventRowSchema).parse(
       await tx`
-      SELECT e.id,e.at,e.from_status,e.to_status FROM hub_task_status_event e
+      SELECT e.id,e.at,e.from_status,e.to_status,e.actor_name,e.agent FROM hub_task_status_event e
       JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_status_event', 'e')}
       WHERE t.id=${String(task.id)}::uuid AND e.space_id=${spaceId}::uuid AND e.deleted_at IS NULL
       ORDER BY e.at,e.id`,
@@ -400,6 +406,7 @@ export async function hostedTaskDetail(
     )
     return hostedTaskDetailFromRows(
       hostedDetailRows(task, comments, documents, statusHistory, intervals, key),
+      identity.userId,
     )
   })
 }
@@ -472,6 +479,10 @@ function hostedDetailRows(
       id: comment.id,
       body: comment.body,
       created_at: iso(comment.created_at)!,
+      updated_at: iso(comment.updated_at),
+      actor_user_id: comment.actor_user_id,
+      actor_name: comment.actor_name,
+      agent: comment.agent,
     })),
     documents: documents.map((document) => ({
       id: document.id,
@@ -489,6 +500,8 @@ function hostedDetailRows(
       at: iso(event.at)!,
       from_status: event.from_status,
       to_status: event.to_status,
+      actor_name: event.actor_name,
+      agent: event.agent,
     })),
     runs: shapedIntervals,
     measures: computeMeasures(

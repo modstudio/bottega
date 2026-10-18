@@ -315,6 +315,8 @@ export const PLATFORM_COMMAND_WORDS = [
   'task',
   'task close',
   'task comment',
+  'task comment-delete',
+  'task comment-edit',
   'task doc',
   'task doc help',
   'task doc list',

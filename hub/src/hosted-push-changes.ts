@@ -89,14 +89,60 @@ async function applyTaskPatch(
     WHERE id=${id}::uuid AND space_id=${identity.spaceId}::uuid`
 }
 
-async function commentEquals(
-  tx: SQL,
-  identity: TaskIdentity,
-  row: import('./hosted-tasks.ts').HostedComment,
-) {
-  const found =
-    await tx`SELECT 1 FROM hub_task_comment WHERE id=${row.id}::uuid AND space_id=${identity.spaceId}::uuid AND task_key=${row.task_key} AND body=${row.body} AND updated_at=${row.updated_at}::timestamptz AND deleted_at IS NOT DISTINCT FROM ${row.deleted_at}::timestamptz`
-  return (found as unknown[]).length > 0
+type StoredCommentPushRow = PushedComment & { actor_user_id: string | null }
+export type HostedCommentPushDecision =
+  | { kind: 'apply' }
+  | { kind: 'duplicate' }
+  | { kind: 'reject'; reason: string }
+
+const sameTimestamp = (left: string | Date | null, right: string | Date | null) =>
+  left === null || right === null
+    ? left === right
+    : new Date(left).getTime() === new Date(right).getTime()
+
+const commentPushMatches = (stored: StoredCommentPushRow, pushed: PushedComment) =>
+  stored.id === pushed.id &&
+  stored.task_key === pushed.task_key &&
+  stored.body === pushed.body &&
+  sameTimestamp(stored.updated_at, pushed.updated_at) &&
+  sameTimestamp(stored.deleted_at, pushed.deleted_at) &&
+  (pushed.actor_user_id == null || stored.actor_user_id === pushed.actor_user_id) &&
+  (pushed.actor_name == null || stored.actor_name === pushed.actor_name) &&
+  (pushed.agent == null || stored.agent === pushed.agent) &&
+  (pushed.run_id == null || stored.run_id === pushed.run_id)
+
+const commentPushChangesAttribution = (stored: StoredCommentPushRow, pushed: PushedComment) =>
+  (pushed.actor_user_id != null && stored.actor_user_id !== pushed.actor_user_id) ||
+  (pushed.actor_name != null && stored.actor_name !== pushed.actor_name) ||
+  (pushed.agent != null && stored.agent !== pushed.agent) ||
+  (pushed.run_id != null && stored.run_id !== pushed.run_id)
+
+export function decideHostedCommentPush(
+  stored: StoredCommentPushRow | null,
+  pushed: PushedComment,
+  pushingUserId: string,
+): HostedCommentPushDecision {
+  if (!stored) {
+    if (
+      pushed.actor_user_id !== null &&
+      pushed.actor_user_id !== undefined &&
+      pushed.actor_user_id !== pushingUserId
+    )
+      return { kind: 'reject', reason: 'new comment claims another member as its author' }
+    return { kind: 'apply' }
+  }
+  if (stored.deleted_at !== null) {
+    if (pushed.deleted_at !== null) return { kind: 'duplicate' }
+    return { kind: 'reject', reason: DELETED_ON_HOSTED_RECORD_REASON }
+  }
+  if (commentPushMatches(stored, pushed)) return { kind: 'duplicate' }
+  if (stored.actor_user_id === null)
+    return { kind: 'reject', reason: 'comment predates recorded authorship and cannot be changed' }
+  if (stored.actor_user_id !== pushingUserId)
+    return { kind: 'reject', reason: 'comment belongs to another author' }
+  if (commentPushChangesAttribution(stored, pushed))
+    return { kind: 'reject', reason: 'comment attribution differs from the stored row' }
+  return { kind: 'apply' }
 }
 
 async function statusEventEquals(tx: SQL, identity: TaskIdentity, row: PushedStatusEvent) {
@@ -106,6 +152,10 @@ async function statusEventEquals(tx: SQL, identity: TaskIdentity, row: PushedSta
       AND at=${row.at}::timestamptz
       AND from_status IS NOT DISTINCT FROM ${row.from_status}
       AND to_status=${row.to_status}
+      AND actor_user_id IS NOT DISTINCT FROM COALESCE(${row.actor_user_id},actor_user_id)
+      AND actor_name IS NOT DISTINCT FROM COALESCE(${row.actor_name},actor_name)
+      AND agent IS NOT DISTINCT FROM COALESCE(${row.agent},agent)
+      AND run_id IS NOT DISTINCT FROM COALESCE(${row.run_id},run_id)
       AND created_at=${row.created_at}::timestamptz
       AND updated_at=${row.updated_at}::timestamptz
       AND deleted_at IS NOT DISTINCT FROM ${row.deleted_at}::timestamptz`) as Array<{
@@ -183,16 +233,14 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
     async apply(tx, identity, input) {
       if (input.table !== HOSTED_COMMENT_TABLE || input.op === 'delete')
         throw new Error('hub_task_comment accepts upsert only')
-      const insertIfAbsent = Array.isArray(input.fields) && input.fields.length === 0
-      if (insertIfAbsent) {
-        const existing =
-          (await tx`SELECT deleted_at FROM hub_task_comment WHERE id=${input.id}::uuid
-            AND space_id=${identity.spaceId}::uuid`) as Array<{ deleted_at: string | null }>
-        if (existing[0]?.deleted_at) throw new Error(DELETED_ON_HOSTED_RECORD_REASON)
-        if (existing[0]) return { id: input.id, status: 'duplicate' }
-      }
+      const existing = (await tx`SELECT id::text id,task_key,body,created_at,updated_at,deleted_at,
+          actor_user_id,actor_name,agent,run_id,project_name,task_id::text task_id
+          FROM hub_task_comment WHERE id=${input.id}::uuid
+            AND space_id=${identity.spaceId}::uuid FOR UPDATE`) as StoredCommentPushRow[]
+      const decision = decideHostedCommentPush(existing[0] ?? null, input.row, identity.userId)
+      if (decision.kind === 'reject') throw new Error(decision.reason)
+      if (decision.kind === 'duplicate') return { id: input.id, status: 'duplicate' }
       await requireLiveChildTask(tx, identity, input.row)
-      if (await commentEquals(tx, identity, input.row)) return { id: input.id, status: 'duplicate' }
       await mirrorCommentRow(tx, identity, input.row)
       const taskId = await taskIdFor(tx, identity.spaceId, input.row.task_key, input.row.task_id)
       await tx`UPDATE hub_task SET updated_at=GREATEST(updated_at,${input.row.updated_at}::timestamptz),last_seen=GREATEST(last_seen,${input.row.updated_at}::timestamptz) WHERE id=${taskId}::uuid AND space_id=${identity.spaceId}::uuid`
@@ -236,12 +284,14 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
       const row = input.row
       const existing = (await tx`SELECT id FROM hub_task_status_event WHERE id=${input.id}::uuid
           AND space_id=${identity.spaceId}::uuid`) as Array<{ id: string }>
+      if (existing.length) {
+        if (!(await statusEventEquals(tx, identity, row)))
+          throw new Error(`hub_task_status_event ${input.id} differs from the pushed row`)
+        return { id: input.id, status: 'duplicate' }
+      }
       const adoption = await mirrorStatusEventRow(tx, identity, row)
       if (adoption) return { id: input.id, status: 'duplicate', adoptedId: adoption.id }
-      if (!existing.length) return { id: input.id, status: 'applied' }
-      if (!(await statusEventEquals(tx, identity, row)))
-        throw new Error(`hub_task_status_event ${input.id} differs from the pushed row`)
-      return { id: input.id, status: 'duplicate' }
+      return { id: input.id, status: 'applied' }
     },
   },
   [HOSTED_INTERVAL_TABLE]: {

@@ -41,6 +41,7 @@ export function childEnv(
    * to whichever of them happened to be waiting.
    */
   if (runId) env.ORCH_RUN_ID = String(runId)
+  if (runId) env.ORCH_AGENT = a.name
   // The credential half. The id says which run; this says the caller is
   // actually that run, and the environment of a child process is the one place
   // an unrelated process cannot read it from.

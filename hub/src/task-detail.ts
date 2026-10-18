@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto'
+import type { ProjectWriteDecision } from './hosted-write-mode.ts'
 import type { Measures } from './measures.ts'
+import { commentAuthorDecision } from './task-attribution.ts'
 import type { Capabilities } from './tracker-capabilities.ts'
 
 export type TaskDetail = {
@@ -19,7 +21,16 @@ export type TaskDetail = {
     spaceName: string | null
   }
   bodyVersion: string
-  comments: { id: string; body: string; createdAt: string }[]
+  comments: {
+    id: string
+    body: string
+    createdAt: string
+    actorName: string | null
+    agent: string | null
+    updatedAt: string | null
+    canEdit: boolean
+    canDelete: boolean
+  }[]
   documents: {
     id: string
     number: number
@@ -30,7 +41,14 @@ export type TaskDetail = {
     version: string
     updatedAt: string
   }[]
-  statusEvents: { id: string; at: string; fromStatus: string | null; toStatus: string }[]
+  statusEvents: {
+    id: string
+    at: string
+    fromStatus: string | null
+    toStatus: string
+    actorName: string | null
+    agent: string | null
+  }[]
   runs: {
     id: string | null
     source: string | null
@@ -69,7 +87,15 @@ export type LocalTaskDetailRows = {
     source_protocol: string | null
     updated_at: string | null
   }
-  comments: { id: string; body: string; created_at: string }[]
+  comments: {
+    id: string
+    body: string
+    created_at: string
+    updated_at: string | null
+    actor_user_id: string | null
+    actor_name: string | null
+    agent: string | null
+  }[]
   documents: Array<{
     id: string
     number: number
@@ -85,6 +111,8 @@ export type LocalTaskDetailRows = {
     at: string
     from_status: string | null
     to_status: string
+    actor_name: string | null
+    agent: string | null
   }>
   runs: Array<{
     id: string | number | null
@@ -98,7 +126,11 @@ export type LocalTaskDetailRows = {
   capabilities: TaskDetail['capabilities']
 }
 
-export function localTaskDetail(rows: LocalTaskDetailRows): TaskDetail {
+export function localTaskDetail(
+  rows: LocalTaskDetailRows,
+  readerUserId: string | null = null,
+  writeDecision: ProjectWriteDecision = { mode: 'local-authoritative' },
+): TaskDetail {
   const task = rows.task
   return {
     task: {
@@ -121,6 +153,17 @@ export function localTaskDetail(rows: LocalTaskDetailRows): TaskDetail {
       id: row.id,
       body: row.body,
       createdAt: row.created_at,
+      actorName: row.actor_name,
+      agent: row.agent,
+      updatedAt: row.updated_at,
+      canEdit:
+        rows.capabilities.comment.allowed &&
+        writeDecision.mode !== 'refused' &&
+        commentAuthorDecision(writeDecision.mode, readerUserId, row.actor_user_id).allowed,
+      canDelete:
+        rows.capabilities.comment.allowed &&
+        writeDecision.mode !== 'refused' &&
+        commentAuthorDecision(writeDecision.mode, readerUserId, row.actor_user_id).allowed,
     })),
     documents: rows.documents.map((row) => ({
       id: row.id,
@@ -137,6 +180,8 @@ export function localTaskDetail(rows: LocalTaskDetailRows): TaskDetail {
       at: row.at,
       fromStatus: row.from_status,
       toStatus: row.to_status,
+      actorName: row.actor_name,
+      agent: row.agent,
     })),
     runs: rows.runs.map((row) => ({
       id: row.id === null ? null : String(row.id),
@@ -170,30 +215,37 @@ export type HostedTaskDetailRows = Omit<LocalTaskDetailRows, 'task' | 'runs' | '
 
 const HOSTED_WRITE_REFUSAL = 'The hosted record does not accept task writes from the dashboard.'
 
-export function hostedTaskDetailFromRows(rows: HostedTaskDetailRows): TaskDetail {
+export function hostedTaskDetailFromRows(
+  rows: HostedTaskDetailRows,
+  readerUserId = '',
+): TaskDetail {
   const refused = { allowed: false as const, reason: HOSTED_WRITE_REFUSAL }
   return {
-    ...localTaskDetail({
-      ...rows,
-      task: { ...rows.task, record_id: rows.task.id },
-      runs: rows.runs.map((row) => ({
-        id: row.id ?? null,
-        source: row.source,
-        agent: row.agent,
-        job: row.job,
-        started_at: row.start_at,
-        ended_at: row.end_at,
-        running: Boolean(row.open),
-      })),
-      capabilities: {
-        setTitle: refused,
-        setStatus: refused,
-        setBody: refused,
-        comment: refused,
-        documents: refused,
-        statusVocabulary: null,
+    ...localTaskDetail(
+      {
+        ...rows,
+        task: { ...rows.task, record_id: rows.task.id },
+        runs: rows.runs.map((row) => ({
+          id: row.id ?? null,
+          source: row.source,
+          agent: row.agent,
+          job: row.job,
+          started_at: row.start_at,
+          ended_at: row.end_at,
+          running: Boolean(row.open),
+        })),
+        capabilities: {
+          setTitle: refused,
+          setStatus: refused,
+          setBody: refused,
+          comment: refused,
+          documents: refused,
+          statusVocabulary: null,
+        },
       },
-    }),
+      readerUserId,
+      { mode: 'hosted-configured' },
+    ),
     task: {
       key: rows.task.key,
       recordId: rows.task.id,

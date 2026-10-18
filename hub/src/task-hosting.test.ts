@@ -9,6 +9,7 @@ import {
 } from './hosted-tasks.ts'
 import { createTask } from './task.ts'
 import { taskApi } from './task-api.ts'
+import { UNATTRIBUTED } from './task-attribution.ts'
 import { applyHostedTaskRows } from './task-cache.ts'
 import {
   hostedCreateDocument,
@@ -317,7 +318,7 @@ describe('hosted-only task safety', () => {
   test('close never prunes after a hosted close failure', async () => {
     let pruned = false
     await expect(
-      closeThenPrune('DEV-1', {}, false, undefined, {
+      closeThenPrune('DEV-1', {}, false, undefined, UNATTRIBUTED, {
         close: async () => {
           throw new Error('hosted close failed')
         },
@@ -387,6 +388,7 @@ describe('hosted-only task safety', () => {
     expect(response?.status).toBe(200)
     expect(await response?.json()).toEqual({
       userId: 'user-1',
+      userName: null,
       activeSpaceId: 'space-a',
       memberships: [
         { spaceId: 'space-a', slug: 'workshop', permission: 'write' },

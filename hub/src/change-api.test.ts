@@ -49,6 +49,7 @@ test('change route binds a requested member space and parses its bounded request
       userId: 'user-1',
       spaceId: 'space-b',
       spaceIds: ['space-a', 'space-b'],
+      userName: null,
       memberships: [
         { spaceId: 'space-a', slug: 'active', permission: 'write' },
         { spaceId: 'space-b', slug: 'other', permission: 'write' },
@@ -88,7 +89,18 @@ test('push route authorizes the requested space and refuses unaccepted tables', 
   expect(response?.status).toBe(200)
   expect(received).toEqual({
     identity: expect.objectContaining({ spaceId: 'space-b' }),
-    body: [change],
+    body: [
+      {
+        ...change,
+        row: {
+          ...change.row,
+          actor_user_id: null,
+          actor_name: null,
+          agent: null,
+          run_id: null,
+        },
+      },
+    ],
   })
 
   const refused = await changeApi(pushRequest([{ ...change, table: 'hub_send' }]), config, {
@@ -156,7 +168,18 @@ test('push route rejects an invalid item in place and passes only validated rows
       return [{ id: valid.id, status: 'applied' }]
     },
   })
-  expect(received).toEqual([valid])
+  expect(received).toEqual([
+    {
+      ...valid,
+      row: {
+        ...valid.row,
+        actor_user_id: null,
+        actor_name: null,
+        agent: null,
+        run_id: null,
+      },
+    },
+  ])
   expect(await response?.json()).toEqual([
     {
       id: invalid.id,
@@ -201,7 +224,18 @@ test('push route rejects malformed UUIDs and timestamps at their batch positions
       return [{ id: valid.id, status: 'applied' }]
     },
   })
-  expect(received).toEqual([valid])
+  expect(received).toEqual([
+    {
+      ...valid,
+      row: {
+        ...valid.row,
+        actor_user_id: null,
+        actor_name: null,
+        agent: null,
+        run_id: null,
+      },
+    },
+  ])
   expect(await response?.json()).toEqual([
     {
       id: 'not-a-uuid',

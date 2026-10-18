@@ -93,21 +93,44 @@ export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][numb
 
 function applyComment(conn: Database, row: HostedChanges['comments'][number]) {
   const taskRecordId = taskRecordIdFor(conn, row.task_key, row.project_name)
-  if (row.deleted_at) {
-    conn.query(`DELETE FROM task_comment WHERE record_id=?`).run(row.id)
-    return
-  }
   const updated = conn
     .query(
-      `UPDATE task_comment SET task_key=?,task_record_id=?,body=?,created_at=? WHERE record_id=?`,
+      `UPDATE task_comment SET task_key=?,task_record_id=?,body=?,created_at=?,updated_at=?,deleted_at=?,
+       actor_user_id=COALESCE(?,actor_user_id),actor_name=COALESCE(?,actor_name),
+       agent=COALESCE(?,agent),run_id=COALESCE(?,run_id) WHERE record_id=?`,
     )
-    .run(row.task_key, taskRecordId, row.body, row.created_at, row.id)
+    .run(
+      row.task_key,
+      taskRecordId,
+      row.body,
+      row.created_at,
+      row.updated_at,
+      row.deleted_at,
+      row.actor_user_id ?? null,
+      row.actor_name ?? null,
+      row.agent ?? null,
+      row.run_id ?? null,
+      row.id,
+    )
   if (!updated.changes)
     conn
       .query(
-        `INSERT INTO task_comment (record_id,task_key,task_record_id,body,created_at) VALUES (?,?,?,?,?)`,
+        `INSERT INTO task_comment (record_id,task_key,task_record_id,body,created_at,updated_at,deleted_at,
+         actor_user_id,actor_name,agent,run_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       )
-      .run(row.id, row.task_key, taskRecordId, row.body, row.created_at)
+      .run(
+        row.id,
+        row.task_key,
+        taskRecordId,
+        row.body,
+        row.created_at,
+        row.updated_at,
+        row.deleted_at,
+        row.actor_user_id ?? null,
+        row.actor_name ?? null,
+        row.agent ?? null,
+        row.run_id ?? null,
+      )
 }
 
 function applyDocument(conn: Database, row: HostedChanges['documents'][number]) {
@@ -203,15 +226,40 @@ function writeStatusEvent(
 ) {
   const updated = conn
     .query(
-      `UPDATE task_status_event SET task_key=?,task_record_id=COALESCE(?,task_record_id),at=?,from_status=?,to_status=? WHERE record_id=?`,
+      `UPDATE task_status_event SET task_key=?,task_record_id=COALESCE(?,task_record_id),at=?,from_status=?,to_status=?,
+       actor_user_id=COALESCE(?,actor_user_id),actor_name=COALESCE(?,actor_name),
+       agent=COALESCE(?,agent),run_id=COALESCE(?,run_id) WHERE record_id=?`,
     )
-    .run(row.task_key, taskRecordId, row.at, row.from_status, row.to_status, row.id)
+    .run(
+      row.task_key,
+      taskRecordId,
+      row.at,
+      row.from_status,
+      row.to_status,
+      row.actor_user_id ?? null,
+      row.actor_name ?? null,
+      row.agent ?? null,
+      row.run_id ?? null,
+      row.id,
+    )
   if (!updated.changes)
     conn
       .query(
-        `INSERT INTO task_status_event (record_id,task_key,task_record_id,at,from_status,to_status) VALUES (?,?,?,?,?,?)`,
+        `INSERT INTO task_status_event (record_id,task_key,task_record_id,at,from_status,to_status,
+         actor_user_id,actor_name,agent,run_id) VALUES (?,?,?,?,?,?,?,?,?,?)`,
       )
-      .run(row.id, row.task_key, taskRecordId, row.at, row.from_status, row.to_status)
+      .run(
+        row.id,
+        row.task_key,
+        taskRecordId,
+        row.at,
+        row.from_status,
+        row.to_status,
+        row.actor_user_id ?? null,
+        row.actor_name ?? null,
+        row.agent ?? null,
+        row.run_id ?? null,
+      )
 }
 
 function retargetStatusEvent(

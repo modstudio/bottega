@@ -10,6 +10,10 @@ export function taskHistoryEntries(detail: TaskSheetDetail): HistoryEntry[] {
         id: `comment:${comment.id}`,
         at: comment.createdAt,
         body: comment.body,
+        actor: comment.actorName,
+        agent: comment.agent,
+        canEdit: comment.canEdit,
+        canDelete: comment.canDelete,
       }),
     ),
     ...detail.statusEvents.map(
@@ -19,6 +23,8 @@ export function taskHistoryEntries(detail: TaskSheetDetail): HistoryEntry[] {
         at: event.at,
         from: event.fromStatus,
         to: event.toStatus,
+        actor: event.actorName,
+        agent: event.agent,
       }),
     ),
     // A run can appear once per interval, and a hosted interval may have no run id, so the row's
@@ -33,6 +39,7 @@ export function taskHistoryEntries(detail: TaskSheetDetail): HistoryEntry[] {
         job: run.job,
         endedAt: run.running ? null : run.endedAt,
         running: run.running,
+        actor: null,
       }),
     ),
   ]

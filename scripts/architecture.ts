@@ -448,6 +448,7 @@ export const modules: ArchitectureModule[] = [
   module('shared/record-api-url.ts', ['./config-directory.ts', './env-values.ts']),
   module('shared/http-json.ts', []),
   module('shared/autonomy.ts', []),
+  module('shared/caller-classification.ts', []),
   module('shared/keychain.ts', []),
   module('shared/machine-key-id.ts', []),
   module('shared/record-remedies.ts', ['./brand.ts']),

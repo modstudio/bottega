@@ -13,9 +13,9 @@ import {
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
+import { WORKER_ENVIRONMENT_MARKERS } from '../../shared/caller-classification.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../shared/config-directory.ts'
 import { createTestHubDatabaseGuard, mintTestHubDatabase } from '../../shared/test-hub-database.ts'
-import { WORKER_ENVIRONMENT_MARKERS } from '../src/caller-classification.ts'
 
 const discoveryEnv = Object.fromEntries(
   Object.entries(process.env).filter(

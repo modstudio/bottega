@@ -409,10 +409,10 @@ function observeTrackerTaskOn(
   const inserted = conn
     .query(
       `INSERT OR IGNORE INTO task_status_event
-       (record_id, task_key, task_record_id, at, from_status, to_status)
-       VALUES (?,?,?,?,?,?)`,
+       (record_id,task_key,task_record_id,at,from_status,to_status,actor_user_id,actor_name,agent,run_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
     )
-    .run(recordId, task.key, taskRecordId!, at, was, task.category)
+    .run(recordId, task.key, taskRecordId!, at, was, task.category, null, null, null, null)
   const event =
     inserted.changes > 0 ? { recordId, fromCategory: was!, toCategory: task.category } : null
   if (event) queueHostedChange(conn, HOSTED_STATUS_EVENT_TABLE, event.recordId, 'upsert', at)

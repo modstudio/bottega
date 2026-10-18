@@ -4,6 +4,7 @@ import { newRecordId } from '../../shared/record/schema.ts'
 import { TASK_STATUSES } from '../../shared/trackers.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import type { HostedTask } from './hosted-tasks.ts'
+import type { TaskWriteMode } from './hosted-write-mode.ts'
 import { persistInstallBinding } from './install-binding.ts'
 import { drainHostedEditOutbox } from './offline-task-edits.ts'
 import { type BranchPruneResult, classifyTaskBranches } from './orch.ts'
@@ -16,6 +17,8 @@ import {
   HOSTED_TASK_TABLE,
 } from './push-contract.ts'
 import { runRef } from './reconcile.ts'
+import type { Attribution } from './task-attribution.ts'
+import { commentAuthorDecision, UNATTRIBUTED } from './task-attribution.ts'
 import { hostedCreateTask } from './task-client.ts'
 import { decideTaskClose, landingCheck } from './task-close-decision.ts'
 import { localTaskDetail, type TaskDetail, taskBodyVersion } from './task-detail.ts'
@@ -32,6 +35,7 @@ import {
   type HostedTaskWriteOptions,
   hostedTaskWriteOptions,
   registeredTaskProject,
+  taskWriteDecision,
   taskWriteMode,
 } from './task-write-destination.ts'
 import { trackerCapabilities } from './tracker-capabilities.ts'
@@ -65,6 +69,12 @@ export type TaskComment = {
   task_record_id: string
   body: string
   created_at: string
+  actor_user_id: string | null
+  actor_name: string | null
+  agent: string | null
+  run_id: string | null
+  updated_at: string | null
+  deleted_at: string | null
 }
 
 export type DuplicateCandidate = {
@@ -194,15 +204,27 @@ function recordLocalStatusChange(
   task: { key: string; record_id: string; status_category: StatusCategory | null },
   next: StatusCategory | null,
   at: string,
+  attribution: Attribution,
 ) {
   if (!next || next === task.status_category) return null
   const id = newRecordId()
   conn
     .query(
-      `INSERT OR IGNORE INTO task_status_event(record_id,task_key,task_record_id,at,from_status,to_status)
-       VALUES (?,?,?,?,?,?)`,
+      `INSERT OR IGNORE INTO task_status_event(record_id,task_key,task_record_id,at,from_status,to_status,
+       actor_user_id,actor_name,agent,run_id) VALUES (?,?,?,?,?,?,?,?,?,?)`,
     )
-    .run(id, task.key, task.record_id, at, task.status_category, next)
+    .run(
+      id,
+      task.key,
+      task.record_id,
+      at,
+      task.status_category,
+      next,
+      attribution.actorUserId,
+      attribution.actorName,
+      attribution.agent,
+      attribution.runId,
+    )
   return id
 }
 
@@ -221,6 +243,7 @@ export function createLocalTaskInTransaction(
     allowDuplicateReason?: string
     skipDuplicateCheck?: boolean
     afterDuplicateSearch?: () => void
+    attribution?: Attribution
   } = {},
 ): TaskRow {
   const project = registeredProject(input.project)
@@ -287,10 +310,21 @@ export function createLocalTaskInTransaction(
   if (options.allowDuplicateReason !== undefined) {
     conn
       .query(
-        `INSERT INTO task_comment (record_id,task_key,task_record_id,body,created_at)
-         VALUES (?,?,?,?,?)`,
+        `INSERT INTO task_comment (record_id,task_key,task_record_id,body,created_at,updated_at,
+         actor_user_id,actor_name,agent,run_id) VALUES (?,?,?,?,?,?,?,?,?,?)`,
       )
-      .run(newRecordId(), key, recordId, options.allowDuplicateReason, updatedAt)
+      .run(
+        newRecordId(),
+        key,
+        recordId,
+        options.allowDuplicateReason,
+        updatedAt,
+        updatedAt,
+        options.attribution?.actorUserId ?? null,
+        options.attribution?.actorName ?? null,
+        options.attribution?.agent ?? null,
+        options.attribution?.runId ?? null,
+      )
   }
   const row = conn.query<TaskRow, [string]>(`SELECT * FROM task WHERE record_id = ?`).get(recordId)
   if (!row) throw new Error(`no task record ${recordId}`)
@@ -341,18 +375,43 @@ function writeLocalComment(
   body: string,
   at: string,
   queue: boolean,
+  attribution: Attribution,
 ): TaskComment {
   const recordId = newRecordId()
   conn
     .query(
-      `INSERT INTO task_comment (record_id,task_key,task_record_id,body,created_at) VALUES (?,?,?,?,?)`,
+      `INSERT INTO task_comment (record_id,task_key,task_record_id,body,created_at,updated_at,
+       actor_user_id,actor_name,agent,run_id) VALUES (?,?,?,?,?,?,?,?,?,?)`,
     )
-    .run(recordId, task.key, task.record_id, body, at)
+    .run(
+      recordId,
+      task.key,
+      task.record_id,
+      body,
+      at,
+      at,
+      attribution.actorUserId,
+      attribution.actorName,
+      attribution.agent,
+      attribution.runId,
+    )
   conn
     .query(`UPDATE task SET updated_at = ?, last_seen = ? WHERE record_id = ?`)
     .run(at, at, task.record_id)
   if (queue) queueHostedChange(conn, HOSTED_COMMENT_TABLE, recordId, 'upsert', at)
-  return { id: recordId, task_key: task.key, task_record_id: task.record_id, body, created_at: at }
+  return {
+    id: recordId,
+    task_key: task.key,
+    task_record_id: task.record_id,
+    body,
+    created_at: at,
+    actor_user_id: attribution.actorUserId,
+    actor_name: attribution.actorName,
+    agent: attribution.agent,
+    run_id: attribution.runId,
+    updated_at: at,
+    deleted_at: null,
+  }
 }
 
 export async function createTask(
@@ -370,6 +429,7 @@ export async function createTask(
     afterDuplicateSearch?: () => void
     hosted?: HostedOptions
     skipDuplicateCheck?: boolean
+    attribution?: Attribution
   } = {},
 ): Promise<TaskRow> {
   if (!input.title.trim()) throw new Error('task title is required')
@@ -427,6 +487,7 @@ export async function createTask(
         options.allowDuplicateReason,
         commentAt,
         true,
+        options.attribution ?? UNATTRIBUTED,
       )
   })
   if (options.allowDuplicateReason) await drainHostedEditOutbox(commentAt, options.hosted)
@@ -472,8 +533,9 @@ export function showTask(
   const task = taskByRecordId<TaskRow>(recordId)
   const comments = db()
     .query<TaskComment, [string]>(
-      `SELECT record_id AS id, task_key, task_record_id, body, created_at FROM task_comment
-      WHERE task_record_id = ? ORDER BY created_at, record_id`,
+      `SELECT record_id AS id, task_key, task_record_id, body, created_at,updated_at,deleted_at,
+       actor_user_id,actor_name,agent,run_id FROM task_comment
+      WHERE task_record_id = ? AND deleted_at IS NULL ORDER BY created_at, record_id`,
     )
     .all(recordId)
   return { task, comments, documents: listTaskDocuments(upper, { recordId }) }
@@ -492,7 +554,11 @@ type TaskRun = {
 }
 
 /** The complete read-only task record used by the dashboard detail sheet. */
-export function taskRecord(key: string, scope: TaskScope = {}): TaskDetail {
+export function taskRecord(
+  key: string,
+  scope: TaskScope = {},
+  readerUserId: string | null = null,
+): TaskDetail {
   const record = showTask(key, scope)
   const project = projects().find((candidate) => candidate.name === record.task.project) ?? null
   const documents = record.documents
@@ -547,23 +613,37 @@ export function taskRecord(key: string, scope: TaskScope = {}): TaskDetail {
       ]
     })
   const statusEvents = db()
-    .query<{ id: string; at: string; from_status: string | null; to_status: string }, [string]>(
-      `SELECT record_id AS id, at, from_status, to_status FROM task_status_event
+    .query<
+      {
+        id: string
+        at: string
+        from_status: string | null
+        to_status: string
+        actor_name: string | null
+        agent: string | null
+      },
+      [string]
+    >(
+      `SELECT record_id AS id, at, from_status, to_status,actor_name,agent FROM task_status_event
        WHERE task_record_id = ? ORDER BY at, record_id`,
     )
     .all(record.task.record_id)
-  return localTaskDetail({
-    task: {
-      ...record.task,
-      source_protocol:
-        record.task.source === 'mcp' ? (project?.settings.tracker?.protocol ?? null) : null,
+  return localTaskDetail(
+    {
+      task: {
+        ...record.task,
+        source_protocol:
+          record.task.source === 'mcp' ? (project?.settings.tracker?.protocol ?? null) : null,
+      },
+      capabilities: trackerCapabilities({ source: record.task.source, project }),
+      runs,
+      comments: record.comments,
+      documents,
+      statusEvents,
     },
-    capabilities: trackerCapabilities({ source: record.task.source, project }),
-    runs,
-    comments: record.comments,
-    documents,
-    statusEvents,
-  })
+    readerUserId,
+    taskWriteDecision(record.task.project),
+  )
 }
 
 export async function setTaskBody(
@@ -597,7 +677,7 @@ export async function setTaskBody(
     if (currentVersion !== expectedVersion) {
       throw new StaleTaskBodyError(current.key, expectedVersion, currentVersion)
     }
-    const row = applyLocalTaskPatch(conn, recordId, { body }, { force: true }, at)
+    const row = applyLocalTaskPatch(conn, recordId, { body }, { force: true }, at, UNATTRIBUTED)
     if (hosted) queueHostedChange(conn, HOSTED_TASK_TABLE, row.record_id, 'upsert', at, ['body'])
     return row
   })
@@ -624,6 +704,7 @@ function applyLocalTaskPatch(
   },
   options: { force?: boolean },
   at: string,
+  attribution: Attribution,
 ): TaskRow {
   const current = conn
     .query<TaskRow, [string]>(`SELECT * FROM task WHERE record_id = ?`)
@@ -658,7 +739,7 @@ function applyLocalTaskPatch(
       at,
       current.record_id,
     )
-  recordLocalStatusChange(conn, current, category, at)
+  recordLocalStatusChange(conn, current, category, at, attribution)
   const row = conn.query<TaskRow, [string]>(`SELECT * FROM task WHERE record_id = ?`).get(recordId)
   if (!row) throw new Error(`no task record ${recordId}`)
   return row
@@ -666,6 +747,7 @@ function applyLocalTaskPatch(
 
 async function prepareDoneTransition(
   current: TaskRow,
+  attribution: Attribution,
   options: { hosted?: HostedOptions } & DoneTransitionOptions,
 ): Promise<void> {
   if (options.abandonReason && current.source !== 'local') {
@@ -691,6 +773,7 @@ async function prepareDoneTransition(
       current.key,
       { recordId: current.record_id },
       decision.comment,
+      attribution,
       { hosted: options.hosted },
     )
   }
@@ -706,6 +789,7 @@ export async function setTask(
     body?: string
     assignee?: string | null
   },
+  attribution: Attribution,
   options: { force?: boolean; hosted?: HostedOptions } & DoneTransitionOptions = {},
 ): Promise<TaskRow> {
   const upper = key.toUpperCase()
@@ -717,7 +801,7 @@ export async function setTask(
     changes.parent === undefined ? current.parent_key : (changes.parent?.toUpperCase() ?? null)
   assertParent(parent, current.project)
   if (category === 'done' && current.status_category !== 'done') {
-    await prepareDoneTransition(current, options)
+    await prepareDoneTransition(current, attribution, options)
   }
   const mode = writeMode(current.project, options.hosted)
   const at = nowIso()
@@ -733,7 +817,7 @@ export async function setTask(
     const before = conn
       .query<TaskRow, [string]>(`SELECT * FROM task WHERE record_id=?`)
       .get(current.record_id)!
-    const row = applyLocalTaskPatch(conn, current.record_id, changes, options, at)
+    const row = applyLocalTaskPatch(conn, current.record_id, changes, options, at, attribution)
     if (hosted) {
       queueHostedChange(conn, HOSTED_TASK_TABLE, row.record_id, 'upsert', at, fields)
       if (changes.status !== undefined && before.status_category !== row.status_category) {
@@ -754,10 +838,11 @@ export async function setTask(
 export async function closeTask(
   key: string,
   scope: TaskScope,
+  attribution: Attribution,
   options: { hosted?: HostedOptions } & DoneTransitionOptions = {},
 ) {
   const current = showTask(key, scope).task
-  if (current.status_category !== 'done') await prepareDoneTransition(current, options)
+  if (current.status_category !== 'done') await prepareDoneTransition(current, attribution, options)
   const mode = writeMode(current.project, options.hosted)
   const hosted = mode === 'hosted-configured'
   const at = nowIso()
@@ -773,7 +858,7 @@ export async function closeTask(
            WHERE record_id = ?`,
       )
       .run(at, at, at, row.record_id)
-    const eventId = recordLocalStatusChange(conn, row, 'done', at)
+    const eventId = recordLocalStatusChange(conn, row, 'done', at, attribution)
     const closed = conn
       .query<TaskRow, [string]>(`SELECT * FROM task WHERE record_id = ?`)
       .get(row.record_id)
@@ -795,6 +880,7 @@ export async function commentTask(
   key: string,
   scope: TaskScope,
   body: string,
+  attribution: Attribution,
   options: { hosted?: HostedOptions } = {},
 ): Promise<TaskComment> {
   const upper = key.toUpperCase()
@@ -809,8 +895,100 @@ export async function commentTask(
       .get(current.record_id)
     if (!row) throw new Error(`no task record ${current.record_id}`)
     if (row.source !== 'local') throw new Error(`task ${row.key} is not local`)
-    return writeLocalComment(conn, row, body, at, hosted)
+    return writeLocalComment(conn, row, body, at, hosted, attribution)
   })
   if (hosted) await drainHostedEditOutbox(at, options.hosted)
   return result
+}
+
+function editableComment(
+  conn: Database,
+  task: TaskRow,
+  commentId: string,
+  attribution: Attribution,
+  mode: TaskWriteMode,
+): TaskComment {
+  const project = projects().find((candidate) => candidate.name === task.project) ?? null
+  const capability = trackerCapabilities({ source: task.source, project }).comment
+  if (!capability.allowed) throw new Error(capability.reason)
+  const comment = conn
+    .query<TaskComment, [string, string]>(
+      `SELECT record_id id,task_key,task_record_id,body,created_at,updated_at,deleted_at,
+       actor_user_id,actor_name,agent,run_id FROM task_comment
+       WHERE record_id=? AND task_record_id=?`,
+    )
+    .get(commentId, task.record_id)
+  if (!comment || comment.deleted_at)
+    throw new Error(
+      `comment ${commentId} was not found; run ${PLATFORM_SLUG} task show ${task.key}`,
+    )
+  const author = commentAuthorDecision(mode, attribution.actorUserId, comment.actor_user_id)
+  if (!author.allowed) throw new Error(`comment ${commentId} ${author.reason}`)
+  return comment
+}
+
+export async function editTaskComment(
+  key: string,
+  scope: TaskScope,
+  commentId: string,
+  body: string,
+  attribution: Attribution,
+  options: { hosted?: HostedOptions } = {},
+): Promise<TaskComment> {
+  if (!body.trim()) throw new Error('comment body is required; pass non-empty text')
+  const current = showTask(key, scope).task
+  const hosted = writeMode(current.project, options.hosted) === 'hosted-configured'
+  const at = nowIso()
+  const result = writeTransaction((conn) => {
+    const task = conn
+      .query<TaskRow, [string]>('SELECT * FROM task WHERE record_id=?')
+      .get(current.record_id)
+    if (!task) throw new Error(`no task ${key.toUpperCase()}`)
+    const comment = editableComment(
+      conn,
+      task,
+      commentId,
+      attribution,
+      hosted ? 'hosted-configured' : 'local-authoritative',
+    )
+    if (comment.body === body)
+      throw new Error('comment body is unchanged; change the text before saving')
+    conn
+      .query('UPDATE task_comment SET body=?,updated_at=? WHERE record_id=?')
+      .run(body, at, commentId)
+    if (hosted) queueHostedChange(conn, HOSTED_COMMENT_TABLE, commentId, 'upsert', at)
+    return { ...comment, body, updated_at: at }
+  })
+  if (hosted) await drainHostedEditOutbox(at, options.hosted)
+  return result
+}
+
+export async function deleteTaskComment(
+  key: string,
+  scope: TaskScope,
+  commentId: string,
+  attribution: Attribution,
+  options: { hosted?: HostedOptions } = {},
+): Promise<void> {
+  const current = showTask(key, scope).task
+  const hosted = writeMode(current.project, options.hosted) === 'hosted-configured'
+  const at = nowIso()
+  writeTransaction((conn) => {
+    const task = conn
+      .query<TaskRow, [string]>('SELECT * FROM task WHERE record_id=?')
+      .get(current.record_id)
+    if (!task) throw new Error(`no task ${key.toUpperCase()}`)
+    editableComment(
+      conn,
+      task,
+      commentId,
+      attribution,
+      hosted ? 'hosted-configured' : 'local-authoritative',
+    )
+    conn
+      .query('UPDATE task_comment SET updated_at=?,deleted_at=? WHERE record_id=?')
+      .run(at, at, commentId)
+    if (hosted) queueHostedChange(conn, HOSTED_COMMENT_TABLE, commentId, 'upsert', at)
+  })
+  if (hosted) await drainHostedEditOutbox(at, options.hosted)
 }

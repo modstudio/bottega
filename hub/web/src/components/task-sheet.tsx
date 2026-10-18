@@ -93,6 +93,10 @@ function HostedAwareTaskSheet({
   return <TaskSheet taskKey={taskKey} result={result} onClose={onClose} />
 }
 
+function historyAction<T extends { error: { message: string } | null }>(action: T) {
+  return { ...action, error: action.error?.message ?? null }
+}
+
 function TaskSheet({
   taskKey,
   result,
@@ -108,7 +112,7 @@ function TaskSheet({
   useEffect(() => {
     if (taskTitle !== undefined) setTitle(taskTitle ?? '')
   }, [taskTitle])
-  const { setTitle: saveTitle, setStatus: saveStatus, comment: addComment } = result.actions
+  const { setTitle: saveTitle, setStatus: saveStatus } = result.actions
   const sourceLine =
     record.data?.task.source === 'local'
       ? 'hub'
@@ -255,12 +259,9 @@ function TaskSheet({
             ) : null}
             <TaskHistory
               entries={taskHistoryEntries(record.data)}
-              comment={{
-                run: addComment.run,
-                pending: addComment.pending,
-                error: addComment.error?.message ?? null,
-                refused: addComment.refused,
-              }}
+              comment={historyAction(result.actions.comment)}
+              editComment={historyAction(result.actions.editComment)}
+              deleteComment={historyAction(result.actions.deleteComment)}
             />
           </div>
         </>

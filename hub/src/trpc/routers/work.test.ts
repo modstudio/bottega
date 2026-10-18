@@ -7,6 +7,27 @@ import { createWorkRouter } from './work.ts'
 beforeAll(resetFixtureStore)
 beforeEach(resetFixtureStore)
 
+test('task reads disable edits when machine identity resolution throws', async () => {
+  const router = createWorkRouter({
+    strip: (() => ({})) as never,
+    view: (async () => ({})) as never,
+    machineAttribution: (async () => {
+      throw new Error('identity offline')
+    }) as never,
+    taskRecord: ((_key: string, _scope: unknown, readerUserId: string | null) => ({
+      task: { key: 'DEV-1' },
+      comments: [
+        { id: 'comment-1', canEdit: readerUserId !== null, canDelete: readerUserId !== null },
+      ],
+      documents: [],
+      statusEvents: [],
+      runs: [],
+    })) as never,
+  })
+  const result = await router.createCaller({}).task({ key: 'DEV-1', scope: {} })
+  expect(result.comments[0]).toMatchObject({ canEdit: false, canDelete: false })
+})
+
 test('setBody maps the service stale-body error to CONFLICT and leaves the body unchanged', async () => {
   const recordId = Bun.randomUUIDv7()
   const stamp = new Date().toISOString()

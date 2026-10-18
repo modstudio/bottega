@@ -113,6 +113,14 @@ export function HostedTaskSheet({
                 error: result.actions.comment.error?.message ?? null,
                 refused: result.actions.comment.refused,
               }}
+              editComment={{
+                ...result.actions.editComment,
+                error: result.actions.editComment.error?.message ?? null,
+              }}
+              deleteComment={{
+                ...result.actions.deleteComment,
+                error: result.actions.deleteComment.error?.message ?? null,
+              }}
             />
           </div>
         </>
