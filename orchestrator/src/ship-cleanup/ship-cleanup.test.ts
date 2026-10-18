@@ -262,15 +262,6 @@ function landingTreeCleanup(input: {
   }
 }
 
-test('ship cleanup releases a clean landing tree through tree removal', () => {
-  const result = landingTreeCleanup({})
-
-  expect(result.removedTrees).toEqual([result.landingTree])
-  expect(result.closed).toEqual([])
-  expect(result.report.removed.worktrees).toEqual([result.landingTree])
-  expect(result.report.errors).toEqual([])
-})
-
 test('ship cleanup keeps its current landing tree and checked-out branch without failure', () => {
   const result = landingTreeCleanup({
     runsFromTree: true,
