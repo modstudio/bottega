@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   decideAbsentClaim,
+  decideConversationProjectOwnership,
   decideFilesystemOrphanAfterInventory,
   decideFilesystemOrphanAfterRemoval,
   decideFilesystemOrphanEligibility,
@@ -23,6 +24,55 @@ import {
   shouldExpireUnjudgedOwner,
   UNJUDGED_OWNER_WINDOW_MS,
 } from './cleanup-sweep-decisions.ts'
+
+describe('conversation project ownership', () => {
+  const root = { id: 10, projectRecordId: 'project-a' }
+  const matchingChild = { id: 11, projectRecordId: 'project-a' }
+
+  test.each([
+    {
+      name: 'matching root and members are owned',
+      root,
+      members: [root, matchingChild],
+      expectedProjectRecordId: 'project-a',
+      expected: { outcome: 'owned' },
+    },
+    {
+      name: 'a missing root UUID is unknown',
+      root: { id: 10, projectRecordId: null },
+      members: [{ id: 10, projectRecordId: null }, matchingChild],
+      expectedProjectRecordId: 'project-a',
+      expected: {
+        outcome: 'unknown',
+        reason: 'conversation root 10 project UUID is missing; members 10=missing, 11=project-a',
+      },
+    },
+    {
+      name: 'a root outside the expected project is unknown',
+      root,
+      members: [root, matchingChild],
+      expectedProjectRecordId: 'project-b',
+      expected: {
+        outcome: 'unknown',
+        reason: 'conversation root 10 project UUID project-a does not match project project-b',
+      },
+    },
+    {
+      name: 'a member conflicting with its root is unknown',
+      root,
+      members: [root, { id: 11, projectRecordId: 'project-b' }],
+      expectedProjectRecordId: 'project-a',
+      expected: {
+        outcome: 'unknown',
+        reason: 'run 11 project UUID project-b conflicts with root 10 project UUID project-a',
+      },
+    },
+  ])('$name', ({ root, members, expectedProjectRecordId, expected }) => {
+    expect(decideConversationProjectOwnership({ root, members, expectedProjectRecordId })).toEqual(
+      expected,
+    )
+  })
+})
 
 describe('absent claim reconciliation', () => {
   const releasable = {

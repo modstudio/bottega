@@ -484,7 +484,6 @@ async function setProjectCommand(
   }
   const nextName = flags.flag('name') ?? name
   const candidate = {
-    id: project.recordId,
     recordId: project.recordId,
     name: nextName,
     path: flags.flag('path') ?? project.path,

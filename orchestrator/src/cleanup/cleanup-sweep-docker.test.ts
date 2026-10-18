@@ -92,37 +92,6 @@ test('a project-scoped sweep still finds Docker resources after the project is r
   expect(lines).toContain(`would tear down disposable Docker resources for run ${run}`)
 })
 
-test('a NULL-root chain with a UUID child retains Docker resources and fails visibly', () => {
-  const root = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
-  const child = addRun({
-    agent: 'codex',
-    job: 'implement',
-    status: 'failed',
-    parent: root,
-    turn: 2,
-  })
-  const name = `docker-null-root-${root}`
-  const recordId = newRecordId()
-  upsertProject({ recordId, name, path: join(dir, name), settings: {} })
-  db().query('UPDATE run SET repo=?,project_record_id=NULL WHERE id=?').run(name, root)
-  db().query('UPDATE run SET repo=?,project_record_id=? WHERE id=?').run(name, recordId, child)
-  const commands: string[] = []
-  mockDockerForRun(root, commands)
-  const lines: string[] = []
-
-  const failed = reclaimSweptDockerResources({
-    dryRun: false,
-    selectedProject: projectByName(name)!,
-    presentation: presentation(lines),
-    inventoryErrors: new Set(),
-    leaked: new Map(),
-  })
-
-  expect(failed).toBeTrue()
-  expect(commands.some((command) => command.startsWith('docker rm'))).toBeFalse()
-  expect(lines.join('\n')).toContain(`conversation root ${root} project UUID is missing`)
-})
-
 test('a cross-project root and child chain retains Docker resources and fails visibly', () => {
   const root = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
   const child = addRun({
@@ -155,7 +124,7 @@ test('a cross-project root and child chain retains Docker resources and fails vi
   expect(failed).toBeTrue()
   expect(commands.some((command) => command.startsWith('docker rm'))).toBeFalse()
   expect(lines.join('\n')).toContain(
-    `run ${child} project UUID ${bravoId} conflicts with root ${root} project UUID ${alphaId}`,
+    `conversation root ${root} project UUID ${alphaId} does not match project ${bravoId}`,
   )
 })
 

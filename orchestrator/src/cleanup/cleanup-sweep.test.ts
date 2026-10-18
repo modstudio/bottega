@@ -58,7 +58,85 @@ test('a live run-named directory with unknown root project ownership is kept and
     expect(existsSync(tree)).toBeTrue()
     expect(exitCode).toBe(1)
     expect(lines.join('\n')).toContain(
-      `could not reclaim orphan  ${tree}: run ${run} root ${run} project UUID is missing`,
+      `could not reclaim orphan  ${tree}: conversation root ${run} project UUID is missing; members ${run}=missing`,
+    )
+  } finally {
+    rmSync(projectPath, { recursive: true, force: true })
+  }
+})
+
+test('an orphan directory with a conflicting conversation member is kept and reported', async () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'orch-sweep-conflicting-owner-'))
+  Bun.spawnSync(['git', 'init', '--quiet'], { cwd: projectPath })
+  const root = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+  const child = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'failed',
+    parent: root,
+    turn: 2,
+  })
+  const name = `sweep-conflicting-owner-${root}`
+  const projectRecordId = newRecordId()
+  const conflictingRecordId = newRecordId()
+  const tree = join(projectPath, '.claude', 'worktrees', `orch-${root}`)
+  mkdirSync(tree, { recursive: true })
+  writeFileSync(join(tree, '.git'), 'gitdir: unavailable\n')
+  upsertProject({
+    recordId: projectRecordId,
+    name,
+    path: projectPath,
+    settings: {
+      trunk: 'main',
+      worktree: { branch: 'orch-{id}', remove: 'registered-remove-marker {path}' },
+    },
+  })
+  upsertProject({
+    recordId: conflictingRecordId,
+    name: `${name}-conflict`,
+    path: join(projectPath, 'conflict'),
+    settings: {},
+  })
+  db()
+    .query('UPDATE run SET repo=?,project_record_id=? WHERE id=?')
+    .run(name, projectRecordId, root)
+  db()
+    .query('UPDATE run SET repo=?,project_record_id=? WHERE id=?')
+    .run(name, conflictingRecordId, child)
+  const actualSpawnSync = Bun.spawnSync.bind(Bun)
+  const commands: string[] = []
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[], options) => {
+    const command = args.join(' ')
+    commands.push(command)
+    if (command.startsWith('docker ps -a --format')) return result('')
+    if (command.startsWith('docker volume ls --format')) return result('')
+    if (command === 'docker network ls --format {{.Name}}') return result('')
+    return actualSpawnSync(args, options)
+  }) as typeof Bun.spawnSync)
+  const lines: string[] = []
+  let exitCode = 0
+
+  try {
+    await sweepRuns(
+      {
+        dryRun: false,
+        project: name,
+        force: false,
+        presentation: presentation(lines, (code) => {
+          exitCode = code
+        }),
+      },
+      {
+        observeGrokTrustHeadings: () => ({ succeeded: true, headings: [] }),
+        grokTrustPathFromHeading: () => null,
+      },
+    )
+
+    expect(existsSync(tree)).toBeTrue()
+    expect(commands.some((command) => command.includes('registered-remove-marker'))).toBeFalse()
+    expect(exitCode).toBe(1)
+    expect(lines.join('\n')).toContain(
+      `run ${child} project UUID ${conflictingRecordId} conflicts with root ${root} project UUID ${projectRecordId}`,
     )
   } finally {
     rmSync(projectPath, { recursive: true, force: true })

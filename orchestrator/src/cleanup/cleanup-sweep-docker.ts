@@ -32,6 +32,7 @@ import {
 } from '../resources/resource-ownership.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import type { CleanupPresentation } from './cleanup.ts'
+import { decideConversationProjectOwnership } from './cleanup-sweep-decisions.ts'
 
 type DockerOwner = {
   id: number
@@ -94,7 +95,7 @@ function reclaimTerminalOwners(input: {
   const reclaimed = new Set<number>()
   let failed = false
   for (const owner of owners) {
-    const ownershipIssue = dockerOwnershipIssue(owner, owners)
+    const ownershipIssue = dockerOwnershipIssue(owner, owners, selectedProject)
     if (ownershipIssue && dockerOwnerCouldBeInScope(owner, owners, ownerIds, selectedProject)) {
       failed = true
       presentation.error(`retained Docker resources for run ${owner.id}: ${ownershipIssue}`)
@@ -111,16 +112,21 @@ function reclaimTerminalOwners(input: {
   return { failed, reclaimed }
 }
 
-function dockerOwnershipIssue(owner: DockerOwner, owners: DockerOwner[]): string | null {
+function dockerOwnershipIssue(
+  owner: DockerOwner,
+  owners: DockerOwner[],
+  selectedProject: Project | null,
+): string | null {
   const members = owners.filter((member) => member.root_id === owner.root_id)
-  if (owner.project_record_id === null)
-    return `conversation root ${owner.root_id} project UUID is missing; members ${members.map((member) => `${member.id}=${member.member_project_record_id ?? 'missing'}`).join(', ')}`
-  const conflicts = members.filter(
-    (member) => member.member_project_record_id !== owner.project_record_id,
-  )
-  if (conflicts.length)
-    return `${conflicts.map((member) => `run ${member.id} project UUID ${member.member_project_record_id ?? 'missing'}`).join(', ')} conflicts with root ${owner.root_id} project UUID ${owner.project_record_id}`
-  return null
+  const ruling = decideConversationProjectOwnership({
+    root: { id: owner.root_id, projectRecordId: owner.project_record_id },
+    members: members.map((member) => ({
+      id: member.id,
+      projectRecordId: member.member_project_record_id,
+    })),
+    expectedProjectRecordId: selectedProject?.recordId ?? owner.project_record_id ?? '',
+  })
+  return ruling.outcome === 'unknown' ? ruling.reason : null
 }
 
 function dockerOwnerCouldBeInScope(
@@ -149,7 +155,7 @@ function terminalOwnerInScope(
 ): boolean {
   return (
     dockerOwnerCouldBeInScope(owner, owners, ownerIds, selectedProject) &&
-    dockerOwnershipIssue(owner, owners) === null &&
+    dockerOwnershipIssue(owner, owners, selectedProject) === null &&
     ['ok', 'failed', 'stale', 'stopped'].includes(owner.status) &&
     (!selectedProject || owner.project_record_id === selectedProject.recordId)
   )

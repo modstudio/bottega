@@ -3,11 +3,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
-import {
-  checkSqlLiteralSchema,
-  checkSqlLiteralSchemaWith,
-  sqlFingerprint,
-} from './check-sql-literal-schema.ts'
+import { checkSqlLiteralSchemaWith, sqlFingerprint } from './check-sql-literal-schema.ts'
 
 const directories: string[] = []
 afterEach(() => {
@@ -70,10 +66,4 @@ test('every controlled catalogue statement is prepared', () => {
       catalogue: ['SELECT id FROM example', 'SELECT missing FROM example'],
     }),
   ).toThrow('no such column: missing')
-})
-
-test('production SQLite SQL prepares against the fully migrated schemas', () => {
-  const result = checkSqlLiteralSchema()
-  expect(result.prepared.orchestrator).toBeGreaterThan(0)
-  expect(result.prepared.hub).toBeGreaterThan(0)
 })

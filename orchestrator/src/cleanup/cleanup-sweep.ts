@@ -45,6 +45,7 @@ import {
   withCleanupLock,
 } from './cleanup.ts'
 import {
+  decideConversationProjectOwnership,
   decideFilesystemOrphanAfterInventory,
   decideFilesystemOrphanAfterRemoval,
   decideFilesystemOrphanEligibility,
@@ -134,23 +135,27 @@ function namedRun(
   if (!member) return { outcome: 'absent' }
 
   const rootId = member.parent_run_id ?? member.id
-  if (member.root_project_record_id === null)
+  const members = db()
+    .query(
+      `SELECT id,project_record_id
+       FROM run
+       WHERE id=? OR parent_run_id=?
+       ORDER BY id`,
+    )
+    .all(rootId, rootId) as { id: number; project_record_id: string | null }[]
+  const ownership = decideConversationProjectOwnership({
+    root: { id: rootId, projectRecordId: member.root_project_record_id },
+    members: members.map(({ id, project_record_id }) => ({
+      id,
+      projectRecordId: project_record_id,
+    })),
+    expectedProjectRecordId: project.recordId,
+  })
+  if (ownership.outcome === 'unknown')
     return {
       outcome: 'unknown',
       runId: member.id,
-      reason: `run ${member.id} root ${rootId} project UUID is missing`,
-    }
-  if (member.root_project_record_id !== project.recordId)
-    return {
-      outcome: 'unknown',
-      runId: member.id,
-      reason: `run ${member.id} root ${rootId} project UUID ${member.root_project_record_id} does not match project ${project.recordId}`,
-    }
-  if (member.project_record_id !== member.root_project_record_id)
-    return {
-      outcome: 'unknown',
-      runId: member.id,
-      reason: `run ${member.id} project UUID ${member.project_record_id ?? 'missing'} conflicts with root ${rootId} project UUID ${member.root_project_record_id}`,
+      reason: ownership.reason,
     }
   const latest = db()
     .query(
@@ -190,7 +195,10 @@ function observeNamedRunForSweep(
   return { alive: true, failed: true }
 }
 
-function conversationProjectOwnershipIssue(rootId: number): string | null {
+function conversationProjectOwnershipIssue(
+  rootId: number,
+  expectedProjectRecordId: string | null,
+): string | null {
   const members = db()
     .query(
       `SELECT id,project_record_id
@@ -199,14 +207,16 @@ function conversationProjectOwnershipIssue(rootId: number): string | null {
        ORDER BY id`,
     )
     .all(rootId, rootId) as { id: number; project_record_id: string | null }[]
-  const root = members.find(({ id }) => id === rootId)
-  if (!root || root.project_record_id === null)
-    return `conversation root ${rootId} project UUID is missing; members ${members.map(({ id, project_record_id }) => `${id}=${project_record_id ?? 'missing'}`).join(', ')}`
-  const conflicts = members.filter(
-    ({ id, project_record_id }) => id !== rootId && project_record_id !== root.project_record_id,
-  )
-  if (conflicts.length === 0) return null
-  return `conversation root ${rootId} project UUID ${root.project_record_id} conflicts with ${conflicts.map(({ id, project_record_id }) => `run ${id} UUID ${project_record_id ?? 'missing'}`).join(', ')}`
+  const root = members.find(({ id }) => id === rootId) ?? { id: rootId, project_record_id: null }
+  const ruling = decideConversationProjectOwnership({
+    root: { id: root.id, projectRecordId: root.project_record_id },
+    members: members.map(({ id, project_record_id }) => ({
+      id,
+      projectRecordId: project_record_id,
+    })),
+    expectedProjectRecordId: expectedProjectRecordId ?? root.project_record_id ?? '',
+  })
+  return ruling.outcome === 'unknown' ? ruling.reason : null
 }
 
 function sweepCandidateInProject(row: SweepCandidate, selectedProject: Project | null): boolean {
@@ -487,9 +497,10 @@ function sweepRecordedRow(
   dry: boolean,
   state: RecordedSweepState,
   presentation: CleanupPresentation,
+  expectedProjectRecordId: string | null,
 ): void {
   const keep = (line: string, reason: string) => state.kept.push({ line, reason })
-  const ownershipIssue = conversationProjectOwnershipIssue(r.root_id)
+  const ownershipIssue = conversationProjectOwnershipIssue(r.root_id, expectedProjectRecordId)
   if (ownershipIssue) {
     state.cleanupFailed = true
     keep(`${r.id}  ownership unknown: ${ownershipIssue}`, 'project ownership unknown')
@@ -651,7 +662,8 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     counts: closedCounts,
   }
   sweepTerminalRunLeases(dry)
-  for (const r of rows) sweepRecordedRow(r, dry, recordedState, options.presentation)
+  for (const r of rows)
+    sweepRecordedRow(r, dry, recordedState, options.presentation, selectedProject?.recordId ?? null)
   cleanupFailed ||= recordedState.cleanupFailed
 
   const strayCleanupFailed = sweepStrayWorktreeDirectories({
@@ -720,17 +732,14 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       const runId = orchRunId(entry.name)
       try {
         withCleanupLock(p.path, `sweep ${label}`, path, () => {
-          const ownerRow = {
-            id: runId ?? -1,
-            repo: p.name,
-            branch: safe.branch,
-          }
+          const ownerRow = { id: runId ?? -1, repo: p.name, branch: safe.branch }
           const worktreeRow = { id: runId ?? -1, worktree: path }
           const sharersBefore = liveWorktreeSharers(db(), worktreeRow)
-          const lockedRun = namedRun(entry.name, p.settings.worktree?.branch, p)
+          const locked = observeNamedRunForSweep(entry.name, p, label, options.presentation)
+          cleanupFailed ||= locked.failed
           const lockedRuling = decideFilesystemOrphanUnderLock({
             sharers: sharersBefore.length,
-            lockedAlive: namedRunAlive(lockedRun),
+            lockedAlive: locked.alive,
           })
           if (lockedRuling.action === 'shared-before') {
             const owners = sharersBefore.map((owner) => `${owner.id} (${owner.status})`).join(', ')

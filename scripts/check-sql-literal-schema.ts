@@ -475,7 +475,7 @@ export function checkSqlLiteralSchemaWith(input: SqlCheckInput): {
   return { prepared, skipped, exemptions: [...exemptions] }
 }
 
-export function checkSqlLiteralSchema() {
+function checkSqlLiteralSchema() {
   const referenceStatements = PROJECT_REFERENCES.map(
     ([key, , column, explicitTable]) =>
       `SELECT COUNT(*) AS n FROM ${explicitTable ?? key} WHERE ${column}=?`,
