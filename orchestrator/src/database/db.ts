@@ -425,7 +425,8 @@ export function migrateDatabase(input: { beforeMigration?: string } = {}): {
         : applyMigrations(database)
       writeTransaction(() => initializeDefaultLocalProject(database, true), database)
       seedProjects(database)
-      runOpenHooks('afterInitialize', database)
+      // Seeding and hygiene assume the current schema, so a partial migration skips them.
+      if (!input.beforeMigration) runOpenHooks('afterInitialize', database)
       return versions
     })
     if (!created.published) {
@@ -451,7 +452,7 @@ export function migrateDatabase(input: { beforeMigration?: string } = {}): {
       : applyMigrations(d)
     writeTransaction(() => initializeDefaultLocalProject(d, false), d)
     seedProjects(d)
-    runOpenHooks('afterInitialize', d)
+    if (!input.beforeMigration) runOpenHooks('afterInitialize', d)
     return { path: DB_PATH, versions }
   } finally {
     d.close()
