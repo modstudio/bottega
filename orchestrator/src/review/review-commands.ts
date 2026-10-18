@@ -256,6 +256,7 @@ function printReviewTier(
   }
   log(`tier ${output.tier}`)
   log(`risk ${output.risk}`)
+  log(`risk map ${output.risk_map}`)
   log(`size ${output.size}`)
   if (output.review_budget.unclassifiableReviewCount > 0) {
     log(

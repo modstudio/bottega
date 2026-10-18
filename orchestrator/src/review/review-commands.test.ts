@@ -298,6 +298,10 @@ test('review tier reports stack and generic profile sources resolved for its pro
         review: {
           lenses: [{ lens: 'correctness' }, { lens: 'craft' }],
           secondOpinion: { lens: 'correctness' },
+          risk: {
+            paths: [{ pattern: '^orchestrator/hooks/', tier: 3, reason: 'repository hooks' }],
+            unlisted: 2,
+          },
         },
       },
     })
@@ -323,6 +327,7 @@ test('review tier reports stack and generic profile sources resolved for its pro
 
     await runReview(['review', 'tier', String(run.id)], output)
 
+    expect(output).toContain('risk map project declaration')
     expect(output).toContain('lens correctness  framework=stack')
     expect(output).toContain('lens craft  framework=generic')
     expect(output).toContain(

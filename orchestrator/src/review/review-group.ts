@@ -4,7 +4,12 @@ import type { Database } from 'bun:sqlite'
 import type { Project } from '../project/projects.ts'
 import { measureChangeIdentity } from './review-pins.ts'
 import { resolveReviewMergeBase } from './review-target.ts'
-import { classifyReviewTier, diffNumstat, type ReviewTier } from './review-tier.ts'
+import {
+  classifyReviewTier,
+  diffNumstat,
+  type ReviewRiskMap,
+  type ReviewTier,
+} from './review-tier.ts'
 
 export type ChangeGroup = {
   project: string
@@ -62,13 +67,13 @@ type ChangeGroupOperations = {
     base: string,
     tip: string,
   ): { patchId: string; paths: string[]; message: string } | null
-  tier(cwd: string, base: string, tip: string): ReviewTier
+  tier(cwd: string, base: string, tip: string, risk: ReviewRiskMap | undefined): ReviewTier
 }
 
 const changeGroupOperations: ChangeGroupOperations = {
   mergeBase: resolveReviewMergeBase,
   identity: measureChangeIdentity,
-  tier: (cwd, base, tip) => classifyReviewTier({ files: diffNumstat(cwd, base, tip) }),
+  tier: (cwd, base, tip, risk) => classifyReviewTier({ files: diffNumstat(cwd, base, tip), risk }),
 }
 
 export const serializePathSet = (paths: readonly string[]): string =>
@@ -109,7 +114,7 @@ export function measureReviewChange(
     patchId: identity.patchId,
     pathSet: identity.paths,
     base,
-    tier: operations.tier(cwd, base, tip),
+    tier: operations.tier(cwd, base, tip, project.settings.review?.risk),
     message: identity.message,
   }
 }
