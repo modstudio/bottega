@@ -30,10 +30,8 @@ const run = (id: string, at: string, agent: string, actor: string): HistoryEntry
 })
 const shape = (days: HistoryDay[]) =>
   days.map((day) =>
-    day.blocks.map((block) =>
-      block.kind === 'comment'
-        ? 'comment'
-        : `${block.actor ?? '?'}:${block.items.map((item) => item.kind).join(',')}`,
+    day.clusters.map(
+      (cluster) => `${cluster.actor ?? '?'}:${cluster.items.map((item) => item.kind).join(',')}`,
     ),
   )
 const comment = (id: string, at: string): HistoryEntry => ({ kind: 'comment', id, at, body: id })
@@ -50,9 +48,8 @@ test('adjacent status changes fold into one run that reads oldest first', () => 
     now,
   )
   expect(days.map((day) => day.label)).toEqual(['Today'])
-  expect(shape(days)).toEqual([['?:status-run', 'comment', '?:status-run']])
-  const older = days[0]?.blocks[2]
-  const folded = older?.kind === 'cluster' ? older.items[0] : undefined
+  expect(shape(days)).toEqual([['?:status-run,comment,status-run']])
+  const folded = days[0]?.clusters[0]?.items[2]
   expect(
     folded?.kind === 'status-run' && statusPath(folded.changes).map((step) => step.status),
   ).toEqual(['open', 'active', 'review'])
@@ -68,7 +65,7 @@ test('changes on either side of midnight land in separate days', () => {
     now,
   )
   expect(days.map((day) => day.label)).toEqual(['Today', 'Yesterday'])
-  expect(days.map((day) => day.blocks.length)).toEqual([1, 1])
+  expect(days.map((day) => day.clusters.length)).toEqual([1, 1])
 })
 
 test('a filter shows only its kind', () => {
@@ -77,7 +74,7 @@ test('a filter shows only its kind', () => {
     'comment',
     now,
   )
-  expect(shape(days)).toEqual([['comment']])
+  expect(shape(days)).toEqual([['?:comment']])
 })
 
 test('durations read in the largest sensible unit', () => {
@@ -87,10 +84,11 @@ test('durations read in the largest sensible unit', () => {
   expect(runDuration('2026-10-16T09:00:00', null)).toBeNull()
 })
 
-test("one person's events gather across agents, and another person starts a new cluster", () => {
+test("one person's events and comments gather across agents; another person starts a new cluster", () => {
   const days = groupHistory(
     [
       status('a', '2026-10-16T09:00:00', 'open', 'active', ana),
+      { kind: 'comment', id: 'n', at: '2026-10-16T09:02:00', body: 'n', actor: ana },
       run('r1', '2026-10-16T09:05:00', 'codex', ana),
       run('r2', '2026-10-16T09:30:00', 'claude', ben),
       status('b', '2026-10-16T10:00:00', 'active', 'review', ana),
@@ -99,5 +97,5 @@ test("one person's events gather across agents, and another person starts a new 
     'all',
     now,
   )
-  expect(shape(days)).toEqual([['Ana:status-run', 'Ben:run', 'Ana:run,status-run']])
+  expect(shape(days)).toEqual([['Ana:status-run', 'Ben:run', 'Ana:run,comment,status-run']])
 })

@@ -41,16 +41,9 @@ export type HistoryFilter = 'all' | HistoryKind
 /** Consecutive status changes drawn as one line, oldest change first. */
 export type StatusRun = { kind: 'status-run'; id: string; at: string; changes: HistoryEntry[] }
 export type HistoryItem = Exclude<HistoryEntry, { kind: 'status' }> | StatusRun
-export type CommentEntry = Extract<HistoryEntry, { kind: 'comment' }>
 /** One person's consecutive events, newest first, with adjacent status changes folded. */
-export type ActorCluster = {
-  kind: 'cluster'
-  id: string
-  actor: string | null
-  items: Exclude<HistoryItem, CommentEntry>[]
-}
-export type HistoryBlock = CommentEntry | ActorCluster
-export type HistoryDay = { key: string; label: string; blocks: HistoryBlock[] }
+export type ActorCluster = { id: string; actor: string | null; items: HistoryItem[] }
+export type HistoryDay = { key: string; label: string; clusters: ActorCluster[] }
 
 const time = (value: string) => new Date(value).getTime()
 
@@ -78,8 +71,8 @@ export function historyKinds(entries: readonly HistoryEntry[]): HistoryKind[] {
   return (['comment', 'status', 'run'] as const).filter((kind) => present.has(kind))
 }
 
-/** Adds a non-comment entry to a cluster, folding it into an adjacent status run. */
-function addToCluster(cluster: ActorCluster, entry: Exclude<HistoryEntry, CommentEntry>) {
+/** Adds an entry to a cluster, folding a status change into an adjacent status run. */
+function addToCluster(cluster: ActorCluster, entry: HistoryEntry) {
   const last = cluster.items.at(-1)
   if (entry.kind === 'status' && last?.kind === 'status-run') last.changes.unshift(entry)
   else if (entry.kind === 'status')
@@ -89,8 +82,8 @@ function addToCluster(cluster: ActorCluster, entry: Exclude<HistoryEntry, Commen
 
 /**
  * Newest first, bucketed by local day. Within a day, one person's consecutive events gather into a
- * cluster, whichever agents did them for that person,, and status changes next to each other in it fold into one run. A comment always stands
- * alone, because its prose is what the reader opened the feed for.
+ * cluster whichever agents did them, so the person is named again only when the person or the day
+ * changes. Status changes next to each other in a cluster fold into one run.
  */
 export function groupHistory(
   entries: readonly HistoryEntry[],
@@ -105,18 +98,14 @@ export function groupHistory(
     const key = dayKey(new Date(entry.at))
     let day = days.at(-1)
     if (!day || day.key !== key) {
-      day = { key, label: historyDayLabel(entry.at, now), blocks: [] }
+      day = { key, label: historyDayLabel(entry.at, now), clusters: [] }
       days.push(day)
     }
-    if (entry.kind === 'comment') {
-      day.blocks.push(entry)
-      continue
-    }
     const actor = entry.actor ?? null
-    let cluster = day.blocks.at(-1)
-    if (cluster?.kind !== 'cluster' || cluster.actor !== actor) {
-      cluster = { kind: 'cluster', id: entry.id, actor, items: [] }
-      day.blocks.push(cluster)
+    let cluster = day.clusters.at(-1)
+    if (!cluster || cluster.actor !== actor) {
+      cluster = { id: entry.id, actor, items: [] }
+      day.clusters.push(cluster)
     }
     addToCluster(cluster, entry)
   }

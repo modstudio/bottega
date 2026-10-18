@@ -7,7 +7,6 @@ import { EditorBody } from '../document-editor/document-editor.tsx'
 import { type CommentWrite, HistoryComment } from './history-comment.tsx'
 import {
   type ActorCluster,
-  type CommentEntry,
   groupHistory,
   type HistoryEntry,
   type HistoryFilter,
@@ -201,14 +200,19 @@ type CommentControls = {
   onDelete: (id: string) => void
 }
 
-function CommentBlock({ item, controls }: { item: CommentEntry; controls: CommentControls }) {
+function CommentBlock({
+  item,
+  controls,
+}: {
+  item: Extract<HistoryItem, { kind: 'comment' }>
+  controls: CommentControls
+}) {
   const { editing, setEditing, onReply, editComment, deleteComment, deleted } = controls
   return (
     <HistoryComment
       id={item.id}
       at={item.at}
       body={item.body}
-      author={item.actor ?? null}
       agent={item.agent ?? null}
       canEdit={item.canEdit}
       canDelete={item.canDelete}
@@ -242,13 +246,15 @@ function RunLine({
         <span className={taskHistoryStyles().strong()}>
           {item.run && renderRun ? renderRun(item.run, label) : label}
         </span>
-        {item.agent ? ` · ${item.agent}` : ''}
+        {item.agent ? <span className={taskHistoryStyles().agent()}> · {item.agent}</span> : null}
         {item.job ? ` · ${item.job}` : ''}
         {item.running ? (
           <>
             {' · '}
-            <span data-tone="success" className={taskHistoryStyles({ running: true }).live()} />{' '}
-            running
+            <span className={taskHistoryStyles().state()}>
+              <span data-tone="success" className={taskHistoryStyles({ running: true }).live()} />
+              running
+            </span>
           </>
         ) : duration ? (
           ` · ${duration}`
@@ -264,9 +270,11 @@ function RunLine({
 function ClusterBlock({
   cluster,
   renderRun,
+  controls,
 }: {
   cluster: ActorCluster
   renderRun: TaskHistoryProps['renderRun']
+  controls: CommentControls
 }) {
   return (
     <div>
@@ -276,6 +284,8 @@ function ClusterBlock({
           <Glyph kind={item.kind} />
           {item.kind === 'status-run' ? (
             <StatusLine item={item} />
+          ) : item.kind === 'comment' ? (
+            <CommentBlock item={item} controls={controls} />
           ) : (
             <RunLine item={item} renderRun={renderRun} />
           )}
@@ -348,14 +358,10 @@ export function TaskHistory({
           {days.map((day) => (
             <div key={day.key} className={taskHistoryStyles().dayGroup()}>
               <div className={taskHistoryStyles().day()}>{day.label}</div>
-              {day.blocks.map((block) => (
-                <div key={`${block.kind}:${block.id}`} className={taskHistoryStyles().entry()}>
-                  <Avatar name={block.actor ?? null} />
-                  {block.kind === 'comment' ? (
-                    <CommentBlock item={block} controls={controls} />
-                  ) : (
-                    <ClusterBlock cluster={block} renderRun={renderRun} />
-                  )}
+              {day.clusters.map((cluster) => (
+                <div key={cluster.id} className={taskHistoryStyles().entry()}>
+                  <Avatar name={cluster.actor} />
+                  <ClusterBlock cluster={cluster} renderRun={renderRun} controls={controls} />
                 </div>
               ))}
             </div>

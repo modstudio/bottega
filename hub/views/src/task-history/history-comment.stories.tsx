@@ -12,7 +12,7 @@ const meta = {
     at: '2026-10-16T14:45:00',
     time: '14:45',
     body: 'Phase 4 is running; the page waits on its `TaskDetail` contract.',
-    author: 'Shmuel',
+    agent: 'Claude',
     canEdit: true,
     canDelete: true,
     editing: false,

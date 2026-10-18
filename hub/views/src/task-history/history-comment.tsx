@@ -1,6 +1,6 @@
 import { Button } from '@bottega/hub-ui/button'
 import { Menu } from '@bottega/hub-ui/menu'
-import { MessageSquare, MoreHorizontal, Pencil, Reply, Trash } from 'lucide-react'
+import { MoreHorizontal, Pencil, Reply, Trash } from 'lucide-react'
 import { useState } from 'react'
 import { EditorBody } from '../document-editor/document-editor.tsx'
 import { Markdown } from '../markdown/markdown.tsx'
@@ -18,8 +18,6 @@ export type HistoryCommentProps = {
   id: string
   at: string
   body: string
-  /** Who wrote it, when the record says. */
-  author: string | null
   /** The agent that wrote it for the author, if one did. */
   agent?: string | null
   /** Whether this reader may change this comment; the screen's data decides. */
@@ -123,8 +121,7 @@ function Editor({
 
 /** One comment in the history feed: a head with its actions and time, then its prose. */
 export function HistoryComment(props: HistoryCommentProps) {
-  const { at, body, author, agent, canEdit, canDelete, time, editing, onReply, onEditStart, edit } =
-    props
+  const { at, body, agent, canEdit, canDelete, time, editing, onReply, onEditStart, edit } = props
   const { onDelete, deleting, deleteError } = props
   const [confirming, setConfirming] = useState(false)
   const actions: Action[] = [
@@ -140,8 +137,8 @@ export function HistoryComment(props: HistoryCommentProps) {
     <div className={historyCommentStyles().root()}>
       <div className={historyCommentStyles().head()}>
         <span className={historyCommentStyles().kind()}>
-          {author ? <span className={historyCommentStyles().author()}>{author}</span> : 'Comment'}
-          {agent ? ` · ${agent}` : null}
+          Comment
+          {agent ? <span className={historyCommentStyles().agent()}> · {agent}</span> : null}
         </span>
         {confirming ? (
           <span className={historyCommentStyles().confirm()}>
@@ -169,12 +166,7 @@ export function HistoryComment(props: HistoryCommentProps) {
         </time>
       </div>
       <div className={historyCommentStyles().body()}>
-        <span className={historyCommentStyles().glyph()} aria-hidden>
-          <MessageSquare size={14} />
-        </span>
-        <div className={historyCommentStyles().prose()}>
-          {editing && edit ? <Editor props={{ ...props, edit }} /> : <Markdown content={body} />}
-        </div>
+        {editing && edit ? <Editor props={{ ...props, edit }} /> : <Markdown content={body} />}
       </div>
       {deleteError ? <p className={historyCommentStyles().error()}>{deleteError}</p> : null}
     </div>
