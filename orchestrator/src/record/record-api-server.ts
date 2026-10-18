@@ -33,6 +33,11 @@ import { createBoardStreamRegistry } from './record-board-stream.ts'
 import { createBoardWakeSource } from './record-board-wake.ts'
 import { importRecordCanon } from './record-canon-import.ts'
 import {
+  importRecordLensCatalogue,
+  importRecordPortCatalogue,
+  importRecordWorkflowCatalogue,
+} from './record-catalogue-import.ts'
+import {
   addDataKeyWraps,
   createDataKey,
   currentDataKey,
@@ -204,12 +209,15 @@ function recordLensDependencies() {
     upsertLens: upsertRecordLens,
     upsertLensProfile: upsertRecordLensProfile,
     selectProjectLensProfile: selectRecordProjectLensProfile,
+    importLensCatalogue: importRecordLensCatalogue,
     listPortCatalogue: listRecordPortCatalogue,
     writePort: writeRecordPort,
+    importPortCatalogue: importRecordPortCatalogue,
     listWorkflowCatalogue: listRecordWorkflowCatalogue,
     draftWorkflow: draftRecordWorkflow,
     promoteWorkflow: promoteRecordWorkflow,
     retireWorkflow: retireRecordWorkflow,
+    importWorkflowCatalogue: importRecordWorkflowCatalogue,
   }
 }
 

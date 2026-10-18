@@ -2,6 +2,11 @@
 /** Implements decoded port catalogue requests outside the main client file ceiling. */
 import type { RecordRequestDestination } from './record-api-client-paths.ts'
 import {
+  type RecordCatalogueImportResult,
+  recordCatalogueImportResultSchema,
+} from './record-lens-contract.ts'
+import {
+  type RecordPortImportInput,
   type RecordPortRow,
   type RecordPortTable,
   type RecordPortWriteInput,
@@ -35,6 +40,10 @@ export type RecordPortClient = {
     input: RecordPortWriteInput,
     destination?: RecordRequestDestination,
   ): Promise<RecordPortWriteResponse>
+  importPortCatalogue?(
+    input: RecordPortImportInput,
+    destination?: RecordRequestDestination,
+  ): Promise<RecordCatalogueImportResult>
 }
 export const recordPortClient = (request: Request): RecordPortClient => ({
   listPortCatalogue: (table, query, destination) =>
@@ -48,5 +57,12 @@ export const recordPortClient = (request: Request): RecordPortClient => ({
       body: JSON.stringify(input),
       ...destination,
       schema: (body) => recordPortWriteResponseSchema.parse(body),
+    }),
+  importPortCatalogue: (input, destination) =>
+    request('/v1/port-catalogue/import', {
+      method: 'POST',
+      body: JSON.stringify(input),
+      ...destination,
+      schema: (body) => recordCatalogueImportResultSchema.parse(body),
     }),
 })

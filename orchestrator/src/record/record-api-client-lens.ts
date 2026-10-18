@@ -3,6 +3,8 @@
 
 import { lensCataloguePath, type RecordRequestDestination } from './record-api-client-paths.ts'
 import {
+  type RecordCatalogueImportResult,
+  type RecordLensImportInput,
   type RecordLensProfileWriteInput,
   type RecordLensProfileWriteResponse,
   type RecordLensTable,
@@ -10,6 +12,7 @@ import {
   type RecordLensWriteResponse,
   type RecordProjectLensSelectionInput,
   type RecordProjectLensSelectionResponse,
+  recordCatalogueImportResultSchema,
   recordLensPageSchema,
   recordLensProfileWriteResponseSchema,
   recordLensWriteResponseSchema,
@@ -42,6 +45,10 @@ export type RecordLensClient = {
     input: RecordProjectLensSelectionInput,
     destination?: RecordRequestDestination,
   ): Promise<RecordProjectLensSelectionResponse>
+  importLensCatalogue?(
+    input: RecordLensImportInput,
+    destination?: RecordRequestDestination,
+  ): Promise<RecordCatalogueImportResult>
 }
 
 export const recordLensClient = (request: Request): RecordLensClient => ({
@@ -70,5 +77,12 @@ export const recordLensClient = (request: Request): RecordLensClient => ({
       body: JSON.stringify(input),
       ...destination,
       schema: (body) => recordProjectLensSelectionResponseSchema.parse(body),
+    }),
+  importLensCatalogue: (input, destination) =>
+    request('/v1/lens-catalogue/import', {
+      method: 'POST',
+      body: JSON.stringify(input),
+      ...destination,
+      schema: (body) => recordCatalogueImportResultSchema.parse(body),
     }),
 })

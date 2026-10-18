@@ -54,7 +54,7 @@ const event = z.object({
   sessionId: z.string().nullable(),
   at: iso,
 })
-const rows = {
+export const recordWorkflowRowSchemas = {
   step_catalogue: identity,
   step_catalogue_version: version,
   step_catalogue_event: event,
@@ -65,10 +65,19 @@ const rows = {
 export const recordWorkflowTableSchema = z.enum(RECORD_WORKFLOW_TABLES)
 export const recordWorkflowPageSchema = (table: RecordWorkflowTable) =>
   z.object({
-    items: z.array(rows[table]),
+    items: z.array(recordWorkflowRowSchemas[table]),
     nextCursor: z.string().nullable(),
     endCursor: z.string().nullable().optional(),
   })
+export const recordWorkflowImportSchema = z.object({
+  step_catalogue: z.array(recordWorkflowRowSchemas.step_catalogue),
+  step_catalogue_version: z.array(recordWorkflowRowSchemas.step_catalogue_version),
+  step_catalogue_event: z.array(recordWorkflowRowSchemas.step_catalogue_event),
+  workflow: z.array(recordWorkflowRowSchemas.workflow),
+  workflow_version: z.array(recordWorkflowRowSchemas.workflow_version),
+  workflow_event: z.array(recordWorkflowRowSchemas.workflow_event),
+})
+export type RecordWorkflowImportInput = z.infer<typeof recordWorkflowImportSchema>
 
 const context = {
   author: z.string().trim().min(1),

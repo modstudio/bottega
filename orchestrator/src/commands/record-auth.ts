@@ -25,6 +25,7 @@ import {
   recordSpaceSwitchCommand,
 } from '../record/record-command.ts'
 import { publishSnapshotsCommand } from '../record/record-publish.ts'
+import { pushCataloguesCommand } from '../record/record-push-catalogues.ts'
 import { pushDocsCommand } from '../record/record-push-docs.ts'
 import { useHostedRecord } from '../record/record-use.ts'
 import { requireHostedRecord } from '../record/record-write-authority.ts'
@@ -259,6 +260,15 @@ export function register(program: Command): void {
     .action((options) =>
       hostedCommand(`${PLATFORM_SLUG} record push-docs`, () =>
         pushDocsCommand({ dryRun: Boolean(options.dryRun) }, { log }),
+      ),
+    )
+  record
+    .command('push-catalogues')
+    .description('push local catalogues and port items to the hosted record')
+    .option('--dry-run', 'report the import plan without writing')
+    .action((options) =>
+      hostedCommand(`${PLATFORM_SLUG} record push-catalogues`, () =>
+        pushCataloguesCommand({ dryRun: Boolean(options.dryRun) }, { log }),
       ),
     )
   record

@@ -7,9 +7,11 @@ import { decodeRecordCursor, pageRecordItems, type RecordCursor } from './record
 import {
   type RecordWorkflowDraftInput,
   RecordWorkflowError,
+  type RecordWorkflowImportInput,
   type RecordWorkflowTable,
   type RecordWorkflowTransitionInput,
   recordWorkflowDraftSchema,
+  recordWorkflowImportSchema,
   recordWorkflowTableSchema,
   recordWorkflowTransitionSchema,
 } from './record-workflow-contract.ts'
@@ -23,6 +25,7 @@ export type RecordWorkflowRouteDeps = {
   draftWorkflow(input: Tenant & RecordWorkflowDraftInput): Promise<unknown>
   promoteWorkflow(input: Tenant & RecordWorkflowTransitionInput): Promise<unknown>
   retireWorkflow(input: Tenant & RecordWorkflowTransitionInput): Promise<unknown>
+  importWorkflowCatalogue?(input: Tenant & RecordWorkflowImportInput): Promise<unknown>
 }
 type Ports = {
   scope(context: Context<Environment>): Tenant | null
@@ -82,6 +85,15 @@ export function registerRecordWorkflowRoutes(
     } catch (error) {
       return failure(context, error)
     }
+  })
+  app.post('/v1/workflow-catalogue/import', async (context) => {
+    const active = ports.scope(context)
+    if (!active) return ports.noSpace(context)
+    const body = recordWorkflowImportSchema.safeParse(await context.req.json().catch(() => null))
+    if (!body.success) return context.json({ error: 'invalid workflow catalogue import' }, 400)
+    if (!deps.importWorkflowCatalogue)
+      return context.json({ error: 'workflow catalogue import is unavailable' }, 503)
+    return context.json(await deps.importWorkflowCatalogue({ ...active, ...body.data }))
   })
   for (const action of ['promote', 'retire'] as const)
     app.post(`/v1/workflow-catalogue/${action}`, async (context) => {
