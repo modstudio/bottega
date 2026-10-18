@@ -18,13 +18,7 @@ import {
   freezeCheckouts,
   overlappingError,
 } from '../confinement/confinement.ts'
-import {
-  parseReaderOutput,
-  type ReplyDialect,
-  type ReviewReply,
-  type realQuestions,
-  type WorkerReply,
-} from '../contract/contract.ts'
+import type { ReaderReply, ReviewReply, realQuestions, WorkerReply } from '../contract/contract.ts'
 import { db, nowIso, tryWriteContention, writeTransaction } from '../database/db.ts'
 import { assessEvidence, recordEvidence } from '../evidence/evidence.ts'
 import { type classify, FAILS_OVER } from '../failure/failure.ts'
@@ -47,9 +41,11 @@ import {
   retireRunChainQuestionDeliveries,
 } from './question-close.ts'
 import {
+  namedRunArtifactPaths,
   persistRunArtifacts,
   persistTerminalSnapshot,
   runArtifactsDir,
+  runScratchDir,
   runTerminalReplyPath,
   type TerminalSnapshot,
 } from './run-artifacts.ts'
@@ -181,7 +177,7 @@ export type TerminalInput = {
   checkReviewedCommit: boolean
   output: string
   confinementEvent: ConfinementEvent | null
-  resolvedDialect: ReplyDialect
+  parsedReply: ReaderReply | ReviewReply | null
   runProjectName: string | null
   mcpConnection: McpConnection | null
   mcpMode: McpMode | null
@@ -325,6 +321,21 @@ function recordTerminalMcpEvidence(
     .run(ruling.connected, ruling.error, runId)
 }
 
+function persistTerminalArtifacts(
+  id: number,
+  readerReply: ReaderReply | null,
+  output: string,
+  worktree: Worktree | null,
+  changes: Changes | null,
+): void {
+  persistRunArtifacts(
+    id,
+    namedRunArtifactPaths(readerReply, output, runScratchDir(id), runArtifactsDir(id)),
+    worktree,
+    changes,
+  )
+}
+
 function recordedReviewedHead(runId: number, required: boolean): string | null {
   if (!required) return null
   return (
@@ -377,7 +388,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     checkReviewedCommit,
     output,
     confinementEvent,
-    resolvedDialect,
+    parsedReply,
     runProjectName,
     mcpConnection,
     mcpMode,
@@ -517,10 +528,11 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   })
   ;({ status, failureKind, error } = vendorTermination.outcome)
   acceptedQuestions = vendorTermination.acceptedQuestions
-  let parsedReview: ReviewReply | null = null
-  if (requestedJob.findings && output && (status === 'ok' || confinementEvent)) {
-    parsedReview = resolvedDialect.parse(output).reply as ReviewReply | null
-  }
+  const readerReply = isReaderJob(opts.job) ? (parsedReply as ReaderReply | null) : null
+  const parsedReview =
+    requestedJob.findings && output && (status === 'ok' || confinementEvent)
+      ? (parsedReply as ReviewReply | null)
+      : null
   const ownProject = runProjectName ? projectByName(runProjectName) : undefined
   const ownMcpServer =
     mcpConnection?.server ??
@@ -550,7 +562,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       declaredDeliverables,
       readerReply:
         status === 'ok' && isReaderJob(opts.job) && declaredDeliverables.length
-          ? parseReaderOutput(output)
+          ? readerReply
           : null,
     },
   )
@@ -562,8 +574,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   ;({ status, error, failureKind } = applyPrematureFinalFailure(
     { status, error, failureKind },
     terminalPrematureFinalRefusal({
-      readerJob: isReaderJob(opts.job),
-      output,
+      readerReply,
       parsedReview,
       contract,
       measuredFiles: changes?.files ?? null,
@@ -854,12 +865,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   }
 
   try {
-    persistRunArtifacts(
-      claim.id,
-      isReaderJob(opts.job) ? (parseReaderOutput(output)?.files_written ?? null) : null,
-      worktree,
-      changes,
-    )
+    persistTerminalArtifacts(claim.id, readerReply, output, worktree, changes)
   } catch (e) {
     artifactsPersisted = false
     const persistenceError = `artifact persistence failed for ${runArtifactsDir(claim.id)}: ${String((e as Error)?.message ?? e)}`

@@ -73,6 +73,8 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       '../database/db.ts',
       '../database/migrations.ts',
       '../resources/resource-ownership.ts',
+      './run-artifact-retention.ts',
+      './run-artifact-limits.ts',
     ],
     'Keep run artifacts independent of routing, contracts, transports, reviews, and isolation.',
   ),

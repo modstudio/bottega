@@ -6,22 +6,23 @@
  */
 import {
   copyFileSync,
-  cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
+  mkdtempSync,
   readdirSync,
   readFileSync,
-  realpathSync,
+  readlinkSync,
   renameSync,
   rmSync,
   statSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import {
   runArtifactsDir as artifactDirectory,
+  isPathAtOrBelow,
   namedArtifactPlan,
   runScratchDir as scratchDirectory,
 } from '../artifact-paths.ts'
@@ -29,6 +30,12 @@ import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { CONNECTION_SCHEMA_INVARIANT } from '../database/migrations.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
+import { KEEP_RUN_FILES_DAYS } from './run-artifact-limits.ts'
+import {
+  decideRunArtifactRetention,
+  namedRunArtifactPaths,
+  type RunArtifactListingEntry,
+} from './run-artifact-retention.ts'
 
 /**
  * How long a run's prompt and reply are kept on disk.
@@ -43,7 +50,8 @@ import { teardownTerminalRunResources } from '../resources/resource-ownership.ts
  * only the verbatim text ages out, and `runDetail` already copes with a path
  * that no longer exists.
  */
-export const KEEP_RUN_FILES_DAYS = 30
+export { KEEP_RUN_FILES_DAYS } from './run-artifact-limits.ts'
+export { namedRunArtifactPaths }
 
 /**
  * Where prompt and output files live. By default they sit beside the resolved
@@ -260,80 +268,177 @@ export function readDispatchState(id: number): DispatchState {
   }
 }
 
-function mergeScratchEntry(source: string, destination: string): void {
-  if (
-    existsSync(destination) &&
-    lstatSync(source).isDirectory() &&
-    lstatSync(destination).isDirectory()
-  ) {
-    for (const entry of readdirSync(source)) {
-      mergeScratchEntry(join(source, entry), join(destination, entry))
-    }
-    rmSync(source, { recursive: true })
+type ListedArtifact = RunArtifactListingEntry & { source: string }
+
+function listArtifacts(source: string, logical: string, listed: Map<string, ListedArtifact>): void {
+  const stat = lstatSync(source)
+  if (stat.isSymbolicLink()) {
+    listed.set(logical, {
+      path: logical,
+      kind: 'symlink',
+      size: stat.size,
+      linkText: readlinkSync(source),
+      source,
+    })
     return
   }
-  rmSync(destination, { recursive: true, force: true })
-  renameSync(source, destination)
+  if (stat.isFile()) {
+    listed.set(logical, { path: logical, kind: 'file', size: stat.size, source })
+    return
+  }
+  if (!stat.isDirectory()) return
+  listed.set(logical, { path: logical, kind: 'directory', size: stat.size, source })
+  for (const name of readdirSync(source))
+    listArtifacts(join(source, name), logical ? `${logical}/${name}` : name, listed)
 }
 
-function moveScratchArtifacts(scratch: string, artifacts: string): void {
-  if (!existsSync(scratch)) {
-    mkdirSync(artifacts, { recursive: true })
-    return
-  }
-  if (!existsSync(artifacts)) {
-    renameSync(scratch, artifacts)
-    return
-  }
-  for (const entry of readdirSync(scratch)) {
-    mergeScratchEntry(join(scratch, entry), join(artifacts, entry))
-  }
-  rmSync(scratch, { recursive: true })
+function recordArtifactByteTotals(id: number, keptBytes: number, droppedBytes: number): void {
+  const path = runTerminalResultPath(id)
+  if (!existsSync(path)) return
+  const result = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
+  result.artifactBytesKept = keptBytes
+  result.artifactBytesDropped = droppedBytes
+  writeFileSync(path, JSON.stringify(result))
 }
 
-function persistNamedArtifact(
-  id: number,
+type ArtifactCollectionInput = {
+  id: number
+  scratch: string
+  artifacts: string
+  namedPaths: string[]
+  worktreePath: string | null
+  diff?: string
+}
+
+function collectNamedCandidates(
+  input: ArtifactCollectionInput,
+  listed: Map<string, ListedArtifact>,
+): { namedLogical: string[]; failures: string[] } {
+  const failures: string[] = []
+  const namedLogical: string[] = []
+  for (const named of input.namedPaths) {
+    const failure = collectNamedCandidate(input, named, listed, namedLogical)
+    if (failure) failures.push(failure)
+  }
+  return { namedLogical, failures }
+}
+
+function collectNamedCandidate(
+  input: ArtifactCollectionInput,
   named: string,
-  worktreePath: string | null,
+  listed: Map<string, ListedArtifact>,
+  namedLogical: string[],
 ): string | null {
-  const plan = namedArtifactPlan(id, RUNS_DIR, named, worktreePath)
-  if (plan.alreadyInPlace && existsSync(plan.source)) return null
+  const artifact = namedArtifactPlan(input.id, RUNS_DIR, named, input.worktreePath)
+  const logical = relative(input.artifacts, artifact.destination) || '.'
+  if (namedLogical.includes(logical)) return null
+  namedLogical.push(logical)
+  if (logical === '.') return null
   try {
-    if (!existsSync(plan.source)) throw new Error('source does not exist')
-    const source = lstatSync(plan.source).isSymbolicLink() ? realpathSync(plan.source) : plan.source
-    const sourceStat = statSync(source)
-    if (sourceStat.isDirectory()) {
-      cpSync(source, plan.destination, {
-        recursive: true,
-        verbatimSymlinks: true,
-        dereference: false,
-      })
-    } else if (sourceStat.isFile()) {
-      if (source !== plan.destination) copyFileSync(source, plan.destination)
-    } else {
-      throw new Error('source is not a file or directory')
+    const source = isPathAtOrBelow(named, input.scratch) ? named : artifact.source
+    if (!existsSync(source)) throw new Error('source does not exist')
+    if (!artifact.alreadyInPlace && !isPathAtOrBelow(source, input.scratch)) {
+      listArtifacts(source, logical, listed)
     }
     return null
   } catch (error) {
-    return `could not copy named file ${plan.source} to ${plan.destination}: ${error instanceof Error ? error.message : String(error)}`
+    return `could not copy named file ${artifact.source} to ${artifact.destination}: ${error instanceof Error ? error.message : String(error)}`
+  }
+}
+
+function collectArtifactCandidates(input: ArtifactCollectionInput): {
+  listed: Map<string, ListedArtifact>
+  namedLogical: string[]
+  failures: string[]
+} {
+  const listed = new Map<string, ListedArtifact>()
+  if (existsSync(input.artifacts)) {
+    for (const name of readdirSync(input.artifacts)) {
+      if (name !== 'dropped.json') listArtifacts(join(input.artifacts, name), name, listed)
+    }
+  }
+  if (existsSync(input.scratch)) {
+    for (const name of readdirSync(input.scratch)) {
+      listArtifacts(join(input.scratch, name), name, listed)
+    }
+  }
+  const named = collectNamedCandidates(input, listed)
+  if (input.diff) {
+    listed.set('worktree.diff', {
+      path: 'worktree.diff',
+      kind: 'file',
+      size: Buffer.byteLength(input.diff),
+      source: '',
+    })
+  }
+  return { listed, ...named }
+}
+
+function publishRetainedArtifacts(input: {
+  id: number
+  scratch: string
+  artifacts: string
+  runDirectory: string
+  listed: Map<string, ListedArtifact>
+  namedLogical: string[]
+  diff?: string
+}): void {
+  const plan = decideRunArtifactRetention([...input.listed.values()], input.namedLogical)
+  const stage = mkdtempSync(join(input.runDirectory, '.artifacts-'))
+  try {
+    for (const kept of plan.kept) {
+      const entry = input.listed.get(kept)!
+      const destination = join(stage, kept)
+      mkdirSync(dirname(destination), { recursive: true })
+      if (kept === 'worktree.diff' && input.diff) writeFileSync(destination, input.diff)
+      else copyFileSync(entry.source, destination)
+    }
+    writeFileSync(join(stage, 'dropped.json'), JSON.stringify(plan.dropped, null, 2))
+    rmSync(input.artifacts, { recursive: true, force: true })
+    renameSync(stage, input.artifacts)
+    rmSync(input.scratch, { recursive: true, force: true })
+    recordArtifactByteTotals(input.id, plan.keptBytes, plan.droppedBytes)
+  } catch (error) {
+    rmSync(stage, { recursive: true, force: true })
+    throw error
   }
 }
 
 export function persistRunArtifacts(
   id: number,
-  filesWritten: string[] | null,
+  namedPaths: string[] | null,
   worktree: { path: string } | null,
   changes: { diff?: string } | null,
 ): void {
   const scratch = runScratchDir(id)
   const artifacts = runArtifactsDir(id)
-  mkdirSync(join(RUNS_DIR, String(id)), { recursive: true })
-  moveScratchArtifacts(scratch, artifacts)
-  if (changes?.diff) writeFileSync(join(artifacts, 'worktree.diff'), changes.diff)
-  const failures: string[] = []
-  for (const named of filesWritten ?? []) {
-    const failure = persistNamedArtifact(id, named, worktree?.path ?? null)
-    if (failure) failures.push(failure)
-  }
+  const runDirectory = join(RUNS_DIR, String(id))
+  mkdirSync(runDirectory, { recursive: true })
+  // A worker can write the runs directory, so it can swap either root for a link;
+  // following one would copy files the worker itself is denied into artifacts.
+  const linkedRoots = [scratch, artifacts].filter((root) =>
+    lstatSync(root, { throwIfNoEntry: false })?.isSymbolicLink(),
+  )
+  if (linkedRoots.length > 0)
+    throw new Error(
+      `refusing to collect run artifacts through a symlinked root: ${linkedRoots.join(', ')}; inspect where it points, then remove the link`,
+    )
+  const { listed, namedLogical, failures } = collectArtifactCandidates({
+    id,
+    scratch,
+    artifacts,
+    namedPaths: namedPaths ?? [],
+    worktreePath: worktree?.path ?? null,
+    diff: changes?.diff,
+  })
   if (failures.length > 0) throw new Error(failures.join('\n'))
+  publishRetainedArtifacts({
+    id,
+    scratch,
+    artifacts,
+    runDirectory,
+    listed,
+    namedLogical,
+    diff: changes?.diff,
+  })
 }
