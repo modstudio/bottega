@@ -28,8 +28,7 @@ export const taskHistoryStyles = variant({
     toggle: 'shrink-0 cursor-pointer font-mono text-text-muted text-xs hover:text-text-primary',
     changes: 'mt-1 ml-1 flex flex-col gap-1 border-border-default border-l pl-3',
     empty: 'mt-6 text-md text-text-muted',
-    state: 'inline-flex items-center gap-1.5 align-top',
-    live: 'size-1.5 shrink-0 bg-status-fill',
+    live: 'inline-block size-1.5 bg-status-fill align-middle',
   },
   variants: {
     running: { true: { live: 'animate-pulse' } },

@@ -251,10 +251,8 @@ function RunLine({
         {item.running ? (
           <>
             {' · '}
-            <span className={taskHistoryStyles().state()}>
-              <span data-tone="success" className={taskHistoryStyles({ running: true }).live()} />
-              running
-            </span>
+            <span data-tone="success" className={taskHistoryStyles({ running: true }).live()} />{' '}
+            running
           </>
         ) : duration ? (
           ` · ${duration}`
