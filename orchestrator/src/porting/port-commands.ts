@@ -40,6 +40,12 @@ function refusePortUsage(usage: string): never {
   throw new Error(`${PLATFORM_SLUG} doc port ${usage}`)
 }
 
+function registeredProject(recordId: string, taskKey: string) {
+  const project = projects().find((candidate) => candidate.recordId === recordId)
+  if (!project) throw new Error(`ledger ref ${taskKey} names unregistered project id ${recordId}`)
+  return project
+}
+
 export async function portCommand(
   group: string | undefined,
   action: string | undefined,
@@ -62,10 +68,11 @@ export async function portCommand(
   const namedPair = (sourceName: string, targetName: string, create = false) => {
     const source = namedProject(sourceName)
     const target = namedProject(targetName)
-    if (source.id === target.id)
+    if (source.recordId === target.recordId)
       throw new Error('a port source and target must be different projects')
     const pair =
-      pairByProjects(source.id, target.id) ?? (create ? addPair(source.id, target.id) : null)
+      pairByProjects(source.recordId, target.recordId) ??
+      (create ? addPair(source.recordId, target.recordId) : null)
     return { pair, source, target }
   }
   const output = (value: unknown, line: string) => log(has('json') ? JSON.stringify(value) : line)
@@ -171,7 +178,7 @@ export async function portCommand(
         log(`  ${row.taskKey}  note=${JSON.stringify(row.note)}`)
         for (const source of row.sources) {
           log(
-            `    source_project_id=${source.source_project_id} commits=${JSON.stringify(source.commits)} paths=${JSON.stringify(source.paths)} note=${JSON.stringify(source.note)}`,
+            `    source_project_record_id=${source.source_project_record_id} commits=${JSON.stringify(source.commits)} paths=${JSON.stringify(source.paths)} note=${JSON.stringify(source.note)}`,
           )
         }
       }
@@ -300,9 +307,9 @@ export async function portCommand(
       return
     }
     for (const row of rows) {
-      const target = projects().find((project) => project.id === row.target_project_id)
+      const target = projects().find((project) => project.recordId === row.target_project_record_id)
       log(
-        `${target?.name ?? `project:${row.target_project_id}`} ${row.task_key}  ${row.sources.length} source(s)  ${row.resolved_at ?? 'unresolved'}  ${row.note}`,
+        `${target?.name ?? `project:${row.target_project_record_id}`} ${row.task_key}  ${row.sources.length} source(s)  ${row.resolved_at ?? 'unresolved'}  ${row.note}`,
       )
     }
     return
@@ -314,7 +321,7 @@ export async function portCommand(
     if (!taskKey || !projectName)
       throw new Error(`${PLATFORM_SLUG} doc port ref show <task-key> --project PROJECT [--json]`)
     const target = namedProject(projectName)
-    const ref = ledgerRef(target.id, taskKey)
+    const ref = ledgerRef(target.recordId, taskKey)
     if (!ref) throw new Error(`no port ledger ref for task "${projectName}:${taskKey}"`)
     if (has('json')) {
       log(JSON.stringify(ref))
@@ -322,11 +329,7 @@ export async function portCommand(
     }
     log(`${ref.task_key}  ${ref.resolved_at ?? 'unresolved'}\n${ref.note}`)
     for (const source of ref.sources) {
-      const project = projects().find((candidate) => candidate.id === source.source_project_id)
-      if (!project)
-        throw new Error(
-          `ledger ref ${taskKey} names unregistered project id ${source.source_project_id}`,
-        )
+      const project = registeredProject(source.source_project_record_id, taskKey)
       log(
         `  ${project.name}  commits=${source.commits.join(',')}  paths=${source.paths.join(',')}  ${source.note}`,
       )
@@ -369,7 +372,7 @@ export async function portCommand(
         )
       }
       return {
-        source_project_id: namedProject(source.project).id,
+        source_project_record_id: namedProject(source.project).recordId,
         commits: source.commits as string[],
         paths: source.paths as string[],
         note: source.note,
@@ -377,7 +380,7 @@ export async function portCommand(
     })
     const ref = setLedgerRef({
       taskKey,
-      targetProjectId: namedProject(projectName).id,
+      targetProjectId: namedProject(projectName).recordId,
       note,
       sources,
     })
@@ -390,7 +393,7 @@ export async function portCommand(
     const projectName = flag('project')
     if (!taskKey || !projectName)
       throw new Error(`${PLATFORM_SLUG} doc port ref resolve <task-key> --project PROJECT [--json]`)
-    const ref = resolveLedgerRef(namedProject(projectName).id, taskKey)
+    const ref = resolveLedgerRef(namedProject(projectName).recordId, taskKey)
     if (!ref) throw new Error(`no port ledger ref for task "${projectName}:${taskKey}"`)
     output(ref, `resolved ${taskKey} at ${ref.resolved_at}`)
     return
@@ -401,7 +404,7 @@ export async function portCommand(
     const projectName = flag('project')
     if (!taskKey || !projectName)
       refusePortUsage('ref delete-error <task-key> --project PROJECT [--json]')
-    const removed = removeLedgerRef(namedProject(projectName).id, taskKey)
+    const removed = removeLedgerRef(namedProject(projectName).recordId, taskKey)
     output(
       { removed },
       removed

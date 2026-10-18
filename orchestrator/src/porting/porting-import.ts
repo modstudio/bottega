@@ -16,14 +16,19 @@ export type ImportRefusal = ImportIssue & { kind: 'refusal' }
 type ImportExclusion = ImportIssue & { kind: 'exclusion' }
 
 export type ImportPlan = {
-  pairs: { source: string; target: string; sourceId: number; targetId: number }[]
+  pairs: { source: string; target: string; sourceId: string; targetId: string }[]
   baselines: { pairKey: string; sourceCommit: string | null; scannedAt: string | null }[]
   skips: { pairKey: string; candidate: string; reason: string }[]
   refs: {
     taskKey: string
-    targetProjectId: number
+    targetProjectId: string
     note: string
-    sources: { source_project_id: number; commits: string[]; paths: string[]; note: string }[]
+    sources: {
+      source_project_record_id: string
+      commits: string[]
+      paths: string[]
+      note: string
+    }[]
   }[]
   doctrine: { number: number; title: string; body: string }[]
   docs: { scope: string; subject: string | null; slug: string; title: string; body: string }[]
@@ -273,10 +278,12 @@ function targetForSources(
   }
   const targetIds = sources.map(
     (source) =>
-      new Set(pairs.filter((pair) => pair.sourceId === source.id).map((pair) => pair.targetId)),
+      new Set(
+        pairs.filter((pair) => pair.sourceId === source.recordId).map((pair) => pair.targetId),
+      ),
   )
   const shared = [...(targetIds[0] ?? [])].filter((id) => targetIds.every((ids) => ids.has(id)))
-  const matches = registered.filter((project) => shared.includes(project.id))
+  const matches = registered.filter((project) => shared.includes(project.recordId))
   if (matches.length !== 1) {
     refusals.push(
       refusal(
@@ -319,7 +326,7 @@ function parseState(text: string, plan: ImportPlan, byName: Map<string, Project[
     const source = resolveProject(names[1]!, where, byName, plan.refusals)
     const target = resolveProject(names[2]!, where, byName, plan.refusals)
     if (source && target) {
-      if (source.id === target.id) {
+      if (source.recordId === target.recordId) {
         plan.refusals.push(
           refusal(`pair "${pairKey}"`, where, 'source and target are the same project'),
         )
@@ -327,8 +334,8 @@ function parseState(text: string, plan: ImportPlan, byName: Map<string, Project[
         plan.pairs.push({
           source: source.name,
           target: target.name,
-          sourceId: source.id,
-          targetId: target.id,
+          sourceId: source.recordId,
+          targetId: target.recordId,
         })
       }
     }
@@ -390,7 +397,7 @@ function parseState(text: string, plan: ImportPlan, byName: Map<string, Project[
           JSON.stringify({ lastPortedSha: sourceCommit, scannedAt }),
         ),
       )
-    } else if (source && target && source.id !== target.id) {
+    } else if (source && target && source.recordId !== target.recordId) {
       plan.baselines.push({ pairKey, sourceCommit, scannedAt: scannedAt ?? null })
     }
 
@@ -402,7 +409,7 @@ function parseState(text: string, plan: ImportPlan, byName: Map<string, Project[
     value.skipped.forEach((skip, index) => {
       const skipWhere = `${where}.skipped[${index}]`
       if (typeof skip === 'string') {
-        if (source && target && source.id !== target.id) {
+        if (source && target && source.recordId !== target.recordId) {
           plan.skips.push({
             pairKey,
             candidate: skip,
@@ -418,7 +425,7 @@ function parseState(text: string, plan: ImportPlan, byName: Map<string, Project[
         )
         return
       }
-      if (source && target && source.id !== target.id) {
+      if (source && target && source.recordId !== target.recordId) {
         plan.skips.push({ pairKey, candidate: skip.feature, reason: skip.reason })
       }
     })
@@ -436,7 +443,7 @@ function appendRef(
   plan: ImportPlan,
 ): void {
   if (sources.length === 0) return
-  if (new Set(sources.map((source) => source.project.id)).size !== sources.length) {
+  if (new Set(sources.map((source) => source.project.recordId)).size !== sources.length) {
     plan.refusals.push(
       refusal(`ledger ref "${taskKey}"`, where, 'a source project is named more than once'),
     )
@@ -452,10 +459,10 @@ function appendRef(
   if (!target) return
   plan.refs.push({
     taskKey,
-    targetProjectId: target.id,
+    targetProjectId: target.recordId,
     note: notes,
     sources: sources.map((source) => ({
-      source_project_id: source.project.id,
+      source_project_record_id: source.project.recordId,
       commits,
       paths,
       note: source.note,
@@ -808,7 +815,7 @@ function jsonCoverage(plan: ImportPlan, files: ImportFiles): SourceCoverageGap[]
   }
 
   const refs = jsonObject(files.refs, 'refs.json', [])
-  const projectIds = new Map<string, number>()
+  const projectIds = new Map<string, string>()
   let consistentProjectIds = true
   for (const pair of plan.pairs) {
     for (const [name, id] of [
@@ -845,7 +852,7 @@ function jsonCoverage(plan: ImportPlan, files: ImportFiles): SourceCoverageGap[]
           if (names.length !== 1) return null
           const name = names[0]!
           return {
-            source_project_id: projectIds.get(name),
+            source_project_record_id: projectIds.get(name),
             commits: value.commits,
             paths: value.paths,
             note: part.slice(name.length),
@@ -905,11 +912,8 @@ export function projectsForDryRun(path: string): Project[] {
     const readonly = new Database(path, { readonly: true })
     try {
       const rows = readonly
-        .query(
-          'SELECT id, record_id, name, path, stack, canon, settings FROM project ORDER BY name',
-        )
+        .query('SELECT record_id, name, path, stack, canon, settings FROM project ORDER BY name')
         .all() as {
-        id: number
         record_id: string
         name: string
         path: string

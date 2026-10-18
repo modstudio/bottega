@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { WORKER_ENVIRONMENT_MARKERS } from '../caller-classification.ts'
 import { shouldExpireUnjudgedOwner } from '../cleanup/cleanup-sweep-decisions.ts'
@@ -121,8 +122,17 @@ test('operator authority covers answer, continue, tell, review read, and sweep l
     const id = addRun({ agent: 'codex', job: 'implement', session: owner })
     expect(adoptRunMutation(authorizeRunMutation(id, action), action).actor).toBe(owner)
   }
+  db()
+    .query(
+      "INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture','/fixture','{}')",
+    )
+    .run(newRecordId())
   const reviewId = addRun({ agent: 'codex', job: 'implement', session: owner, repo: 'fixture' })
-  db().query('UPDATE run SET branch=? WHERE id=?').run('DEV-1105-operator', reviewId)
+  db()
+    .query(
+      "UPDATE run SET branch='DEV-1105-operator',project_record_id=(SELECT record_id FROM project WHERE name='fixture') WHERE id=?",
+    )
+    .run(reviewId)
   expect(requireBranchRunOwner(db(), 'fixture', 'DEV-1105-operator', owner)).toBe(owner)
 
   recordSessionSeen(owner, '2026-10-05T12:00:00.000Z')

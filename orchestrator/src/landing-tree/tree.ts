@@ -37,7 +37,7 @@ type RunRow = {
   id: number
   parent_run_id: number | null
   repo: string | null
-  project_id: number | null
+  project_record_id: string | null
   cwd: string | null
   worktree: string | null
   branch: string | null
@@ -158,7 +158,7 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
   assertBranchHasNoAliveOwner({
     branch,
     conversationRootId: null,
-    projectId: project.id,
+    projectId: project.recordId,
     retryCommand: `${PLATFORM_SLUG} tree open ${runId}${seed ? ` --seed ${seed}` : ''}`,
   })
   const existingPath = checkedOutWorktree(project.path, branch)
@@ -172,7 +172,7 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
   const prompt = `landing tree for run ${runId}`
   const inserted = db()
     .query(
-      `INSERT INTO run (record_id,started_at,agent,job,repo,project_id,cwd,prompt_sha,prompt_bytes,prompt_head,status,
+      `INSERT INTO run (record_id,started_at,agent,job,repo,project_record_id,cwd,prompt_sha,prompt_bytes,prompt_head,status,
         session_id,launch_cwd,launch_key,launch_base,launch_seed,stack,evidence_excluded,pid)
        VALUES (?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?) RETURNING id`,
     )
@@ -182,7 +182,7 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
       LANDING_TREE_AGENT,
       LANDING_TREE_JOB,
       project.name,
-      project.id,
+      project.recordId,
       project.path,
       createHash('sha256').update(prompt).digest('hex').slice(0, 16),
       Buffer.byteLength(prompt),
@@ -217,7 +217,7 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
       recordCreatedWorktreeClaims(db(), {
         rootRunId: inserted.id,
         runId: inserted.id,
-        projectId: project.id,
+        projectId: project.recordId,
         owned: true,
         path: created.path,
         head: plan.tip,
@@ -231,7 +231,7 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
       recordDatabaseClaim(db(), {
         rootRunId: inserted.id,
         runId: inserted.id,
-        projectId: project.id,
+        projectId: project.recordId,
         claimedAt: nowIso(),
         provider: resource.provider,
         name: resource.name,
@@ -242,7 +242,7 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
       claimRecipePort(db(), {
         rootRunId: inserted.id,
         runId: inserted.id,
-        projectId: project.id,
+        projectId: project.recordId,
         claimedAt: nowIso(),
         band: RECIPE_PORT_BAND,
       }),
@@ -252,7 +252,7 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
       assertBranchHasNoAliveOwner({
         branch,
         conversationRootId: null,
-        projectId: project.id,
+        projectId: project.recordId,
         retryCommand: `${PLATFORM_SLUG} tree open ${runId}${seed ? ` --seed ${seed}` : ''}`,
       })
       prepareResumeBranchIfNeeded(project.path, plan)
@@ -275,7 +275,7 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
         templateBaseRef: templateBase,
         mainStackConsumers: project.settings.mainStack?.consumers,
         mainStackRequiredServices: project.settings.mainStack?.requiredServices,
-        mainStackProject: { id: project.id, name: project.name },
+        mainStackProject: { recordId: project.recordId, name: project.name },
       })
     })
     const actualBranch = branchOf(created.path)

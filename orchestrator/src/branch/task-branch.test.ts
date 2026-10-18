@@ -258,7 +258,7 @@ const branchCandidate = (
   tip,
   commitCount,
   mergeBase: 'merge-base',
-  projectId: 1,
+  projectId: 'project-1',
   projectName: 'starship',
   nominatingRuns: [{ id: commitCount, sessionId: 'session-a' }],
   trunk: 'develop',
@@ -390,7 +390,7 @@ test('task branch reuse notice names branch, tip, contributing runs, and start-o
       tip: 'abc123',
       commitCount: 2,
       mergeBase: 'def456',
-      projectId: 1,
+      projectId: 'project-1',
       projectName: 'project',
       nominatingRuns: [
         { id: 5186, sessionId: 'session-a' },

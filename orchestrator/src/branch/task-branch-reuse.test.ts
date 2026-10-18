@@ -13,7 +13,7 @@ const candidate = {
   tip: 'abc123',
   commitCount: 2,
   mergeBase: 'def456',
-  projectId: 1,
+  projectId: 'project-1',
   projectName: 'project',
   nominatingRuns: [
     { id: 7000, sessionId: 'session-a' },

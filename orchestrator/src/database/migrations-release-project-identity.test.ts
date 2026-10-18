@@ -18,14 +18,14 @@ test('release project identity backfills only an exactly matching project', () =
   `)
 
   expect(applyMigrations(database)).toContain(MIGRATION)
-  expect(database.query('SELECT project,project_id FROM release_ledger ORDER BY id').all()).toEqual(
-    [
-      { project: 'matched', project_id: 1 },
-      { project: 'unknown', project_id: null },
-    ],
-  )
+  expect(
+    database.query('SELECT project,project_record_id FROM release_ledger ORDER BY id').all(),
+  ).toEqual([
+    { project: 'matched', project_record_id: '01990000-0000-7000-8000-000000000001' },
+    { project: 'unknown', project_record_id: null },
+  ])
   expect(database.query("PRAGMA foreign_key_list('release_ledger')").all()).toContainEqual(
-    expect.objectContaining({ from: 'project_id', table: 'project', to: 'id' }),
+    expect.objectContaining({ from: 'project_record_id', table: 'project', to: 'record_id' }),
   )
   database.close()
 })

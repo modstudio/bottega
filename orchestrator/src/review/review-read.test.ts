@@ -48,11 +48,15 @@ test('worker sessions cannot record an architect read', () => {
 test('only the root run session owns architect reads for its branch', () => {
   const d = new Database(':memory:')
   applyMigrations(d)
+  const projectId = newRecordId()
+  d.query(
+    "INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture','/fixture','{}')",
+  ).run(projectId)
   d.query(
     `INSERT INTO run
-      (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch,session_id)
-     VALUES ('${newRecordId()}','2026-09-27','codex','implementation','sha',1,'head','running','fixture','DEV-977-work','owner-session')`,
-  ).run()
+      (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_record_id,branch,session_id)
+     VALUES ('${newRecordId()}','2026-09-27','codex','implementation','sha',1,'head','running','fixture',?,'DEV-977-work','owner-session')`,
+  ).run(projectId)
   expect(requireBranchRunOwner(d, 'fixture', 'DEV-977-work', 'owner-session')).toBe('owner-session')
   expect(() => requireBranchRunOwner(d, 'fixture', 'DEV-977-work', 'foreign-session')).toThrow(
     'calling session does not own DEV-977-work',
@@ -62,14 +66,18 @@ test('only the root run session owns architect reads for its branch', () => {
 test('the latest architect read is selected for one project branch', () => {
   const d = new Database(':memory:')
   applyMigrations(d)
+  const projectRecordId = newRecordId()
+  d.query(
+    `INSERT INTO project (record_id,name,path,canon,settings) VALUES (?,'fixture','/fixture',1,'{}')`,
+  ).run(projectRecordId)
   d.query(
     `INSERT INTO review_read
-      (record_id,project,branch,tip,patch_id,path_set,tier,note,recorded_at)
+      (record_id,project,project_record_id,branch,tip,patch_id,path_set,tier,note,recorded_at)
      VALUES
-      ('read-1','fixture','DEV-1257-work','older','patch-1','[]',1,'older note','2026-10-11T12:00:00.000Z'),
-      ('read-2','fixture','DEV-1257-work','newer','patch-2','[]',1,'newer note','2026-10-12T12:00:00.000Z'),
-      ('read-3','fixture','DEV-other','other','patch-3','[]',1,'other note','2026-10-13T12:00:00.000Z')`,
-  ).run()
+      ('read-1','fixture',?,'DEV-1257-work','older','patch-1','[]',1,'older note','2026-10-11T12:00:00.000Z'),
+      ('read-2','fixture',?,'DEV-1257-work','newer','patch-2','[]',1,'newer note','2026-10-12T12:00:00.000Z'),
+      ('read-3','fixture',?,'DEV-other','other','patch-3','[]',1,'other note','2026-10-13T12:00:00.000Z')`,
+  ).run(projectRecordId, projectRecordId, projectRecordId)
 
   expect(latestArchitectRead(d, 'fixture', 'DEV-1257-work')).toEqual({
     tip: 'newer',
@@ -121,10 +129,16 @@ test('the read command records the branch and tip from --cwd', () => {
     db()
       .query(
         `INSERT INTO run
-          (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch,session_id)
-         VALUES ('${newRecordId()}','2026-10-12','codex','implementation','sha',1,'head','running',?,?,?)`,
+          (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_record_id,branch,session_id)
+         VALUES ('${newRecordId()}','2026-10-12','codex','implementation','sha',1,'head','running',?,
+                 (SELECT record_id FROM project WHERE name=?),?,?)`,
       )
-      .run('read-command-fixture', 'DEV-1262-review-read-fixture', 'owner-session')
+      .run(
+        'read-command-fixture',
+        'read-command-fixture',
+        'DEV-1262-review-read-fixture',
+        'owner-session',
+      )
 
     const relativeCwd = relative(process.cwd(), cwd)
     recordArchitectReadCommand(
@@ -173,8 +187,9 @@ test('a tip unreachable from the checked-out branch is refused without a review 
   ).run('fixture', cwd, '{}')
   d.query(
     `INSERT INTO run
-      (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch,session_id)
-     VALUES ('${newRecordId()}','2026-10-02','codex','implementation','sha',1,'head','running','fixture','DEV-1068-work','owner-session')`,
+      (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_record_id,branch,session_id)
+     VALUES ('${newRecordId()}','2026-10-02','codex','implementation','sha',1,'head','running','fixture',
+             (SELECT record_id FROM project WHERE name='fixture'),'DEV-1068-work','owner-session')`,
   ).run()
   const runGit = (_cwd: string, args: string[]): string => {
     if (args[0] === 'branch') return 'DEV-1068-work'

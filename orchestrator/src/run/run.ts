@@ -414,7 +414,7 @@ export async function run(opts: {
   const resolvedDialect = resolveReplyDialect(requestedJob)
   const generatedSchema = resolvedDialect.schema
   const replySchemaName = opts.schemaPath ? basename(opts.schemaPath) : resolvedDialect.schemaName
-  const runProjectId = runProjectName ? (projectByName(runProjectName)?.id ?? null) : null
+  const runProjectId = runProjectName ? (projectByName(runProjectName)?.recordId ?? null) : null
   let pack: ReturnType<typeof compilePack> | null = null
   if (resume.isFirstTurn) {
     try {
@@ -431,7 +431,7 @@ export async function run(opts: {
         failedId = (
           db()
             .query(
-              `INSERT INTO run (record_id,started_at,agent,job,repo,project_id,cwd,prompt_sha,spec_sha,prompt_bytes,prompt_head,status,session_id,failure_kind,error,docs_injected,mcp,started_by_user_id) VALUES (?,?,'(pending)',?,?,?,?,?,?,?,?,'failed',?,'harness',?,0,?,?) RETURNING id`,
+              `INSERT INTO run (record_id,started_at,agent,job,repo,project_record_id,cwd,prompt_sha,spec_sha,prompt_bytes,prompt_head,status,session_id,failure_kind,error,docs_injected,mcp,started_by_user_id) VALUES (?,?,'(pending)',?,?,?,?,?,?,?,?,'failed',?,'harness',?,0,?,?) RETURNING id`,
             )
             .get(
               ...[newRecordId(), nowIso()],

@@ -223,7 +223,7 @@ function landingThatMovedHead(
   const row = database
     .query(
       `SELECT id, session_id FROM landing
-      WHERE project=? AND status='landed'
+      WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND status='landed'
         AND datetime(COALESCE(finished_at, started_at)) >= datetime(?)
       ORDER BY id DESC LIMIT 1`,
     )

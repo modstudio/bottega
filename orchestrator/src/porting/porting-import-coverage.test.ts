@@ -75,7 +75,7 @@ describe('port importer', () => {
     ]
     const syntheticRegister = projectNames.map((name, index) => ({
       id: index + 1,
-      recordId: '01990000-0000-7000-8000-000000001214',
+      recordId: `01990000-0000-7000-8000-${String(1214 + index).padStart(12, '0')}`,
       name,
       path: `/fixture/${index}`,
       stack: null,
@@ -88,7 +88,7 @@ describe('port importer', () => {
     expect(sourceCoverage(plan, files)).toEqual([])
 
     const wrongId = structuredClone(plan)
-    wrongId.refs[0]!.sources[0]!.source_project_id = 999999
+    wrongId.refs[0]!.sources[0]!.source_project_record_id = 'missing-project'
     expect(sourceCoverage(wrongId, files)).toContainEqual({
       file: 'refs.json',
       offset: 0,

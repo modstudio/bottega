@@ -12,7 +12,7 @@ export function assertRetryRootWorkspace(input: {
   expectedBranch: string
   validatedTip: string
   conversationRootId: number
-  projectId: number | null
+  projectId: string | null
   projectName: string | null
   operation: 'creation' | 'reuse'
 }): void {

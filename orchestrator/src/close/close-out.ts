@@ -486,14 +486,14 @@ function attemptCloseOutRun(
 ): CloseOutAttemptResult {
   const row = db()
     .query(
-      `SELECT id, COALESCE(parent_run_id,id) root_id, project_id, job, repo, cwd, worktree, branch,
+      `SELECT id, COALESCE(parent_run_id,id) root_id, project_record_id, job, repo, cwd, worktree, branch,
             base_commit, worktree_source, minted_branch, status, agent_pid,session_id,launch_key
        FROM run WHERE id=?`,
     )
     .get(runId) as {
     id: number
     root_id: number
-    project_id: number | null
+    project_record_id: string | null
     job: string
     repo: string | null
     cwd: string | null
@@ -510,7 +510,7 @@ function attemptCloseOutRun(
   if (!row) throw new Error(`no run ${runId}`)
   const root = db()
     .query(
-      `SELECT project_id,job,repo,cwd,worktree,branch,base_commit,worktree_source,minted_branch,status,
+      `SELECT project_record_id,job,repo,cwd,worktree,branch,base_commit,worktree_source,minted_branch,status,
               session_id,launch_key
        FROM run WHERE id=?`,
     )
@@ -581,7 +581,7 @@ function attemptCloseOutRun(
         recordRetainedRefClaim(db(), {
           rootRunId: row.root_id,
           runId: row.id,
-          projectId: root?.project_id ?? row.project_id,
+          projectId: root?.project_record_id ?? row.project_record_id,
           ref: retainedRef,
           tip,
           claimedAt: nowIso(),

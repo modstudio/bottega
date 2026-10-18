@@ -63,17 +63,17 @@ test('worker gate tooling admission must be at or after the latest tooling gate 
     database
       .query(
         `INSERT INTO project (record_id,name,path,stack,settings)
-         VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'fixture','/missing/fixture','bun','{"trunk":"main"}') RETURNING id`,
+         VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'fixture','/missing/fixture','bun','{"trunk":"main"}') RETURNING record_id`,
       )
-      .get() as { id: number }
-  ).id
+      .get() as { record_id: string }
+  ).record_id
   const before = addRun({ agent: 'codex', job: 'implement', repo: 'fixture' })
   const after = addRun({ agent: 'codex', job: 'implement', repo: 'fixture' })
   database
-    .query('UPDATE run SET project_id=?,branch=?,minted_branch=? WHERE id=?')
+    .query('UPDATE run SET project_record_id=?,branch=?,minted_branch=? WHERE id=?')
     .run(project, 'DEV-before', 'DEV-before', before)
   database
-    .query('UPDATE run SET project_id=?,branch=?,minted_branch=? WHERE id=?')
+    .query('UPDATE run SET project_record_id=?,branch=?,minted_branch=? WHERE id=?')
     .run(project, 'DEV-after', 'DEV-after', after)
   const insertGate = database.query(
     `INSERT INTO gate_execution
@@ -85,7 +85,7 @@ test('worker gate tooling admission must be at or after the latest tooling gate 
   insertGate.run(newRecordId(), after)
   const insertSnapshot = database.query(
     `INSERT INTO landing_triage_snapshot
-       (record_id,project,project_id,branch,tip,tree,review_ids,patch_id,tier,lens_rounds,
+       (record_id,project,project_record_id,branch,tip,tree,review_ids,patch_id,tier,lens_rounds,
         finding_count,at)
      VALUES (?,?,?,?,?,'tree','[]','patch',1,1,0,?)`,
   )

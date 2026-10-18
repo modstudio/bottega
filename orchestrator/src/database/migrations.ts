@@ -469,6 +469,24 @@ function applyBackfills(d: Database, entries: JournalEntry[], folder: string): v
   }
 }
 
+const BACKFILL_SCHEMA_BOUNDARIES = new Set(['0117_project_uuid_key'])
+const INTEGER_PROJECT_BACKFILLS = new Set([
+  '0006_project_id_backfill',
+  '0010_landing_queue',
+  '0116_release_project_identity',
+])
+
+function compatibleBackfillEntries(d: Database, entries: JournalEntry[]): JournalEntry[] {
+  const projectHasIntegerId = (
+    d.query("SELECT COUNT(*) AS n FROM pragma_table_info('project') WHERE name='id'").get() as {
+      n: number
+    }
+  ).n
+  if (projectHasIntegerId > 0)
+    return entries.filter((entry) => !BACKFILL_SCHEMA_BOUNDARIES.has(entry.tag))
+  return entries.filter((entry) => !INTEGER_PROJECT_BACKFILLS.has(entry.tag))
+}
+
 const expectedSchemaHashes = new Map<string, string>()
 
 /** Hash the schema produced by the complete journal, not only its adoption baseline. */
@@ -626,12 +644,16 @@ function applyMigrationRange(d: Database, folder: string, beforeMigration?: stri
     const allowed = new Set(allowedEntries.map((entry) => entry.tag))
     for (const entry of state.pending.filter((entry) => allowed.has(entry.tag))) {
       createMigrationsTable(d)
+      if (BACKFILL_SCHEMA_BOUNDARIES.has(entry.tag)) {
+        const boundary = allowedEntries.findIndex((candidate) => candidate.tag === entry.tag)
+        applyBackfills(d, allowedEntries.slice(0, boundary), folder)
+      }
       executeMigrationSource(d, migrationSource(entry, folder))
       recordMigration(d, entry, folder)
       stampUserVersion(d, entry.idx + 1)
       versions.push(entry.tag)
     }
-    applyBackfills(d, allowedEntries, folder)
+    applyBackfills(d, compatibleBackfillEntries(d, allowedEntries), folder)
     const highestApplied = journal.reduce(
       (highest, entry) =>
         state.pending.some((pending) => pending.tag === entry.tag)

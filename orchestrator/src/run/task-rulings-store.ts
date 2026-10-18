@@ -27,7 +27,8 @@ export function taskRulingsForDispatch(input: {
            FROM question q
            JOIN run owner ON owner.id=q.run_id
            JOIN run root ON root.id=COALESCE(owner.parent_run_id,owner.id)
-          WHERE root.repo=? AND root.launch_key=?
+          WHERE root.project_record_id=(SELECT record_id FROM project WHERE name=?)
+            AND root.launch_key=?
             AND q.answered_at IS NOT NULL
             AND NOT (q.overturned_at IS NOT NULL AND q.replacement IS NULL)
          UNION ALL
@@ -37,7 +38,8 @@ export function taskRulingsForDispatch(input: {
                 COALESCE(q.overturned_at,q.answered_at) effective_at
            FROM question q
            JOIN workflow_cursor c ON c.id=q.workflow_cursor_id
-          WHERE c.project=? AND q.workflow_key=?
+          WHERE c.project_record_id=(SELECT record_id FROM project WHERE name=?)
+            AND q.workflow_key=?
             AND q.answered_at IS NOT NULL
             AND NOT (q.overturned_at IS NOT NULL AND q.replacement IS NULL)
        ), candidates AS (

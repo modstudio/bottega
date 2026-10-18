@@ -40,7 +40,9 @@ import {
 
 const listPairs = () =>
   db()
-    .query('SELECT id,source_project_id,target_project_id,created_at FROM port_pair ORDER BY id')
+    .query(
+      'SELECT id,source_project_record_id,target_project_record_id,created_at FROM port_pair ORDER BY id',
+    )
     .all() as PortPair[]
 
 test('user document addressing refuses a subject', () => {
@@ -313,7 +315,7 @@ describe('scoped operator docs', () => {
       (await command(['port', 'ref', 'resolve', 'TGT-7', '--project', 'target-invented', '--json']))
         .code,
     ).toBe(0)
-    expect(ledgerRef(pair.target_project_id, 'TGT-7')).toMatchObject({
+    expect(ledgerRef(pair.target_project_record_id, 'TGT-7')).toMatchObject({
       task_key: 'TGT-7',
       resolved_at: expect.any(String),
     })
@@ -323,7 +325,7 @@ describe('scoped operator docs', () => {
       (await command(['port', 'ref', 'delete-error', 'TGT-7', '--project', 'target-invented']))
         .code,
     ).toBe(0)
-    expect(ledgerRef(pair.target_project_id, 'TGT-7')).toBeNull()
+    expect(ledgerRef(pair.target_project_record_id, 'TGT-7')).toBeNull()
 
     expect(
       (

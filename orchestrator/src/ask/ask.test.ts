@@ -294,12 +294,12 @@ describe('the live ask channel always answers', () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const project = db()
       .query(
-        `INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?) RETURNING id`,
+        `INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?) RETURNING record_id AS id`,
       )
       .get('gate-wait-fixture', '/fixture', 'bun', JSON.stringify({ gate: 'bun run check' })) as {
       id: number
     }
-    db().query('UPDATE run SET project_id=? WHERE id=?').run(project.id, run)
+    db().query('UPDATE run SET project_record_id=? WHERE id=?').run(project.id, run)
     let nowMs = Date.now()
     let waits = 0
     const connection = await askClient(run, '', undefined, {
@@ -353,7 +353,7 @@ describe('the live ask channel always answers', () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const project = db()
       .query(
-        `INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?) RETURNING id`,
+        `INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?) RETURNING record_id AS id`,
       )
       .get(
         newRecordId(),
@@ -364,7 +364,7 @@ describe('the live ask channel always answers', () => {
       ) as {
       id: number
     }
-    db().query('UPDATE run SET project_id=? WHERE id=?').run(project.id, run)
+    db().query('UPDATE run SET project_record_id=? WHERE id=?').run(project.id, run)
     let nowMs = Date.now()
     const connection = await askClient(run, '', undefined, {
       fileWorkerNote: async () => ({
@@ -414,12 +414,12 @@ describe('the live ask channel always answers', () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const project = db()
       .query(
-        `INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?) RETURNING id`,
+        `INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?) RETURNING record_id AS id`,
       )
       .get('gate-abort-fixture', '/fixture', 'bun', JSON.stringify({ gate: 'bun run check' })) as {
       id: number
     }
-    db().query('UPDATE run SET project_id=? WHERE id=?').run(project.id, run)
+    db().query('UPDATE run SET project_record_id=? WHERE id=?').run(project.id, run)
     const controller = new AbortController()
     let waitCalls = 0
     const connection = await askClient(run, '', undefined, {
@@ -473,7 +473,7 @@ describe('the live ask channel always answers', () => {
   test('gate_result returns the newest finished gate for the reader project and exact commit', async () => {
     const project = db()
       .query(
-        `INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'gate-result-fixture','/fixture','bun','{}') RETURNING id`,
+        `INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'gate-result-fixture','/fixture','bun','{}') RETURNING record_id AS id`,
       )
       .get() as { id: number }
     const reader = addRun({
@@ -486,7 +486,7 @@ describe('the live ask channel always answers', () => {
     const newerWriter = addRun({ agent: 'codex', job: 'implement', headCommit: 'reviewed-commit' })
     const otherWriter = addRun({ agent: 'codex', job: 'implement', headCommit: 'other-commit' })
     for (const run of [reader, olderWriter, newerWriter, otherWriter]) {
-      db().query('UPDATE run SET project_id=? WHERE id=?').run(project.id, run)
+      db().query('UPDATE run SET project_record_id=? WHERE id=?').run(project.id, run)
     }
     db()
       .query(
@@ -652,12 +652,12 @@ describe('the live ask channel always answers', () => {
     const run = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
     const project = db()
       .query(
-        `INSERT INTO project (record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?) RETURNING id,name`,
+        `INSERT INTO project (record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?) RETURNING record_id AS id,name`,
       )
       .get('worker-note-project', '/projects/worker-note', '{}') as { id: number; name: string }
     db()
       .query(
-        `UPDATE run SET project_id=?,worktree=?,branch=?,session_id=?,head_commit=? WHERE id=?`,
+        `UPDATE run SET project_record_id=?,worktree=?,branch=?,session_id=?,head_commit=? WHERE id=?`,
       )
       .run(project.id, '/runs/review-tree', 'DEV-1029-review', 'session-1029', 'abc123', run)
     const seen: unknown[] = []

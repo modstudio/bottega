@@ -189,14 +189,16 @@ test('set and restore repair the project id on an existing document', () => {
     canon: true,
     settings: {},
   })
-  const project = db().query('SELECT id FROM project WHERE name=?').get('repair-project') as {
-    id: number
+  const project = db()
+    .query('SELECT record_id FROM project WHERE name=?')
+    .get('repair-project') as {
+    record_id: string
   }
   const input = {
     scope: 'resume',
     subject: 'repair-project',
     owner: null,
-    projectId: project.id,
+    projectId: project.record_id,
     slug: 'repair-project-id',
     title: 'Resume',
     body: '---\nstatus: open\n---\n\nBody.',
@@ -209,16 +211,16 @@ test('set and restore repair the project id on an existing document', () => {
   }
   const created = commitDocSet({ ...input, revisionId: newRecordId() })
 
-  db().query('UPDATE doc SET project_id=NULL WHERE id=?').run(created.id)
+  db().query('UPDATE doc SET project_record_id=NULL WHERE id=?').run(created.id)
   commitDocSet({ ...input, revisionId: newRecordId() })
-  expect(db().query('SELECT project_id FROM doc WHERE id=?').get(created.id)).toEqual({
-    project_id: project.id,
+  expect(db().query('SELECT project_record_id FROM doc WHERE id=?').get(created.id)).toEqual({
+    project_record_id: project.record_id,
   })
 
-  db().query('UPDATE doc SET project_id=NULL WHERE id=?').run(created.id)
+  db().query('UPDATE doc SET project_record_id=NULL WHERE id=?').run(created.id)
   commitDocRestore({ ...input, revisionId: newRecordId() })
-  expect(db().query('SELECT project_id FROM doc WHERE id=?').get(created.id)).toEqual({
-    project_id: project.id,
+  expect(db().query('SELECT project_record_id FROM doc WHERE id=?').get(created.id)).toEqual({
+    project_record_id: project.record_id,
   })
 })
 

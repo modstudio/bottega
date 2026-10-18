@@ -3,6 +3,42 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 export const UNJUDGED_OWNER_WINDOW_MS = 3 * 24 * 60 * 60 * 1000
 
+export type ConversationProjectMember = {
+  id: number
+  projectRecordId: string | null
+}
+export type ConversationProjectOwnershipRuling =
+  | { outcome: 'owned' }
+  | { outcome: 'unknown'; reason: string }
+
+/** Authorize cleanup only when the root, every turn, and the requested project agree. */
+export function decideConversationProjectOwnership(input: {
+  root: ConversationProjectMember
+  members: readonly ConversationProjectMember[]
+  expectedProjectRecordId: string
+}): ConversationProjectOwnershipRuling {
+  const { root, members, expectedProjectRecordId } = input
+  if (root.projectRecordId === null)
+    return {
+      outcome: 'unknown',
+      reason: `conversation root ${root.id} project UUID is missing; members ${members.map((member) => `${member.id}=${member.projectRecordId ?? 'missing'}`).join(', ')}`,
+    }
+  if (root.projectRecordId !== expectedProjectRecordId)
+    return {
+      outcome: 'unknown',
+      reason: `conversation root ${root.id} project UUID ${root.projectRecordId} does not match project ${expectedProjectRecordId}`,
+    }
+  const conflicts = members.filter(
+    (member) => member.id !== root.id && member.projectRecordId !== root.projectRecordId,
+  )
+  if (conflicts.length)
+    return {
+      outcome: 'unknown',
+      reason: `${conflicts.map((member) => `run ${member.id} project UUID ${member.projectRecordId ?? 'missing'}`).join(', ')} conflicts with root ${root.id} project UUID ${root.projectRecordId}`,
+    }
+  return { outcome: 'owned' }
+}
+
 export type AbsentClaimFacts = {
   probe: 'present' | 'absent' | 'failed'
   owningRepository: 'known' | 'unknown-present' | 'unknown-absent'

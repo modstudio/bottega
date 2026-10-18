@@ -1,6 +1,6 @@
 /** Cleanup sweep knows worktree ownership, leases and the cleanup lock, resource reclamation, and branch retention. It must not know transports, routing, reviews, contracts, the CLI, or durable execution. */
 import { existsSync, lstatSync, readdirSync, realpathSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { stampEndedClaims } from '../board/board-claim-service.ts'
@@ -11,7 +11,13 @@ import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { expireUnjudgedRun, unjudgedRuns } from '../evidence/unjudged-expiry.ts'
 import { shouldSweepHookTree } from '../hook-tree/hook-tree.ts'
 import { observeLandingTreeRelease } from '../landing-tree/release-observation.ts'
-import { isProjectRepository, projectAt, projectByName, projects } from '../project/projects.ts'
+import {
+  isProjectRepository,
+  type Project,
+  projectAt,
+  projectByName,
+  projects,
+} from '../project/projects.ts'
 import { type DockerResource, orchRunId } from '../resources/docker-resources.ts'
 import { sweepIdleMainStacks } from '../resources/main-stack.ts'
 import { liveWorktreeSharers } from '../resources/resource-ownership.ts'
@@ -39,6 +45,7 @@ import {
   withCleanupLock,
 } from './cleanup.ts'
 import {
+  decideConversationProjectOwnership,
   decideFilesystemOrphanAfterInventory,
   decideFilesystemOrphanAfterRemoval,
   decideFilesystemOrphanEligibility,
@@ -80,11 +87,16 @@ export type SweepHelpers = {
 const KEPT_ROW_LIMIT = 10
 
 type NamedRun = { id: number; status: string; alive: boolean }
+type NamedRunLookup =
+  | { outcome: 'absent' }
+  | { outcome: 'owned'; run: NamedRun }
+  | { outcome: 'unknown'; runId: number; reason: string }
 type ClosedSweepOutcome = 'released' | 'absent' | 'forgotten'
 type SweepCandidate = {
   id: number
   root_id: number
   repo: string | null
+  project_record_id: string | null
   worktree: string | null
   branch: string | null
   base_commit: string | null
@@ -99,37 +111,52 @@ type SweepCandidate = {
 }
 type ClosedSweepCounts = Record<ClosedSweepOutcome, number>
 
-function pathIsUnder(path: string | null, root: string): boolean {
-  if (!path) return false
-  const candidate = resolve(path)
-  const project = resolve(root)
-  return candidate === project || candidate.startsWith(`${project}/`)
-}
-
 function namedRun(
   name: string,
   branchTemplate: string | undefined,
-  project: { name: string; path: string },
-): NamedRun | null {
+  project: Project,
+): NamedRunLookup {
   const runId = worktreeNameRunId(name, branchTemplate)
-  if (runId === null) return null
+  if (runId === null) return { outcome: 'absent' }
   const member = db()
-    .query('SELECT id, parent_run_id, repo, cwd, worktree FROM run WHERE id=?')
+    .query(
+      `SELECT member.id, member.parent_run_id,
+              member.project_record_id, root.project_record_id root_project_record_id
+       FROM run member
+       JOIN run root ON root.id=COALESCE(member.parent_run_id,member.id)
+       WHERE member.id=?`,
+    )
     .get(runId) as {
     id: number
     parent_run_id: number | null
-    repo: string | null
-    cwd: string | null
-    worktree: string | null
+    project_record_id: string | null
+    root_project_record_id: string | null
   } | null
-  if (!member) return null
-  const belongs =
-    member.repo === project.name ||
-    (member.repo === null &&
-      (pathIsUnder(member.cwd, project.path) || pathIsUnder(member.worktree, project.path)))
-  if (!belongs) return null
+  if (!member) return { outcome: 'absent' }
 
   const rootId = member.parent_run_id ?? member.id
+  const members = db()
+    .query(
+      `SELECT id,project_record_id
+       FROM run
+       WHERE id=? OR parent_run_id=?
+       ORDER BY id`,
+    )
+    .all(rootId, rootId) as { id: number; project_record_id: string | null }[]
+  const ownership = decideConversationProjectOwnership({
+    root: { id: rootId, projectRecordId: member.root_project_record_id },
+    members: members.map(({ id, project_record_id }) => ({
+      id,
+      projectRecordId: project_record_id,
+    })),
+    expectedProjectRecordId: project.recordId,
+  })
+  if (ownership.outcome === 'unknown')
+    return {
+      outcome: 'unknown',
+      runId: member.id,
+      reason: ownership.reason,
+    }
   const latest = db()
     .query(
       `SELECT id,status,pid FROM run
@@ -138,14 +165,69 @@ function namedRun(
     )
     .get(rootId, rootId) as { id: number; status: string; pid: number | null }
   return {
-    id: member.id,
-    status: latest.status,
-    alive: runAlive({
+    outcome: 'owned',
+    run: {
+      id: member.id,
       status: latest.status,
-      lease: runLeaseState(latest.id),
-      pidAlive: Boolean(latest.pid && pidAlive(latest.pid)),
-    }),
+      alive: runAlive({
+        status: latest.status,
+        lease: runLeaseState(latest.id),
+        pidAlive: Boolean(latest.pid && pidAlive(latest.pid)),
+      }),
+    },
   }
+}
+
+function namedRunAlive(lookup: NamedRunLookup): boolean {
+  if (lookup.outcome === 'unknown') throw new Error(lookup.reason)
+  return lookup.outcome === 'owned' && lookup.run.alive
+}
+
+function observeNamedRunForSweep(
+  name: string,
+  project: Project,
+  label: string,
+  presentation: CleanupPresentation,
+): { alive: boolean; failed: boolean } {
+  const lookup = namedRun(name, project.settings.worktree?.branch, project)
+  if (lookup.outcome !== 'unknown') return { alive: namedRunAlive(lookup), failed: false }
+  presentation.error(`could not reclaim ${label}: ${lookup.reason}`)
+  return { alive: true, failed: true }
+}
+
+function conversationProjectOwnershipIssue(
+  rootId: number,
+  expectedProjectRecordId: string | null,
+): string | null {
+  const members = db()
+    .query(
+      `SELECT id,project_record_id
+       FROM run
+       WHERE id=? OR parent_run_id=?
+       ORDER BY id`,
+    )
+    .all(rootId, rootId) as { id: number; project_record_id: string | null }[]
+  const root = members.find(({ id }) => id === rootId) ?? { id: rootId, project_record_id: null }
+  const ruling = decideConversationProjectOwnership({
+    root: { id: root.id, projectRecordId: root.project_record_id },
+    members: members.map(({ id, project_record_id }) => ({
+      id,
+      projectRecordId: project_record_id,
+    })),
+    expectedProjectRecordId: expectedProjectRecordId ?? root.project_record_id ?? '',
+  })
+  return ruling.outcome === 'unknown' ? ruling.reason : null
+}
+
+function sweepCandidateInProject(row: SweepCandidate, selectedProject: Project | null): boolean {
+  if (!selectedProject) return true
+  const members = db()
+    .query('SELECT project_record_id FROM run WHERE id=? OR parent_run_id=?')
+    .all(row.root_id, row.root_id) as { project_record_id: string | null }[]
+  return members.some(
+    ({ project_record_id }) =>
+      project_record_id === selectedProject.recordId || project_record_id === null,
+  )
 }
 
 function printSweepKept(
@@ -415,8 +497,16 @@ function sweepRecordedRow(
   dry: boolean,
   state: RecordedSweepState,
   presentation: CleanupPresentation,
+  expectedProjectRecordId: string | null,
 ): void {
   const keep = (line: string, reason: string) => state.kept.push({ line, reason })
+  const ownershipIssue = conversationProjectOwnershipIssue(r.root_id, expectedProjectRecordId)
+  if (ownershipIssue) {
+    state.cleanupFailed = true
+    keep(`${r.id}  ownership unknown: ${ownershipIssue}`, 'project ownership unknown')
+    presentation.error(`could not reclaim ${r.id}: ${ownershipIssue}`)
+    return
+  }
   const current = db().query('SELECT worktree FROM run WHERE id=?').get(r.id) as {
     worktree: string | null
   } | null
@@ -515,7 +605,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     db()
       .query(
         `SELECT r.id, COALESCE(r.parent_run_id, r.id) root_id,
-              r.repo, r.worktree, r.branch, r.base_commit, r.worktree_source, r.status, r.job,
+              r.repo, r.project_record_id, r.worktree, r.branch, r.base_commit, r.worktree_source, r.status, r.job,
               r.pid, r.agent_pid, r.session_id, seen.last_seen AS session_last_seen,
               r.launch_key, r.close_out_outcome
          FROM run r
@@ -535,12 +625,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     .filter(
       (row) => !row.worktree || shouldSweepHookTree(row as SweepCandidate & { worktree: string }),
     )
-    .filter(
-      (row) =>
-        !selectedProject ||
-        row.repo === selectedProject.name ||
-        Boolean(row.worktree && projectAt(row.worktree)?.name === selectedProject.name),
-    )
+    .filter((row) => sweepCandidateInProject(row, selectedProject))
 
   const { removeFor, sweepWithTool } = await import('../worktree/worktree-remove.ts')
 
@@ -577,7 +662,8 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     counts: closedCounts,
   }
   sweepTerminalRunLeases(dry)
-  for (const r of rows) sweepRecordedRow(r, dry, recordedState, options.presentation)
+  for (const r of rows)
+    sweepRecordedRow(r, dry, recordedState, options.presentation, selectedProject?.recordId ?? null)
   cleanupFailed ||= recordedState.cleanupFailed
 
   const strayCleanupFailed = sweepStrayWorktreeDirectories({
@@ -613,13 +699,14 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       if (remembered.has(realpathSync(path))) continue
 
       const label = `orphan  ${path}`
-      const named = namedRun(entry.name, p.settings.worktree?.branch, p)
+      const named = observeNamedRunForSweep(entry.name, p, label, options.presentation)
+      cleanupFailed ||= named.failed
       const trunk =
         typeof p.settings.trunk === 'string' && p.settings.trunk.trim() ? p.settings.trunk : 'HEAD'
       const safe = orphanSafety(path, p.path, trunk)
       const eligibilityRuling = decideFilesystemOrphanEligibility({
         orchOwned: isOrchWorktree(path, p.settings.worktree?.branch),
-        alive: Boolean(named?.alive),
+        alive: named.alive,
         safe,
         dry,
       })
@@ -645,17 +732,14 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       const runId = orchRunId(entry.name)
       try {
         withCleanupLock(p.path, `sweep ${label}`, path, () => {
-          const ownerRow = {
-            id: runId ?? -1,
-            repo: p.name,
-            branch: safe.branch,
-          }
+          const ownerRow = { id: runId ?? -1, repo: p.name, branch: safe.branch }
           const worktreeRow = { id: runId ?? -1, worktree: path }
           const sharersBefore = liveWorktreeSharers(db(), worktreeRow)
-          const lockedRun = namedRun(entry.name, p.settings.worktree?.branch, p)
+          const locked = observeNamedRunForSweep(entry.name, p, label, options.presentation)
+          cleanupFailed ||= locked.failed
           const lockedRuling = decideFilesystemOrphanUnderLock({
             sharers: sharersBefore.length,
-            lockedAlive: Boolean(lockedRun?.alive),
+            lockedAlive: locked.alive,
           })
           if (lockedRuling.action === 'shared-before') {
             const owners = sharersBefore.map((owner) => `${owner.id} (${owner.status})`).join(', ')
@@ -843,5 +927,4 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     sandboxCounts,
   )
   if (cleanupFailed) options.presentation.setExitCode(1)
-  return
 }

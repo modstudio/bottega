@@ -167,7 +167,7 @@ function assertInjectSize(input: {
       )
       const proposed: Doc = {
         id: -1,
-        project_id: null,
+        project_record_id: null,
         scope: input.scope as DocScope,
         subject: input.subject,
         owner: null,
@@ -398,7 +398,7 @@ async function setDocWithOp(
         ...input,
         owner,
         prior,
-        projectId: projectName ? projectByName(input.subject!)!.id : null,
+        projectId: projectName ? projectByName(input.subject!)!.recordId : null,
         delivery,
         ...tree,
         ...lifecycle,
@@ -444,7 +444,7 @@ async function setDocWithOp(
       return commitDocSet({
         ...input,
         owner,
-        projectId: projectName ? projectByName(input.subject!)!.id : null,
+        projectId: projectName ? projectByName(input.subject!)!.recordId : null,
         delivery,
         ...tree,
         ...lifecycle,
@@ -904,7 +904,7 @@ export async function restoreDoc(
     current,
   )
   const projectName = docWriteProjectName(scope, subject)
-  const projectId = projectName ? (projectByName(subject!)?.id ?? null) : null
+  const projectId = projectName ? (projectByName(subject!)?.recordId ?? null) : null
   const liveRecordId = current?.record_id
   const restoredParentSlug = localRestoredParentSlug({
     scope,

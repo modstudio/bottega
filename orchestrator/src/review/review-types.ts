@@ -101,7 +101,7 @@ export type RunRow = {
   input_tree: string | null
   head_commit: string | null
   repo: string | null
-  project_id: number | null
+  project_record_id: string | null
   base_commit: string | null
   review_ref: string | null
   changed_paths: string | null

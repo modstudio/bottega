@@ -102,7 +102,7 @@ describe('worker shared-text store writes', () => {
     ).rejects.toThrow(refusal)
     await expect(
       importCanon({
-        address: { kind: 'project', subject: 'unused', projectId: 1 },
+        address: { kind: 'project', subject: 'unused', projectId: 'project-1' },
         rows: [],
         reason: 'worker fixture',
       }),

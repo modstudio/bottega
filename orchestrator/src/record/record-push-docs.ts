@@ -69,7 +69,7 @@ type LocalDoc = {
   checked_against_commit: string | null
   summary: string | null
   replacement_slug: string | null
-  project_id: number | null
+  project_record_id: string | null
   created_at: string
   updated_at: string
 }
@@ -103,7 +103,7 @@ type LocalRevision = {
   reason: string
   session_id: string | null
   at: string
-  project_id: number | null
+  project_record_id: string | null
 }
 
 type ImportGroup = {
@@ -132,22 +132,22 @@ function lifecycleAddress(input: {
   return `${input.scope}\0${input.subject ?? ''}\0${input.owner ?? ''}\0${input.slug}`
 }
 
-function projectNames(local: ReturnType<typeof db>): Map<number, string> {
-  const names = new Map<number, string>()
+function projectNames(local: ReturnType<typeof db>): Map<string, string> {
+  const names = new Map<string, string>()
   for (const row of local
-    .query<{ id: number; name: string }, []>('SELECT id, name FROM project')
+    .query<{ record_id: string; name: string }, []>('SELECT record_id, name FROM project')
     .all()) {
-    names.set(row.id, row.name)
+    names.set(row.record_id, row.name)
   }
   return names
 }
 
-function projectRecordIds(local: ReturnType<typeof db>): Map<number, string | null> {
+function projectRecordIds(local: ReturnType<typeof db>): Map<string, string> {
   return new Map(
     local
-      .query<{ id: number; record_id: string | null }, []>('SELECT id, record_id FROM project')
+      .query<{ record_id: string }, []>('SELECT record_id FROM project')
       .all()
-      .map((row) => [row.id, row.record_id]),
+      .map((row) => [row.record_id, row.record_id]),
   )
 }
 
@@ -189,8 +189,8 @@ function asRevision(
 function groupFromLive(
   doc: LocalDoc,
   revisions: LocalRevision[],
-  names: Map<number, string>,
-  projectIds: Map<number, string | null>,
+  names: Map<string, string>,
+  projectIds: Map<string, string>,
   recordIds: Map<number, string>,
   relatedIds: string[],
 ): ImportGroup {
@@ -226,8 +226,10 @@ function groupFromLive(
           summary: doc.summary,
         }),
         replacementSlug: doc.replacement_slug,
-        projectName: doc.project_id == null ? null : (names.get(doc.project_id) ?? null),
-        projectId: doc.project_id == null ? null : (projectIds.get(doc.project_id) ?? null),
+        projectName:
+          doc.project_record_id == null ? null : (names.get(doc.project_record_id) ?? null),
+        projectId:
+          doc.project_record_id == null ? null : (projectIds.get(doc.project_record_id) ?? null),
         createdAt: doc.created_at,
         updatedAt: doc.updated_at,
         deletedAt: null,
@@ -239,8 +241,8 @@ function groupFromLive(
 
 function groupFromDeleted(
   revisions: LocalRevision[],
-  names: Map<number, string>,
-  projectIds: Map<number, string | null>,
+  names: Map<string, string>,
+  projectIds: Map<string, string>,
   recordIds: Map<number, string>,
 ): ImportGroup {
   const ordered = [...revisions].sort((left, right) => {
@@ -249,7 +251,7 @@ function groupFromDeleted(
   })
   const last = ordered.at(-1)!
   const deleted = [...ordered].reverse().find((row) => row.op === 'delete') ?? last
-  const projectId = last.project_id ?? deleted.project_id
+  const projectId = last.project_record_id ?? deleted.project_record_id
   return {
     localDocId: null,
     sourceDocId: last.doc_id,
@@ -295,14 +297,14 @@ export function groupLocalDocsForImport(local: ReturnType<typeof db> = db()): Im
   const projectIds = projectRecordIds(local)
   const docs = local
     .query<LocalDoc, []>(
-      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, parent_id, position, project_id, created_at, updated_at
+      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, parent_id, position, project_record_id, created_at, updated_at
        FROM doc ORDER BY id`,
     )
     .all()
   const revisions = local
     .query<LocalRevision, []>(
       `SELECT id, doc_id, record_id, scope, subject, owner, slug, op, title, body, delivery, audiences, featured, status, kind, form, article_subject_id, related_subject_ids, source_files, checked_against_commit, summary, replacement_slug, parent_id, position, author, reason,
-              session_id, at, project_id
+              session_id, at, project_record_id
        FROM doc_revision ORDER BY id`,
     )
     .all()
@@ -401,7 +403,7 @@ async function compareLiveDocs(
 ): Promise<string[]> {
   const docs = local
     .query<LocalDoc, []>(
-      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, status, kind, summary, replacement_slug, project_id, created_at, updated_at
+      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, status, kind, summary, replacement_slug, project_record_id, created_at, updated_at
        FROM doc ORDER BY id`,
     )
     .all()
@@ -415,11 +417,11 @@ async function compareLiveDocs(
     let hosted: Record<string, unknown>
     try {
       const projectName =
-        doc.project_id == null
+        doc.project_record_id == null
           ? null
           : (local
-              .query<{ name: string }, [number]>('SELECT name FROM project WHERE id=?')
-              .get(doc.project_id)?.name ?? null)
+              .query<{ name: string }, [string]>('SELECT name FROM project WHERE record_id=?')
+              .get(doc.project_record_id)?.name ?? null)
       hosted = await client.getDoc(doc.record_id, destinations.get(projectName))
     } catch {
       mismatches.push(`${label}: hosted row is absent`)

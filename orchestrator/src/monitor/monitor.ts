@@ -108,9 +108,9 @@ function recipeDatabaseObservations(
     database
       .query(
         `SELECT allocation_key,state FROM resource_claim
-         WHERE project_id=? AND kind='database'`,
+         WHERE project_record_id=? AND kind='database'`,
       )
-      .all(project.id) as { allocation_key: string; state: string }[]
+      .all(project.recordId) as { allocation_key: string; state: string }[]
   ).map((claim) => ({ allocationKey: claim.allocation_key, state: claim.state }))
   const connectionInventory = observeRecipeDatabaseConnections({
     project: project.name,
@@ -121,9 +121,9 @@ function recipeDatabaseObservations(
     database
       .query(
         `SELECT allocation_key,root_run_id FROM resource_claim
-         WHERE project_id=? AND kind='database' AND state IN ('claimed','retained')`,
+         WHERE project_record_id=? AND kind='database' AND state IN ('claimed','retained')`,
       )
-      .all(project.id) as { allocation_key: string; root_run_id: number }[]
+      .all(project.recordId) as { allocation_key: string; root_run_id: number }[]
   )
     .filter((claim) => claim.allocation_key.startsWith('postgres:'))
     .map((claim) => ({
@@ -720,11 +720,11 @@ export async function monitor(
         `SELECT MIN(id) id, worktree, MAX(keep_tree) keep_tree,
                 MAX(keep_tree_until) keep_tree_until, MAX(keep_tree_reason) keep_tree_reason,
                 MIN(started_at) started_at
-         FROM run WHERE repo=? AND worktree IS NOT NULL
+         FROM run WHERE project_record_id=? AND worktree IS NOT NULL
           AND status IN ('ok','failed','stale','stopped')
         GROUP BY worktree`,
       )
-      .all(project.name) as {
+      .all(project.recordId) as {
       id: number
       worktree: string
       keep_tree: number
@@ -770,9 +770,9 @@ export async function monitor(
     const branches = database
       .query(
         `SELECT minted_branch branch, MIN(started_at) started_at FROM run
-          WHERE repo=? AND minted_branch IS NOT NULL GROUP BY minted_branch`,
+          WHERE project_record_id=? AND minted_branch IS NOT NULL GROUP BY minted_branch`,
       )
-      .all(project.name) as { branch: string; started_at: string }[]
+      .all(project.recordId) as { branch: string; started_at: string }[]
     const branchInventory = branchInventoryDecision(
       project.name,
       branches,

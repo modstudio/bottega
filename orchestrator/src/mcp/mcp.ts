@@ -215,12 +215,12 @@ function registeredProject(name: string) {
 function registeredPair(source: string, target: string, create = false) {
   const sourceProject = registeredProject(source)
   const targetProject = registeredProject(target)
-  if (sourceProject.id === targetProject.id) {
+  if (sourceProject.recordId === targetProject.recordId) {
     throw new Error('a port source and target must be different projects')
   }
   const pair =
-    pairByProjects(sourceProject.id, targetProject.id) ??
-    (create ? addPair(sourceProject.id, targetProject.id) : null)
+    pairByProjects(sourceProject.recordId, targetProject.recordId) ??
+    (create ? addPair(sourceProject.recordId, targetProject.recordId) : null)
   return { sourceProject, targetProject, pair }
 }
 
@@ -837,7 +837,7 @@ export function createDocsMcpServer(): McpServer {
       description: 'Look up the source provenance recorded for a target task key.',
       inputSchema: z.object({ project: z.string(), task_key: z.string() }),
     },
-    async ({ project, task_key }) => text(ledgerRef(registeredProject(project).id, task_key)),
+    async ({ project, task_key }) => text(ledgerRef(registeredProject(project).recordId, task_key)),
   )
 
   server.registerTool(
@@ -855,10 +855,10 @@ export function createDocsMcpServer(): McpServer {
       text(
         setLedgerRef({
           taskKey: task_key,
-          targetProjectId: registeredProject(project).id,
+          targetProjectId: registeredProject(project).recordId,
           note,
           sources: sources.map((source) => ({
-            source_project_id: registeredProject(source.project).id,
+            source_project_record_id: registeredProject(source.project).recordId,
             commits: source.commits,
             paths: source.paths,
             note: source.note,
@@ -874,7 +874,7 @@ export function createDocsMcpServer(): McpServer {
       inputSchema: z.object({ project: z.string(), task_key: z.string() }),
     },
     async ({ project, task_key }) => {
-      const ref = resolveLedgerRef(registeredProject(project).id, task_key)
+      const ref = resolveLedgerRef(registeredProject(project).recordId, task_key)
       if (!ref) throw new Error(`no port ledger ref for task "${project}:${task_key}"`)
       return text(ref)
     },
@@ -888,7 +888,7 @@ export function createDocsMcpServer(): McpServer {
       inputSchema: z.object({ project: z.string(), task_key: z.string() }),
     },
     async ({ project, task_key }) =>
-      text({ removed: removeLedgerRef(registeredProject(project).id, task_key) }),
+      text({ removed: removeLedgerRef(registeredProject(project).recordId, task_key) }),
   )
 
   server.registerTool(

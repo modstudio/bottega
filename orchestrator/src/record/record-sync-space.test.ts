@@ -50,8 +50,8 @@ test("a contention row binds its run project's declared space", async () => {
   local
     .query(
       `INSERT INTO run
-       (id,record_id,project_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-       VALUES (42,?,1,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','ok')`,
+       (id,record_id,project_record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       VALUES (42,?,(SELECT record_id FROM project WHERE name='declared'),'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','ok')`,
     )
     .run(RECORD_ID)
   local
@@ -89,8 +89,8 @@ test("a contention row binds its landing project's declared space", async () => 
     .run(JSON.stringify({ space: 'team' }))
   local
     .query(
-      `INSERT INTO landing (id,record_id,project,project_id,branch,status,started_at)
-       VALUES (42,?, 'declared',1,'DEV-1367','landed','2026-09-16T00:00:00.000Z')`,
+      `INSERT INTO landing (id,record_id,project,project_record_id,branch,status,started_at)
+       VALUES (42,?,'declared',(SELECT record_id FROM project WHERE name='declared'),'DEV-1367','landed','2026-09-16T00:00:00.000Z')`,
     )
     .run(RECORD_ID)
   local

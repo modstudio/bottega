@@ -355,6 +355,7 @@ const rootTests = [
   './shared/trackers-protocols.test.ts',
   './shared/shard.test.ts',
   './scripts/test-focused.test.ts',
+  './scripts/check-sql-literal-schema.test.ts',
 ]
 
 const selected = new Set(selectedCheckLegs(checkArguments))
@@ -392,6 +393,7 @@ if (checkArguments.mode === 'static') {
       name: 'orchestrator identity inventory',
       argv: ['bun', `${root}scripts/check-identity-inventory.ts`, qualityMode],
     },
+    { name: 'SQL literal schema', argv: ['bun', `${root}scripts/check-sql-literal-schema.ts`] },
     staticCheck('scripts/check-machine-state.ts'),
     staticCheck('scripts/check-cascade-preservation.ts'),
     staticCheck('scripts/check-postgres-migrations.ts'),

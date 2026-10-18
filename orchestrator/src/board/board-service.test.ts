@@ -67,10 +67,11 @@ test('a created message, tag and receipt carry a version-7 record id', () => {
   const clock = Date.now()
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
-     VALUES ('board-id-reader','claude-code','architect','test',?,'/tmp',NULL,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+     VALUES ('board-id-reader','claude-code','architect','test',?,
+             (SELECT record_id FROM project WHERE name=?),'/tmp',NULL,?)`,
     )
-    .run(PLATFORM_SLUG, new Date(clock).toISOString())
+    .run(PLATFORM_SLUG, PLATFORM_SLUG, new Date(clock).toISOString())
   const posted = postNotice(
     {
       audience: 'architects:all',
@@ -107,10 +108,11 @@ test('notice store round-trip resolves, renders, delivers, and explicitly acknow
   const clock = Date.now()
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
-     VALUES ('board-reader','claude-code','architect','test',?,'/tmp',NULL,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+     VALUES ('board-reader','claude-code','architect','test',?,
+             (SELECT record_id FROM project WHERE name=?),'/tmp',NULL,?)`,
     )
-    .run(PLATFORM_SLUG, new Date(clock).toISOString())
+    .run(PLATFORM_SLUG, PLATFORM_SLUG, new Date(clock).toISOString())
   const posted = postNotice(
     {
       audience: 'architects:all',
@@ -153,14 +155,15 @@ test('local architect audiences select the posting project, all projects, or one
     )
     .run()
   const presence = db().query(
-    `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-     VALUES (?,'claude-code','architect','test',?,'/tmp',NULL,?,?)`,
+    `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+     VALUES (?,'claude-code','architect','test',?,
+             (SELECT record_id FROM project WHERE name=?),'/tmp',NULL,?,?)`,
   )
   for (const [session, name] of [
     ['architect-a', project.name],
     ['architect-b', 'board-other'],
   ] as const)
-    presence.run(session, name, new Date(clock).toISOString(), new Date(clock).toISOString())
+    presence.run(session, name, name, new Date(clock).toISOString(), new Date(clock).toISOString())
   const env = { CLAUDE_CODE_SESSION_ID: 'architect-author' }
   const posting = postNotice(
     { audience: 'architects', title: 'Local project', body: 'A only.' },
@@ -239,11 +242,13 @@ test('operator push is unbounded and a missing session start withholds required 
   })
 
   const insertPresence = db().query(
-    `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-     VALUES (?,'claude-code','architect','test',?,?,NULL,?,?)`,
+    `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+     VALUES (?,'claude-code','architect','test',?,
+             (SELECT record_id FROM project WHERE name=?),?,NULL,?,?)`,
   )
   insertPresence.run(
     'missing-start-reader',
+    project.name,
     project.name,
     cwd,
     new Date(clock).toISOString(),
@@ -251,6 +256,7 @@ test('operator push is unbounded and a missing session start withholds required 
   )
   insertPresence.run(
     'thread-author',
+    project.name,
     project.name,
     cwd,
     new Date(clock).toISOString(),
@@ -301,8 +307,9 @@ test('tagged project notices are not pushed to a late session even when acknowle
   const clock = Date.now() + 10_000
   const project = 'board-routing-project'
   const insertPresence = db().query(
-    `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
-     VALUES (?,'claude-code','architect','test',?,'/tmp',NULL,?)`,
+    `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+     VALUES (?,'claude-code','architect','test',?,
+             (SELECT record_id FROM project WHERE name=?),'/tmp',NULL,?)`,
   )
   const insertRun = db().query(
     `INSERT INTO run
@@ -313,7 +320,7 @@ test('tagged project notices are not pushed to a late session even when acknowle
     ['matching-reader', ['orchestrator/src/board/board-service.ts']],
     ['other-reader', ['hub/web/src/routes/index.tsx']],
   ] as const) {
-    insertPresence.run(session, project, new Date(clock).toISOString())
+    insertPresence.run(session, project, project, new Date(clock).toISOString())
     insertRun.run(newRecordId(), new Date(clock).toISOString(), session, JSON.stringify(paths))
   }
   const posted = postNotice(
@@ -360,7 +367,7 @@ test('tagged project notices are not pushed to a late session even when acknowle
     clock + 1,
   )
 
-  insertPresence.run('late-reader', project, new Date(clock + 2).toISOString())
+  insertPresence.run('late-reader', project, project, new Date(clock + 2).toISOString())
   insertRun.run(
     newRecordId(),
     new Date(clock + 2).toISOString(),
@@ -669,7 +676,7 @@ test('plain architects duplicate identity includes the posting project', () => {
   const firstCwd = resolve(import.meta.dir)
   const secondCwd = resolve(import.meta.dir, '../record')
   const project = db().query(
-    `INSERT OR IGNORE INTO project(record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?, '{}') RETURNING id`,
+    `INSERT OR IGNORE INTO project(record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?, '{}') RETURNING record_id`,
   )
   project.get('board-duplicate-a', firstCwd)
   project.get('board-duplicate-b', secondCwd)
@@ -691,10 +698,11 @@ test('a session-start notice reduced to a title or count stays unread until a st
   const clock = Date.now() + 20_000
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
-       VALUES ('budget-reader','claude-code','architect','test',?,'/tmp',NULL,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+       VALUES ('budget-reader','claude-code','architect','test',?,
+               (SELECT record_id FROM project WHERE name=?),'/tmp',NULL,?)`,
     )
-    .run(PLATFORM_SLUG, new Date(clock).toISOString())
+    .run(PLATFORM_SLUG, PLATFORM_SLUG, new Date(clock).toISOString())
   const posted = postNotice(
     { audience: `session:budget-reader`, title: 'Droppable', body: 'budget text '.repeat(20) },
     {},
@@ -712,8 +720,8 @@ test('architect post resolves its current cwd project, refreshes stale presence,
   const posting = postingProject()
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
-       VALUES (?,'claude-code','architect','test','stale-project','/tmp',NULL,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+       VALUES (?,'claude-code','architect','test','stale-project',(SELECT record_id FROM project WHERE name='stale-project'),'/tmp',NULL,?)`,
     )
     .run(session, new Date(clock).toISOString())
   const posted = postNotice(
@@ -860,8 +868,8 @@ test('status is limited to operator, author, or an addressed architect and refus
   const clock = Date.now() + 80_000
   const posting = postingProject()
   const insert = db().query(
-    `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
-     VALUES (?,'claude-code','architect','test','status-project','/tmp',NULL,?)`,
+    `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+     VALUES (?,'claude-code','architect','test','status-project',(SELECT record_id FROM project WHERE name='status-project'),'/tmp',NULL,?)`,
   )
   for (const session of ['status-author', 'status-reader', 'status-stranger'])
     insert.run(session, new Date(clock).toISOString())
@@ -920,12 +928,19 @@ test('machine:this resolves to the posting machine, interrupts, and reports unac
   const clock = Date.now() + 100_000
   const machine = hostname()
   const insert = db().query(
-    `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
-     VALUES (?,'claude-code','architect',?,?,'/tmp',NULL,?)`,
+    `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+     VALUES (?,'claude-code','architect',?,?,
+             (SELECT record_id FROM project WHERE name=?),'/tmp',NULL,?)`,
   )
-  insert.run('machine-one', machine, PLATFORM_SLUG, new Date(clock).toISOString())
-  insert.run('machine-two', machine, PLATFORM_SLUG, new Date(clock).toISOString())
-  insert.run('elsewhere', `${machine}-elsewhere`, PLATFORM_SLUG, new Date(clock).toISOString())
+  insert.run('machine-one', machine, PLATFORM_SLUG, PLATFORM_SLUG, new Date(clock).toISOString())
+  insert.run('machine-two', machine, PLATFORM_SLUG, PLATFORM_SLUG, new Date(clock).toISOString())
+  insert.run(
+    'elsewhere',
+    `${machine}-elsewhere`,
+    PLATFORM_SLUG,
+    PLATFORM_SLUG,
+    new Date(clock).toISOString(),
+  )
   const posted = postNotice(
     {
       audience: 'machine:this',
@@ -960,8 +975,8 @@ test('machine:this resolves to the posting machine, interrupts, and reports unac
 test('ack escalation keeps the posting-time audience snapshot across presence refreshes', () => {
   const clock = Date.now() + 10_000
   const insertPresence = db().query(
-    `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
-     VALUES (?,'claude-code','architect','test','snapshot-project','/tmp',NULL,?)
+    `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+     VALUES (?,'claude-code','architect','test','snapshot-project',(SELECT record_id FROM project WHERE name='snapshot-project'),'/tmp',NULL,?)
      ON CONFLICT(session_id) DO UPDATE SET project=excluded.project,last_seen=excluded.last_seen`,
   )
   insertPresence.run('posting-reader', new Date(clock).toISOString())

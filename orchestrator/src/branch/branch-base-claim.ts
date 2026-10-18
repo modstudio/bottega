@@ -20,9 +20,9 @@ export function liveBaseClaim(project: Project, branch: string): LiveBaseClaim |
         WHERE root.parent_run_id IS NULL
           AND CASE WHEN root.launch_base LIKE 'refs/heads/%'
                    THEN substr(root.launch_base,12) ELSE root.launch_base END=?
-          AND root.project_id=?
+          AND root.project_record_id=?
           AND latest.status IN ('reserved','attached','running','asking')
         ORDER BY latest.id DESC LIMIT 1`,
     )
-    .get(branch, project.id) as LiveBaseClaim | null
+    .get(branch, project.recordId) as LiveBaseClaim | null
 }

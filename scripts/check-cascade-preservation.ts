@@ -33,9 +33,41 @@ type Migration = { tag: string; source: string }
 type AstNode = Node & Record<string, unknown>
 type ForeignKey = { parent: string; dependent: string }
 
+const PROJECT_UUID_REBUILD_CASCADE_EDGES = [
+  ['workflow_cursor', 'workflow_step_text'],
+  ['run', 'question'],
+  ['run', 'review_lens'],
+  ['run', 'blocker'],
+  ['run', 'calibration'],
+  ['run', 'compared_pair'],
+  ['run', 'duel'],
+  ['run', 'run_carried_ruling'],
+  ['run', 'run_checkpoint'],
+  ['run', 'score'],
+  ['run', 'gate_execution'],
+  ['run', 'run_message'],
+  ['run', 'worker_note_request'],
+  ['doc', 'doc_related_subject'],
+  ['port_pair', 'port_baseline'],
+  ['port_pair', 'port_skip'],
+  ['port_ref', 'port_ref_source'],
+  ['project_lens_profile', 'project_lens_profile_revision'],
+  ['review', 'review_lens'],
+  ['review', 'review_finding'],
+  ['project', 'main_stack_activity'],
+  ['project', 'project_lens_profile'],
+] as const
+
 // These migrations may already be applied. The repair restores every
 // missing review_finding row from its outbox payload, whichever migration removed it.
 const EXEMPTIONS: readonly CascadeExemption[] = [
+  ...PROJECT_UUID_REBUILD_CASCADE_EDGES.map(([deletedTable, dependentTable]) => ({
+    migration: '0117_project_uuid_key',
+    deletedTable,
+    dependentTable,
+    remedy:
+      'DEV-1214: migration runner disables foreign keys for the direct rebuild and refuses any foreign_key_check violation before commit',
+  })),
   {
     migration: '0115_project_identity_contract',
     deletedTable: 'project',
@@ -624,7 +656,8 @@ function counts(database: Database): Map<string, number> {
 function execute(database: Database, migration: Migration): void {
   const ddl = splitMigrationSource(migration.source).ddl.trim()
   if (!stripSqlComments(ddl).trim()) return
-  const rebuildsRequiredProjectIdentity = migration.tag === '0115_project_identity_contract'
+  const rebuildsRequiredProjectIdentity =
+    migration.tag === '0115_project_identity_contract' || migration.tag === '0117_project_uuid_key'
   const legacyAlterTable = (
     database.query('PRAGMA legacy_alter_table').get() as { legacy_alter_table: number }
   ).legacy_alter_table

@@ -93,7 +93,8 @@ export function selectWorkflowCursor(
     return d
       .query(
         `SELECT * FROM workflow_cursor
-         WHERE project=? AND workflow_slug=? AND mode_slug=? AND workflow_key=?
+         WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+           AND workflow_slug=? AND mode_slug=? AND workflow_key=?
            AND instance_id='' ORDER BY id DESC LIMIT 1`,
       )
       .get(
@@ -107,7 +108,8 @@ export function selectWorkflowCursor(
   const rows = d
     .query(
       `SELECT * FROM workflow_cursor
-       WHERE project=? AND workflow_slug=? AND mode_slug=? AND workflow_key=''
+       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+         AND workflow_slug=? AND mode_slug=? AND workflow_key=''
          AND session_id=? AND state NOT IN ('done','abandoned') ORDER BY id`,
     )
     .all(identity.project, identity.workflow, identity.mode, ownerSession) as SelectableCursorRow[]
@@ -126,7 +128,8 @@ export function selectUntouchedKeylessWorkflowCursor(
   const rows = d
     .query(
       `SELECT * FROM workflow_cursor
-       WHERE project=? AND workflow_slug=? AND mode_slug=? AND workflow_key=''
+       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+         AND workflow_slug=? AND mode_slug=? AND workflow_key=''
          AND session_id=? AND state NOT IN ('done','abandoned')
          AND ordinal=0 ORDER BY id`,
     )
@@ -160,7 +163,8 @@ export function resolveWorkflowCursorMode(
   const rows = d
     .query(
       `SELECT DISTINCT mode_slug FROM workflow_cursor
-       WHERE project=? AND workflow_slug=? AND workflow_key=?
+       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+         AND workflow_slug=? AND workflow_key=?
          AND ${key ? "instance_id=''" : 'session_id=?'}
          AND state NOT IN ('done','abandoned') ORDER BY mode_slug`,
     )

@@ -97,7 +97,7 @@ function composeContext(input: {
   const owner = db()
     .query(
       `SELECT COALESCE(r.parent_run_id,r.id) root_run_id,p.name project_name
-       FROM run r JOIN project p ON p.id=r.project_id WHERE r.id=?`,
+       FROM run r JOIN project p ON p.record_id=r.project_record_id WHERE r.id=?`,
     )
     .get(input.runId) as { root_run_id: number; project_name: string } | null
   if (!owner) {
@@ -154,11 +154,11 @@ export const trackedAllocator: TrackedAllocator = {
       const database = db()
       const owner = database
         .query(
-          `SELECT COALESCE(parent_run_id,id) root_run_id,project_id
+          `SELECT COALESCE(parent_run_id,id) root_run_id,project_record_id
            FROM run WHERE id=?`,
         )
-        .get(input.runId) as { root_run_id: number; project_id: number | null } | null
-      if (!owner?.project_id) {
+        .get(input.runId) as { root_run_id: number; project_record_id: string | null } | null
+      if (!owner?.project_record_id) {
         throw new Error(`tracked recipe allocation for run ${input.runId} requires a project`)
       }
       const before = (
@@ -167,7 +167,7 @@ export const trackedAllocator: TrackedAllocator = {
       const identity = {
         rootRunId: owner.root_run_id,
         runId: input.runId,
-        projectId: owner.project_id,
+        projectId: owner.project_record_id,
         claimedAt: nowIso(),
       }
       const index = claimIndex(database, identity)
@@ -443,7 +443,7 @@ export function readSnapshot(runId: number): {
     .query(
       `SELECT r.id root_run_id,r.recipe_snapshot snapshot,r.launch_key key,r.launch_seed seed,
               p.name project_name
-       FROM run r LEFT JOIN project p ON p.id=r.project_id
+       FROM run r LEFT JOIN project p ON p.record_id=r.project_record_id
        WHERE r.id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)`,
     )
     .get(runId) as {

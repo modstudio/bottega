@@ -3,12 +3,17 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { upsertProject } from '../project/projects.ts'
 import { TASK_RULINGS_MAX_COUNT } from './task-rulings.ts'
 import { taskRulingsForDispatch } from './task-rulings-store.ts'
 
 function root(repo: string, launchKey: string): number {
   const id = addRun({ agent: 'codex', job: 'implement', repo })
-  db().query('UPDATE run SET launch_key=? WHERE id=?').run(launchKey, id)
+  db()
+    .query(
+      'UPDATE run SET launch_key=?,project_record_id=(SELECT record_id FROM project WHERE name=?) WHERE id=?',
+    )
+    .run(launchKey, repo, id)
   return id
 }
 
@@ -29,6 +34,12 @@ function answeredQuestion(
 
 describe('task ruling candidate query', () => {
   test('filters in SQL, orders by effective date, caps, and reports the full omitted count', () => {
+    upsertProject({
+      recordId: newRecordId(),
+      name: PLATFORM_SLUG,
+      path: `/fixture/${PLATFORM_SLUG}`,
+    })
+    upsertProject({ recordId: newRecordId(), name: 'other', path: '/fixture/other' })
     const matching = root(PLATFORM_SLUG, 'DEV-960')
     const otherKey = root(PLATFORM_SLUG, 'DEV-999')
     const otherProject = root('other', 'DEV-960')
@@ -52,12 +63,12 @@ describe('task ruling candidate query', () => {
     const cursor = db()
       .query(
         `INSERT INTO workflow_cursor
-          (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,workflow_version,
+          (record_id,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,workflow_version,
            catalogue_version,args,ordinal,step_slug,state,closed,question,total_steps,created_at,updated_at)
-         VALUES (?, ?, 'fixture-workflow','default','DEV-960','',1,1,'{}',0,'build','running','[]',NULL,1,
+         VALUES (?, ?, (SELECT record_id FROM project WHERE name=?),'fixture-workflow','default','DEV-960','',1,1,'{}',0,'build','running','[]',NULL,1,
                  '2026-09-01','2026-10-05') RETURNING id`,
       )
-      .get(newRecordId(), PLATFORM_SLUG) as { id: number }
+      .get(newRecordId(), PLATFORM_SLUG, PLATFORM_SLUG) as { id: number }
     db()
       .query(
         `INSERT INTO question
@@ -66,10 +77,11 @@ describe('task ruling candidate query', () => {
                '2026-10-05T12:00:00.000Z','agent','workflow')`,
       )
       .run(cursor.id)
+    db().query("UPDATE project SET name='renamed-fixture' WHERE name=?").run(PLATFORM_SLUG)
 
     const selected = taskRulingsForDispatch({
       resume: false,
-      project: PLATFORM_SLUG,
+      project: 'renamed-fixture',
       launchKey: 'DEV-960',
     })
 

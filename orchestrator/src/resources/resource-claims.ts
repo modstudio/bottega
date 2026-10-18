@@ -170,7 +170,7 @@ export function sandboxDirectoryRelease(
 type ClaimIdentity = {
   rootRunId: number
   runId: number
-  projectId: number | null
+  projectId: string | null
 }
 
 function insertClaim(
@@ -194,7 +194,7 @@ function insertClaim(
   database
     .query(
       `INSERT INTO resource_claim
-       (record_id,root_run_id,run_id,project_id,kind,allocation_key,identity,label,state,claimed_at)
+       (record_id,root_run_id,run_id,project_record_id,kind,allocation_key,identity,label,state,claimed_at)
        VALUES (?,?,?,?,?,?,?,?,'claimed',?)`,
     )
     .run(
@@ -274,7 +274,7 @@ export function claimRecipePort(
       database
         .query(
           `INSERT INTO resource_claim
-           (record_id,root_run_id,run_id,project_id,kind,allocation_key,identity,label,state,claimed_at)
+           (record_id,root_run_id,run_id,project_record_id,kind,allocation_key,identity,label,state,claimed_at)
            VALUES (?,?,?,?,'port',?,?,?,'claimed',?)`,
         )
         .run(
@@ -317,12 +317,12 @@ export function claimRecipePort(
 
 export function claimIndex(
   database: Database,
-  input: ClaimIdentity & { projectId: number; claimedAt: string },
+  input: ClaimIdentity & { projectId: string; claimedAt: string },
 ): number {
   const existing = database
     .query(
       `SELECT allocation_key FROM resource_claim
-       WHERE root_run_id=? AND project_id=? AND kind='index' AND state='claimed'
+       WHERE root_run_id=? AND project_record_id=? AND kind='index' AND state='claimed'
        ORDER BY id DESC LIMIT 1`,
     )
     .get(input.rootRunId, input.projectId) as { allocation_key: string } | null
@@ -331,7 +331,7 @@ export function claimIndex(
     database
       .query(
         `SELECT allocation_key FROM resource_claim
-         WHERE project_id=? AND kind='index' AND state='claimed'`,
+         WHERE project_record_id=? AND kind='index' AND state='claimed'`,
       )
       .all(input.projectId) as { allocation_key: string }[]
   ).map((row) => Number(row.allocation_key.split(':').at(-1)))
@@ -344,7 +344,7 @@ export function claimIndex(
       database
         .query(
           `INSERT INTO resource_claim
-           (record_id,root_run_id,run_id,project_id,kind,allocation_key,identity,label,state,claimed_at)
+           (record_id,root_run_id,run_id,project_record_id,kind,allocation_key,identity,label,state,claimed_at)
            VALUES (?,?,?,?,'index',?,?,?,'claimed',?)`,
         )
         .run(
@@ -369,12 +369,12 @@ export function claimIndex(
 
 export function claimString(
   database: Database,
-  input: ClaimIdentity & { projectId: number; name: string; value: string; claimedAt: string },
+  input: ClaimIdentity & { projectId: string; name: string; value: string; claimedAt: string },
 ): string {
   const existing = database
     .query(
       `SELECT allocation_key FROM resource_claim
-       WHERE root_run_id=? AND project_id=? AND kind='string' AND state='claimed'
+       WHERE root_run_id=? AND project_record_id=? AND kind='string' AND state='claimed'
          AND json_extract(identity,'$.name')=?
        ORDER BY id DESC LIMIT 1`,
     )
@@ -400,7 +400,7 @@ export function claimString(
     database
       .query(
         `INSERT INTO resource_claim
-         (record_id,root_run_id,run_id,project_id,kind,allocation_key,identity,label,state,claimed_at)
+         (record_id,root_run_id,run_id,project_record_id,kind,allocation_key,identity,label,state,claimed_at)
          VALUES (?,?,?,?,'string',?,?,?,'claimed',?)`,
       )
       .run(
@@ -432,7 +432,7 @@ export function claimString(
 export function claimDatabaseName(
   database: Database,
   input: ClaimIdentity & {
-    projectId: number
+    projectId: string
     name: string
     engine: string
     value: string
@@ -442,7 +442,7 @@ export function claimDatabaseName(
   const existing = database
     .query(
       `SELECT allocation_key FROM resource_claim
-       WHERE root_run_id=? AND project_id=? AND kind='database' AND state='claimed'
+       WHERE root_run_id=? AND project_record_id=? AND kind='database' AND state='claimed'
          AND json_extract(CASE WHEN json_valid(identity) THEN identity END,'$.name')=?
        ORDER BY id DESC LIMIT 1`,
     )
@@ -467,7 +467,7 @@ export function claimDatabaseName(
     database
       .query(
         `INSERT INTO resource_claim
-         (record_id,root_run_id,run_id,project_id,kind,allocation_key,identity,label,state,claimed_at)
+         (record_id,root_run_id,run_id,project_record_id,kind,allocation_key,identity,label,state,claimed_at)
          VALUES (?,?,?,?,'database',?,?,?,'claimed',?)`,
       )
       .run(

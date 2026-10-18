@@ -22,16 +22,15 @@ test('refuses a secret-shaped override reason before resolving the checkout', ()
 test('records the exact triage snapshot and outboxes it', () => {
   const database = db()
   const project = database
-    .query<{ id: number }, []>(
+    .query<{ record_id: string }, []>(
       `INSERT INTO project (record_id,name,path,stack,canon,settings,retired_at)
        VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'snapshot-fixture','/tmp/snapshot-fixture',NULL,0,'{"trunk":"main"}',NULL)
-       RETURNING id`,
+       RETURNING record_id`,
     )
     .get()!
   const change: PullRequestChange = {
     project: {
-      id: project.id,
-      recordId: '01990000-0000-7000-8000-000000001214',
+      recordId: project.record_id,
       name: 'snapshot-fixture',
       path: '/tmp/snapshot-fixture',
       stack: null,
@@ -114,16 +113,15 @@ test('records the exact triage snapshot and outboxes it', () => {
 test('merge admission leaves an existing snapshot unchanged', () => {
   const database = db()
   const project = database
-    .query<{ id: number }, []>(
+    .query<{ record_id: string }, []>(
       `INSERT INTO project (record_id,name,path,stack,canon,settings,retired_at)
        VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'existing-snapshot','/tmp/existing-snapshot',NULL,0,'{"trunk":"main"}',NULL)
-       RETURNING id`,
+       RETURNING record_id`,
     )
     .get()!
   const change: PullRequestChange = {
     project: {
-      id: project.id,
-      recordId: '01990000-0000-7000-8000-000000001214',
+      recordId: project.record_id,
       name: 'existing-snapshot',
       path: '/tmp/existing-snapshot',
       stack: null,

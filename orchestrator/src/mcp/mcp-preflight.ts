@@ -93,7 +93,7 @@ export function requiredMcpServer(
   const project = projectName ? projectByName(projectName) : projectAt(cwd)
   if (!project) return undefined
   return {
-    projectId: project.id,
+    projectId: project.recordId,
     project: project.name,
     server: project.settings.mcpServer ?? project.name,
     mode: requestedMcpMode(request)!,

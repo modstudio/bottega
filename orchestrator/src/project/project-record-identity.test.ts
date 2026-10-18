@@ -138,16 +138,17 @@ test('the project identity decision is pure over local, hosted, and retirement f
   ).toEqual({ kind: 'mint-local' })
 })
 
-test('project list JSON publishes required record_id beside the local id', async () => {
+test('project list JSON publishes record_id without a local integer id', async () => {
   upsertProject({ recordId: newRecordId(), name: 'identity-list', path: '/w/identity-list' })
   const rows = JSON.parse(await runProject(['project', 'list'], { json: true })) as Array<{
-    id: number
     record_id: string
     name: string
   }>
-  expect(rows.find((row) => row.name === 'identity-list')?.record_id).toMatch(
+  const row = rows.find((candidate) => candidate.name === 'identity-list')
+  expect(row?.record_id).toMatch(
     /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
   )
+  expect(row).not.toHaveProperty('id')
 })
 
 test('project push stores returned identities without overwriting concurrent set or retire writes', async () => {

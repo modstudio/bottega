@@ -32,10 +32,14 @@ import {
 } from '../resources/resource-ownership.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import type { CleanupPresentation } from './cleanup.ts'
+import { decideConversationProjectOwnership } from './cleanup-sweep-decisions.ts'
 
 type DockerOwner = {
   id: number
   repo: string | null
+  project_record_id: string | null
+  member_project_record_id: string | null
+  root_id: number
   worktree: string | null
   status: string
   worktree_source: Worktree['source'] | null
@@ -48,11 +52,15 @@ type DockerOwner = {
 function dockerOwners(ownerIds: Set<number>): DockerOwner[] {
   const rows = db()
     .query(
-      `SELECT r.id,COALESCE(root.repo,r.repo) repo,r.worktree,r.status,
+      `SELECT r.id,COALESCE(root.repo,r.repo) repo,
+              root.project_record_id project_record_id,
+              r.project_record_id member_project_record_id,
+              root.id root_id,
+              r.worktree,r.status,
               COALESCE(root.worktree_source,r.worktree_source) worktree_source,
               COALESCE(root.recipe_snapshot,r.recipe_snapshot) recipe_snapshot,
               COALESCE(root.resource_teardown,r.resource_teardown) resource_teardown
-       FROM run r LEFT JOIN run root ON root.id=r.parent_run_id`,
+       FROM run r JOIN run root ON root.id=COALESCE(r.parent_run_id,r.id)`,
     )
     .all() as Omit<DockerOwner, 'absentTreeTeardown' | 'retentionReason'>[]
   return rows.map((owner) => ({
@@ -87,7 +95,13 @@ function reclaimTerminalOwners(input: {
   const reclaimed = new Set<number>()
   let failed = false
   for (const owner of owners) {
-    if (!terminalOwnerInScope(owner, ownerIds, selectedProject)) continue
+    const ownershipIssue = dockerOwnershipIssue(owner, owners, selectedProject)
+    if (ownershipIssue && dockerOwnerCouldBeInScope(owner, owners, ownerIds, selectedProject)) {
+      failed = true
+      presentation.error(`retained Docker resources for run ${owner.id}: ${ownershipIssue}`)
+      continue
+    }
+    if (!terminalOwnerInScope(owner, owners, ownerIds, selectedProject)) continue
     const teardown = teardownTerminalRunResources(db(), owner.id, inventory, { dryRun })
     if (teardown.complete && !teardown.skipped) reclaimed.add(owner.id)
     else failed = true
@@ -98,15 +112,52 @@ function reclaimTerminalOwners(input: {
   return { failed, reclaimed }
 }
 
+function dockerOwnershipIssue(
+  owner: DockerOwner,
+  owners: DockerOwner[],
+  selectedProject: Project | null,
+): string | null {
+  const members = owners.filter((member) => member.root_id === owner.root_id)
+  const ruling = decideConversationProjectOwnership({
+    root: { id: owner.root_id, projectRecordId: owner.project_record_id },
+    members: members.map((member) => ({
+      id: member.id,
+      projectRecordId: member.member_project_record_id,
+    })),
+    expectedProjectRecordId: selectedProject?.recordId ?? owner.project_record_id ?? '',
+  })
+  return ruling.outcome === 'unknown' ? ruling.reason : null
+}
+
+function dockerOwnerCouldBeInScope(
+  owner: DockerOwner,
+  owners: DockerOwner[],
+  ownerIds: Set<number>,
+  selectedProject: Project | null,
+): boolean {
+  const chainProjectRecordIds = owners
+    .filter((member) => member.root_id === owner.root_id)
+    .map((member) => member.member_project_record_id)
+  return (
+    ownerIds.has(owner.id) &&
+    (!selectedProject ||
+      owner.project_record_id === selectedProject.recordId ||
+      chainProjectRecordIds.includes(selectedProject.recordId) ||
+      owner.project_record_id === null)
+  )
+}
+
 function terminalOwnerInScope(
   owner: DockerOwner,
+  owners: DockerOwner[],
   ownerIds: Set<number>,
   selectedProject: Project | null,
 ): boolean {
   return (
-    ownerIds.has(owner.id) &&
+    dockerOwnerCouldBeInScope(owner, owners, ownerIds, selectedProject) &&
+    dockerOwnershipIssue(owner, owners, selectedProject) === null &&
     ['ok', 'failed', 'stale', 'stopped'].includes(owner.status) &&
-    (!selectedProject || owner.repo === selectedProject.name)
+    (!selectedProject || owner.project_record_id === selectedProject.recordId)
   )
 }
 
@@ -213,7 +264,7 @@ function orphanComposeWorkingDirs(input: {
     if (!container.workingDir || container.runAttributed || container.mainCheckout) return false
     const owner = projectForWorktreeDirectory(container.workingDir, registered)
     return (
-      owner?.id === project.id &&
+      owner?.recordId === project.recordId &&
       isOrphanWorktreeDockerResource({
         workingDir: container.workingDir,
         projectPath: project.path,
@@ -255,7 +306,7 @@ function orphanWorktreeDockerGroups(input: {
     const firstWorkingDir = containers[0]!.workingDir
     if (!firstWorkingDir) continue
     const project = projectForWorktreeDirectory(firstWorkingDir, registered)
-    if (!project || (selectedProject && project.id !== selectedProject.id)) continue
+    if (!project || (selectedProject && project.recordId !== selectedProject.recordId)) continue
     if (!gitPaths.has(project)) gitPaths.set(project, listedWorktreePaths(project))
     const workingDirs = orphanComposeWorkingDirs({
       containers,
@@ -269,7 +320,7 @@ function orphanWorktreeDockerGroups(input: {
       (resource) => resource.kind === 'container' && resource.composeProject === composeProject,
     )
     if (resources.length !== containers.length) continue
-    grouped.set(`${project.id}\0${composeProject}`, { project, resources, workingDirs })
+    grouped.set(`${project.recordId}\0${composeProject}`, { project, resources, workingDirs })
   }
   const groups = [...grouped.values()]
   for (const group of groups) {
@@ -474,11 +525,12 @@ export function reclaimSweptDockerResources(input: {
     selectedProject,
   })
   failed ||= reclaimedResult.failed
-  const classified = classifiedDockerResources(resources, owners).filter(
-    (item) =>
-      !reclaimedResult.reclaimed.has(item.resource.runId) &&
-      (!selectedProject || item.project === selectedProject.name),
-  )
+  const ownerByRun = new Map(owners.map((owner) => [owner.id, owner]))
+  const classified = classifiedDockerResources(resources, owners).filter((item) => {
+    if (reclaimedResult.reclaimed.has(item.resource.runId)) return false
+    const owner = ownerByRun.get(item.resource.runId)
+    return Boolean(owner && dockerOwnerCouldBeInScope(owner, owners, ownerIds, selectedProject))
+  })
   for (const { resource, project, condition } of classified) {
     if (condition === 'retained-worktree-resources') continue
     const key = `${resource.kind}:${resource.name}`

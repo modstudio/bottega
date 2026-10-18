@@ -235,8 +235,8 @@ test('an architect may address architects without receiving its own post', async
   const clock = Date.parse('2026-10-07T13:00:00.000Z')
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES ('posting-reader','claude-code','architect','test','push-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES ('posting-reader','claude-code','architect','test','push-project',(SELECT record_id FROM project WHERE name='push-project'),'/tmp',NULL,?,?)`,
     )
     .run(new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
   expect(() =>
@@ -260,8 +260,8 @@ test('a claim-conflict delivery is not a pending acknowledgement', async () => {
   const clock = Date.parse('2026-10-07T13:30:00.000Z')
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES ('claim-holder','claude-code','architect','test','push-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES ('claim-holder','claude-code','architect','test','push-project',(SELECT record_id FROM project WHERE name='push-project'),'/tmp',NULL,?,?)`,
     )
     .run(new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
   takeClaim(
@@ -295,8 +295,8 @@ test('mid-session local delivery includes an ordinary notice, question, and part
   for (const session of ['delivery-reader', 'thread-author'])
     db()
       .query(
-        `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-         VALUES (?,'claude-code','architect','test','push-project','/tmp',NULL,?,?)`,
+        `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+         VALUES (?,'claude-code','architect','test','push-project',(SELECT record_id FROM project WHERE name='push-project'),'/tmp',NULL,?,?)`,
       )
       .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
   const ordinary = postNotice(
@@ -387,8 +387,8 @@ test('mid-session hosted delivery includes an ordinary notice, question, and par
   const otherUser = newRecordId()
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude-code','architect','test','push-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude-code','architect','test','push-project',(SELECT record_id FROM project WHERE name='push-project'),'/tmp',NULL,?,?)`,
     )
     .run(reader, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
   const setMeta = db().query(
@@ -515,8 +515,8 @@ test('delivery returns every pending notice and preserves its first delivered ti
   const clock = Date.parse('2026-10-08T12:00:00.000Z')
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-     VALUES ('remind-reader','claude-code','architect','test','remind-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+     VALUES ('remind-reader','claude-code','architect','test','remind-project',(SELECT record_id FROM project WHERE name='remind-project'),'/tmp',NULL,?,?)`,
     )
     .run(new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
   const posted = postNotice(
@@ -576,8 +576,8 @@ test('recent reminders are removed before bounding without changing pending ackn
   const session = 'bounded-reminder-reader'
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude-code','architect','test','push-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude-code','architect','test','push-project',(SELECT record_id FROM project WHERE name='push-project'),'/tmp',NULL,?,?)`,
     )
     .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
   const reminders = Array.from({ length: BOARD_DELIVERY_MAX_MESSAGES }, (_, index) =>
@@ -623,8 +623,8 @@ test('ordinary-only delivery excludes required notices before bounding', async (
   const session = 'ordinary-only-reader'
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude-code','architect','test','push-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude-code','architect','test','push-project',(SELECT record_id FROM project WHERE name='push-project'),'/tmp',NULL,?,?)`,
     )
     .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
   const required = Array.from({ length: BOARD_DELIVERY_MAX_MESSAGES }, (_, index) =>
@@ -665,8 +665,8 @@ test('recently-injected ids do not suppress messages never delivered to the sess
   const session = 'unread-reminder-reader'
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude-code','architect','test','push-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude-code','architect','test','push-project',(SELECT record_id FROM project WHERE name='push-project'),'/tmp',NULL,?,?)`,
     )
     .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
   const unread = postNotice(

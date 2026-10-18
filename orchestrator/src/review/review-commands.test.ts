@@ -242,9 +242,10 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
     const run = db()
       .query<{ id: number }, [string, string, string]>(
         `INSERT INTO run
-           (record_id,started_at,agent,job,repo,branch,base_commit,input_tree,head_commit,
+           (record_id,started_at,agent,job,repo,project_record_id,branch,base_commit,input_tree,head_commit,
             prompt_sha,prompt_bytes,prompt_head,status)
-         VALUES ('${newRecordId()}','2026-09-27','codex','implement','tier-fixture','DEV-992-fixture',?,?,?,
+         VALUES ('${newRecordId()}','2026-09-27','codex','implement','tier-fixture',
+                 (SELECT record_id FROM project WHERE name='tier-fixture'),'DEV-992-fixture',?,?,?,
                  'sha',1,'head','ok')
          RETURNING id`,
       )

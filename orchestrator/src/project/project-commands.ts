@@ -161,7 +161,6 @@ export async function addProject(
   })
   if (decision.kind === 'refuse') throw new Error(decision.reason)
   const candidate = {
-    id: 0,
     recordId: decision.kind === 'adopt' ? decision.recordId : newRecordId(),
     name: input.name,
     path: input.path,
@@ -485,7 +484,6 @@ async function setProjectCommand(
   }
   const nextName = flags.flag('name') ?? name
   const candidate = {
-    id: project.id,
     recordId: project.recordId,
     name: nextName,
     path: flags.flag('path') ?? project.path,

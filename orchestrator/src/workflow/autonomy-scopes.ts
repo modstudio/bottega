@@ -174,7 +174,8 @@ function workflowRulingsSnapshot(
   const rows = d
     .query(
       `SELECT autonomy FROM workflow_cursor
-       WHERE project=? AND workflow_key=? AND state IN ('running','awaiting-ruling')
+       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+         AND workflow_key=? AND state IN ('running','awaiting-ruling')
        ORDER BY updated_at DESC,id DESC`,
     )
     .all(project, launchKey) as { autonomy: string | null }[]

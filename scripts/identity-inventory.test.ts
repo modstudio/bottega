@@ -149,6 +149,17 @@ test('an unclassified reference-shaped column is refused', () => {
   )
 })
 
+test('an unclassified project-name-shaped orchestrator column is refused', () => {
+  const table = {
+    name: 'cursor',
+    primaryKey: ['record_id'],
+    columns: [column('cursor', 'record_id', 'uuid', true), column('cursor', 'repo', 'text')],
+  }
+  expect(() => classifyKeyInventory('orchestrator', [table], EMPTY)).toThrow(
+    'orchestrator reference-shaped column cursor.repo is not classified',
+  )
+})
+
 test('real natural and undeclared references remain measured', () => {
   const database = new Database(':memory:')
   try {

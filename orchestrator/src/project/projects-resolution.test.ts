@@ -6,6 +6,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { codeSearchCommand } from '../code/code-commands.ts'
 import { db, writableDb } from '../database/db.ts'
+import { PROJECT_REFERENCES } from './project-reference-counts.ts'
 import {
   type ProjectReferenceCounts,
   projectAt,
@@ -24,19 +25,9 @@ import {
   validateProjectSettings,
 } from './projects.ts'
 
-const none: ProjectReferenceCounts = {
-  run: 0,
-  resource_claim: 0,
-  canon_pack: 0,
-  landing: 0,
-  landing_override: 0,
-  landing_review_carry: 0,
-  landing_triage_snapshot: 0,
-  review_read: 0,
-  doc: 0,
-  doc_revision: 0,
-  review: 0,
-}
+const none = Object.fromEntries(
+  PROJECT_REFERENCES.map(([key]) => [key, 0]),
+) as ProjectReferenceCounts
 
 let projectDirectory: string | null = null
 
@@ -314,22 +305,24 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
     writableDb()
     db()
       .query(
-        `INSERT INTO run (record_id,started_at, agent, job, project_id, prompt_sha, prompt_bytes, prompt_head, status)
+        `INSERT INTO run (record_id,started_at, agent, job, project_record_id, prompt_sha, prompt_bytes, prompt_head, status)
          VALUES ('${newRecordId()}','t', 'a', 'understand', ?, 'sha', 1, 'h', 'ok')`,
       )
-      .run(project.id)
+      .run(project.recordId)
     expect(() => removeProject('kept-run')).toThrow(
       'project kept-run is referenced by 1 run(s); removing it would blank their project attribution\n' +
         `cleared by: ${PLATFORM_SLUG} project retire kept-run`,
     )
-    expect(projectByName('kept-run')?.id).toBe(project.id)
+    expect(projectByName('kept-run')?.recordId).toBe(project.recordId)
     expect(
       (
-        db().query('SELECT project_id FROM run WHERE project_id=?').get(project.id) as {
-          project_id: number
+        db()
+          .query('SELECT project_record_id FROM run WHERE project_record_id=?')
+          .get(project.recordId) as {
+          project_record_id: string
         }
-      ).project_id,
-    ).toBe(project.id)
+      ).project_record_id,
+    ).toBe(project.recordId)
   })
 
   test('a project with nothing referencing it still removes', () => {
@@ -347,7 +340,7 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
     expect(projects().some((project) => project.name === 'tombstoned')).toBe(false)
     expect(projectByName('tombstoned')).toBeNull()
     expect(projectAt(path)).toBeNull()
-    expect(retiredProjectByName('tombstoned')?.id).toBe(retired!.id)
+    expect(retiredProjectByName('tombstoned')?.recordId).toBe(retired!.recordId)
     expect(retiredProjectAt(path)?.name).toBe('tombstoned')
     expect(retiredProjectRefusal('tombstoned')).toBe(
       `project tombstoned is retired; cleared by: ${PLATFORM_SLUG} project retire tombstoned --undo`,

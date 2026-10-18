@@ -19,7 +19,7 @@ function insertProject(name: string): number {
   return (
     db()
       .query<{ id: number }, [string]>(
-        "INSERT INTO project (record_id,name, path, canon, settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?, '/tmp/p', 1, '{}') RETURNING id",
+        "INSERT INTO project (record_id,name, path, canon, settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?, '/tmp/p', 1, '{}') RETURNING record_id AS id",
       )
       .get(name) as { id: number }
   ).id
@@ -41,7 +41,7 @@ function insertDoc(row: {
   return (
     db()
       .query(
-        `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, audiences, created_at, updated_at, parent_id, record_id)
+        `INSERT INTO doc (scope, subject, project_record_id, slug, title, body, delivery, audiences, created_at, updated_at, parent_id, record_id)
          VALUES (?,?,?,?,?,?,?,'["technical"]',?,?,?,?) RETURNING id`,
       )
       .get(
@@ -81,7 +81,7 @@ function insertRevision(row: {
     db()
       .query(
         `INSERT INTO doc_revision
-         (doc_id, scope, subject, project_id, slug, op, title, body, delivery, audiences, author, reason, session_id, at, parent_id, record_id)
+         (doc_id, scope, subject, project_record_id, slug, op, title, body, delivery, audiences, author, reason, session_id, at, parent_id, record_id)
          VALUES (?,?,?,?,?,?,?,?,?,'["technical"]',?,?,?,?,?,?) RETURNING id`,
       )
       .get(

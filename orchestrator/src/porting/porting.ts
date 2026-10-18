@@ -3,8 +3,8 @@ import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 
 export type PortPair = {
   id: number
-  source_project_id: number
-  target_project_id: number
+  source_project_record_id: string
+  target_project_record_id: string
   created_at: string
 }
 
@@ -23,7 +23,7 @@ export type PortSkip = {
 }
 
 export type LedgerSource = {
-  source_project_id: number
+  source_project_record_id: string
   commits: string[]
   paths: string[]
   note: string
@@ -31,7 +31,7 @@ export type LedgerSource = {
 
 export type LedgerRef = {
   task_key: string
-  target_project_id: number
+  target_project_record_id: string
   note: string
   created_at: string
   resolved_at: string | null
@@ -46,21 +46,21 @@ export type DoctrineRule = {
   retired_at: string | null
 }
 
-export function pairByProjects(sourceProjectId: number, targetProjectId: number): PortPair | null {
+export function pairByProjects(sourceProjectId: string, targetProjectId: string): PortPair | null {
   return db()
     .query(
-      'SELECT id,source_project_id,target_project_id,created_at FROM port_pair WHERE source_project_id=? AND target_project_id=?',
+      'SELECT id,source_project_record_id,target_project_record_id,created_at FROM port_pair WHERE source_project_record_id=? AND target_project_record_id=?',
     )
     .get(sourceProjectId, targetProjectId) as PortPair | null
 }
 
-export function addPair(sourceProjectId: number, targetProjectId: number, at = nowIso()): PortPair {
+export function addPair(sourceProjectId: string, targetProjectId: string, at = nowIso()): PortPair {
   writableDb()
   writeTransaction(() => {
     db()
       .query(
-        `INSERT INTO port_pair (record_id, source_project_id, target_project_id, created_at)
-       VALUES (?,?,?,?) ON CONFLICT(source_project_id, target_project_id) DO NOTHING`,
+        `INSERT INTO port_pair (record_id, source_project_record_id, target_project_record_id, created_at)
+       VALUES (?,?,?,?) ON CONFLICT(source_project_record_id, target_project_record_id) DO NOTHING`,
       )
       .run(newRecordId(), sourceProjectId, targetProjectId, at)
     const pair = pairByProjects(sourceProjectId, targetProjectId)!
@@ -132,20 +132,20 @@ function parseStringArray(value: string): string[] {
   return parsed
 }
 
-export function ledgerRef(targetProjectId: number, taskKey: string): LedgerRef | null {
+export function ledgerRef(targetProjectId: string, taskKey: string): LedgerRef | null {
   const ref = db()
     .query(
-      'SELECT task_key,target_project_id,note,created_at,resolved_at FROM port_ref WHERE target_project_id=? AND task_key=?',
+      'SELECT task_key,target_project_record_id,note,created_at,resolved_at FROM port_ref WHERE target_project_record_id=? AND task_key=?',
     )
     .get(targetProjectId, taskKey) as Omit<LedgerRef, 'sources'> | null
   if (!ref) return null
   const rows = db()
     .query(
-      `SELECT source_project_id, commits, paths, note FROM port_ref_source
-     WHERE target_project_id=? AND task_key=? ORDER BY id`,
+      `SELECT source_project_record_id, commits, paths, note FROM port_ref_source
+     WHERE target_project_record_id=? AND task_key=? ORDER BY id`,
     )
     .all(targetProjectId, taskKey) as {
-    source_project_id: number
+    source_project_record_id: string
     commits: string
     paths: string
     note: string
@@ -153,7 +153,7 @@ export function ledgerRef(targetProjectId: number, taskKey: string): LedgerRef |
   return {
     ...ref,
     sources: rows.map((row) => ({
-      source_project_id: row.source_project_id,
+      source_project_record_id: row.source_project_record_id,
       commits: parseStringArray(row.commits),
       paths: parseStringArray(row.paths),
       note: row.note,
@@ -164,15 +164,17 @@ export function ledgerRef(targetProjectId: number, taskKey: string): LedgerRef |
 export function listLedgerRefs(includeResolved = false): LedgerRef[] {
   const keys = db()
     .query(
-      `SELECT target_project_id,task_key FROM port_ref${includeResolved ? '' : ' WHERE resolved_at IS NULL'} ORDER BY target_project_id,task_key`,
+      `SELECT target_project_record_id,task_key FROM port_ref${includeResolved ? '' : ' WHERE resolved_at IS NULL'} ORDER BY target_project_record_id,task_key`,
     )
-    .all() as { target_project_id: number; task_key: string }[]
-  return keys.map(({ target_project_id, task_key }) => ledgerRef(target_project_id, task_key)!)
+    .all() as { target_project_record_id: string; task_key: string }[]
+  return keys.map(
+    ({ target_project_record_id, task_key }) => ledgerRef(target_project_record_id, task_key)!,
+  )
 }
 
 export function setLedgerRef(input: {
   taskKey: string
-  targetProjectId: number
+  targetProjectId: string
   note: string
   sources: LedgerSource[]
   createdAt?: string
@@ -180,15 +182,16 @@ export function setLedgerRef(input: {
   writableDb()
   if (input.sources.length === 0) throw new Error('a ledger ref needs at least one source project')
   if (
-    new Set(input.sources.map((source) => source.source_project_id)).size !== input.sources.length
+    new Set(input.sources.map((source) => source.source_project_record_id)).size !==
+    input.sources.length
   ) {
     throw new Error('a ledger ref may name each source project only once')
   }
   writeTransaction(() => {
     db()
       .query(
-        `INSERT INTO port_ref (record_id, task_key, target_project_id, note, created_at) VALUES (?,?,?,?,?)
-       ON CONFLICT(target_project_id,task_key) DO UPDATE SET note=excluded.note`,
+        `INSERT INTO port_ref (record_id, task_key, target_project_record_id, note, created_at) VALUES (?,?,?,?,?)
+       ON CONFLICT(target_project_record_id,task_key) DO UPDATE SET note=excluded.note`,
       )
       .run(
         newRecordId(),
@@ -198,18 +201,18 @@ export function setLedgerRef(input: {
         input.createdAt ?? nowIso(),
       )
     db()
-      .query('DELETE FROM port_ref_source WHERE target_project_id=? AND task_key=?')
+      .query('DELETE FROM port_ref_source WHERE target_project_record_id=? AND task_key=?')
       .run(input.targetProjectId, input.taskKey)
     const insert = db().query(
       `INSERT INTO port_ref_source
-         (record_id, task_key, target_project_id, source_project_id, commits, paths, note) VALUES (?,?,?,?,?,?,?)`,
+         (record_id, task_key, target_project_record_id, source_project_record_id, commits, paths, note) VALUES (?,?,?,?,?,?,?)`,
     )
     for (const source of input.sources) {
       insert.run(
         newRecordId(),
         input.taskKey,
         input.targetProjectId,
-        source.source_project_id,
+        source.source_project_record_id,
         JSON.stringify(source.commits),
         JSON.stringify(source.paths),
         source.note,
@@ -219,17 +222,17 @@ export function setLedgerRef(input: {
   return ledgerRef(input.targetProjectId, input.taskKey)!
 }
 
-export function removeLedgerRef(targetProjectId: number, taskKey: string): boolean {
+export function removeLedgerRef(targetProjectId: string, taskKey: string): boolean {
   writableDb()
   return (
     db()
-      .query('DELETE FROM port_ref WHERE target_project_id=? AND task_key=?')
+      .query('DELETE FROM port_ref WHERE target_project_record_id=? AND task_key=?')
       .run(targetProjectId, taskKey).changes > 0
   )
 }
 
 export function resolveLedgerRef(
-  targetProjectId: number,
+  targetProjectId: string,
   taskKey: string,
   resolvedAt = nowIso(),
 ): LedgerRef | null {
@@ -238,7 +241,7 @@ export function resolveLedgerRef(
   if (!existing || existing.resolved_at) return existing
   db()
     .query(
-      'UPDATE port_ref SET resolved_at=? WHERE target_project_id=? AND task_key=? AND resolved_at IS NULL',
+      'UPDATE port_ref SET resolved_at=? WHERE target_project_record_id=? AND task_key=? AND resolved_at IS NULL',
     )
     .run(resolvedAt, targetProjectId, taskKey)
   return ledgerRef(targetProjectId, taskKey)

@@ -38,7 +38,7 @@ export function reviewFindingMemoryRows(
          JOIN review r ON r.id=rf.review_id
          JOIN review_lens rl ON rl.id=rf.review_lens_id
          JOIN run ON run.id=rl.run_id
-        WHERE run.repo=?`,
+        WHERE run.project_record_id=(SELECT record_id FROM project WHERE name=?)`,
     )
     .all(project)
     .map((row) => ({

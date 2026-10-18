@@ -261,14 +261,16 @@ describe('lens catalogue', () => {
     const renamedRunId = addRun({ agent: 'codex', job: 'review-lens', repo: 'devbox' })
     const live = db()
     live.exec('PRAGMA foreign_keys=ON')
-    live.query('UPDATE run SET project_id=NULL WHERE id=?').run(runId)
-    live.query('UPDATE run SET project_id=NULL WHERE id=?').run(renamedRunId)
+    live.query('UPDATE run SET project_record_id=NULL WHERE id=?').run(runId)
+    live.query('UPDATE run SET project_record_id=NULL WHERE id=?').run(renamedRunId)
     live
-      .query(`INSERT INTO canon_pack (id,record_id,job,project,sha256,bytes,doc_count,doc_revisions,compiled_at,findings,project_id)
+      .query(`INSERT INTO canon_pack (id,record_id,job,project,sha256,bytes,doc_count,doc_revisions,compiled_at,findings,project_record_id)
       VALUES (8001,?,'review-lens','one','sha',1,1,'[]','now',0,NULL)`)
       .run(newRecordId())
     live
-      .query(`INSERT INTO review (id,record_id,recorded_at,project_id) VALUES (8002,?,'now',NULL)`)
+      .query(
+        `INSERT INTO review (id,record_id,recorded_at,project_record_id) VALUES (8002,?,'now',NULL)`,
+      )
       .run(newRecordId())
     live
       .query(`INSERT INTO review_lens (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
@@ -276,32 +278,34 @@ describe('lens catalogue', () => {
       .run(newRecordId(), runId)
     live
       .query(
-        `INSERT INTO landing (id,record_id,project,branch,status,started_at,project_id) VALUES (8003,?,'one','branch','queued','now',NULL)`,
+        `INSERT INTO landing (id,record_id,project,branch,status,started_at,project_record_id) VALUES (8003,?,'one','branch','queued','now',NULL)`,
       )
       .run(newRecordId())
     live
-      .query(`INSERT INTO landing_override (id,record_id,project,branch,tip,tree,reason,at,project_id)
+      .query(`INSERT INTO landing_override (id,record_id,project,branch,tip,tree,reason,at,project_record_id)
       VALUES (8004,?,'one','branch','tip','tree','test','now',NULL)`)
       .run(newRecordId())
     live
       .query(`INSERT INTO landing_review_carry
-      (id,record_id,project,branch,tip,tree,review_id,reviewed_commit,reviewed_tree,patch_id,old_base,new_base,at,project_id)
+      (id,record_id,project,branch,tip,tree,review_id,reviewed_commit,reviewed_tree,patch_id,old_base,new_base,at,project_record_id)
       VALUES (8005,?,'one','branch','tip','tree',8002,'commit','tree','patch','old','new','now',NULL)`)
       .run(newRecordId())
     live
-      .query(`INSERT INTO doc (id,scope,subject,slug,title,body,audiences,created_at,updated_at,project_id,record_id)
+      .query(`INSERT INTO doc (id,scope,subject,slug,title,body,audiences,created_at,updated_at,project_record_id,record_id)
       VALUES (8006,'project','one','probe','Probe','body','["technical"]','now','now',NULL,?)`)
       .run(newRecordId())
     live
       .query(`INSERT INTO doc_revision
-      (id,doc_id,scope,subject,slug,op,title,body,audiences,author,reason,at,project_id,record_id)
+      (id,doc_id,scope,subject,slug,op,title,body,audiences,author,reason,at,project_record_id,record_id)
       VALUES (8007,8006,'project','one','probe','create','Probe','body','["technical"]','test','test','now',NULL,?)`)
       .run(newRecordId())
 
     expect(applyMigrations(live)).toEqual([])
-    expect(live.query('SELECT project_id FROM run WHERE id=?').get(renamedRunId)).toEqual({
-      project_id: (
-        live.query(`SELECT id FROM project WHERE name='${PLATFORM_SLUG}'`).get() as { id: number }
+    expect(live.query('SELECT project_record_id FROM run WHERE id=?').get(renamedRunId)).toEqual({
+      project_record_id: (
+        live.query(`SELECT record_id AS id FROM project WHERE name='${PLATFORM_SLUG}'`).get() as {
+          id: number
+        }
       ).id,
     })
     for (const [table, where] of [
@@ -316,7 +320,7 @@ describe('lens catalogue', () => {
       expect(
         (
           live
-            .query(`SELECT COUNT(*) n FROM ${table} WHERE ${where} AND project_id IS NULL`)
+            .query(`SELECT COUNT(*) n FROM ${table} WHERE ${where} AND project_record_id IS NULL`)
             .get() as { n: number }
         ).n,
         table,
@@ -324,9 +328,9 @@ describe('lens catalogue', () => {
     expect(
       (
         live
-          .query(`SELECT COUNT(*) n FROM review rv WHERE rv.project_id IS NULL
-        AND 1=(SELECT COUNT(DISTINCT r.project_id) FROM review_lens rl JOIN run r ON r.id=rl.run_id WHERE rl.review_id=rv.id)
-        AND 0=(SELECT COUNT(*) FROM review_lens rl JOIN run r ON r.id=rl.run_id WHERE rl.review_id=rv.id AND r.project_id IS NULL)`)
+          .query(`SELECT COUNT(*) n FROM review rv WHERE rv.project_record_id IS NULL
+        AND 1=(SELECT COUNT(DISTINCT r.project_record_id) FROM review_lens rl JOIN run r ON r.id=rl.run_id WHERE rl.review_id=rv.id)
+        AND 0=(SELECT COUNT(*) FROM review_lens rl JOIN run r ON r.id=rl.run_id WHERE rl.review_id=rv.id AND r.project_record_id IS NULL)`)
           .get() as { n: number }
       ).n,
     ).toBe(0)

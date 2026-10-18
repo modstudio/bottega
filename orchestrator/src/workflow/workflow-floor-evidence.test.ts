@@ -153,7 +153,9 @@ const setTrackerStates = (d: Database, name: string, states: Record<string, stri
 
 const projectId = (d: Database, name: string) =>
   (
-    d.query<{ id: number }, [string]>('SELECT id FROM project WHERE name=?').get(name) as {
+    d
+      .query<{ id: number }, [string]>('SELECT record_id AS id FROM project WHERE name=?')
+      .get(name) as {
       id: number
     }
   ).id
@@ -172,7 +174,7 @@ const insertRun = (
   (
     d
       .query<{ id: number }, (string | number | null)[]>(
-        `INSERT INTO run (record_id,started_at,agent,job,repo,project_id,prompt_sha,prompt_bytes,prompt_head,status,exit_code,launch_key,branch,session_id)
+        `INSERT INTO run (record_id,started_at,agent,job,repo,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,exit_code,launch_key,branch,session_id)
          VALUES ('${newRecordId()}',?,'codex','implement',?,?, 'sha',1,'p',?,0,?,?,?) RETURNING id`,
       )
       .get(
@@ -238,8 +240,8 @@ test('resolves probe artifacts and task comments through injected ports', () => 
   ).run()
   d.query(
     `INSERT INTO landing_triage_snapshot
-      (record_id,project,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
-     VALUES ('snap-1','fixture','DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
+      (record_id,project,project_record_id,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
+     VALUES ('snap-1','fixture',(SELECT record_id FROM project WHERE name='fixture'),'DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
   ).run()
   const gathered = gather(d, { artifact: 'probe:1', task: 'DEV-977' })
   expect(gathered.artifact).toEqual({ ref: 'probe:1', exists: true })
@@ -265,7 +267,7 @@ test('a foreign review is refused and a matching review is allowed', () => {
     branch: 'other-branch',
   })
   d.query(
-    `INSERT INTO review (record_id,recorded_at,project_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
+    `INSERT INTO review (record_id,recorded_at,project_record_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
   ).run(projectId(d, 'other'))
   d.query(
     `INSERT INTO review_lens (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
@@ -281,7 +283,7 @@ test('a foreign review is refused and a matching review is allowed', () => {
     branch: 'DEV-977-work',
   })
   d.query(
-    `INSERT INTO review (record_id,recorded_at,project_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
+    `INSERT INTO review (record_id,recorded_at,project_record_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
   ).run(projectId(d, 'fixture'))
   d.query(
     `INSERT INTO review_lens (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
@@ -303,7 +305,7 @@ test('review evidence covers every review of the same change on the branch', () 
   ]
   const project = projectId(d, 'fixture')
   d.query(
-    `INSERT INTO review (id,record_id,recorded_at,project_id,patch_id,path_set) VALUES
+    `INSERT INTO review (id,record_id,recorded_at,project_record_id,patch_id,path_set) VALUES
       (1,'${newRecordId()}','2026-09-01',?,'same-patch','["src/change.ts"]'),
       (2,'${newRecordId()}','2026-09-01',?,'same-patch','["src/change.ts"]'),
       (3,'${newRecordId()}','2026-09-01',?,'other-patch','["src/other.ts"]')`,
@@ -344,7 +346,7 @@ test('a same-project review whose lenses miss the branch and key is refused', ()
     branch: 'other-branch',
   })
   d.query(
-    `INSERT INTO review (record_id,recorded_at,project_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
+    `INSERT INTO review (record_id,recorded_at,project_record_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
   ).run(projectId(d, 'fixture'))
   d.query(
     `INSERT INTO review_lens (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
@@ -363,7 +365,7 @@ test('a review matches when a lens run carries the workflow key on another branc
     branch: 'other-branch',
   })
   d.query(
-    `INSERT INTO review (record_id,recorded_at,project_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
+    `INSERT INTO review (record_id,recorded_at,project_record_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
   ).run(projectId(d, 'fixture'))
   d.query(
     `INSERT INTO review_lens (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
@@ -386,7 +388,7 @@ test('a launch-key-bound review uses its cursor branch review round', () => {
   })
   const project = projectId(d, 'fixture')
   d.query(
-    `INSERT INTO review (id,record_id,recorded_at,project_id,patch_id,path_set) VALUES
+    `INSERT INTO review (id,record_id,recorded_at,project_record_id,patch_id,path_set) VALUES
       (1,'${newRecordId()}','2026-09-01',?,'same-patch','["src/change.ts"]'),
       (2,'${newRecordId()}','2026-09-01',?,'same-patch','["src/change.ts"]')`,
   ).run(project, project)
@@ -611,14 +613,14 @@ test("exec evidence recognizes only a cursor's recorded adopting session", () =>
 test('a foreign doc is refused and a matching doc is allowed', () => {
   const d = database()
   d.query(
-    `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_id,record_id)
+    `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_record_id,record_id)
      VALUES ('project','other','note','t','b','inject','["technical"]','t','t',?,?)`,
   ).run(projectId(d, 'other'), newRecordId())
   expect(() => gather(d, { artifact: 'doc:1' })).toThrow(
     "--artifact doc:1 is scoped to other, not this cursor's fixture",
   )
   d.query(
-    `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_id,record_id)
+    `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_record_id,record_id)
      VALUES ('project','fixture','note','t','b','inject','["technical"]','t','t',?,?)`,
   ).run(projectId(d, 'fixture'), newRecordId())
   expect(gather(d, { artifact: 'doc:2' }).artifact).toEqual({
@@ -630,7 +632,7 @@ test('a foreign doc is refused and a matching doc is allowed', () => {
 test('a legacy resume doc without a project id is scoped by its project subject', () => {
   const d = database()
   d.query(
-    `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_id,record_id)
+    `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_record_id,record_id)
      VALUES ('resume','fixture','brief','t','b','demand','["technical"]','t','t',NULL,?),
             ('resume','other','foreign-brief','t','b','demand','["technical"]','t','t',NULL,?)`,
   ).run(newRecordId(), newRecordId())
@@ -732,8 +734,8 @@ test('a snapshot plus a merged PR satisfies tracker evidence', () => {
   const d = database()
   d.query(
     `INSERT INTO landing_triage_snapshot
-      (record_id,project,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
-     VALUES ('snap-1','fixture','DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
+      (record_id,project,project_record_id,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
+     VALUES ('snap-1','fixture',(SELECT record_id FROM project WHERE name='fixture'),'DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
   ).run()
   expect(gather(d, { task: 'DEV-977' }).task).toEqual({
     key: 'DEV-977',
@@ -748,8 +750,8 @@ test('an open PR is gathered as an unmerged tracker fact', () => {
   const d = database()
   d.query(
     `INSERT INTO landing_triage_snapshot
-      (record_id,project,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
-     VALUES ('snap-1','fixture','DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
+      (record_id,project,project_record_id,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
+     VALUES ('snap-1','fixture',(SELECT record_id FROM project WHERE name='fixture'),'DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
   ).run()
   expect(
     gather(d, { task: 'DEV-977' }, { viewPullRequest: () => ({ state: 'OPEN', mergedAt: null }) })
@@ -777,8 +779,8 @@ test('an unavailable pull request read is gathered as unmerged', () => {
   const d = database()
   d.query(
     `INSERT INTO landing_triage_snapshot
-      (record_id,project,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
-     VALUES ('snap-1','fixture','DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
+      (record_id,project,project_record_id,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
+     VALUES ('snap-1','fixture',(SELECT record_id FROM project WHERE name='fixture'),'DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
   ).run()
   expect(
     gather(

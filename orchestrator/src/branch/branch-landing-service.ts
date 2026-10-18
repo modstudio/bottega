@@ -76,7 +76,7 @@ function branchRunIdentity(branch: string): { project: Project; taskKey: string 
     .query(
       `SELECT DISTINCT p.name project_name,r.launch_key
          FROM run r
-         JOIN project p ON p.id=r.project_id
+         JOIN project p ON p.record_id=r.project_record_id
         WHERE r.minted_branch=?`,
     )
     .all(branch) as BranchRunIdentity[]
@@ -242,9 +242,9 @@ function persistVerifiedBranchLanding(
     db()
       .query(
         `INSERT INTO branch_landing_record
-           (record_id,project,branch,tip,pr_number,merge_commit,merged_at,recording_session,recorded_at)
-         VALUES (?,?,?,?,?,?,?,?,?)
-         ON CONFLICT(project,branch) DO UPDATE SET
+           (record_id,project,project_record_id,branch,tip,pr_number,merge_commit,merged_at,recording_session,recorded_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(project_record_id,branch) DO UPDATE SET
            tip=excluded.tip, pr_number=excluded.pr_number, merge_commit=excluded.merge_commit,
            merged_at=excluded.merged_at, recording_session=excluded.recording_session,
            recorded_at=excluded.recorded_at`,
@@ -252,6 +252,7 @@ function persistVerifiedBranchLanding(
       .run(
         newRecordId(),
         project.name,
+        project.recordId,
         branch,
         tip,
         landing.number,

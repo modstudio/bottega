@@ -82,7 +82,7 @@ function getDoc(input: Address): Doc | null {
 }
 
 type SetInput = Address & {
-  projectId: number | null
+  projectId: string | null
   title: string
   body: string
   delivery: 'inject' | 'demand'
@@ -120,7 +120,7 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
     if (existing) {
       db()
         .query(
-          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, checked_against_commit=?, summary=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
+          'UPDATE doc SET project_record_id=?, title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, checked_against_commit=?, summary=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
         )
         .run(
           input.projectId,
@@ -146,7 +146,7 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
     } else {
       db()
         .query(
-          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audiences, parent_id, position, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, created_at, updated_at, record_id)
+          `INSERT INTO doc (scope, subject, owner, project_record_id, slug, title, body, delivery, audiences, parent_id, position, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, created_at, updated_at, record_id)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
@@ -248,7 +248,7 @@ export function commitDocConsume(
 }
 
 type RestoreInput = Address & {
-  projectId: number | null
+  projectId: string | null
   title: string
   body: string
   delivery: 'inject' | 'demand'
@@ -293,7 +293,7 @@ export function commitDocRestore(
     if (existing) {
       db()
         .query(
-          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, checked_against_commit=?, summary=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
+          'UPDATE doc SET project_record_id=?, title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, checked_against_commit=?, summary=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
         )
         .run(
           input.projectId,
@@ -319,7 +319,7 @@ export function commitDocRestore(
     } else {
       db()
         .query(
-          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audiences, parent_id, position, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, created_at, updated_at, record_id)
+          `INSERT INTO doc (scope, subject, owner, project_record_id, slug, title, body, delivery, audiences, parent_id, position, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, created_at, updated_at, record_id)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(

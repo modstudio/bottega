@@ -314,7 +314,7 @@ export async function retryRun(
           requested.schema_path, requested.model, requested.lens, requested.launch_cwd,
           requested.launch_seed, requested.launch_key, requested.launch_base, requested.no_failover,
           requested.keep_tree, requested.keep_tree_until, requested.keep_tree_reason,
-          requested.started_at, root.repo, root.project_id, root.cwd root_cwd,
+          requested.started_at, root.repo, root.project_record_id, root.cwd root_cwd,
           root.base_commit root_base_commit, root.branch_kept, root.branch_kept_tip
      FROM run requested JOIN run root ON root.id=COALESCE(requested.parent_run_id,requested.id)
      WHERE requested.id = ?`,
@@ -346,7 +346,7 @@ export async function retryRun(
     keep_tree_reason: string | null
     started_at: string
     repo: string | null
-    project_id: number | null
+    project_record_id: string | null
     branch_kept: string | null
     branch_kept_tip: string | null
   } | null
@@ -423,7 +423,7 @@ export async function retryRun(
         job: row.job,
         launchKey: row.launch_key,
         repo: row.repo,
-        projectId: row.project_id,
+        projectId: row.project_record_id,
         branchKept: row.branch_kept,
         branchKeptTip: row.branch_kept_tip,
         strandedRecordOnly: recordedRulings.length > 0 && latestTurn.status === 'asking',

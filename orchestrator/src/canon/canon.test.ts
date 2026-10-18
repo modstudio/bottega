@@ -437,7 +437,7 @@ describe('schema coexistence', () => {
     }
   })
 
-  test('review project_id backfill requires aliased lens repos to collapse to one project', () => {
+  test('review project_record_id backfill requires aliased lens repos to collapse to one project', () => {
     const d = fresh()
     d.query(
       `INSERT INTO project (record_id,name,path,canon,settings) VALUES (?, ?, '/p', 1, '{}')`,
@@ -449,16 +449,21 @@ describe('schema coexistence', () => {
       `INSERT INTO project (record_id,name,path,canon,settings) VALUES (?, 'alephbeis', '/a', 1, '{}')`,
     ).run(newRecordId())
     const platformId = (
-      d.query('SELECT id FROM project WHERE name=?').get(PLATFORM_SLUG) as { id: number }
+      d.query('SELECT record_id AS id FROM project WHERE name=?').get(PLATFORM_SLUG) as {
+        id: number
+      }
     ).id
     const starship = (
-      d.query("SELECT id FROM project WHERE name='starship'").get() as { id: number }
+      d.query("SELECT record_id AS id FROM project WHERE name='starship'").get() as { id: number }
+    ).id
+    const alephbeis = (
+      d.query("SELECT record_id AS id FROM project WHERE name='alephbeis'").get() as { id: number }
     ).id
     const insertRun = (repo: string, projectId: number) =>
       (
         d
           .query(
-            `INSERT INTO run (record_id,started_at, agent, job, repo, project_id, prompt_sha, prompt_bytes, prompt_head, status)
+            `INSERT INTO run (record_id,started_at, agent, job, repo, project_record_id, prompt_sha, prompt_bytes, prompt_head, status)
          VALUES ('${newRecordId()}','t', 'a', 'review-lens', ?, ?, 'sha', 1, 'h', 'ok') RETURNING id`,
           )
           .get(repo, projectId) as { id: number }
@@ -478,7 +483,7 @@ describe('schema coexistence', () => {
         .get() as { id: number }
     ).id
     const mixedA = insertRun('starship', starship)
-    const mixedB = insertRun('alephbeis', starship)
+    const mixedB = insertRun('alephbeis', alephbeis)
     const aliasA = insertRun(PLATFORM_SLUG, platformId)
     const aliasB = insertRun('devbox', platformId)
     const lens = (reviewId: number, runId: number, name: string) => {
@@ -492,11 +497,11 @@ describe('schema coexistence', () => {
     lens(aliased, aliasA, 'a')
     lens(aliased, aliasB, 'b')
     expect(applyMigrations(d)).toEqual([])
-    expect(d.query('SELECT project_id FROM review WHERE id=?').get(mixed)).toEqual({
-      project_id: null,
+    expect(d.query('SELECT project_record_id FROM review WHERE id=?').get(mixed)).toEqual({
+      project_record_id: null,
     })
-    expect(d.query('SELECT project_id FROM review WHERE id=?').get(aliased)).toEqual({
-      project_id: platformId,
+    expect(d.query('SELECT project_record_id FROM review WHERE id=?').get(aliased)).toEqual({
+      project_record_id: platformId,
     })
     d.close()
   })
@@ -536,9 +541,11 @@ describe('schema coexistence', () => {
         .map((entry) => entry.tag),
     )
     const row = d
-      .query('SELECT project_id, (SELECT id FROM project WHERE name=?) expected FROM run')
-      .get('widget') as { project_id: number; expected: number }
-    expect(row.project_id).toBe(row.expected)
+      .query(
+        'SELECT project_record_id, (SELECT record_id AS id FROM project WHERE name=?) expected FROM run',
+      )
+      .get('widget') as { project_record_id: number; expected: number }
+    expect(row.project_record_id).toBe(row.expected)
     d.close()
     rmSync(dir, { recursive: true, force: true })
   })

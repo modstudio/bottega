@@ -169,10 +169,10 @@ function projectRuns(project: Project): RunRow[] {
     .query(
       `SELECT id,parent_run_id,launch_key,branch,minted_branch,launch_base,status
          FROM run
-        WHERE project_id=?
+        WHERE project_record_id=?
         ORDER BY id`,
     )
-    .all(project.id) as RunRow[]
+    .all(project.recordId) as RunRow[]
 }
 
 function keepLiveBaseClaim(project: Project, branch: string, report: BranchPruneReport): boolean {

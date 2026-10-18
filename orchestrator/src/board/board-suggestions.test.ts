@@ -37,8 +37,9 @@ test('worker suggestion can be edited, posted with both origins, and withdrawn',
   const run = runFixture('owning-architect')
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,last_seen)
-       VALUES ('owning-architect','claude-code','architect','test','suggestion-project',?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,last_seen)
+       VALUES ('owning-architect','claude-code','architect','test','suggestion-project',
+               (SELECT record_id FROM project WHERE name='suggestion-project'),?,?)`,
     )
     .run(cwd, new Date(clock).toISOString())
   const suggested = suggestBoardPost(

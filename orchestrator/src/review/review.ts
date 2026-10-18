@@ -161,7 +161,7 @@ export function listReviews(
   if (filter.state === 'complete') where.push('r.completed_at IS NOT NULL')
   if (filter.project) {
     where.push(
-      'EXISTS (SELECT 1 FROM review_lens project_l JOIN run project_run ON project_run.id=project_l.run_id WHERE project_l.review_id=r.id AND project_run.repo=?)',
+      'EXISTS (SELECT 1 FROM review_lens project_l JOIN run project_run ON project_run.id=project_l.run_id WHERE project_l.review_id=r.id AND project_run.project_record_id=(SELECT record_id FROM project WHERE name=?))',
     )
     params.push(filter.project)
   }
@@ -376,6 +376,12 @@ export function getReview(reviewId: number, database: Database = db()) {
   }
 }
 
+function sharedProjectRecordId(runs: readonly RunRow[]): string | null {
+  return runs.every((run) => run.project_record_id === runs[0]!.project_record_id)
+    ? runs[0]!.project_record_id
+    : null
+}
+
 export function recordReviews(
   entries: { runId: number; output: ReviewReply }[],
   database: Database = writableDb(),
@@ -384,7 +390,7 @@ export function recordReviews(
   const runs = entries.map(({ runId }) => {
     const run = database
       .query(
-        `SELECT id, agent, model, lens, job, status, output_path, input_tree, head_commit, repo, project_id,
+        `SELECT id, agent, model, lens, job, status, output_path, input_tree, head_commit, repo, project_record_id,
               base_commit, review_ref, changed_paths, branch
          FROM run WHERE id=?`,
       )
@@ -403,7 +409,7 @@ export function recordReviews(
       throw new Error(`run ${runId} is already recorded in review ${existing.review_id}`)
     return run
   })
-  const projects = [...new Set(runs.map((run) => run.repo))]
+  const projects = [...new Set(runs.map((run) => run.project_record_id))]
   if (projects.length > 1) {
     throw new Error(
       `review lens runs belong to different projects: ${projects.map((project) => project ?? '(none)').join(', ')}`,
@@ -420,17 +426,15 @@ export function recordReviews(
   }
   const measured = (() => {
     const run = runs[0]!
-    if (!run.repo || !run.head_commit) return null
-    const repo = projectPath(database, run.repo)
-    if (!repo) return null
+    if (!run.project_record_id || !run.head_commit) return null
     const project = database
-      .query<{ name: string; settings: string }, [string]>(
-        'SELECT name,settings FROM project WHERE name=?',
+      .query<{ name: string; path: string; settings: string }, [string]>(
+        'SELECT name,path,settings FROM project WHERE record_id=?',
       )
-      .get(run.repo)
+      .get(run.project_record_id)
     if (!project) return null
     return measureReviewChange(
-      repo,
+      project.path,
       { name: project.name, settings: JSON.parse(project.settings) },
       run.head_commit,
     )
@@ -439,7 +443,7 @@ export function recordReviews(
     const tier = measured?.tier ?? null
     const review = database
       .query(
-        `INSERT INTO review (record_id, recorded_at, tier, tier_risk, tier_size, tier_reasons, tier_reason, project_id,
+        `INSERT INTO review (record_id, recorded_at, tier, tier_risk, tier_size, tier_reasons, tier_reason, project_record_id,
                            patch_id, path_set, commit_message)
        VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       )
@@ -451,7 +455,7 @@ export function recordReviews(
         tier?.size ?? null,
         tier ? JSON.stringify(tier.reasons) : null,
         tier?.reasons[tier.risk >= tier.size ? 0 : 1] ?? null,
-        runs.every((run) => run.project_id === runs[0]!.project_id) ? runs[0]!.project_id : null,
+        sharedProjectRecordId(runs),
         measured?.patchId ?? null,
         measured ? serializePathSet(measured.pathSet) : null,
         measured?.message ?? null,

@@ -131,7 +131,8 @@ function triageDecision(change: PullRequestChange, database: Database): TriageDe
         [string, string]
       >(
         `SELECT id,tip,patch_id,path_set,recorded_at,session_id FROM review_read
-        WHERE project=? AND branch=? ORDER BY id DESC`,
+        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+          AND branch=? ORDER BY id DESC`,
       )
       .all(change.project.name, change.branch)
       .map((row) => ({
@@ -161,7 +162,8 @@ function overridesForChange(change: PullRequestChange, database: Database): Admi
     >(
       `SELECT id,project,branch,tip,tree,patch_id AS patchId,path_set AS pathSet
        FROM landing_override
-       WHERE project=? AND branch=? ORDER BY id DESC`,
+       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+         AND branch=? ORDER BY id DESC`,
     )
     .all(change.project.name, change.branch)
 }
@@ -240,7 +242,7 @@ function insertOverride(change: PullRequestChange, reason: string, database: Dat
       [
         string,
         string,
-        number,
+        string,
         string,
         string,
         string,
@@ -252,13 +254,13 @@ function insertOverride(change: PullRequestChange, reason: string, database: Dat
       ]
     >(
       `INSERT INTO landing_override
-         (record_id,project,project_id,branch,tip,tree,patch_id,path_set,reason,session_id,at)
+         (record_id,project,project_record_id,branch,tip,tree,patch_id,path_set,reason,session_id,at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
     )
     .get(
       newRecordId(),
       change.project.name,
-      change.project.id,
+      change.project.recordId,
       change.branch,
       change.tip,
       change.tree,
@@ -310,7 +312,7 @@ export function recordTriageIntent(
   const row = database
     .query(
       `INSERT INTO landing_triage_snapshot
-         (record_id,project,project_id,branch,tip,tree,pr_number,review_ids,patch_id,tier,
+         (record_id,project,project_record_id,branch,tip,tree,pr_number,review_ids,patch_id,tier,
           lens_rounds,finding_count,admission_path,read_id,override_id,session_id,at)
        VALUES (?,?,?,?,?,?,NULL,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(project,branch,tip) DO UPDATE SET
@@ -324,7 +326,7 @@ export function recordTriageIntent(
     .get(
       newRecordId(),
       change.project.name,
-      change.project.id,
+      change.project.recordId,
       change.branch,
       change.tip,
       change.tree,
@@ -363,7 +365,8 @@ function finalizeTriageIntentWrite(
   const row = database
     .query<{ id: number }, [string, string]>(
       `SELECT id FROM landing_triage_snapshot
-        WHERE project=? AND branch=? AND pr_number IS NULL ORDER BY id DESC LIMIT 1`,
+        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+          AND branch=? AND pr_number IS NULL ORDER BY id DESC LIMIT 1`,
     )
     .get(project, branch)
   if (!row) return null
@@ -382,7 +385,8 @@ export function recordMergeAdmission(
     const existing = database
       .query<{ id: number }, [string, string, string]>(
         `SELECT id FROM landing_triage_snapshot
-          WHERE project=? AND branch=? AND tip=? LIMIT 1`,
+          WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+            AND branch=? AND tip=? LIMIT 1`,
       )
       .get(change.project.name, change.branch, change.tip)
     if (existing) return null
@@ -421,7 +425,7 @@ function pendingIntent(database: Database, project: string, branch: string): boo
   return Boolean(
     database
       .query(
-        'SELECT 1 FROM landing_triage_snapshot WHERE project=? AND branch=? AND pr_number IS NULL LIMIT 1',
+        'SELECT 1 FROM landing_triage_snapshot WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND branch=? AND pr_number IS NULL LIMIT 1',
       )
       .get(project, branch),
   )
@@ -479,11 +483,11 @@ export function createPullRequest(
 
 function recordedRunBranches(database: Database, project: Project): string[] {
   const rows = database
-    .query<{ branch: string | null; minted_branch: string | null }, [number]>(
+    .query<{ branch: string | null; minted_branch: string | null }, [string]>(
       `SELECT branch,minted_branch FROM run
-        WHERE project_id=?`,
+        WHERE project_record_id=?`,
     )
-    .all(project.id)
+    .all(project.recordId)
   return [
     ...new Set(rows.flatMap((row) => [row.branch, row.minted_branch]).filter(Boolean)),
   ] as string[]

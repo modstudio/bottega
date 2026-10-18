@@ -81,7 +81,7 @@ function staleRunCandidates(selected: ProjectSelection): UnattendedResidueCandid
     const row = db()
       .query(
         `SELECT COALESCE(project.name,r.repo) project
-           FROM run r LEFT JOIN project ON project.id=r.project_id WHERE r.id=?`,
+           FROM run r LEFT JOIN project ON project.record_id=r.project_record_id WHERE r.id=?`,
       )
       .get(runId) as { project: string | null } | null
     return row && selected(row.project)
@@ -105,7 +105,7 @@ export function unattendedProcessCandidates(
     const row = db()
       .query(
         `SELECT COALESCE(project.name,r.repo) project
-           FROM run r LEFT JOIN project ON project.id=r.project_id WHERE r.id=?`,
+           FROM run r LEFT JOIN project ON project.record_id=r.project_record_id WHERE r.id=?`,
       )
       .get(observation.runId) as { project: string | null } | null
     return (selectedProject === null || row?.project === selectedProject) && row
@@ -181,7 +181,7 @@ function sandboxCandidates(selected: ProjectSelection): Inventory {
           `SELECT COALESCE(project.name,root.repo) project
              FROM run member
              JOIN run root ON root.id=COALESCE(member.parent_run_id,member.id)
-             LEFT JOIN project ON project.id=root.project_id
+             LEFT JOIN project ON project.record_id=root.project_record_id
             WHERE member.id=?`,
         )
         .get(directory.rootId) as { project: string | null } | null

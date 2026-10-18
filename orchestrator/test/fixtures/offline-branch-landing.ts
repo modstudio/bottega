@@ -30,13 +30,13 @@ export function removeGitRepository(path: string): void {
   rmSync(path, { recursive: true, force: true })
 }
 
-export function addProject(name: string, path: string): number {
+export function addProject(name: string, path: string): string {
   return (
     db()
       .query(
         `INSERT INTO project (record_id,name,path,stack,settings)
-         VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,'bun','{"trunk":"main"}') RETURNING id`,
+         VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,'bun','{"trunk":"main"}') RETURNING record_id`,
       )
-      .get(name, path) as { id: number }
-  ).id
+      .get(name, path) as { record_id: string }
+  ).record_id
 }

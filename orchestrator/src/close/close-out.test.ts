@@ -192,13 +192,15 @@ test("a resumed turn's retained branch claim is settled with the branch it marks
   })
   const turnBranch = `DEV-1128-orch-${child}`
   const projectId = (
-    db().query('SELECT id FROM project WHERE name=?').get(`close-out-${fixture.id}`) as {
+    db()
+      .query('SELECT record_id AS id FROM project WHERE name=?')
+      .get(`close-out-${fixture.id}`) as {
       id: number
     }
   ).id
   db()
     .query(
-      `UPDATE run SET repo=?,project_id=?,cwd=?,worktree=?,branch=?,minted_branch=?,base_commit=?
+      `UPDATE run SET repo=?,project_record_id=?,cwd=?,worktree=?,branch=?,minted_branch=?,base_commit=?
        WHERE id=?`,
     )
     .run(
@@ -215,7 +217,7 @@ test("a resumed turn's retained branch claim is settled with the branch it marks
     db()
       .query(
         `INSERT INTO resource_claim
-         (record_id, root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+         (record_id, root_run_id,run_id,project_record_id,kind,allocation_key,state,claimed_at)
          VALUES ('${newRecordId()}', ?,?,?,'branch',?,'claimed','2026-10-06T00:00:00.000Z')`,
       )
       .run(fixture.id, child, projectId, `refs/heads/${turnBranch}`).lastInsertRowid,
@@ -451,18 +453,18 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
   mkdirSync(join(repo, '.git'), { recursive: true })
   upsertProject({ recordId: newRecordId(), name: project, path: repo, settings: { trunk: 'main' } })
   const projectId = (
-    db().query('SELECT id FROM project WHERE name=?').get(project) as { id: number }
+    db().query('SELECT record_id AS id FROM project WHERE name=?').get(project) as { id: number }
   ).id
   db()
     .query(
-      `UPDATE run SET repo=?,project_id=?,cwd=?,worktree=?,branch=?,minted_branch=NULL,
+      `UPDATE run SET repo=?,project_record_id=?,cwd=?,worktree=?,branch=?,minted_branch=NULL,
        session_id='owner' WHERE id=?`,
     )
     .run(project, projectId, tree, tree, `DEV-1023-orch-${id}`, id)
   db()
     .query(
       `INSERT INTO resource_claim
-       (record_id, root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+       (record_id, root_run_id,run_id,project_record_id,kind,allocation_key,state,claimed_at)
        VALUES ('${newRecordId()}', ?,?,?,'worktree',?,'claimed','2026-09-29T00:00:00.000Z')`,
     )
     .run(id, id, projectId, tree)
@@ -475,10 +477,10 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
   try {
     db()
       .query(
-        `INSERT INTO landing (record_id,project,branch,status,started_at)
-         VALUES (?,?,?,'queued','2026-09-29T00:00:00.000Z')`,
+        `INSERT INTO landing (record_id,project,project_record_id,branch,status,started_at)
+         VALUES (?,?,?,?,'queued','2026-09-29T00:00:00.000Z')`,
       )
-      .run(newRecordId(), project, `DEV-1023-orch-${id}`)
+      .run(newRecordId(), project, projectId, `DEV-1023-orch-${id}`)
     expect(closeOutRun(id, { intent: 'explicit' })).toMatchObject({
       outcome: 'held',
       detail: 'landing tree held by session owner: landing is in flight',

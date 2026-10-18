@@ -174,7 +174,7 @@ function enqueueLanding(database: Database, id: number, at = nowIso()): void {
     .query<LocalRow, [number]>(
       `SELECT landing.*, project.name AS project_name, project.record_id AS project_record_id,
               cause.record_id AS causing_landing_record_id
-       FROM landing LEFT JOIN project ON project.id=landing.project_id
+       FROM landing LEFT JOIN project ON project.record_id=landing.project_record_id
        LEFT JOIN landing cause ON cause.id=landing.causing_landing_id WHERE landing.id=?`,
     )
     .get(id)
@@ -189,7 +189,7 @@ export function enqueueLandingOverride(database: Database, id: number, at = nowI
   const row = database
     .query<LocalRow, [number]>(
       `SELECT landing_override.*, project.name AS project_name, project.record_id AS project_record_id FROM landing_override
-       LEFT JOIN project ON project.id=landing_override.project_id WHERE landing_override.id=?`,
+       LEFT JOIN project ON project.record_id=landing_override.project_record_id WHERE landing_override.id=?`,
     )
     .get(id)
   if (!row) throw new Error(`landing override ${id} does not exist and cannot be enqueued`)
@@ -203,7 +203,7 @@ export function enqueueLandingTriageSnapshot(database: Database, id: number, at 
       `SELECT snapshot.*, project.name AS project_name, project.record_id AS project_record_id, override.record_id AS override_record_id,
               review_read.record_id AS read_record_id
        FROM landing_triage_snapshot snapshot
-       LEFT JOIN project ON project.id=snapshot.project_id
+       LEFT JOIN project ON project.record_id=snapshot.project_record_id
        LEFT JOIN landing_override override ON override.id=snapshot.override_id
        LEFT JOIN review_read ON review_read.id=snapshot.read_id
        WHERE snapshot.id=?`,
@@ -229,7 +229,7 @@ function enqueueLandingReviewCarry(database: Database, id: number, at = nowIso()
   const row = database
     .query<LocalRow, [number]>(
       `SELECT carry.*, project.name AS project_name, project.record_id AS project_record_id, review.record_id AS review_record_id
-       FROM landing_review_carry carry LEFT JOIN project ON project.id=carry.project_id
+       FROM landing_review_carry carry LEFT JOIN project ON project.record_id=carry.project_record_id
        JOIN review ON review.id=carry.review_id WHERE carry.id=?`,
     )
     .get(id)

@@ -217,7 +217,6 @@ const OrchTrackerSettingsSchema = z
 
 export const OrchProjectSchema = z
   .object({
-    id: z.number().int(),
     record_id: z.string().uuid(),
     name: z.string(),
     path: z.string(),
@@ -236,7 +235,7 @@ export const OrchProjectSchema = z
       })
       .passthrough(),
   })
-  .passthrough()
+  .strip()
 
 export const OrchProjectListSchema = z.array(OrchProjectSchema)
 

@@ -52,19 +52,19 @@ function gatePlan(runId: number): {
   trunk: string | null
   mainStackConsumers: MainStackConsumer[] | undefined
   mainStackRequiredServices: string[] | undefined
-  projectId: number
+  projectId: string
   projectName: string
 } {
   const row = db()
     .query(
-      `SELECT r.worktree,r.base_commit,p.id project_id,p.name project_name,p.settings
-       FROM run r JOIN project p ON p.id=r.project_id WHERE r.id=?`,
+      `SELECT r.worktree,r.base_commit,p.record_id project_record_id,p.name project_name,p.settings
+       FROM run r JOIN project p ON p.record_id=r.project_record_id WHERE r.id=?`,
     )
     .get(runId) as {
     worktree: string | null
     base_commit: string | null
     settings: string | null
-    project_id: number
+    project_record_id: string
     project_name: string
   } | null
   if (!row?.worktree) throw new Error(`run ${runId} has no recorded worktree`)
@@ -85,7 +85,7 @@ function gatePlan(runId: number): {
       typeof settings.trunk === 'string' && settings.trunk.trim() ? settings.trunk.trim() : null,
     mainStackConsumers: settings.mainStack?.consumers,
     mainStackRequiredServices: settings.mainStack?.requiredServices,
-    projectId: row.project_id,
+    projectId: row.project_record_id,
     projectName: row.project_name,
   }
 }

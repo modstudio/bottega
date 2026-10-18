@@ -38,7 +38,7 @@ function reviewsForRun(runId: number) {
   const lenses = db()
     .query(
       `SELECT l.*, run.record_id AS run_record_id,
-              r.project_id AS review_project_id, r.recorded_at, r.completed_at,
+              r.project_record_id AS review_project_id, r.recorded_at, r.completed_at,
               r.tier, r.patch_id, r.commit_message
          FROM review_lens l JOIN review r ON r.id=l.review_id JOIN run ON run.id=l.run_id
         WHERE l.run_id=? ORDER BY r.recorded_at DESC, l.id DESC`,

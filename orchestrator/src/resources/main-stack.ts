@@ -57,7 +57,7 @@ export function mainStackIdleStopAfterMs(
 
 /** Start a declared consumer's main stack before the consumer runs. */
 export function ensureMainStackStarted(input: {
-  projectId: number
+  projectId: string
   projectName: string
   projectPath: string
   declaration: { consumers: MainStackConsumer[]; requiredServices?: string[] } | undefined
@@ -98,14 +98,14 @@ export function ensureMainStackStarted(input: {
         `main stack for ${input.projectName}, required by ${input.consumer}, did not become healthy from registered main checkout ${input.projectPath}: ${started.reason}; run ${command} there, then retry`,
       )
   }
-  if (input.projectId === 0) return
+  if (!input.projectId) return
   try {
     const database = input.database ?? writableDb()
     writeTransaction(() => {
       database
         .query(
-          `INSERT INTO main_stack_activity (project_id,last_ensured_at) VALUES (?,?)
-           ON CONFLICT(project_id) DO UPDATE SET last_ensured_at=excluded.last_ensured_at`,
+          `INSERT INTO main_stack_activity (project_record_id,last_ensured_at) VALUES (?,?)
+           ON CONFLICT(project_record_id) DO UPDATE SET last_ensured_at=excluded.last_ensured_at`,
         )
         .run(input.projectId, nowIso())
     }, database)
@@ -120,7 +120,7 @@ export function ensureProjectMainStack(
   database?: Database,
 ): void {
   ensureMainStackStarted({
-    projectId: project.id,
+    projectId: project.recordId,
     projectName: project.name,
     projectPath: project.path,
     declaration: project.settings.mainStack,
@@ -204,7 +204,7 @@ export function mainStackExecInProgress(
 
 function latestActivity(
   database: Database,
-  projectId: number,
+  projectId: string,
   nowMs: number,
 ): {
   liveRun: boolean
@@ -214,7 +214,9 @@ function latestActivity(
   lastEnsureAtMs: number | null
 } {
   const liveRows = database
-    .query("SELECT id,status,pid FROM run WHERE project_id=? AND status IN ('running','asking')")
+    .query(
+      "SELECT id,status,pid FROM run WHERE project_record_id=? AND status IN ('running','asking')",
+    )
     .all(projectId) as { id: number; status: string; pid: number | null }[]
   const liveRun = liveRows.some((row) =>
     runAlive({
@@ -224,25 +226,29 @@ function latestActivity(
     }),
   )
   const created = database
-    .query('SELECT MAX(started_at) value FROM run WHERE project_id=? AND worktree IS NOT NULL')
+    .query(
+      'SELECT MAX(started_at) value FROM run WHERE project_record_id=? AND worktree IS NOT NULL',
+    )
     .get(projectId) as { value: string | null }
   const gated = database
     .query(
       `SELECT MAX(g.requested_at) value FROM gate_execution g
-       JOIN run r ON r.id=g.run_id WHERE r.project_id=?`,
+       JOIN run r ON r.id=g.run_id WHERE r.project_record_id=?`,
     )
     .get(projectId) as { value: string | null }
-  const project = database.query('SELECT name FROM project WHERE id=?').get(projectId) as {
+  const project = database.query('SELECT name FROM project WHERE record_id=?').get(projectId) as {
     name: string
   }
   const sessionCutoff = new Date(nowMs - SESSION_LIVE_MS).toISOString()
   const liveSession = Boolean(
     database
-      .query("SELECT 1 FROM presence WHERE role='architect' AND project=? AND last_seen>=? LIMIT 1")
+      .query(
+        "SELECT 1 FROM presence WHERE role='architect' AND project_record_id=(SELECT record_id FROM project WHERE name=?) AND last_seen>=? LIMIT 1",
+      )
       .get(project.name, sessionCutoff),
   )
   const ensured = database
-    .query('SELECT last_ensured_at value FROM main_stack_activity WHERE project_id=?')
+    .query('SELECT last_ensured_at value FROM main_stack_activity WHERE project_record_id=?')
     .get(projectId) as { value: string | null } | null
   const recordedTime = (value: string | null): number | null => {
     if (value === null) return null
@@ -275,7 +281,7 @@ function sweepIdleMainStack(
 ): boolean {
   let activity: ReturnType<typeof latestActivity>
   try {
-    activity = latestActivity(input.database, project.id, input.nowMs ?? Date.now())
+    activity = latestActivity(input.database, project.recordId, input.nowMs ?? Date.now())
   } catch (error) {
     input.error(`main stack ${project.name}: idleness unavailable: ${(error as Error).message}`)
     return true

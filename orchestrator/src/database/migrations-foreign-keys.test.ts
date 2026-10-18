@@ -126,9 +126,9 @@ test('the project identity contract backfills run ids and migrates board adoptio
 
   applyMigrations(database)
 
-  expect(database.query('SELECT repo,project_id FROM run ORDER BY id').all()).toEqual([
-    { repo: 'known', project_id: 1 },
-    { repo: 'missing', project_id: null },
+  expect(database.query('SELECT repo,project_record_id FROM run ORDER BY id').all()).toEqual([
+    { repo: 'known', project_record_id: projectRecordId },
+    { repo: 'missing', project_record_id: null },
   ])
   expect(database.query('SELECT * FROM board_hosted_adoption_ledger').get()).toMatchObject({
     source_record_id: messageRecordId,

@@ -115,7 +115,7 @@ export function enqueueRunRecord(
       `SELECT r.*, project.name AS project_name, project.record_id AS project_record_id,
               retry.record_id AS retry_record_id, parent.record_id AS parent_record_id
          FROM run r
-         LEFT JOIN project ON project.id=r.project_id
+         LEFT JOIN project ON project.record_id=r.project_record_id
          LEFT JOIN run retry ON retry.id=r.retry_of
          LEFT JOIN run parent ON parent.id=r.parent_run_id
         WHERE r.id=?`,
