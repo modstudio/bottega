@@ -1,6 +1,7 @@
 import { resolveHostedUrl } from './hosted-url.ts'
 import {
   declaredProjectSpace,
+  type ProjectWriteDecision,
   projectWriteDecisionFor,
   type TaskWriteMode,
 } from './hosted-write-mode.ts'
@@ -25,12 +26,19 @@ export function hostedTaskWriteOptions(projectName: string, options?: HostedTask
   return recordSpace ? { ...options, recordSpace } : options
 }
 
-export function taskWriteMode(projectName: string, hosted?: HostedTaskWriteOptions): TaskWriteMode {
-  const decision = projectWriteDecisionFor(
+export function taskWriteDecision(
+  projectName: string,
+  hosted?: HostedTaskWriteOptions,
+): ProjectWriteDecision {
+  return projectWriteDecisionFor(
     registeredTaskProject(projectName),
     readInstallBinding(),
     hosted?.baseUrl ?? resolveHostedUrl(),
   )
+}
+
+export function taskWriteMode(projectName: string, hosted?: HostedTaskWriteOptions): TaskWriteMode {
+  const decision = taskWriteDecision(projectName, hosted)
   if (decision.mode === 'refused') throw new Error(decision.reason)
   return decision.mode
 }

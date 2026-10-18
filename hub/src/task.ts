@@ -35,6 +35,7 @@ import {
   type HostedTaskWriteOptions,
   hostedTaskWriteOptions,
   registeredTaskProject,
+  taskWriteDecision,
   taskWriteMode,
 } from './task-write-destination.ts'
 import { trackerCapabilities } from './tracker-capabilities.ts'
@@ -641,7 +642,7 @@ export function taskRecord(
       statusEvents,
     },
     readerUserId,
-    writeMode(record.task.project),
+    taskWriteDecision(record.task.project),
   )
 }
 

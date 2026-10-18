@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { TaskWriteMode } from './hosted-write-mode.ts'
+import type { ProjectWriteDecision } from './hosted-write-mode.ts'
 import type { Measures } from './measures.ts'
 import { commentAuthorDecision } from './task-attribution.ts'
 import type { Capabilities } from './tracker-capabilities.ts'
@@ -129,7 +129,7 @@ export type LocalTaskDetailRows = {
 export function localTaskDetail(
   rows: LocalTaskDetailRows,
   readerUserId: string | null = null,
-  writeMode: TaskWriteMode = 'local-authoritative',
+  writeDecision: ProjectWriteDecision = { mode: 'local-authoritative' },
 ): TaskDetail {
   const task = rows.task
   return {
@@ -158,10 +158,12 @@ export function localTaskDetail(
       updatedAt: row.updated_at,
       canEdit:
         rows.capabilities.comment.allowed &&
-        commentAuthorDecision(writeMode, readerUserId, row.actor_user_id).allowed,
+        writeDecision.mode !== 'refused' &&
+        commentAuthorDecision(writeDecision.mode, readerUserId, row.actor_user_id).allowed,
       canDelete:
         rows.capabilities.comment.allowed &&
-        commentAuthorDecision(writeMode, readerUserId, row.actor_user_id).allowed,
+        writeDecision.mode !== 'refused' &&
+        commentAuthorDecision(writeDecision.mode, readerUserId, row.actor_user_id).allowed,
     })),
     documents: rows.documents.map((row) => ({
       id: row.id,
@@ -242,7 +244,7 @@ export function hostedTaskDetailFromRows(
         },
       },
       readerUserId,
-      'hosted-configured',
+      { mode: 'hosted-configured' },
     ),
     task: {
       key: rows.task.key,

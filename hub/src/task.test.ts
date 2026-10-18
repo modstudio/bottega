@@ -345,62 +345,78 @@ describe('hosted-authoritative existing-row edits', () => {
 })
 
 describe('local task tracker', () => {
-  test('comment authors may edit and delete while other record users are refused', async () => {
-    resetFixtureStore()
-    const key = 'BET-AUTHOR'
-    seed(key, 'beta')
-    const author = { actorUserId: 'user-1', actorName: 'Person', agent: 'codex', runId: '42' }
-    const other = { ...author, actorUserId: 'user-2' }
-    const comment = await commentTask(key, {}, 'first', author)
-    await expect(editTaskComment(key, {}, comment.id, 'first', author)).rejects.toThrow('unchanged')
-    await expect(editTaskComment(key, {}, comment.id, '', author)).rejects.toThrow('required')
-    await expect(editTaskComment(key, {}, comment.id, 'other', other)).rejects.toThrow(
-      'another author',
-    )
-    await expect(
-      editTaskComment(key, {}, comment.id, 'unknown identity', {
-        ...author,
-        actorUserId: null,
-      }),
-    ).rejects.toThrow('record sign-in')
-    await writeTransaction((conn) =>
-      conn.query(`UPDATE task_comment SET actor_user_id=NULL WHERE record_id=?`).run(comment.id),
-    )
-    await expect(editTaskComment(key, {}, comment.id, 'older', author)).rejects.toThrow(
-      'predates recorded authorship',
-    )
-    await writeTransaction((conn) =>
-      conn
-        .query(`UPDATE task_comment SET actor_user_id=? WHERE record_id=?`)
-        .run(author.actorUserId, comment.id),
-    )
-    const beforeEdit = db()
-      .query<{ generation: number }, [string]>(
-        `SELECT generation FROM hosted_outbox WHERE table_name='hub_task_comment' AND row_id=?`,
-      )
-      .get(comment.id)!
-    await editTaskComment(key, {}, comment.id, 'edited', author)
-    const afterEdit = db()
-      .query<{ generation: number }, [string]>(
-        `SELECT generation FROM hosted_outbox WHERE table_name='hub_task_comment' AND row_id=?`,
-      )
-      .get(comment.id)!
-    expect(afterEdit.generation).toBeGreaterThan(beforeEdit.generation)
-    expect(showTask(key).comments[0]).toMatchObject({
-      body: 'edited',
-      actor_name: 'Person',
-      agent: 'codex',
+  describe('with hosted comment authorship', () => {
+    let previousHostedUrl: string | undefined
+
+    beforeEach(() => {
+      previousHostedUrl = process.env.HUB_HOSTED_URL
+      process.env.HUB_HOSTED_URL = 'https://hub.example.test'
     })
-    await deleteTaskComment(key, {}, comment.id, author)
-    expect(
-      db()
+
+    afterEach(() => {
+      if (previousHostedUrl === undefined) delete process.env.HUB_HOSTED_URL
+      else process.env.HUB_HOSTED_URL = previousHostedUrl
+    })
+
+    test('comment authors may edit and delete while other record users are refused', async () => {
+      resetFixtureStore()
+      const key = 'BET-AUTHOR'
+      seed(key, 'beta')
+      const author = { actorUserId: 'user-1', actorName: 'Person', agent: 'codex', runId: '42' }
+      const other = { ...author, actorUserId: 'user-2' }
+      const comment = await commentTask(key, {}, 'first', author)
+      await expect(editTaskComment(key, {}, comment.id, 'first', author)).rejects.toThrow(
+        'unchanged',
+      )
+      await expect(editTaskComment(key, {}, comment.id, '', author)).rejects.toThrow('required')
+      await expect(editTaskComment(key, {}, comment.id, 'other', other)).rejects.toThrow(
+        'another author',
+      )
+      await expect(
+        editTaskComment(key, {}, comment.id, 'unknown identity', {
+          ...author,
+          actorUserId: null,
+        }),
+      ).rejects.toThrow('record sign-in')
+      await writeTransaction((conn) =>
+        conn.query(`UPDATE task_comment SET actor_user_id=NULL WHERE record_id=?`).run(comment.id),
+      )
+      await expect(editTaskComment(key, {}, comment.id, 'older', author)).rejects.toThrow(
+        'predates recorded authorship',
+      )
+      await writeTransaction((conn) =>
+        conn
+          .query(`UPDATE task_comment SET actor_user_id=? WHERE record_id=?`)
+          .run(author.actorUserId, comment.id),
+      )
+      const beforeEdit = db()
         .query<{ generation: number }, [string]>(
           `SELECT generation FROM hosted_outbox WHERE table_name='hub_task_comment' AND row_id=?`,
         )
-        .get(comment.id)!.generation,
-    ).toBeGreaterThan(afterEdit.generation)
-    expect(showTask(key).comments).toEqual([])
-    await expect(deleteTaskComment(key, {}, comment.id, author)).rejects.toThrow('not found')
+        .get(comment.id)!
+      await editTaskComment(key, {}, comment.id, 'edited', author)
+      const afterEdit = db()
+        .query<{ generation: number }, [string]>(
+          `SELECT generation FROM hosted_outbox WHERE table_name='hub_task_comment' AND row_id=?`,
+        )
+        .get(comment.id)!
+      expect(afterEdit.generation).toBeGreaterThan(beforeEdit.generation)
+      expect(showTask(key).comments[0]).toMatchObject({
+        body: 'edited',
+        actor_name: 'Person',
+        agent: 'codex',
+      })
+      await deleteTaskComment(key, {}, comment.id, author)
+      expect(
+        db()
+          .query<{ generation: number }, [string]>(
+            `SELECT generation FROM hosted_outbox WHERE table_name='hub_task_comment' AND row_id=?`,
+          )
+          .get(comment.id)!.generation,
+      ).toBeGreaterThan(afterEdit.generation)
+      expect(showTask(key).comments).toEqual([])
+      await expect(deleteTaskComment(key, {}, comment.id, author)).rejects.toThrow('not found')
+    })
   })
   test('a project without a declared space sends no record-space header', async () => {
     let recordSpace: string | null = 'not-called'
@@ -884,6 +900,30 @@ describe('local-authoritative task writes', () => {
     await expect(
       createTask({ project: 'workshop', title: 'Must not mint locally on a bound install' }),
     ).rejects.toThrow("project 'workshop' belongs to a hosted space")
+  })
+
+  test('a hosted-space task remains readable when hosting is unavailable', () => {
+    writeTransaction((conn) => persistInstallBinding(conn, 'space-a'))
+    const recordId = seed('DEV-READ-OFFLINE', 'workshop')
+    writeTransaction((conn) =>
+      conn
+        .query(
+          `INSERT INTO task_comment
+           (record_id,task_key,task_record_id,body,created_at,actor_user_id)
+           VALUES (?,?,?,?,?,?)`,
+        )
+        .run(
+          Bun.randomUUIDv7(),
+          'DEV-READ-OFFLINE',
+          recordId,
+          'still readable',
+          new Date().toISOString(),
+          'user-1',
+        ),
+    )
+
+    const result = taskRecord('DEV-READ-OFFLINE', {}, 'user-1')
+    expect(result.comments).toEqual([expect.objectContaining({ canEdit: false, canDelete: false })])
   })
 
   test('a never-bound project with no key prefix is refused locally', async () => {
