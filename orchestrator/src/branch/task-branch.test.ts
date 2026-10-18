@@ -263,6 +263,7 @@ const branchCandidate = (
   nominatingRuns: [{ id: commitCount, sessionId: 'session-a' }],
   trunk: 'develop',
   worktree: null,
+  worktreeOwnerJob: null,
   ...extras,
 })
 
@@ -398,6 +399,7 @@ test('task branch reuse notice names branch, tip, contributing runs, and start-o
       ],
       trunk: 'main',
       worktree: null,
+      worktreeOwnerJob: null,
     }),
   ).toBe(
     '! continuing task branch DEV-832-orch-5186 at tip abc123 (runs 5186, 5190); use --base main to start over',

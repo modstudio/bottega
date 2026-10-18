@@ -4,10 +4,16 @@
  * lifecycle facts. Must not create trees, touch stores, or run processes.
  */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ResumeCreationLifecycle } from './resume-tree.ts'
 
 export type ClaimTreePlanFacts = {
-  hasResolvedTaskWorktree: boolean
+  resolvedTaskWorktree: {
+    path: string
+    branch: string
+    ownerJob: string | null
+    freshBase: string
+  } | null
   forbidsRepo: boolean
   repoJob: boolean
   hasWorktree: boolean
@@ -15,6 +21,7 @@ export type ClaimTreePlanFacts = {
 
 export type ClaimTreePlanRuling =
   | { mode: 'attach' }
+  | { mode: 'refuse'; path: string; branch: string; freshBase: string }
   | { mode: 'isolate' }
   | { mode: 'create' }
   | { mode: 'caller' }
@@ -43,10 +50,29 @@ export function claimedRunBranch(
 
 /** Decide the claimed run's working-tree mode before performing any effects. */
 export function decideClaimTreePlan(facts: ClaimTreePlanFacts): ClaimTreePlanRuling {
-  if (facts.hasResolvedTaskWorktree) return { mode: 'attach' }
+  if (facts.resolvedTaskWorktree?.ownerJob === 'landing-tree') {
+    return {
+      mode: 'refuse',
+      path: facts.resolvedTaskWorktree.path,
+      branch: facts.resolvedTaskWorktree.branch,
+      freshBase: facts.resolvedTaskWorktree.freshBase,
+    }
+  }
+  if (facts.resolvedTaskWorktree) return { mode: 'attach' }
   if (facts.forbidsRepo) return { mode: 'isolate' }
   if (facts.repoJob && !facts.hasWorktree) return { mode: 'create' }
   return { mode: 'caller' }
+}
+
+/** Compose the operator remedy when an architect landing tree owns the reused branch. */
+export function claimTreePlanRefusal(
+  refusal: Extract<ClaimTreePlanRuling, { mode: 'refuse' }>,
+): string {
+  return (
+    `refusing task branch ${refusal.branch}: it is checked out in architect landing tree ${refusal.path}.\n` +
+    `cleared by: ${PLATFORM_SLUG} tree remove ${refusal.path}, then dispatch again; ` +
+    `or dispatch again with --base ${refusal.freshBase} to start a fresh branch`
+  )
 }
 
 export function resumeCreationLifecycle(facts: {

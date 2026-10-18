@@ -37,6 +37,7 @@ export type TaskBranchCandidate = {
   nominatingRuns: TaskBranchNominatingRun[]
   trunk: string
   worktree: Worktree | null
+  worktreeOwnerJob: string | null
 }
 
 export type TaskBranchRunRow = {
@@ -44,6 +45,13 @@ export type TaskBranchRunRow = {
   parent_run_id: number | null
   branch: string
   launch_base: string | null
+}
+
+type ResolvedTaskBranchRunRow = TaskBranchRunRow & {
+  session_id: string | null
+  worktree: string | null
+  worktree_source: string | null
+  job: string
 }
 
 export type TaskBranchPullRequestCheck =
@@ -387,6 +395,39 @@ export function taskBranchIsAncestor(cwd: string, ancestor: string, descendant: 
   )
 }
 
+function resolvedTaskBranchWorktree(input: {
+  repoRoot: string
+  branch: string
+  tip: string
+  path: string | null
+  rows: readonly ResolvedTaskBranchRunRow[]
+}): { worktree: Worktree | null; ownerJob: string | null } {
+  if (!input.path) return { worktree: null, ownerJob: null }
+  const owner = input.rows.find(
+    (row) =>
+      row.worktree && realpathOrSpelled(row.worktree) === realpathOrSpelled(input.path!),
+  )
+  const source = owner?.worktree_source
+  return {
+    worktree: {
+      path: input.path,
+      branch: input.branch,
+      base: input.tip,
+      repoRoot: input.repoRoot,
+      source:
+        source === 'recipe' ||
+        source === 'git' ||
+        source === 'clone' ||
+        source === 'readonly_recipe'
+          ? source
+          : undefined,
+      // Null records that this run attached; it did not mint the task branch.
+      mintedBranch: null,
+    },
+    ownerJob: owner?.job ?? null,
+  }
+}
+
 /** Tips that are a strict ancestor of another candidate tip. Equal tips are not contained. */
 export function taskBranchContainedTips(
   tips: readonly string[],
@@ -442,7 +483,7 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
       `WITH candidate AS (SELECT run.*, run.id AS run_id FROM run)
      SELECT candidate.id, candidate.parent_run_id, candidate.branch,
             candidate.launch_base, candidate.session_id, candidate.worktree,
-            candidate.worktree_source
+            candidate.worktree_source, candidate.job
        FROM candidate
       WHERE candidate.launch_key=?
         AND candidate.project_record_id=?
@@ -451,11 +492,7 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
         AND ${reviewRunEvidenceSql('candidate', 'candidate')}
       ORDER BY candidate.id`,
     )
-    .all(launchKey, project.recordId) as (TaskBranchRunRow & {
-    session_id: string | null
-    worktree: string | null
-    worktree_source: string | null
-  })[]
+    .all(launchKey, project.recordId) as ResolvedTaskBranchRunRow[]
   if (rows.length === 0) return null
 
   const trunk = project.settings.trunk?.trim()
@@ -510,12 +547,13 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
       continue
 
     const path = checkedOutWorktree(repoRoot, branch)
-    const attachedRow = path
-      ? branchRows.find(
-          (row) => row.worktree && realpathOrSpelled(row.worktree) === realpathOrSpelled(path),
-        )
-      : null
-    const source = attachedRow?.worktree_source
+    const resolvedWorktree = resolvedTaskBranchWorktree({
+      repoRoot,
+      branch,
+      tip,
+      path,
+      rows: branchRows,
+    })
     candidates.push({
       branch,
       tip,
@@ -525,23 +563,8 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
       projectName: project.name,
       nominatingRuns: branchRows.map((row) => ({ id: row.id, sessionId: row.session_id })),
       trunk,
-      worktree: path
-        ? {
-            path,
-            branch,
-            base: tip,
-            repoRoot,
-            source:
-              source === 'recipe' ||
-              source === 'git' ||
-              source === 'clone' ||
-              source === 'readonly_recipe'
-                ? source
-                : undefined,
-            // Null records that this run attached; it did not mint the task branch.
-            mintedBranch: null,
-          }
-        : null,
+      worktree: resolvedWorktree.worktree,
+      worktreeOwnerJob: resolvedWorktree.ownerJob,
     })
   }
 

@@ -33,6 +33,7 @@ export type ResolvedTaskBranch = {
   nominatingRuns: TaskBranchNominatingRun[]
   trunk: string
   worktree: RetryWorktree | null
+  worktreeOwnerJob: string | null
 }
 
 export type DetachSpec = {

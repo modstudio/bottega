@@ -79,7 +79,6 @@ import {
 import { inheritedRunFacts } from './run-claim-inheritance.ts'
 import {
   claimedRunBranch,
-  decideClaimTreePlan,
   resumeCreationLifecycle,
   resumeCreationTool,
   retryRootTreeValidation,
@@ -91,7 +90,10 @@ import { prepareResumeBranchIfNeeded, restoreResumeIfNeeded } from './run-resume
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 import { assertRetryRootWorkspace } from './run-retry-claim.ts'
-import { taskBranchResolution } from './run-task-branch-resolution.ts'
+import {
+  taskBranchClaimTreePlan,
+  taskBranchResolution,
+} from './run-task-branch-resolution.ts'
 import { resolveRunTaskRecordId } from './run-task-reference.ts'
 import {
   grokReaderServersForRun,
@@ -312,6 +314,12 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       resolvedTaskBranch = null
     }
   }
+  const { attachedTree, claimTreePlan } = taskBranchClaimTreePlan({
+    resolvedTaskBranch,
+    forbidsRepo,
+    repoJob,
+    hasWorktree: Boolean(opts.resume?.worktree),
+  })
   const existingBranch = resumePlan?.branch ?? resolvedTaskBranch?.branch
   assertBranchHasNoAliveOwner({
     branch: existingBranch,
@@ -546,13 +554,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     .get(claim.id)!
   const sandboxRunDir = join(runsDir, `sandbox-${sandboxRoot.record_id}`)
   const sandboxRunDirExisted = existsSync(sandboxRunDir)
-  const attachedTree = resolvedTaskBranch?.worktree ?? null
-  const claimTreePlan = decideClaimTreePlan({
-    hasResolvedTaskWorktree: attachedTree !== null,
-    forbidsRepo,
-    repoJob,
-    hasWorktree: Boolean(worktree),
-  })
   /**
    * Cutting the worktree can FAIL, and the row already exists by now.
    *
