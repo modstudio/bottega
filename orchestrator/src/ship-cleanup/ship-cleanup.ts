@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { findRecordedBranchLanding } from '../branch/branch-state.ts'
 import { classifyMintedBranch, pruneBranch } from '../branch/branches.ts'
-import { closeOutRun } from '../close/close-out.ts'
+import { closeOutRun, removeLifecycleTree } from '../close/close-out.ts'
 import { writableDb } from '../database/db.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
@@ -52,6 +52,7 @@ export type ShipCleanupDependencies = {
   }
   measure(paths: readonly string[]): { bytes: number; errors: string[]; stoppedAtLimit: boolean }
   readerCloneArchive(runId: number): string | null
+  removeLandingTree(runId: number): { outcome: string; detail: string }
   remove(path: string): void
 }
 
@@ -78,6 +79,7 @@ const dependencies: ShipCleanupDependencies = {
       throw cause
     }
   },
+  removeLandingTree: removeLifecycleTree,
   remove: (path) => rmSync(path, { recursive: true, force: true }),
 }
 
@@ -190,15 +192,26 @@ function closeBranchWorktrees(
   decisions: readonly ShipCleanupRunDecision[],
   report: ShipCleanupReport,
   adapter: ShipCleanupDependencies,
-): void {
+): Map<string, string> {
   const closeRows = decisions.filter(
     (decision) => decision.worktreeAction === 'close' && decision.worktree,
   )
   const closedRoots = new Set<number>()
+  const keptLandingTrees = new Map<string, string>()
   for (const row of closeRows) {
     if (closedRoots.has(row.rootId)) continue
     closedRoots.add(row.rootId)
     try {
+      if (row.scope === 'landing-tree' && row.worktree) {
+        const result = releaseLandingTree(
+          branch,
+          { ...row, worktree: row.worktree },
+          report,
+          adapter,
+        )
+        if (result) keptLandingTrees.set(row.worktree, result)
+        continue
+      }
       const result = adapter.closeOut(row.id)
       if (result.outcome === 'released' || result.outcome === 'absent') {
         if (row.worktree) report.removed.worktrees.push(row.worktree)
@@ -218,6 +231,36 @@ function closeBranchWorktrees(
       })
     }
   }
+  return keptLandingTrees
+}
+
+function releaseLandingTree(
+  branch: string,
+  row: ShipCleanupRunDecision & { worktree: string },
+  report: ShipCleanupReport,
+  adapter: ShipCleanupDependencies,
+): string | null {
+  const remedy = `${PLATFORM_SLUG} tree remove ${row.worktree}, then ${cleanupRetry(branch)}`
+  const result = adapter.removeLandingTree(row.id)
+  if (result.outcome === 'released' || result.outcome === 'absent') {
+    report.removed.worktrees.push(row.worktree)
+    return null
+  }
+  const cwdKept = result.detail.includes('current working directory')
+  if (cwdKept || result.outcome === 'held') {
+    report.kept.push({
+      item: `run ${row.id} worktree`,
+      reason: cwdKept ? 'the command runs from this tree' : result.detail,
+      remedy,
+    })
+    return remedy
+  }
+  report.errors.push({
+    item: `run ${row.id} worktree`,
+    detail: `tree removal ${result.outcome}: ${result.detail}`,
+    retry: cleanupRetry(branch),
+  })
+  return null
 }
 
 function removeRunStorage(
@@ -277,12 +320,20 @@ function pruneMergedBranch(
   branch: string,
   report: ShipCleanupReport,
   adapter: ShipCleanupDependencies,
+  keptLandingTrees: ReadonlyMap<string, string>,
 ): void {
   try {
     const pruned = adapter.prune(report.project, branch)
     report.removed.branches.push(...pruned.deleted)
+    const landingTreeRemedy = keptLandingTrees.values().next().value
     report.kept.push(
-      ...pruned.kept.map((item) => ({ item: `branch ${item.branch}`, reason: item.reason })),
+      ...pruned.kept.map((item) => ({
+        item: `branch ${item.branch}`,
+        reason: item.reason,
+        ...(item.reason === 'checked-out' && landingTreeRemedy
+          ? { remedy: landingTreeRemedy }
+          : {}),
+      })),
     )
     report.errors.push(
       ...pruned.errors.map((detail) => ({
@@ -346,9 +397,9 @@ export function shipCleanup(
     ),
   ]
   const beforeWorktrees = adapter.measure(worktreePaths)
-  closeBranchWorktrees(branch, decisions, report, adapter)
+  const keptLandingTrees = closeBranchWorktrees(branch, decisions, report, adapter)
   removeRunStorage(branch, decisions, beforeWorktrees, worktreePaths, report, adapter)
-  pruneMergedBranch(branch, report, adapter)
+  pruneMergedBranch(branch, report, adapter, keptLandingTrees)
   return report
 }
 

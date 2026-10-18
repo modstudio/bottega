@@ -114,6 +114,7 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
   mkdirSync(runScratchDir(lens), { recursive: true })
   writeFileSync(join(runScratchDir(lens), 'scratch.txt'), 'scratch')
   const removed = new Set<string>()
+  const removedLandingTrees: string[] = []
   const closed: number[] = []
   const pruned: string[][] = []
   const dependencies: ShipCleanupDependencies = {
@@ -145,6 +146,11 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
       if (id !== lens || !existsSync(lensPointer)) return null
       return (JSON.parse(readFileSync(lensPointer, 'utf8')) as { path: string }).path
     },
+    removeLandingTree: () => {
+      removedLandingTrees.push('/trees/landing')
+      removed.add('/trees/landing')
+      return { outcome: 'released', detail: 'released' }
+    },
   }
 
   const report = shipCleanup('DEV-1392-c3', {
@@ -156,7 +162,8 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
 
   expect(report.removed.artifacts).toEqual([root, turn, lens, landing])
   expect(report.removed.scratch).toEqual([root, turn, lens, landing])
-  expect(closed).toEqual([root, lens, unscored, landing])
+  expect(closed).toEqual([root, lens, unscored])
+  expect(removedLandingTrees).toEqual(['/trees/landing'])
   expect(closed).not.toContain(live)
   expect(closed).not.toContain(sibling)
   expect(closed).not.toContain(keyless)
@@ -188,6 +195,7 @@ test('ship cleanup refuses a landed classification without a recorded landing ti
     prune: unavailable,
     measure: unavailable,
     readerCloneArchive: unavailable,
+    removeLandingTree: unavailable,
     remove: unavailable,
   }
 
@@ -200,4 +208,107 @@ test('ship cleanup refuses a landed classification without a recorded landing ti
   ).toThrow(
     `refusing ship cleanup: branch DEV-1392-c3 has no recorded landing time; cleared by: ${PLATFORM_SLUG} tree branch landed DEV-1392-c3 --pr <number>`,
   )
+})
+
+function landingTreeCleanup(input: {
+  removal?: { outcome: string; detail: string }
+  pruneKept?: { branch: string; reason: string }[]
+}): {
+  report: ReturnType<typeof shipCleanup>
+  landingTree: string
+  removedTrees: string[]
+  closed: number[]
+} {
+  const project = addProject()
+  addLanding(project)
+  const landingTree = '/trees/landing'
+  addRun(project, {
+    job: 'landing-tree',
+    judged: true,
+    worktree: landingTree,
+  })
+  const removedTrees: string[] = []
+  const closed: number[] = []
+  const dependencies: ShipCleanupDependencies = {
+    landingState: () => 'landed',
+    closeOut: (id) => {
+      closed.push(id)
+      return { outcome: 'released', detail: 'released' }
+    },
+    prune: () => ({ deleted: [], kept: input.pruneKept ?? [], errors: [] }),
+    measure: () => ({ bytes: 0, errors: [], stoppedAtLimit: false }),
+    readerCloneArchive: () => null,
+    removeLandingTree: () => {
+      const removal = input.removal ?? { outcome: 'released', detail: 'released' }
+      if (removal.outcome === 'released') removedTrees.push(landingTree)
+      return removal
+    },
+    remove: () => {},
+  }
+  return {
+    report: shipCleanup('DEV-1392-c3', {
+      cwd: landingTree,
+      project: 'ship-fixture',
+      confirmedLanded: true,
+      database: db(),
+      dependencies,
+    }),
+    landingTree,
+    removedTrees,
+    closed,
+  }
+}
+
+test('ship cleanup releases a clean landing tree through tree removal', () => {
+  const result = landingTreeCleanup({})
+
+  expect(result.removedTrees).toEqual([result.landingTree])
+  expect(result.closed).toEqual([])
+  expect(result.report.removed.worktrees).toEqual([result.landingTree])
+  expect(result.report.errors).toEqual([])
+})
+
+test('ship cleanup keeps its current landing tree and checked-out branch without failure', () => {
+  const result = landingTreeCleanup({
+    removal: {
+      outcome: 'failed',
+      detail: 'current working directory /trees/landing is inside it',
+    },
+    pruneKept: [{ branch: 'DEV-1392-c3', reason: 'checked-out' }],
+  })
+  const remedy =
+    `${PLATFORM_SLUG} tree remove ${result.landingTree}, then ` +
+    `${PLATFORM_SLUG} tree ship-cleanup DEV-1392-c3`
+
+  expect(result.removedTrees).toEqual([])
+  expect(result.report.kept).toContainEqual({
+    item: expect.stringMatching(/^run \d+ worktree$/),
+    reason: 'the command runs from this tree',
+    remedy,
+  })
+  expect(result.report.kept).toContainEqual({
+    item: 'branch DEV-1392-c3',
+    reason: 'checked-out',
+    remedy,
+  })
+  expect(result.report.errors).toEqual([])
+})
+
+test('ship cleanup keeps a dirty landing tree and names its dirty paths', () => {
+  const result = landingTreeCleanup({
+    removal: {
+      outcome: 'held',
+      detail: 'landing tree held by its invoking session: tree is dirty: tracked.ts, new file.ts',
+    },
+  })
+
+  expect(result.removedTrees).toEqual([])
+  expect(result.report.kept).toContainEqual({
+    item: expect.stringMatching(/^run \d+ worktree$/),
+    reason: 'landing tree held by its invoking session: tree is dirty: tracked.ts, new file.ts',
+    remedy:
+      `${PLATFORM_SLUG} tree remove ${result.landingTree}, then ` +
+      `${PLATFORM_SLUG} tree ship-cleanup DEV-1392-c3`,
+  })
+  expect(result.report.errors).toEqual([])
 })

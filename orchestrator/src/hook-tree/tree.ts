@@ -6,7 +6,7 @@ import { existsSync, realpathSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { closeOutRun } from '../close/close-out.ts'
+import { removeLifecycleTree } from '../close/close-out.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { git } from '../git/git-environment.ts'
 import { projectAt, projects, resolvedWorktreeTool, stackAt } from '../project/projects.ts'
@@ -242,7 +242,7 @@ export function removeHookTree(requestedPath: string): void {
     )
   }
   writableDb()
-  const result = closeOutRun(owners[0]!.id, { intent: 'tree-remove' })
+  const result = removeLifecycleTree(owners[0]!.id)
   if (!['released', 'absent'].includes(result.outcome)) {
     throw new Error(`tree teardown ${result.outcome}: ${result.detail}`)
   }
