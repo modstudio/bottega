@@ -67,6 +67,14 @@ type ResolvedTaskBranchRunRow = TaskBranchRunRow & {
   job: string
 }
 
+type TaskBranchWorktreeOwnerRow = {
+  id: number
+  worktree: string
+  worktree_source: string | null
+  job: string
+  status: string
+}
+
 export type TaskBranchPullRequestCheck =
   | { state: 'landed'; landedBy: 'name' | 'pr-commits'; number: number }
   | { state: 'closed-unmerged'; number: number }
@@ -410,13 +418,21 @@ export function taskBranchIsAncestor(cwd: string, ancestor: string, descendant: 
 
 function resolvedTaskBranchWorktree(input: {
   repoRoot: string
+  projectId: string
   branch: string
   tip: string
   path: string | null
-  rows: readonly ResolvedTaskBranchRunRow[]
 }): { worktree: Worktree | null; ownerJob: string | null } {
   if (!input.path) return { worktree: null, ownerJob: null }
-  const owner = input.rows.find(
+  const owners = db()
+    .query(
+      `SELECT id,worktree,worktree_source,job,status
+         FROM run
+        WHERE project_record_id=? AND worktree IS NOT NULL
+        ORDER BY CASE WHEN status IN ('ok','failed','stale','stopped') THEN 1 ELSE 0 END, id DESC`,
+    )
+    .all(input.projectId) as TaskBranchWorktreeOwnerRow[]
+  const owner = owners.find(
     (row) => row.worktree && realpathOrSpelled(row.worktree) === realpathOrSpelled(input.path!),
   )
   const source = owner?.worktree_source
@@ -561,10 +577,10 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
     const path = checkedOutWorktree(repoRoot, branch)
     const resolvedWorktree = resolvedTaskBranchWorktree({
       repoRoot,
+      projectId: project.recordId,
       branch,
       tip,
       path,
-      rows: branchRows,
     })
     candidates.push({
       branch,
