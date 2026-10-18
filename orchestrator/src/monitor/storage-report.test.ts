@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  deduplicateHardLinkedBytes,
   FREE_SPACE_ABSOLUTE_FLOOR_BYTES,
   largestRuns,
   STORAGE_WALK_ENTRY_LIMIT,
@@ -74,6 +75,20 @@ describe('storage pressure decision', () => {
 })
 
 describe('storage totals', () => {
+  test('counts two paths to one multiply linked inode once while retaining both entries', () => {
+    const observations = deduplicateHardLinkedBytes([
+      { bytes: 4096, hardLinkKey: '12:34', kind: 'other', runId: null, path: 'first' },
+      { bytes: 4096, hardLinkKey: '12:34', kind: 'other', runId: null, path: 'second' },
+    ])
+
+    expect(observations).toHaveLength(2)
+    expect(observations.map(({ path, bytes }) => ({ path, bytes }))).toEqual([
+      { path: 'first', bytes: 4096 },
+      { path: 'second', bytes: 0 },
+    ])
+    expect(observations.reduce((total, observation) => total + observation.bytes, 0)).toBe(4096)
+  })
+
   test('labels an entry-capped total as a partial lower bound', () => {
     expect(
       storageMeasurement({ bytes: 41, entries: STORAGE_WALK_ENTRY_LIMIT, stoppedAtLimit: true }),

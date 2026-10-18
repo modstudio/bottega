@@ -28,7 +28,12 @@ export type StorageMeasurement = {
   detail: string | null
 }
 
-type WalkObservation = { bytes: number; kind: RunStorageKind; runId: number | null }
+type WalkObservation = {
+  bytes: number
+  hardLinkKey: string | null
+  kind: RunStorageKind
+  runId: number | null
+}
 type RunStorageKind = 'artifacts' | 'scratch' | 'sandboxes' | 'prompts' | 'replies' | 'other'
 
 export type LargestRun = {
@@ -69,6 +74,19 @@ type WalkResult = {
   stoppedAtLimit: boolean
   errors: string[]
   unreadable: string | null
+}
+
+/** Count a multiply linked regular file only at its first path, while preserving visited entries. */
+export function deduplicateHardLinkedBytes<T extends { bytes: number; hardLinkKey: string | null }>(
+  observations: readonly T[],
+): T[] {
+  const seen = new Set<string>()
+  return observations.map((observation) => {
+    if (observation.hardLinkKey === null) return { ...observation }
+    if (seen.has(observation.hardLinkKey)) return { ...observation, bytes: 0 }
+    seen.add(observation.hardLinkKey)
+    return { ...observation }
+  })
 }
 
 /** Turn bounded observations into an honest total without filesystem access. */
@@ -171,7 +189,7 @@ async function walk(
     }
   }
   return {
-    observations,
+    observations: deduplicateHardLinkedBytes(observations),
     entries,
     stoppedAtLimit: attempted >= entryLimit && cursor < pending.length,
     errors,
@@ -191,6 +209,8 @@ function startWalk(
           observations: [
             {
               bytes: typeof rootStat.blocks === 'number' ? rootStat.blocks * 512 : rootStat.size,
+              hardLinkKey:
+                rootStat.isFile() && rootStat.nlink > 1 ? `${rootStat.dev}:${rootStat.ino}` : null,
               ...classify(''),
             },
           ],
@@ -254,6 +274,7 @@ async function inspectEntry(
     const stat = await lstat(path)
     const observation = {
       bytes: typeof stat.blocks === 'number' ? stat.blocks * 512 : stat.size,
+      hardLinkKey: stat.isFile() && stat.nlink > 1 ? `${stat.dev}:${stat.ino}` : null,
       ...classify(relative(root, path)),
     }
     if (!stat.isDirectory() || stat.isSymbolicLink()) {
