@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, describe, expect, spyOn, test } from 'bun:test'
+import { createTRPCClient, httpBatchLink, TRPCClientError } from '@trpc/client'
 import {
   fixtureRecordId,
   ingestRunFixtures,
@@ -7,8 +8,8 @@ import {
 } from '../test/run-fixtures.ts'
 import { db } from './db.ts'
 import { LOCAL_LOGIN_MESSAGE } from './local-auth.ts'
-import { stopDashboardCapability } from './orch.ts'
 import { clearOrchCache, handleTrpcRequest, trpcMutationRequestAllowed, view } from './serve.ts'
+import type { AppRouter } from './trpc/router.ts'
 
 test('tRPC mutation requests require browser same-origin proof', () => {
   const request = (headers?: HeadersInit, method = 'POST') =>
@@ -20,45 +21,49 @@ test('tRPC mutation requests require browser same-origin proof', () => {
   expect(trpcMutationRequestAllowed(request(undefined, 'GET'))).toBe(true)
 })
 
-function trpcMutation(origin: string): Request {
-  const hubOrigin = 'http://127.0.0.1:4567'
-  return new Request(`${hubOrigin}/trpc/run.score`, {
-    method: 'POST',
-    headers: { Origin: origin, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ json: null }),
+function trpcClient(origin: string, auth: { allows(request: Request): boolean }) {
+  return createTRPCClient<AppRouter>({
+    links: [
+      httpBatchLink({
+        url: 'http://127.0.0.1:4567/trpc',
+        fetch(input, init) {
+          const request = new Request(input, init)
+          request.headers.set('Origin', origin)
+          return handleTrpcRequest(request, auth)
+        },
+      }),
+    ],
   })
 }
 
-type TrpcErrorBody = { error: { message: string } }
+async function mutationError(origin: string, allows: boolean): Promise<TRPCClientError<AppRouter>> {
+  try {
+    await trpcClient(origin, { allows: () => allows }).run.score.mutate({
+      id: 1,
+      delivery: 'none',
+      quality: null,
+      fidelity: null,
+      note: null,
+    })
+    throw new Error('expected mutation to be refused')
+  } catch (error) {
+    expect(error).toBeInstanceOf(TRPCClientError)
+    return error as TRPCClientError<AppRouter>
+  }
+}
 
-test('a refused local session returns the tRPC JSON remedy', async () => {
-  const response = await handleTrpcRequest(trpcMutation('http://127.0.0.1:4567'), {
-    allows: () => false,
-  })
+test('a refused local session returns the tRPC remedy through the dashboard transport', async () => {
+  const error = await mutationError('http://127.0.0.1:4567', false)
 
-  expect(response.status).toBe(401)
-  const body = (await response.json()) as TrpcErrorBody
-  expect(body.error.message).toBe(LOCAL_LOGIN_MESSAGE)
+  expect(error.data?.code).toBe('UNAUTHORIZED')
+  expect(error.message).toBe(LOCAL_LOGIN_MESSAGE)
 })
 
-test('an allowed session with a foreign origin returns the tRPC JSON refusal', async () => {
-  const response = await handleTrpcRequest(trpcMutation('https://attacker.example'), {
-    allows: () => true,
-  })
+test('a foreign origin returns the tRPC refusal through the dashboard transport', async () => {
+  const error = await mutationError('https://attacker.example', true)
 
-  expect(response.status).toBe(403)
-  const body = (await response.json()) as TrpcErrorBody
-  expect(body.error.message).toBe('cross-origin tRPC mutation refused')
-})
-
-test('an allowed session with the same origin passes the mutation gate', async () => {
-  stopDashboardCapability()
-  const response = await handleTrpcRequest(trpcMutation('http://127.0.0.1:4567'), {
-    allows: () => true,
-  })
-
-  expect(response.status).not.toBe(401)
-  expect(response.status).not.toBe(403)
+  expect(error.data?.code).toBe('FORBIDDEN')
+  expect(error.message).toBe('cross-origin tRPC mutation refused')
 })
 
 beforeAll(resetFixtureStore)
