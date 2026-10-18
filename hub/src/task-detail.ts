@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
+import type { TaskWriteMode } from './hosted-write-mode.ts'
 import type { Measures } from './measures.ts'
 import { commentAuthorDecision } from './task-attribution.ts'
-import type { TaskWriteMode } from './task-write-destination.ts'
 import type { Capabilities } from './tracker-capabilities.ts'
 
 export type TaskDetail = {

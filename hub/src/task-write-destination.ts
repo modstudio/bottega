@@ -1,5 +1,9 @@
 import { resolveHostedUrl } from './hosted-url.ts'
-import { declaredProjectSpace, projectWriteDecisionFor } from './hosted-write-mode.ts'
+import {
+  declaredProjectSpace,
+  projectWriteDecisionFor,
+  type TaskWriteMode,
+} from './hosted-write-mode.ts'
 import { readInstallBinding } from './install-binding.ts'
 import { projects } from './projects.ts'
 import type { TaskFetch } from './task-client.ts'
@@ -9,8 +13,6 @@ export type HostedTaskWriteOptions = {
   token?: string | null
   fetch?: TaskFetch
 }
-
-export type TaskWriteMode = 'hosted-configured' | 'local-authoritative'
 
 export function registeredTaskProject(name: string) {
   const project = projects().find((candidate) => candidate.name === name)

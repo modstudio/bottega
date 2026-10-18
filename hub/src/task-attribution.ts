@@ -1,6 +1,6 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { classifyCaller } from '../../shared/caller-classification.ts'
-import type { TaskWriteMode } from './task-write-destination.ts'
+import type { TaskWriteMode } from './hosted-write-mode.ts'
 
 export type Attribution = {
   actorUserId: string | null

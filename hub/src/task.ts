@@ -4,6 +4,7 @@ import { newRecordId } from '../../shared/record/schema.ts'
 import { TASK_STATUSES } from '../../shared/trackers.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import type { HostedTask } from './hosted-tasks.ts'
+import type { TaskWriteMode } from './hosted-write-mode.ts'
 import { persistInstallBinding } from './install-binding.ts'
 import { drainHostedEditOutbox } from './offline-task-edits.ts'
 import { type BranchPruneResult, classifyTaskBranches } from './orch.ts'
@@ -34,7 +35,6 @@ import {
   type HostedTaskWriteOptions,
   hostedTaskWriteOptions,
   registeredTaskProject,
-  type TaskWriteMode,
   taskWriteMode,
 } from './task-write-destination.ts'
 import { trackerCapabilities } from './tracker-capabilities.ts'

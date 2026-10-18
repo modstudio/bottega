@@ -2,6 +2,7 @@
 
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 export type HostedWriteMode = 'hosted-configured' | 'local-authoritative' | 'hosted-unavailable'
+export type TaskWriteMode = Exclude<HostedWriteMode, 'hosted-unavailable'>
 
 export type InstallBinding = {
   bound: boolean
