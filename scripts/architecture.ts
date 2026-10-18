@@ -154,11 +154,6 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/orch-contract.ts',
     '../project/projects.ts',
   ]),
-  module('orchestrator/src/porting/port-overlay.ts', []),
-  module('orchestrator/src/porting/port-import-authority.ts', [
-    '../record/record-write-authority.ts',
-    '../worker-store-write.ts',
-  ]),
   module('orchestrator/src/run/question-open.ts', []),
   module('orchestrator/src/run/question-close.ts', [
     '../../../shared/brand.ts',
