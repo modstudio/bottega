@@ -215,6 +215,52 @@ async function measurePath(path: string): Promise<StorageMeasurement> {
   })
 }
 
+export type StoragePathMeasurement = {
+  bytes: number
+  entries: number
+  errors: string[]
+  stoppedAtLimit: boolean
+}
+
+/** Measure selected paths with the storage report's allocated-byte and hard-link rules. */
+export function measureStoragePaths(
+  paths: readonly string[],
+  entryLimit = STORAGE_WALK_ENTRY_LIMIT,
+): StoragePathMeasurement {
+  const pending = [...new Set(paths.map((path) => resolve(path)))]
+  const observations: WalkObservation[] = []
+  const errors: string[] = []
+  let entries = 0
+  let attempted = 0
+  while (pending.length > 0 && attempted < entryLimit) {
+    const path = pending.shift()!
+    attempted++
+    try {
+      const stat = lstatSync(path)
+      entries++
+      observations.push({
+        bytes: typeof stat.blocks === 'number' ? stat.blocks * 512 : stat.size,
+        hardLinkKey: stat.isFile() && stat.nlink > 1 ? `${stat.dev}:${stat.ino}` : null,
+        kind: 'other',
+        runId: null,
+      })
+      if (stat.isDirectory() && !stat.isSymbolicLink()) {
+        pending.push(...readdirSync(path).map((name) => join(path, name)))
+      }
+    } catch (cause) {
+      const error = cause as NodeJS.ErrnoException
+      if (error.code !== 'ENOENT') errors.push(`${path}: ${String(error.message ?? cause)}`)
+    }
+  }
+  const deduplicated = deduplicateHardLinkedBytes(observations)
+  return {
+    bytes: deduplicated.reduce((total, entry) => total + entry.bytes, 0),
+    entries,
+    errors,
+    stoppedAtLimit: pending.length > 0,
+  }
+}
+
 function runClassifier(
   runsRoot: string,
   promptPaths: ReadonlySet<string>,

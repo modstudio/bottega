@@ -10,6 +10,7 @@ import { writableDb } from '../database/db.ts'
 import { passingGateForCommit } from '../gate/gate-passed.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt } from '../project/projects.ts'
+import { formatShipCleanup, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import type { AdmissionDecision } from './admission-decision.ts'
 import {
   decideMergeAdmission,
@@ -78,6 +79,7 @@ export type PullRequestMergeAdapter = {
   enqueue(cwd: string, number: number, headCommit: string): void
   now(): number
   wait(milliseconds: number): void
+  shipCleanup?(project: string, branch: string, database: Database): string
 }
 
 type ProcessResult = { exitCode: number; stdout: string; stderr: string }
@@ -257,6 +259,9 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
   wait(milliseconds) {
     Bun.sleepSync(milliseconds)
   },
+  shipCleanup(project, branch, database) {
+    return formatShipCleanup(shipCleanup(branch, { project, confirmedLanded: true, database }))
+  },
 }
 
 function collectMergeProof(
@@ -418,8 +423,10 @@ export function mergePullRequest(
     )
   }
 
+  let pullRequest: PullRequestMergeFacts
+  let mergeCommit: string
   try {
-    const pullRequest = adapter.view(cwd, target)
+    pullRequest = adapter.view(cwd, target)
     const identityDecision = decidePullRequestIdentity({
       number: pullRequest.number,
       state: pullRequest.state,
@@ -451,21 +458,32 @@ export function mergePullRequest(
       database,
     )
     if (release.mergeQueue) {
-      return waitForQueuedMerge(pullRequest, cwd, adapter)
+      mergeCommit = waitForQueuedMerge(pullRequest, cwd, adapter)
+    } else {
+      const subject = `${pullRequest.title} (#${pullRequest.number})`
+      mergeCommit = adapter.merge(
+        cwd,
+        pullRequest.number,
+        release.mergeMethod,
+        subject,
+        pullRequest.headCommit,
+      )
     }
-    const subject = `${pullRequest.title} (#${pullRequest.number})`
-    return adapter.merge(
-      cwd,
-      pullRequest.number,
-      release.mergeMethod,
-      subject,
-      pullRequest.headCommit,
-    )
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause)
     if (message.startsWith('refusing merge:')) throw cause
     throw new Error(
       `refusing merge because the pull request proof was not checked: ${message}; cleared by: restore forge and repository access, then ${PLATFORM_SLUG} pr merge ${target}`,
+    )
+  }
+  if (!adapter.shipCleanup) return mergeCommit
+  try {
+    return `${mergeCommit}\n${adapter.shipCleanup(project.name, pullRequest.headBranch, database)}`
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    return (
+      `${mergeCommit}\nship cleanup failed for ${pullRequest.headBranch}: ${detail}; ` +
+      `retry: ${PLATFORM_SLUG} tree ship-cleanup ${pullRequest.headBranch}`
     )
   }
 }

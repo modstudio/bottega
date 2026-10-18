@@ -746,6 +746,7 @@ function deleteAndSettleBranch(
 export function pruneBranches(options: {
   project: string
   key: string
+  branch?: string
   dryRun?: boolean
 }): BranchPruneReport {
   const observed = branchesReport({
@@ -773,6 +774,7 @@ export function pruneBranches(options: {
     errors: [],
   }
   for (const row of keyReport?.branches ?? []) {
+    if (options.branch !== undefined && row.branch !== options.branch) continue
     if (listOperatorBranch(row, report)) continue
     if (report.dryRun) {
       if (!tipStillEligible(project, row, report)) continue

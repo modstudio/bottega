@@ -1,0 +1,77 @@
+// concern: ship cleanup decision
+/** Selects branch-owned ephemeral run data without filesystem or database access. */
+
+export const SHIP_CLEANUP_TERMINAL_STATUSES = new Set(['ok', 'failed', 'stale', 'stopped'])
+
+export type ShipCleanupRunFact = {
+  id: number
+  rootId: number
+  job: string
+  status: string
+  branch: string | null
+  launchKey: string | null
+  judged: boolean
+  worktree: string | null
+}
+
+export type ShipCleanupRunDecision = ShipCleanupRunFact & {
+  scope: 'chain' | 'review-lens' | 'landing-tree' | 'outside'
+  artifacts: 'remove' | 'keep' | 'ignore'
+  worktreeAction: 'close' | 'keep' | 'ignore'
+  reason: string
+}
+
+function scopeFor(run: ShipCleanupRunFact, branch: string): ShipCleanupRunDecision['scope'] {
+  if (!run.launchKey || !run.branch) return 'outside'
+  if (run.job === 'landing-tree' && run.branch === branch) return 'landing-tree'
+  if (run.job === 'review-lens' && run.branch === branch) return 'review-lens'
+  return run.branch === branch ? 'chain' : 'outside'
+}
+
+/** Decide removal independently for each run; turns inherit their root verdict in gathered facts. */
+export function decideShipCleanup(
+  branch: string,
+  runs: readonly ShipCleanupRunFact[],
+): ShipCleanupRunDecision[] {
+  return runs.map((run) => {
+    const scope = scopeFor(run, branch)
+    if (scope === 'outside') {
+      return {
+        ...run,
+        scope,
+        artifacts: 'ignore',
+        worktreeAction: 'ignore',
+        reason: !run.launchKey
+          ? 'run has no task key'
+          : !run.branch
+            ? 'run has no branch'
+            : `run belongs to branch ${run.branch}`,
+      }
+    }
+    if (!SHIP_CLEANUP_TERMINAL_STATUSES.has(run.status)) {
+      return {
+        ...run,
+        scope,
+        artifacts: 'keep',
+        worktreeAction: 'keep',
+        reason: `run is live (${run.status})`,
+      }
+    }
+    if (!run.judged) {
+      return {
+        ...run,
+        scope,
+        artifacts: 'keep',
+        worktreeAction: 'close',
+        reason: 'run has no recorded verdict',
+      }
+    }
+    return {
+      ...run,
+      scope,
+      artifacts: 'remove',
+      worktreeAction: 'close',
+      reason: 'terminal judged run on merged branch',
+    }
+  })
+}
