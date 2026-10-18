@@ -1,4 +1,5 @@
 import { queryClient, trpc } from '@bottega/hub-data/client'
+import { signOutFromRecord } from '@bottega/hub-data/hosted-auth'
 import {
   hostedOrigin,
   isDocsPath,
@@ -9,6 +10,7 @@ import {
   navForMode,
   sameLocationOn,
 } from '@bottega/hub-data/hub-mode'
+import { waitingInboxEntries } from '@bottega/hub-data/operator-waiting'
 import {
   AppShell,
   type NavItem,
@@ -28,8 +30,6 @@ import {
 } from '@tanstack/react-router'
 import { useEffect } from 'react'
 import { AppMark } from '@/components/app-mark'
-import { signOutFromRecord } from '@/lib/hosted-auth'
-import { waitingInboxEntries } from '@/lib/operator-waiting'
 import { recordSpaces } from '@/lib/record-spaces'
 import { useWindowState } from '@/lib/window'
 import { SiteFrame } from '@/site/chrome'

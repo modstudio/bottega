@@ -3,9 +3,14 @@ import { Input } from '@bottega/hub-ui/field/input'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
-import { signInWithEmail } from '@/lib/hosted-auth'
 
-export function HostedSignIn({ passwordChanged = false }: { passwordChanged?: boolean }) {
+export function HostedSignIn({
+  passwordChanged = false,
+  signInWithEmail,
+}: {
+  passwordChanged?: boolean
+  signInWithEmail: (email: string, password: string) => Promise<void>
+}) {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')

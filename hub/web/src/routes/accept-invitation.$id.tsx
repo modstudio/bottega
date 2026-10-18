@@ -1,11 +1,4 @@
-import { isHostedMode } from '@bottega/hub-data/hub-mode'
-import { Button } from '@bottega/hub-ui/button'
-import { Input } from '@bottega/hub-ui/field/input'
-import { PageHeader } from '@bottega/hub-ui/page-header'
-import { useQuery } from '@tanstack/react-query'
-import { createFileRoute, Navigate } from '@tanstack/react-router'
-import { useState } from 'react'
-import { signInWithEmail, signOutFromRecord } from '@/lib/hosted-auth'
+import { signInWithEmail, signOutFromRecord } from '@bottega/hub-data/hosted-auth'
 import {
   acceptOrganizationInvitation,
   getOrganizationInvitation,
@@ -14,7 +7,14 @@ import {
   rejectOrganizationInvitation,
   setActiveOrganization,
   signUpForRecord,
-} from '@/lib/hosted-organization'
+} from '@bottega/hub-data/hosted-organization'
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
+import { Button } from '@bottega/hub-ui/button'
+import { Input } from '@bottega/hub-ui/field/input'
+import { PageHeader } from '@bottega/hub-ui/page-header'
+import { useQuery } from '@tanstack/react-query'
+import { createFileRoute, Navigate } from '@tanstack/react-router'
+import { useState } from 'react'
 
 export const Route = createFileRoute('/accept-invitation/$id')({ component: InvitationRoute })
 

@@ -10,9 +10,10 @@ test('reset validation rejects a mismatch and a short password', () => {
 })
 
 test('an expired, used, or missing token renders the failure state', () => {
+  const resetPassword = async () => {}
   for (const page of [
-    <HostedResetPassword key="used" token="used-token" invalid />,
-    <HostedResetPassword key="missing" />,
+    <HostedResetPassword key="used" token="used-token" invalid resetPassword={resetPassword} />,
+    <HostedResetPassword key="missing" resetPassword={resetPassword} />,
   ]) {
     const html = renderToStaticMarkup(page)
     expect(html).toContain('This password reset link is invalid or has expired.')

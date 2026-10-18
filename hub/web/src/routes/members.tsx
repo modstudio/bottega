@@ -1,3 +1,14 @@
+import {
+  activeOrganizationMember,
+  cancelOrganizationInvitation,
+  inviteOrganizationMember,
+  listOrganizationInvitations,
+  listOrganizationMembers,
+  type OrganizationMember,
+  type OrganizationRole,
+  removeOrganizationMember,
+  updateOrganizationMemberRole,
+} from '@bottega/hub-data/hosted-organization'
 import { isHostedMode } from '@bottega/hub-data/hub-mode'
 import { Button } from '@bottega/hub-ui/button'
 import { Input } from '@bottega/hub-ui/field/input'
@@ -14,17 +25,6 @@ import {
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, Navigate } from '@tanstack/react-router'
 import { useState } from 'react'
-import {
-  activeOrganizationMember,
-  cancelOrganizationInvitation,
-  inviteOrganizationMember,
-  listOrganizationInvitations,
-  listOrganizationMembers,
-  type OrganizationMember,
-  type OrganizationRole,
-  removeOrganizationMember,
-  updateOrganizationMemberRole,
-} from '@/lib/hosted-organization'
 
 export const Route = createFileRoute('/members')({ component: MembersRoute })
 const roles: OrganizationRole[] = ['owner', 'admin', 'member']

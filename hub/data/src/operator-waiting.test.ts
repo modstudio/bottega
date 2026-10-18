@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { waitingByRun, waitingInboxEntries } from './operator-waiting.ts'
 
 test('maps only the exact active run named by a waiting question', () => {

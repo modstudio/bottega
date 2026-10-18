@@ -1,3 +1,4 @@
+import { signInWithEmail } from '@bottega/hub-data/hosted-auth'
 import { isHostedMode } from '@bottega/hub-data/hub-mode'
 import { createFileRoute, Navigate } from '@tanstack/react-router'
 import { HostedSignIn } from '@/components/hosted-sign-in'
@@ -7,6 +8,6 @@ export const Route = createFileRoute('/sign-in')({
   component: function SignInPage() {
     const search = Route.useSearch()
     if (!isHostedMode()) return <Navigate to="/" />
-    return <HostedSignIn passwordChanged={search.reset} />
+    return <HostedSignIn passwordChanged={search.reset} signInWithEmail={signInWithEmail} />
   },
 })

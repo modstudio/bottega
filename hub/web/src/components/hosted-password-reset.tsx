@@ -2,11 +2,14 @@ import { Button } from '@bottega/hub-ui/button'
 import { Input } from '@bottega/hub-ui/field/input'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { useState } from 'react'
-import { requestPasswordReset, resetPassword } from '@/lib/hosted-auth'
 
 const confirmation = 'If an account exists for that email, a password reset link has been sent.'
 
-export function HostedForgotPassword() {
+export function HostedForgotPassword({
+  requestPasswordReset,
+}: {
+  requestPasswordReset: (email: string) => Promise<void>
+}) {
   const [email, setEmail] = useState('')
   const [submitted, setSubmitted] = useState(false)
   const [pending, setPending] = useState(false)
@@ -61,9 +64,11 @@ export function validateResetPassword(password: string, confirmationValue: strin
 export function HostedResetPassword({
   token,
   invalid = false,
+  resetPassword,
 }: {
   token?: string
   invalid?: boolean
+  resetPassword: (token: string, newPassword: string) => Promise<void>
 }) {
   const [password, setPassword] = useState('')
   const [confirmationValue, setConfirmationValue] = useState('')

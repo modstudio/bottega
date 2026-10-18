@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { DocStorePage } from '@/site/doc-store'
-import { requireHostedSite, siteHead } from '@/site/route'
+import { requireHostedSite, siteHead } from './-site'
 export const Route = createFileRoute('/product/doc-store')({
   beforeLoad: requireHostedSite,
   component: DocStorePage,
