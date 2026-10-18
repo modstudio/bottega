@@ -23,6 +23,14 @@ describe('storage pressure decision', () => {
     expect(
       storagePressureDecision({ path: '/state', freeBytes: 100 * GiB, totalBytes, error: null }),
     ).toMatchObject({ pressured: false, thresholdBytes: 100 * GiB })
+    expect(
+      storagePressureDecision({
+        path: '/state',
+        freeBytes: 100 * GiB + 1,
+        totalBytes,
+        error: null,
+      }),
+    ).toMatchObject({ pressured: false, thresholdBytes: 100 * GiB })
   })
 
   test('fires immediately below and clears at the absolute floor', () => {
@@ -39,6 +47,14 @@ describe('storage pressure decision', () => {
       storagePressureDecision({
         path: '/state',
         freeBytes: FREE_SPACE_ABSOLUTE_FLOOR_BYTES,
+        totalBytes,
+        error: null,
+      }),
+    ).toMatchObject({ pressured: false, thresholdBytes: FREE_SPACE_ABSOLUTE_FLOOR_BYTES })
+    expect(
+      storagePressureDecision({
+        path: '/state',
+        freeBytes: FREE_SPACE_ABSOLUTE_FLOOR_BYTES + 1,
         totalBytes,
         error: null,
       }),
