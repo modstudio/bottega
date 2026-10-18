@@ -13,6 +13,48 @@ const isTaskBodyConflict = (error: unknown): boolean =>
   'data' in error &&
   (error as { data?: { code?: string } }).data?.code === 'CONFLICT'
 
+function useCommentActions(
+  localInput: { key: string; scope: { recordId?: string } },
+  refused: string | undefined,
+  refresh: () => Promise<unknown>,
+) {
+  const comment = useMutation(trpc.work.comment.mutationOptions())
+  const editComment = useMutation(trpc.work.editComment.mutationOptions())
+  const deleteComment = useMutation(trpc.work.deleteComment.mutationOptions())
+  return {
+    comment: {
+      run: async (body: string) => {
+        if (refused) return
+        await comment.mutateAsync({ ...localInput, body })
+        await refresh()
+      },
+      pending: comment.isPending,
+      error: comment.error,
+      refused,
+    },
+    editComment: {
+      run: async ({ id, body }: { id: string; body: string }) => {
+        if (refused) return
+        await editComment.mutateAsync({ ...localInput, commentId: id, body })
+        await refresh()
+      },
+      pending: editComment.isPending,
+      error: editComment.error,
+      refused,
+    },
+    deleteComment: {
+      run: async ({ id }: { id: string }) => {
+        if (refused) return
+        await deleteComment.mutateAsync({ ...localInput, commentId: id })
+        await refresh()
+      },
+      pending: deleteComment.isPending,
+      error: deleteComment.error,
+      refused,
+    },
+  }
+}
+
 export function useTask(key: string, recordId?: string) {
   const hostedMode = isHostedMode()
   const separator = key.indexOf(':')
@@ -28,12 +70,10 @@ export function useTask(key: string, recordId?: string) {
   const setTitle = useMutation(trpc.work.setTitle.mutationOptions())
   const setStatus = useMutation(trpc.work.setStatus.mutationOptions())
   const setBody = useMutation(trpc.work.setBody.mutationOptions())
-  const comment = useMutation(trpc.work.comment.mutationOptions())
-  const editComment = useMutation(trpc.work.editComment.mutationOptions())
-  const deleteComment = useMutation(trpc.work.deleteComment.mutationOptions())
   const setDocument = useMutation(trpc.work.setDocument.mutationOptions())
   const refresh = () => queryClient.invalidateQueries()
   const capability = detail?.capabilities
+  const commentActions = useCommentActions(localInput, refusal(capability?.comment), refresh)
 
   return {
     detail,
@@ -91,36 +131,7 @@ export function useTask(key: string, recordId?: string) {
           setBody.reset()
         },
       },
-      comment: {
-        run: async (body: string) => {
-          if (refusal(capability?.comment)) return
-          await comment.mutateAsync({ ...localInput, body })
-          await refresh()
-        },
-        pending: comment.isPending,
-        error: comment.error,
-        refused: refusal(capability?.comment),
-      },
-      editComment: {
-        run: async ({ id, body }: { id: string; body: string }) => {
-          if (refusal(capability?.comment)) return
-          await editComment.mutateAsync({ ...localInput, commentId: id, body })
-          await refresh()
-        },
-        pending: editComment.isPending,
-        error: editComment.error,
-        refused: refusal(capability?.comment),
-      },
-      deleteComment: {
-        run: async ({ id }: { id: string }) => {
-          if (refusal(capability?.comment)) return
-          await deleteComment.mutateAsync({ ...localInput, commentId: id })
-          await refresh()
-        },
-        pending: deleteComment.isPending,
-        error: deleteComment.error,
-        refused: refusal(capability?.comment),
-      },
+      ...commentActions,
       setDocument: {
         run: async (input: { id: string; title: string; body: string; version: string }) => {
           if (refusal(capability?.documents)) return

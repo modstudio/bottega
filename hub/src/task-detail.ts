@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { Measures } from './measures.ts'
-import type { Capabilities } from './tracker-capabilities.ts'
 import { mayChangeComment } from './task-attribution.ts'
+import type { Capabilities } from './tracker-capabilities.ts'
 
 export type TaskDetail = {
   task: {

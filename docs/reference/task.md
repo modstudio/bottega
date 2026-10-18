@@ -7,6 +7,8 @@ tasks and task documents
 - [bottega task](#bottega-task)
 - [bottega task close](#bottega-task-close)
 - [bottega task comment](#bottega-task-comment)
+- [bottega task comment-delete](#bottega-task-comment-delete)
+- [bottega task comment-edit](#bottega-task-comment-edit)
 - [bottega task doc](#bottega-task-doc)
 - [bottega task doc help](#bottega-task-doc-help)
 - [bottega task doc list](#bottega-task-doc-list)
@@ -36,6 +38,8 @@ tasks and task documents
 
 - [bottega task close](./task.md#bottega-task-close)
 - [bottega task comment](./task.md#bottega-task-comment)
+- [bottega task comment-delete](./task.md#bottega-task-comment-delete)
+- [bottega task comment-edit](./task.md#bottega-task-comment-edit)
 - [bottega task doc](./task.md#bottega-task-doc)
 - [bottega task duplicates](./task.md#bottega-task-duplicates)
 - [bottega task help](./task.md#bottega-task-help)
@@ -70,6 +74,34 @@ close a task, release its claims, and prune its branches
 **Synopsis:** `bottega task comment <key> <text> [--project <X>]`
 
 add a comment to a task
+
+### Options
+
+- `--project <X>`: resolve the task in this project
+
+### Related
+
+- [bottega task](./task.md#bottega-task)
+
+## bottega task comment-delete
+
+**Synopsis:** `bottega task comment-delete <key> <comment-id> [--project <X>]`
+
+delete one of your task comments
+
+### Options
+
+- `--project <X>`: resolve the task in this project
+
+### Related
+
+- [bottega task](./task.md#bottega-task)
+
+## bottega task comment-edit
+
+**Synopsis:** `bottega task comment-edit <key> <comment-id> <text> [--project <X>]`
+
+edit one of your task comments
 
 ### Options
 

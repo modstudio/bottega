@@ -1,7 +1,8 @@
+import { userInfo } from 'node:os'
 import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
-import { userInfo } from 'node:os'
 import { TASK_STATUSES } from '../../../../shared/trackers.ts'
+import { createRecordClient } from '../../record-client.ts'
 import { strip, view } from '../../serve.ts'
 import {
   commentTask,
@@ -12,8 +13,7 @@ import {
   setTaskBody,
   taskRecord,
 } from '../../task.ts'
-import { attributionFromInputs, type Attribution } from '../../task-attribution.ts'
-import { createRecordClient } from '../../record-client.ts'
+import { type Attribution, attributionFromInputs } from '../../task-attribution.ts'
 import { getTaskDocument, updateTaskDocument } from '../../task-document.ts'
 import type { Context } from '../context.ts'
 
@@ -114,6 +114,39 @@ function setBodyProcedure(deps: WorkDeps) {
     })
 }
 
+function commentProcedures(deps: WorkDeps) {
+  return {
+    comment: t.procedure
+      .input(z.object({ ...taskIdentityInput, body: z.string().trim().min(1) }))
+      .mutation(async ({ ctx, input: value }) => {
+        const attribution = await dashboardAttribution(ctx)
+        return write(() => deps.commentTask(value.key, value.scope, value.body, attribution))
+      }),
+    editComment: t.procedure
+      .input(
+        z.object({
+          ...taskIdentityInput,
+          commentId: z.string().uuid(),
+          body: z.string().trim().min(1),
+        }),
+      )
+      .mutation(async ({ ctx, input: value }) => {
+        const attribution = await dashboardAttribution(ctx)
+        return write(() =>
+          deps.editTaskComment(value.key, value.scope, value.commentId, value.body, attribution),
+        )
+      }),
+    deleteComment: t.procedure
+      .input(z.object({ ...taskIdentityInput, commentId: z.string().uuid() }))
+      .mutation(async ({ ctx, input: value }) => {
+        const attribution = await dashboardAttribution(ctx)
+        return write(() =>
+          deps.deleteTaskComment(value.key, value.scope, value.commentId, attribution),
+        )
+      }),
+  }
+}
+
 export function createWorkRouter(given: Partial<WorkDeps> = {}) {
   const deps: WorkDeps = {
     strip,
@@ -172,39 +205,7 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
         )
       }),
     setBody: setBodyProcedure(deps),
-    comment: t.procedure
-      .input(
-        z.object({
-          ...taskIdentityInput,
-          body: z.string().trim().min(1),
-        }),
-      )
-      .mutation(async ({ ctx, input: value }) => {
-        const attribution = await dashboardAttribution(ctx)
-        return write(() => deps.commentTask(value.key, value.scope, value.body, attribution))
-      }),
-    editComment: t.procedure
-      .input(
-        z.object({
-          ...taskIdentityInput,
-          commentId: z.string().uuid(),
-          body: z.string().trim().min(1),
-        }),
-      )
-      .mutation(async ({ ctx, input: value }) => {
-        const attribution = await dashboardAttribution(ctx)
-        return write(() =>
-          deps.editTaskComment(value.key, value.scope, value.commentId, value.body, attribution),
-        )
-      }),
-    deleteComment: t.procedure
-      .input(z.object({ ...taskIdentityInput, commentId: z.string().uuid() }))
-      .mutation(async ({ ctx, input: value }) => {
-        const attribution = await dashboardAttribution(ctx)
-        return write(() =>
-          deps.deleteTaskComment(value.key, value.scope, value.commentId, attribution),
-        )
-      }),
+    ...commentProcedures(deps),
     setDocument: t.procedure
       .input(
         z.object({

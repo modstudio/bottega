@@ -1,8 +1,8 @@
 import { pruneTaskBranches, releaseTaskClaims } from './orch.ts'
 import { closeTask, type TaskRow } from './task.ts'
-import type { TaskScope } from './task-identity.ts'
 import type { Attribution } from './task-attribution.ts'
 import { NO_ATTRIBUTION } from './task-attribution.ts'
+import type { TaskScope } from './task-identity.ts'
 
 export async function closeThenPrune(
   key: string,

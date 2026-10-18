@@ -631,7 +631,13 @@ export async function mirrorStatusEventRow(
       projectId: row.projectId,
       projectName: row.project_name,
     }))
-  if (decision.action === 'adopt') return { id: decision.id }
+  if (decision.action === 'adopt') {
+    await tx`UPDATE hub_task_status_event SET
+      actor_user_id=COALESCE(${row.actor_user_id},actor_user_id),actor_name=COALESCE(${row.actor_name},actor_name),
+      agent=COALESCE(${row.agent},agent),run_id=COALESCE(${row.run_id},run_id)
+      WHERE id=${decision.id}::uuid`
+    return { id: decision.id }
+  }
   if (decision.action === 'idempotent-duplicate') {
     await tx`UPDATE hub_task_status_event SET project_id=${projectId}::uuid,task_key=${row.task_key},task_id=${taskId}::uuid,
       actor_user_id=COALESCE(${row.actor_user_id},actor_user_id),actor_name=COALESCE(${row.actor_name},actor_name),

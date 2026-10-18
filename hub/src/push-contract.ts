@@ -269,6 +269,22 @@ function rejected(id: string, reason: string): ParsedHostedPushItem {
   return { outcome: { id, status: 'rejected', reason } }
 }
 
+function invalidAttributionField(
+  row: Record<string, unknown>,
+  table: PushableHubChangeTable,
+): string | null {
+  for (const field of ['actor_user_id', 'actor_name', 'agent', 'run_id'] as const)
+    if (row[field] !== undefined && !nullableString(row[field]))
+      return `${table} row.${field} must be a string, null, or absent`
+  return null
+}
+
+function invalidStatusTimestamp(row: Record<string, unknown>, table: PushableHubChangeTable) {
+  for (const field of ['at', 'created_at', 'updated_at'] as const)
+    if (!isTimestamp(row[field])) return `${table} row.${field} must be an ISO timestamp`
+  return null
+}
+
 function parseStatusEventRow(
   value: unknown,
   id: string,
@@ -285,11 +301,10 @@ function parseStatusEventRow(
   if (typeof row.task_id === 'string' && !UUID.test(row.task_id))
     return `${table} row.task_id must be a UUID, null, or absent`
   if (!nullableString(row.from_status)) return `${table} row.from_status must be a string or null`
-  for (const field of ['actor_user_id', 'actor_name', 'agent', 'run_id'] as const)
-    if (row[field] !== undefined && !nullableString(row[field]))
-      return `${table} row.${field} must be a string, null, or absent`
-  for (const field of ['at', 'created_at', 'updated_at'] as const)
-    if (!isTimestamp(row[field])) return `${table} row.${field} must be an ISO timestamp`
+  const attributionError = invalidAttributionField(row, table)
+  if (attributionError) return attributionError
+  const timestampError = invalidStatusTimestamp(row, table)
+  if (timestampError) return timestampError
   if (row.deleted_at !== null && !isTimestamp(row.deleted_at))
     return `${table} row.deleted_at must be an ISO timestamp or null`
   return {

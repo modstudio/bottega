@@ -782,13 +782,30 @@ test('comment and document pushes apply their route effects and deduplicate dele
       task_id: taskId,
       project_name: 'workshop',
       body: 'offline',
+      actor_user_id: userId,
+      actor_name: 'Person',
+      agent: 'codex',
+      run_id: '14336',
       created_at: at,
       updated_at: at,
       deleted_at: null,
     },
   }
   expect(await apply([comment])).toEqual([{ id: commentId, status: 'applied' }])
-  expect(await apply([comment])).toEqual([{ id: commentId, status: 'duplicate' }])
+  const { actor_user_id, actor_name, agent, run_id, ...legacyRow } = comment.row
+  expect(actor_user_id).toBe(userId)
+  expect([actor_name, agent, run_id]).toEqual(['Person', 'codex', '14336'])
+  expect(await apply([{ ...comment, row: legacyRow }])).toEqual([
+    { id: commentId, status: 'applied' },
+  ])
+  expect(
+    (
+      await database.query(
+        `SELECT actor_user_id::text,actor_name,agent,run_id FROM hub_task_comment WHERE id=$1`,
+        [commentId],
+      )
+    ).rows,
+  ).toEqual([{ actor_user_id: userId, actor_name: 'Person', agent: 'codex', run_id: '14336' }])
   expect(
     await apply([{ ...comment, row: { ...comment.row, body: 'machine' }, fields: [] }]),
   ).toEqual([{ id: commentId, status: 'duplicate' }])

@@ -10,10 +10,10 @@ import {
   closeTask,
   commentTask,
   createTask,
+  deleteTaskComment,
   duplicateCandidates,
   duplicateScore,
   editTaskComment,
-  deleteTaskComment,
   setTask,
   setTaskBody,
   showTask,
@@ -286,17 +286,52 @@ describe('hosted-authoritative existing-row edits', () => {
 describe('local task tracker', () => {
   test('comment authors may edit and delete while other record users are refused', async () => {
     resetFixtureStore()
-    const key = `BET-${Date.now()}`
+    const key = 'BET-AUTHOR'
     seed(key, 'beta')
     const author = { actorUserId: 'user-1', actorName: 'Person', agent: 'codex', runId: '42' }
     const other = { ...author, actorUserId: 'user-2' }
     const comment = await commentTask(key, {}, 'first', author)
     await expect(editTaskComment(key, {}, comment.id, 'first', author)).rejects.toThrow('unchanged')
     await expect(editTaskComment(key, {}, comment.id, '', author)).rejects.toThrow('required')
-    await expect(editTaskComment(key, {}, comment.id, 'other', other)).rejects.toThrow('another author')
+    await expect(editTaskComment(key, {}, comment.id, 'other', other)).rejects.toThrow(
+      'another author',
+    )
+    await writeTransaction((conn) =>
+      conn.query(`UPDATE task_comment SET actor_user_id=NULL WHERE record_id=?`).run(comment.id),
+    )
+    await expect(editTaskComment(key, {}, comment.id, 'older', author)).rejects.toThrow(
+      'predates recorded authorship',
+    )
+    await writeTransaction((conn) =>
+      conn
+        .query(`UPDATE task_comment SET actor_user_id=? WHERE record_id=?`)
+        .run(author.actorUserId, comment.id),
+    )
+    const beforeEdit = db()
+      .query<{ generation: number }, [string]>(
+        `SELECT generation FROM hosted_outbox WHERE table_name='hub_task_comment' AND row_id=?`,
+      )
+      .get(comment.id)!
     await editTaskComment(key, {}, comment.id, 'edited', author)
-    expect(showTask(key).comments[0]).toMatchObject({ body: 'edited', actor_name: 'Person', agent: 'codex' })
+    const afterEdit = db()
+      .query<{ generation: number }, [string]>(
+        `SELECT generation FROM hosted_outbox WHERE table_name='hub_task_comment' AND row_id=?`,
+      )
+      .get(comment.id)!
+    expect(afterEdit.generation).toBeGreaterThan(beforeEdit.generation)
+    expect(showTask(key).comments[0]).toMatchObject({
+      body: 'edited',
+      actor_name: 'Person',
+      agent: 'codex',
+    })
     await deleteTaskComment(key, {}, comment.id, author)
+    expect(
+      db()
+        .query<{ generation: number }, [string]>(
+          `SELECT generation FROM hosted_outbox WHERE table_name='hub_task_comment' AND row_id=?`,
+        )
+        .get(comment.id)!.generation,
+    ).toBeGreaterThan(afterEdit.generation)
     expect(showTask(key).comments).toEqual([])
     await expect(deleteTaskComment(key, {}, comment.id, author)).rejects.toThrow('not found')
   })

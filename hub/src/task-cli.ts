@@ -1,22 +1,25 @@
 import { readFileSync, writeFileSync } from 'node:fs'
+import { userInfo } from 'node:os'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { PresenceOption } from './cli-command.ts'
 import { requireDatabase } from './db.ts'
+import { resolveHostedUrl } from './hosted-url.ts'
 import { credentials, Mcp } from './mcp.ts'
 import { projects } from './projects.ts'
 import {
   commentTask,
-  deleteTaskComment,
-  editTaskComment,
   createTask,
   DuplicateTaskError,
+  deleteTaskComment,
   duplicateCandidates,
+  editTaskComment,
   listTasks,
   setTask,
   showTask,
 } from './task.ts'
-import { cliAttribution } from './task-attribution.ts'
+import { type Attribution, attributionFromInputs } from './task-attribution.ts'
+import { hostedSignedInUser } from './task-client.ts'
 import { closeThenPrune } from './task-close.ts'
 import {
   createTaskDocument,
@@ -55,6 +58,10 @@ type TaskOptions = {
 }
 
 const open = () => requireDatabase()
+const cliAttribution = async (): Promise<Attribution> => {
+  const user = resolveHostedUrl() ? await hostedSignedInUser() : null
+  return attributionFromInputs({ env: process.env, user, machineUser: userInfo().username })
+}
 const required = (options: TaskOptions, name: keyof TaskOptions): string => {
   const value = options[name]
   if (typeof value !== 'string' || !value.trim())

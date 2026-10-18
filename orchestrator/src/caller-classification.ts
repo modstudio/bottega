@@ -1,11 +1,7 @@
 // concern: caller-classification
-import {
-  classifyCaller,
-  type CallerClassification,
-  WORKER_ENVIRONMENT_MARKERS,
-} from '../../shared/caller-classification.ts'
+import { type CallerClassification, classifyCaller } from '../../shared/caller-classification.ts'
 
-export { classifyCaller, type CallerClassification, WORKER_ENVIRONMENT_MARKERS }
+export { type CallerClassification, classifyCaller }
 
 export type CallerIdentityResolution =
   | { kind: 'identity'; session: string }

@@ -15,7 +15,7 @@ export const WORKER_ENVIRONMENT_MARKERS = [
   'ORCH_ASK_URL',
 ] as const
 
-export const RECOGNIZED_HARNESSES = [
+const RECOGNIZED_HARNESSES = [
   { environment: 'CLAUDE_CODE_SESSION_ID', harness: 'claude-code' as const },
 ] as const
 

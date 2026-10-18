@@ -399,6 +399,14 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'note_acknowledgement.session_id',
     'question.session_id',
   ]),
+  ...manifest('hub', 'identifier issued by the orchestrator run system', [
+    'task_comment.run_id',
+    'task_status_event.run_id',
+  ]),
+  ...manifest('hub', 'identifier issued by the authentication provider', [
+    'task_comment.actor_user_id',
+    'task_status_event.actor_user_id',
+  ]),
   ...manifest('hub', 'identifier issued by the external issue tracker', [
     'task.external_id',
     'task_identity_claim.external_id',
@@ -426,6 +434,10 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'step_catalogue_event.session_id',
     'workflow_event.session_id',
   ]),
+  ...manifest('hosted', 'identifier issued by the orchestrator run system', [
+    'hub_task_comment.run_id',
+    'hub_task_status_event.run_id',
+  ]),
   ...manifest('hosted', "identifier issued by Git's patch-id system", [
     'landing_override.patch_id',
     'landing_review_carry.patch_id',
@@ -437,6 +449,8 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
   ...manifest('hosted', 'identifier issued by the authentication provider', [
     'account.account_id',
     'account.provider_id',
+    'hub_task_comment.actor_user_id',
+    'hub_task_status_event.actor_user_id',
   ]),
   ...manifest('hosted', 'identifier issued by the project task tracker', ['port_ref.task_key']),
 ]

@@ -16,6 +16,8 @@ import {
   HOSTED_TASK_TABLE,
 } from './push-contract.ts'
 import { runRef } from './reconcile.ts'
+import type { Attribution } from './task-attribution.ts'
+import { mayChangeComment, NO_ATTRIBUTION } from './task-attribution.ts'
 import { hostedCreateTask } from './task-client.ts'
 import { decideTaskClose, landingCheck } from './task-close-decision.ts'
 import { localTaskDetail, type TaskDetail, taskBodyVersion } from './task-detail.ts'
@@ -36,8 +38,6 @@ import {
 } from './task-write-destination.ts'
 import { trackerCapabilities } from './tracker-capabilities.ts'
 import { taskCreationDestination } from './tracker-new.ts'
-import type { Attribution } from './task-attribution.ts'
-import { mayChangeComment, NO_ATTRIBUTION } from './task-attribution.ts'
 
 export type TaskRow = {
   record_id: string
@@ -488,7 +488,7 @@ export async function createTask(
         options.allowDuplicateReason,
         commentAt,
         true,
-        options.attribution!,
+        options.attribution ?? NO_ATTRIBUTION,
       )
   })
   if (options.allowDuplicateReason) await drainHostedEditOutbox(commentAt, options.hosted)

@@ -88,7 +88,13 @@ test('comment and document rows validate every wire field', () => {
     row: { ...comment.row, number: 1, role: null, title: 'title', version: 'v1' },
   } satisfies HostedPushChange
   expect(parseHostedPushItem(comment)).toEqual({ input: comment })
-  const { actor_user_id: _actorUserId, actor_name: _actorName, agent: _agent, run_id: _runId, ...legacyRow } = comment.row
+  const {
+    actor_user_id: _actorUserId,
+    actor_name: _actorName,
+    agent: _agent,
+    run_id: _runId,
+    ...legacyRow
+  } = comment.row
   expect(parseHostedPushItem({ ...comment, row: legacyRow })).toEqual({ input: comment })
   expect(parseHostedPushItem(document)).toEqual({ input: document })
   for (const [value, field] of [

@@ -23,7 +23,18 @@ test('hosted task detail renders all history without mutation controls', () => {
       spaceName: 'Workshop',
     },
     bodyVersion: 'body-version',
-    comments: [{ id: 'comment', body: 'A comment', createdAt: '2026-09-17T11:00:00.000Z' }],
+    comments: [
+      {
+        id: 'comment',
+        body: 'A comment',
+        createdAt: '2026-09-17T11:00:00.000Z',
+        updatedAt: '2026-09-17T11:00:00.000Z',
+        actorName: null,
+        agent: null,
+        canEdit: false,
+        canDelete: false,
+      },
+    ],
     documents: [
       {
         id: 'document',
@@ -42,12 +53,16 @@ test('hosted task detail renders all history without mutation controls', () => {
         at: '2026-09-17T11:00:00.000Z',
         fromStatus: 'open',
         toStatus: 'active',
+        actorName: null,
+        agent: null,
       },
       {
         id: 'event',
         at: '2026-09-17T12:00:00.000Z',
         fromStatus: 'active',
         toStatus: 'done',
+        actorName: null,
+        agent: null,
       },
     ],
     runs: [
@@ -109,7 +124,11 @@ test('hosted task detail renders all history without mutation controls', () => {
     },
   }
   const refused = { run: () => undefined, pending: false, error: null, refused: 'Read only' }
-  const result = { detail, error: null, actions: { comment: refused } } as unknown as UseTaskResult
+  const result = {
+    detail,
+    error: null,
+    actions: { comment: refused, editComment: refused, deleteComment: refused },
+  } as unknown as UseTaskResult
   const html = renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
       <HostedTaskSheet taskKey="DEV-701" result={result} onClose={() => undefined} />

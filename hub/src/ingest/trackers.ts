@@ -409,8 +409,7 @@ function observeTrackerTaskOn(
   const inserted = conn
     .query(
       `INSERT OR IGNORE INTO task_status_event
-       (record_id, task_key, task_record_id, at, from_status, to_status,
-        actor_user_id,actor_name,agent,run_id)
+       (record_id,task_key,task_record_id,at,from_status,to_status,actor_user_id,actor_name,agent,run_id)
        VALUES (?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(recordId, task.key, taskRecordId!, at, was, task.category, null, null, null, null)

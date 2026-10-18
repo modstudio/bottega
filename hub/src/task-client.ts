@@ -537,6 +537,11 @@ async function taskIdentityResult(
         object.remedy ? `. ${String(object.remedy)}` : ''
       }`,
     )
+  validateTaskIdentityUser(object)
+  return { unauthorized: false, value: object }
+}
+
+function validateTaskIdentityUser(object: Record<string, unknown>): void {
   if (typeof object.userId !== 'string')
     throw new Error('hosted hub returned a malformed task identity: userId must be a string')
   if (
@@ -547,7 +552,6 @@ async function taskIdentityResult(
     throw new Error(
       'hosted hub returned a malformed task identity: userName must be a string or null',
     )
-  return { unauthorized: false, value: object }
 }
 
 export async function hostedTaskIdentity(

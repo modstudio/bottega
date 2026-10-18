@@ -1,7 +1,4 @@
-import { userInfo } from 'node:os'
 import { classifyCaller } from '../../shared/caller-classification.ts'
-import { resolveHostedUrl } from './hosted-url.ts'
-import { hostedSignedInUser } from './task-client.ts'
 
 export type Attribution = {
   actorUserId: string | null
@@ -39,9 +36,4 @@ export function attributionFromInputs(input: {
       (caller.kind === 'harness' ? caller.harness : null),
     runId,
   }
-}
-
-export async function cliAttribution(): Promise<Attribution> {
-  const user = resolveHostedUrl() ? await hostedSignedInUser() : null
-  return attributionFromInputs({ env: process.env, user, machineUser: userInfo().username })
 }

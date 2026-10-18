@@ -93,6 +93,10 @@ function HostedAwareTaskSheet({
   return <TaskSheet taskKey={taskKey} result={result} onClose={onClose} />
 }
 
+function historyAction<T extends { error: { message: string } | null }>(action: T) {
+  return { ...action, error: action.error?.message ?? null }
+}
+
 function TaskSheet({
   taskKey,
   result,
@@ -261,14 +265,8 @@ function TaskSheet({
                 error: addComment.error?.message ?? null,
                 refused: addComment.refused,
               }}
-              editComment={{
-                ...result.actions.editComment,
-                error: result.actions.editComment.error?.message ?? null,
-              }}
-              deleteComment={{
-                ...result.actions.deleteComment,
-                error: result.actions.deleteComment.error?.message ?? null,
-              }}
+              editComment={historyAction(result.actions.editComment)}
+              deleteComment={historyAction(result.actions.deleteComment)}
             />
           </div>
         </>
