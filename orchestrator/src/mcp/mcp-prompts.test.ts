@@ -4,7 +4,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { removeProject, upsertProject } from '../project/projects.ts'
-import { promoteWorkflow, setWorkflow, type WorkflowDefinition } from '../workflow/workflows.ts'
+import { promoteWorkflowLocal, setWorkflowLocal, type WorkflowDefinition } from '../workflow/workflows.ts'
 import { createDocsMcpServer } from './mcp.ts'
 import { bindWorkflowPromptArguments, workflowPromptDefinitions } from './mcp-prompts.ts'
 
@@ -204,7 +204,7 @@ describe('workflow prompts on the wire', () => {
 
   const installPlanTask = () => {
     const slug = 'plan-task'
-    const draft = setWorkflow(
+    const draft = setWorkflowLocal(
       slug,
       {
         title: 'Plan a task',
@@ -220,7 +220,7 @@ describe('workflow prompts on the wire', () => {
       'test plan-task prompt',
       'test',
     )
-    promoteWorkflow(slug, draft.n, 'publish test plan-task prompt', 'test')
+    promoteWorkflowLocal(slug, draft.n, 'publish test plan-task prompt', 'test')
   }
 
   test('advertised-requiredness mutation: a workflow-required argument reaches the client optional and described', async () => {
@@ -266,7 +266,7 @@ describe('workflow prompts on the wire', () => {
       stack: 'node',
       settings: { gate: 'true', docs: { protocol: 'orch-docs' } },
     })
-    const draft = setWorkflow(
+    const draft = setWorkflowLocal(
       slug,
       {
         title: 'Choose prompt mode',
@@ -280,7 +280,7 @@ describe('workflow prompts on the wire', () => {
       'test prompt mode chooser',
       'test',
     )
-    promoteWorkflow(slug, draft.n, 'publish test prompt', 'test')
+    promoteWorkflowLocal(slug, draft.n, 'publish test prompt', 'test')
     const client = await connected()
     const result = await client.getPrompt({
       name: slug,

@@ -3,8 +3,8 @@ import { expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
 import {
   productionStepCatalogue,
-  promoteStepCatalogue,
-  setStepCatalogue,
+  promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
 } from './step-catalogue.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
@@ -12,8 +12,8 @@ import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 import {
   composeWorkflow,
   getWorkflowStep,
-  promoteWorkflow,
-  setWorkflow,
+  promoteWorkflowLocal,
+  setWorkflowLocal,
   type WorkflowDefinition,
   workflowModeStepLists,
 } from './workflows.ts'
@@ -54,7 +54,7 @@ const database = () => {
 test('sequence and flat modes compose, look up, and number identically', () => {
   const d = database()
   const current = productionStepCatalogue(d).definition
-  const catalogue = setStepCatalogue(
+  const catalogue = setStepCatalogueLocal(
     {
       steps: current.steps,
       sequences: [{ slug: 'quality', title: 'Quality', steps: ['lens', 'score'] }],
@@ -63,13 +63,13 @@ test('sequence and flat modes compose, look up, and number identically', () => {
     'test',
     d,
   )
-  promoteStepCatalogue(catalogue.n, 'publish', 'test', d)
+  promoteStepCatalogueLocal(catalogue.n, 'publish', 'test', d)
   for (const [slug, steps] of [
     ['flat-fixture', ['rebase', 'lens', 'score', 'close']],
     ['sequence-fixture', ['rebase', { sequence: 'quality' }, 'close']],
   ] as const) {
-    const draft = setWorkflow(slug, definition([...steps]), 'sequence fixture', 'test', d)
-    promoteWorkflow(slug, draft.n, 'publish', 'test', d)
+    const draft = setWorkflowLocal(slug, definition([...steps]), 'sequence fixture', 'test', d)
+    promoteWorkflowLocal(slug, draft.n, 'publish', 'test', d)
   }
 
   const args = { key: 'DEV-1195', branch: 'DEV-1195-sequences', worktree: '/tmp/fixture' }

@@ -23,7 +23,11 @@ import {
   type RecordInvitationRouteDeps,
   registerRecordInvitationRoute,
 } from './record-api-invitations.ts'
-import { type CatalogueDeps, registerCatalogues } from './record-api-lens.ts'
+import { type RecordLensRouteDeps, registerRecordLensRoutes } from './record-api-lens.ts'
+import {
+  type RecordWorkflowRouteDeps,
+  registerRecordWorkflowRoutes,
+} from './record-api-workflow.ts'
 import { registerPublicDocRoutes, registerSignedDocSearchRoute } from './record-api-public-docs.ts'
 import { type RecordReleaseRouteDeps, registerRecordReleaseRoutes } from './record-api-releases.ts'
 import { registerRecordRequestSpace } from './record-api-request-space.ts'
@@ -88,7 +92,8 @@ type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[]
 type Deps = RecordSubjectRouteDeps &
   RecordReleaseRouteDeps &
   RecordSyncRouteDeps &
-  CatalogueDeps &
+  RecordLensRouteDeps &
+  RecordWorkflowRouteDeps &
   RecordApiDeps
 type RecordApiDeps = RecordInvitationRouteDeps & {
   clientAddresses: RecordClientAddresses
@@ -285,10 +290,13 @@ function registerSessionRoutes(app: Hono<ApiEnvironment>, deps: Deps): void {
 function registerCatalogueWriteRoutes(
   app: Hono<ApiEnvironment>,
   deps: Deps,
-  ports: Parameters<typeof registerRecordWriteRoutes>[2] & Parameters<typeof registerCatalogues>[2],
+  ports: Parameters<typeof registerRecordWriteRoutes>[2] &
+    Parameters<typeof registerRecordLensRoutes>[2] &
+    Parameters<typeof registerRecordWorkflowRoutes>[2],
 ): void {
   registerRecordWriteRoutes(app, deps, ports)
-  registerCatalogues(app, deps, ports)
+  registerRecordLensRoutes(app, deps, ports)
+  registerRecordWorkflowRoutes(app, deps, ports)
 }
 
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {

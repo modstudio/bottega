@@ -16,7 +16,7 @@ import { db } from '../database/db.ts'
 import { missingIssueReportFields } from '../issue/issue-report-fields.ts'
 import { type Project, removeProject, upsertProject } from '../project/projects.ts'
 import { productionStepCatalogue } from '../workflow/step-catalogue.ts'
-import { promoteWorkflow, setWorkflow } from '../workflow/workflows.ts'
+import { promoteWorkflowLocal, setWorkflowLocal } from '../workflow/workflows.ts'
 import { createDocsMcpServer, fileIssueTaskKey } from './mcp.ts'
 
 describe('orch MCP', () => {
@@ -189,7 +189,7 @@ describe('orch MCP', () => {
   test('next_workflow_step names the MCP mode remedy when no default exists', async () => {
     const slug = 'mcp-no-default-mode'
     const step = productionStepCatalogue().definition.steps[0]!
-    const draft = setWorkflow(
+    const draft = setWorkflowLocal(
       slug,
       {
         title: 'MCP mode refusal',
@@ -203,7 +203,7 @@ describe('orch MCP', () => {
       'test MCP cursor mode resolution',
       'test',
     )
-    promoteWorkflow(slug, draft.n, 'publish', 'test')
+    promoteWorkflowLocal(slug, draft.n, 'publish', 'test')
     const server = createDocsMcpServer()
     const client = new Client({ name: 'orch-test', version: '1.0.0' })
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()

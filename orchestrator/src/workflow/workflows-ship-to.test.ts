@@ -4,11 +4,11 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import {
   productionStepCatalogue,
-  promoteStepCatalogue,
-  setStepCatalogue,
+  promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
 } from './step-catalogue.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
-import { composeWorkflow, getWorkflowStep, promoteWorkflow, setWorkflow } from './workflows.ts'
+import { composeWorkflow, getWorkflowStep, promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
 const release = {
   rungs: [{ name: 'production', branch: 'production', deploy: 'bun run deploy' }],
@@ -44,7 +44,7 @@ const publishShipToFixture = (
   floor?: string,
 ) => {
   const current = productionStepCatalogue(d).definition
-  const catalogue = setStepCatalogue(
+  const catalogue = setStepCatalogueLocal(
     {
       steps: [
         ...current.steps,
@@ -70,8 +70,8 @@ const publishShipToFixture = (
     'test',
     d,
   )
-  promoteStepCatalogue(catalogue.n, 'publish', 'test', d)
-  const workflow = setWorkflow(
+  promoteStepCatalogueLocal(catalogue.n, 'publish', 'test', d)
+  const workflow = setWorkflowLocal(
     'ship-to-fixture',
     {
       title: 'Ship-to fixture',
@@ -90,7 +90,7 @@ const publishShipToFixture = (
     'test',
     d,
   )
-  promoteWorkflow('ship-to-fixture', workflow.n, 'publish', 'test', d)
+  promoteWorkflowLocal('ship-to-fixture', workflow.n, 'publish', 'test', d)
 }
 
 const shipToAutonomy = (level: 'branch' | 'trunk' | 'production') => ({

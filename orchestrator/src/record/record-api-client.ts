@@ -15,7 +15,8 @@ import type { DocGenerator } from '../doc/doc-generator.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import { MISSING_HOSTED_REVISION_REMEDY, RECORD_WRITE_REMEDY } from '../doc/doc-write-allowed.ts'
 import type { VerdictInput } from '../verdict/verdict-payload.ts'
-import { type RecordCatalogueClient, recordLensClient } from './record-api-client-lens.ts'
+import { type RecordLensClient, recordLensClient } from './record-api-client-lens.ts'
+import { type RecordWorkflowClient, recordWorkflowClient } from './record-api-client-workflow.ts'
 import {
   boardClaimListPath,
   docSearchParams,
@@ -192,7 +193,8 @@ export type {
 } from './record-api-client-paths.ts'
 
 export type RecordApiClient = ProjectIdentityClient &
-  RecordCatalogueClient & {
+  RecordLensClient &
+  RecordWorkflowClient & {
     whoami(): Promise<RecordIdentity>
     sync?(input: RecordSyncRequest): Promise<RecordSyncResponse>
     createOrganization(input: { name: string; slug: string }): Promise<{ id: string; slug: string }>
@@ -704,6 +706,7 @@ export function recordApiClient(request = defaultRequest): RecordApiClient {
     ...recordDocReadClient(request),
     ...recordDocWriteClient(request),
     ...recordLensClient(request),
+    ...recordWorkflowClient(request),
     ...projectIdentityClient(request),
     ...recordProjectSubjectClient(request),
     ...recordRunClient(request),

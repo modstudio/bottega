@@ -6,7 +6,7 @@ import { floorGuidance, floorKinds } from './workflow-floor.ts'
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
-import { composeWorkflow, getWorkflowStep, promoteWorkflow, setWorkflow } from './workflows.ts'
+import { composeWorkflow, getWorkflowStep, promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
 const database = () => {
   const d = new Database(':memory:')
@@ -70,7 +70,7 @@ describe('workflow rendering', () => {
 
   test('a composition needing a mode asks for one without the driving contract', () => {
     const d = database()
-    const draft = setWorkflow(
+    const draft = setWorkflowLocal(
       'choose',
       {
         title: 'Choose',
@@ -88,7 +88,7 @@ describe('workflow rendering', () => {
       'test',
       d,
     )
-    promoteWorkflow('choose', draft.n, 'publish', 'test', d)
+    promoteWorkflowLocal('choose', draft.n, 'publish', 'test', d)
 
     const rendered = renderWorkflowComposition(
       composeWorkflow('choose', 'fixture', undefined, {}, d),
@@ -166,7 +166,7 @@ describe('workflow rendering', () => {
       `Next: when this step's floor is met, close it with \`next_workflow_step\` (MCP) or \`${PLATFORM_SLUG} workflow next\`, giving a one-line note of how the floor was met; this is the last step of flow (default), and closing it finishes the workflow.`,
     )
 
-    const draft = setWorkflow(
+    const draft = setWorkflowLocal(
       'forked-next',
       {
         title: 'Forked next',
@@ -184,7 +184,7 @@ describe('workflow rendering', () => {
       'test',
       d,
     )
-    promoteWorkflow('forked-next', draft.n, 'publish', 'test', d)
+    promoteWorkflowLocal('forked-next', draft.n, 'publish', 'test', d)
     expect(renderWorkflowStep(getWorkflowStep('forked-next', 'fixture', 'score', {}, d))).toEndWith(
       `Next: when this step's floor is met, close it with \`next_workflow_step\` (MCP) or \`${PLATFORM_SLUG} workflow next\`, giving a one-line note of how the floor was met; that serves the following step from the workflow's step list.`,
     )

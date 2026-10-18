@@ -6,7 +6,7 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { encodeStoredDocAudiences } from '../doc/doc-audiences-codec.ts'
-import { rememberProjectLensSpaces } from '../lens/project-lens-space.ts'
+import { rememberProjectSpace } from '../project-space.ts'
 import { projects } from '../project/projects.ts'
 import { applySubjectRecord } from '../subject/subjects.ts'
 import { recordApiClient } from './record-api-client.ts'
@@ -243,8 +243,10 @@ export async function pullRecordCache(local: Database = db()): Promise<{
   const pulledSubjects = await pullSubjects(local, cache.spaces, cache.projectSpaces)
   const pulledDocs = await pullDocs(local, identity, cache.spaces, cache.projectSpaces)
   const lensCatalogue = await pullLensCatalogue(local, cache.spaces)
-  const workflowCatalogue = await pullWorkflowCatalogue(local, cache.spaces)
-  rememberProjectLensSpaces(local, cache.projectSpaces)
+  const workflowPull = await pullWorkflowCatalogue(local, cache.spaces)
+  for (const [project, spaceId] of cache.projectSpaces)
+    if (spaceId === null || workflowPull.completedSpaces.has(spaceId))
+      rememberProjectSpace(local, project, spaceId)
   let scores = 0
   let scoreCursor = readCursor(local, SCORES_CURSOR)
   for (;;) {
@@ -260,7 +262,13 @@ export async function pullRecordCache(local: Database = db()): Promise<{
     }, local)
     if (!page.nextCursor) break
   }
-  return { ...pulledDocs, ...pulledSubjects, scores, lensCatalogue, workflowCatalogue }
+  return {
+    ...pulledDocs,
+    ...pulledSubjects,
+    scores,
+    lensCatalogue,
+    workflowCatalogue: workflowPull.count,
+  }
 }
 
 async function pullSubjects(

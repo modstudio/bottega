@@ -1,10 +1,10 @@
 import type { Database } from 'bun:sqlite'
 import {
   productionStepCatalogue,
-  promoteStepCatalogue,
-  setStepCatalogue,
+  promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
 } from './step-catalogue.ts'
-import { promoteWorkflow, setWorkflow } from './workflows.ts'
+import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
 /** Installs a neutral multi-step workflow for tests of generic workflow behavior. */
 export function installWorkflowStoreFixture(d: Database): void {
@@ -103,14 +103,14 @@ export function installWorkflowStoreFixture(d: Database): void {
       needs: ['tracker'],
     },
   ]
-  const catalogue = setStepCatalogue(
+  const catalogue = setStepCatalogueLocal(
     { ...current, steps: [...current.steps, ...steps] },
     'neutral workflow test fixture',
     'test',
     d,
   )
-  promoteStepCatalogue(catalogue.n, 'publish neutral workflow test fixture', 'test', d)
-  const workflow = setWorkflow(
+  promoteStepCatalogueLocal(catalogue.n, 'publish neutral workflow test fixture', 'test', d)
+  const workflow = setWorkflowLocal(
     'flow',
     {
       title: 'Fixture workflow',
@@ -143,5 +143,5 @@ export function installWorkflowStoreFixture(d: Database): void {
     'test',
     d,
   )
-  promoteWorkflow('flow', workflow.n, 'publish neutral workflow test fixture', 'test', d)
+  promoteWorkflowLocal('flow', workflow.n, 'publish neutral workflow test fixture', 'test', d)
 }

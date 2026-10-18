@@ -5,12 +5,13 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
-import { rememberProjectLensSpace } from '../lens/project-lens-space.ts'
+import { effectiveProjectSpace, rememberProjectSpace } from '../project-space.ts'
 import { upsertProject } from '../project/projects.ts'
 import { productionStepCatalogue } from '../workflow/step-catalogue.ts'
 import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
 import { productionWorkflows } from '../workflow/workflows.ts'
 import { applyWorkflowCatalogueRow, pullWorkflowCatalogue } from './record-cache-workflow.ts'
+import { pullRecordCache } from './record-cache.ts'
 
 afterEach(() => installRecordApiClient(createMemoryRecordApiClient()))
 const at = '2026-10-18T12:00:00.000Z'
@@ -84,7 +85,10 @@ test('workflow pull orders six durable streams, resumes pages, and holds an unre
       return { items: [items[table]!], nextCursor: null }
     },
   })
-  expect(await pullWorkflowCatalogue(local, [space])).toBe(6)
+  expect(await pullWorkflowCatalogue(local, [space])).toEqual({
+    count: 6,
+    completedSpaces: new Set([space]),
+  })
   expect(calls).toEqual([
     'step_catalogue',
     'step_catalogue',
@@ -110,13 +114,53 @@ test('workflow pull orders six durable streams, resumes pages, and holds an unre
         : { items: [], nextCursor: null }
     },
   })
-  expect(await pullWorkflowCatalogue(local, [missingSpace])).toBe(0)
-  expect(heldCalls).toContain('workflow_event')
+  expect(await pullWorkflowCatalogue(local, [missingSpace])).toEqual({
+    count: 0,
+    completedSpaces: new Set(),
+  })
+  expect(heldCalls).toEqual(['step_catalogue', 'step_catalogue_version'])
   expect(
     local
       .query('SELECT value FROM schema_meta WHERE key=?')
       .get(`record_workflow_cursor:${missingSpace}:step_catalogue_version`),
   ).toBeNull()
+})
+
+test('an unresolved workflow parent preserves prior project routing', async () => {
+  const local = db(),
+    oldSpace = newRecordId(),
+    newSpace = newRecordId(),
+    project = 'workflow-moving-project'
+  upsertProject({
+    recordId: newRecordId(),
+    name: project,
+    path: `/tmp/${project}`,
+    settings: { space: 'new-space' },
+  })
+  rememberProjectSpace(local, project, oldSpace)
+  const orphan = version(newSpace, newRecordId(), {})
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: newRecordId(), email: 'pull@example.test' },
+      activeSpaceId: oldSpace,
+      personalSpaceId: oldSpace,
+      memberships: [
+        { space_id: oldSpace, slug: 'old-space', permission: 'write' },
+        { space_id: newSpace, slug: 'new-space', permission: 'write' },
+      ],
+    }),
+    listWorkflowCatalogue: async (table, _query, destination) => ({
+      items:
+        destination?.destinationSpaceId === newSpace && table === 'step_catalogue_version'
+          ? [orphan]
+          : [],
+      nextCursor: null,
+    }),
+  })
+
+  await pullRecordCache(local)
+  expect(effectiveProjectSpace(local, project)).toBe(oldSpace)
 })
 
 test('the same workflow slug resolves through each project space without consuming local rows', () => {
@@ -141,7 +185,7 @@ test('the same workflow slug resolves through each project space without consumi
     )
     const project = `space-${index + 1}`
     upsertProject({ name: project, path: `/tmp/${project}`, recordId: newRecordId() })
-    rememberProjectLensSpace(local, project, space!)
+    rememberProjectSpace(local, project, space!)
   }
   expect(productionWorkflowTree(local, 'space-1').workflows[0]!.definition.title).toBe('Space 1')
   expect(productionWorkflowTree(local, 'space-2').workflows[0]!.definition.title).toBe('Space 2')

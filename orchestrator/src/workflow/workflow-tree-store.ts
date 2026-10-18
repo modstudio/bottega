@@ -4,23 +4,29 @@ import type { Database } from 'bun:sqlite'
 import { isDeepStrictEqual } from 'node:util'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
-import { effectiveProjectLensSpace } from '../lens/project-lens-space.ts'
 import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
 import {
   type CatalogueSequence,
   type CatalogueStep,
   importStepCatalogue,
+  importStepCatalogueLocal,
   selectedStepCatalogue,
   validateStepCatalogue,
 } from './step-catalogue.ts'
 import type { WorkflowTreeStore } from './workflow-tree.ts'
-import { importWorkflow, productionWorkflows, validateWorkflowDefinition } from './workflows.ts'
+import { projectCatalogueResolutionSpace } from './workflow-resolution-space.ts'
+import {
+  importWorkflow,
+  importWorkflowLocal,
+  productionWorkflows,
+  validateWorkflowDefinition,
+} from './workflows.ts'
 
 export function productionWorkflowTree(
   d: Database = db(),
   project: string | null = null,
 ): WorkflowTreeStore {
-  const spaceId = effectiveProjectLensSpace(d, project)
+  const spaceId = projectCatalogueResolutionSpace(d, project)
   const catalogue = selectedStepCatalogue(undefined, d, spaceId)
   return {
     steps: catalogue.definition.steps,
@@ -84,7 +90,7 @@ export function importWorkflowTree(
   author?: string,
   d?: Database,
   project?: string,
-): WorkflowTreeImportResult {
+): WorkflowTreeImportResult | Promise<WorkflowTreeImportResult> {
   if (!reason?.trim()) throw new Error('reason is required')
   const database = d ?? writableDb()
   return writeTransaction(() => {
@@ -146,11 +152,11 @@ export function importWorkflowTree(
         for (const { slug, definition } of changedWorkflows)
           await importWorkflow(slug, definition, reason, author, database, catalogue, project)
         return result
-      })() as unknown as WorkflowTreeImportResult
+      })()
     if (changedSteps.length || changedSequences.length)
-      importStepCatalogue(catalogue, reason, author, database, project)
+      importStepCatalogueLocal(catalogue, reason, author, database)
     for (const { slug, definition } of changedWorkflows)
-      importWorkflow(slug, definition, reason, author, database, catalogue, project)
+      importWorkflowLocal(slug, definition, reason, author, database, catalogue)
     return result
   }, database)
 }

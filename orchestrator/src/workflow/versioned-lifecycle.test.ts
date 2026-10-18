@@ -5,8 +5,8 @@ import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 import {
   listWorkflows,
-  retireWorkflow,
-  setWorkflow,
+  retireWorkflowLocal,
+  setWorkflowLocal,
   showWorkflow,
   type WorkflowDefinition,
   workflowVersions,
@@ -31,9 +31,9 @@ const database = () => {
 describe('versioned lifecycle retirement', () => {
   test('retires a draft, preserves its null promotion time, and records the event', () => {
     const d = database()
-    const draft = setWorkflow('withdraw-draft', definition('Withdraw draft'), 'create', 'writer', d)
+    const draft = setWorkflowLocal('withdraw-draft', definition('Withdraw draft'), 'create', 'writer', d)
 
-    const retired = retireWorkflow('withdraw-draft', draft.n, 'superseded', 'architect', d)
+    const retired = retireWorkflowLocal('withdraw-draft', draft.n, 'superseded', 'architect', d)
 
     expect(retired).toMatchObject({
       status: 'retired',
@@ -58,7 +58,7 @@ describe('versioned lifecycle retirement', () => {
     const d = database()
     const production = showWorkflow('flow', undefined, d)
 
-    const retired = retireWorkflow('flow', production.n, 'withdraw production', 'architect', d)
+    const retired = retireWorkflowLocal('flow', production.n, 'withdraw production', 'architect', d)
 
     expect(retired).toMatchObject({
       status: 'retired',
@@ -69,18 +69,18 @@ describe('versioned lifecycle retirement', () => {
 
   test('refuses an already-retired version and names its state', () => {
     const d = database()
-    const draft = setWorkflow('retired-state', definition('Retired state'), 'create', 'writer', d)
-    retireWorkflow('retired-state', draft.n, 'withdraw', 'architect', d)
+    const draft = setWorkflowLocal('retired-state', definition('Retired state'), 'create', 'writer', d)
+    retireWorkflowLocal('retired-state', draft.n, 'withdraw', 'architect', d)
 
     expect(() =>
-      retireWorkflow('retired-state', draft.n, 'withdraw again', 'architect', d),
+      retireWorkflowLocal('retired-state', draft.n, 'withdraw again', 'architect', d),
     ).toThrow('workflow "retired-state" version 1 is retired')
   })
 
   test('does not list a withdrawn draft as the current draft', () => {
     const d = database()
-    const draft = setWorkflow('draft-listing', definition('Draft listing'), 'create', 'writer', d)
-    retireWorkflow('draft-listing', draft.n, 'withdraw', 'architect', d)
+    const draft = setWorkflowLocal('draft-listing', definition('Draft listing'), 'create', 'writer', d)
+    retireWorkflowLocal('draft-listing', draft.n, 'withdraw', 'architect', d)
 
     expect(listWorkflows(d).find(({ slug }) => slug === 'draft-listing')).toMatchObject({
       production_n: null,

@@ -4,17 +4,17 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import {
   productionStepCatalogue,
-  promoteStepCatalogue,
-  setStepCatalogue,
+  promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
 } from './step-catalogue.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 import {
   composeWorkflow,
   getWorkflowStep,
-  importWorkflow,
-  promoteWorkflow,
-  setWorkflow,
+  importWorkflowLocal,
+  promoteWorkflowLocal,
+  setWorkflowLocal,
   showWorkflow,
   validateWorkflowDefinition,
   type WorkflowDefinition,
@@ -60,7 +60,7 @@ const database = () => {
 }
 const promotePlanTask = (d: Database) => {
   const current = productionStepCatalogue(d).definition
-  const catalogue = setStepCatalogue(
+  const catalogue = setStepCatalogueLocal(
     {
       steps: [
         ...current.steps,
@@ -90,8 +90,8 @@ const promotePlanTask = (d: Database) => {
     'test',
     d,
   )
-  promoteStepCatalogue(catalogue.n, 'publish', 'test', d)
-  const draft = setWorkflow(
+  promoteStepCatalogueLocal(catalogue.n, 'publish', 'test', d)
+  const draft = setWorkflowLocal(
     'plan-task',
     {
       title: 'Plan a task',
@@ -110,7 +110,7 @@ const promotePlanTask = (d: Database) => {
     'test',
     d,
   )
-  promoteWorkflow('plan-task', draft.n, 'publish', 'test', d)
+  promoteWorkflowLocal('plan-task', draft.n, 'publish', 'test', d)
 }
 
 describe('workflow definition validation', () => {
@@ -127,7 +127,7 @@ describe('workflow definition validation', () => {
   test('refuses an invalid entry and a sequence expansion with a duplicate step', () => {
     const d = database()
     const current = productionStepCatalogue(d).definition
-    const catalogue = setStepCatalogue(
+    const catalogue = setStepCatalogueLocal(
       {
         steps: current.steps,
         sequences: [{ slug: 'quality', title: 'Quality', steps: ['lens', 'score'] }],
@@ -136,7 +136,7 @@ describe('workflow definition validation', () => {
       'test',
       d,
     )
-    promoteStepCatalogue(catalogue.n, 'publish', 'test', d)
+    promoteStepCatalogueLocal(catalogue.n, 'publish', 'test', d)
     expect(
       validateWorkflowDefinition(
         { ...valid(), modes: [{ ...valid().modes[0]!, steps: [{ step: 'lens' }] }] },
@@ -241,7 +241,7 @@ describe('workflow versions and project composition', () => {
   test('separate ship-to and tracker needs do not require a tracker review state', () => {
     const d = database()
     const current = productionStepCatalogue(d).definition
-    const catalogue = setStepCatalogue(
+    const catalogue = setStepCatalogueLocal(
       {
         steps: [
           ...current.steps,
@@ -271,8 +271,8 @@ describe('workflow versions and project composition', () => {
       'test',
       d,
     )
-    promoteStepCatalogue(catalogue.n, 'publish', 'test', d)
-    const workflow = setWorkflow(
+    promoteStepCatalogueLocal(catalogue.n, 'publish', 'test', d)
+    const workflow = setWorkflowLocal(
       'separate-ship-to-tracker',
       {
         title: 'Separate ship-to and tracker',
@@ -291,7 +291,7 @@ describe('workflow versions and project composition', () => {
       'test',
       d,
     )
-    promoteWorkflow('separate-ship-to-tracker', workflow.n, 'publish', 'test', d)
+    promoteWorkflowLocal('separate-ship-to-tracker', workflow.n, 'publish', 'test', d)
     d.query('UPDATE project SET settings=? WHERE name=?').run(
       JSON.stringify({
         tracker: { protocol: 'workspace-mcp', states: { completed: 'done' } },
@@ -345,7 +345,7 @@ describe('workflow versions and project composition', () => {
   test('renders the registered name through the built-in project placeholder', () => {
     const d = database()
     const current = productionStepCatalogue(d).definition
-    const catalogue = setStepCatalogue(
+    const catalogue = setStepCatalogueLocal(
       {
         steps: current.steps.map((step) =>
           step.slug === 'lens' ? { ...step, body: 'Check {{project}}.' } : step,
@@ -355,7 +355,7 @@ describe('workflow versions and project composition', () => {
       'test',
       d,
     )
-    promoteStepCatalogue(catalogue.n, 'publish', 'test', d)
+    promoteStepCatalogueLocal(catalogue.n, 'publish', 'test', d)
 
     expect(
       getWorkflowStep(
@@ -370,7 +370,7 @@ describe('workflow versions and project composition', () => {
 
   test("a mode's requirements apply to compose and step only in that mode", () => {
     const d = database()
-    const draft = setWorkflow(
+    const draft = setWorkflowLocal(
       'mode-arguments',
       {
         title: 'Mode arguments',
@@ -391,7 +391,7 @@ describe('workflow versions and project composition', () => {
       'test',
       d,
     )
-    promoteWorkflow('mode-arguments', draft.n, 'publish', 'test', d)
+    promoteWorkflowLocal('mode-arguments', draft.n, 'publish', 'test', d)
 
     expect(composeWorkflow('mode-arguments', 'fixture', 'required', {}, d).needs.arguments).toEqual(
       [{ name: 'key', description: 'Task key.' }],
@@ -412,7 +412,7 @@ describe('workflow versions and project composition', () => {
 
   test('a mode-less step fetch applies requirements from every containing mode', () => {
     const d = database()
-    const draft = setWorkflow(
+    const draft = setWorkflowLocal(
       'mode-less-arguments',
       {
         title: 'Mode-less arguments',
@@ -434,7 +434,7 @@ describe('workflow versions and project composition', () => {
       'test',
       d,
     )
-    promoteWorkflow('mode-less-arguments', draft.n, 'publish', 'test', d)
+    promoteWorkflowLocal('mode-less-arguments', draft.n, 'publish', 'test', d)
 
     expect(() => getWorkflowStep('mode-less-arguments', 'fixture', 'complete', {}, d)).toThrow(
       'missing required arguments: key',
@@ -444,7 +444,7 @@ describe('workflow versions and project composition', () => {
 
   test('compose uses a requested draft workflow version instead of production', () => {
     const d = database(),
-      draft = setWorkflow(
+      draft = setWorkflowLocal(
         'flow',
         {
           ...valid(),
@@ -475,7 +475,7 @@ describe('workflow versions and project composition', () => {
   test('compose without a workflow version still uses production', () => {
     const d = database(),
       production = showWorkflow('flow', undefined, d),
-      draft = setWorkflow('flow', valid(), 'ignored draft fixture', 'test', d)
+      draft = setWorkflowLocal('flow', valid(), 'ignored draft fixture', 'test', d)
 
     const composed = composeWorkflow('flow', 'fixture', undefined, {}, d)
 
@@ -501,13 +501,13 @@ describe('workflow versions and project composition', () => {
     const d = database(),
       current = productionStepCatalogue(d).definition,
       lens = current.steps.find((step) => step.slug === 'lens')!,
-      catalogue = setStepCatalogue(
+      catalogue = setStepCatalogueLocal(
         { steps: [...current.steps, { ...lens, slug: 'draft-step', title: 'Draft step' }] },
         'draft catalogue fixture',
         'test',
         d,
       ),
-      workflow = importWorkflow(
+      workflow = importWorkflowLocal(
         'draft-flow',
         {
           ...valid(),
@@ -560,12 +560,12 @@ describe('workflow versions and project composition', () => {
   })
   test('keeps immutable workflow history', () => {
     const d = database(),
-      first = setWorkflow('test-flow', valid(), 'first', 'author', d)
+      first = setWorkflowLocal('test-flow', valid(), 'first', 'author', d)
     const changed = valid()
     changed.title = 'Changed'
-    const second = setWorkflow('test-flow', changed, 'second', 'author', d)
-    promoteWorkflow('test-flow', first.n, 'publish', 'architect', d)
-    promoteWorkflow('test-flow', second.n, 'replace', 'architect', d)
+    const second = setWorkflowLocal('test-flow', changed, 'second', 'author', d)
+    promoteWorkflowLocal('test-flow', first.n, 'publish', 'architect', d)
+    promoteWorkflowLocal('test-flow', second.n, 'replace', 'architect', d)
     expect(showWorkflow('test-flow', first.n, d).status).toBe('retired')
     expect(workflowVersions('test-flow', d)).toHaveLength(2)
   })
@@ -576,7 +576,7 @@ describe('workflow versions and project composition', () => {
       'fixture',
     )
     const current = productionStepCatalogue(d).definition
-    const catalogue = setStepCatalogue(
+    const catalogue = setStepCatalogueLocal(
       {
         steps: [
           ...current.steps,
@@ -596,8 +596,8 @@ describe('workflow versions and project composition', () => {
       'test',
       d,
     )
-    promoteStepCatalogue(catalogue.n, 'publish', 'test', d)
-    const workflow = setWorkflow(
+    promoteStepCatalogueLocal(catalogue.n, 'publish', 'test', d)
+    const workflow = setWorkflowLocal(
       'land',
       {
         title: 'Land',
@@ -609,7 +609,7 @@ describe('workflow versions and project composition', () => {
       'test',
       d,
     )
-    promoteWorkflow('land', workflow.n, 'publish', 'test', d)
+    promoteWorkflowLocal('land', workflow.n, 'publish', 'test', d)
 
     expect(getWorkflowStep('land', 'fixture', 'land', {}, d).body).toBe('Land on develop.')
     d.query('UPDATE project SET settings=? WHERE name=?').run(
@@ -627,7 +627,7 @@ describe('workflow versions and project composition', () => {
       'fixture',
     )
     const current = productionStepCatalogue(d).definition
-    const catalogue = setStepCatalogue(
+    const catalogue = setStepCatalogueLocal(
       {
         steps: [
           ...current.steps,
@@ -647,8 +647,8 @@ describe('workflow versions and project composition', () => {
       'test',
       d,
     )
-    promoteStepCatalogue(catalogue.n, 'publish', 'test', d)
-    const workflow = setWorkflow(
+    promoteStepCatalogueLocal(catalogue.n, 'publish', 'test', d)
+    const workflow = setWorkflowLocal(
       'release-facts',
       {
         title: 'Release facts',
@@ -667,7 +667,7 @@ describe('workflow versions and project composition', () => {
       'test',
       d,
     )
-    promoteWorkflow('release-facts', workflow.n, 'publish', 'test', d)
+    promoteWorkflowLocal('release-facts', workflow.n, 'publish', 'test', d)
 
     const facts = composeWorkflow('release-facts', 'fixture', undefined, {}, d).facts
     expect(facts.release!.rungs).toEqual(release.rungs)
@@ -687,7 +687,7 @@ describe('workflow versions and project composition', () => {
       'fixture',
     )
     const current = productionStepCatalogue(d).definition
-    const catalogue = setStepCatalogue(
+    const catalogue = setStepCatalogueLocal(
       {
         steps: [
           ...current.steps,
@@ -707,8 +707,8 @@ describe('workflow versions and project composition', () => {
       'test',
       d,
     )
-    promoteStepCatalogue(catalogue.n, 'publish', 'test', d)
-    const workflow = setWorkflow(
+    promoteStepCatalogueLocal(catalogue.n, 'publish', 'test', d)
+    const workflow = setWorkflowLocal(
       'plan-task',
       {
         title: 'Plan task',
@@ -720,7 +720,7 @@ describe('workflow versions and project composition', () => {
       'test',
       d,
     )
-    promoteWorkflow('plan-task', workflow.n, 'publish', 'test', d)
+    promoteWorkflowLocal('plan-task', workflow.n, 'publish', 'test', d)
 
     expect(getWorkflowStep('plan-task', 'fixture', 'dedupe', {}, d).body).toBe(
       'Search with list-tasks-tool.',
@@ -781,7 +781,7 @@ describe('workflow versions and project composition', () => {
       'fixture',
     )
     const current = productionStepCatalogue(d).definition
-    const draft = setStepCatalogue(
+    const draft = setStepCatalogueLocal(
       {
         steps: current.steps.map((step) =>
           step.slug === 'lens' ? { ...step, body: '{{unknown}}' } : step,
@@ -791,14 +791,14 @@ describe('workflow versions and project composition', () => {
       'a',
       d,
     )
-    expect(() => promoteStepCatalogue(draft.n, 'publish', 'a', d)).toThrow(
+    expect(() => promoteStepCatalogueLocal(draft.n, 'publish', 'a', d)).toThrow(
       'workflow flow, mode default, step lens, field body, placeholder unknown',
     )
   })
   test('an unresolved declared argument placeholder names the late-argument remedy', () => {
     const d = database(),
       current = productionStepCatalogue(d).definition
-    const catalogue = setStepCatalogue(
+    const catalogue = setStepCatalogueLocal(
       {
         steps: [
           ...current.steps,
@@ -818,8 +818,8 @@ describe('workflow versions and project composition', () => {
       'test',
       d,
     )
-    promoteStepCatalogue(catalogue.n, 'publish', 'test', d)
-    const workflow = setWorkflow(
+    promoteStepCatalogueLocal(catalogue.n, 'publish', 'test', d)
+    const workflow = setWorkflowLocal(
       'late-argument',
       {
         title: 'Late argument',
@@ -831,7 +831,7 @@ describe('workflow versions and project composition', () => {
       'test',
       d,
     )
-    promoteWorkflow('late-argument', workflow.n, 'publish', 'test', d)
+    promoteWorkflowLocal('late-argument', workflow.n, 'publish', 'test', d)
 
     expect(() =>
       getWorkflowStep('late-argument', 'fixture', 'late-argument', {}, d, { mode: 'default' }),
@@ -842,38 +842,38 @@ describe('workflow versions and project composition', () => {
   test('catalogue promotion refuses dropping a production workflow step', () => {
     const d = database(),
       current = productionStepCatalogue(d).definition
-    const draft = setStepCatalogue(
+    const draft = setStepCatalogueLocal(
       { steps: current.steps.filter((step) => step.slug !== 'lens') },
       'drop lens',
       'a',
       d,
     )
-    expect(() => promoteStepCatalogue(draft.n, 'publish', 'a', d)).toThrow('flow: lens')
+    expect(() => promoteStepCatalogueLocal(draft.n, 'publish', 'a', d)).toThrow('flow: lens')
   })
   test('workflow promotion refuses a draft whose step the catalogue has since dropped', () => {
     const d = database(),
       current = productionStepCatalogue(d).definition,
       lens = current.steps.find((step) => step.slug === 'lens')!
-    const withTemp = setStepCatalogue(
+    const withTemp = setStepCatalogueLocal(
       { steps: [...current.steps, { ...lens, slug: 'temp' }] },
       'add temp',
       'a',
       d,
     )
-    promoteStepCatalogue(withTemp.n, 'publish', 'a', d)
+    promoteStepCatalogueLocal(withTemp.n, 'publish', 'a', d)
     const definition = valid()
     definition.modes[0]!.steps = ['temp']
-    const draft = setWorkflow('stale-flow', definition, 'uses temp', 'a', d)
-    const withoutTemp = setStepCatalogue({ steps: current.steps }, 'drop temp', 'a', d)
-    promoteStepCatalogue(withoutTemp.n, 'publish', 'a', d)
-    expect(() => promoteWorkflow('stale-flow', draft.n, 'publish', 'a', d)).toThrow(
+    const draft = setWorkflowLocal('stale-flow', definition, 'uses temp', 'a', d)
+    const withoutTemp = setStepCatalogueLocal({ steps: current.steps }, 'drop temp', 'a', d)
+    promoteStepCatalogueLocal(withoutTemp.n, 'publish', 'a', d)
+    expect(() => promoteWorkflowLocal('stale-flow', draft.n, 'publish', 'a', d)).toThrow(
       'invalid workflow definition:\n- mode "default" references missing step "temp"',
     )
   })
   test('promotion guards preserve production sequence references', () => {
     const d = database()
     const current = productionStepCatalogue(d).definition
-    const withSequence = setStepCatalogue(
+    const withSequence = setStepCatalogueLocal(
       {
         steps: current.steps,
         sequences: [{ slug: 'quality', title: 'Quality', steps: ['lens', 'score'] }],
@@ -882,15 +882,15 @@ describe('workflow versions and project composition', () => {
       'test',
       d,
     )
-    promoteStepCatalogue(withSequence.n, 'publish', 'test', d)
+    promoteStepCatalogueLocal(withSequence.n, 'publish', 'test', d)
     const definition = {
       ...valid(),
       modes: [{ ...valid().modes[0]!, steps: [{ sequence: 'quality' }] }],
     }
-    const flow = setWorkflow('sequence-guard', definition, 'use sequence', 'test', d)
-    promoteWorkflow('sequence-guard', flow.n, 'publish', 'test', d)
-    const withoutSequence = setStepCatalogue({ steps: current.steps }, 'drop sequence', 'test', d)
-    expect(() => promoteStepCatalogue(withoutSequence.n, 'publish', 'test', d)).toThrow(
+    const flow = setWorkflowLocal('sequence-guard', definition, 'use sequence', 'test', d)
+    promoteWorkflowLocal('sequence-guard', flow.n, 'publish', 'test', d)
+    const withoutSequence = setStepCatalogueLocal({ steps: current.steps }, 'drop sequence', 'test', d)
+    expect(() => promoteStepCatalogueLocal(withoutSequence.n, 'publish', 'test', d)).toThrow(
       'sequence "quality" is absent from the catalogue',
     )
   })
@@ -899,7 +899,7 @@ describe('workflow versions and project composition', () => {
     const d = database()
     const current = productionStepCatalogue(d).definition
     const lens = current.steps.find(({ slug }) => slug === 'lens')!
-    const withSequence = setStepCatalogue(
+    const withSequence = setStepCatalogueLocal(
       {
         steps: [...current.steps, { ...lens, slug: 'sequence-only' }],
         sequences: [{ slug: 'quality', title: 'Quality', steps: ['sequence-only'] }],
@@ -908,8 +908,8 @@ describe('workflow versions and project composition', () => {
       'test',
       d,
     )
-    promoteStepCatalogue(withSequence.n, 'publish', 'test', d)
-    const flow = setWorkflow(
+    promoteStepCatalogueLocal(withSequence.n, 'publish', 'test', d)
+    const flow = setWorkflowLocal(
       'sequence-step-guard',
       {
         ...valid(),
@@ -919,8 +919,8 @@ describe('workflow versions and project composition', () => {
       'test',
       d,
     )
-    promoteWorkflow('sequence-step-guard', flow.n, 'publish', 'test', d)
-    const withoutReachedStep = setStepCatalogue(
+    promoteWorkflowLocal('sequence-step-guard', flow.n, 'publish', 'test', d)
+    const withoutReachedStep = setStepCatalogueLocal(
       {
         steps: current.steps,
         sequences: [{ slug: 'quality', title: 'Quality', steps: ['lens'] }],
@@ -929,7 +929,7 @@ describe('workflow versions and project composition', () => {
       'test',
       d,
     )
-    expect(() => promoteStepCatalogue(withoutReachedStep.n, 'publish', 'test', d)).toThrow(
+    expect(() => promoteStepCatalogueLocal(withoutReachedStep.n, 'publish', 'test', d)).toThrow(
       'sequence-step-guard: sequence-only',
     )
   })
@@ -937,7 +937,7 @@ describe('workflow versions and project composition', () => {
   test('workflow promotion refuses a sequence absent from production', () => {
     const d = database()
     const current = productionStepCatalogue(d).definition
-    const withSequence = setStepCatalogue(
+    const withSequence = setStepCatalogueLocal(
       {
         steps: current.steps,
         sequences: [{ slug: 'quality', title: 'Quality', steps: ['lens'] }],
@@ -946,8 +946,8 @@ describe('workflow versions and project composition', () => {
       'test',
       d,
     )
-    promoteStepCatalogue(withSequence.n, 'publish', 'test', d)
-    const draft = setWorkflow(
+    promoteStepCatalogueLocal(withSequence.n, 'publish', 'test', d)
+    const draft = setWorkflowLocal(
       'sequence-draft',
       {
         ...valid(),
@@ -957,14 +957,14 @@ describe('workflow versions and project composition', () => {
       'test',
       d,
     )
-    const withoutSequence = setStepCatalogue(
+    const withoutSequence = setStepCatalogueLocal(
       { steps: current.steps },
       'drop unused sequence',
       'test',
       d,
     )
-    promoteStepCatalogue(withoutSequence.n, 'publish', 'test', d)
-    expect(() => promoteWorkflow('sequence-draft', draft.n, 'publish', 'test', d)).toThrow(
+    promoteStepCatalogueLocal(withoutSequence.n, 'publish', 'test', d)
+    expect(() => promoteWorkflowLocal('sequence-draft', draft.n, 'publish', 'test', d)).toThrow(
       'sequence "quality" is absent from the catalogue',
     )
   })

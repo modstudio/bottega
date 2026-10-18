@@ -3,9 +3,9 @@ import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations, migrationJournal } from '../database/migrations.ts'
 import {
-  forkStepCatalogue,
+  forkStepCatalogueLocal,
   productionStepCatalogue,
-  promoteStepCatalogue,
+  promoteStepCatalogueLocal,
   showStepCatalogue,
   stepCatalogueVersions,
   validateStepCatalogue,
@@ -237,7 +237,7 @@ describe('workflow projection and seeds', () => {
 
     let message = ''
     try {
-      forkStepCatalogue(1, 'operator edit', 'architect', d)
+      forkStepCatalogueLocal(1, 'operator edit', 'architect', d)
     } catch (error) {
       message = error instanceof Error ? error.message : String(error)
     }
@@ -258,8 +258,8 @@ describe('workflow projection and seeds', () => {
       JSON.stringify(legacy),
       catalogue.owner_id,
     )
-    const draft = forkStepCatalogue(1, 'operator edit', 'architect', d)
-    promoteStepCatalogue(draft.n, 'operator promote', 'architect', d)
+    const draft = forkStepCatalogueLocal(1, 'operator edit', 'architect', d)
+    promoteStepCatalogueLocal(draft.n, 'operator promote', 'architect', d)
     d.query(
       "UPDATE step_catalogue_event SET reason='seed r1' WHERE catalogue_id=? AND author='seed'",
     ).run(catalogue.owner_id)

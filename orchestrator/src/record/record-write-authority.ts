@@ -20,14 +20,14 @@ export function currentRecordWriteDecision(database?: Database): RecordWriteDeci
 export function applyRecordWriteAuthority<T>(actions: {
   local(): T | Promise<T>
   hosted(): T | Promise<T>
-}): T {
+}): Promise<T> {
   const decision = currentRecordWriteDecision()
   if (decision === 'refused') throw new Error(BOUND_RECORD_WRITE_REFUSAL)
-  if (decision === 'local-authoritative') return actions.local() as T
+  if (decision === 'local-authoritative') return Promise.resolve(actions.local())
   return Promise.resolve(actions.hosted()).then((result) => {
     rememberHostedRecord()
     return result
-  }) as T
+  })
 }
 
 export function requireHostedRecord(command: string): void {

@@ -4,8 +4,8 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import {
   productionStepCatalogue,
-  promoteStepCatalogue,
-  setStepCatalogue,
+  promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
 } from './step-catalogue.ts'
 import { composeWorkflowWithCursor, nextWorkflowStep } from './workflow-cursor.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
@@ -201,7 +201,7 @@ test('self-ruling refuses a non-ruling step without changing the cursor or quest
 test('self-ruling refuses an operator-ruling floor without changing durable state', () => {
   const d = database()
   const current = productionStepCatalogue(d).definition
-  const catalogue = setStepCatalogue(
+  const catalogue = setStepCatalogueLocal(
     {
       ...current,
       steps: current.steps.map((step) =>
@@ -212,7 +212,7 @@ test('self-ruling refuses an operator-ruling floor without changing durable stat
     'test',
     d,
   )
-  promoteStepCatalogue(catalogue.n, 'publish operator-ruling fixture', 'test', d)
+  promoteStepCatalogueLocal(catalogue.n, 'publish operator-ruling fixture', 'test', d)
   openAtRuling(d)
   expect(() => selfRule(d)).toThrow(/requires an operator ruling.*--from-operator/)
   expect(d.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({

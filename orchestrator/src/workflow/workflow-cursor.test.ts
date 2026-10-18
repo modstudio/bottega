@@ -4,8 +4,8 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import {
   productionStepCatalogue,
-  promoteStepCatalogue,
-  setStepCatalogue,
+  promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
 } from './step-catalogue.ts'
 import {
   abandonWorkflowCursor,
@@ -22,7 +22,7 @@ import type { WorkflowEvidenceInput } from './workflow-floor-evidence.ts'
 import { renderWorkflowComposition } from './workflow-render.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
-import { promoteWorkflow, setWorkflow, showWorkflow } from './workflows.ts'
+import { promoteWorkflowLocal, setWorkflowLocal, showWorkflow } from './workflows.ts'
 
 const database = () => {
   const d = new Database(':memory:')
@@ -218,7 +218,7 @@ describe('workflow cursor adapter', () => {
 
   test('next advances with a rebound argument from the pinned workflow and records the event', () => {
     const d = database()
-    const draft = setWorkflow(
+    const draft = setWorkflowLocal(
       'rebind-fixture',
       {
         title: 'Rebind fixture',
@@ -241,7 +241,7 @@ describe('workflow cursor adapter', () => {
       'test',
       d,
     )
-    promoteWorkflow('rebind-fixture', draft.n, 'test fixture', 'test', d)
+    promoteWorkflowLocal('rebind-fixture', draft.n, 'test fixture', 'test', d)
     composeWorkflowWithCursor(
       'rebind-fixture',
       'fixture',
@@ -297,8 +297,8 @@ describe('workflow cursor adapter', () => {
         },
       ],
     }
-    const original = setWorkflow('policy-fixture', definition, 'test fixture', 'test', d)
-    promoteWorkflow('policy-fixture', original.n, 'test fixture', 'test', d)
+    const original = setWorkflowLocal('policy-fixture', definition, 'test fixture', 'test', d)
+    promoteWorkflowLocal('policy-fixture', original.n, 'test fixture', 'test', d)
     composeWorkflowWithCursor(
       'policy-fixture',
       'fixture',
@@ -307,7 +307,7 @@ describe('workflow cursor adapter', () => {
       context,
       d,
     )
-    const current = setWorkflow(
+    const current = setWorkflowLocal(
       'policy-fixture',
       {
         ...definition,
@@ -319,7 +319,7 @@ describe('workflow cursor adapter', () => {
       'test',
       d,
     )
-    promoteWorkflow('policy-fixture', current.n, 'test fixture', 'test', d)
+    promoteWorkflowLocal('policy-fixture', current.n, 'test fixture', 'test', d)
 
     expect(
       closeStep(
@@ -538,7 +538,7 @@ describe('workflow cursor adapter', () => {
 
   test('keyless cursor finish text names its mode', () => {
     const d = database()
-    const draft = setWorkflow(
+    const draft = setWorkflowLocal(
       'keyless-fixture',
       {
         title: 'Keyless fixture',
@@ -557,7 +557,7 @@ describe('workflow cursor adapter', () => {
       'test',
       d,
     )
-    promoteWorkflow('keyless-fixture', draft.n, 'test fixture', 'test', d)
+    promoteWorkflowLocal('keyless-fixture', draft.n, 'test fixture', 'test', d)
     const keylessArgs = {}
     const keylessContext = { session: 'keyless-session' }
     const composition = composeWorkflowWithCursor(
@@ -856,7 +856,7 @@ describe('workflow cursor adapter', () => {
     getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d)
     closeStep('flow', 'fixture', 'default', args, 'rebased', context, d)
     const currentCatalogue = productionStepCatalogue(d).definition
-    const catalogueDraft = setStepCatalogue(
+    const catalogueDraft = setStepCatalogueLocal(
       {
         steps: currentCatalogue.steps,
         sequences: [{ slug: 'later', title: 'Later', steps: ['close'] }],
@@ -865,9 +865,9 @@ describe('workflow cursor adapter', () => {
       'test',
       d,
     )
-    promoteStepCatalogue(catalogueDraft.n, 'publish', 'test', d)
+    promoteStepCatalogueLocal(catalogueDraft.n, 'publish', 'test', d)
     const current = showWorkflow('flow', undefined, d).definition
-    const draft = setWorkflow(
+    const draft = setWorkflowLocal(
       'flow',
       {
         ...current,
@@ -879,7 +879,7 @@ describe('workflow cursor adapter', () => {
       'test',
       d,
     )
-    promoteWorkflow('flow', draft.n, 'publish', 'test', d)
+    promoteWorkflowLocal('flow', draft.n, 'publish', 'test', d)
 
     expect(
       getWorkflowStepWithCursor('flow', 'fixture', '2', args, 'default', context, d).slug,

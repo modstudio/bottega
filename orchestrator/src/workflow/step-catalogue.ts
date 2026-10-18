@@ -5,12 +5,13 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { orchDoValueOptionNames } from '../commands/do-options.ts'
 import { db, sessionId, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
-import { effectiveProjectLensSpace } from '../lens/project-lens-space.ts'
+import { effectiveProjectSpace } from '../project-space.ts'
 import { workflowFactSources } from '../project/project-injection.ts'
 import { projects } from '../project/projects.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { applyWorkflowWriteResponse } from '../record/record-cache-workflow.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
+import { workerStoreWriteRefusal } from '../worker-store-write.ts'
 import { type AutonomyValue, autonomyStages, autonomyValues } from './autonomy.ts'
 import type {
   CatalogueSequence,
@@ -297,6 +298,10 @@ const lifecycle = versionedLifecycle<StepCatalogueDefinition>({
   },
 })
 const CATALOGUE = 'shared'
+function assertCatalogueWriteAllowed(operation: string): void {
+  const refusal = workerStoreWriteRefusal('workflow', operation, process.env)
+  if (refusal) throw new Error(refusal)
+}
 
 const compatibleCatalogue = <T extends { definition: StepCatalogueDefinition }>(row: T): T => ({
   ...row,
@@ -337,11 +342,20 @@ export const setStepCatalogue = (
   reason: string | undefined,
   author?: string,
   d: Database = writableDb(),
-) => catalogueDraft('set', definition, undefined, reason, author, d)
+) => {
+  assertCatalogueWriteAllowed('set step catalogue')
+  return catalogueDraft('set', definition, undefined, reason, author, d)
+}
+export const setStepCatalogueLocal = (
+  definition: unknown,
+  reason: string | undefined,
+  author?: string,
+  d: Database = writableDb(),
+) => lifecycle.write(CATALOGUE, definition, reason, author, 'set', d)
 const writeAuthor = (value?: string) => value?.trim() || sessionId() || 'unknown'
 async function activeSpace(d?: Database, project?: string) {
   const identity = await recordApiClient().whoami()
-  const spaceId = project && d ? effectiveProjectLensSpace(d, project) : identity.activeSpaceId
+  const spaceId = project && d ? effectiveProjectSpace(d, project) : identity.activeSpaceId
   if (!spaceId) throw new Error('record session has no active space')
   return spaceId
 }
@@ -385,6 +399,7 @@ export const forkStepCatalogue = (
   author?: string,
   d: Database = writableDb(),
 ) => {
+  assertCatalogueWriteAllowed('fork step catalogue')
   return applyRecordWriteAuthority({
     local: () => {
       const source = from === undefined ? productionStepCatalogue(d) : showStepCatalogue(from, d)
@@ -410,13 +425,23 @@ export const forkStepCatalogue = (
     },
   })
 }
+export const forkStepCatalogueLocal = (
+  from: number | undefined,
+  reason: string | undefined,
+  author?: string,
+  d: Database = writableDb(),
+) => {
+  const source = from === undefined ? productionStepCatalogue(d) : showStepCatalogue(from, d)
+  return lifecycle.write(CATALOGUE, source.definition, reason, author, 'fork', d)
+}
 export const retireStepCatalogue = (
   n: number,
   reason: string | undefined,
   author?: string,
   d: Database = writableDb(),
-) =>
-  applyRecordWriteAuthority({
+) => {
+  assertCatalogueWriteAllowed('retire step catalogue')
+  return applyRecordWriteAuthority({
     local: () => lifecycle.retire(CATALOGUE, n, reason, author, d),
     hosted: async () => {
       if (!reason?.trim()) throw new Error('reason is required')
@@ -442,6 +467,13 @@ export const retireStepCatalogue = (
       return selectedStepCatalogue(n, d, spaceId)
     },
   })
+}
+export const retireStepCatalogueLocal = (
+  n: number,
+  reason: string | undefined,
+  author?: string,
+  d: Database = writableDb(),
+) => lifecycle.retire(CATALOGUE, n, reason, author, d)
 export const stepCatalogueVersions = (d: Database = db()) => lifecycle.versions(CATALOGUE, d)
 
 type ProductionWorkflowDefinition = {
@@ -495,16 +527,19 @@ export function promoteStepCatalogue(
   author?: string,
   d: Database = writableDb(),
 ) {
+  assertCatalogueWriteAllowed('promote step catalogue')
   return applyRecordWriteAuthority({
     local: () => promoteStepCatalogueLocal(n, reason, author, d),
     hosted: async () => {
       if (!reason?.trim()) throw new Error('reason is required')
       const spaceId = await activeSpace(),
+        target = selectedStepCatalogue(n, d, spaceId),
         current = d
           .query<{ n: number }, [string]>(
             `SELECT v.n FROM step_catalogue_version v JOIN step_catalogue c ON c.id=v.catalogue_id WHERE c.slug='shared' AND c.space_id=? AND v.status='production'`,
           )
           .get(spaceId)
+      cataloguePromotionPreflight(target.definition, d, spaceId)
       const result = await recordApiClient().promoteWorkflow!(
         {
           kind: 'step_catalogue',
@@ -522,33 +557,49 @@ export function promoteStepCatalogue(
     },
   })
 }
-function promoteStepCatalogueLocal(
+export function promoteStepCatalogueLocal(
   n: number,
   reason: string | undefined,
   author: string | undefined,
-  d: Database,
+  d: Database = writableDb(),
 ) {
   return lifecycle.promote(CATALOGUE, n, reason, author, d, (definition, database) => {
-    const currentSequences = productionStepCatalogue(database).definition.sequences ?? []
-    const rows = database
-      .query(
-        `SELECT w.slug,v.definition FROM workflow w JOIN workflow_version v ON v.workflow_id=w.id WHERE v.status='production' AND w.space_id IS NULL`,
-      )
-      .all() as { slug: string; definition: string }[]
-    const missing = cataloguePromotionReferenceErrors(definition, currentSequences, rows)
-    const workflows = rows.map((row) => ({
-      slug: row.slug,
-      definition: JSON.parse(row.definition) as WorkflowDefinition,
-    }))
-    if (missing.length)
-      throw new Error(
-        `step catalogue changes references used by production workflows:\n${missing.map((line) => `- ${line}`).join('\n')}\nfix: keep the named sequences and reached steps, or promote workflow drafts that remove those references first`,
-      )
-    const refusal = renderCheckRefusal(
-      checkWorkflowRendering(workflows, definition, projects(undefined, database)),
-    )
-    if (refusal) throw new Error(refusal)
+    cataloguePromotionPreflight(definition, database, null)
   })
+}
+function cataloguePromotionPreflight(
+  definition: StepCatalogueDefinition,
+  d: Database,
+  spaceId: string | null,
+): void {
+  const current = d
+    .query<{ definition: string }, [string | null]>(
+      `SELECT v.definition FROM step_catalogue c JOIN step_catalogue_version v ON v.catalogue_id=c.id
+       WHERE c.slug='shared' AND c.space_id IS ? AND v.status='production'`,
+    )
+    .get(spaceId)
+  const currentSequences = current
+    ? ((JSON.parse(current.definition) as StepCatalogueDefinition).sequences ?? [])
+    : []
+  const rows = d
+    .query(
+      `SELECT w.slug,v.definition FROM workflow w JOIN workflow_version v ON v.workflow_id=w.id
+       WHERE v.status='production' AND w.space_id IS ?`,
+    )
+    .all(spaceId) as { slug: string; definition: string }[]
+  const missing = cataloguePromotionReferenceErrors(definition, currentSequences, rows)
+  if (missing.length)
+    throw new Error(
+      `step catalogue changes references used by production workflows:\n${missing.map((line) => `- ${line}`).join('\n')}\nfix: keep the named sequences and reached steps, or promote workflow drafts that remove those references first`,
+    )
+  const workflows = rows.map((row) => ({
+    slug: row.slug,
+    definition: JSON.parse(row.definition) as WorkflowDefinition,
+  }))
+  const refusal = renderCheckRefusal(
+    checkWorkflowRendering(workflows, definition, projects(undefined, d)),
+  )
+  if (refusal) throw new Error(refusal)
 }
 
 export function importStepCatalogue(
@@ -558,5 +609,12 @@ export function importStepCatalogue(
   d: Database = writableDb(),
   project?: string,
 ) {
+  assertCatalogueWriteAllowed('import step catalogue')
   return catalogueDraft('import', definition, undefined, reason, author, d, project)
 }
+export const importStepCatalogueLocal = (
+  definition: unknown,
+  reason: string | undefined,
+  author?: string,
+  d: Database = writableDb(),
+) => lifecycle.write(CATALOGUE, definition, reason, author, 'import', d)

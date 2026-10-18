@@ -6,7 +6,7 @@ import {
 } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { resolveLens } from '../lens/lenses.ts'
-import { rememberProjectLensSpaces } from '../lens/project-lens-space.ts'
+import { rememberProjectSpaces } from '../project-space.ts'
 import { upsertProject } from '../project/projects.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { applyLensCatalogueRow } from './record-cache-lens.ts'
@@ -170,7 +170,7 @@ test('two spaces keep the same lens key isolated after later hosted revisions', 
   applyLensCatalogueRow(local, 'lens_profile', profileB)
   upsertProject({ recordId: newRecordId(), name: 'space-a-project', path: '/tmp/a', settings: {} })
   upsertProject({ recordId: newRecordId(), name: 'space-b-project', path: '/tmp/b', settings: {} })
-  rememberProjectLensSpaces(
+  rememberProjectSpaces(
     local,
     new Map([
       ['space-a-project', spaceA],
@@ -350,7 +350,7 @@ test('a failed lens pull keeps project routing on the prior complete catalogue',
     'lens_profile',
     profileRow(oldSpace, oldLens.id, '{"guidance":"prior complete catalogue"}'),
   )
-  rememberProjectLensSpaces(local, new Map([['moving-project', oldSpace]]))
+  rememberProjectSpaces(local, new Map([['moving-project', oldSpace]]))
 
   installRecordApiClient({
     ...createMemoryRecordApiClient(),

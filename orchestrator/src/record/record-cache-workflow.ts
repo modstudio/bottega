@@ -33,14 +33,29 @@ const remember = (local: Database, key: string, value: RecordCursor) =>
 export async function pullWorkflowCatalogue(
   local: Database,
   spaces: readonly string[],
-): Promise<number> {
+): Promise<{ count: number; completedSpaces: ReadonlySet<string> }> {
   let count = 0
-  for (const spaceId of spaces)
-    for (const table of RECORD_WORKFLOW_TABLES) count += await pullTable(local, spaceId, table)
-  return count
+  const completedSpaces = new Set<string>()
+  for (const spaceId of spaces) {
+    let completed = true
+    for (const table of RECORD_WORKFLOW_TABLES) {
+      const pulled = await pullTable(local, spaceId, table)
+      count += pulled.count
+      if (!pulled.completed) {
+        completed = false
+        break
+      }
+    }
+    if (completed) completedSpaces.add(spaceId)
+  }
+  return { count, completedSpaces }
 }
 
-async function pullTable(local: Database, spaceId: string, table: RecordWorkflowTable) {
+async function pullTable(
+  local: Database,
+  spaceId: string,
+  table: RecordWorkflowTable,
+): Promise<{ count: number; completed: boolean }> {
   const key = `${CURSOR}:${spaceId}:${table}`
   let current = cursor(local, key),
     requestCursor = current ? encodeRecordCursor(current) : undefined,
@@ -51,8 +66,9 @@ async function pullTable(local: Database, spaceId: string, table: RecordWorkflow
       { limit: 100, cursor: requestCursor },
       { destinationSpaceId: spaceId },
     )
-    if (!page.items.length) break
-    if (page.items.some((item) => !parentPresent(local, table, item))) break
+    if (!page.items.length) return { count, completed: true }
+    if (page.items.some((item) => !parentPresent(local, table, item)))
+      return { count, completed: false }
     writeTransaction(() => {
       for (const item of page.items) {
         applyWorkflowCatalogueRow(local, table, item)
@@ -64,10 +80,9 @@ async function pullTable(local: Database, spaceId: string, table: RecordWorkflow
         : { at: String(last[table.endsWith('_event') ? 'at' : 'updatedAt']), id: String(last.id) }
       remember(local, key, current)
     }, local)
-    if (!page.nextCursor) break
+    if (!page.nextCursor) return { count, completed: true }
     requestCursor = page.nextCursor
   }
-  return count
 }
 
 function names(table: RecordWorkflowTable) {

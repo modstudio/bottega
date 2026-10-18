@@ -9,7 +9,7 @@ import { applyMigrations } from '../database/migrations.ts'
 import {
   compatibleCatalogueStep,
   productionStepCatalogue,
-  promoteStepCatalogue,
+  promoteStepCatalogueLocal,
   showStepCatalogue,
   validateStepCatalogue,
 } from './step-catalogue.ts'
@@ -209,7 +209,7 @@ test('promoting a stored pre-validator draft revalidates before changing product
       VALUES (?,?,2,'draft',?,'legacy','pre-validator draft','2026-01-01T00:00:00.000Z')`,
   ).run(newRecordId(), production.owner_id, JSON.stringify(invalid))
 
-  expect(() => promoteStepCatalogue(2, 'promote legacy', 'architect', d)).toThrow(
+  expect(() => promoteStepCatalogueLocal(2, 'promote legacy', 'architect', d)).toThrow(
     `step "diagnose" dispatch "${PLATFORM_SLUG} run start diagnose --key {{key}}" must include --file or a double-quoted argument`,
   )
   expect(productionStepCatalogue(d).n).toBe(production.n)
