@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   deduplicateHardLinkedBytes,
   diskPressureCondition,
@@ -97,7 +96,10 @@ describe('storage pressure decision', () => {
     expect(decision.condition).toMatchObject({
       kind: 'disk-pressure',
       since: '2026-10-18T12:00:00.000Z',
-      action: expect.stringContaining(`${PLATFORM_SLUG} machine storage`),
+      remedy: {
+        reportCommand: 'machine storage',
+        reclaimCommand: 'machine reclaim worktree, sandbox, or stale-run',
+      },
     })
   })
 })

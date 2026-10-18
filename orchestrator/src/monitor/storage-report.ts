@@ -4,6 +4,7 @@
 import { lstatSync, readdirSync, statfsSync } from 'node:fs'
 import { lstat } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   resolveHubDatabase,
   resolveOrchestratorDatabase,
@@ -387,8 +388,20 @@ export async function diskPressureObservation(clock = Date.now()): Promise<{
   if (!preliminary.condition) return { conditions: [], errors: [] }
   const report = await storageReport(clock)
   const decision = diskPressureCondition(volume, storageKindSummaries(report), clock)
+  const condition = decision.condition
   return {
-    conditions: decision.condition ? [decision.condition as MonitorCondition] : [],
+    conditions: condition
+      ? [
+          {
+            kind: condition.kind,
+            subject: condition.subject,
+            since: condition.since,
+            ageMs: condition.ageMs,
+            detail: condition.detail,
+            action: `run ${PLATFORM_SLUG} ${condition.remedy.reportCommand}, then use ${PLATFORM_SLUG} ${condition.remedy.reclaimCommand} for the classified resources that apply`,
+          } satisfies MonitorCondition,
+        ]
+      : [],
     errors: [],
   }
 }

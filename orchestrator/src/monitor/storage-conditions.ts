@@ -1,8 +1,6 @@
 // concern: monitor-storage-conditions
 /** Pure storage measurements, rankings, and disk-pressure decisions. */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-
 export const STORAGE_WALK_ENTRY_LIMIT = 1_000_000
 const FREE_SPACE_PROPORTION_THRESHOLD = 0.1
 export const FREE_SPACE_ABSOLUTE_FLOOR_BYTES = 20 * 1024 ** 3
@@ -44,7 +42,10 @@ export type StoragePressureCondition = {
   since: string
   ageMs: 0
   detail: string
-  action: string
+  remedy: {
+    reportCommand: 'machine storage'
+    reclaimCommand: 'machine reclaim worktree, sandbox, or stale-run'
+  }
 }
 
 /** Count a multiply linked regular file only at its first path, while preserving visited entries. */
@@ -173,7 +174,10 @@ export function diskPressureCondition(
       since: new Date(clock).toISOString(),
       ageMs: 0,
       detail: `${volume.freeBytes} free bytes is below the ${decision.thresholdBytes}-byte threshold (10% of ${volume.totalBytes} bytes or the 20 GiB floor); largest storage: ${largestKinds.join(', ') || 'unreadable'}`,
-      action: `run ${PLATFORM_SLUG} machine storage, then use ${PLATFORM_SLUG} machine reclaim worktree, sandbox, or stale-run for the classified resources that apply`,
+      remedy: {
+        reportCommand: 'machine storage',
+        reclaimCommand: 'machine reclaim worktree, sandbox, or stale-run',
+      },
     },
     error: null,
     largestKinds,
