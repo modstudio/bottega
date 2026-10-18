@@ -94,6 +94,17 @@ const TERMINAL_CLOSE_OUT_NOTICE_KINDS = {
   failed: 'terminal-close-out-failed',
 } as const satisfies Record<'held' | 'failed', MonitorNoticeKind>
 
+async function initialMonitorObservations(clock: number): Promise<{
+  conditions: MonitorCondition[]
+  errors: string[]
+}> {
+  const diskPressure = await diskPressureObservation(clock)
+  return {
+    conditions: [...staleCustomerGuideCommandConditions(), ...diskPressure.conditions],
+    errors: diskPressure.errors,
+  }
+}
+
 function recipeDatabaseObservations(
   project: Project,
   database: ReturnType<typeof db>,
@@ -535,8 +546,7 @@ export async function monitor(
 ): Promise<MonitorResult> {
   const startedAt = new Date(clock).toISOString()
   const { database, invocation } = startMonitorInvocation(trigger, startedAt)
-  const conditions: MonitorCondition[] = staleCustomerGuideCommandConditions()
-  const errors: string[] = []
+  const { conditions, errors } = await initialMonitorObservations(clock)
   const canonRows = allInjectChecks()
   const canon = {
     findings: canonRows.reduce(
@@ -555,9 +565,6 @@ export async function monitor(
       ageMs: condition.ageMs ?? age(condition.since, clock),
     } as MonitorCondition)
   const reclaimProject = projectAt(process.cwd())
-  const diskPressure = await diskPressureObservation(clock)
-  conditions.push(...diskPressure.conditions)
-  errors.push(...diskPressure.errors)
   const ratchetedRuleRefills = observeRatchetedRuleRefills(
     projects().filter(isProjectRepository),
     database,
