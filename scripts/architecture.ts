@@ -721,6 +721,7 @@ export const modules: ArchitectureModule[] = [
     'bun:sqlite',
     'node:util',
     '../database/db.ts',
+    '../lens/project-lens-space.ts',
     './step-catalogue.ts',
     './workflow-step-sequences.ts',
     './workflow-tree.ts',

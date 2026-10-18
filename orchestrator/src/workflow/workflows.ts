@@ -1,6 +1,10 @@
 import type { Database } from 'bun:sqlite'
-import { db, writableDb } from '../database/db.ts'
+import { db, sessionId, writableDb } from '../database/db.ts'
+import { effectiveProjectLensSpace } from '../lens/project-lens-space.ts'
 import { projects } from '../project/projects.ts'
+import { recordApiClient } from '../record/record-api-client.ts'
+import { applyWorkflowWriteResponse } from '../record/record-cache-workflow.ts'
+import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import {
   type AutonomyPreset,
   autonomyPresets,
@@ -13,7 +17,7 @@ import {
   compatibleCatalogueStep,
   productionStepCatalogue,
   type StepCatalogueDefinition,
-  showStepCatalogue,
+  selectedStepCatalogue,
 } from './step-catalogue.ts'
 import { type VersionEvent, versionedLifecycle } from './versioned-lifecycle.ts'
 import type { WorkflowDefinition, WorkflowMode, WorkflowModeStep } from './workflow-definition.ts'
@@ -282,7 +286,12 @@ type VersionRow = {
   promoted_at: string | null
   retired_at: string | null
 }
-function versionRow(slug: string, n?: number, d: Database = db()): VersionRow {
+function versionRow(
+  slug: string,
+  n?: number,
+  d: Database = db(),
+  spaceId: string | null = null,
+): VersionRow {
   // Unqualified show prefers production, then the newest draft, then the
   // newest retired. A newer draft must not shadow live production.
   const where =
@@ -291,9 +300,9 @@ function versionRow(slug: string, n?: number, d: Database = db()): VersionRow {
       : `AND v.n=?`
   const row = d
     .query(
-      `SELECT v.*, w.slug FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug=? ${where}`,
+      `SELECT v.*, w.slug FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug=? AND w.space_id IS ? ${where}`,
     )
-    .get(...(n === undefined ? [slug] : [slug, n])) as VersionRow | null
+    .get(...(n === undefined ? [slug, spaceId] : [slug, spaceId, n])) as VersionRow | null
   if (!row)
     throw new Error(
       n === undefined ? `unknown workflow "${slug}"` : `workflow "${slug}" has no version ${n}`,
@@ -305,12 +314,16 @@ const parseVersion = (row: VersionRow) => ({
   definition: JSON.parse(row.definition) as WorkflowDefinition,
 })
 
-function productionVersionRow(slug: string, d: Database = db()): VersionRow {
+function productionVersionRow(
+  slug: string,
+  d: Database = db(),
+  spaceId: string | null = null,
+): VersionRow {
   const row = d
     .query(`SELECT v.*, w.slug FROM workflow_version v
     JOIN workflow w ON w.id=v.workflow_id
-    WHERE w.slug=? AND v.status='production'`)
-    .get(slug) as VersionRow | null
+    WHERE w.slug=? AND w.space_id IS ? AND v.status='production'`)
+    .get(slug, spaceId) as VersionRow | null
   if (!row) throw new Error(`workflow "${slug}" has no production version; promote one`)
   return row
 }
@@ -320,7 +333,7 @@ export function listWorkflows(d: Database = db()) {
     .query(`SELECT w.id,w.slug,
     (SELECT n FROM workflow_version WHERE workflow_id=w.id AND status='production') production_n,
     (SELECT MAX(n) FROM workflow_version WHERE workflow_id=w.id AND status='draft') draft_n
-    FROM workflow w ORDER BY w.slug`)
+    FROM workflow w WHERE w.space_id IS NULL ORDER BY w.slug`)
     .all() as { id: number; slug: string; production_n: number | null; draft_n: number | null }[]
   return rows.map((row) => {
     const selected = versionRow(row.slug, row.production_n ?? row.draft_n ?? undefined, d)
@@ -335,14 +348,15 @@ export function listWorkflows(d: Database = db()) {
 
 export function productionWorkflows(
   d: Database = db(),
+  spaceId: string | null = null,
 ): { slug: string; definition: WorkflowDefinition }[] {
   return (
     d
       .query(
         `SELECT w.slug,v.definition FROM workflow w JOIN workflow_version v ON v.workflow_id=w.id
-         WHERE v.status='production' ORDER BY w.slug`,
+         WHERE v.status='production' AND w.space_id IS ? ORDER BY w.slug`,
       )
-      .all() as { slug: string; definition: string }[]
+      .all(spaceId) as { slug: string; definition: string }[]
   ).map((row) => ({ slug: row.slug, definition: JSON.parse(row.definition) as WorkflowDefinition }))
 }
 export function showWorkflow(slug: string, n?: number, d: Database = db()) {
@@ -361,7 +375,12 @@ const workflowLifecycleFor = (knownCatalogue?: StepCatalogueDefinition) =>
     },
   })
 const workflowLifecycle = workflowLifecycleFor()
-function writeDraft(
+type LocalWorkflowRow = ReturnType<typeof workflowLifecycle.write>
+function hostedWorkflowRow(slug: string, n: number, d: Database, spaceId: string): LocalWorkflowRow {
+  const row = selectedWorkflow(slug, n, d, spaceId)
+  return { ...row, owner_id: row.workflow_id }
+}
+function writeDraftLocal(
   slug: string,
   definition: unknown,
   reasonValue: string | undefined,
@@ -387,7 +406,52 @@ export const setWorkflow = (
   reason: string | undefined,
   author?: string,
   d: Database = writableDb(),
-) => writeDraft(slug, definition, reason, author, 'set', d)
+) => hostedDraft('set', slug, definition, undefined, reason, author, d)
+
+const writeAuthor = (value?: string) => value?.trim() || sessionId() || 'unknown'
+async function hostedSpace(d: Database, project?: string) {
+  const identity = await recordApiClient().whoami()
+  const spaceId = project ? effectiveProjectLensSpace(d, project) : identity.activeSpaceId
+  if (!spaceId) throw new Error('record session has no active space')
+  return spaceId
+}
+function hostedDraft(
+  kind: Extract<VersionEvent, 'set' | 'fork' | 'import'>,
+  slug: string,
+  definition: unknown,
+  from: number | undefined,
+  reason: string | undefined,
+  author: string | undefined,
+  d: Database,
+  project?: string,
+  knownCatalogue?: StepCatalogueDefinition,
+) {
+  requireSlug(slug)
+  return applyRecordWriteAuthority({
+    local: () => writeDraftLocal(slug, definition, reason, author, kind, d, knownCatalogue),
+    hosted: async () => {
+      requireValid(definition, d, knownCatalogue)
+      if (!reason?.trim()) throw new Error('reason is required')
+      const spaceId = await hostedSpace(d, project)
+      const result = await recordApiClient().draftWorkflow!(
+        {
+          kind: 'workflow',
+          slug,
+          event: kind,
+          ...(kind === 'fork'
+            ? { from: from ?? null }
+            : { definition: JSON.stringify(definition) }),
+          author: writeAuthor(author),
+          reason: reason.trim(),
+          sessionId: sessionId(),
+        },
+        { destinationSpaceId: spaceId },
+      )
+      applyWorkflowWriteResponse(d, 'workflow', result)
+      return hostedWorkflowRow(slug, result.versions.at(-1)!.n, d, spaceId)
+    },
+  })
+}
 
 export function promoteWorkflow(
   slug: string,
@@ -395,6 +459,40 @@ export function promoteWorkflow(
   reasonValue: string | undefined,
   authorValue?: string,
   d: Database = writableDb(),
+) {
+  return applyRecordWriteAuthority({
+    local: () => promoteWorkflowLocal(slug, n, reasonValue, authorValue, d),
+    hosted: async () => {
+      if (!reasonValue?.trim()) throw new Error('reason is required')
+      const spaceId = await hostedSpace(d)
+      const current = d
+        .query<{ n: number }, [string, string]>(
+          `SELECT v.n FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug=? AND w.space_id=? AND v.status='production'`,
+        )
+        .get(slug, spaceId)
+      const result = await recordApiClient().promoteWorkflow!(
+        {
+          kind: 'workflow',
+          slug,
+          n,
+          expectedProductionVersion: current?.n ?? null,
+          author: writeAuthor(authorValue),
+          reason: reasonValue.trim(),
+          sessionId: sessionId(),
+        },
+        { destinationSpaceId: spaceId },
+      )
+      applyWorkflowWriteResponse(d, 'workflow', result)
+    return hostedWorkflowRow(slug, n, d, spaceId)
+    },
+  })
+}
+function promoteWorkflowLocal(
+  slug: string,
+  n: number,
+  reasonValue: string | undefined,
+  authorValue: string | undefined,
+  d: Database,
 ) {
   // A draft is validated against the catalogue it was written for; the
   // production catalogue may have dropped one of its steps since.
@@ -422,7 +520,32 @@ export function retireWorkflow(
   authorValue?: string,
   d: Database = writableDb(),
 ) {
-  return workflowLifecycle.retire(slug, n, reasonValue, authorValue, d)
+  return applyRecordWriteAuthority({
+    local: () => workflowLifecycle.retire(slug, n, reasonValue, authorValue, d),
+    hosted: async () => {
+      if (!reasonValue?.trim()) throw new Error('reason is required')
+      const spaceId = await hostedSpace(d)
+      const current = d
+        .query<{ n: number }, [string, string]>(
+          `SELECT v.n FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug=? AND w.space_id=? AND v.status='production'`,
+        )
+        .get(slug, spaceId)
+      const result = await recordApiClient().retireWorkflow!(
+        {
+          kind: 'workflow',
+          slug,
+          n,
+          expectedProductionVersion: current?.n ?? null,
+          author: writeAuthor(authorValue),
+          reason: reasonValue.trim(),
+          sessionId: sessionId(),
+        },
+        { destinationSpaceId: spaceId },
+      )
+      applyWorkflowWriteResponse(d, 'workflow', result)
+    return hostedWorkflowRow(slug, n, d, spaceId)
+    },
+  })
 }
 export function forkWorkflow(
   slug: string,
@@ -431,12 +554,34 @@ export function forkWorkflow(
   author?: string,
   d: Database = writableDb(),
 ) {
-  const definition = (
-    from === undefined
-      ? workflowLifecycle.production(slug, d)
-      : workflowLifecycle.show(slug, from, d)
-  ).definition
-  return writeDraft(slug, definition, reason, author, 'fork', d)
+  return applyRecordWriteAuthority({
+    local: () => {
+      const definition = (
+        from === undefined
+          ? workflowLifecycle.production(slug, d)
+          : workflowLifecycle.show(slug, from, d)
+      ).definition
+      return writeDraftLocal(slug, definition, reason, author, 'fork', d)
+    },
+    hosted: async () => {
+      if (!reason?.trim()) throw new Error('reason is required')
+      const spaceId = await hostedSpace(d)
+      const result = await recordApiClient().draftWorkflow!(
+        {
+          kind: 'workflow',
+          slug,
+          event: 'fork',
+          from: from ?? null,
+          author: writeAuthor(author),
+          reason: reason.trim(),
+          sessionId: sessionId(),
+        },
+        { destinationSpaceId: spaceId },
+      )
+      applyWorkflowWriteResponse(d, 'workflow', result)
+      return hostedWorkflowRow(slug, result.versions.at(-1)!.n, d, spaceId)
+    },
+  })
 }
 export function workflowVersions(slug: string, d: Database = db()) {
   return workflowLifecycle.versions(slug, d)
@@ -448,12 +593,22 @@ type WorkflowNeeds = {
 }
 type WorkflowSelection = { version?: number; catalogueVersion?: number; mode?: string }
 
-const selectedWorkflow = (slug: string, version: number | undefined, d: Database) =>
-  version === undefined
-    ? parseVersion(productionVersionRow(slug, d))
-    : showWorkflow(slug, version, d)
-const selectedCatalogue = (version: number | undefined, d: Database) =>
-  version === undefined ? productionStepCatalogue(d) : showStepCatalogue(version, d)
+const selectedWorkflow = (
+  slug: string,
+  version: number | undefined,
+  d: Database,
+  spaceId: string | null = null,
+) =>
+  parseVersion(
+    version === undefined
+      ? productionVersionRow(slug, d, spaceId)
+      : versionRow(slug, version, d, spaceId),
+  )
+const selectedCatalogue = (
+  version: number | undefined,
+  d: Database,
+  spaceId: string | null = null,
+) => selectedStepCatalogue(version, d, spaceId)
 
 export function resolveWorkflowMode(
   definition: WorkflowDefinition,
@@ -502,9 +657,10 @@ export function composeWorkflow(
   selection: WorkflowSelection = {},
   autonomy?: WorkflowAutonomyResolution,
 ) {
-  const row = selectedWorkflow(slug, selection.version, d),
+  const spaceId = effectiveProjectLensSpace(d, projectName)
+  const row = selectedWorkflow(slug, selection.version, d, spaceId),
     definition = row.definition,
-    catalogue = selectedCatalogue(selection.catalogueVersion, d)
+    catalogue = selectedCatalogue(selection.catalogueVersion, d, spaceId)
   const mode = resolveWorkflowMode(definition, modeSlug)
   const needs: WorkflowNeeds = {}
   if (modeSlug && !mode) throw new Error(`workflow "${slug}" has no mode "${modeSlug}"`)
@@ -623,9 +779,10 @@ export function getWorkflowStep(
   selection: WorkflowSelection = {},
   autonomy?: WorkflowAutonomyResolution,
 ) {
-  const row = selectedWorkflow(slug, selection.version, d),
+  const spaceId = effectiveProjectLensSpace(d, projectName)
+  const row = selectedWorkflow(slug, selection.version, d, spaceId),
     definition = row.definition,
-    catalogue = selectedCatalogue(selection.catalogueVersion, d),
+    catalogue = selectedCatalogue(selection.catalogueVersion, d, spaceId),
     { selectedMode, containingModes, referenced } = workflowModesForStep(
       definition,
       catalogue.definition.sequences,
@@ -712,7 +869,18 @@ export function importWorkflow(
   author?: string,
   d: Database = writableDb(),
   knownCatalogue?: StepCatalogueDefinition,
+  project?: string,
 ) {
   required(reason, 'reason')
-  return writeDraft(slug, definition, reason, author, 'import', d, knownCatalogue)
+  return hostedDraft(
+    'import',
+    slug,
+    definition,
+    undefined,
+    reason,
+    author,
+    d,
+    project,
+    knownCatalogue,
+  )
 }

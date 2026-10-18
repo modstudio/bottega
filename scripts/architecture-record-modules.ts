@@ -39,6 +39,32 @@ export const recordModules: RecordModule[] = [
     './record-cursor.ts',
     './record-lens-contract.ts',
   ]),
+  module('orchestrator/src/record/record-workflow-catalogue.ts', [
+    'bun',
+    '../../../shared/record/schema.ts',
+    '../../../shared/record/tenant.ts',
+    './record-cursor.ts',
+    './record-workflow-contract.ts',
+  ]),
+  module('orchestrator/src/record/record-workflow-contract.ts', ['zod']),
+  module('orchestrator/src/record/record-api-workflow.ts', [
+    'hono',
+    'zod',
+    './record-auth.ts',
+    './record-cursor.ts',
+    './record-workflow-contract.ts',
+  ]),
+  module('orchestrator/src/record/record-api-client-workflow.ts', [
+    './record-api-client-paths.ts',
+    './record-workflow-contract.ts',
+  ]),
+  module('orchestrator/src/record/record-cache-workflow.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    './record-api-client.ts',
+    './record-cursor.ts',
+    './record-workflow-contract.ts',
+  ]),
   module('orchestrator/src/record/record-use.ts', [
     'node:fs',
     'node:path',

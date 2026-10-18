@@ -3,10 +3,13 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { orchDoValueOptionNames } from '../commands/do-options.ts'
-import { db, writableDb } from '../database/db.ts'
+import { db, sessionId, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { workflowFactSources } from '../project/project-injection.ts'
 import { projects } from '../project/projects.ts'
+import { recordApiClient } from '../record/record-api-client.ts'
+import { applyWorkflowWriteResponse } from '../record/record-cache-workflow.ts'
+import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { type AutonomyValue, autonomyStages, autonomyValues } from './autonomy.ts'
 import type {
   CatalogueSequence,
@@ -305,27 +308,137 @@ export const showStepCatalogue = (n?: number, d: Database = db()) =>
   compatibleCatalogue(lifecycle.show(CATALOGUE, n, d))
 export const productionStepCatalogue = (d: Database = db()) =>
   compatibleCatalogue(lifecycle.production(CATALOGUE, d))
+export function selectedStepCatalogue(
+  n: number | undefined,
+  d: Database = db(),
+  spaceId: string | null = null,
+): ReturnType<typeof showStepCatalogue> {
+  const suffix = n === undefined ? "AND v.status='production'" : 'AND v.n=?'
+  const row = d
+    .query(
+      `SELECT v.*,i.slug FROM step_catalogue_version v JOIN step_catalogue i ON i.id=v.catalogue_id WHERE i.slug=? AND i.space_id IS ? ${suffix}`,
+    )
+    .get(...(n === undefined ? [CATALOGUE, spaceId] : [CATALOGUE, spaceId, n])) as {
+    definition: string
+    [key: string]: unknown
+  } | null
+  if (!row)
+    throw new Error(
+      `step catalogue has no ${n === undefined ? 'production version; promote one' : `version ${n}`}`,
+    )
+  return compatibleCatalogue({
+    ...row,
+    definition: JSON.parse(row.definition) as StepCatalogueDefinition,
+  }) as ReturnType<typeof showStepCatalogue>
+}
 export const setStepCatalogue = (
   definition: unknown,
   reason: string | undefined,
   author?: string,
   d: Database = writableDb(),
-) => lifecycle.write(CATALOGUE, definition, reason, author, 'set', d)
+) => catalogueDraft('set', definition, undefined, reason, author, d)
+const writeAuthor = (value?: string) => value?.trim() || sessionId() || 'unknown'
+async function activeSpace() {
+  const identity = await recordApiClient().whoami()
+  if (!identity.activeSpaceId) throw new Error('record session has no active space')
+  return identity.activeSpaceId
+}
+function catalogueDraft(
+  event: 'set' | 'fork' | 'import',
+  definition: unknown,
+  from: number | undefined,
+  reason: string | undefined,
+  author: string | undefined,
+  d: Database,
+) {
+  return applyRecordWriteAuthority({
+    local: () => lifecycle.write(CATALOGUE, definition, reason, author, event, d),
+    hosted: async () => {
+      requireCatalogue(definition)
+      if (!reason?.trim()) throw new Error('reason is required')
+      const spaceId = await activeSpace()
+      const result = await recordApiClient().draftWorkflow!(
+        {
+          kind: 'step_catalogue',
+          slug: CATALOGUE,
+          event,
+          ...(event === 'fork'
+            ? { from: from ?? null }
+            : { definition: JSON.stringify(definition) }),
+          author: writeAuthor(author),
+          reason: reason.trim(),
+          sessionId: sessionId(),
+        },
+        { destinationSpaceId: spaceId },
+      )
+      applyWorkflowWriteResponse(d, 'step_catalogue', result)
+      return selectedStepCatalogue(result.versions.at(-1)!.n, d, spaceId)
+    },
+  })
+}
 export const forkStepCatalogue = (
   from: number | undefined,
   reason: string | undefined,
   author?: string,
   d: Database = writableDb(),
 ) => {
-  const source = from === undefined ? productionStepCatalogue(d) : showStepCatalogue(from, d)
-  return lifecycle.write(CATALOGUE, source.definition, reason, author, 'fork', d)
+  return applyRecordWriteAuthority({
+    local: () => {
+      const source = from === undefined ? productionStepCatalogue(d) : showStepCatalogue(from, d)
+      return lifecycle.write(CATALOGUE, source.definition, reason, author, 'fork', d)
+    },
+    hosted: async () => {
+      if (!reason?.trim()) throw new Error('reason is required')
+      const spaceId = await activeSpace()
+      const result = await recordApiClient().draftWorkflow!(
+        {
+          kind: 'step_catalogue',
+          slug: CATALOGUE,
+          event: 'fork',
+          from: from ?? null,
+          author: writeAuthor(author),
+          reason: reason.trim(),
+          sessionId: sessionId(),
+        },
+        { destinationSpaceId: spaceId },
+      )
+      applyWorkflowWriteResponse(d, 'step_catalogue', result)
+      return selectedStepCatalogue(result.versions.at(-1)!.n, d, spaceId)
+    },
+  })
 }
 export const retireStepCatalogue = (
   n: number,
   reason: string | undefined,
   author?: string,
   d: Database = writableDb(),
-) => lifecycle.retire(CATALOGUE, n, reason, author, d)
+) =>
+  applyRecordWriteAuthority({
+    local: () => lifecycle.retire(CATALOGUE, n, reason, author, d),
+    hosted: async () => {
+      if (!reason?.trim()) throw new Error('reason is required')
+      const spaceId = await activeSpace(),
+        current = d
+          .query<{ n: number }, [string]>(
+            `SELECT v.n FROM step_catalogue_version v JOIN step_catalogue c ON c.id=v.catalogue_id WHERE c.slug='shared' AND c.space_id=? AND v.status='production'`,
+          )
+          .get(spaceId)
+      const result = await recordApiClient().retireWorkflow!(
+        {
+          kind: 'step_catalogue',
+          slug: CATALOGUE,
+          n,
+          expectedProductionVersion: current?.n ?? null,
+          author: writeAuthor(author),
+          reason: reason.trim(),
+          sessionId: sessionId(),
+        },
+        { destinationSpaceId: spaceId },
+      )
+      applyWorkflowWriteResponse(d, 'step_catalogue', result)
+      return selectedStepCatalogue(n, d, spaceId)
+    },
+  })
 export const stepCatalogueVersions = (d: Database = db()) => lifecycle.versions(CATALOGUE, d)
 
 type ProductionWorkflowDefinition = {
@@ -379,11 +492,44 @@ export function promoteStepCatalogue(
   author?: string,
   d: Database = writableDb(),
 ) {
+  return applyRecordWriteAuthority({
+    local: () => promoteStepCatalogueLocal(n, reason, author, d),
+    hosted: async () => {
+      if (!reason?.trim()) throw new Error('reason is required')
+      const spaceId = await activeSpace(),
+        current = d
+          .query<{ n: number }, [string]>(
+            `SELECT v.n FROM step_catalogue_version v JOIN step_catalogue c ON c.id=v.catalogue_id WHERE c.slug='shared' AND c.space_id=? AND v.status='production'`,
+          )
+          .get(spaceId)
+      const result = await recordApiClient().promoteWorkflow!(
+        {
+          kind: 'step_catalogue',
+          slug: CATALOGUE,
+          n,
+          expectedProductionVersion: current?.n ?? null,
+          author: writeAuthor(author),
+          reason: reason.trim(),
+          sessionId: sessionId(),
+        },
+        { destinationSpaceId: spaceId },
+      )
+      applyWorkflowWriteResponse(d, 'step_catalogue', result)
+      return selectedStepCatalogue(n, d, spaceId)
+    },
+  })
+}
+function promoteStepCatalogueLocal(
+  n: number,
+  reason: string | undefined,
+  author: string | undefined,
+  d: Database,
+) {
   return lifecycle.promote(CATALOGUE, n, reason, author, d, (definition, database) => {
     const currentSequences = productionStepCatalogue(database).definition.sequences ?? []
     const rows = database
       .query(
-        `SELECT w.slug,v.definition FROM workflow w JOIN workflow_version v ON v.workflow_id=w.id WHERE v.status='production'`,
+        `SELECT w.slug,v.definition FROM workflow w JOIN workflow_version v ON v.workflow_id=w.id WHERE v.status='production' AND w.space_id IS NULL`,
       )
       .all() as { slug: string; definition: string }[]
     const missing = cataloguePromotionReferenceErrors(definition, currentSequences, rows)
@@ -408,5 +554,5 @@ export function importStepCatalogue(
   author?: string,
   d: Database = writableDb(),
 ) {
-  return lifecycle.write(CATALOGUE, definition, reason, author, 'import', d)
+  return catalogueDraft('import', definition, undefined, reason, author, d)
 }

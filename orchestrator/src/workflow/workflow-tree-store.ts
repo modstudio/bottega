@@ -4,21 +4,27 @@ import type { Database } from 'bun:sqlite'
 import { isDeepStrictEqual } from 'node:util'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
+import { effectiveProjectLensSpace } from '../lens/project-lens-space.ts'
 import {
   type CatalogueSequence,
   type CatalogueStep,
   importStepCatalogue,
-  productionStepCatalogue,
+  selectedStepCatalogue,
   validateStepCatalogue,
 } from './step-catalogue.ts'
 import type { WorkflowTreeStore } from './workflow-tree.ts'
 import { importWorkflow, productionWorkflows, validateWorkflowDefinition } from './workflows.ts'
 
-export function productionWorkflowTree(d: Database = db()): WorkflowTreeStore {
+export function productionWorkflowTree(
+  d: Database = db(),
+  project: string | null = null,
+): WorkflowTreeStore {
+  const spaceId = effectiveProjectLensSpace(d, project)
+  const catalogue = selectedStepCatalogue(undefined, d, spaceId)
   return {
-    steps: productionStepCatalogue(d).definition.steps,
-    sequences: productionStepCatalogue(d).definition.sequences ?? [],
-    workflows: productionWorkflows(d),
+    steps: catalogue.definition.steps,
+    sequences: catalogue.definition.sequences ?? [],
+    workflows: productionWorkflows(d, spaceId),
   }
 }
 

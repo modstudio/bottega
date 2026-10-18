@@ -101,6 +101,12 @@ import {
   upsertRecordScore,
   voidRecordRun,
 } from './record-verdicts.ts'
+import {
+  draftRecordWorkflow,
+  listRecordWorkflowCatalogue,
+  promoteRecordWorkflow,
+  retireRecordWorkflow,
+} from './record-workflow-catalogue.ts'
 
 type ServerEnvironment = Record<string, string | undefined>
 
@@ -200,6 +206,15 @@ function recordLensDependencies() {
   }
 }
 
+function recordWorkflowDependencies() {
+  return {
+    listWorkflowCatalogue: listRecordWorkflowCatalogue,
+    draftWorkflow: draftRecordWorkflow,
+    promoteWorkflow: promoteRecordWorkflow,
+    retireWorkflow: retireRecordWorkflow,
+  }
+}
+
 export async function startRecordApiServer(environment: ServerEnvironment = process.env) {
   const config = recordApiServerConfig(environment)
   const auth = recordAuth(config.recordUrl, environment, config.authDatabaseUrl)
@@ -222,6 +237,7 @@ export async function startRecordApiServer(environment: ServerEnvironment = proc
     upsertProject: upsertRecordProject,
     retireProject: retireRecordProject,
     ...recordLensDependencies(),
+    ...recordWorkflowDependencies(),
     listSubjects: listRecordSubjects,
     addSubject: addRecordSubject,
     renameSubject: renameRecordSubject,

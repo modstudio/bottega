@@ -29,6 +29,10 @@ import { type RecordReleaseRouteDeps, registerRecordReleaseRoutes } from './reco
 import { registerRecordRequestSpace } from './record-api-request-space.ts'
 import { type RecordSubjectRouteDeps, registerRecordSubjectRoutes } from './record-api-subjects.ts'
 import { type RecordSyncRouteDeps, registerRecordSyncRoute } from './record-api-sync.ts'
+import {
+  type RecordWorkflowRouteDeps,
+  registerRecordWorkflowRoutes,
+} from './record-api-workflow.ts'
 import { registerRecordWriteRoutes } from './record-api-write-routes.ts'
 import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import { RecordBoardError } from './record-board-contract.ts'
@@ -89,6 +93,7 @@ type Deps = RecordSubjectRouteDeps &
   RecordReleaseRouteDeps &
   RecordSyncRouteDeps &
   RecordLensRouteDeps &
+  RecordWorkflowRouteDeps &
   RecordApiDeps
 type RecordApiDeps = RecordInvitationRouteDeps & {
   clientAddresses: RecordClientAddresses
@@ -286,10 +291,12 @@ function registerCatalogueWriteRoutes(
   app: Hono<ApiEnvironment>,
   deps: Deps,
   ports: Parameters<typeof registerRecordWriteRoutes>[2] &
-    Parameters<typeof registerRecordLensRoutes>[2],
+    Parameters<typeof registerRecordLensRoutes>[2] &
+    Parameters<typeof registerRecordWorkflowRoutes>[2],
 ): void {
   registerRecordWriteRoutes(app, deps, ports)
   registerRecordLensRoutes(app, deps, ports)
+  registerRecordWorkflowRoutes(app, deps, ports)
 }
 
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {

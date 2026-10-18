@@ -13,6 +13,7 @@ import { recordApiClient } from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { pullLensCatalogue } from './record-cache-lens.ts'
 import { recordCacheSpaceOwnsAddress } from './record-cache-ownership.ts'
+import { pullWorkflowCatalogue } from './record-cache-workflow.ts'
 import {
   decodeRecordCursor,
   encodeRecordCursor,
@@ -217,6 +218,7 @@ export async function pullRecordCache(local: Database = db()): Promise<{
   skippedSubjects: number
   scores: number
   lensCatalogue: number
+  workflowCatalogue: number
 }> {
   const hasMeta = local
     .query<{ n: number }, []>(
@@ -224,7 +226,15 @@ export async function pullRecordCache(local: Database = db()): Promise<{
     )
     .get()
   if (!hasMeta)
-    return { docs: 0, skippedDocs: 0, subjects: 0, skippedSubjects: 0, scores: 0, lensCatalogue: 0 }
+    return {
+      docs: 0,
+      skippedDocs: 0,
+      subjects: 0,
+      skippedSubjects: 0,
+      scores: 0,
+      lensCatalogue: 0,
+      workflowCatalogue: 0,
+    }
   const client = recordApiClient()
   const identity = await client.whoami()
   if (!identity.activeSpaceId) throw new Error(noActiveRecordSpaceRefusal())
@@ -233,6 +243,7 @@ export async function pullRecordCache(local: Database = db()): Promise<{
   const pulledSubjects = await pullSubjects(local, cache.spaces, cache.projectSpaces)
   const pulledDocs = await pullDocs(local, identity, cache.spaces, cache.projectSpaces)
   const lensCatalogue = await pullLensCatalogue(local, cache.spaces)
+  const workflowCatalogue = await pullWorkflowCatalogue(local, cache.spaces)
   rememberProjectLensSpaces(local, cache.projectSpaces)
   let scores = 0
   let scoreCursor = readCursor(local, SCORES_CURSOR)
@@ -249,7 +260,7 @@ export async function pullRecordCache(local: Database = db()): Promise<{
     }, local)
     if (!page.nextCursor) break
   }
-  return { ...pulledDocs, ...pulledSubjects, scores, lensCatalogue }
+  return { ...pulledDocs, ...pulledSubjects, scores, lensCatalogue, workflowCatalogue }
 }
 
 async function pullSubjects(

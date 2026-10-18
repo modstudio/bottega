@@ -17,6 +17,7 @@ import { spaceIdentity, tenantPolicies } from './schema.ts'
 
 const identity = () => uuid('id').primaryKey()
 const recordedAt = (name: string) => timestamp(name, { withTimezone: true }).notNull()
+const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 const sameSpaceIdentity = <
   T extends { spaceId: ReturnType<typeof spaceIdentity>; id: ReturnType<typeof identity> },
 >(
@@ -31,10 +32,12 @@ export const workflow = pgTable.withRLS(
     spaceId: spaceIdentity(),
     slug: text().notNull(),
     createdAt: recordedAt('created_at'),
+    updatedAt: updatedAt(),
   },
   (table) => [
     unique('workflow_space_slug_unique').on(table.spaceId, table.slug),
     sameSpaceIdentity('workflow_space_id_unique', table),
+    index('workflow_space_updated_id_idx').on(table.spaceId, table.updatedAt, table.id),
     ...tenantPolicies('workflow', table.spaceId),
   ],
 )
@@ -53,6 +56,7 @@ export const workflowVersion = pgTable.withRLS(
     createdAt: recordedAt('created_at'),
     promotedAt: timestamp('promoted_at', { withTimezone: true }),
     retiredAt: timestamp('retired_at', { withTimezone: true }),
+    updatedAt: updatedAt(),
   },
   (table) => [
     check('workflow_version_n_check', sql`${table.n} > 0`),
@@ -67,6 +71,7 @@ export const workflowVersion = pgTable.withRLS(
       .on(table.workflowId)
       .where(sql`${table.status} = 'production'`),
     sameSpaceIdentity('workflow_version_space_id_unique', table),
+    index('workflow_version_space_updated_id_idx').on(table.spaceId, table.updatedAt, table.id),
     foreignKey({
       columns: [table.spaceId, table.workflowId],
       foreignColumns: [workflow.spaceId, workflow.id],
@@ -112,10 +117,12 @@ export const stepCatalogue = pgTable.withRLS(
     spaceId: spaceIdentity(),
     slug: text().notNull(),
     createdAt: recordedAt('created_at'),
+    updatedAt: updatedAt(),
   },
   (table) => [
     unique('step_catalogue_space_slug_unique').on(table.spaceId, table.slug),
     sameSpaceIdentity('step_catalogue_space_id_unique', table),
+    index('step_catalogue_space_updated_id_idx').on(table.spaceId, table.updatedAt, table.id),
     ...tenantPolicies('step_catalogue', table.spaceId),
   ],
 )
@@ -134,6 +141,7 @@ export const stepCatalogueVersion = pgTable.withRLS(
     createdAt: recordedAt('created_at'),
     promotedAt: timestamp('promoted_at', { withTimezone: true }),
     retiredAt: timestamp('retired_at', { withTimezone: true }),
+    updatedAt: updatedAt(),
   },
   (table) => [
     check('step_catalogue_version_n_check', sql`${table.n} > 0`),
@@ -148,6 +156,11 @@ export const stepCatalogueVersion = pgTable.withRLS(
       .on(table.catalogueId)
       .where(sql`${table.status} = 'production'`),
     sameSpaceIdentity('step_catalogue_version_space_id_unique', table),
+    index('step_catalogue_version_space_updated_id_idx').on(
+      table.spaceId,
+      table.updatedAt,
+      table.id,
+    ),
     foreignKey({
       columns: [table.spaceId, table.catalogueId],
       foreignColumns: [stepCatalogue.spaceId, stepCatalogue.id],

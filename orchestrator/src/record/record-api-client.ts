@@ -36,6 +36,7 @@ import {
   type RecordSnapshotAndPublicDocMethod,
   subjectMutationBody,
 } from './record-api-client-paths.ts'
+import { type RecordWorkflowClient, recordWorkflowClient } from './record-api-client-workflow.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import type {
   HostedBoardAcceptInput,
@@ -192,7 +193,8 @@ export type {
 } from './record-api-client-paths.ts'
 
 export type RecordApiClient = ProjectIdentityClient &
-  RecordLensClient & {
+  RecordLensClient &
+  RecordWorkflowClient & {
     whoami(): Promise<RecordIdentity>
     sync?(input: RecordSyncRequest): Promise<RecordSyncResponse>
     createOrganization(input: { name: string; slug: string }): Promise<{ id: string; slug: string }>
@@ -704,6 +706,7 @@ export function recordApiClient(request = defaultRequest): RecordApiClient {
     ...recordDocReadClient(request),
     ...recordDocWriteClient(request),
     ...recordLensClient(request),
+    ...recordWorkflowClient(request),
     ...projectIdentityClient(request),
     ...recordProjectSubjectClient(request),
     ...recordRunClient(request),
