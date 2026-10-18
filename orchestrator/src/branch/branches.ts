@@ -300,6 +300,7 @@ function branchReportFor(
   project: Project,
   options: {
     key?: string
+    branch?: string
     allLocal?: boolean
     repairLandings?: boolean
     dryRunLandingRepair?: boolean
@@ -335,6 +336,7 @@ function branchReportFor(
   const protectedRuns = new Map<string, RunRow[]>()
   for (const run of runs) {
     if (!run.minted_branch || !branches.has(run.minted_branch)) continue
+    if (options.branch !== undefined && run.minted_branch !== options.branch) continue
     const key = run.launch_key ?? 'unkeyed'
     if (options.key !== undefined && key !== options.key) continue
     if (
@@ -615,6 +617,7 @@ function observationError(project: Project, error: unknown): BranchReportProject
 export function branchesReport(options: {
   project?: string
   key?: string
+  branch?: string
   allLocal?: boolean
   repairLandings?: boolean
   dryRunLandingRepair?: boolean
@@ -740,6 +743,48 @@ function deleteAndSettleBranch(
     const reason = error instanceof Error ? error.message : String(error)
     report.errors.push(`${row.branch}: branch deleted but claims could not be settled: ${reason}`)
   }
+}
+
+/** Observe and prune one exact run-minted branch without widening through its task key. */
+export function pruneBranch(options: {
+  project: string
+  branch: string
+  dryRun?: boolean
+}): BranchPruneReport {
+  const observed = branchesReport({
+    project: options.project,
+    branch: options.branch,
+    repairLandings: true,
+    dryRunLandingRepair: options.dryRun,
+  })
+  const projectReport = observed.projects[0]!
+  if (projectReport.error) throw new Error(projectReport.error)
+  const project = projectByName(options.project)!
+  const report: BranchPruneReport = {
+    project: options.project,
+    key: null,
+    allLocal: false,
+    dryRun: options.dryRun ?? false,
+    deleted: [],
+    wouldDelete: [],
+    kept: [],
+    operator: [],
+    recordedLandings: projectReport.recordedLandings,
+    wouldRecordLandings: projectReport.wouldRecordLandings,
+    observations: projectReport.observations,
+    errors: [],
+  }
+  const row = projectReport.keys
+    .flatMap((key) => key.branches)
+    .find((candidate) => candidate.branch === options.branch)
+  if (!row) return report
+  if (listOperatorBranch(row, report)) return report
+  if (report.dryRun) {
+    if (tipStillEligible(project, row, report)) report.wouldDelete.push(row.branch)
+  } else {
+    deleteAndSettleBranch(project, row, report)
+  }
+  return report
 }
 
 /** Observe once, then delete only branches whose safety facts still hold. */

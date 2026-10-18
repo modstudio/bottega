@@ -1,7 +1,11 @@
 import { expect, test } from 'bun:test'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
+import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { type ShipCleanupDependencies, shipCleanup } from './ship-cleanup.ts'
 
 function addProject(): string {
@@ -10,6 +14,26 @@ function addProject(): string {
     .query('INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?)')
     .run(recordId, 'ship-fixture', '/fixture', 'bun', JSON.stringify({ trunk: 'main' }))
   return recordId
+}
+
+function addLanding(project: string): void {
+  db()
+    .query(
+      `INSERT INTO branch_landing_record
+       (record_id,project,project_record_id,branch,tip,pr_number,merge_commit,merged_at,recorded_at)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+    )
+    .run(
+      newRecordId(),
+      'ship-fixture',
+      project,
+      'DEV-1392-c3',
+      'tip',
+      1392,
+      'merge',
+      '2026-10-18T01:00:00Z',
+      '2026-10-18T01:00:01Z',
+    )
 }
 
 function addRun(
@@ -22,6 +46,7 @@ function addRun(
     parent?: number | null
     worktree?: string | null
     judged?: boolean
+    startedAt?: string
   } = {},
 ): number {
   const row = db()
@@ -33,7 +58,7 @@ function addRun(
     )
     .get(
       newRecordId(),
-      '2026-10-18T00:00:00Z',
+      input.startedAt ?? '2026-10-18T00:00:00Z',
       'codex',
       input.job ?? 'implement',
       project,
@@ -57,6 +82,7 @@ function addRun(
 
 test('ship cleanup gathers branch facts and applies only the pure decision', () => {
   const project = addProject()
+  addLanding(project)
   const root = addRun(project, {
     branch: 'DEV-1392-c2',
     judged: true,
@@ -77,6 +103,16 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
     judged: true,
     worktree: '/trees/landing',
   })
+  const later = addRun(project, {
+    startedAt: '2026-10-18T02:00:00Z',
+    judged: true,
+    worktree: '/trees/later',
+  })
+  const archiveRoot = mkdtempSync(join(tmpdir(), 'ship-cleanup-archive-'))
+  const lensArchive = join(archiveRoot, 'lens')
+  const lensPointer = join(runArtifactsDir(lens), 'reader-clone-archive.json')
+  mkdirSync(runScratchDir(lens), { recursive: true })
+  writeFileSync(join(runScratchDir(lens), 'scratch.txt'), 'scratch')
   const removed = new Set<string>()
   const closed: number[] = []
   const pruned: string[][] = []
@@ -84,10 +120,16 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
     landingState: () => 'landed',
     closeOut: (id) => {
       closed.push(id)
+      if (id === lens) {
+        mkdirSync(lensArchive, { recursive: true })
+        writeFileSync(join(lensArchive, 'clone.txt'), 'clone')
+        mkdirSync(runArtifactsDir(lens), { recursive: true })
+        writeFileSync(lensPointer, `${JSON.stringify({ path: lensArchive })}\n`)
+      }
       return { outcome: 'released', detail: 'released' }
     },
-    prune: (name, branch, key) => {
-      pruned.push([name, branch, key])
+    prune: (name, branch) => {
+      pruned.push([name, branch])
       return { deleted: [branch], kept: [], errors: [] }
     },
     measure: (paths) => ({
@@ -97,6 +139,11 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
     }),
     remove: (path) => {
       removed.add(path)
+      rmSync(path, { recursive: true, force: true })
+    },
+    readerCloneArchive: (id) => {
+      if (id !== lens || !existsSync(lensPointer)) return null
+      return (JSON.parse(readFileSync(lensPointer, 'utf8')) as { path: string }).path
     },
   }
 
@@ -113,6 +160,7 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
   expect(closed).not.toContain(live)
   expect(closed).not.toContain(sibling)
   expect(closed).not.toContain(keyless)
+  expect(closed).not.toContain(later)
   expect(report.kept).toContainEqual({
     item: `run ${unscored} artifacts and scratch`,
     reason: 'run has no recorded verdict',
@@ -122,5 +170,9 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
     item: `run ${live} artifacts and scratch and worktree`,
     reason: 'run is live (running)',
   })
-  expect(pruned).toEqual([['ship-fixture', 'DEV-1392-c3', 'DEV-1392']])
+  expect(pruned).toEqual([['ship-fixture', 'DEV-1392-c3']])
+  expect(existsSync(runArtifactsDir(lens))).toBe(false)
+  expect(existsSync(runScratchDir(lens))).toBe(false)
+  expect(existsSync(lensArchive)).toBe(false)
+  rmSync(archiveRoot, { recursive: true, force: true })
 })

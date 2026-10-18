@@ -6,6 +6,7 @@ const SHIP_CLEANUP_TERMINAL_STATUSES = new Set(['ok', 'failed', 'stale', 'stoppe
 export type ShipCleanupRunFact = {
   id: number
   rootId: number
+  startedAt: string
   job: string
   status: string
   branch: string | null
@@ -21,12 +22,18 @@ export type ShipCleanupRunDecision = ShipCleanupRunFact & {
   reason: string
 }
 
+function startedByLanding(startedAt: string, landingMergedAt: string): boolean {
+  return Date.parse(startedAt) <= Date.parse(landingMergedAt)
+}
+
 function scopeFor(
   run: ShipCleanupRunFact,
   branch: string,
+  landingMergedAt: string,
   branchChainRoots: ReadonlySet<number>,
 ): ShipCleanupRunDecision['scope'] {
   if (!run.launchKey || !run.branch) return 'outside'
+  if (!startedByLanding(run.startedAt, landingMergedAt)) return 'outside'
   if (run.job === 'landing-tree' && run.branch === branch) return 'landing-tree'
   if (run.job === 'review-lens' && run.branch === branch) return 'review-lens'
   return branchChainRoots.has(run.rootId) ? 'chain' : 'outside'
@@ -35,6 +42,7 @@ function scopeFor(
 /** Decide removal independently for each run; turns inherit their root verdict in gathered facts. */
 export function decideShipCleanup(
   branch: string,
+  landingMergedAt: string,
   runs: readonly ShipCleanupRunFact[],
 ): ShipCleanupRunDecision[] {
   const branchChainRoots = new Set(
@@ -42,6 +50,7 @@ export function decideShipCleanup(
       .filter(
         (run) =>
           run.launchKey &&
+          startedByLanding(run.startedAt, landingMergedAt) &&
           run.branch === branch &&
           run.job !== 'review-lens' &&
           run.job !== 'landing-tree',
@@ -49,18 +58,21 @@ export function decideShipCleanup(
       .map((run) => run.rootId),
   )
   return runs.map((run) => {
-    const scope = scopeFor(run, branch, branchChainRoots)
+    const scope = scopeFor(run, branch, landingMergedAt, branchChainRoots)
     if (scope === 'outside') {
       return {
         ...run,
         scope,
         artifacts: 'ignore',
         worktreeAction: 'ignore',
-        reason: !run.launchKey
-          ? 'run has no task key'
-          : !run.branch
-            ? 'run has no branch'
-            : `run belongs to branch ${run.branch}`,
+        reason:
+          !startedByLanding(run.startedAt, landingMergedAt)
+            ? `run started after branch landed at ${landingMergedAt}`
+            : !run.launchKey
+              ? 'run has no task key'
+              : !run.branch
+                ? 'run has no branch'
+                : `run belongs to branch ${run.branch}`,
       }
     }
     if (!SHIP_CLEANUP_TERMINAL_STATUSES.has(run.status)) {

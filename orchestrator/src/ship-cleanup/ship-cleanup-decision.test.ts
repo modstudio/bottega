@@ -4,6 +4,7 @@ import { decideShipCleanup, type ShipCleanupRunFact } from './ship-cleanup-decis
 const run = (overrides: Partial<ShipCleanupRunFact> = {}): ShipCleanupRunFact => ({
   id: 1,
   rootId: 1,
+  startedAt: '2026-10-18T00:00:00Z',
   job: 'implement',
   status: 'ok',
   branch: 'DEV-1392-c3',
@@ -14,8 +15,11 @@ const run = (overrides: Partial<ShipCleanupRunFact> = {}): ShipCleanupRunFact =>
 })
 
 describe('ship cleanup decision', () => {
+  const decide = (runs: ShipCleanupRunFact[]) =>
+    decideShipCleanup('DEV-1392-c3', '2026-10-18T01:00:00Z', runs)
+
   test('leaves a sibling branch on the same key alone', () => {
-    expect(decideShipCleanup('DEV-1392-c3', [run({ branch: 'DEV-1392-c2' })])[0]).toMatchObject({
+    expect(decide([run({ branch: 'DEV-1392-c2' })])[0]).toMatchObject({
       scope: 'outside',
       artifacts: 'ignore',
       worktreeAction: 'ignore',
@@ -23,7 +27,7 @@ describe('ship cleanup decision', () => {
   })
 
   test('covers the root and turns of the chain that reached the merged branch', () => {
-    const decisions = decideShipCleanup('DEV-1392-c3', [
+    const decisions = decide([
       run({ id: 1, rootId: 1, branch: 'DEV-1392-c2' }),
       run({ id: 2, rootId: 1, branch: 'DEV-1392-c3' }),
       run({ id: 3, rootId: 3, branch: 'DEV-1392-c2' }),
@@ -36,7 +40,7 @@ describe('ship cleanup decision', () => {
   })
 
   test('keeps an unscored run artifacts and names the missing verdict', () => {
-    expect(decideShipCleanup('DEV-1392-c3', [run({ judged: false })])[0]).toMatchObject({
+    expect(decide([run({ judged: false })])[0]).toMatchObject({
       artifacts: 'keep',
       worktreeAction: 'close',
       reason: 'run has no recorded verdict',
@@ -44,7 +48,7 @@ describe('ship cleanup decision', () => {
   })
 
   test('skips a live run', () => {
-    expect(decideShipCleanup('DEV-1392-c3', [run({ status: 'asking' })])[0]).toMatchObject({
+    expect(decide([run({ status: 'asking' })])[0]).toMatchObject({
       artifacts: 'keep',
       worktreeAction: 'keep',
       reason: 'run is live (asking)',
@@ -52,7 +56,7 @@ describe('ship cleanup decision', () => {
   })
 
   test('removes a lens run that targeted the branch', () => {
-    expect(decideShipCleanup('DEV-1392-c3', [run({ job: 'review-lens' })])[0]).toMatchObject({
+    expect(decide([run({ job: 'review-lens' })])[0]).toMatchObject({
       scope: 'review-lens',
       artifacts: 'remove',
       worktreeAction: 'close',
@@ -60,11 +64,20 @@ describe('ship cleanup decision', () => {
   })
 
   test('leaves a keyless run alone', () => {
-    expect(decideShipCleanup('DEV-1392-c3', [run({ launchKey: null })])[0]).toMatchObject({
+    expect(decide([run({ launchKey: null })])[0]).toMatchObject({
       scope: 'outside',
       artifacts: 'ignore',
       worktreeAction: 'ignore',
       reason: 'run has no task key',
+    })
+  })
+
+  test('leaves a later run that reused the merged branch name alone', () => {
+    expect(decide([run({ startedAt: '2026-10-18T02:00:00Z' })])[0]).toMatchObject({
+      scope: 'outside',
+      artifacts: 'ignore',
+      worktreeAction: 'ignore',
+      reason: 'run started after branch landed at 2026-10-18T01:00:00Z',
     })
   })
 })

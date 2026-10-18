@@ -1,7 +1,8 @@
 // concern: monitor-storage-conditions
 /** Pure storage measurements, rankings, and disk-pressure decisions. */
 
-export const STORAGE_WALK_ENTRY_LIMIT = 1_000_000
+import { STORAGE_WALK_ENTRY_LIMIT } from '../storage-walk.ts'
+
 const FREE_SPACE_PROPORTION_THRESHOLD = 0.1
 export const FREE_SPACE_ABSOLUTE_FLOOR_BYTES = 20 * 1024 ** 3
 const LARGEST_RUN_LIMIT = 10
@@ -46,19 +47,6 @@ export type StoragePressureCondition = {
     reportCommand: 'machine storage'
     reclaimCommand: 'machine reclaim worktree, sandbox, or stale-run'
   }
-}
-
-/** Count a multiply linked regular file only at its first path, while preserving visited entries. */
-export function deduplicateHardLinkedBytes<T extends { bytes: number; hardLinkKey: string | null }>(
-  observations: readonly T[],
-): T[] {
-  const seen = new Set<string>()
-  return observations.map((observation) => {
-    if (observation.hardLinkKey === null) return { ...observation }
-    if (seen.has(observation.hardLinkKey)) return { ...observation, bytes: 0 }
-    seen.add(observation.hardLinkKey)
-    return { ...observation }
-  })
 }
 
 /** Turn bounded observations into an honest total without filesystem access. */

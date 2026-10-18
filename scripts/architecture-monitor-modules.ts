@@ -69,16 +69,16 @@ export const monitorModules: MonitorModule[] = [
   ]),
   module('orchestrator/src/monitor/storage-report.ts', [
     'node:fs',
-    'node:fs/promises',
     'node:path',
     '../../../shared/brand.ts',
     '../../../shared/state-directory.ts',
     '../database/db.ts',
     '../project/projects.ts',
+    '../storage-walk.ts',
     './storage-conditions.ts',
     './monitor-types.ts',
   ]),
-  module('orchestrator/src/monitor/storage-conditions.ts', []),
+  module('orchestrator/src/monitor/storage-conditions.ts', ['../storage-walk.ts']),
   module('orchestrator/src/monitor/storage-commands.ts', ['./storage-report.ts']),
   module('orchestrator/src/monitor/orphan-inventory-conditions.ts', [
     '../../../shared/brand.ts',

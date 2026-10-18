@@ -6,6 +6,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { recordBranchLanding } from '../branch/branch-landing-service.ts'
 import { writableDb } from '../database/db.ts'
 import { passingGateForCommit } from '../gate/gate-passed.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
@@ -79,7 +80,7 @@ export type PullRequestMergeAdapter = {
   enqueue(cwd: string, number: number, headCommit: string): void
   now(): number
   wait(milliseconds: number): void
-  shipCleanup?(project: string, branch: string, database: Database): string
+  shipCleanup?(project: string, branch: string, prNumber: number, database: Database): string
 }
 
 type ProcessResult = { exitCode: number; stdout: string; stderr: string }
@@ -259,7 +260,8 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
   wait(milliseconds) {
     Bun.sleepSync(milliseconds)
   },
-  shipCleanup(project, branch, database) {
+  shipCleanup(project, branch, prNumber, database) {
+    recordBranchLanding(branch, prNumber)
     return formatShipCleanup(shipCleanup(branch, { project, confirmedLanded: true, database }))
   },
 }
@@ -408,11 +410,12 @@ function mergedPullRequestOutput(input: {
   database: Database
   project: string
   branch: string
+  prNumber: number
   mergeCommit: string
 }): string {
   if (!input.adapter.shipCleanup) return input.mergeCommit
   try {
-    return `${input.mergeCommit}\n${input.adapter.shipCleanup(input.project, input.branch, input.database)}`
+    return `${input.mergeCommit}\n${input.adapter.shipCleanup(input.project, input.branch, input.prNumber, input.database)}`
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : String(cause)
     return (
@@ -500,6 +503,7 @@ export function mergePullRequest(
     database,
     project: project.name,
     branch: pullRequest.headBranch,
+    prNumber: pullRequest.number,
     mergeCommit,
   })
 }
