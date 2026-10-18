@@ -34,6 +34,7 @@ import { mcpCommand } from '../mcp/mcp-commands.ts'
 import { readerMcpProxyCommand } from '../mcp/mcp-reader-proxy.ts'
 import { metricCommand } from '../metric/metric-commands.ts'
 import { monitorCommand } from '../monitor/monitor-commands.ts'
+import { storageCommand } from '../monitor/storage-commands.ts'
 import { relayCommand, waitingCommand } from '../operator/operator-commands.ts'
 import { projectAt } from '../project/projects.ts'
 import { treeRefreshCommand } from '../recipe/tree-refresh.ts'
@@ -183,6 +184,12 @@ function registerMachineAttentionCommands(program: Command): void {
         { ...presentation, write: writeStdout },
       ),
     )
+  program
+    .command('storage')
+    .description('measure run, worktree, store, and volume storage')
+    .option('--json', 'write the storage report as JSON')
+    .allowExcessArguments(false)
+    .action((options) => storageCommand(Boolean(options.json), { write: writeStdout }))
   program
     .command('reclaim <kind> [subject]')
     .description('reclaim one classified stale resource')

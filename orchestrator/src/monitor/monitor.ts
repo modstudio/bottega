@@ -86,12 +86,24 @@ import {
 } from './orphan-inventory-conditions.ts'
 import { observeRatchetedRuleRefills } from './ratcheted-rule-conditions.ts'
 import { observeProjectReleaseLive } from './release-live-observation.ts'
+import { diskPressureObservation } from './storage-report.ts'
 
 const TERMINAL_STATUSES = new Set(['ok', 'failed', 'stale', 'stopped'])
 const TERMINAL_CLOSE_OUT_NOTICE_KINDS = {
   held: 'terminal-close-out-held',
   failed: 'terminal-close-out-failed',
 } as const satisfies Record<'held' | 'failed', MonitorNoticeKind>
+
+async function initialMonitorObservations(clock: number): Promise<{
+  conditions: MonitorCondition[]
+  errors: string[]
+}> {
+  const diskPressure = await diskPressureObservation(clock)
+  return {
+    conditions: [...staleCustomerGuideCommandConditions(), ...diskPressure.conditions],
+    errors: diskPressure.errors,
+  }
+}
 
 function recipeDatabaseObservations(
   project: Project,
@@ -534,8 +546,7 @@ export async function monitor(
 ): Promise<MonitorResult> {
   const startedAt = new Date(clock).toISOString()
   const { database, invocation } = startMonitorInvocation(trigger, startedAt)
-  const conditions: MonitorCondition[] = staleCustomerGuideCommandConditions()
-  const errors: string[] = []
+  const { conditions, errors } = await initialMonitorObservations(clock)
   const canonRows = allInjectChecks()
   const canon = {
     findings: canonRows.reduce(

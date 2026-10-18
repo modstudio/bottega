@@ -55,6 +55,7 @@ upkeep of this machine
 - [bottega machine setup facts](#bottega-machine-setup-facts)
 - [bottega machine setup plan](#bottega-machine-setup-plan)
 - [bottega machine setup-ask](#bottega-machine-setup-ask)
+- [bottega machine storage](#bottega-machine-storage)
 - [bottega machine sweep](#bottega-machine-sweep)
 
 ## bottega machine
@@ -79,6 +80,7 @@ upkeep of this machine
 - [bottega machine settings](./machine.md#bottega-machine-settings)
 - [bottega machine setup](./machine.md#bottega-machine-setup)
 - [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
+- [bottega machine storage](./machine.md#bottega-machine-storage)
 - [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine blockers
@@ -798,6 +800,20 @@ plan recommended machine setup actions
 **Synopsis:** `bottega machine setup-ask`
 
 install the live worker question channel
+
+### Related
+
+- [bottega machine](./machine.md#bottega-machine)
+
+## bottega machine storage
+
+**Synopsis:** `bottega machine storage [--json]`
+
+measure run, worktree, store, and volume storage
+
+### Options
+
+- `--json`: write the storage report as JSON
 
 ### Related
 

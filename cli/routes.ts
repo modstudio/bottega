@@ -216,6 +216,7 @@ export const ROUTES = (
       'health',
       'blockers',
       'monitor',
+      'storage',
       'sweep',
       'reclaim',
       'config',
