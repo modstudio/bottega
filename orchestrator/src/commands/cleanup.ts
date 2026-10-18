@@ -58,12 +58,14 @@ export function register(program: Command): void {
     .option('--project <value>', 'registered project whose resources are swept')
     .option('--force', 'continue despite a project sweep failure')
     .option('--dry-run', 'report releases without applying them')
+    .option('--verbose', 'list every kept run artifact')
     .allowExcessArguments(false)
     .action(async (options) => {
       const flags = optionFlags(options)
       await sweepRuns(
         {
           dryRun: flags.has('dry-run'),
+          verbose: flags.has('verbose'),
           project: flags.flag('project'),
           force: flags.has('force'),
           presentation,

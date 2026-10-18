@@ -821,7 +821,7 @@ measure run, worktree, store, and volume storage
 
 ## bottega machine sweep
 
-**Synopsis:** `bottega machine sweep [--project <value>] [--force] [--dry-run]`
+**Synopsis:** `bottega machine sweep [--project <value>] [--force] [--dry-run] [--verbose]`
 
 release terminal runs and reclaim safe stale resources
 
@@ -830,6 +830,7 @@ release terminal runs and reclaim safe stale resources
 - `--project <value>`: registered project whose resources are swept
 - `--force`: continue despite a project sweep failure
 - `--dry-run`: report releases without applying them
+- `--verbose`: list every kept run artifact
 
 ### Related
 

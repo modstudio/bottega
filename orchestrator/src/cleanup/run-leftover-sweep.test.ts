@@ -13,7 +13,11 @@ import {
   runScratchDir,
 } from '../run/run-artifacts.ts'
 import type { CleanupPresentation } from './cleanup.ts'
-import { sweepRunLeftovers } from './run-leftover-sweep.ts'
+import {
+  keptRunLeftoverLines,
+  RUN_LEFTOVER_REPORT_EXAMPLES,
+  sweepRunLeftovers,
+} from './run-leftover-sweep.ts'
 
 const clock = Date.parse('2026-10-18T12:00:00.000Z')
 const old = new Date(clock - 4 * 24 * 60 * 60 * 1000)
@@ -93,7 +97,7 @@ describe('scheduled run leftover sweep adapter', () => {
     expect(result.freed).toEqual(dry.freed)
   })
 
-  test('keeps old unjudged artifacts with the score remedy', () => {
+  test('keeps old unjudged artifacts with the pending-scores remedy', () => {
     const root = runsRoot()
     const runId = addRun({
       agent: 'codex',
@@ -116,7 +120,8 @@ describe('scheduled run leftover sweep adapter', () => {
     })
 
     expect(existsSync(artifacts)).toBeTrue()
-    expect(lines.join('\n')).toContain(`remedy: ${PLATFORM_SLUG} score ${runId}`)
+    expect(lines.join('\n')).toContain(`example runs: ${runId}`)
+    expect(lines.join('\n')).toContain(`${PLATFORM_SLUG} score pending lists every unjudged run`)
 
     const dry = sweepRunLeftovers({
       dryRun: true,
@@ -129,6 +134,53 @@ describe('scheduled run leftover sweep adapter', () => {
     })
     expect(dry.freed.artifacts).toBeGreaterThan(0)
     expect(existsSync(artifacts)).toBeTrue()
+  })
+
+  test('summarizes many measured candidates under one reason with five examples', () => {
+    const kept = Array.from({ length: RUN_LEFTOVER_REPORT_EXAMPLES + 2 }, (_, index) => ({
+      path: `/runs/${index + 1}/artifacts`,
+      kind: 'artifacts' as const,
+      runId: index + 1,
+      reason: 'run has no recorded verdict',
+      bytes: 10,
+      complete: true,
+      remedy: 'score' as const,
+    }))
+
+    expect(keptRunLeftoverLines(kept, false)).toEqual([
+      'kept 7 run artifacts with no recorded verdict (70 bytes); example runs: 1, 2, 3, 4, 5; and 2 more',
+      `  ${PLATFORM_SLUG} score pending lists every unjudged run`,
+    ])
+  })
+
+  test('summarizes mixed reasons separately and verbose lists every item', () => {
+    const kept = [
+      {
+        path: '/runs/1/scratch',
+        kind: 'scratch' as const,
+        runId: 1,
+        reason: 'run is not older than the run leftover age cap',
+        bytes: 8,
+        complete: true,
+      },
+      {
+        path: '/runs/2/scratch',
+        kind: 'scratch' as const,
+        runId: 2,
+        reason: 'run is live (asking)',
+        bytes: 9,
+        complete: true,
+      },
+    ]
+
+    expect(keptRunLeftoverLines(kept, false)).toEqual([
+      'kept 1 run scratch directory not older than the run leftover age cap (8 bytes); example paths: /runs/1/scratch',
+      'kept 1 run scratch directory live (asking) (9 bytes); example paths: /runs/2/scratch',
+    ])
+    expect(keptRunLeftoverLines(kept, true)).toEqual([
+      'kept scratch /runs/1/scratch: run is not older than the run leftover age cap',
+      'kept scratch /runs/2/scratch: run is live (asking)',
+    ])
   })
 
   test('removes only old run-shaped orphans and keeps young and owned directories', () => {
@@ -155,7 +207,7 @@ describe('scheduled run leftover sweep adapter', () => {
     expect(existsSync(oldOrphan)).toBeFalse()
     expect(existsSync(youngOrphan)).toBeTrue()
     expect(ownedDirectories.every(existsSync)).toBeTrue()
-    expect(lines.join('\n')).toContain(`kept orphan ${youngOrphan}`)
+    expect(lines.join('\n')).toContain(`example paths: ${youngOrphan}`)
     for (const path of ownedDirectories) expect(lines.join('\n')).not.toContain(path)
   })
 
@@ -187,11 +239,8 @@ describe('scheduled run leftover sweep adapter', () => {
 
     expect(paths.every(existsSync)).toBeTrue()
     expect(Object.values(result.freed).every((bytes) => bytes === 0)).toBeTrue()
-    for (const path of paths) {
-      expect(
-        lines.some((line) => line.includes(path) && line.includes('run is live (asking)')),
-      ).toBeTrue()
-    }
+    expect(lines).toContainEqual(expect.stringContaining('kept 4 run leftovers live (asking)'))
+    for (const path of paths) expect(lines.join('\n')).toContain(path)
   })
 
   test('reports the sandbox release decision reason when it remains held', () => {
