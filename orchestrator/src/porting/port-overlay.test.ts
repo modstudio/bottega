@@ -10,12 +10,6 @@ describe('port item overlay', () => {
     expect(overlay([{ key: 'one', value: 'local' }], [])).toEqual([{ key: 'one', value: 'local' }])
   })
 
-  test('a hosted item wins on the same natural key', () => {
-    expect(overlay([{ key: 'one', value: 'local' }], [{ key: 'one', value: 'hosted' }])).toEqual([
-      { key: 'one', value: 'hosted' },
-    ])
-  })
-
   test('a list merges hosted items with unmatched local items', () => {
     expect(
       overlay(

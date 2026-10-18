@@ -11,6 +11,14 @@ export const RECORD_PORT_TABLES = [
   'port_skip',
 ] as const
 export type RecordPortTable = (typeof RECORD_PORT_TABLES)[number]
+export const RECORD_PORT_CURSORS = {
+  port_doctrine: { column: 'updated_at', field: 'updatedAt' },
+  port_pair: { column: 'created_at', field: 'createdAt' },
+  port_baseline: { column: 'updated_at', field: 'updatedAt' },
+  port_ref: { column: 'updated_at', field: 'updatedAt' },
+  port_ref_source: { column: 'updated_at', field: 'updatedAt' },
+  port_skip: { column: 'skipped_at', field: 'skippedAt' },
+} as const satisfies Record<RecordPortTable, { column: string; field: string }>
 
 export class RecordPortError extends Error {
   readonly status: number
@@ -77,6 +85,11 @@ const recordPortRows = {
     skippedAt: iso,
   }),
 } as const
+export type RecordPortRowByTable = {
+  [Table in RecordPortTable]: z.infer<(typeof recordPortRows)[Table]>
+}
+export type RecordPortRow<Table extends RecordPortTable = RecordPortTable> =
+  RecordPortRowByTable[Table]
 export const recordPortTableSchema = z.enum(RECORD_PORT_TABLES)
 export const recordPortPageSchema = (table: RecordPortTable) =>
   z.object({

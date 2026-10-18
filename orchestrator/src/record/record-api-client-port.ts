@@ -3,6 +3,7 @@
 import type { RecordRequestDestination } from './record-api-client-paths.ts'
 import {
   type RecordPortTable,
+  type RecordPortRow,
   type RecordPortWriteInput,
   type RecordPortWriteResponse,
   recordPortPageSchema,
@@ -26,7 +27,7 @@ export type RecordPortClient = {
     query: { limit?: number; cursor?: string },
     destination?: RecordRequestDestination,
   ): Promise<{
-    items: Record<string, unknown>[]
+    items: RecordPortRow[]
     nextCursor: string | null
     endCursor?: string | null
   }>

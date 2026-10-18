@@ -5,7 +5,10 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import type { RecordCursor } from './record-cursor.ts'
 import {
+  RECORD_PORT_CURSORS,
   RecordPortError,
+  type RecordPortRow,
+  type RecordPortRowByTable,
   type RecordPortTable,
   type RecordPortWriteInput,
   type RecordPortWriteResponse,
@@ -29,7 +32,26 @@ async function tenant<T>(input: Tenant, use: (tx: SQL) => Promise<T>): Promise<T
   }
 }
 
-function mapped(table: RecordPortTable, row: Record<string, unknown>) {
+function mapped(
+  table: 'port_doctrine',
+  row: Record<string, unknown>,
+): RecordPortRowByTable['port_doctrine']
+function mapped(
+  table: 'port_pair',
+  row: Record<string, unknown>,
+): RecordPortRowByTable['port_pair']
+function mapped(
+  table: 'port_baseline',
+  row: Record<string, unknown>,
+): RecordPortRowByTable['port_baseline']
+function mapped(table: 'port_ref', row: Record<string, unknown>): RecordPortRowByTable['port_ref']
+function mapped(
+  table: 'port_ref_source',
+  row: Record<string, unknown>,
+): RecordPortRowByTable['port_ref_source']
+function mapped(table: 'port_skip', row: Record<string, unknown>): RecordPortRowByTable['port_skip']
+function mapped(table: RecordPortTable, row: Record<string, unknown>): RecordPortRow
+function mapped(table: RecordPortTable, row: Record<string, unknown>): RecordPortRow {
   const common = { id: text(row.id), spaceId: text(row.space_id) }
   switch (table) {
     case 'port_doctrine':
@@ -93,16 +115,13 @@ function mapped(table: RecordPortTable, row: Record<string, unknown>) {
   }
 }
 
-const cursorColumn = (table: RecordPortTable) =>
-  table === 'port_pair' ? 'created_at' : table === 'port_skip' ? 'skipped_at' : 'updated_at'
-
 export async function listRecordPortCatalogue(
   input: Tenant & { table: RecordPortTable; limit: number; cursor: RecordCursor | null },
 ) {
   return tenant(input, async (tx) => {
     const at = input.cursor?.at ?? null
     const id = input.cursor?.id ?? null
-    const column = cursorColumn(input.table)
+    const column = RECORD_PORT_CURSORS[input.table].column
     const rows = await tx.unsafe(
       `SELECT * FROM ${input.table} WHERE space_id=$1::uuid AND ($2::timestamptz IS NULL OR (${column},id)>($2::timestamptz,$3::uuid)) ORDER BY ${column},id LIMIT $4`,
       [input.spaceId, at, id, input.limit + 1],
@@ -134,7 +153,7 @@ async function writeDoctrine(
     const id = newRecordId()
     const rows =
       await tx`INSERT INTO port_doctrine (id,space_id,number,title,body,created_at,version,updated_at) VALUES (${id}::uuid,${input.spaceId}::uuid,${input.number},${input.title},${input.body},${input.createdAt}::timestamptz,1,${input.createdAt}::timestamptz) RETURNING *`
-    return { doctrine: mapped('port_doctrine', rows[0]!) as never }
+    return { doctrine: mapped('port_doctrine', rows[0]!) }
   }
   const rows =
     await tx`SELECT * FROM port_doctrine WHERE space_id=${input.spaceId}::uuid AND number=${input.number} FOR UPDATE`
@@ -143,7 +162,7 @@ async function writeDoctrine(
     stale('doctrine retire', input.expectedVersion, number(rows[0].version))
   const changed =
     await tx`UPDATE port_doctrine SET retired_at=${input.retiredAt}::timestamptz,version=version+1,updated_at=${input.retiredAt}::timestamptz WHERE id=${text(rows[0].id)}::uuid RETURNING *`
-  return { doctrine: mapped('port_doctrine', changed[0]!) as never }
+  return { doctrine: mapped('port_doctrine', changed[0]!) }
 }
 
 async function pair(
@@ -184,8 +203,8 @@ async function writeBaseline(
       await tx`UPDATE port_baseline SET source_commit=${input.sourceCommit},scanned_at=${input.scannedAt}::timestamptz,version=version+1,updated_at=${now}::timestamptz WHERE id=${text(rows[0].id)}::uuid RETURNING *`
   }
   return {
-    pair: mapped('port_pair', pairRow) as never,
-    baseline: mapped('port_baseline', rows[0]!) as never,
+    pair: mapped('port_pair', pairRow),
+    baseline: mapped('port_baseline', rows[0]!),
   }
 }
 
@@ -197,7 +216,7 @@ async function writeSkip(
   const id = newRecordId()
   const rows =
     await tx`INSERT INTO port_skip (id,space_id,pair_id,candidate,reason,skipped_at) VALUES (${id}::uuid,${input.spaceId}::uuid,${text(pairRow.id)}::uuid,${input.candidate},${input.reason},${input.skippedAt}::timestamptz) RETURNING *`
-  return { skip: mapped('port_skip', rows[0]!) as never }
+  return { skip: mapped('port_skip', rows[0]!) }
 }
 
 async function writeRefSet(
@@ -252,8 +271,8 @@ async function writeRefSet(
     }
   }
   return {
-    ref: mapped('port_ref', ref) as never,
-    sources: changed.map((row) => mapped('port_ref_source', row) as never),
+    ref: mapped('port_ref', ref),
+    sources: changed.map((row) => mapped('port_ref_source', row)),
   }
 }
 
@@ -275,15 +294,15 @@ async function writeRefTransition(
     input.action === 'resolve_ref'
       ? await tx`UPDATE port_ref SET resolved_at=${input.at}::timestamptz,version=version+1,updated_at=${input.at}::timestamptz WHERE id=${text(refs[0].id)}::uuid RETURNING *`
       : await tx`UPDATE port_ref SET deleted_at=${input.at}::timestamptz,version=version+1,updated_at=${input.at}::timestamptz WHERE id=${text(refs[0].id)}::uuid RETURNING *`
-  if (input.action === 'resolve_ref') return { ref: mapped('port_ref', changed[0]!) as never }
+  if (input.action === 'resolve_ref') return { ref: mapped('port_ref', changed[0]!) }
   const sources =
     (await tx`UPDATE port_ref_source SET deleted_at=${input.at}::timestamptz,updated_at=${input.at}::timestamptz WHERE space_id=${input.spaceId}::uuid AND ref_id=${text(refs[0].id)}::uuid AND deleted_at IS NULL RETURNING *`) as Record<
       string,
       unknown
     >[]
   return {
-    ref: mapped('port_ref', changed[0]!) as never,
-    sources: sources.map((row) => mapped('port_ref_source', row) as never),
+    ref: mapped('port_ref', changed[0]!),
+    sources: sources.map((row) => mapped('port_ref_source', row)),
   }
 }
 

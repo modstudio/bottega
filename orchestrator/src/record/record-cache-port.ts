@@ -10,7 +10,10 @@ import {
   type RecordCursor,
 } from './record-cursor.ts'
 import {
+  RECORD_PORT_CURSORS,
   RECORD_PORT_TABLES,
+  type RecordPortRow,
+  type RecordPortRowByTable,
   type RecordPortTable,
   type RecordPortWriteResponse,
 } from './record-port-contract.ts'
@@ -78,11 +81,13 @@ async function pullTable(
         count++
       }
       const last = page.items.at(-1)!
-      const timestamp =
-        table === 'port_pair' ? 'createdAt' : table === 'port_skip' ? 'skippedAt' : 'updatedAt'
+      const timestamp = RECORD_PORT_CURSORS[table].field
       current = page.endCursor
         ? decodeRecordCursor(page.endCursor)
-        : { at: String(last[timestamp]), id: String(last.id) }
+        : {
+            at: String((last as RecordPortRow & Record<string, unknown>)[timestamp]),
+            id: last.id,
+          }
       remember(local, key, current)
     }, local)
     if (!page.nextCursor) return { count, completed: true }
@@ -104,20 +109,30 @@ const hasRef = (local: Database, id: unknown, spaceId: unknown) =>
       .query('SELECT 1 FROM port_ref WHERE record_id=? AND space_id=?')
       .get(String(id), String(spaceId)),
   )
-function parentPresent(local: Database, table: RecordPortTable, item: Record<string, unknown>) {
+function parentPresent(local: Database, table: RecordPortTable, item: RecordPortRow) {
   switch (table) {
-    case 'port_pair':
-      return hasProject(local, item.sourceProjectId) && hasProject(local, item.targetProjectId)
+    case 'port_pair': {
+      const row = item as RecordPortRowByTable['port_pair']
+      return hasProject(local, row.sourceProjectId) && hasProject(local, row.targetProjectId)
+    }
     case 'port_baseline':
-    case 'port_skip':
-      return hasPair(local, item.pairId, item.spaceId)
-    case 'port_ref':
-      return hasProject(local, item.targetProjectId)
-    case 'port_ref_source':
+    case 'port_skip': {
+      const row = item as
+        | RecordPortRowByTable['port_baseline']
+        | RecordPortRowByTable['port_skip']
+      return hasPair(local, row.pairId, row.spaceId)
+    }
+    case 'port_ref': {
+      const row = item as RecordPortRowByTable['port_ref']
+      return hasProject(local, row.targetProjectId)
+    }
+    case 'port_ref_source': {
+      const row = item as RecordPortRowByTable['port_ref_source']
       return (
-        (item.deletedAt != null || hasRef(local, item.refId, item.spaceId)) &&
-        hasProject(local, item.sourceProjectId)
+        (row.deletedAt != null || hasRef(local, row.refId, row.spaceId)) &&
+        hasProject(local, row.sourceProjectId)
       )
+    }
     default:
       return true
   }
@@ -126,21 +141,60 @@ function parentPresent(local: Database, table: RecordPortTable, item: Record<str
 const nullable = (value: unknown) => (value == null ? null : String(value))
 export function applyPortCatalogueRow(
   local: Database,
+  table: 'port_doctrine',
+  item: RecordPortRowByTable['port_doctrine'],
+): void
+export function applyPortCatalogueRow(
+  local: Database,
+  table: 'port_pair',
+  item: RecordPortRowByTable['port_pair'],
+): void
+export function applyPortCatalogueRow(
+  local: Database,
+  table: 'port_baseline',
+  item: RecordPortRowByTable['port_baseline'],
+): void
+export function applyPortCatalogueRow(
+  local: Database,
+  table: 'port_ref',
+  item: RecordPortRowByTable['port_ref'],
+): void
+export function applyPortCatalogueRow(
+  local: Database,
+  table: 'port_ref_source',
+  item: RecordPortRowByTable['port_ref_source'],
+): void
+export function applyPortCatalogueRow(
+  local: Database,
+  table: 'port_skip',
+  item: RecordPortRowByTable['port_skip'],
+): void
+export function applyPortCatalogueRow(
+  local: Database,
   table: RecordPortTable,
-  item: Record<string, unknown>,
+  item: RecordPortRow,
+): void
+export function applyPortCatalogueRow(
+  local: Database,
+  table: RecordPortTable,
+  item: RecordPortRow,
 ): void {
-  applicators[table](local, item)
+  switch (table) {
+    case 'port_doctrine':
+      return applyDoctrine(local, item as RecordPortRowByTable['port_doctrine'])
+    case 'port_pair':
+      return applyPair(local, item as RecordPortRowByTable['port_pair'])
+    case 'port_baseline':
+      return applyBaseline(local, item as RecordPortRowByTable['port_baseline'])
+    case 'port_ref':
+      return applyRef(local, item as RecordPortRowByTable['port_ref'])
+    case 'port_ref_source':
+      return applyRefSource(local, item as RecordPortRowByTable['port_ref_source'])
+    case 'port_skip':
+      return applySkip(local, item as RecordPortRowByTable['port_skip'])
+  }
 }
-type Applicator = (local: Database, item: Record<string, unknown>) => void
-const applicators: Record<RecordPortTable, Applicator> = {
-  port_doctrine: applyDoctrine,
-  port_pair: applyPair,
-  port_baseline: applyBaseline,
-  port_ref: applyRef,
-  port_ref_source: applyRefSource,
-  port_skip: applySkip,
-}
-function applyDoctrine(local: Database, item: Record<string, unknown>): void {
+function applyDoctrine(local: Database, item: RecordPortRowByTable['port_doctrine']): void {
   const recordId = String(item.id)
   const spaceId = String(item.spaceId)
   const found =
@@ -174,7 +228,7 @@ function applyDoctrine(local: Database, item: Record<string, unknown>): void {
       )
       .run(recordId, spaceId, Number(item.number), ...values)
 }
-function applyPair(local: Database, item: Record<string, unknown>): void {
+function applyPair(local: Database, item: RecordPortRowByTable['port_pair']): void {
   const recordId = String(item.id)
   const spaceId = String(item.spaceId)
   const found =
@@ -208,14 +262,18 @@ function applyPair(local: Database, item: Record<string, unknown>): void {
       )
       .run(...values)
 }
-function portPairId(local: Database, item: Record<string, unknown>, spaceId: string): number {
+function portPairId(
+  local: Database,
+  item: RecordPortRowByTable['port_baseline'] | RecordPortRowByTable['port_skip'],
+  spaceId: string,
+): number {
   return local
     .query<{ id: number }, [string, string]>(
       'SELECT id FROM port_pair WHERE record_id=? AND space_id=?',
     )
     .get(String(item.pairId), spaceId)!.id
 }
-function applyBaseline(local: Database, item: Record<string, unknown>): void {
+function applyBaseline(local: Database, item: RecordPortRowByTable['port_baseline']): void {
   const recordId = String(item.id)
   const spaceId = String(item.spaceId)
   const pairId = portPairId(local, item, spaceId)
@@ -249,7 +307,7 @@ function applyBaseline(local: Database, item: Record<string, unknown>): void {
       )
       .run(...values)
 }
-function applySkip(local: Database, item: Record<string, unknown>): void {
+function applySkip(local: Database, item: RecordPortRowByTable['port_skip']): void {
   const recordId = String(item.id)
   const spaceId = String(item.spaceId)
   const pairId = portPairId(local, item, spaceId)
@@ -285,7 +343,7 @@ function applySkip(local: Database, item: Record<string, unknown>): void {
       )
       .run(...values)
 }
-function applyRef(local: Database, item: Record<string, unknown>): void {
+function applyRef(local: Database, item: RecordPortRowByTable['port_ref']): void {
   const recordId = String(item.id)
   const spaceId = String(item.spaceId)
   if (item.deletedAt != null) {
@@ -326,7 +384,7 @@ function applyRef(local: Database, item: Record<string, unknown>): void {
       )
       .run(...values)
 }
-function applyRefSource(local: Database, item: Record<string, unknown>): void {
+function applyRefSource(local: Database, item: RecordPortRowByTable['port_ref_source']): void {
   const recordId = String(item.id)
   const spaceId = String(item.spaceId)
   const parent = local

@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { projects, upsertProject } from '../project/projects.ts'
+import { rememberActiveRecordSpace, rememberProjectSpace } from '../project-space.ts'
+import { applyPortCatalogueRow } from '../record/record-cache-port.ts'
 import {
   addDoctrineRuleLocal,
   addPairLocal,
@@ -11,6 +13,7 @@ import {
   listDoctrineRules,
   listLedgerRefs,
   listSkips,
+  pairByProjects,
   type PortPair,
   resolveLedgerRefLocal,
   retireDoctrineRuleLocal,
@@ -200,5 +203,49 @@ describe('porting data model', () => {
       { number: 7, retired_at: '2026-09-02T00:00:00.000Z' },
     ])
     expect(() => addDoctrineRuleLocal(7, 'Replacement', 'Must not reuse seven.')).toThrow()
+  })
+  test('a hosted doctrine retirement hides the matching active local rule', () => {
+    const space = newRecordId()
+    addDoctrineRuleLocal(8, 'Local rule', 'Local body.', '2026-09-01T00:00:00.000Z')
+    rememberActiveRecordSpace(db(), space)
+    applyPortCatalogueRow(db(), 'port_doctrine', {
+      id: newRecordId(),
+      spaceId: space,
+      number: 8,
+      title: 'Hosted rule',
+      body: 'Hosted body.',
+      createdAt: '2026-09-01T00:00:00.000Z',
+      retiredAt: '2026-09-02T00:00:00.000Z',
+      version: 2,
+      updatedAt: '2026-09-02T00:00:00.000Z',
+    })
+
+    expect(listDoctrineRules(false)).toEqual([])
+    expect(listDoctrineRules(true)).toMatchObject([
+      { number: 8, title: 'Hosted rule', retired_at: '2026-09-02T00:00:00.000Z' },
+    ])
+  })
+  test('a local skip survives when routing selects a hosted pair', () => {
+    const sourceId = newRecordId()
+    const targetId = newRecordId()
+    const space = newRecordId()
+    upsertProject({ recordId: sourceId, name: 'skip-source', path: '/w/skip-source', settings: {} })
+    upsertProject({ recordId: targetId, name: 'skip-target', path: '/w/skip-target', settings: {} })
+    const localPair = addPairLocal(sourceId, targetId)
+    addSkipLocal(localPair.id, 'local-candidate', 'keep this skip')
+    rememberProjectSpace(db(), 'skip-target', space)
+    applyPortCatalogueRow(db(), 'port_pair', {
+      id: newRecordId(),
+      spaceId: space,
+      sourceProjectId: sourceId,
+      targetProjectId: targetId,
+      createdAt: '2026-09-03T00:00:00.000Z',
+    })
+
+    const routedPair = pairByProjects(sourceId, targetId)!
+    expect(routedPair.id).not.toBe(localPair.id)
+    expect(listSkips(routedPair.id)).toMatchObject([
+      { candidate: 'local-candidate', reason: 'keep this skip' },
+    ])
   })
 })

@@ -5,7 +5,9 @@ import { z } from 'zod'
 import type { RecordIdentity } from './record-auth.ts'
 import { decodeRecordCursor, pageRecordItems, type RecordCursor } from './record-cursor.ts'
 import {
+  RECORD_PORT_CURSORS,
   RecordPortError,
+  type RecordPortRow,
   type RecordPortTable,
   type RecordPortWriteInput,
   recordPortTableSchema,
@@ -17,7 +19,7 @@ type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[]
 export type RecordPortRouteDeps = {
   listPortCatalogue(
     input: Tenant & { table: RecordPortTable; limit: number; cursor: RecordCursor | null },
-  ): Promise<Record<string, unknown>[]>
+  ): Promise<RecordPortRow[]>
   writePort(input: Tenant & RecordPortWriteInput): Promise<unknown>
 }
 type Ports = {
@@ -50,17 +52,15 @@ export function registerRecordPortRoutes(
       limit: query.data.limit,
       cursor,
     })
-    const timestamp =
-      table.data === 'port_pair'
-        ? 'createdAt'
-        : table.data === 'port_skip'
-          ? 'skippedAt'
-          : 'updatedAt'
+    const timestamp = RECORD_PORT_CURSORS[table.data].field
     return context.json(
       pageRecordItems(
         items,
         query.data.limit,
-        (item) => ({ at: String(item[timestamp]), id: String(item.id) }),
+        (item) => ({
+          at: String((item as RecordPortRow & Record<string, unknown>)[timestamp]),
+          id: item.id,
+        }),
         true,
       ),
     )
