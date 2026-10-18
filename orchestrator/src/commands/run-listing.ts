@@ -29,8 +29,7 @@ const strandedRecovery = (id: number) =>
 export function register(program: Command): void {
   program
     .command('run-identities')
-    .description('list numeric run identities and their durable record ids')
-    .option('--json', 'write the identity map as JSON')
+    .description('print numeric run identities and their durable record ids as JSON')
     .allowExcessArguments(false)
     .action(() => log(JSON.stringify(runIdentityMap())))
 

@@ -58,9 +58,13 @@ describe('run listing', () => {
     const turn = insert('running')
     db().query('UPDATE run SET parent_run_id=?,turn=2 WHERE id=?').run(root, turn)
 
+    const recordId = (id: number) =>
+      db().query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?').get(id)!
+        .record_id
+    expect(recordId(root)).not.toBe(recordId(turn))
     expect(runIdentityMap().filter((row) => row.id === root || row.id === turn)).toEqual([
-      { id: root, record_id: expect.any(String) },
-      { id: turn, record_id: expect.any(String) },
+      { id: root, record_id: recordId(root) },
+      { id: turn, record_id: recordId(turn) },
     ])
   })
 

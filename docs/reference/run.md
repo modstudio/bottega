@@ -132,13 +132,9 @@ remove a run worktree and discard its branch
 
 ## bottega run identity-map
 
-**Synopsis:** `bottega run identity-map [--json]`
+**Synopsis:** `bottega run identity-map`
 
-list numeric run identities and their durable record ids
-
-### Options
-
-- `--json`: write the identity map as JSON
+print numeric run identities and their durable record ids as JSON
 
 ### Related
 
