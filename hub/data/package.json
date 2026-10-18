@@ -21,6 +21,7 @@
     "./hosted-auth": "./src/hosted-auth.ts",
     "./hosted-organization": "./src/hosted-organization.ts",
     "./operator-waiting": "./src/operator-waiting.ts",
+    "./record-request": "./src/record-request.ts",
     "./use-task": "./src/use-task.ts",
     "./transport": "./src/transport.ts"
   },
