@@ -23,6 +23,7 @@ export const cleanupBoundarySpecs = [
       '../project/projects.ts',
       '../run/run-artifacts.ts',
       '../storage-walk.ts',
+      '../worktree/removal-working-directory.ts',
       './ship-cleanup-decision.ts',
     ],
     typeOnlyAllowed: [],

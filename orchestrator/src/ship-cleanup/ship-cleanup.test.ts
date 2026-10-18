@@ -146,6 +146,7 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
       if (id !== lens || !existsSync(lensPointer)) return null
       return (JSON.parse(readFileSync(lensPointer, 'utf8')) as { path: string }).path
     },
+    runsFromTree: () => false,
     removeLandingTree: () => {
       removedLandingTrees.push('/trees/landing')
       removed.add('/trees/landing')
@@ -194,6 +195,7 @@ test('ship cleanup refuses a landed classification without a recorded landing ti
     prune: unavailable,
     measure: unavailable,
     readerCloneArchive: unavailable,
+    runsFromTree: () => false,
     removeLandingTree: unavailable,
     remove: unavailable,
   }
@@ -211,6 +213,7 @@ test('ship cleanup refuses a landed classification without a recorded landing ti
 
 function landingTreeCleanup(input: {
   removal?: { outcome: string; detail: string }
+  runsFromTree?: boolean
   pruneKept?: { branch: string; reason: string }[]
 }): {
   report: ReturnType<typeof shipCleanup>
@@ -237,6 +240,7 @@ function landingTreeCleanup(input: {
     prune: () => ({ deleted: [], kept: input.pruneKept ?? [], errors: [] }),
     measure: () => ({ bytes: 0, errors: [], stoppedAtLimit: false }),
     readerCloneArchive: () => null,
+    runsFromTree: () => input.runsFromTree ?? false,
     removeLandingTree: () => {
       const removal = input.removal ?? { outcome: 'released', detail: 'released' }
       if (removal.outcome === 'released') removedTrees.push(landingTree)
@@ -269,10 +273,7 @@ test('ship cleanup releases a clean landing tree through tree removal', () => {
 
 test('ship cleanup keeps its current landing tree and checked-out branch without failure', () => {
   const result = landingTreeCleanup({
-    removal: {
-      outcome: 'failed',
-      detail: 'current working directory /trees/landing is inside it',
-    },
+    runsFromTree: true,
     pruneKept: [{ branch: 'DEV-1392-c3', reason: 'checked-out' }],
   })
   const remedy =

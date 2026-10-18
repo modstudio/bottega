@@ -13,6 +13,7 @@ import { removeHookTree } from '../hook-tree/tree.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { STORAGE_WALK_ENTRY_LIMIT, walkStoragePaths } from '../storage-walk.ts'
+import { removalWorkingDirectoryRefusal } from '../worktree/removal-working-directory.ts'
 import {
   decideShipCleanup,
   type ShipCleanupRunDecision,
@@ -54,6 +55,7 @@ export type ShipCleanupDependencies = {
   measure(paths: readonly string[]): { bytes: number; errors: string[]; stoppedAtLimit: boolean }
   readerCloneArchive(runId: number): string | null
   removeLandingTree(path: string): void
+  runsFromTree(path: string): boolean
   remove(path: string): void
 }
 
@@ -81,6 +83,7 @@ const dependencies: ShipCleanupDependencies = {
     }
   },
   removeLandingTree: removeHookTree,
+  runsFromTree: (path) => removalWorkingDirectoryRefusal(path, '') !== null,
   remove: (path) => rmSync(path, { recursive: true, force: true }),
 }
 
@@ -246,15 +249,21 @@ function releaseLandingTree(
   adapter: ShipCleanupDependencies,
 ): string | null {
   const remedy = `${PLATFORM_SLUG} tree remove ${row.worktree}, then ${cleanupRetry(branch)}`
+  if (adapter.runsFromTree(row.worktree)) {
+    report.kept.push({
+      item: `run ${row.id} worktree`,
+      reason: 'the command runs from this tree',
+      remedy,
+    })
+    return remedy
+  }
   try {
     adapter.removeLandingTree(row.worktree)
     report.removed.worktrees.push(row.worktree)
     return null
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : String(cause)
-    const cwdKept = detail.includes('current working directory')
-    const dirtyKept = detail.includes('tree is dirty')
-    if (!cwdKept && !dirtyKept) {
+    if (!detail.includes('tree is dirty')) {
       report.errors.push({
         item: `run ${row.id} worktree`,
         detail,
@@ -262,11 +271,7 @@ function releaseLandingTree(
       })
       return null
     }
-    report.kept.push({
-      item: `run ${row.id} worktree`,
-      reason: cwdKept ? 'the command runs from this tree' : detail,
-      remedy,
-    })
+    report.kept.push({ item: `run ${row.id} worktree`, reason: detail, remedy })
     return remedy
   }
 }
