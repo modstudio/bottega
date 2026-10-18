@@ -6,6 +6,7 @@ import { existsSync, lstatSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import { releaseSandboxDirectoryForConversation } from '../close/close-out.ts'
 import { db } from '../database/db.ts'
 import {
   noRepoIsolatePath,
@@ -103,19 +104,43 @@ type Candidate = {
   measurement?: Measurement
 }
 
+function removeCandidate(
+  candidate: Candidate,
+  dryRun: boolean,
+  remove: SweepInput['remove'],
+): void {
+  if (remove) {
+    remove(candidate, dryRun)
+    return
+  }
+  if (candidate.kind === 'sandbox') {
+    const result = releaseSandboxDirectoryForConversation(candidate.runId!, {
+      dryRun,
+      expiredTerminal: true,
+    })
+    if (result.outcome !== 'released') throw new Error(result.detail)
+    return
+  }
+  if (!dryRun) rmSync(candidate.path, { recursive: true })
+}
+
+function candidateRemedy(candidate: Candidate): string {
+  return candidate.decision.action === 'keep' &&
+    candidate.decision.reason === 'run has no recorded verdict'
+    ? `; remedy: ${scoreRemedy(candidate.runId!)}`
+    : ''
+}
+
 function applyCandidate(
   candidate: Candidate,
   dryRun: boolean,
   presentation: CleanupPresentation,
   freed: Record<RunLeftoverKind, number>,
   partial: Set<RunLeftoverKind>,
+  remove: SweepInput['remove'],
 ): boolean {
   const state = directoryPresent(candidate.path)
-  const remedy =
-    candidate.decision.action === 'keep' &&
-    candidate.decision.reason === 'run has no recorded verdict'
-      ? `; remedy: ${scoreRemedy(candidate.runId!)}`
-      : ''
+  const remedy = candidateRemedy(candidate)
   if (!state.present) {
     if (remedy)
       presentation.log(
@@ -136,7 +161,7 @@ function applyCandidate(
   const measurement = candidate.measurement ?? measure(candidate.path, false)
   if (!measurement.complete) partial.add(candidate.kind)
   try {
-    if (!dryRun) rmSync(candidate.path, { recursive: true })
+    removeCandidate(candidate, dryRun, remove)
     freed[candidate.kind] += measurement.bytes
     if (measurement.detail)
       presentation.log(
@@ -205,6 +230,10 @@ type SweepInput = {
   database?: Database
   runsDir?: string
   judgedRootIds?: ReadonlySet<number>
+  remove?: (
+    candidate: { path: string; kind: RunLeftoverKind; runId: number | null },
+    dryRun: boolean,
+  ) => void
 }
 
 type SweepState = {
@@ -241,6 +270,7 @@ function sweepRecordedLeftovers(
         input.presentation,
         state.freed,
         state.partial,
+        input.remove,
       )
       failed ||= candidateFailed
     }
@@ -264,6 +294,7 @@ function sweepRecordedLeftovers(
       input.presentation,
       state.freed,
       state.partial,
+      input.remove,
     )
     failed ||= sandboxFailed
   }
@@ -308,6 +339,7 @@ function sweepOrphans(
       input.presentation,
       state.freed,
       state.partial,
+      input.remove,
     )
     failed ||= orphanFailed
   }

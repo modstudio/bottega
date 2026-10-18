@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -45,6 +46,10 @@ function runsRoot(): string {
   return root
 }
 
+function removeCandidate(candidate: { path: string }, dryRun: boolean): void {
+  if (!dryRun) rmSync(candidate.path, { recursive: true })
+}
+
 describe('scheduled run leftover sweep adapter', () => {
   test('dry-run and removal use the same measured plan for an old judged run', () => {
     const root = runsRoot()
@@ -71,6 +76,7 @@ describe('scheduled run leftover sweep adapter', () => {
       presentation: presentation(dryLines),
       clock,
       runsDir: root,
+      remove: removeCandidate,
     })
     expect(paths.every(existsSync)).toBeTrue()
     expect(Object.values(dry.freed).reduce((total, bytes) => total + bytes, 0)).toBeGreaterThan(0)
@@ -81,6 +87,7 @@ describe('scheduled run leftover sweep adapter', () => {
       presentation: presentation([]),
       clock,
       runsDir: root,
+      remove: removeCandidate,
     })
     expect(paths.some(existsSync)).toBeFalse()
     expect(result.freed).toEqual(dry.freed)
@@ -105,10 +112,11 @@ describe('scheduled run leftover sweep adapter', () => {
       presentation: presentation(lines),
       clock,
       runsDir: root,
+      remove: removeCandidate,
     })
 
     expect(existsSync(artifacts)).toBeTrue()
-    expect(lines.join('\n')).toContain(`remedy: bottega score ${runId}`)
+    expect(lines.join('\n')).toContain(`remedy: ${PLATFORM_SLUG} score ${runId}`)
 
     const dry = sweepRunLeftovers({
       dryRun: true,
@@ -117,6 +125,7 @@ describe('scheduled run leftover sweep adapter', () => {
       clock,
       runsDir: root,
       judgedRootIds: new Set([runId]),
+      remove: removeCandidate,
     })
     expect(dry.freed.artifacts).toBeGreaterThan(0)
     expect(existsSync(artifacts)).toBeTrue()
@@ -136,6 +145,7 @@ describe('scheduled run leftover sweep adapter', () => {
       presentation: presentation(lines),
       clock,
       runsDir: root,
+      remove: removeCandidate,
     })
 
     expect(existsSync(oldOrphan)).toBeFalse()

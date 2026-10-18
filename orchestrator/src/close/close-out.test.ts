@@ -6,16 +6,33 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
+import { runSandboxDir } from '../run/run-artifacts.ts'
 import {
   clearConversationKeepTreeHold,
   closeOutRun,
   extractionRunId,
   releaseRunFailoverAttempts,
+  releaseSandboxDirectoryForConversation,
 } from './close-out.ts'
 import { closeOutCommand } from './close-out-command.ts'
 
 afterEach(() => {
   mock.restore()
+})
+
+test('expired terminal sandbox release ignores a retained worktree hold', () => {
+  const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const sandbox = runSandboxDir(id)
+  const tree = join(dir, `held-tree-${id}`)
+  mkdirSync(sandbox, { recursive: true })
+  mkdirSync(tree, { recursive: true })
+  db().query('UPDATE run SET worktree=? WHERE id=?').run(tree, id)
+
+  const result = releaseSandboxDirectoryForConversation(id, { expiredTerminal: true })
+  rmSync(tree, { recursive: true, force: true })
+
+  expect(result.outcome).toBe('released')
+  expect(existsSync(sandbox)).toBeFalse()
 })
 
 function spawnResult(stdout = '', exitCode = 0): ReturnType<typeof Bun.spawnSync> {

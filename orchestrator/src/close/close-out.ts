@@ -266,6 +266,7 @@ export function releaseSandboxDirectoryForConversation(
   options: {
     dryRun?: boolean
     worktreeState?: ResourceClaimState | 'no-tree'
+    expiredTerminal?: boolean
   } = {},
 ): SandboxReleaseResult {
   const path = join(RUNS_DIR, `sandbox-${runRecordId(db(), rootId)}`)
@@ -275,10 +276,12 @@ export function releaseSandboxDirectoryForConversation(
   const keepTree = conversationKeepTreeHold(rootId, nowIso())
   const decision = sandboxDirectoryRelease({
     terminal: turns.length > 0 && turns.every((turn) => TERMINAL.has(turn.status)),
-    liveTurn: aliveConversationTurns(rootId).length > 0,
-    liveProcess: conversationProcessState(rootId),
-    worktreeState: options.worktreeState ?? recordedWorktreeState(rootId),
-    keepTree: keepTree.held,
+    liveTurn: options.expiredTerminal ? false : aliveConversationTurns(rootId).length > 0,
+    liveProcess: options.expiredTerminal ? false : conversationProcessState(rootId),
+    worktreeState: options.expiredTerminal
+      ? 'no-tree'
+      : (options.worktreeState ?? recordedWorktreeState(rootId)),
+    keepTree: options.expiredTerminal ? false : keepTree.held,
     directoryExists: existsSync(path),
   })
   if (decision === 'absent') {
