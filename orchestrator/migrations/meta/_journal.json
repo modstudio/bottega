@@ -827,6 +827,13 @@
       "when": 1792098400000,
       "tag": "0117_project_uuid_key",
       "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "6",
+      "when": 1792324800000,
+      "tag": "0118_lens_selection_version",
+      "breakpoints": true
     }
   ]
 }

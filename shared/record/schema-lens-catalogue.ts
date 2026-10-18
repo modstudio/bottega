@@ -5,6 +5,7 @@ import {
   boolean,
   check,
   foreignKey,
+  index,
   integer,
   pgTable,
   text,
@@ -17,6 +18,7 @@ import { project, spaceIdentity, tenantPolicies } from './schema.ts'
 
 const identity = () => uuid('id').primaryKey()
 const recordedAt = (name: string) => timestamp(name, { withTimezone: true }).notNull()
+const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 const sameSpaceIdentity = <
   T extends { spaceId: ReturnType<typeof spaceIdentity>; id: ReturnType<typeof identity> },
 >(
@@ -37,11 +39,13 @@ export const lens = pgTable.withRLS(
     version: integer().notNull(),
     enabled: boolean().notNull().default(true),
     requiresExecution: boolean('requires_execution').notNull().default(false),
+    updatedAt: updatedAt(),
   },
   (table) => [
     check('lens_version_check', sql`${table.version} > 0`),
     unique('lens_space_key_unique').on(table.spaceId, table.key),
     sameSpaceIdentity('lens_space_id_unique', table),
+    index('lens_space_updated_id_idx').on(table.spaceId, table.updatedAt, table.id),
     ...tenantPolicies('lens', table.spaceId),
   ],
 )
@@ -82,6 +86,7 @@ export const lensProfile = pgTable.withRLS(
     version: integer().notNull(),
     body: text().notNull(),
     enabled: boolean().notNull().default(true),
+    updatedAt: updatedAt(),
   },
   (table) => [
     check('lens_profile_axis_check', sql`${table.axis} IN ('framework','architecture')`),
@@ -93,6 +98,7 @@ export const lensProfile = pgTable.withRLS(
       table.name,
     ),
     sameSpaceIdentity('lens_profile_space_id_unique', table),
+    index('lens_profile_space_updated_id_idx').on(table.spaceId, table.updatedAt, table.id),
     foreignKey({
       columns: [table.spaceId, table.lensId],
       foreignColumns: [lens.spaceId, lens.id],
@@ -137,6 +143,8 @@ export const projectLensProfile = pgTable.withRLS(
     axis: text().notNull(),
     profileName: text('profile_name').notNull(),
     selectedVersion: integer('selected_version'),
+    selectionVersion: integer('selection_version').notNull().default(1),
+    updatedAt: updatedAt(),
   },
   (table) => [
     check('project_lens_profile_axis_check', sql`${table.axis} IN ('framework','architecture')`),
@@ -144,6 +152,7 @@ export const projectLensProfile = pgTable.withRLS(
       'project_lens_profile_selected_version_check',
       sql`${table.selectedVersion} IS NULL OR ${table.selectedVersion} > 0`,
     ),
+    check('project_lens_profile_selection_version_check', sql`${table.selectionVersion} > 0`),
     uniqueIndex('project_lens_profile_specific')
       .on(table.spaceId, table.projectId, table.lensId, table.axis)
       .where(sql`${table.lensId} IS NOT NULL`),
@@ -151,6 +160,11 @@ export const projectLensProfile = pgTable.withRLS(
       .on(table.spaceId, table.projectId, table.axis)
       .where(sql`${table.lensId} IS NULL`),
     sameSpaceIdentity('project_lens_profile_space_id_unique', table),
+    index('project_lens_profile_space_updated_id_idx').on(
+      table.spaceId,
+      table.updatedAt,
+      table.id,
+    ),
     foreignKey({
       columns: [table.spaceId, table.projectId],
       foreignColumns: [project.spaceId, project.id],
