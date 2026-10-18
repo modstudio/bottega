@@ -187,7 +187,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       './synthetic-lifecycle-job.ts',
     ],
     'Keep run listing independent of run control, transports, routing, the CLI, and worktrees.',
-    ['./question-vocabulary.ts'],
+    ['./question-vocabulary.ts', '../../../shared/orch-contract.ts'],
   ),
   boundary(
     'run-liveness-boundary',
