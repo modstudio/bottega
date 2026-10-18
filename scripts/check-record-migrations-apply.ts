@@ -473,6 +473,47 @@ async function proofProjectRelationsStayWithinOneSpace(transaction: Transaction)
   }
 }
 
+async function proofCatalogueDefaultGrants(transaction: Transaction): Promise<void> {
+  const privileges = await transaction.query<{
+    table_name: string
+    actor_select: boolean
+    actor_insert: boolean
+    actor_update: boolean
+    actor_delete: boolean
+    reader_select: boolean
+  }>(`
+    SELECT
+      table_name,
+      has_table_privilege('${RECORD_ACTOR_ROLE}', table_name, 'SELECT') AS actor_select,
+      has_table_privilege('${RECORD_ACTOR_ROLE}', table_name, 'INSERT') AS actor_insert,
+      has_table_privilege('${RECORD_ACTOR_ROLE}', table_name, 'UPDATE') AS actor_update,
+      has_table_privilege('${RECORD_ACTOR_ROLE}', table_name, 'DELETE') AS actor_delete,
+      has_table_privilege('${RECORD_READER_ROLE}', table_name, 'SELECT') AS reader_select
+    FROM unnest(ARRAY[
+      'workflow', 'workflow_version', 'workflow_event',
+      'step_catalogue', 'step_catalogue_version', 'step_catalogue_event',
+      'lens', 'lens_revision', 'lens_profile', 'lens_profile_revision',
+      'project_lens_profile', 'project_lens_profile_revision',
+      'port_doctrine', 'port_ref', 'port_ref_source', 'port_baseline', 'port_pair', 'port_skip'
+    ]) AS table_name
+  `)
+  const missing = privileges.rows.filter(
+    (row) =>
+      !row.actor_select ||
+      !row.actor_insert ||
+      !row.actor_update ||
+      !row.actor_delete ||
+      !row.reader_select,
+  )
+  if (missing.length > 0) {
+    throw new CheckFailure(
+      `DEV-1388 catalogue tables did not inherit record grants: ${missing
+        .map((row) => row.table_name)
+        .join(', ')}`,
+    )
+  }
+}
+
 async function seedHubProjectIdentityBackfill(transaction: Transaction): Promise<void> {
   await transaction.exec(`
     SELECT set_config('app.space_id', '${PLATFORM_SPACE_ID}', true);
@@ -630,6 +671,7 @@ async function main(): Promise<void> {
         for (const migration of migrations) await applyAndProveMigration(transaction, migration)
         await proofManagedCanonProjects(transaction)
         await proofProjectRelationsStayWithinOneSpace(transaction)
+        await proofCatalogueDefaultGrants(transaction)
       })
       await proofBoardNotifications(database)
     } catch (error) {
