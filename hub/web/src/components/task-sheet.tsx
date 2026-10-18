@@ -7,8 +7,10 @@ import { DisplayRow, FieldSection, SettingBlock } from '@bottega/hub-ui/form-lay
 import { Identifier } from '@bottega/hub-ui/identifier'
 import { Select } from '@bottega/hub-ui/listbox/select'
 import { Markdown } from '@bottega/hub-views/markdown'
+import { TaskHistory } from '@bottega/hub-views/task-history'
 import { useEffect, useState } from 'react'
 import { relativeTime } from '@/lib/format'
+import { taskHistoryEntries } from '@/lib/task-history'
 import { taskStatusLook } from '@/lib/task-status'
 import type { TaskSheetDetail, TaskSheetResult } from '@/routes/-task-sheet-data'
 import { ProjectMark, SourceMark } from './design-system'
@@ -102,7 +104,6 @@ function TaskSheet({
 }) {
   const record = { data: result.detail, error: result.error }
   const [title, setTitle] = useState('')
-  const [comment, setComment] = useState('')
   const taskTitle = record.data?.task.title
   useEffect(() => {
     if (taskTitle !== undefined) setTitle(taskTitle ?? '')
@@ -252,66 +253,15 @@ function TaskSheet({
                 <Markdown content={record.data.task.body} />
               </FieldSection>
             ) : null}
-            <FieldSection title="Comments">
-              {record.data.comments.length ? (
-                record.data.comments.map((item) => (
-                  <article key={item.id} className="border-b border-border-default py-3">
-                    <Markdown content={item.body} />
-                    <div className="mt-2 text-xs text-text-muted">
-                      {relativeTime(item.createdAt)}
-                    </div>
-                  </article>
-                ))
-              ) : (
-                <p className="text-text-muted">No comments.</p>
-              )}
-              {record.data.capabilities.comment.allowed ? (
-                <div className="space-y-2">
-                  <Textarea
-                    aria-label="New comment"
-                    value={comment}
-                    onChange={(event) => setComment(event.target.value)}
-                    placeholder="Add a comment"
-                  />
-                  {addComment.error ? (
-                    <p data-tone="error" className="text-status-text">
-                      {addComment.error.message}
-                    </p>
-                  ) : null}
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    disabled={addComment.pending || !comment.trim()}
-                    onClick={() => void addComment.run(comment).then(() => setComment(''))}
-                  >
-                    Add comment
-                  </Button>
-                </div>
-              ) : null}
-            </FieldSection>
-            <FieldSection title="Runs">
-              {record.data.runs.length ? (
-                record.data.runs.map((run) => (
-                  <div
-                    key={`${run.id}:${run.agent}:${run.startedAt}`}
-                    className="grid grid-cols-[4rem_1fr_auto] gap-3 border-b border-border-default py-2"
-                  >
-                    <strong>#{run.id}</strong>
-                    <span>
-                      {run.agent ?? '-'} · {run.job ?? '-'}
-                    </span>
-                    <span
-                      data-tone={run.running ? 'success' : undefined}
-                      className={run.running ? 'text-status-text' : 'text-text-muted'}
-                    >
-                      {run.running ? 'running' : relativeTime(run.endedAt)}
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <p className="text-text-muted">No delegated runs.</p>
-              )}
-            </FieldSection>
+            <TaskHistory
+              entries={taskHistoryEntries(record.data)}
+              comment={{
+                run: addComment.run,
+                pending: addComment.pending,
+                error: addComment.error?.message ?? null,
+                refused: addComment.refused,
+              }}
+            />
           </div>
         </>
       ) : null}

@@ -36,8 +36,9 @@ can hide matching rows behind another project's traffic.
 # Design system
 
 Presentation has three layers. `@bottega/hub-ui` owns generic controls,
-`@bottega/hub-views` owns domain-free document and feature surfaces, and `@bottega/hub-web`
-owns routes and the screens that still know hub domains. Leave no control wearing the browser's
+`@bottega/hub-views` owns document and feature surfaces, the task's among them, that render
+the plain data and actions they are given, and `@bottega/hub-web` owns routes and the screens
+that decide where data comes from. Leave no control wearing the browser's
 own appearance. A hub package depends only on the workspace packages its entry in
 `hubWorkspaceDependencies` allows, and code outside a package imports it only through a
 declared export subpath. Every non-test source file in `hub/ui/src` and `hub/views/src` has
@@ -70,9 +71,10 @@ A hub-ui or hub-views component's appearance is defined only in its sibling styl
 `scripts/check-hub-ui-styles.ts` enforces styles-file use, theme-key synchronization and
 the generated component list in `hub/web/lint/layout-only-classname.grit`.
 
-A reusable control belongs in `hub/ui`; a domain-free document or feature composition belongs
-in `hub/views`; a component that knows what a project, run or tracker is belongs beside the
-screens using it. `ProjectName` renders a name and a color; `ProjectMark` knows where a
+A reusable control belongs in `hub/ui`. A document or feature composition that renders plain
+data belongs in `hub/views` whatever domain it draws, so local and hosted screens share one
+front end. A component that knows where its data comes from belongs beside the screens using
+it. `ProjectName` renders a name and a color; `ProjectMark` knows where a
 project's color comes from.
 
 Color, type and measurement come from `hub/ui/src/styles/tokens.css` through the

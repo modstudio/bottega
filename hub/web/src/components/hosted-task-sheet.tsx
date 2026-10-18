@@ -3,7 +3,9 @@ import { Companion } from '@bottega/hub-ui/companion'
 import { DisplayRow, FieldSection } from '@bottega/hub-ui/form-layout'
 import { Identifier } from '@bottega/hub-ui/identifier'
 import { Markdown } from '@bottega/hub-views/markdown'
+import { TaskHistory } from '@bottega/hub-views/task-history'
 import { relativeTime } from '@/lib/format'
+import { taskHistoryEntries } from '@/lib/task-history'
 import { taskStatusLook } from '@/lib/task-status'
 import type { TaskSheetDetail, TaskSheetResult } from '@/routes/-task-sheet-data'
 import { ProjectMark, SourceMark } from './design-system'
@@ -21,42 +23,6 @@ function Documents({ rows }: { rows: TaskSheetDetail['documents'] }) {
       </div>
       <Markdown content={document.body} />
     </article>
-  ))
-}
-
-function Comments({ rows }: { rows: TaskSheetDetail['comments'] }) {
-  if (!rows.length) return <p className="text-text-muted">No comments.</p>
-  return rows.map((comment) => (
-    <article key={comment.id} className="border-b border-border-default py-3">
-      <Markdown content={comment.body} />
-      <div className="mt-2 text-xs text-text-muted">{relativeTime(comment.createdAt)}</div>
-    </article>
-  ))
-}
-
-function StatusHistory({ rows }: { rows: TaskSheetDetail['statusEvents'] }) {
-  if (!rows.length) return <p className="text-text-muted">No status history.</p>
-  return [...rows].reverse().map((event) => (
-    <div key={event.id} className="border-b border-border-default py-2">
-      <strong>{event.fromStatus ?? 'unknown'}</strong> → <strong>{event.toStatus}</strong>
-      <span className="ml-2 text-xs text-text-muted">{relativeTime(event.at)}</span>
-    </div>
-  ))
-}
-
-function Intervals({ rows }: { rows: TaskSheetDetail['runs'] }) {
-  if (!rows.length) return <p className="text-text-muted">No intervals.</p>
-  return rows.map((item) => (
-    <div
-      key={`${item.id}:${item.startedAt}:${item.agent ?? ''}`}
-      className="border-b border-border-default py-2"
-    >
-      <strong>{item.agent ?? item.source ?? '-'}</strong>
-      {item.job ? ` · ${item.job}` : ''}
-      <span className="ml-2 text-xs text-text-muted">
-        {item.running ? 'running' : relativeTime(item.endedAt)}
-      </span>
-    </div>
   ))
 }
 
@@ -139,15 +105,15 @@ export function HostedTaskSheet({
             <FieldSection title="Documents">
               <Documents rows={detail.documents} />
             </FieldSection>
-            <FieldSection title="Comments">
-              <Comments rows={detail.comments} />
-            </FieldSection>
-            <FieldSection title="Status history">
-              <StatusHistory rows={detail.statusEvents} />
-            </FieldSection>
-            <FieldSection title="Intervals">
-              <Intervals rows={detail.runs} />
-            </FieldSection>
+            <TaskHistory
+              entries={taskHistoryEntries(detail)}
+              comment={{
+                run: result.actions.comment.run,
+                pending: result.actions.comment.pending,
+                error: result.actions.comment.error?.message ?? null,
+                refused: result.actions.comment.refused,
+              }}
+            />
           </div>
         </>
       ) : null}

@@ -368,3 +368,7 @@
 [data-doc-wide] .markdown > blockquote {
   max-width: var(--docs-measure);
 }
+/* A block's spacing separates it from the one above; the first has none above it. */
+.markdown > :first-child {
+  margin-top: 0;
+}

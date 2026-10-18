@@ -44,6 +44,8 @@
     "./field/textarea.styles": "./src/field/textarea.styles.ts",
     "./form-layout": "./src/form-layout/form-layout.tsx",
     "./form-layout/form-layout.styles": "./src/form-layout/form-layout.styles.ts",
+    "./avatar": "./src/avatar/avatar.tsx",
+    "./avatar/avatar.styles": "./src/avatar/avatar.styles.ts",
     "./identifier": "./src/identifier/identifier.tsx",
     "./identifier/identifier.styles": "./src/identifier/identifier.styles.ts",
     "./kbd": "./src/kbd/kbd.tsx",
