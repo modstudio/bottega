@@ -10,6 +10,7 @@ const uiLayers: { name: string; folders: string[] }[] = [
   {
     name: 'primitives',
     folders: [
+      'avatar',
       'badge',
       'identifier',
       'button',

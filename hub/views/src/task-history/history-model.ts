@@ -1,7 +1,29 @@
-/** One thing that happened to a task, in the shape the history feed draws. */
+/** Who did something: a person, or an agent working for one. */
+export type HistoryActor = { name: string; kind: 'person' | 'agent' }
+
+/**
+ * One thing that happened to a task, in the shape the history feed draws. An actor of null means
+ * the record does not say who; a run without one is its agent's.
+ */
 export type HistoryEntry =
-  | { kind: 'comment'; id: string; at: string; body: string }
-  | { kind: 'status'; id: string; at: string; from: string | null; to: string }
+  | {
+      kind: 'comment'
+      id: string
+      at: string
+      body: string
+      actor?: HistoryActor | null
+      /** Whether this reader may edit or delete it; the screen's data decides. */
+      canEdit?: boolean
+      canDelete?: boolean
+    }
+  | {
+      kind: 'status'
+      id: string
+      at: string
+      from: string | null
+      to: string
+      actor?: HistoryActor | null
+    }
   | {
       kind: 'run'
       id: string
@@ -11,6 +33,7 @@ export type HistoryEntry =
       job: string | null
       endedAt: string | null
       running: boolean
+      actor?: HistoryActor | null
     }
 
 export type HistoryKind = HistoryEntry['kind']
@@ -19,7 +42,16 @@ export type HistoryFilter = 'all' | HistoryKind
 /** Consecutive status changes drawn as one line, oldest change first. */
 export type StatusRun = { kind: 'status-run'; id: string; at: string; changes: HistoryEntry[] }
 export type HistoryItem = Exclude<HistoryEntry, { kind: 'status' }> | StatusRun
-export type HistoryDay = { key: string; label: string; items: HistoryItem[] }
+export type CommentEntry = Extract<HistoryEntry, { kind: 'comment' }>
+/** One actor's consecutive events, newest first, with adjacent status changes folded. */
+export type ActorCluster = {
+  kind: 'cluster'
+  id: string
+  actor: HistoryActor | null
+  items: Exclude<HistoryItem, CommentEntry>[]
+}
+export type HistoryBlock = CommentEntry | ActorCluster
+export type HistoryDay = { key: string; label: string; blocks: HistoryBlock[] }
 
 const time = (value: string) => new Date(value).getTime()
 
@@ -47,9 +79,29 @@ export function historyKinds(entries: readonly HistoryEntry[]): HistoryKind[] {
   return (['comment', 'status', 'run'] as const).filter((kind) => present.has(kind))
 }
 
+/** Who an entry is attributed to: its recorded actor, or a run's agent. */
+export function historyActor(entry: HistoryEntry): HistoryActor | null {
+  if (entry.actor) return entry.actor
+  if (entry.kind === 'run' && entry.agent) return { name: entry.agent, kind: 'agent' }
+  return null
+}
+
+const sameActor = (left: HistoryActor | null, right: HistoryActor | null) =>
+  left?.name === right?.name && left?.kind === right?.kind
+
+/** Adds a non-comment entry to a cluster, folding it into an adjacent status run. */
+function addToCluster(cluster: ActorCluster, entry: Exclude<HistoryEntry, CommentEntry>) {
+  const last = cluster.items.at(-1)
+  if (entry.kind === 'status' && last?.kind === 'status-run') last.changes.unshift(entry)
+  else if (entry.kind === 'status')
+    cluster.items.push({ kind: 'status-run', id: entry.id, at: entry.at, changes: [entry] })
+  else cluster.items.push(entry)
+}
+
 /**
- * Newest first, bucketed by local day. Status changes that sit next to each other in that order
- * fold into one run; comments and runs always stand alone.
+ * Newest first, bucketed by local day. Within a day, one actor's consecutive events gather into a
+ * cluster, and status changes next to each other in it fold into one run. A comment always stands
+ * alone, because its prose is what the reader opened the feed for.
  */
 export function groupHistory(
   entries: readonly HistoryEntry[],
@@ -64,17 +116,20 @@ export function groupHistory(
     const key = dayKey(new Date(entry.at))
     let day = days.at(-1)
     if (!day || day.key !== key) {
-      day = { key, label: historyDayLabel(entry.at, now), items: [] }
+      day = { key, label: historyDayLabel(entry.at, now), blocks: [] }
       days.push(day)
     }
-    const last = day.items.at(-1)
-    if (entry.kind === 'status' && last?.kind === 'status-run') {
-      last.changes.unshift(entry)
-    } else if (entry.kind === 'status') {
-      day.items.push({ kind: 'status-run', id: entry.id, at: entry.at, changes: [entry] })
-    } else {
-      day.items.push(entry)
+    if (entry.kind === 'comment') {
+      day.blocks.push(entry)
+      continue
     }
+    const actor = historyActor(entry)
+    let cluster = day.blocks.at(-1)
+    if (cluster?.kind !== 'cluster' || !sameActor(cluster.actor, actor)) {
+      cluster = { kind: 'cluster', id: entry.id, actor, items: [] }
+      day.blocks.push(cluster)
+    }
+    addToCluster(cluster, entry)
   }
   return days
 }

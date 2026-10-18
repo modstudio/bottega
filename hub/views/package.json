@@ -49,6 +49,8 @@
     "./styles/doc-editor": "./src/styles/doc-editor.css",
     "./styles/markdown": "./src/styles/markdown.css",
     "./task-history": "./src/task-history/task-history.tsx",
+    "./task-history/history-comment": "./src/task-history/history-comment.tsx",
+    "./task-history/history-comment.styles": "./src/task-history/history-comment.styles.ts",
     "./task-history/history-model": "./src/task-history/history-model.ts",
     "./task-history/task-history.styles": "./src/task-history/task-history.styles.ts"
   },

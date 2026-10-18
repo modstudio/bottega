@@ -1,11 +1,15 @@
+import { Avatar } from '@bottega/hub-ui/avatar'
 import { Button } from '@bottega/hub-ui/button'
 import { Segmented } from '@bottega/hub-ui/segmented'
 import { Bot, CircleDot, MessageSquare } from 'lucide-react'
-import { type ReactNode, useMemo, useState } from 'react'
+import { type ReactNode, useMemo, useRef, useState } from 'react'
 import { EditorBody } from '../document-editor/document-editor.tsx'
-import { Markdown } from '../markdown/markdown.tsx'
+import { type CommentWrite, HistoryComment } from './history-comment.tsx'
 import {
+  type ActorCluster,
+  type CommentEntry,
   groupHistory,
+  type HistoryActor,
   type HistoryEntry,
   type HistoryFilter,
   type HistoryItem,
@@ -33,7 +37,19 @@ export type TaskHistoryProps = {
   now?: Date
   /** The element id the page's contents list points at. */
   id?: string
+  /** Edits a comment the reader may edit; absent where comments cannot change. */
+  editComment?: CommentWrite<{ id: string; body: string }>
+  /** Deletes a comment the reader may delete; absent where comments cannot change. */
+  deleteComment?: CommentWrite<{ id: string }>
 }
+
+/** The reply's opening: the comment quoted, then a blank line for the answer. */
+const quote = (body: string) =>
+  `${body
+    .trim()
+    .split('\n')
+    .map((line) => (line ? `> ${line}` : '>'))
+    .join('\n')}\n\n`
 
 const FILTER_LABELS: Record<HistoryFilter, string> = {
   all: 'All',
@@ -45,9 +61,20 @@ const FILTER_LABELS: Record<HistoryFilter, string> = {
 const clock = (at: string) =>
   new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' }).format(new Date(at))
 
-function Composer({ comment }: { comment: CommentAction }) {
-  const [open, setOpen] = useState(false)
-  const [body, setBody] = useState('')
+function Composer({
+  comment,
+  draft,
+  setDraft,
+}: {
+  comment: CommentAction
+  /** Null while the composer is closed. */
+  draft: string | null
+  setDraft: (draft: string | null) => void
+}) {
+  const open = draft !== null
+  const body = draft ?? ''
+  const setOpen = (next: boolean) => setDraft(next ? '' : null)
+  const setBody = (next: string) => setDraft(next)
   const [mode, setMode] = useState<'rich' | 'markdown'>('rich')
   if (comment.refused) return <p className={taskHistoryStyles().refusal()}>{comment.refused}</p>
   if (!open) {
@@ -60,8 +87,7 @@ function Composer({ comment }: { comment: CommentAction }) {
   const submit = async () => {
     if (!body.trim() || comment.pending) return
     await comment.run(body)
-    setBody('')
-    setOpen(false)
+    setDraft(null)
   }
   return (
     <div>
@@ -153,38 +179,61 @@ function Glyph({ kind }: { kind: HistoryItem['kind'] }) {
   )
 }
 
-function Item({
+type CommentControls = {
+  editing: string | null
+  setEditing: (id: string | null) => void
+  onReply?: (body: string) => void
+  editComment?: TaskHistoryProps['editComment']
+  deleteComment?: TaskHistoryProps['deleteComment']
+  deleted: string | null
+  onDelete: (id: string) => void
+}
+
+function CommentBlock({ item, controls }: { item: CommentEntry; controls: CommentControls }) {
+  const { editing, setEditing, onReply, editComment, deleteComment, deleted } = controls
+  return (
+    <HistoryComment
+      id={item.id}
+      at={item.at}
+      body={item.body}
+      author={item.actor?.name ?? null}
+      canEdit={item.canEdit}
+      canDelete={item.canDelete}
+      time={clock(item.at)}
+      editing={editing === item.id}
+      onReply={onReply ? () => onReply(item.body) : undefined}
+      onEditStart={() => setEditing(item.id)}
+      onEditEnd={() => setEditing(null)}
+      edit={editComment}
+      onDelete={
+        deleteComment && !deleteComment.refused ? () => controls.onDelete(item.id) : undefined
+      }
+      deleting={deleted === item.id && deleteComment?.pending}
+      deleteError={deleted === item.id ? deleteComment?.error : null}
+    />
+  )
+}
+
+function RunLine({
   item,
+  actor,
   renderRun,
 }: {
-  item: HistoryItem
+  item: Extract<HistoryItem, { kind: 'run' }>
+  actor: HistoryActor | null
   renderRun: TaskHistoryProps['renderRun']
 }) {
-  if (item.kind === 'status-run') return <StatusLine item={item} />
-  if (item.kind === 'comment') {
-    return (
-      <>
-        <div className={taskHistoryStyles().line()}>
-          <span className={taskHistoryStyles().lineText()}>Comment</span>
-          <time className={taskHistoryStyles().time()} dateTime={item.at}>
-            {clock(item.at)}
-          </time>
-        </div>
-        <div className={taskHistoryStyles().commentBody()}>
-          <Markdown content={item.body} />
-        </div>
-      </>
-    )
-  }
   const label = item.run ? `Run #${item.run}` : 'Run'
   const duration = runDuration(item.at, item.endedAt)
+  /* The cluster's name already says which agent, unless someone else is the actor. */
+  const agent = item.agent && item.agent !== actor?.name ? item.agent : null
   return (
     <div className={taskHistoryStyles().line()}>
       <span className={taskHistoryStyles().lineText()}>
         <span className={taskHistoryStyles().strong()}>
           {item.run && renderRun ? renderRun(item.run, label) : label}
         </span>
-        {item.agent ? ` · ${item.agent}` : ''}
+        {agent ? ` · ${agent}` : ''}
         {item.job ? ` · ${item.job}` : ''}
         {item.running ? (
           <>
@@ -203,9 +252,64 @@ function Item({
   )
 }
 
+function ClusterBlock({
+  cluster,
+  renderRun,
+}: {
+  cluster: ActorCluster
+  renderRun: TaskHistoryProps['renderRun']
+}) {
+  return (
+    <div>
+      {cluster.actor ? (
+        <div className={taskHistoryStyles().author()}>{cluster.actor.name}</div>
+      ) : null}
+      {cluster.items.map((item) => (
+        <div key={`${item.kind}:${item.id}`} className={taskHistoryStyles().row()}>
+          <Glyph kind={item.kind} />
+          {item.kind === 'status-run' ? (
+            <StatusLine item={item} />
+          ) : (
+            <RunLine item={item} actor={cluster.actor} renderRun={renderRun} />
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 /** A task's comments, status changes and runs as one newest-first feed, with a comment composer. */
-export function TaskHistory({ entries, comment, renderRun, now, id }: TaskHistoryProps) {
+export function TaskHistory({
+  entries,
+  comment,
+  renderRun,
+  now,
+  id,
+  editComment,
+  deleteComment,
+}: TaskHistoryProps) {
   const [filter, setFilter] = useState<HistoryFilter>('all')
+  const [draft, setDraft] = useState<string | null>(null)
+  const [editing, setEditing] = useState<string | null>(null)
+  const [deleted, setDeleted] = useState<string | null>(null)
+  const composer = useRef<HTMLDivElement>(null)
+  const controls: CommentControls = {
+    editing,
+    setEditing,
+    onReply: comment.refused
+      ? undefined
+      : (body) => {
+          setDraft((current) => `${current ?? ''}${quote(body)}`)
+          composer.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+        },
+    editComment,
+    deleteComment,
+    deleted,
+    onDelete: (target) => {
+      setDeleted(target)
+      void deleteComment?.run({ id: target })
+    },
+  }
   const kinds = historyKinds(entries)
   const active = filter !== 'all' && !kinds.includes(filter) ? 'all' : filter
   const days = useMemo(
@@ -229,20 +333,22 @@ export function TaskHistory({ entries, comment, renderRun, now, id }: TaskHistor
           />
         ) : null}
       </div>
-      <div className={taskHistoryStyles().composer()}>
-        <Composer comment={comment} />
+      <div ref={composer} className={taskHistoryStyles().composer()}>
+        <Composer comment={comment} draft={draft} setDraft={setDraft} />
       </div>
       {days.length ? (
         <div className={taskHistoryStyles().feed()}>
           {days.map((day) => (
             <div key={day.key} className={taskHistoryStyles().dayGroup()}>
               <div className={taskHistoryStyles().day()}>{day.label}</div>
-              {day.items.map((item) => (
-                <div key={`${item.kind}:${item.id}`} className={taskHistoryStyles().entry()}>
-                  <Glyph kind={item.kind} />
-                  <div>
-                    <Item item={item} renderRun={renderRun} />
-                  </div>
+              {day.blocks.map((block) => (
+                <div key={`${block.kind}:${block.id}`} className={taskHistoryStyles().entry()}>
+                  <Avatar name={block.actor?.name ?? null} kind={block.actor?.kind} />
+                  {block.kind === 'comment' ? (
+                    <CommentBlock item={block} controls={controls} />
+                  ) : (
+                    <ClusterBlock cluster={block} renderRun={renderRun} />
+                  )}
                 </div>
               ))}
             </div>
