@@ -1,4 +1,3 @@
-import { type MeasuresResponse, trpc } from '@bottega/hub-data/client'
 import { Select } from '@bottega/hub-ui/listbox/select'
 import { PageHeader, SectionTitle } from '@bottega/hub-ui/page-header'
 import {
@@ -9,8 +8,6 @@ import {
   TableHeader,
   TableRow,
 } from '@bottega/hub-ui/table'
-import { useQueries, useQuery } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
 import { WindowControl } from '@/components/design-system'
 import {
   AgentUnknown,
@@ -19,56 +16,54 @@ import {
   measureFormat,
   SessionDetail,
 } from '@/components/measure-display'
-import { useWindowState } from '@/lib/window'
 
 type ScopeKind = 'space' | 'project' | 'person'
-
-function selectedScope(kind: ScopeKind, project: string, person: string) {
-  if (kind === 'project' && project) return { kind, project } as const
-  if (kind === 'person' && person) return { kind, userId: person } as const
-  return { kind: 'space' } as const
+type Sampled = { sample: { intervalCount: number } }
+/** The summary's measures plus the sample sizes the breakdown tables print. */
+type Measures = Parameters<typeof MeasuresSummary>[0]['measures'] & {
+  hoursRunning: Sampled
+  agentHours: Sampled
+  sessionTime: Sampled
+  cost: Sampled
+  shipped?: { count: number; sample: { eventCount: number } }
 }
+type Project = { name: string }
+type Person = { userId: string; name: string }
+type MeasureQuery = { data?: Measures }
 
-export function HostedReports() {
-  const { hours } = useWindowState()
-  const [kind, setKind] = useState<ScopeKind>('space')
-  const [chosenProject, setChosenProject] = useState('')
-  const [chosenPerson, setChosenPerson] = useState('')
-  const window = useMemo(() => {
-    const to = Date.now()
-    return { from: new Date(to - hours * 3_600_000).toISOString(), to: new Date(to).toISOString() }
-  }, [hours])
-  const projects = useQuery(trpc.record.projects.queryOptions())
-  const people = useQuery(trpc.record.measurePeople.queryOptions(window))
-  const project = chosenProject || projects.data?.[0]?.name || ''
-  const person = chosenPerson || people.data?.[0]?.userId || ''
-  const scope = selectedScope(kind, project, person)
-  const measures = useQuery(trpc.record.measures.queryOptions({ ...window, scope }))
-  const sortedProjects = [...(projects.data ?? [])].sort((left, right) =>
-    left.name.localeCompare(right.name),
-  )
-  const projectMeasures = useQueries({
-    queries: sortedProjects.map((row) =>
-      trpc.record.measures.queryOptions({
-        ...window,
-        scope: { kind: 'project', project: row.name },
-      }),
-    ),
-  })
-  const projectPeople = useQuery(
-    trpc.record.measurePeople.queryOptions({ ...window, ...(project ? { project } : {}) }),
-  )
-  const personMeasures = useQueries({
-    queries: (kind === 'project' ? (projectPeople.data ?? []) : []).map((row) =>
-      trpc.record.measures.queryOptions({
-        ...window,
-        scope: { kind: 'person', userId: row.userId, project },
-      }),
-    ),
-  })
-  const namedPerson = people.data?.find((row) => row.userId === person)?.name
-  const title = kind === 'space' ? 'This space' : kind === 'project' ? project : namedPerson
-
+export function HostedReports({
+  kind,
+  onKindChange,
+  projects,
+  people,
+  project,
+  person,
+  onProjectChange,
+  onPersonChange,
+  title,
+  measures,
+  measuresError,
+  sortedProjects,
+  projectMeasures,
+  projectPeople,
+  personMeasures,
+}: {
+  kind: ScopeKind
+  onKindChange(kind: ScopeKind): void
+  projects: Project[]
+  people: Person[]
+  project: string
+  person: string
+  onProjectChange(project: string): void
+  onPersonChange(person: string): void
+  title: string | undefined
+  measures: Measures | undefined
+  measuresError: string | null
+  sortedProjects: Project[]
+  projectMeasures: readonly MeasureQuery[]
+  projectPeople: Person[]
+  personMeasures: readonly MeasureQuery[]
+}) {
   return (
     <section>
       <PageHeader
@@ -83,18 +78,18 @@ export function HostedReports() {
               value={kind}
               options={[
                 { value: 'space', label: 'This space' },
-                { value: 'project', label: 'One project', disabled: !projects.data?.length },
-                { value: 'person', label: 'One person', disabled: !people.data?.length },
+                { value: 'project', label: 'One project', disabled: !projects.length },
+                { value: 'person', label: 'One person', disabled: !people.length },
               ]}
-              onChange={(value) => setKind(value as ScopeKind)}
+              onChange={(value) => onKindChange(value as ScopeKind)}
             />
             {kind === 'project' ? (
               <Select
                 size="sm"
                 label="Project"
                 value={project}
-                options={(projects.data ?? []).map((row) => ({ value: row.name, label: row.name }))}
-                onChange={setChosenProject}
+                options={projects.map((row) => ({ value: row.name, label: row.name }))}
+                onChange={onProjectChange}
               />
             ) : null}
             {kind === 'person' ? (
@@ -102,20 +97,20 @@ export function HostedReports() {
                 size="sm"
                 label="Person"
                 value={person}
-                options={(people.data ?? []).map((row) => ({ value: row.userId, label: row.name }))}
-                onChange={setChosenPerson}
+                options={people.map((row) => ({ value: row.userId, label: row.name }))}
+                onChange={onPersonChange}
               />
             ) : null}
           </>
         }
       />
-      {measures.error ? (
+      {measuresError ? (
         <p data-tone="error" className="text-status-text">
-          {measures.error.message}
+          {measuresError}
         </p>
       ) : null}
-      {measures.data ? (
-        <MeasuresSummary measures={measures.data} />
+      {measures ? (
+        <MeasuresSummary measures={measures} />
       ) : (
         <p className="text-text-muted">Loading measures...</p>
       )}
@@ -123,11 +118,7 @@ export function HostedReports() {
         <ProjectBreakdown projects={sortedProjects} queries={projectMeasures} />
       ) : null}
       {kind === 'project' ? (
-        <PersonBreakdown
-          people={projectPeople.data ?? []}
-          queries={personMeasures}
-          unknown={measures.data}
-        />
+        <PersonBreakdown people={projectPeople} queries={personMeasures} unknown={measures} />
       ) : null}
     </section>
   )
@@ -138,7 +129,7 @@ export function ProjectBreakdown({
   queries,
 }: {
   projects: { name: string }[]
-  queries: readonly { data?: MeasuresResponse }[]
+  queries: readonly MeasureQuery[]
 }) {
   return (
     <>
@@ -214,7 +205,7 @@ export function ProjectBreakdown({
                     )}
                   </TableCell>
                   <TableCell>
-                    {value && 'shipped' in value ? (
+                    {value?.shipped ? (
                       <>
                         {value.shipped.count}
                         <div className="text-xs text-text-muted">
@@ -249,8 +240,8 @@ function PersonBreakdown({
   unknown,
 }: {
   people: { userId: string; name: string }[]
-  queries: readonly { data?: MeasuresResponse }[]
-  unknown: MeasuresResponse | undefined
+  queries: readonly MeasureQuery[]
+  unknown: Measures | undefined
 }) {
   return (
     <>

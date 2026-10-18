@@ -1,18 +1,28 @@
-import { queryClient, trpc } from '@bottega/hub-data/client'
 import { Badge } from '@bottega/hub-ui/badge'
 import { Button, IconButton } from '@bottega/hub-ui/button'
 import { Input } from '@bottega/hub-ui/field/input'
 import { Select } from '@bottega/hub-ui/listbox/select'
-import { useMutation } from '@tanstack/react-query'
-import type { inferRouterOutputs } from '@trpc/server'
 import { X } from 'lucide-react'
 import { useState } from 'react'
 import { MachineOptIn } from '@/components/machine-override'
-import type { AppRouter } from '../../../src/trpc/router.ts'
 
-type Overlay = NonNullable<inferRouterOutputs<AppRouter>['context']['settings']['get']['machine']>
+type PermissionList = 'allow' | 'ask' | 'deny'
+type PermissionLists = Record<PermissionList, string[]>
+type Overlay = { additions: PermissionLists; drop: PermissionLists }
 type Lists = Overlay['additions']
 type List = keyof Lists
+type PermissionChangeAction = {
+  run(
+    input: {
+      operation: 'add' | 'remove' | 'drop' | 'undrop'
+      list: PermissionList
+      rule: string
+    },
+    options: { onApplied(): void },
+  ): Promise<boolean>
+  pending: boolean
+  error: string | null
+}
 
 const listsOf = (lists: Lists) => Object.keys(lists) as List[]
 
@@ -53,22 +63,23 @@ function OverlayRules({
 }
 
 /** Edits this machine's permission overlay: rules it adds and profile rules it drops. */
-export function MachinePermissionEditor({ machine }: { machine: Overlay | undefined }) {
-  return machine ? <OverlayEditor machine={machine} /> : null
+export function MachinePermissionEditor({
+  machine,
+  change,
+}: {
+  machine: Overlay | undefined
+  change: PermissionChangeAction
+}) {
+  return machine ? <OverlayEditor machine={machine} change={change} /> : null
 }
 
-function OverlayEditor({ machine }: { machine: Overlay }) {
+function OverlayEditor({ machine, change }: { machine: Overlay; change: PermissionChangeAction }) {
   const names = listsOf(machine.additions)
   const [list, setList] = useState<List>(names[0] ?? 'allow')
   const [rule, setRule] = useState('')
-  const change = useMutation(
-    trpc.context.settings.machinePermission.mutationOptions({
-      onSuccess: async () => {
-        setRule('')
-        await queryClient.invalidateQueries({ queryKey: trpc.context.settings.pathKey() })
-      },
-    }),
-  )
+  const runChange = (input: Parameters<PermissionChangeAction['run']>[0]) => {
+    void change.run(input, { onApplied: () => setRule('') })
+  }
   const empty = names.every(
     (name) => machine.additions[name].length === 0 && machine.drop[name].length === 0,
   )
@@ -86,19 +97,15 @@ function OverlayEditor({ machine }: { machine: Overlay }) {
             title="Adds"
             lists={machine.additions}
             undo="Remove addition"
-            pending={change.isPending}
-            onUndo={(name, value) =>
-              change.mutate({ operation: 'remove', list: name, rule: value })
-            }
+            pending={change.pending}
+            onUndo={(name, value) => runChange({ operation: 'remove', list: name, rule: value })}
           />
           <OverlayRules
             title="Drops from your profile"
             lists={machine.drop}
             undo="Stop dropping"
-            pending={change.isPending}
-            onUndo={(name, value) =>
-              change.mutate({ operation: 'undrop', list: name, rule: value })
-            }
+            pending={change.pending}
+            onUndo={(name, value) => runChange({ operation: 'undrop', list: name, rule: value })}
           />
           <div className="grid gap-3 md:grid-cols-[10rem_minmax(0,1fr)]">
             <Select
@@ -116,19 +123,19 @@ function OverlayEditor({ machine }: { machine: Overlay }) {
           </div>
           {change.error ? (
             <p data-tone="error" className="whitespace-pre-wrap text-status-text">
-              {change.error.message}
+              {change.error}
             </p>
           ) : null}
           <div className="flex flex-wrap gap-2">
             <Button
-              disabled={!rule.trim() || change.isPending}
-              onClick={() => change.mutate({ operation: 'add', list, rule })}
+              disabled={!rule.trim() || change.pending}
+              onClick={() => runChange({ operation: 'add', list, rule })}
             >
               Add on this machine
             </Button>
             <Button
-              disabled={!rule.trim() || change.isPending}
-              onClick={() => change.mutate({ operation: 'drop', list, rule })}
+              disabled={!rule.trim() || change.pending}
+              onClick={() => runChange({ operation: 'drop', list, rule })}
             >
               Drop on this machine
             </Button>

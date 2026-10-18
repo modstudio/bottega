@@ -94,6 +94,11 @@
       "entry": ["src/cli.ts!", "src/hosted.ts!", "src/**/*.test.ts"],
       "project": ["src/**/*.ts!", "test/**/*.ts"]
     },
+    "hub/data": {
+      // test/dom.ts is loaded through the bunfig.toml test preload.
+      "entry": ["src/**/*.test.ts", "test/dom.ts"],
+      "project": ["src/**/*.ts!", "test/**/*.ts"]
+    },
     "hub/ui": {
       "entry": [".storybook/preview.css!"]
     },

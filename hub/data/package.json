@@ -22,6 +22,12 @@
     "./hosted-organization": "./src/hosted-organization.ts",
     "./operator-waiting": "./src/operator-waiting.ts",
     "./record-request": "./src/record-request.ts",
+    "./use-health": "./src/use-health.ts",
+    "./use-machine-permission": "./src/use-machine-permission.ts",
+    "./use-projects": "./src/use-projects.ts",
+    "./use-reports": "./src/use-reports.ts",
+    "./use-reviews": "./src/use-reviews.ts",
+    "./use-routing": "./src/use-routing.ts",
     "./use-task": "./src/use-task.ts",
     "./transport": "./src/transport.ts"
   },

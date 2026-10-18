@@ -1,5 +1,6 @@
 import { hostedTrpc, queryClient, trpc } from '@bottega/hub-data/client'
 import { isHostedMode } from '@bottega/hub-data/hub-mode'
+import { useMachinePermissionChange } from '@bottega/hub-data/use-machine-permission'
 import { Badge } from '@bottega/hub-ui/badge'
 import { Button, TextButton } from '@bottega/hub-ui/button'
 import { Input } from '@bottega/hub-ui/field/input'
@@ -666,6 +667,7 @@ function ManagedSettingsSection({
   projects: ManagedProject[]
   onTarget(value: string): void
 }) {
+  const machinePermissionChange = useMachinePermissionChange()
   const address = target === 'user' ? ({ user: true } as const) : { project: target }
   const localSettings = useQuery({
     ...trpc.context.settings.get.queryOptions(address),
@@ -722,7 +724,10 @@ function ManagedSettingsSection({
             />
           ))}
           <PermissionEditor address={address} revision={settings.data.revision} />
-          <MachinePermissionEditor machine={userMachineOverlay(target, localSettings.data)} />
+          <MachinePermissionEditor
+            machine={userMachineOverlay(target, localSettings.data)}
+            change={machinePermissionChange}
+          />
           {hosted ? null : (
             <SettingBlock
               label="Apply now from a terminal"
