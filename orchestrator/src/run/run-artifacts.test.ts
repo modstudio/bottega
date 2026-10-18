@@ -211,6 +211,21 @@ test('a listed symlink to a directory is recorded without following it', () => {
     expect.objectContaining({ path: 'linked-evidence', reason: 'symlink', linkText: source }),
   )
 })
+test('a scratch root replaced by a symlink is refused and its target is never copied', () => {
+  const id = addRun({ agent: 'codex', job: 'understand' })
+  const outside = mkdtempSync(join(tmpdir(), 'orch-linked-scratch-root-'))
+  writeFileSync(join(outside, 'secret.txt'), 'outside\n')
+  mkdirSync(join(runScratchDir(id), '..'), { recursive: true })
+  symlinkSync(outside, runScratchDir(id))
+  try {
+    expect(() => persistRunArtifacts(id, null, null, null)).toThrow('symlinked root')
+    expect(existsSync(join(runArtifactsDir(id), 'secret.txt'))).toBe(false)
+    expect(existsSync(join(outside, 'secret.txt'))).toBe(true)
+  } finally {
+    rmSync(runScratchDir(id), { force: true })
+    rmSync(outside, { recursive: true, force: true })
+  }
+})
 test('all named artifacts are checked before copy failures are reported together', () => {
   const id = addRun({ agent: 'codex', job: 'diagnose' })
   const tree = mkdtempSync(join(tmpdir(), 'orch-multiple-artifact-failures-'))

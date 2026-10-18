@@ -414,6 +414,15 @@ export function persistRunArtifacts(
   const artifacts = runArtifactsDir(id)
   const runDirectory = join(RUNS_DIR, String(id))
   mkdirSync(runDirectory, { recursive: true })
+  // A worker can write the runs directory, so it can swap either root for a link;
+  // following one would copy files the worker itself is denied into artifacts.
+  const linkedRoots = [scratch, artifacts].filter((root) =>
+    lstatSync(root, { throwIfNoEntry: false })?.isSymbolicLink(),
+  )
+  if (linkedRoots.length > 0)
+    throw new Error(
+      `refusing to collect run artifacts through a symlinked root: ${linkedRoots.join(', ')}; inspect where it points, then remove the link`,
+    )
   const { listed, namedLogical, failures } = collectArtifactCandidates({
     id,
     scratch,
