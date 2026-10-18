@@ -18,6 +18,7 @@ import {
   type RenderLink,
 } from '@bottega/hub-ui/shell/app-shell'
 import { UserMenu } from '@bottega/hub-ui/shell/user-menu'
+import { recordSpaces } from '@bottega/hub-util/record-spaces'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   createRootRoute,
@@ -30,7 +31,6 @@ import {
 } from '@tanstack/react-router'
 import { useEffect } from 'react'
 import { AppMark } from '@/components/app-mark'
-import { recordSpaces } from '@/lib/record-spaces'
 import { useWindowState } from '@/lib/window'
 import { SiteFrame } from '@/site/chrome'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'

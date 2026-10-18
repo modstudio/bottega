@@ -11,11 +11,11 @@ import {
   TableHeader,
   TableRow,
 } from '@bottega/hub-ui/table'
+import { compactTokens, duration } from '@bottega/hub-util/format'
 import { useQuery } from '@tanstack/react-query'
 import type { inferRouterOutputs } from '@trpc/server'
 import { useEffect } from 'react'
 import { responseSubtitle, WindowControl } from '@/components/design-system'
-import { compactTokens, duration } from '@/lib/format'
 import { setWorkCounts, useWindowState } from '@/lib/window'
 import type { AppRouter } from '../../../src/trpc/router.ts'
 

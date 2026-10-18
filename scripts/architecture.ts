@@ -22,7 +22,12 @@ import { gateModules } from './architecture-gate-modules.ts'
 import { hubDataArchitectureRules } from './architecture-hub-data.ts'
 import { hubImportModules } from './architecture-hub-import-modules.ts'
 import { hubModuleSpecs } from './architecture-hub-modules.ts'
-import { HUB_DATA_PACKAGE, HUB_UI_PACKAGE, HUB_VIEWS_PACKAGE } from './architecture-hub-packages.ts'
+import {
+  HUB_DATA_PACKAGE,
+  HUB_UI_PACKAGE,
+  HUB_VIEWS_PACKAGE,
+  hubUtilArchitectureRules,
+} from './architecture-hub-packages.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
 import { metricModules } from './architecture-metric-modules.ts'
 import { monitorModules } from './architecture-monitor-modules.ts'
@@ -815,6 +820,7 @@ const hubWebAllowedConcernImports = [
   exactArchitecturePath(hubWebRouterException.to),
   '^hub/ui/src/',
   '^hub/data/src/',
+  '^hub/util/src/',
   '^hub/views/src/',
 ]
 const { viewDataRule: hubWebViewDataRule, boundaryRules: hubDataBoundaryRules } =
@@ -834,6 +840,7 @@ export function writeTimeArchitectureRules(): ArchitectureRule[] {
     ...uiArchitectureRules(architectureDependencyPath, HUB_UI_PACKAGE),
     ...viewArchitectureRules(architectureDependencyPath, HUB_VIEWS_PACKAGE),
     ...hubDataBoundaryRules,
+    ...hubUtilArchitectureRules(),
     hubWebViewDataRule,
   ]
 }

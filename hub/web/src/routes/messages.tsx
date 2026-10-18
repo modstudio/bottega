@@ -10,6 +10,7 @@ import { SettingBlock } from '@bottega/hub-ui/form-layout'
 import { Select } from '@bottega/hub-ui/listbox/select'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { Segmented } from '@bottega/hub-ui/segmented'
+import { sendTimestamp } from '@bottega/hub-util/format'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router'
 import type { inferRouterOutputs } from '@trpc/server'
@@ -17,7 +18,6 @@ import { ChevronRight, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { useDetailPanel } from '@/lib/detail-panel'
-import { sendTimestamp } from '@/lib/format'
 import {
   BOARD_PURPOSES,
   type BoardPurpose,

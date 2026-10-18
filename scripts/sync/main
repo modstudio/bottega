@@ -102,18 +102,29 @@ else
   echo "INSTALL: skipped; recorded bun.lock and root node_modules are current"
 fi
 
-hub_web_tree="$(git -C "$PROJECT_ROOT" rev-parse HEAD:hub/web)"
-recorded_hub_web_tree=""
+dashboard_source_hash="$(
+  git -C "$PROJECT_ROOT" rev-parse \
+    HEAD:hub/web \
+    HEAD:hub/ui \
+    HEAD:hub/views \
+    HEAD:hub/data \
+    HEAD:hub/util \
+    HEAD:shared \
+    HEAD:tsconfig.base.json \
+    HEAD:package.json |
+    git -C "$PROJECT_ROOT" hash-object --stdin
+)"
+recorded_dashboard_source_hash=""
 if [[ -f "$BUILD_MARKER" ]]; then
-  recorded_hub_web_tree="$(<"$BUILD_MARKER")"
+  recorded_dashboard_source_hash="$(<"$BUILD_MARKER")"
 fi
 
 dist_dir="$PROJECT_ROOT/hub/web/dist"
 build_reason=""
 if [[ ! -f "$dist_dir/index.html" ]]; then
   build_reason="hub/web/dist/index.html is missing"
-elif [[ "$recorded_hub_web_tree" != "$hub_web_tree" ]]; then
-  build_reason="the recorded hub/web tree differs"
+elif [[ "$recorded_dashboard_source_hash" != "$dashboard_source_hash" ]]; then
+  build_reason="the recorded dashboard source hash differs"
 fi
 
 if [[ -n "$build_reason" ]]; then
@@ -152,11 +163,11 @@ if [[ -n "$build_reason" ]]; then
   fi
   mv "$build_dir" "$dist_dir"
   build_dir=""
-  write_marker "$BUILD_MARKER" "$hub_web_tree"
-  echo "BUILD: succeeded; recorded hub/web ${hub_web_tree:0:12}; the dashboard serves it without a restart"
+  write_marker "$BUILD_MARKER" "$dashboard_source_hash"
+  echo "BUILD: succeeded; recorded dashboard sources ${dashboard_source_hash:0:12}; the dashboard serves them without a restart"
 
   cleanup_build_directories
   trap - EXIT
 else
-  echo "BUILD: skipped; recorded hub/web tree and local web bundle are current"
+  echo "BUILD: skipped; recorded dashboard sources and local web bundle are current"
 fi

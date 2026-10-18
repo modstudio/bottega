@@ -9,8 +9,11 @@ import {
   HUB_PACKAGE_PREFIX,
   HUB_UI_PACKAGE,
   HUB_UI_ROOT,
+  HUB_UTIL_PACKAGE,
+  HUB_UTIL_ROOT,
   HUB_VIEWS_PACKAGE,
   HUB_VIEWS_ROOT,
+  hubUtilRuntimeDependencyViolations,
   hubWorkspaceDependencies,
 } from './architecture-hub-packages.ts'
 import { isDeclaredHubUiSourceLocation } from './architecture-ui-layers.ts'
@@ -218,11 +221,39 @@ if (dataPackage.name !== HUB_DATA_PACKAGE) {
   violations.push(`${relative(ROOT, dataPackagePath)}: package name must be ${HUB_DATA_PACKAGE}`)
 }
 
+const utilPackagePath = join(ROOT, HUB_UTIL_ROOT, 'package.json')
+const utilPackage = readPackage(utilPackagePath)
+const expectedUtilExports = Object.fromEntries(
+  [...new Glob('**/*.{ts,tsx}').scanSync({ cwd: join(ROOT, HUB_UTIL_ROOT, 'src') })]
+    .filter((path) => !/\.(?:test|spec)\.[cm]?tsx?$/.test(path))
+    .map((path) => {
+      const normalized = path.split(sep).join('/')
+      return [exportSubpath(normalized), `./src/${normalized}`]
+    })
+    .sort(([left], [right]) => left.localeCompare(right)),
+)
+for (const [subpath, source] of Object.entries(expectedUtilExports)) {
+  if (utilPackage.exports?.[subpath] !== source) {
+    violations.push(`${relative(ROOT, utilPackagePath)}: export ${subpath} must point to ${source}`)
+  }
+}
+for (const subpath of Object.keys(utilPackage.exports ?? {})) {
+  if (!(subpath in expectedUtilExports)) {
+    violations.push(
+      `${relative(ROOT, utilPackagePath)}: export ${subpath} has no public source file`,
+    )
+  }
+}
+if (utilPackage.name !== HUB_UTIL_PACKAGE) {
+  violations.push(`${relative(ROOT, utilPackagePath)}: package name must be ${HUB_UTIL_PACKAGE}`)
+}
+violations.push(...hubUtilRuntimeDependencyViolations(utilPackage))
+
 if (violations.length) {
   for (const violation of violations) console.error(violation)
   process.exit(1)
 }
 
 console.log(
-  `check-hub-packages: ok (${checkedPackages.sort().join(', ')}; ${Object.keys(expectedExports).length} ui exports; ${Object.keys(expectedDataExports).length} data exports)`,
+  `check-hub-packages: ok (${checkedPackages.sort().join(', ')}; ${Object.keys(expectedExports).length} ui exports; ${Object.keys(expectedDataExports).length} data exports; ${Object.keys(expectedUtilExports).length} util exports)`,
 )

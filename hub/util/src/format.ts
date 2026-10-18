@@ -1,6 +1,6 @@
-export { compactTokens } from '../../../../shared/compact-number'
+export { compactTokens } from '../../../shared/compact-number'
 
-import { compactTokens } from '../../../../shared/compact-number'
+import { compactTokens } from '../../../shared/compact-number'
 
 export function vendorFigures(vendors: { agent: string; tokens: number }[]) {
   return vendors.length
