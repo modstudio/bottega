@@ -13,6 +13,7 @@ import {
   setLens,
   setProfile,
 } from './lenses.ts'
+import { rememberProjectLensSpace } from './project-lens-space.ts'
 
 describe('lens catalogue', () => {
   test('six seeded cores render their default profile for every registered project', () => {
@@ -214,6 +215,45 @@ describe('lens catalogue', () => {
       prior_selected_version: null,
       reason: 'return to baseline',
     })
+  })
+
+  test('a project routed to a hosted space without the lens keeps its local catalogue body', async () => {
+    upsertProject({ recordId: newRecordId(), name: 'routed', path: '/tmp/routed', settings: {} })
+    await setProfile({
+      lensId: 'correctness',
+      axis: 'framework',
+      name: 'routed-body',
+      body: '{"framework_guidance":"Routed.","commands":"bun test"}',
+      enabled: true,
+      reason: 'test',
+    })
+    await selectProjectProfile({
+      project: 'routed',
+      axis: 'framework',
+      name: 'routed-body',
+      lensId: 'correctness',
+      reason: 'test',
+    })
+    rememberProjectLensSpace(db(), 'routed', newRecordId())
+    expect(resolveLens('correctness', 'routed')!.profiles[0]).toMatchObject({
+      name: 'routed-body',
+      source: 'project',
+    })
+  })
+
+  test('a project routed to a hosted space that holds the lens resolves the hosted copy', () => {
+    upsertProject({ recordId: newRecordId(), name: 'hosted', path: '/tmp/hosted', settings: {} })
+    const space = newRecordId()
+    db()
+      .query(
+        `INSERT INTO lens (record_id,space_id,id,title,question,excludes,slots,version,enabled,requires_execution)
+         SELECT ?,?,id,title,'Hosted question?',excludes,slots,version,enabled,requires_execution
+         FROM lens WHERE id='correctness' AND space_id IS NULL`,
+      )
+      .run(newRecordId(), space)
+    rememberProjectLensSpace(db(), 'hosted', space)
+    expect(resolveLens('correctness', 'hosted')!.question).toBe('Hosted question?')
+    expect(resolveLens('correctness', null)!.question).not.toBe('Hosted question?')
   })
 
   test('unknown lenses remain free-form while disabled catalogue content refuses', async () => {

@@ -596,8 +596,16 @@ export async function selectProjectProfile(input: SelectProjectProfileInput) {
 const disabledLensRefusal = (id: string, what: string) =>
   `${what}\ninvariant: A disabled catalogue lens or selected profile never dispatches.\ncleared by: enable ${id} or select an enabled profile`
 
+/** A project's hosted space resolves a lens only once that space holds the lens; until then the local catalogue does. */
+function resolutionSpace(id: string, projectName: string | null, d: Database): string | null {
+  const hosted = effectiveProjectLensSpace(d, projectName)
+  if (hosted === null) return null
+  const held = d.query('SELECT 1 FROM lens WHERE id=? AND space_id=?').get(id, hosted)
+  return held ? hosted : null
+}
+
 export function resolveLens(id: string, projectName: string | null, d: Database = db()) {
-  const spaceId = effectiveProjectLensSpace(d, projectName)
+  const spaceId = resolutionSpace(id, projectName, d)
   const core = d
     .query(`SELECT ${LENS_COLUMNS} FROM lens WHERE id=? AND space_id IS ?`)
     .get(id, spaceId) as CoreRow | null
