@@ -141,7 +141,7 @@ describe('scheduled run leftover sweep adapter', () => {
       path: `/runs/${index + 1}/artifacts`,
       kind: 'artifacts' as const,
       runId: index + 1,
-      reason: 'run has no recorded verdict',
+      reason: 'no recorded verdict' as const,
       bytes: 10,
       complete: true,
       remedy: 'score' as const,
@@ -159,7 +159,7 @@ describe('scheduled run leftover sweep adapter', () => {
         path: '/runs/1/scratch',
         kind: 'scratch' as const,
         runId: 1,
-        reason: 'run is not older than the run leftover age cap',
+        reason: 'recently finished' as const,
         bytes: 8,
         complete: true,
       },
@@ -167,7 +167,8 @@ describe('scheduled run leftover sweep adapter', () => {
         path: '/runs/2/scratch',
         kind: 'scratch' as const,
         runId: 2,
-        reason: 'run is live (asking)',
+        reason: 'live' as const,
+        status: 'asking',
         bytes: 9,
         complete: true,
       },
@@ -175,11 +176,11 @@ describe('scheduled run leftover sweep adapter', () => {
 
     expect(keptRunLeftoverLines(kept, false)).toEqual([
       'kept 1 run scratch directory not older than the run leftover age cap (8 bytes); example paths: /runs/1/scratch',
-      'kept 1 run scratch directory live (asking) (9 bytes); example paths: /runs/2/scratch',
+      'kept 1 run scratch directory live (9 bytes); example paths: /runs/2/scratch',
     ])
     expect(keptRunLeftoverLines(kept, true)).toEqual([
-      'kept scratch /runs/1/scratch: run is not older than the run leftover age cap',
-      'kept scratch /runs/2/scratch: run is live (asking)',
+      'kept scratch /runs/1/scratch: not older than the run leftover age cap',
+      'kept scratch /runs/2/scratch: live (asking)',
     ])
   })
 
@@ -239,7 +240,7 @@ describe('scheduled run leftover sweep adapter', () => {
 
     expect(paths.every(existsSync)).toBeTrue()
     expect(Object.values(result.freed).every((bytes) => bytes === 0)).toBeTrue()
-    expect(lines).toContainEqual(expect.stringContaining('kept 4 run leftovers live (asking)'))
+    expect(lines).toContainEqual(expect.stringContaining('kept 4 run leftovers live'))
     for (const path of paths) expect(lines.join('\n')).toContain(path)
   })
 
@@ -267,7 +268,46 @@ describe('scheduled run leftover sweep adapter', () => {
 
     expect(existsSync(sandbox)).toBeTrue()
     expect(result.freed.sandbox).toBe(0)
-    expect(lines.some((line) => line.startsWith(`kept sandbox ${sandbox}: `))).toBeTrue()
+    expect(lines).toContainEqual(
+      expect.stringContaining('kept 1 run sandbox held by the sandbox release decision'),
+    )
+    expect(lines.join('\n')).not.toContain(`kept sandbox ${sandbox}:`)
     expect(lines.join('\n')).not.toContain('removal failed')
+
+    const verboseLines: string[] = []
+    sweepRunLeftovers({
+      dryRun: false,
+      verbose: true,
+      projectRecordId: null,
+      presentation: presentation(verboseLines),
+      clock,
+    })
+    expect(verboseLines).toContainEqual(
+      expect.stringContaining(`kept sandbox ${sandbox}: held by the sandbox release decision`),
+    )
+  })
+
+  test('does not report an old unjudged run when it has no leftover directories', () => {
+    const root = runsRoot()
+    const runId = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'failed',
+      startedAt: old.toISOString(),
+    })
+    db().query('UPDATE run SET latency_ms=? WHERE id=?').run(1_000, runId)
+    const lines: string[] = []
+
+    sweepRunLeftovers({
+      dryRun: false,
+      projectRecordId: null,
+      presentation: presentation(lines),
+      clock,
+      runsDir: root,
+      remove: removeCandidate,
+    })
+
+    expect(lines.join('\n')).not.toContain('kept')
+    expect(lines.join('\n')).not.toContain('score pending')
   })
 })

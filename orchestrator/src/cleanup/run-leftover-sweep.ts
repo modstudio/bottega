@@ -22,6 +22,7 @@ import type { CleanupPresentation } from './cleanup.ts'
 import {
   decideRunLeftover,
   type RunLeftoverDecision,
+  type RunLeftoverKeepReason,
   type RunLeftoverKind,
 } from './run-leftover-decision.ts'
 
@@ -96,7 +97,9 @@ export type KeptRunLeftover = {
   path: string
   kind: RunLeftoverKind
   runId: number | null
-  reason: string
+  reason: RunLeftoverKeepReason
+  status?: string
+  detail?: string
   bytes: number
   complete: boolean
   remedy?: 'score'
@@ -122,12 +125,21 @@ function keptNoun(items: KeptGroup): string {
   }
 }
 
-function keptGroupLines(reason: string, items: KeptGroup, verbose: boolean): string[] {
+function keptGroupLines(
+  reason: RunLeftoverKeepReason,
+  items: KeptGroup,
+  verbose: boolean,
+): string[] {
   const remedy = items.some((item) => item.remedy === 'score')
     ? [`  ${PLATFORM_SLUG} score pending lists every unjudged run`]
     : []
   if (verbose)
-    return [...items.map((item) => `kept ${item.kind} ${item.path}: ${item.reason}`), ...remedy]
+    return [
+      ...items.map(
+        (item) => `kept ${item.kind} ${item.path}: ${keptReasonClause(item.reason, item, true)}`,
+      ),
+      ...remedy,
+    ]
   const bytes = items.reduce((total, item) => total + item.bytes, 0)
   const qualifier = items.every((item) => item.complete) ? '' : 'at least '
   const usesRunIds = items.every((item) => item.remedy === 'score' && item.runId !== null)
@@ -136,23 +148,37 @@ function keptGroupLines(reason: string, items: KeptGroup, verbose: boolean): str
     .map((item) => (usesRunIds ? String(item.runId) : item.path))
   const more = items.length - examples.length
   return [
-    `kept ${items.length} ${keptNoun(items)} ${keptReasonClause(reason)} (${qualifier}${bytes} bytes); example ${usesRunIds ? 'runs' : 'paths'}: ${examples.join(', ')}${more > 0 ? `; and ${more} more` : ''}`,
+    `kept ${items.length} ${keptNoun(items)} ${keptReasonClause(reason, items[0]!, false)} (${qualifier}${bytes} bytes); example ${usesRunIds ? 'runs' : 'paths'}: ${examples.join(', ')}${more > 0 ? `; and ${more} more` : ''}`,
     ...remedy,
   ]
 }
 
-function keptReasonClause(reason: string): string {
-  if (reason === 'run has no recorded verdict') return 'with no recorded verdict'
-  if (reason === 'run finish time could not be established')
-    return 'whose run finish time could not be established'
-  if (reason.startsWith('run is ')) return reason.slice('run is '.length)
-  if (reason.startsWith('orphan is ')) return reason.slice('orphan is '.length)
-  return `because ${reason}`
+function keptReasonClause(
+  reason: RunLeftoverKeepReason,
+  item: KeptRunLeftover,
+  verbose: boolean,
+): string {
+  switch (reason) {
+    case 'live':
+      return `live${verbose ? ` (${item.status ?? 'unknown'})` : ''}`
+    case 'recently finished':
+      return 'not older than the run leftover age cap'
+    case 'finish time unknown':
+      return 'whose run finish time could not be established'
+    case 'no recorded verdict':
+      return 'with no recorded verdict'
+    case 'orphan age unknown':
+      return `whose age could not be established${verbose && item.detail ? `: ${item.detail}` : ''}`
+    case 'young orphan':
+      return 'not older than the run leftover age cap'
+    case 'sandbox held':
+      return `held by the sandbox release decision${verbose && item.detail ? `: ${item.detail}` : ''}`
+  }
 }
 
 /** Format measured policy-kept candidates without knowing the filesystem or presentation. */
 export function keptRunLeftoverLines(kept: readonly KeptRunLeftover[], verbose: boolean): string[] {
-  const groups = new Map<string, KeptRunLeftover[]>()
+  const groups = new Map<RunLeftoverKeepReason, KeptRunLeftover[]>()
   for (const item of kept) {
     const group = groups.get(item.reason) ?? []
     group.push(item)
@@ -165,17 +191,23 @@ function removeCandidate(
   candidate: Candidate,
   dryRun: boolean,
   remove: SweepInput['remove'],
-): string | null {
+):
+  | { action: 'removed' }
+  | { action: 'kept'; reason: 'sandbox held'; detail: string }
+  | { action: 'failed'; detail: string } {
   if (remove) {
     remove(candidate, dryRun)
-    return null
+    return { action: 'removed' }
   }
   if (candidate.kind === 'sandbox') {
     const result = releaseSandboxDirectoryForConversation(candidate.runId!, { dryRun })
-    return result.outcome === 'released' ? null : result.detail
+    if (result.outcome !== 'kept') return { action: 'removed' }
+    if (result.detail.startsWith('sandbox directory removal failed:'))
+      return { action: 'failed', detail: result.detail }
+    return { action: 'kept', reason: 'sandbox held', detail: result.detail }
   }
   if (!dryRun) rmSync(candidate.path, { recursive: true })
-  return null
+  return { action: 'removed' }
 }
 
 function applyCandidate(
@@ -202,6 +234,8 @@ function applyCandidate(
       kind: candidate.kind,
       runId: candidate.runId,
       reason: candidate.decision.reason,
+      status: candidate.decision.status,
+      detail: candidate.decision.detail,
       bytes: measurement.bytes,
       complete: measurement.complete,
       remedy: candidate.decision.remedy,
@@ -211,10 +245,22 @@ function applyCandidate(
   const measurement = candidate.measurement ?? measure(candidate.path, false)
   if (!measurement.complete) partial.add(candidate.kind)
   try {
-    const keptReason = removeCandidate(candidate, dryRun, remove)
-    if (keptReason !== null) {
-      presentation.log(`kept ${candidate.kind} ${candidate.path}: ${keptReason}`)
+    const removal = removeCandidate(candidate, dryRun, remove)
+    if (removal.action === 'kept') {
+      kept.push({
+        path: candidate.path,
+        kind: candidate.kind,
+        runId: candidate.runId,
+        reason: removal.reason,
+        detail: removal.detail,
+        bytes: measurement.bytes,
+        complete: measurement.complete,
+      })
       return false
+    }
+    if (removal.action === 'failed') {
+      presentation.log(`kept ${candidate.kind} ${candidate.path}: ${removal.detail}`)
+      return true
     }
     freed[candidate.kind] += measurement.bytes
     if (measurement.detail)
@@ -359,7 +405,8 @@ function sweepOrphans(
       ? decision
       : {
           action: 'keep' as const,
-          reason: `orphan age could not be established: ${measurement.detail ?? 'storage walk was incomplete'}`,
+          reason: 'orphan age unknown' as const,
+          detail: measurement.detail ?? 'storage walk was incomplete',
         }
     const orphanFailed = applyCandidate(
       { path, kind: 'orphan', runId: null, decision: ruling, measurement },

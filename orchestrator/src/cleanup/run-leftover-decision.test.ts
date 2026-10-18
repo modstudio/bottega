@@ -22,14 +22,15 @@ describe('scheduled run leftover decision', () => {
   test('keeps a live run', () => {
     expect(decideRunLeftover(facts({ runStatus: 'running' }))).toEqual({
       action: 'keep',
-      reason: 'run is live (running)',
+      reason: 'live',
+      status: 'running',
     })
   })
 
   test('keeps a recent terminal run', () => {
     expect(decideRunLeftover(facts({ finishedAt: recent }))).toEqual({
       action: 'keep',
-      reason: 'run is not older than the run leftover age cap',
+      reason: 'recently finished',
     })
   })
 
@@ -45,7 +46,7 @@ describe('scheduled run leftover decision', () => {
   test('keeps and names old unjudged artifacts', () => {
     expect(decideRunLeftover(facts({ kind: 'artifacts', judged: false }))).toEqual({
       action: 'keep',
-      reason: 'run has no recorded verdict',
+      reason: 'no recorded verdict',
       remedy: 'score',
     })
   })
@@ -63,6 +64,6 @@ describe('scheduled run leftover decision', () => {
       decideRunLeftover(
         facts({ kind: 'orphan', runStatus: null, finishedAt: null, newestEntryAt: recent }),
       ),
-    ).toEqual({ action: 'keep', reason: 'orphan is not older than the run leftover age cap' })
+    ).toEqual({ action: 'keep', reason: 'young orphan' })
   })
 })

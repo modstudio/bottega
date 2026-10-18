@@ -16,27 +16,39 @@ export type RunLeftoverFacts = {
   clock: number
 }
 
+export type RunLeftoverKeepReason =
+  | 'live'
+  | 'recently finished'
+  | 'finish time unknown'
+  | 'no recorded verdict'
+  | 'orphan age unknown'
+  | 'young orphan'
+  | 'sandbox held'
+
 export type RunLeftoverDecision =
   | { action: 'remove'; reason: string }
-  | { action: 'keep'; reason: string; remedy?: 'score' }
+  | {
+      action: 'keep'
+      reason: RunLeftoverKeepReason
+      status?: string
+      detail?: string
+      remedy?: 'score'
+    }
 
 /** Decide one directory without knowing the filesystem, database, or clock source. */
 export function decideRunLeftover(facts: RunLeftoverFacts): RunLeftoverDecision {
   const cutoff = facts.clock - RUN_LEFTOVER_MAX_AGE_MS
   if (facts.kind === 'orphan') {
-    if (facts.newestEntryAt === null)
-      return { action: 'keep', reason: 'orphan age could not be established' }
+    if (facts.newestEntryAt === null) return { action: 'keep', reason: 'orphan age unknown' }
     return facts.newestEntryAt < cutoff
       ? { action: 'remove', reason: 'orphan is older than the run leftover age cap' }
-      : { action: 'keep', reason: 'orphan is not older than the run leftover age cap' }
+      : { action: 'keep', reason: 'young orphan' }
   }
   if (facts.runStatus === null || !TERMINAL_RUN_STATUSES.has(facts.runStatus))
-    return { action: 'keep', reason: `run is live (${facts.runStatus ?? 'unknown'})` }
-  if (facts.finishedAt === null)
-    return { action: 'keep', reason: 'run finish time could not be established' }
-  if (facts.finishedAt >= cutoff)
-    return { action: 'keep', reason: 'run is not older than the run leftover age cap' }
+    return { action: 'keep', reason: 'live', status: facts.runStatus ?? 'unknown' }
+  if (facts.finishedAt === null) return { action: 'keep', reason: 'finish time unknown' }
+  if (facts.finishedAt >= cutoff) return { action: 'keep', reason: 'recently finished' }
   if (facts.kind === 'artifacts' && !facts.judged)
-    return { action: 'keep', reason: 'run has no recorded verdict', remedy: 'score' }
+    return { action: 'keep', reason: 'no recorded verdict', remedy: 'score' }
   return { action: 'remove', reason: 'terminal run is older than the run leftover age cap' }
 }
