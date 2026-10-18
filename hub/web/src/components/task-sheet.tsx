@@ -261,6 +261,14 @@ function TaskSheet({
                 error: addComment.error?.message ?? null,
                 refused: addComment.refused,
               }}
+              editComment={{
+                ...result.actions.editComment,
+                error: result.actions.editComment.error?.message ?? null,
+              }}
+              deleteComment={{
+                ...result.actions.deleteComment,
+                error: result.actions.deleteComment.error?.message ?? null,
+              }}
             />
           </div>
         </>

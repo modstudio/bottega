@@ -7,6 +7,8 @@ import { credentials, Mcp } from './mcp.ts'
 import { projects } from './projects.ts'
 import {
   commentTask,
+  deleteTaskComment,
+  editTaskComment,
   createTask,
   DuplicateTaskError,
   duplicateCandidates,
@@ -14,6 +16,7 @@ import {
   setTask,
   showTask,
 } from './task.ts'
+import { cliAttribution } from './task-attribution.ts'
 import { closeThenPrune } from './task-close.ts'
 import {
   createTaskDocument,
@@ -117,6 +120,7 @@ async function createTaskCommand(options: TaskOptions): Promise<void> {
           await createTask(input, {
             allowDuplicateReason: override,
             afterDuplicateSearch,
+            attribution: await cliAttribution(),
           })
         ).key,
       )
@@ -164,7 +168,10 @@ async function showTaskCommand(key: string, options: TaskOptions): Promise<void>
       )
     }
   }
-  for (const comment of shown.comments) console.log(`\n${comment.created_at}  ${comment.body}`)
+  for (const comment of shown.comments)
+    console.log(
+      `\n${comment.id}  ${comment.created_at}  ${comment.actor_name ?? 'unknown'}\n${comment.body}`,
+    )
 }
 
 async function closeTask(key: string, options: TaskOptions): Promise<void> {
@@ -173,6 +180,7 @@ async function closeTask(key: string, options: TaskOptions): Promise<void> {
     { project: options.project },
     Boolean(options.keepBranches),
     optional(options, 'abandon'),
+    await cliAttribution(),
     {},
   )
   printTaskRow(closed)
@@ -337,7 +345,7 @@ function registerTaskQueryCommands(task: Command): void {
     if (!Object.keys(changes).length)
       throw new Error(`${PLATFORM_SLUG} task set requires a field to change`)
     printTaskRow(
-      await setTask(key, { project: options.project }, changes, {
+      await setTask(key, { project: options.project }, changes, await cliAttribution(), {
         force: Boolean(options.force),
         abandonReason: optional(options, 'abandon'),
       }),
@@ -362,8 +370,42 @@ function registerTaskLifecycleCommands(task: Command): void {
     .option('--project <X>', 'resolve the task in this project')
     .action(async (key, text, _options, command) => {
       open()
-      const comment = await commentTask(key, { project: taskOptions(command).project }, text)
+      const comment = await commentTask(
+        key,
+        { project: taskOptions(command).project },
+        text,
+        await cliAttribution(),
+      )
       console.log(`${comment.task_key} commented ${comment.created_at}`)
+    })
+  task
+    .command('comment-edit <key> <comment-id> <text>')
+    .description('edit one of your task comments')
+    .option('--project <X>', 'resolve the task in this project')
+    .action(async (key, commentId, text, _options, command) => {
+      open()
+      const edited = await editTaskComment(
+        key,
+        { project: taskOptions(command).project },
+        commentId,
+        text,
+        await cliAttribution(),
+      )
+      console.log(`${edited.task_key} comment ${edited.id} edited ${edited.updated_at}`)
+    })
+  task
+    .command('comment-delete <key> <comment-id>')
+    .description('delete one of your task comments')
+    .option('--project <X>', 'resolve the task in this project')
+    .action(async (key, commentId, _options, command) => {
+      open()
+      await deleteTaskComment(
+        key,
+        { project: taskOptions(command).project },
+        commentId,
+        await cliAttribution(),
+      )
+      console.log(`${key.toUpperCase()} comment ${commentId} deleted`)
     })
   task
     .command('import <file>')

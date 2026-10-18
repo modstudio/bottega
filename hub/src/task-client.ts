@@ -61,6 +61,7 @@ async function hostedFetch(
 
 export type HostedTaskIdentity = {
   userId: string
+  userName?: string | null
   activeSpaceId: string
   memberships: RecordSpaceMembership[]
   capabilities?: {
@@ -538,6 +539,14 @@ async function taskIdentityResult(
     )
   if (typeof object.userId !== 'string')
     throw new Error('hosted hub returned a malformed task identity: userId must be a string')
+  if (
+    object.userName !== undefined &&
+    object.userName !== null &&
+    typeof object.userName !== 'string'
+  )
+    throw new Error(
+      'hosted hub returned a malformed task identity: userName must be a string or null',
+    )
   return { unauthorized: false, value: object }
 }
 
@@ -553,6 +562,7 @@ export async function hostedTaskIdentity(
     throw new Error('hosted hub returned a malformed task identity: memberships must be an array')
   return {
     userId: value.userId as string,
+    userName: (value.userName as string | null | undefined) ?? null,
     activeSpaceId: value.activeSpaceId as string,
     memberships: value.memberships as RecordSpaceMembership[],
     capabilities: {
@@ -577,4 +587,16 @@ export async function hostedSignedInUserId(
 ): Promise<string | null> {
   const result = await taskIdentityResult(options)
   return result.unauthorized ? null : (result.value.userId as string)
+}
+
+export async function hostedSignedInUser(
+  options?: Parameters<typeof request>[3],
+): Promise<{ id: string; name: string | null } | null> {
+  const result = await taskIdentityResult(options)
+  return result.unauthorized
+    ? null
+    : {
+        id: result.value.userId as string,
+        name: (result.value.userName as string | null | undefined) ?? null,
+      }
 }

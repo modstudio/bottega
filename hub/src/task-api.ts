@@ -51,6 +51,7 @@ type RouteContext = {
   dependencies: Dependencies
   who: {
     userId: string
+    userName: string | null
     spaceId: string
     spaceIds: string[]
     memberships: RecordSpaceMembership[]
@@ -175,6 +176,7 @@ export async function taskApi(
   if (request.method === 'GET' && url.pathname === '/v1/tasks/identity')
     return json({
       userId: who.userId,
+      userName: who.userName,
       activeSpaceId: who.spaceId,
       memberships: who.memberships,
       capabilities: {

@@ -12,6 +12,8 @@ import {
   createTask,
   duplicateCandidates,
   duplicateScore,
+  editTaskComment,
+  deleteTaskComment,
   setTask,
   setTaskBody,
   showTask,
@@ -282,6 +284,22 @@ describe('hosted-authoritative existing-row edits', () => {
 })
 
 describe('local task tracker', () => {
+  test('comment authors may edit and delete while other record users are refused', async () => {
+    resetFixtureStore()
+    const key = `BET-${Date.now()}`
+    seed(key, 'beta')
+    const author = { actorUserId: 'user-1', actorName: 'Person', agent: 'codex', runId: '42' }
+    const other = { ...author, actorUserId: 'user-2' }
+    const comment = await commentTask(key, {}, 'first', author)
+    await expect(editTaskComment(key, {}, comment.id, 'first', author)).rejects.toThrow('unchanged')
+    await expect(editTaskComment(key, {}, comment.id, '', author)).rejects.toThrow('required')
+    await expect(editTaskComment(key, {}, comment.id, 'other', other)).rejects.toThrow('another author')
+    await editTaskComment(key, {}, comment.id, 'edited', author)
+    expect(showTask(key).comments[0]).toMatchObject({ body: 'edited', actor_name: 'Person', agent: 'codex' })
+    await deleteTaskComment(key, {}, comment.id, author)
+    expect(showTask(key).comments).toEqual([])
+    await expect(deleteTaskComment(key, {}, comment.id, author)).rejects.toThrow('not found')
+  })
   test('a project without a declared space sends no record-space header', async () => {
     let recordSpace: string | null = 'not-called'
     await createTask(
@@ -522,7 +540,11 @@ describe('local task tracker', () => {
       documents: { allowed: true },
     })
     expect(result.comments).toEqual([
-      { id: comment.id, body: comment.body, createdAt: comment.created_at },
+      expect.objectContaining({
+        id: comment.id,
+        body: comment.body,
+        createdAt: comment.created_at,
+      }),
     ])
     expect(result.documents.map((document) => document.id)).toEqual([handoffId, ordinaryId])
     expect(result.documents[0]?.body).toBe('# Handoff')

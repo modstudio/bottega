@@ -80,7 +80,9 @@ function currentTask(conn: Database, id: string): LoadedOutboxChange | null {
 function currentComment(conn: Database, id: string): LoadedOutboxChange | null {
   const row = conn
     .query<PushedComment, [string]>(
-      `SELECT c.record_id id,c.task_key,c.task_record_id task_id,t.project project_name,t.project_record_id projectId,c.body,c.created_at,c.created_at updated_at,NULL deleted_at FROM task_comment c JOIN task t ON t.record_id=c.task_record_id WHERE c.record_id=?`,
+      `SELECT c.record_id id,c.task_key,c.task_record_id task_id,t.project project_name,t.project_record_id projectId,
+       c.body,c.created_at,c.updated_at,c.deleted_at,c.actor_user_id,c.actor_name,c.agent,c.run_id
+       FROM task_comment c JOIN task t ON t.record_id=c.task_record_id WHERE c.record_id=?`,
     )
     .get(id)
   return row
@@ -116,10 +118,15 @@ function currentStatusEvent(conn: Database, id: string): LoadedOutboxChange | nu
         from_status: string | null
         to_status: string
         project_name: string
+        actor_user_id: string | null
+        actor_name: string | null
+        agent: string | null
+        run_id: string | null
       },
       [string]
     >(
       `SELECT e.record_id id,e.task_key,e.task_record_id task_id,e.at,e.from_status,e.to_status,
+        e.actor_user_id,e.actor_name,e.agent,e.run_id,
         t.project project_name,t.project_record_id projectId FROM task_status_event e
        JOIN task t ON t.record_id=e.task_record_id WHERE e.record_id=?`,
     )

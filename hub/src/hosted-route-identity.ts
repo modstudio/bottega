@@ -25,6 +25,7 @@ export async function taskSpaceIdentity(
   if (!decision.allowed) return { refusedSpace: decision.requestedSpace }
   return {
     userId: user.id,
+    userName: typeof user.name === 'string' && user.name.trim() ? user.name : null,
     spaceId: decision.spaceId!,
     spaceIds: memberships.map((row) => row.spaceId),
     memberships,

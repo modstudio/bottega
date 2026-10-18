@@ -1,8 +1,19 @@
 import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
+import { userInfo } from 'node:os'
 import { TASK_STATUSES } from '../../../../shared/trackers.ts'
 import { strip, view } from '../../serve.ts'
-import { commentTask, StaleTaskBodyError, setTask, setTaskBody, taskRecord } from '../../task.ts'
+import {
+  commentTask,
+  deleteTaskComment,
+  editTaskComment,
+  StaleTaskBodyError,
+  setTask,
+  setTaskBody,
+  taskRecord,
+} from '../../task.ts'
+import { attributionFromInputs, type Attribution } from '../../task-attribution.ts'
+import { createRecordClient } from '../../record-client.ts'
 import { getTaskDocument, updateTaskDocument } from '../../task-document.ts'
 import type { Context } from '../context.ts'
 
@@ -59,8 +70,27 @@ type WorkDeps = {
   setTask: typeof setTask
   setTaskBody: typeof setTaskBody
   commentTask: typeof commentTask
+  editTaskComment: typeof editTaskComment
+  deleteTaskComment: typeof deleteTaskComment
   getTaskDocument: typeof getTaskDocument
   updateTaskDocument: typeof updateTaskDocument
+}
+
+async function dashboardAttribution(ctx: Context): Promise<Attribution> {
+  const baseUrl = process.env.HUB_RECORD_API_URL
+  const user = baseUrl
+    ? (
+        await createRecordClient({
+          baseUrl,
+          headers: { cookie: ctx.cookie, authorization: ctx.authorization },
+        }).whoami()
+      ).user
+    : null
+  return attributionFromInputs({
+    env: process.env,
+    user: user ? { id: user.id, name: typeof user.name === 'string' ? user.name : null } : null,
+    machineUser: userInfo().username,
+  })
 }
 
 function setBodyProcedure(deps: WorkDeps) {
@@ -92,6 +122,8 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
     setTask,
     setTaskBody,
     commentTask,
+    editTaskComment,
+    deleteTaskComment,
     getTaskDocument,
     updateTaskDocument,
     ...given,
@@ -103,9 +135,10 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
       data: (await deps.view(name, value.hours, value.filters)) as TaskData,
     }))
   return t.router({
-    task: t.procedure.input(z.object(taskIdentityInput)).query(({ input: value }) => {
+    task: t.procedure.input(z.object(taskIdentityInput)).query(async ({ ctx, input: value }) => {
       try {
-        return deps.taskRecord(value.key, value.scope)
+        const attribution = await dashboardAttribution(ctx)
+        return deps.taskRecord(value.key, value.scope, attribution.actorUserId)
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause)
         if (message.startsWith('no task ')) throw new TRPCError({ code: 'NOT_FOUND', message })
@@ -119,9 +152,12 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
           status: z.enum(TASK_STATUSES),
         }),
       )
-      .mutation(({ input: value }) =>
-        write(() => deps.setTask(value.key, value.scope, { status: value.status })),
-      ),
+      .mutation(async ({ ctx, input: value }) => {
+        const attribution = await dashboardAttribution(ctx)
+        return write(() =>
+          deps.setTask(value.key, value.scope, { status: value.status }, attribution),
+        )
+      }),
     setTitle: t.procedure
       .input(
         z.object({
@@ -129,9 +165,12 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
           title: z.string().trim().min(1).max(500),
         }),
       )
-      .mutation(({ input: value }) =>
-        write(() => deps.setTask(value.key, value.scope, { title: value.title })),
-      ),
+      .mutation(async ({ ctx, input: value }) => {
+        const attribution = await dashboardAttribution(ctx)
+        return write(() =>
+          deps.setTask(value.key, value.scope, { title: value.title }, attribution),
+        )
+      }),
     setBody: setBodyProcedure(deps),
     comment: t.procedure
       .input(
@@ -140,9 +179,32 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
           body: z.string().trim().min(1),
         }),
       )
-      .mutation(({ input: value }) =>
-        write(() => deps.commentTask(value.key, value.scope, value.body)),
-      ),
+      .mutation(async ({ ctx, input: value }) => {
+        const attribution = await dashboardAttribution(ctx)
+        return write(() => deps.commentTask(value.key, value.scope, value.body, attribution))
+      }),
+    editComment: t.procedure
+      .input(
+        z.object({
+          ...taskIdentityInput,
+          commentId: z.string().uuid(),
+          body: z.string().trim().min(1),
+        }),
+      )
+      .mutation(async ({ ctx, input: value }) => {
+        const attribution = await dashboardAttribution(ctx)
+        return write(() =>
+          deps.editTaskComment(value.key, value.scope, value.commentId, value.body, attribution),
+        )
+      }),
+    deleteComment: t.procedure
+      .input(z.object({ ...taskIdentityInput, commentId: z.string().uuid() }))
+      .mutation(async ({ ctx, input: value }) => {
+        const attribution = await dashboardAttribution(ctx)
+        return write(() =>
+          deps.deleteTaskComment(value.key, value.scope, value.commentId, attribution),
+        )
+      }),
     setDocument: t.procedure
       .input(
         z.object({

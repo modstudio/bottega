@@ -95,7 +95,9 @@ async function commentEquals(
   row: import('./hosted-tasks.ts').HostedComment,
 ) {
   const found =
-    await tx`SELECT 1 FROM hub_task_comment WHERE id=${row.id}::uuid AND space_id=${identity.spaceId}::uuid AND task_key=${row.task_key} AND body=${row.body} AND updated_at=${row.updated_at}::timestamptz AND deleted_at IS NOT DISTINCT FROM ${row.deleted_at}::timestamptz`
+    await tx`SELECT 1 FROM hub_task_comment WHERE id=${row.id}::uuid AND space_id=${identity.spaceId}::uuid AND task_key=${row.task_key} AND body=${row.body} AND updated_at=${row.updated_at}::timestamptz AND deleted_at IS NOT DISTINCT FROM ${row.deleted_at}::timestamptz
+      AND actor_user_id IS NOT DISTINCT FROM ${row.actor_user_id} AND actor_name IS NOT DISTINCT FROM ${row.actor_name}
+      AND agent IS NOT DISTINCT FROM ${row.agent} AND run_id IS NOT DISTINCT FROM ${row.run_id}`
   return (found as unknown[]).length > 0
 }
 
@@ -106,6 +108,10 @@ async function statusEventEquals(tx: SQL, identity: TaskIdentity, row: PushedSta
       AND at=${row.at}::timestamptz
       AND from_status IS NOT DISTINCT FROM ${row.from_status}
       AND to_status=${row.to_status}
+      AND actor_user_id IS NOT DISTINCT FROM ${row.actor_user_id}
+      AND actor_name IS NOT DISTINCT FROM ${row.actor_name}
+      AND agent IS NOT DISTINCT FROM ${row.agent}
+      AND run_id IS NOT DISTINCT FROM ${row.run_id}
       AND created_at=${row.created_at}::timestamptz
       AND updated_at=${row.updated_at}::timestamptz
       AND deleted_at IS NOT DISTINCT FROM ${row.deleted_at}::timestamptz`) as Array<{

@@ -75,6 +75,13 @@ test('a Codex worker environment uses its chain-scoped CODEX_HOME', () => {
   ).toBe('/runs/sandbox-41/codex')
 })
 
+test('a delegated worker environment names its run and selected agent', () => {
+  expect(childEnv(AGENTS.codex!, 42, 'token', {}, false)).toMatchObject({
+    ORCH_RUN_ID: '42',
+    ORCH_AGENT: AGENTS.codex!.name,
+  })
+})
+
 const FILED_DEFECT_BIRTH = 'Thu Oct  8 12:00:00 2026'
 const filedDefectInventory = (coordinator: number, vendor: number) => ({
   ascertainable: true as const,

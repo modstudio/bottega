@@ -26,7 +26,17 @@ const base = {
     source_protocol: 'workspace-mcp',
     updated_at: '2026-10-16T12:00:00.000Z',
   },
-  comments: [{ id: 'comment-1', body: 'Note', created_at: '2026-10-16T11:00:00.000Z' }],
+  comments: [
+    {
+      id: 'comment-1',
+      body: 'Note',
+      created_at: '2026-10-16T11:00:00.000Z',
+      updated_at: '2026-10-16T11:00:00.000Z',
+      actor_user_id: 'user-1',
+      actor_name: 'Person',
+      agent: 'codex',
+    },
+  ],
   documents: [
     {
       id: 'document-1',
@@ -45,32 +55,39 @@ const base = {
       at: '2026-10-16T10:00:00.000Z',
       from_status: null,
       to_status: 'open',
+      actor_name: 'Person',
+      agent: 'codex',
     },
     {
       id: 'event-2',
       at: '2026-10-16T10:30:00.000Z',
       from_status: 'open',
       to_status: 'active',
+      actor_name: 'Person',
+      agent: null,
     },
   ],
 }
 
 test('local task rows map to the shared detail contract', () => {
-  const detail = localTaskDetail({
-    ...base,
-    capabilities,
-    runs: [
-      {
-        id: 42,
-        source: 'orch',
-        agent: 'codex',
-        job: 'implementation',
-        started_at: '2026-10-16T10:00:00.000Z',
-        ended_at: '2026-10-16T11:00:00.000Z',
-        running: false,
-      },
-    ],
-  })
+  const detail = localTaskDetail(
+    {
+      ...base,
+      capabilities,
+      runs: [
+        {
+          id: 42,
+          source: 'orch',
+          agent: 'codex',
+          job: 'implementation',
+          started_at: '2026-10-16T10:00:00.000Z',
+          ended_at: '2026-10-16T11:00:00.000Z',
+          running: false,
+        },
+      ],
+    },
+    'user-1',
+  )
   expect(detail).toEqual({
     task: {
       key: 'DEV-1',
@@ -88,7 +105,18 @@ test('local task rows map to the shared detail contract', () => {
       spaceName: null,
     },
     bodyVersion: taskBodyVersion('Body'),
-    comments: [{ id: 'comment-1', body: 'Note', createdAt: '2026-10-16T11:00:00.000Z' }],
+    comments: [
+      {
+        id: 'comment-1',
+        body: 'Note',
+        createdAt: '2026-10-16T11:00:00.000Z',
+        updatedAt: '2026-10-16T11:00:00.000Z',
+        actorName: 'Person',
+        agent: 'codex',
+        canEdit: true,
+        canDelete: true,
+      },
+    ],
     documents: [
       {
         id: 'document-1',
@@ -102,12 +130,21 @@ test('local task rows map to the shared detail contract', () => {
       },
     ],
     statusEvents: [
-      { id: 'event-1', at: '2026-10-16T10:00:00.000Z', fromStatus: null, toStatus: 'open' },
+      {
+        id: 'event-1',
+        at: '2026-10-16T10:00:00.000Z',
+        fromStatus: null,
+        toStatus: 'open',
+        actorName: 'Person',
+        agent: 'codex',
+      },
       {
         id: 'event-2',
         at: '2026-10-16T10:30:00.000Z',
         fromStatus: 'open',
         toStatus: 'active',
+        actorName: 'Person',
+        agent: null,
       },
     ],
     runs: [
@@ -205,7 +242,18 @@ test('hosted task rows map absent bodies and intervals to shared runs', () => {
       spaceName: 'Team',
     },
     bodyVersion: taskBodyVersion(null),
-    comments: [{ id: 'comment-1', body: 'Note', createdAt: '2026-10-16T11:00:00.000Z' }],
+    comments: [
+      {
+        id: 'comment-1',
+        body: 'Note',
+        createdAt: '2026-10-16T11:00:00.000Z',
+        updatedAt: '2026-10-16T11:00:00.000Z',
+        actorName: 'Person',
+        agent: 'codex',
+        canEdit: false,
+        canDelete: false,
+      },
+    ],
     documents: [
       {
         id: 'document-1',
@@ -219,12 +267,21 @@ test('hosted task rows map absent bodies and intervals to shared runs', () => {
       },
     ],
     statusEvents: [
-      { id: 'event-1', at: '2026-10-16T10:00:00.000Z', fromStatus: null, toStatus: 'open' },
+      {
+        id: 'event-1',
+        at: '2026-10-16T10:00:00.000Z',
+        fromStatus: null,
+        toStatus: 'open',
+        actorName: 'Person',
+        agent: 'codex',
+      },
       {
         id: 'event-2',
         at: '2026-10-16T10:30:00.000Z',
         fromStatus: 'open',
         toStatus: 'active',
+        actorName: 'Person',
+        agent: null,
       },
     ],
     runs: [

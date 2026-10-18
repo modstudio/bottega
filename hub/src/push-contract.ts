@@ -31,6 +31,10 @@ export type PushedStatusEvent = {
   created_at: string
   updated_at: string
   deleted_at: string | null
+  actor_user_id?: string | null
+  actor_name?: string | null
+  agent?: string | null
+  run_id?: string | null
 }
 
 export type PushedInterval = {
@@ -145,6 +149,10 @@ export type PushedComment = {
   created_at: string
   updated_at: string
   deleted_at: string | null
+  actor_user_id?: string | null
+  actor_name?: string | null
+  agent?: string | null
+  run_id?: string | null
 }
 export type PushedDocument = {
   id: string
@@ -168,6 +176,10 @@ const HOSTED_COMMENT_UPDATE_COLUMNS = [
   'body',
   'updated_at',
   'deleted_at',
+  'actor_user_id',
+  'actor_name',
+  'agent',
+  'run_id',
 ] as const
 const HOSTED_DOCUMENT_UPDATE_COLUMNS = ['role', 'title', 'body', 'version'] as const
 
@@ -273,11 +285,20 @@ function parseStatusEventRow(
   if (typeof row.task_id === 'string' && !UUID.test(row.task_id))
     return `${table} row.task_id must be a UUID, null, or absent`
   if (!nullableString(row.from_status)) return `${table} row.from_status must be a string or null`
+  for (const field of ['actor_user_id', 'actor_name', 'agent', 'run_id'] as const)
+    if (row[field] !== undefined && !nullableString(row[field]))
+      return `${table} row.${field} must be a string, null, or absent`
   for (const field of ['at', 'created_at', 'updated_at'] as const)
     if (!isTimestamp(row[field])) return `${table} row.${field} must be an ISO timestamp`
   if (row.deleted_at !== null && !isTimestamp(row.deleted_at))
     return `${table} row.deleted_at must be an ISO timestamp or null`
-  return row as PushedStatusEvent
+  return {
+    ...row,
+    actor_user_id: row.actor_user_id ?? null,
+    actor_name: row.actor_name ?? null,
+    agent: row.agent ?? null,
+    run_id: row.run_id ?? null,
+  } as PushedStatusEvent
 }
 
 function parseTaskRow(value: unknown, id: string): PushedTask | string {
@@ -450,7 +471,16 @@ function parseCommentRow(value: unknown, id: string): PushedComment | string {
   const error = childRowError(row, id, HOSTED_COMMENT_TABLE)
   if (error) return error
   if (typeof row.body !== 'string') return `${HOSTED_COMMENT_TABLE} row.body must be a string`
-  return row as PushedComment
+  for (const field of ['actor_user_id', 'actor_name', 'agent', 'run_id'] as const)
+    if (row[field] !== undefined && !nullableString(row[field]))
+      return `${HOSTED_COMMENT_TABLE} row.${field} must be a string, null, or absent`
+  return {
+    ...row,
+    actor_user_id: row.actor_user_id ?? null,
+    actor_name: row.actor_name ?? null,
+    agent: row.agent ?? null,
+    run_id: row.run_id ?? null,
+  } as PushedComment
 }
 
 function parseDocumentRow(value: unknown, id: string): PushedDocument | string {

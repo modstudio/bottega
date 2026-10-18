@@ -29,6 +29,8 @@ export function useTask(key: string, recordId?: string) {
   const setStatus = useMutation(trpc.work.setStatus.mutationOptions())
   const setBody = useMutation(trpc.work.setBody.mutationOptions())
   const comment = useMutation(trpc.work.comment.mutationOptions())
+  const editComment = useMutation(trpc.work.editComment.mutationOptions())
+  const deleteComment = useMutation(trpc.work.deleteComment.mutationOptions())
   const setDocument = useMutation(trpc.work.setDocument.mutationOptions())
   const refresh = () => queryClient.invalidateQueries()
   const capability = detail?.capabilities
@@ -97,6 +99,26 @@ export function useTask(key: string, recordId?: string) {
         },
         pending: comment.isPending,
         error: comment.error,
+        refused: refusal(capability?.comment),
+      },
+      editComment: {
+        run: async ({ id, body }: { id: string; body: string }) => {
+          if (refusal(capability?.comment)) return
+          await editComment.mutateAsync({ ...localInput, commentId: id, body })
+          await refresh()
+        },
+        pending: editComment.isPending,
+        error: editComment.error,
+        refused: refusal(capability?.comment),
+      },
+      deleteComment: {
+        run: async ({ id }: { id: string }) => {
+          if (refusal(capability?.comment)) return
+          await deleteComment.mutateAsync({ ...localInput, commentId: id })
+          await refresh()
+        },
+        pending: deleteComment.isPending,
+        error: deleteComment.error,
         refused: refusal(capability?.comment),
       },
       setDocument: {
