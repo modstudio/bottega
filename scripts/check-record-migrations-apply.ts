@@ -47,6 +47,13 @@ const jsonbInvalidDocId = '01990000-0000-7000-8000-000000000027'
 const hubProjectMatchId = '01990000-0000-7000-8000-000000000050'
 const hubProjectMatchTaskId = '01990000-0000-7000-8000-000000000051'
 const hubProjectUnmatchedTaskId = '01990000-0000-7000-8000-000000000052'
+const crossSpaceProofSpaceId = '01990000-0000-7000-8000-000000000060'
+const crossSpaceProofUserId = '01990000-0000-7000-8000-000000000061'
+const sameSpaceSourceProjectId = '01990000-0000-7000-8000-000000000062'
+const sameSpaceTargetProjectId = '01990000-0000-7000-8000-000000000063'
+const otherSpaceProjectId = '01990000-0000-7000-8000-000000000064'
+const sameSpacePairId = '01990000-0000-7000-8000-000000000065'
+const crossSpacePairId = '01990000-0000-7000-8000-000000000066'
 
 class CheckFailure extends Error {}
 
@@ -412,6 +419,60 @@ async function proofManagedCanonProjects(transaction: Transaction): Promise<void
   }
 }
 
+async function proofProjectRelationsStayWithinOneSpace(transaction: Transaction): Promise<void> {
+  await transaction.exec(`
+    INSERT INTO "user" (id, email, name, created_at)
+    VALUES ('${crossSpaceProofUserId}', 'catalogue-space-proof@example.test', 'Catalogue proof', now());
+    SELECT set_config('app.space_id', '${crossSpaceProofSpaceId}', true);
+    SELECT set_config('app.user_id', '${crossSpaceProofUserId}', true);
+    INSERT INTO space (id, name, slug, created_at)
+    VALUES ('${crossSpaceProofSpaceId}', 'Catalogue proof', 'catalogue-proof', now());
+    INSERT INTO membership (id, space_id, user_id, role, permission, created_at)
+    VALUES (
+      '01990000-0000-7000-8000-000000000067', '${crossSpaceProofSpaceId}',
+      '${crossSpaceProofUserId}', 'owner', 'write', now()
+    );
+    INSERT INTO project (id, space_id, name, created_at)
+    VALUES ('${otherSpaceProjectId}', '${crossSpaceProofSpaceId}', 'other-space-project', now());
+
+    SELECT set_config('app.space_id', '${PLATFORM_SPACE_ID}', true);
+    SELECT set_config('app.user_id', '${platformOperatorId}', true);
+    INSERT INTO project (id, space_id, name, created_at) VALUES
+      ('${sameSpaceSourceProjectId}', '${PLATFORM_SPACE_ID}', 'pair-source-proof', now()),
+      ('${sameSpaceTargetProjectId}', '${PLATFORM_SPACE_ID}', 'pair-target-proof', now());
+    INSERT INTO port_pair (id, space_id, source_project_id, target_project_id, created_at)
+    VALUES (
+      '${sameSpacePairId}', '${PLATFORM_SPACE_ID}', '${sameSpaceSourceProjectId}',
+      '${sameSpaceTargetProjectId}', now()
+    );
+  `)
+
+  await transaction.exec('SAVEPOINT cross_space_pair_refusal')
+  let refused = false
+  try {
+    await transaction.exec(`
+      INSERT INTO port_pair (id, space_id, source_project_id, target_project_id, created_at)
+      VALUES (
+        '${crossSpacePairId}', '${PLATFORM_SPACE_ID}', '${sameSpaceSourceProjectId}',
+        '${otherSpaceProjectId}', now()
+      );
+    `)
+  } catch {
+    refused = true
+    await transaction.exec('ROLLBACK TO SAVEPOINT cross_space_pair_refusal')
+  }
+  await transaction.exec('RELEASE SAVEPOINT cross_space_pair_refusal')
+  if (!refused) throw new CheckFailure('DEV-1388 cross-space port pair was accepted')
+
+  const accepted = await transaction.query<{ total: number }>(
+    'SELECT count(*)::int AS total FROM port_pair WHERE id = $1',
+    [sameSpacePairId],
+  )
+  if (accepted.rows[0]?.total !== 1) {
+    throw new CheckFailure('DEV-1388 same-space port pair was not accepted')
+  }
+}
+
 async function seedHubProjectIdentityBackfill(transaction: Transaction): Promise<void> {
   await transaction.exec(`
     SELECT set_config('app.space_id', '${PLATFORM_SPACE_ID}', true);
@@ -568,6 +629,7 @@ async function main(): Promise<void> {
       await database.transaction(async (transaction) => {
         for (const migration of migrations) await applyAndProveMigration(transaction, migration)
         await proofManagedCanonProjects(transaction)
+        await proofProjectRelationsStayWithinOneSpace(transaction)
       })
       await proofBoardNotifications(database)
     } catch (error) {

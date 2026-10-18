@@ -455,6 +455,18 @@ export const recordSchemaBoundaries: ImportBoundary[] = [
     'Enforce the hosted doc schema concern boundary.',
   ),
   boundary(
+    'postgres-schema-catalogue-boundary',
+    'shared/record/schema-catalogue.ts',
+    ['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts'],
+    'Enforce the hosted workflow and lens catalogue schema concern boundary.',
+  ),
+  boundary(
+    'postgres-schema-port-boundary',
+    'shared/record/schema-port.ts',
+    ['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts'],
+    'Enforce the hosted port catalogue schema concern boundary.',
+  ),
+  boundary(
     'postgres-schema-subjects-boundary',
     'shared/record/schema-subjects.ts',
     ['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts'],
