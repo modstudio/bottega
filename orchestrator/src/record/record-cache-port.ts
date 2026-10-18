@@ -117,9 +117,7 @@ function parentPresent(local: Database, table: RecordPortTable, item: RecordPort
     }
     case 'port_baseline':
     case 'port_skip': {
-      const row = item as
-        | RecordPortRowByTable['port_baseline']
-        | RecordPortRowByTable['port_skip']
+      const row = item as RecordPortRowByTable['port_baseline'] | RecordPortRowByTable['port_skip']
       return hasPair(local, row.pairId, row.spaceId)
     }
     case 'port_ref': {
@@ -181,17 +179,23 @@ export function applyPortCatalogueRow(
 ): void {
   switch (table) {
     case 'port_doctrine':
-      return applyDoctrine(local, item as RecordPortRowByTable['port_doctrine'])
+      applyDoctrine(local, item as RecordPortRowByTable['port_doctrine'])
+      break
     case 'port_pair':
-      return applyPair(local, item as RecordPortRowByTable['port_pair'])
+      applyPair(local, item as RecordPortRowByTable['port_pair'])
+      break
     case 'port_baseline':
-      return applyBaseline(local, item as RecordPortRowByTable['port_baseline'])
+      applyBaseline(local, item as RecordPortRowByTable['port_baseline'])
+      break
     case 'port_ref':
-      return applyRef(local, item as RecordPortRowByTable['port_ref'])
+      applyRef(local, item as RecordPortRowByTable['port_ref'])
+      break
     case 'port_ref_source':
-      return applyRefSource(local, item as RecordPortRowByTable['port_ref_source'])
+      applyRefSource(local, item as RecordPortRowByTable['port_ref_source'])
+      break
     case 'port_skip':
-      return applySkip(local, item as RecordPortRowByTable['port_skip'])
+      applySkip(local, item as RecordPortRowByTable['port_skip'])
+      break
   }
 }
 function applyDoctrine(local: Database, item: RecordPortRowByTable['port_doctrine']): void {

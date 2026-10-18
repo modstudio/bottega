@@ -92,9 +92,7 @@ test('every hosted port writer refuses a worker before calling the record', () =
         taskKey: 'DEV-1',
         targetProjectId: target,
         note: 'note',
-        sources: [
-          { source_project_record_id: source, commits: [], paths: [], note: 'source' },
-        ],
+        sources: [{ source_project_record_id: source, commits: [], paths: [], note: 'source' }],
       }),
     () => resolveLedgerRef(target, 'DEV-1'),
     () => removeLedgerRef(target, 'DEV-1'),

@@ -2,8 +2,8 @@
 /** Implements decoded port catalogue requests outside the main client file ceiling. */
 import type { RecordRequestDestination } from './record-api-client-paths.ts'
 import {
-  type RecordPortTable,
   type RecordPortRow,
+  type RecordPortTable,
   type RecordPortWriteInput,
   type RecordPortWriteResponse,
   recordPortPageSchema,

@@ -36,10 +36,7 @@ function mapped(
   table: 'port_doctrine',
   row: Record<string, unknown>,
 ): RecordPortRowByTable['port_doctrine']
-function mapped(
-  table: 'port_pair',
-  row: Record<string, unknown>,
-): RecordPortRowByTable['port_pair']
+function mapped(table: 'port_pair', row: Record<string, unknown>): RecordPortRowByTable['port_pair']
 function mapped(
   table: 'port_baseline',
   row: Record<string, unknown>,

@@ -5,9 +5,9 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
+import { ledgerRef, listLedgerRefs, setLedgerRefLocal } from '../porting/porting.ts'
 import { upsertProject } from '../project/projects.ts'
 import { effectiveProjectSpace, rememberProjectSpace } from '../project-space.ts'
-import { ledgerRef, listLedgerRefs, setLedgerRefLocal } from '../porting/porting.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { applyPortCatalogueRow, pullPortCatalogue } from './record-cache-port.ts'
 
@@ -213,9 +213,8 @@ test('port tombstones remove only hosted refs and replaced sources', async () =>
       .get(replacedSourceId, space),
   ).toBeNull()
   expect(
-    local
-      .query<{ n: number }, []>('SELECT COUNT(*) n FROM port_ref WHERE space_id IS NULL')
-      .get()!.n,
+    local.query<{ n: number }, []>('SELECT COUNT(*) n FROM port_ref WHERE space_id IS NULL').get()!
+      .n,
   ).toBe(2)
   expect(
     local
