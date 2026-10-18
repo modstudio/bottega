@@ -18,6 +18,9 @@
     "./docs/use-doc-reorder": "./src/docs/use-doc-reorder.ts",
     "./docs/use-docs": "./src/docs/use-docs.ts",
     "./hub-mode": "./src/hub-mode.ts",
+    "./hosted-auth": "./src/hosted-auth.ts",
+    "./hosted-organization": "./src/hosted-organization.ts",
+    "./operator-waiting": "./src/operator-waiting.ts",
     "./use-task": "./src/use-task.ts",
     "./transport": "./src/transport.ts"
   },

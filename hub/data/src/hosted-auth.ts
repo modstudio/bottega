@@ -1,4 +1,4 @@
-import { recordApiUrl } from '@bottega/hub-data/hub-mode'
+import { recordApiUrl } from './hub-mode.ts'
 
 function authUrl(path: string) {
   const base = recordApiUrl()

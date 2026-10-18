@@ -1,4 +1,4 @@
-import type { OperatorWaitingItem } from '@bottega/hub-data/client'
+import type { OperatorWaitingItem } from './client.ts'
 
 /** Match each rendered run to a question waiting on its chain root. */
 export function waitingByRun<Run extends { id: number | string; root_id?: number | string }>(

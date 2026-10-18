@@ -1,4 +1,3 @@
-import type { MeasuresResponse } from '@bottega/hub-data/client'
 import { StatRow, StatTile } from '@bottega/hub-ui/stat'
 import type { ReactNode } from 'react'
 import { compactTokens } from '@/lib/format'
@@ -6,6 +5,33 @@ import { compactTokens } from '@/lib/format'
 const hour = (ms: number) =>
   `${(ms / 3_600_000).toLocaleString(undefined, { maximumFractionDigits: 1 })} hours`
 const money = (usd: number) => usd.toLocaleString(undefined, { style: 'currency', currency: 'USD' })
+
+type SessionTimeMeasure = {
+  unionThenSumMs: number
+  uncountedSilenceMs: number
+  silenceAllowanceSentence: string
+  unknownUser?: { unionThenSumMs: number; uncountedSilenceMs: number }
+}
+
+type AgentHoursMeasure = {
+  sumMs: number
+  unknownShare?: { sumMs: number }
+}
+
+type CostMeasure = {
+  vendorCostUsd: number
+  vendorTokens: number
+  unknownShare?: { vendorCostUsd: number; vendorTokens: number }
+}
+
+type MeasuresSummaryValue = {
+  hoursRunning: { unionMs: number }
+  agentHours: AgentHoursMeasure
+  sessionTime: SessionTimeMeasure
+  cost: CostMeasure
+  shipped?: { count: number }
+  cycleTime?: { medianMs: number; n: number }
+}
 
 function Unknown({ children, mostly }: { children: ReactNode; mostly: boolean }) {
   return (
@@ -16,7 +42,7 @@ function Unknown({ children, mostly }: { children: ReactNode; mostly: boolean })
   )
 }
 
-export function SessionDetail({ measure }: { measure: MeasuresResponse['sessionTime'] }) {
+export function SessionDetail({ measure }: { measure: SessionTimeMeasure }) {
   const unknown = measure.unknownUser
   const total = measure.unionThenSumMs + (unknown?.unionThenSumMs ?? 0)
   return (
@@ -35,7 +61,7 @@ export function SessionDetail({ measure }: { measure: MeasuresResponse['sessionT
   )
 }
 
-export function AgentUnknown({ measure }: { measure: MeasuresResponse['agentHours'] }) {
+export function AgentUnknown({ measure }: { measure: AgentHoursMeasure }) {
   if (!measure.unknownShare) return null
   return (
     <Unknown mostly={measure.unknownShare.sumMs > measure.sumMs / 2}>
@@ -44,7 +70,7 @@ export function AgentUnknown({ measure }: { measure: MeasuresResponse['agentHour
   )
 }
 
-export function CostUnknown({ measure }: { measure: MeasuresResponse['cost'] }) {
+export function CostUnknown({ measure }: { measure: CostMeasure }) {
   if (!measure.unknownShare) return null
   const mostly = measure.vendorCostUsd
     ? measure.unknownShare.vendorCostUsd > measure.vendorCostUsd / 2
@@ -61,7 +87,7 @@ export function MeasuresSummary({
   measures,
   showShipped = true,
 }: {
-  measures: MeasuresResponse
+  measures: MeasuresSummaryValue
   showShipped?: boolean
 }) {
   return (
@@ -89,14 +115,14 @@ export function MeasuresSummary({
         hint={<CostUnknown measure={measures.cost} />}
         wrapHint
       />
-      {showShipped && 'shipped' in measures ? (
+      {showShipped && measures.shipped ? (
         <StatTile
           label="Tasks done"
           figure={measures.shipped.count.toLocaleString()}
           hint="Tasks moved to done in this window."
         />
       ) : null}
-      {'cycleTime' in measures && measures.cycleTime ? (
+      {measures.cycleTime ? (
         <StatTile
           label="Cycle time for tasks done"
           figure={hour(measures.cycleTime.medianMs)}

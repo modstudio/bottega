@@ -5,12 +5,6 @@
   "hub/web/src/components/hosted-reports.tsx",
   "hub/web/src/components/insight-view.tsx",
   "hub/web/src/components/machine-permission-editor.tsx",
-  "hub/web/src/components/measure-display.tsx",
   "hub/web/src/components/review-lenses.tsx",
-  "hub/web/src/components/waiting-badge.tsx",
-  "hub/web/src/components/work-view.tsx",
-  "hub/web/src/lib/hosted-auth.ts",
-  "hub/web/src/lib/hosted-organization.ts",
-  "hub/web/src/lib/operator-waiting.ts",
-  "hub/web/src/site/route.ts"
+  "hub/web/src/components/work-view.tsx"
 ]

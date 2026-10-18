@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { TaskView } from '@/components/work-view'
 import { HomePage } from '@/site/home'
-import { siteHead } from '@/site/route'
+import { siteHead } from './-site'
 
 /** The marketing home for a signed-out hosted visitor; the app's own home for everyone else. */
 function HostedIndex() {

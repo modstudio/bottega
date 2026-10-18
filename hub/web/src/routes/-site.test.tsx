@@ -10,7 +10,7 @@ import {
 } from '@tanstack/react-router'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'
-import { siteHead } from './route.ts'
+import { siteHead } from './-site.ts'
 
 test('marketing home metadata reaches the document head', async () => {
   const root = createRootRoute({
