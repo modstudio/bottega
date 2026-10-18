@@ -1,131 +1,95 @@
-import { describe, expect, test } from 'bun:test'
-import {
-  deduplicateHardLinkedBytes,
-  FREE_SPACE_ABSOLUTE_FLOOR_BYTES,
-  largestRuns,
-  STORAGE_WALK_ENTRY_LIMIT,
-  storageMeasurement,
-  storagePressureDecision,
-} from './storage-report.ts'
+import { afterEach, expect, test } from 'bun:test'
+import { linkSync, lstatSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { formatStorageReport, measureRunStorage } from './storage-report.ts'
 
-describe('storage pressure decision', () => {
-  const GiB = 1024 ** 3
-
-  test('fires immediately below and clears at the proportional threshold', () => {
-    const totalBytes = 1_000 * GiB
-    expect(
-      storagePressureDecision({
-        path: '/state',
-        freeBytes: 100 * GiB - 1,
-        totalBytes,
-        error: null,
-      }),
-    ).toMatchObject({ pressured: true, thresholdBytes: 100 * GiB })
-    expect(
-      storagePressureDecision({ path: '/state', freeBytes: 100 * GiB, totalBytes, error: null }),
-    ).toMatchObject({ pressured: false, thresholdBytes: 100 * GiB })
-    expect(
-      storagePressureDecision({
-        path: '/state',
-        freeBytes: 100 * GiB + 1,
-        totalBytes,
-        error: null,
-      }),
-    ).toMatchObject({ pressured: false, thresholdBytes: 100 * GiB })
-  })
-
-  test('fires immediately below and clears at the absolute floor', () => {
-    const totalBytes = 100 * GiB
-    expect(
-      storagePressureDecision({
-        path: '/state',
-        freeBytes: FREE_SPACE_ABSOLUTE_FLOOR_BYTES - 1,
-        totalBytes,
-        error: null,
-      }),
-    ).toMatchObject({ pressured: true, thresholdBytes: FREE_SPACE_ABSOLUTE_FLOOR_BYTES })
-    expect(
-      storagePressureDecision({
-        path: '/state',
-        freeBytes: FREE_SPACE_ABSOLUTE_FLOOR_BYTES,
-        totalBytes,
-        error: null,
-      }),
-    ).toMatchObject({ pressured: false, thresholdBytes: FREE_SPACE_ABSOLUTE_FLOOR_BYTES })
-    expect(
-      storagePressureDecision({
-        path: '/state',
-        freeBytes: FREE_SPACE_ABSOLUTE_FLOOR_BYTES + 1,
-        totalBytes,
-        error: null,
-      }),
-    ).toMatchObject({ pressured: false, thresholdBytes: FREE_SPACE_ABSOLUTE_FLOOR_BYTES })
-  })
-
-  test('does not invent a pressure verdict from an unreadable size', () => {
-    expect(
-      storagePressureDecision({
-        path: '/state',
-        freeBytes: null,
-        totalBytes: null,
-        error: 'permission denied',
-      }),
-    ).toEqual({ pressured: false, thresholdBytes: null, error: 'permission denied' })
-  })
+const roots: string[] = []
+afterEach(() => {
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-describe('storage totals', () => {
-  test('counts two paths to one multiply linked inode once while retaining both entries', () => {
-    const observations = deduplicateHardLinkedBytes([
-      { bytes: 4096, hardLinkKey: '12:34', kind: 'other', runId: null, path: 'first' },
-      { bytes: 4096, hardLinkKey: '12:34', kind: 'other', runId: null, path: 'second' },
-    ])
+function allocatedBytes(path: string): number {
+  const stat = lstatSync(path)
+  return typeof stat.blocks === 'number' ? stat.blocks * 512 : stat.size
+}
 
-    expect(observations).toHaveLength(2)
-    expect(observations.map(({ path, bytes }) => ({ path, bytes }))).toEqual([
-      { path: 'first', bytes: 4096 },
-      { path: 'second', bytes: 0 },
-    ])
-    expect(observations.reduce((total, observation) => total + observation.bytes, 0)).toBe(4096)
+test('the bounded adapter classifies files, deduplicates hard links, and labels partial totals', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'storage-report-'))
+  roots.push(root)
+  const run = join(root, '1')
+  const artifacts = join(run, 'artifacts')
+  const scratch = join(run, 'scratch')
+  const sandbox = join(root, 'sandbox-1')
+  mkdirSync(artifacts, { recursive: true })
+  mkdirSync(scratch)
+  mkdirSync(sandbox)
+  const artifact = join(artifacts, 'artifact.bin')
+  const artifactLink = join(artifacts, 'artifact-link.bin')
+  const scratchFile = join(scratch, 'scratch.bin')
+  const prompt = join(run, 'turn.prompt.txt')
+  const boundPrompt = join(run, 'turn.bound.txt')
+  const reply = join(run, 'reply.txt')
+  const sandboxFile = join(sandbox, 'sandbox.bin')
+  writeFileSync(artifact, 'artifact'.repeat(1_024))
+  linkSync(artifact, artifactLink)
+  writeFileSync(scratchFile, 'scratch')
+  writeFileSync(prompt, 'prompt')
+  writeFileSync(boundPrompt, 'bound')
+  writeFileSync(reply, 'reply')
+  writeFileSync(sandboxFile, 'sandbox')
+  mkdirSync(join(root, 'zz-overflow', 'a', 'b', 'c'), { recursive: true })
+
+  const measured = await measureRunStorage(
+    root,
+    [
+      {
+        id: 1,
+        status: 'running',
+        started_at: '2026-10-18T11:00:00.000Z',
+        prompt_path: prompt,
+        output_path: reply,
+      },
+    ],
+    Date.parse('2026-10-18T12:00:00.000Z'),
+    14,
+  )
+
+  expect(measured.kinds.artifacts).toMatchObject({
+    bytes: allocatedBytes(artifacts) + allocatedBytes(artifact),
+    entries: 3,
+    state: 'partial',
+  })
+  expect(measured.kinds.scratch).toMatchObject({
+    bytes: allocatedBytes(scratch) + allocatedBytes(scratchFile),
+    entries: 2,
+    state: 'partial',
+  })
+  expect(measured.kinds.prompts).toMatchObject({
+    bytes: allocatedBytes(prompt) + allocatedBytes(boundPrompt),
+    entries: 2,
+    state: 'partial',
+  })
+  expect(measured.kinds.replies).toMatchObject({ bytes: allocatedBytes(reply), entries: 1 })
+  expect(measured.kinds.sandboxes).toMatchObject({
+    bytes: allocatedBytes(sandbox) + allocatedBytes(sandboxFile),
+    entries: 2,
+  })
+  expect(measured.largestRuns.artifacts).toMatchObject({
+    state: 'partial',
+    runs: [{ runId: 1, state: 'partial' }],
   })
 
-  test('labels an entry-capped total as a partial lower bound', () => {
-    expect(
-      storageMeasurement({ bytes: 41, entries: STORAGE_WALK_ENTRY_LIMIT, stoppedAtLimit: true }),
-    ).toEqual({
-      bytes: 41,
-      entries: STORAGE_WALK_ENTRY_LIMIT,
-      state: 'partial',
-      detail: `at least 41 bytes and ${STORAGE_WALK_ENTRY_LIMIT} entries; walk stopped at the ${STORAGE_WALK_ENTRY_LIMIT}-entry cap`,
-    })
+  const text = formatStorageReport({
+    measuredAt: '2026-10-18T12:00:00.000Z',
+    walkDurationMs: 1,
+    entryLimit: 14,
+    runs: measured,
+    worktrees: [],
+    stores: [],
+    volume: { path: root, freeBytes: 1, totalBytes: 2, error: null },
   })
-
-  test('uses null rather than zero for a wholly unreadable size', () => {
-    expect(storageMeasurement({ bytes: 0, entries: 0, unreadable: 'permission denied' })).toEqual({
-      bytes: null,
-      entries: null,
-      state: 'unreadable',
-      detail: 'permission denied',
-    })
-  })
-})
-
-test('largest runs are ordered by size with stable ids and carry age and liveness', () => {
-  const sizes = new Map([
-    [7, 50],
-    [3, 80],
-    [2, 80],
-    [9, 20],
-  ])
-  const facts = new Map([
-    [2, { startedAt: '2026-10-18T11:00:00.000Z', status: 'running' }],
-    [3, { startedAt: '2026-10-18T10:00:00.000Z', status: 'ok' }],
-    [7, { startedAt: 'unreadable', status: 'failed' }],
-  ])
-  expect(largestRuns(sizes, facts, Date.parse('2026-10-18T12:00:00.000Z'))).toEqual([
-    { runId: 2, bytes: 80, ageMs: 3_600_000, status: 'live' },
-    { runId: 3, bytes: 80, ageMs: 7_200_000, status: 'terminal' },
-    { runId: 7, bytes: 50, ageMs: null, status: 'terminal' },
-    { runId: 9, bytes: 20, ageMs: null, status: 'terminal' },
-  ])
+  expect(text).toContain('largest artifacts (partial ranking):')
+  expect(text).toContain('run 1: at least ')
+  expect(JSON.stringify(measured.largestRuns.artifacts)).toContain('"state":"partial"')
 })
