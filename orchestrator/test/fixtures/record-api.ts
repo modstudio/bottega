@@ -52,6 +52,12 @@ function idleWorkflowDeps() {
     retireWorkflow: unused,
   }
 }
+function idlePortDeps() {
+  const unused = async () => {
+    throw new Error('hosted port catalogue is unused in this fixture')
+  }
+  return { listPortCatalogue: async () => [], writePort: unused }
+}
 
 function idleBoardDeps(): RecordBoardDeps {
   const unused = async () => {
@@ -91,6 +97,7 @@ export function idleRecordApiDeps() {
     ...idleBoardDeps(),
     ...idleLensDeps(),
     ...idleWorkflowDeps(),
+    ...idlePortDeps(),
   }
 }
 
@@ -219,6 +226,8 @@ export function unusedBoardClientMethods(): Pick<
   | 'draftWorkflow'
   | 'promoteWorkflow'
   | 'retireWorkflow'
+  | 'listPortCatalogue'
+  | 'writePort'
 > {
   return {
     listPublicDocs: unusedBoard,
@@ -257,6 +266,8 @@ export function unusedBoardClientMethods(): Pick<
     draftWorkflow: unusedSubject,
     promoteWorkflow: unusedSubject,
     retireWorkflow: unusedSubject,
+    listPortCatalogue: async () => ({ items: [], nextCursor: null }),
+    writePort: unusedSubject,
   }
 }
 
@@ -313,6 +324,12 @@ export function createMemoryRecordApiClient(): RecordApiClient {
     },
     async retireWorkflow() {
       throw new Error('hosted workflow catalogue is unused in this fixture')
+    },
+    async listPortCatalogue() {
+      return { items: [], nextCursor: null }
+    },
+    async writePort() {
+      throw new Error('hosted port catalogue is unused in this fixture')
     },
     async applySettingsPermission() {
       throw new Error('settings permission endpoint is not implemented by the memory fixture')

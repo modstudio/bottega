@@ -24,6 +24,7 @@ import {
   registerRecordInvitationRoute,
 } from './record-api-invitations.ts'
 import { type RecordLensRouteDeps, registerRecordLensRoutes } from './record-api-lens.ts'
+import { type RecordPortRouteDeps, registerRecordPortRoutes } from './record-api-port.ts'
 import { registerPublicDocRoutes, registerSignedDocSearchRoute } from './record-api-public-docs.ts'
 import { type RecordReleaseRouteDeps, registerRecordReleaseRoutes } from './record-api-releases.ts'
 import { registerRecordRequestSpace } from './record-api-request-space.ts'
@@ -93,6 +94,7 @@ type Deps = RecordSubjectRouteDeps &
   RecordReleaseRouteDeps &
   RecordSyncRouteDeps &
   RecordLensRouteDeps &
+  RecordPortRouteDeps &
   RecordWorkflowRouteDeps &
   RecordApiDeps
 type RecordApiDeps = RecordInvitationRouteDeps & {
@@ -282,6 +284,16 @@ const activeSpaceRemedy = `run \`${PLATFORM_SLUG} record space switch <slug>\` t
 const noSpace = (context: Context<ApiEnvironment>) =>
   context.json({ error: 'record session has no active space', remedy: activeSpaceRemedy }, 409)
 
+function registerCatalogueRoutes(
+  app: Hono<ApiEnvironment>,
+  deps: Deps,
+  scope: (context: Context<ApiEnvironment>) => Tenant | null,
+): void {
+  registerRecordLensRoutes(app, deps, { scope, noSpace })
+  registerRecordPortRoutes(app, deps, { scope, noSpace })
+  registerRecordWorkflowRoutes(app, deps, { scope, noSpace })
+}
+
 function registerSessionRoutes(app: Hono<ApiEnvironment>, deps: Deps): void {
   registerRecordInvitationRoute(app, deps)
   registerRecordSyncRoute(app, deps)
@@ -459,8 +471,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     throw error
   }
   registerRecordWriteRoutes(app, deps, { scope, noSpace, writeError })
-  registerRecordLensRoutes(app, deps, { scope, noSpace })
-  registerRecordWorkflowRoutes(app, deps, { scope, noSpace })
+  registerCatalogueRoutes(app, deps, scope)
   const configBody = z.object({
     environment: z.string().min(1),
     scope: configScopeSchema,

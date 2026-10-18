@@ -7,12 +7,13 @@ import { parseRecordSpaceMemberships } from '../../../shared/record-space-member
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { encodeStoredDocAudiences } from '../doc/doc-audiences-codec.ts'
 import { projects } from '../project/projects.ts'
-import { rememberProjectSpace } from '../project-space.ts'
+import { rememberActiveRecordSpace, rememberProjectSpace } from '../project-space.ts'
 import { applySubjectRecord } from '../subject/subjects.ts'
 import { recordApiClient } from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { pullLensCatalogue } from './record-cache-lens.ts'
 import { recordCacheSpaceOwnsAddress } from './record-cache-ownership.ts'
+import { pullPortCatalogue } from './record-cache-port.ts'
 import { pullWorkflowCatalogue } from './record-cache-workflow.ts'
 import {
   decodeRecordCursor,
@@ -219,6 +220,7 @@ export async function pullRecordCache(local: Database = db()): Promise<{
   scores: number
   lensCatalogue: number
   workflowCatalogue: number
+  portCatalogue: number
 }> {
   const hasMeta = local
     .query<{ n: number }, []>(
@@ -234,18 +236,24 @@ export async function pullRecordCache(local: Database = db()): Promise<{
       scores: 0,
       lensCatalogue: 0,
       workflowCatalogue: 0,
+      portCatalogue: 0,
     }
   const client = recordApiClient()
   const identity = await client.whoami()
   if (!identity.activeSpaceId) throw new Error(noActiveRecordSpaceRefusal())
   rememberSignedInRecordUser(identity.user, local)
+  rememberActiveRecordSpace(local, identity.activeSpaceId)
   const cache = recordCacheSpaces(identity)
   const pulledSubjects = await pullSubjects(local, cache.spaces, cache.projectSpaces)
   const pulledDocs = await pullDocs(local, identity, cache.spaces, cache.projectSpaces)
   const lensCatalogue = await pullLensCatalogue(local, cache.spaces)
   const workflowPull = await pullWorkflowCatalogue(local, cache.spaces)
+  const portPull = await pullPortCatalogue(local, cache.spaces)
   for (const [project, spaceId] of cache.projectSpaces)
-    if (spaceId === null || workflowPull.completedSpaces.has(spaceId))
+    if (
+      spaceId === null ||
+      (workflowPull.completedSpaces.has(spaceId) && portPull.completedSpaces.has(spaceId))
+    )
       rememberProjectSpace(local, project, spaceId)
   let scores = 0
   let scoreCursor = readCursor(local, SCORES_CURSOR)
@@ -268,6 +276,7 @@ export async function pullRecordCache(local: Database = db()): Promise<{
     scores,
     lensCatalogue,
     workflowCatalogue: workflowPull.count,
+    portCatalogue: portPull.count,
   }
 }
 

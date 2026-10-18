@@ -72,6 +72,7 @@ import {
   upsertRecordLensProfile,
 } from './record-lens-catalogue.ts'
 import { listPendingRecordInvitations } from './record-pending-invitations.ts'
+import { listRecordPortCatalogue, writeRecordPort } from './record-port-catalogue.ts'
 import { listRecordProjects, retireRecordProject, upsertRecordProject } from './record-projects.ts'
 import {
   getPublicRecordDoc,
@@ -203,6 +204,8 @@ function recordLensDependencies() {
     upsertLens: upsertRecordLens,
     upsertLensProfile: upsertRecordLensProfile,
     selectProjectLensProfile: selectRecordProjectLensProfile,
+    listPortCatalogue: listRecordPortCatalogue,
+    writePort: writeRecordPort,
     listWorkflowCatalogue: listRecordWorkflowCatalogue,
     draftWorkflow: draftRecordWorkflow,
     promoteWorkflow: promoteRecordWorkflow,

@@ -16,6 +16,8 @@ import { project, spaceIdentity, tenantPolicies } from './schema.ts'
 
 const identity = () => uuid('id').primaryKey()
 const recordedAt = (name: string) => timestamp(name, { withTimezone: true }).notNull()
+const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+const version = () => integer().notNull().default(1)
 const sameSpaceIdentity = <
   T extends { spaceId: ReturnType<typeof spaceIdentity>; id: ReturnType<typeof identity> },
 >(
@@ -33,10 +35,13 @@ export const portDoctrine = pgTable.withRLS(
     body: text().notNull(),
     createdAt: recordedAt('created_at'),
     retiredAt: timestamp('retired_at', { withTimezone: true }),
+    version: version(),
+    updatedAt: updatedAt(),
   },
   (table) => [
     check('port_doctrine_number_check', sql`${table.number} > 0`),
     unique('port_doctrine_space_number_unique').on(table.spaceId, table.number),
+    index('port_doctrine_space_updated_id_idx').on(table.spaceId, table.updatedAt, table.id),
     ...tenantPolicies('port_doctrine', table.spaceId),
   ],
 )
@@ -84,6 +89,8 @@ export const portBaseline = pgTable.withRLS(
     pairId: uuid('pair_id').notNull(),
     sourceCommit: text('source_commit'),
     scannedAt: timestamp('scanned_at', { withTimezone: true }),
+    version: version(),
+    updatedAt: updatedAt(),
   },
   (table) => [
     check(
@@ -91,6 +98,7 @@ export const portBaseline = pgTable.withRLS(
       sql`(${table.sourceCommit} IS NULL) = (${table.scannedAt} IS NULL)`,
     ),
     unique('port_baseline_space_pair_unique').on(table.spaceId, table.pairId),
+    index('port_baseline_space_updated_id_idx').on(table.spaceId, table.updatedAt, table.id),
     foreignKey({
       columns: [table.spaceId, table.pairId],
       foreignColumns: [portPair.spaceId, portPair.id],
@@ -110,6 +118,9 @@ export const portRef = pgTable.withRLS(
     note: text().notNull(),
     createdAt: recordedAt('created_at'),
     resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    version: version(),
+    updatedAt: updatedAt(),
   },
   (table) => [
     unique('port_ref_space_target_task_unique').on(
@@ -118,6 +129,7 @@ export const portRef = pgTable.withRLS(
       table.taskKey,
     ),
     sameSpaceIdentity('port_ref_space_id_unique', table),
+    index('port_ref_space_updated_id_idx').on(table.spaceId, table.updatedAt, table.id),
     foreignKey({
       columns: [table.spaceId, table.targetProjectId],
       foreignColumns: [project.spaceId, project.id],
@@ -137,6 +149,8 @@ export const portRefSource = pgTable.withRLS(
     commits: text().notNull(),
     paths: text().notNull(),
     note: text().notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    updatedAt: updatedAt(),
   },
   (table) => [
     unique('port_ref_source_space_ref_source_unique').on(
@@ -144,6 +158,8 @@ export const portRefSource = pgTable.withRLS(
       table.refId,
       table.sourceProjectId,
     ),
+    sameSpaceIdentity('port_ref_source_space_id_unique', table),
+    index('port_ref_source_space_updated_id_idx').on(table.spaceId, table.updatedAt, table.id),
     foreignKey({
       columns: [table.spaceId, table.refId],
       foreignColumns: [portRef.spaceId, portRef.id],

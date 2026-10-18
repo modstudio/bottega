@@ -3,7 +3,14 @@ import { existsSync, readFileSync } from 'node:fs'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { importDoc, listDocs, removeDoc } from '../doc/docs.ts'
 import type { Project } from '../project/projects.ts'
-import { addDoctrineRule, addPair, addSkip, setBaseline, setLedgerRef } from './porting.ts'
+import { assertPortImportAllowed } from './port-import-authority.ts'
+import {
+  addDoctrineRuleLocal,
+  addPairLocal,
+  addSkipLocal,
+  setBaselineLocal,
+  setLedgerRefLocal,
+} from './porting.ts'
 
 type ImportIssue = {
   kind: 'refusal' | 'exclusion'
@@ -976,6 +983,7 @@ export async function applyImport(
   plan: ImportPlan,
   options: { replace?: boolean; sourceLabel?: string } = {},
 ): Promise<void> {
+  assertPortImportAllowed()
   writableDb()
   if (plan.refusals.length) throw new ImportRefusalError(plan.refusals)
   const context = {
@@ -1020,12 +1028,12 @@ export async function applyImport(
 
     const pairs = new Map<string, number>()
     for (const row of plan.pairs)
-      pairs.set(`${row.source}->${row.target}`, addPair(row.sourceId, row.targetId).id)
+      pairs.set(`${row.source}->${row.target}`, addPairLocal(row.sourceId, row.targetId).id)
     for (const row of plan.baselines)
-      setBaseline(pairs.get(row.pairKey)!, row.sourceCommit, row.scannedAt)
-    for (const row of plan.skips) addSkip(pairs.get(row.pairKey)!, row.candidate, row.reason)
-    for (const row of plan.refs) setLedgerRef(row)
-    for (const row of plan.doctrine) addDoctrineRule(row.number, row.title, row.body)
+      setBaselineLocal(pairs.get(row.pairKey)!, row.sourceCommit, row.scannedAt)
+    for (const row of plan.skips) addSkipLocal(pairs.get(row.pairKey)!, row.candidate, row.reason)
+    for (const row of plan.refs) setLedgerRefLocal(row)
+    for (const row of plan.doctrine) addDoctrineRuleLocal(row.number, row.title, row.body)
   })
   if (options.replace) {
     for (const doc of owned) await removeDoc(doc.scope, doc.subject, doc.slug, context)

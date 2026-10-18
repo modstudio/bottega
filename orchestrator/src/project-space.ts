@@ -3,6 +3,7 @@
 import type { Database } from 'bun:sqlite'
 
 const PROJECT_SPACES = 'record_project_spaces'
+const ACTIVE_SPACE = 'record_active_space'
 
 function read(local: Database): string | undefined {
   return local
@@ -44,4 +45,19 @@ export function effectiveProjectSpace(local: Database, project: string | null): 
   } catch {
     return null
   }
+}
+
+export function rememberActiveRecordSpace(local: Database, spaceId: string): void {
+  local
+    .query(
+      'INSERT INTO schema_meta (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+    )
+    .run(ACTIVE_SPACE, spaceId)
+}
+
+export function activeRecordSpace(local: Database): string | null {
+  const value = local
+    .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
+    .get(ACTIVE_SPACE)?.value
+  return value ?? null
 }
