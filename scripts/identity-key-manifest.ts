@@ -238,6 +238,15 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'hub_day.lines_config',
     'hub_day.lines_generated',
     'subject.position',
+    'workflow_version.n',
+    'step_catalogue_version.n',
+    'lens.version',
+    'lens_revision.version',
+    'lens_profile.version',
+    'lens_profile_revision.version',
+    'project_lens_profile.selected_version',
+    'project_lens_profile_revision.prior_selected_version',
+    'port_doctrine.number',
   ]),
 ]
 
@@ -406,6 +415,11 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'review_read.session_id',
     'run.session_id',
     'question_mutation_audit.actor_session',
+    'lens_profile_revision.session_id',
+    'lens_revision.session_id',
+    'project_lens_profile_revision.session_id',
+    'step_catalogue_event.session_id',
+    'workflow_event.session_id',
   ]),
   ...manifest('hosted', "identifier issued by Git's patch-id system", [
     'landing_override.patch_id',
@@ -419,6 +433,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'account.account_id',
     'account.provider_id',
   ]),
+  ...manifest('hosted', 'identifier issued by the project task tracker', ['port_ref.task_key']),
 ]
 
 const UUID_COLUMNS: readonly ManifestColumn[] = [
