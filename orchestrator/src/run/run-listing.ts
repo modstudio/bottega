@@ -16,6 +16,7 @@ import type {
   QuestionDeliveryMode,
   QuestionDeliveryOutcome,
 } from './question-vocabulary.ts'
+import { classifyRunIdentifier, resolveRunIdentifierOrNull } from './run-identifier.ts'
 import { agentWorkValue } from './synthetic-lifecycle-job.ts'
 
 function questionDeliveries(questionId: number) {
@@ -72,6 +73,56 @@ function processSamplesForRows(
   sampleProcesses: () => ProcessSample[],
 ): ProcessSample[] {
   return rows.some((row) => row.status === 'running') ? sampleProcesses() : []
+}
+
+function retryRecordId(retryOf: unknown): string | null {
+  if (!retryOf) return null
+  return (
+    db()
+      .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+      .get(Number(retryOf))?.record_id ?? null
+  )
+}
+
+function withRetryRecordId(row: Record<string, unknown>): Record<string, unknown> {
+  row.retry_record_id = retryRecordId(row.retry_of)
+  return row
+}
+
+function resolveRequestedRunIds(values: string[]): { ids: number[]; unknown: string[] } {
+  const ids = new Set<number>()
+  const unknown: string[] = []
+  for (const value of values) {
+    const parsed = classifyRunIdentifier(value)
+    if (!parsed) throw new Error(`invalid run id: ${value}`)
+    if (parsed.kind === 'number') {
+      ids.add(parsed.id)
+      continue
+    }
+    const id = resolveRunIdentifierOrNull(db(), value)
+    if (id !== null) ids.add(id)
+    else unknown.push(parsed.recordId)
+  }
+  return { ids: [...ids], unknown }
+}
+
+function applyRequestedRunFilter(
+  requested: { ids: number[]; unknown: string[] },
+  sinceFlag: string | undefined,
+  where: string[],
+  args: (string | number)[],
+): void {
+  if ((requested.ids.length || requested.unknown.length) && sinceFlag) {
+    throw new Error(`${PLATFORM_SLUG} run list --id and --since cannot be combined`)
+  }
+  if (!requested.ids.length) return
+  const marks = requested.ids.map(() => '?').join(',')
+  where.push(`(r.id IN (${marks}) OR EXISTS (
+    SELECT 1 FROM run requested_turn
+     WHERE requested_turn.parent_run_id = r.id
+       AND requested_turn.id IN (${marks})
+  ))`)
+  args.push(...requested.ids, ...requested.ids)
 }
 
 export async function runListingCommand(
@@ -147,30 +198,12 @@ export async function runListingCommand(
     )`)
   }
   const sinceFlag = flag('since')
-  const requestedIds = [
-    ...new Set(
-      values('id').map((value) => {
-        const id = Number(value)
-        if (!Number.isInteger(id) || id <= 0) throw new Error(`invalid run id: ${value}`)
-        return id
-      }),
-    ),
-  ]
-  if (requestedIds.length && sinceFlag) {
-    throw new Error(`${PLATFORM_SLUG} run list --id and --since cannot be combined`)
-  }
-  if (requestedIds.length) {
-    const marks = requestedIds.map(() => '?').join(',')
-    // Runs normally presents one canonical row per resumed conversation. If
-    // a caller names a child turn, return that conversation rather than
-    // falsely reporting an existing run id as unknown.
-    where.push(`(r.id IN (${marks}) OR EXISTS (
-      SELECT 1 FROM run requested_turn
-       WHERE requested_turn.parent_run_id = r.id
-         AND requested_turn.id IN (${marks})
-    ))`)
-    args.push(...requestedIds, ...requestedIds)
-  }
+  const requested = resolveRequestedRunIds(values('id'))
+  const requestedIds = requested.ids
+  const unknownRecordIds = requested.unknown
+  // Runs normally presents one canonical row per resumed conversation. If a caller names a child
+  // turn, return that conversation rather than falsely reporting an existing run id as unknown.
+  applyRequestedRunFilter(requested, sinceFlag, where, args)
   if (sinceFlag) {
     // A chain belongs in the window when any turn started there, any
     // question was asked, answered, or closed there, or any question is
@@ -215,8 +248,7 @@ export async function runListingCommand(
       ORDER BY r.id DESC LIMIT ?`,
     )
     .all(...args, limit) as Record<string, unknown>[]
-
-  rows = rows.flatMap((r) => {
+  rows = rows.map(withRetryRecordId).flatMap((r) => {
     const chain = resolveFailover(db(), Number(r.id))
     const final = chain.attempts.at(-1)!
     const current = json
@@ -410,10 +442,13 @@ export async function runListingCommand(
     for (const id of unknownIds) {
       log(publish({ id, status: 'unknown', unknown: true }))
     }
+    for (const recordId of unknownRecordIds) {
+      log(publish({ record_id: recordId, status: 'unknown', unknown: true }))
+    }
     return
   }
 
-  if (!rows.length && !unknownIds.length) {
+  if (!rows.length && !unknownIds.length && !unknownRecordIds.length) {
     log('no runs')
     return
   }
@@ -448,8 +483,7 @@ export async function runListingCommand(
       const reclaimed = r.reclaimed_ms as number | null
       log(`      idle-killed` + (reclaimed != null ? `; reclaimed ${dur(reclaimed)} of wall` : ''))
     }
-    // The reason is where a fan-out says its exclusions ran out. Hiding it
-    // here would leave the database honest and the human-facing command not.
+    // Keep the reason where a fan-out says its exclusions ran out so the command stays honest.
     if (r.route_reason) log(`      route: ${String(r.route_reason)}`)
     const warning = agentWorkValue(String(r.job), () =>
       thinOutputWarning({

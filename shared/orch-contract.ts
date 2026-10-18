@@ -365,7 +365,8 @@ export const OrchRunSchema = z
 
 export const OrchUnknownRunSchema = z
   .object({
-    id: z.number().int(),
+    id: z.number().int().optional(),
+    record_id: z.string().uuid().optional(),
     status: z.literal('unknown'),
     unknown: z.literal(true),
   })

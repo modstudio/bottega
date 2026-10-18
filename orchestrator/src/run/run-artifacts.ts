@@ -29,6 +29,7 @@ import {
 import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { CONNECTION_SCHEMA_INVARIANT } from '../database/migrations.ts'
+import type { FilesystemIdentityPlan, FilesystemIdentityRun } from '../filesystem-identity-plan.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { KEEP_RUN_FILES_DAYS } from './run-artifact-limits.ts'
 import {
@@ -59,6 +60,77 @@ export { namedRunArtifactPaths }
  * ORCH_RUNS remains the deliberate override used by the suite.
  */
 export const RUNS_DIR = resolveRunsDirectory(process.env)
+
+function legacyRunDirectory(name: string): { number: string; sandbox: boolean } | null {
+  const sandbox = /^sandbox-([1-9]\d*)$/.exec(name)?.[1]
+  if (sandbox) return { number: sandbox, sandbox: true }
+  return /^[1-9]\d*$/.test(name) ? { number: name, sandbox: false } : null
+}
+
+function runDirectoryName(recordId: string, sandbox = false): string {
+  return sandbox ? `sandbox-${recordId}` : recordId
+}
+
+export type RunArtifactMigrationCandidate = {
+  name: string
+  directory: boolean
+  destinationExists: boolean
+}
+
+/** Purely classify legacy artifact directories; filesystem discovery happens once upstream. */
+export function planRunArtifactMigration(
+  runsDirectory: string,
+  candidates: readonly RunArtifactMigrationCandidate[],
+  runs: ReadonlyMap<string, FilesystemIdentityRun>,
+): FilesystemIdentityPlan {
+  const plan: FilesystemIdentityPlan = { mapped: [], collisions: [], unmapped: [] }
+  for (const candidate of candidates) {
+    const legacy = candidate.directory ? legacyRunDirectory(candidate.name) : null
+    if (!legacy) continue
+    const source = join(runsDirectory, candidate.name)
+    const run = runs.get(legacy.number)
+    if (!run) {
+      plan.unmapped.push({ source, number: legacy.number })
+      continue
+    }
+    const move = {
+      source,
+      destination: join(runsDirectory, runDirectoryName(run.recordId, legacy.sandbox)),
+      run,
+      payload: undefined,
+    }
+    ;(candidate.destinationExists ? plan.collisions : plan.mapped).push(move)
+  }
+  return plan
+}
+
+export function discoverRunArtifactMigration(
+  runsDirectory: string,
+  runs: ReadonlyMap<string, FilesystemIdentityRun>,
+): FilesystemIdentityPlan {
+  if (!existsSync(runsDirectory)) return { mapped: [], collisions: [], unmapped: [] }
+  const entries = readdirSync(runsDirectory, { withFileTypes: true })
+  return planRunArtifactMigration(
+    runsDirectory,
+    entries.map((entry) => {
+      const legacy = entry.isDirectory() ? legacyRunDirectory(entry.name) : null
+      const run = legacy ? runs.get(legacy.number) : undefined
+      return {
+        name: entry.name,
+        directory: entry.isDirectory(),
+        destinationExists: Boolean(
+          run && existsSync(join(runsDirectory, runDirectoryName(run.recordId, legacy!.sandbox))),
+        ),
+      }
+    }),
+    runs,
+  )
+}
+
+export function applyRunArtifactMigration(plan: FilesystemIdentityPlan): number {
+  for (const move of plan.mapped) renameSync(move.source, move.destination)
+  return plan.mapped.length
+}
 
 /** The names owned by one run; `unique` is its id once a row has been claimed. */
 export function runFilePaths(
@@ -110,26 +182,51 @@ export function pruneRuns(dir: string): void {
   }
 }
 
-export const runScratchDir = (id: number, runsDir = RUNS_DIR): string =>
-  scratchDirectory(id, runsDir)
-
-export function noRepoIsolatePath(id: number, runsDir = RUNS_DIR): string {
-  return join(runsDir, 'isolates', String(id))
+function runStorageKey(id: number | string): string {
+  if (typeof id === 'string') return id
+  const row = db()
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+    .get(id)
+  if (!row) throw new Error(`no run ${id}`)
+  return row.record_id
 }
 
-export const runArtifactsDir = (id: number, runsDir = RUNS_DIR): string =>
-  artifactDirectory(id, runsDir)
+export const runScratchDir = (id: number | string, runsDir = RUNS_DIR): string =>
+  scratchDirectory(runStorageKey(id), runsDir)
+
+export function prepareFiles(
+  runsDir: string,
+  recordId: string,
+  claimedPrompt: string | null,
+  originalPrompt: string,
+) {
+  const runDirectory = join(runsDir, recordId)
+  mkdirSync(runDirectory, { recursive: true })
+  const paths = {
+    promptPath: claimedPrompt ?? join(runDirectory, 'prompt.txt'),
+    outputPath: join(runDirectory, 'output.txt'),
+  }
+  writeFileSync(paths.promptPath, originalPrompt)
+  return paths
+}
+
+export function noRepoIsolatePath(id: number, runsDir = RUNS_DIR): string {
+  return join(runsDir, 'isolates', runStorageKey(id))
+}
+
+export const runArtifactsDir = (id: number | string, runsDir = RUNS_DIR): string =>
+  artifactDirectory(runStorageKey(id), runsDir)
 
 function declaredDeliverablesPath(id: number, runsDir = RUNS_DIR): string {
-  return join(runsDir, String(id), 'deliverables.json')
+  return join(runsDir, runStorageKey(id), 'deliverables.json')
 }
 
 function runTerminalResultPath(id: number, runsDir = RUNS_DIR): string {
-  return join(runsDir, String(id), 'result.json')
+  return join(runsDir, runStorageKey(id), 'result.json')
 }
 
 export function runTerminalReplyPath(id: number, runsDir = RUNS_DIR): string {
-  return join(runsDir, String(id), 'reply.txt')
+  return join(runsDir, runStorageKey(id), 'reply.txt')
 }
 
 export type TerminalSnapshot = {
@@ -158,7 +255,7 @@ export type TerminalSnapshot = {
 }
 
 export function persistTerminalSnapshot(id: number, snapshot: TerminalSnapshot): void {
-  mkdirSync(join(RUNS_DIR, String(id)), { recursive: true })
+  mkdirSync(join(RUNS_DIR, runStorageKey(id)), { recursive: true })
   writeFileSync(runTerminalReplyPath(id), snapshot.output)
   writeFileSync(runTerminalResultPath(id), JSON.stringify(snapshot))
 }
@@ -241,7 +338,7 @@ export function reconcileRun(id: number): string {
 export type DispatchState = { deliverables: string[]; timeoutMinutes: number | null }
 
 export function writeDispatchState(id: number, state: DispatchState): void {
-  mkdirSync(join(RUNS_DIR, String(id)), { recursive: true })
+  mkdirSync(join(RUNS_DIR, runStorageKey(id)), { recursive: true })
   writeFileSync(declaredDeliverablesPath(id), JSON.stringify(state))
 }
 
@@ -329,7 +426,7 @@ function collectNamedCandidate(
   listed: Map<string, ListedArtifact>,
   namedLogical: string[],
 ): string | null {
-  const artifact = namedArtifactPlan(input.id, RUNS_DIR, named, input.worktreePath)
+  const artifact = namedArtifactPlan(runStorageKey(input.id), RUNS_DIR, named, input.worktreePath)
   const logical = relative(input.artifacts, artifact.destination) || '.'
   if (namedLogical.includes(logical)) return null
   namedLogical.push(logical)
@@ -412,7 +509,7 @@ export function persistRunArtifacts(
 ): void {
   const scratch = runScratchDir(id)
   const artifacts = runArtifactsDir(id)
-  const runDirectory = join(RUNS_DIR, String(id))
+  const runDirectory = join(RUNS_DIR, runStorageKey(id))
   mkdirSync(runDirectory, { recursive: true })
   // A worker can write the runs directory, so it can swap either root for a link;
   // following one would copy files the worker itself is denied into artifacts.

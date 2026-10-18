@@ -60,6 +60,7 @@ import { machineId } from '../record/machine-identity.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { ASKED_VIA_LIVE, ASKED_VIA_REPLY, type AskedVia } from '../run/question-vocabulary.ts'
 import { runScratchDir } from '../run/run-artifacts.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
 import { registerAskBoardTools } from './ask-board-tools.ts'
 import { writeAskServerFailure } from './ask-failure.ts'
@@ -450,13 +451,14 @@ type AskServerDependencies = {
 function workerNoteRun(runId: number): WorkerNoteRun {
   const row = db()
     .query(
-      `SELECT r.id,p.name AS project,p.path AS project_path,
+      `SELECT r.id,r.record_id,p.name AS project,p.path AS project_path,
               COALESCE(r.worktree,r.cwd) AS tree,r.branch,
               r.session_id,r.head_commit
          FROM run r JOIN project p ON p.record_id=r.project_record_id WHERE r.id=?`,
     )
     .get(runId) as {
     id: number
+    record_id: string
     project: string
     project_path: string
     tree: string | null
@@ -468,6 +470,7 @@ function workerNoteRun(runId: number): WorkerNoteRun {
   if (!row.tree) throw new Error(`run ${runId} has no run tree for a file-bound observation`)
   return {
     id: row.id,
+    recordId: row.record_id,
     project: row.project,
     projectPath: row.project_path,
     tree: row.tree,
@@ -836,7 +839,7 @@ async function proxyAsk(urlValue: string): Promise<void> {
 export async function serveAsk(): Promise<void> {
   const loopback = process.env.ORCH_ASK_URL
   if (loopback) return proxyAsk(loopback)
-  const runId = Number(process.env.ORCH_RUN_ID ?? 0)
+  const runId = resolveRunIdentifier(db(), process.env.ORCH_RUN_ID ?? '')
   const token = process.env.ORCH_RUN_TOKEN ?? ''
   serveStdio(() => createAskMcpServer(runId, token), {
     transport: observeAskTransport(new StdioServerTransport(), runId),

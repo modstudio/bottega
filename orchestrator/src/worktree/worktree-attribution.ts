@@ -3,10 +3,20 @@
  * Knows worktree markers, ownership, dirty state, orphan safety, and extraction
  * to artifacts. Must not know routing, contracts, transports, run state, or CLI adapters.
  */
-import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  writeFileSync,
+} from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
+import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db } from '../database/db.ts'
+import type { FilesystemIdentityPlan, FilesystemIdentityRun } from '../filesystem-identity-plan.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { borrowedCheckoutOf, gitOk, gitResult } from '../git/git-environment.ts'
 import type { Worktree } from './worktree-types.ts'
@@ -22,37 +32,137 @@ export const ORCH_RUN_MARKER = '.orch-run'
 export type TreeOwnership = 'owned' | 'attached' | 'unknown'
 
 export type TreeOwnershipInput = {
-  conversationRunIds: readonly number[]
-  directoryName: string
+  conversationRunIds: readonly string[]
   repoRoot: string
-  branchTemplate?: string
   checkout: boolean | 'unknown'
   marker:
     | { state: 'absent' }
     | { state: 'unreadable' }
-    | { state: 'present'; runId: number | null; repoRoot: string | null }
+    | { state: 'present'; runRecordId: string | null; repoRoot: string | null }
 }
 
-/** Read the run id carried by a current or legacy worktree directory name. */
-export function worktreeNameRunId(name: string, branchTemplate?: string): number | null {
-  const conventional = name.match(/^orch-(\d+)$/)
-  if (conventional) return Number(conventional[1])
-  if (!branchTemplate?.includes('{id}')) return null
+/** Read the UUID carried by a worktree ownership marker. Names are display labels only. */
+export type WorktreeMarkerRead =
+  | {
+      state: 'absent' | 'unreadable'
+      owner: null
+      runRecordId: null
+      repoRoot: null
+      source: undefined
+    }
+  | {
+      state: 'present'
+      owner: string
+      runRecordId: string | null
+      repoRoot: string | null
+      source: Worktree['source'] | undefined
+    }
 
-  let idGroup = 0
-  const pattern = basename(branchTemplate)
-    .split(/(\{id\}|\{key\})/g)
-    .map((part) => {
-      if (part === '{id}') {
-        idGroup++
-        return idGroup === 1 ? '(\\d+)' : '\\d+'
-      }
-      if (part === '{key}') return '[^/]+'
-      return part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+export function readWorktreeMarker(path: string): WorktreeMarkerRead {
+  const marker = join(path, ORCH_RUN_MARKER)
+  if (!existsSync(marker))
+    return { state: 'absent', owner: null, runRecordId: null, repoRoot: null, source: undefined }
+  try {
+    const [owner = '', root = '', ...rest] = readFileSync(marker, 'utf8').split('\n')
+    const candidate = rest.find((line) => line.startsWith('source: '))?.slice(8)
+    const source =
+      candidate === 'recipe' ||
+      candidate === 'git' ||
+      candidate === 'clone' ||
+      candidate === 'readonly_recipe'
+        ? candidate
+        : undefined
+    return {
+      state: 'present',
+      owner: owner.trim(),
+      runRecordId: hasRecordIdShape(owner.trim()) ? owner.trim().toLowerCase() : null,
+      repoRoot: root.trim() || null,
+      source,
+    }
+  } catch {
+    return {
+      state: 'unreadable',
+      owner: null,
+      runRecordId: null,
+      repoRoot: null,
+      source: undefined,
+    }
+  }
+}
+
+export type WorktreeMarkerMigrationCandidate = {
+  worktree: string
+  marker: WorktreeMarkerRead
+  text: string
+}
+
+/** Pure marker decision: numeric owners map only when repository provenance agrees. */
+export function planWorktreeMarkerMigration(
+  candidates: readonly WorktreeMarkerMigrationCandidate[],
+  runs: ReadonlyMap<string, FilesystemIdentityRun>,
+): FilesystemIdentityPlan<string> {
+  const plan: FilesystemIdentityPlan<string> = { mapped: [], collisions: [], unmapped: [] }
+  for (const candidate of candidates) {
+    if (candidate.marker.state !== 'present' || candidate.marker.runRecordId) continue
+    const number = candidate.marker.owner
+    if (!/^[1-9]\d*$/.test(number)) continue
+    const source = join(candidate.worktree, ORCH_RUN_MARKER)
+    const run = runs.get(number)
+    if (!run) {
+      plan.unmapped.push({ source, number, reason: `owner ${number} maps to no run` })
+      continue
+    }
+    if (
+      !candidate.marker.repoRoot ||
+      !run.projectPath ||
+      resolve(candidate.marker.repoRoot) !== resolve(run.projectPath)
+    ) {
+      plan.unmapped.push({
+        source,
+        number,
+        reason: `repository root does not match run ${number}'s project`,
+      })
+      continue
+    }
+    plan.mapped.push({
+      source,
+      destination: source,
+      run,
+      payload: candidate.text,
     })
-    .join('')
-  const match = name.match(new RegExp(`^${pattern}$`))
-  return match?.[1] ? Number(match[1]) : null
+  }
+  return plan
+}
+
+export function discoverWorktreeMarkerMigration(
+  worktrees: Iterable<string>,
+  runs: ReadonlyMap<string, FilesystemIdentityRun>,
+): FilesystemIdentityPlan<string> {
+  const candidates: WorktreeMarkerMigrationCandidate[] = []
+  for (const worktree of worktrees) {
+    const markerPath = join(worktree, ORCH_RUN_MARKER)
+    if (!existsSync(markerPath)) continue
+    candidates.push({
+      worktree,
+      marker: readWorktreeMarker(worktree),
+      text: readFileSync(markerPath, 'utf8'),
+    })
+  }
+  return planWorktreeMarkerMigration(candidates, runs)
+}
+
+export function applyWorktreeMarkerMigration(plan: FilesystemIdentityPlan<string>): number {
+  for (const move of plan.mapped) {
+    const [, ...rest] = move.payload.split('\n')
+    const temporary = join(dirname(move.source), `.${basename(move.source)}.uuid-migration`)
+    writeFileSync(temporary, [move.run.recordId, ...rest].join('\n'))
+    renameSync(temporary, move.source)
+  }
+  return plan.mapped.length
+}
+
+export function worktreeNameRunId(path: string): string | null {
+  return readWorktreeMarker(path).runRecordId
 }
 
 /** Decide whether this conversation owns a checkout without reading process state or storage. */
@@ -63,16 +173,15 @@ export function treeOwnership(input: TreeOwnershipInput): TreeOwnership {
 
   const conversation = new Set(input.conversationRunIds)
   if (input.marker.state === 'present') {
-    if (input.marker.runId === null || input.marker.repoRoot === null) return 'unknown'
+    if (input.marker.runRecordId === null || input.marker.repoRoot === null) return 'unknown'
     const markerRoot = resolve(input.marker.repoRoot).replace(/\/$/, '')
     const expectedRoot = resolve(input.repoRoot).replace(/\/$/, '')
-    return conversation.has(input.marker.runId) && markerRoot === expectedRoot
+    return conversation.has(input.marker.runRecordId) && markerRoot === expectedRoot
       ? 'owned'
       : 'attached'
   }
 
-  const namedRun = worktreeNameRunId(input.directoryName, input.branchTemplate)
-  return namedRun !== null && conversation.has(namedRun) ? 'owned' : 'attached'
+  return 'attached'
 }
 
 /** Gather marker and checkout facts at the storage edge, then apply the ownership decision. */
@@ -80,38 +189,34 @@ export function inspectTreeOwnership(
   path: string,
   repoRoot: string,
   conversationRunIds: readonly number[],
-  branchTemplate?: string,
 ): TreeOwnership {
   if (!existsSync(path)) {
     return treeOwnership({
-      conversationRunIds,
-      directoryName: basename(path),
+      conversationRunIds: conversationRunIds.flatMap((id) => {
+        const row = db()
+          .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+          .get(id)
+        return row ? [row.record_id] : []
+      }),
       repoRoot,
-      branchTemplate,
       checkout: 'unknown',
       marker: { state: 'absent' },
     })
   }
   const checkout = gitOk(['rev-parse', '--is-inside-work-tree'], path)
-  const markerPath = join(path, ORCH_RUN_MARKER)
-  let marker: TreeOwnershipInput['marker'] = { state: 'absent' }
-  if (existsSync(markerPath)) {
-    try {
-      const [runIdLine, markerRoot] = readFileSync(markerPath, 'utf8').split('\n')
-      marker = {
-        state: 'present',
-        runId: /^\d+$/.test(runIdLine ?? '') ? Number(runIdLine) : null,
-        repoRoot: markerRoot?.trim() || null,
-      }
-    } catch {
-      marker = { state: 'unreadable' }
-    }
-  }
+  const read = readWorktreeMarker(path)
+  const marker: TreeOwnershipInput['marker'] =
+    read.state === 'present'
+      ? { state: 'present', runRecordId: read.runRecordId, repoRoot: read.repoRoot }
+      : { state: read.state }
   return treeOwnership({
-    conversationRunIds,
-    directoryName: basename(path),
+    conversationRunIds: conversationRunIds.flatMap((id) => {
+      const row = db()
+        .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+        .get(id)
+      return row ? [row.record_id] : []
+    }),
     repoRoot,
-    branchTemplate,
     checkout: checkout === null ? 'unknown' : checkout === 'true',
     marker,
   })
@@ -119,26 +224,13 @@ export function inspectTreeOwnership(
 
 /** Read lifecycle provenance from current markers; legacy markers have none. */
 export function markedWorktreeSource(path: string): Worktree['source'] | undefined {
-  try {
-    const line = readFileSync(join(path, ORCH_RUN_MARKER), 'utf8')
-      .split('\n')
-      .find((entry) => entry.startsWith('source: '))
-    const source = line?.slice('source: '.length)
-    return source === 'recipe' ||
-      source === 'git' ||
-      source === 'clone' ||
-      source === 'readonly_recipe'
-      ? source
-      : undefined
-  } catch {
-    return undefined
-  }
+  return readWorktreeMarker(path).source
 }
 
 /** Recognize current markers and the naming schemes used before markers existed. */
-export function isOrchWorktree(path: string, branchTemplate?: string): boolean {
+export function isOrchWorktree(path: string): boolean {
   if (existsSync(join(path, ORCH_RUN_MARKER))) return true
-  return worktreeNameRunId(basename(path), branchTemplate) !== null
+  return false
 }
 
 /**
@@ -160,7 +252,7 @@ export function orphanSafety(path: string, repoRoot: string, _trunk: string): Or
   let markedBorrowedCheckout = false
   if (!registered && existsSync(join(path, ORCH_RUN_MARKER))) {
     try {
-      const markerRoot = readFileSync(join(path, ORCH_RUN_MARKER), 'utf8').split('\n')[1]?.trim()
+      const markerRoot = readWorktreeMarker(path).repoRoot
       const borrowed = borrowedCheckoutOf(path)
       markedBorrowedCheckout =
         Boolean(markerRoot && borrowed) &&
@@ -244,11 +336,14 @@ export type WorktreeExtraction = {
   ok: boolean
 }
 
-function runRowExists(id: number): boolean {
+function runRecordId(id: number): string | null {
   try {
-    return db().query('SELECT 1 AS present FROM run WHERE id=?').get(id) != null
+    return (
+      db().query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?').get(id)
+        ?.record_id ?? null
+    )
   } catch {
-    return false
+    return null
   }
 }
 
@@ -263,7 +358,10 @@ function extractionDest(
   runId: number | null,
   runsDir = resolveRunsDirectory(process.env),
 ): string {
-  if (runId !== null && runRowExists(runId)) return join(runsDir, String(runId), 'artifacts')
+  if (runId !== null) {
+    const recordId = runRecordId(runId)
+    if (recordId) return join(runsDir, recordId, 'artifacts')
+  }
   return join(runsDir, 'orphans', sanitizeOrphanExtractionPath(tree))
 }
 
@@ -282,7 +380,7 @@ export function extractWorktree(
   runId: number | null,
   runsDir = resolveRunsDirectory(process.env),
 ): { ok: true; dest: string; record: WorktreeExtraction } | { ok: false; detail: string } {
-  const recordedId = runId !== null && runRowExists(runId) ? runId : null
+  const recordedId = runId !== null && runRecordId(runId) ? runId : null
   const dest = extractionDest(tree, runId, runsDir)
   const record: WorktreeExtraction = {
     runId: recordedId,

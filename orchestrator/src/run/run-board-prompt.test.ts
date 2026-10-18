@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   createMemoryRecordApiClient,
@@ -18,11 +21,27 @@ import {
   appendInitialRunBoardPrompt,
   BOARD_PACK_MAX_CHARS,
   BOARD_PACK_MAX_NOTICES,
+  persistBoundPrompt,
   prepareLaterRunBoardPrompt,
   renderRunBoardSection,
 } from './run-board-prompt.ts'
 
 const createdAt = new Date(Date.now() - 1_000).toISOString()
+
+test('persisting a board-bound prompt leaves the original prompt unchanged', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'bound-prompt-'))
+  const promptPath = join(directory, 'prompt.txt')
+  writeFileSync(promptPath, 'original')
+  const run = db()
+    .query<{ id: number }, []>(`INSERT INTO run
+    (record_id,started_at,agent,job,prompt_sha,spec_sha,prompt_bytes,prompt_head,status,turn)
+    VALUES (lower(hex(randomblob(4))) || '-0000-7000-8000-' || lower(hex(randomblob(6))),datetime('now'),'codex','implement','sha','spec',8,'head','running',1)
+    RETURNING id`)
+    .get()!
+  persistBoundPrompt(promptPath, 'original\n\nnotice', run.id)
+  expect(readFileSync(promptPath, 'utf8')).toBe('original')
+  expect(readFileSync(join(directory, 'bound-prompt.txt'), 'utf8')).toContain('notice')
+})
 
 beforeEach(() => {
   process.env.ORCH_RECORD_API_URL = 'https://record.test'

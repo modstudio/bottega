@@ -31,10 +31,10 @@ export type ReconcileResult = {
   leftOpen: ReconcileItem[]
 }
 
-function requestedIdOf(answer: RunAnswer): number | null {
+function requestedRecordIdOf(answer: RunAnswer): string | null {
   if ('unknown' in answer) return null
-  const value = (answer as { requested_id?: unknown }).requested_id
-  return typeof value === 'number' && Number.isInteger(value) ? value : null
+  const value = (answer as { requested_record_id?: unknown }).requested_record_id
+  return typeof value === 'string' ? value : null
 }
 
 function resolvedFromOf(answer: RunAnswer): string | null {
@@ -44,28 +44,29 @@ function resolvedFromOf(answer: RunAnswer): string | null {
 }
 
 /** Index a run by its id, and also by requested_id when orch resolved a turn. */
-export function indexRunAnswers(answers: RunAnswer[]): Map<number, RunAnswer> {
-  const byId = new Map<number, RunAnswer>()
+export function indexRunAnswers(answers: RunAnswer[]): Map<string, RunAnswer> {
+  const byId = new Map<string, RunAnswer>()
   for (const answer of answers) {
-    if (resolvedFromOf(answer) !== 'turn') byId.set(answer.id, answer)
-    const requested = requestedIdOf(answer)
+    if ('unknown' in answer) continue
+    if (resolvedFromOf(answer) !== 'turn') byId.set(answer.record_id, answer)
+    const requested = requestedRecordIdOf(answer)
     if (requested != null) byId.set(requested, answer)
-    else if (!byId.has(answer.id)) byId.set(answer.id, answer)
+    else if (!byId.has(answer.record_id)) byId.set(answer.record_id, answer)
   }
   return byId
 }
 
-export function statusFor(answer: RunAnswer | undefined, turnId: number | null): string | null {
+export function statusFor(answer: RunAnswer | undefined, turnId: string | null): string | null {
   if (!answer || 'unknown' in answer) return null
   if (turnId == null) {
     if (resolvedFromOf(answer) === 'turn') {
-      const requested = requestedIdOf(answer)
+      const requested = requestedRecordIdOf(answer)
       if (requested == null) return null
-      return answer.turns?.find((turn: OrchTurn) => turn.id === requested)?.status ?? null
+      return answer.turns?.find((turn: OrchTurn) => turn.record_id === requested)?.status ?? null
     }
     return answer.status
   }
-  return answer.turns?.find((turn: OrchTurn) => turn.id === turnId)?.status ?? null
+  return answer.turns?.find((turn: OrchTurn) => turn.record_id === turnId)?.status ?? null
 }
 
 /** Reconcile only the facts hub currently claims are live; no clock selects rows or runs. */
@@ -104,7 +105,7 @@ export async function reconcileOpenIntervals(
     if (status == null) {
       leftOpen.push({
         ...interval,
-        runId: ref.turn ?? ref.root,
+        runId: answer && !('unknown' in answer) ? answer.id : null,
         status: null,
         removesMs: 0,
         reason: `run ${ref.turn ?? ref.root} is unknown to orch; needs a decision`,
@@ -114,7 +115,7 @@ export async function reconcileOpenIntervals(
     if (status === 'running') {
       leftOpen.push({
         ...interval,
-        runId: ref.turn ?? ref.root,
+        runId: answer && !('unknown' in answer) ? answer.id : null,
         status,
         removesMs: 0,
         reason: `run ${ref.turn ?? ref.root} is still running`,
@@ -123,7 +124,7 @@ export async function reconcileOpenIntervals(
     }
     closed.push({
       ...interval,
-      runId: ref.turn ?? ref.root,
+      runId: answer && !('unknown' in answer) ? answer.id : null,
       status,
       removesMs: Math.max(0, now - new Date(interval.end_at).getTime()),
       reason: `run ${ref.turn ?? ref.root} is terminal (${status})`,

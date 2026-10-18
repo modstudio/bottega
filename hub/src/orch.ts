@@ -318,7 +318,7 @@ export const readWorkflowRulings = (since: string): Promise<RulingListRow[]> =>
     RulingListSchema,
   )
 
-export async function readRunsById(ids: number[]): Promise<OrchRunLineData[]> {
+export async function readRunsById(ids: (string | number)[]): Promise<OrchRunLineData[]> {
   if (!ids.length) return []
   return decodeRunsJson(
     await orchProcess(

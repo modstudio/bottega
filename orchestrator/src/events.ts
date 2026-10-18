@@ -34,7 +34,6 @@ export type RunLogEvent =
       noteLabel: string
       candidates: { recordId: string; label: string }[]
     }
-  | { ts: string; type: 'note'; noteId: number; candidateIds: number[] }
   | {
       ts: string
       type: 'tool_call'
@@ -102,8 +101,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
-export function runEventsPath(id: number, runsDir = resolveRunsDirectory(process.env)): string {
-  return join(runsDir, String(id), 'events.jsonl')
+function eventRunRecordId(id: number | string): string {
+  if (typeof id === 'string') return id
+  const row = db()
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+    .get(id)
+  if (!row) throw new Error(`no run ${id}`)
+  return row.record_id
+}
+
+export function runEventsPath(
+  id: number | string,
+  runsDir = resolveRunsDirectory(process.env),
+): string {
+  return join(runsDir, eventRunRecordId(id), 'events.jsonl')
 }
 
 export function idleWarnMs(env: NodeJS.ProcessEnv = process.env): number {
@@ -145,16 +156,13 @@ function touchLastEventAt(runId: number, ts: string): void {
   }
 }
 
-export function appendRunEvent(
-  runId: number,
-  event: RunLogEvent,
-  path = runEventsPath(runId),
-): void {
+export function appendRunEvent(runId: number, event: RunLogEvent, path?: string): void {
   // Best-effort, like touchLastEventAt: the live log observes the vendor
   // stream and must never fail the run or reach its outcome (review 349).
   try {
-    mkdirSync(dirname(path), { recursive: true })
-    appendFileSync(path, `${JSON.stringify(event)}\n`)
+    const destination = path ?? runEventsPath(runId)
+    mkdirSync(dirname(destination), { recursive: true })
+    appendFileSync(destination, `${JSON.stringify(event)}\n`)
   } catch {
     /* a missing or unwritable run directory loses the log line, nothing else */
   }
@@ -169,7 +177,7 @@ const RESULT_STATUSES = new Set(['completed', 'failed', 'ok', 'error', 'cancelle
 
 export function createEventLog(
   runId: number,
-  path = runEventsPath(runId),
+  path?: string,
 ): {
   observe(event: StreamEvent, ts?: string): void
   flush(ts?: string): void
@@ -486,7 +494,11 @@ export function readEventLog(path: string): RunLogEvent[] {
         parsed &&
         typeof parsed === 'object' &&
         typeof parsed.ts === 'string' &&
-        typeof parsed.type === 'string'
+        typeof parsed.type === 'string' &&
+        (parsed.type !== 'note' ||
+          (typeof parsed.noteRecordId === 'string' &&
+            typeof parsed.noteLabel === 'string' &&
+            Array.isArray(parsed.candidates)))
       ) {
         events.push(parsed)
       }
@@ -500,18 +512,10 @@ export function readEventLog(path: string): RunLogEvent[] {
 function summarizeEvent(event: RunLogEvent): PeekEventSummary {
   if (event.type === 'text') return { type: 'text', text: event.text.slice(0, PEEK_TEXT_CHARS) }
   if (event.type === 'note') {
-    // Run files live for KEEP_RUN_FILES_DAYS, so accept the numeric event shape until they age out.
-    if ('noteLabel' in event) {
-      return {
-        type: 'note',
-        noteLabel: event.noteLabel,
-        candidateLabels: event.candidates.map((candidate) => candidate.label),
-      }
-    }
     return {
       type: 'note',
-      noteLabel: String(event.noteId),
-      candidateLabels: event.candidateIds.map(String),
+      noteLabel: event.noteLabel,
+      candidateLabels: event.candidates.map((candidate) => candidate.label),
     }
   }
   if (event.type === 'tool_call') {

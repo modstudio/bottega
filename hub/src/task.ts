@@ -542,7 +542,7 @@ export function showTask(
 }
 
 type TaskRun = {
-  id: number
+  id: string
   source: string | null
   agent: string | null
   job: string | null

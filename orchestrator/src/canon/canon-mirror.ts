@@ -2,15 +2,7 @@
 /** Owns the scheduled store-to-repository canon publication lifecycle. */
 import type { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -28,7 +20,7 @@ import { acquireRunLease } from '../run/run-lease.ts'
 import { CANON_MIRROR_JOB } from '../run/synthetic-lifecycle-job.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
-import { inspectTreeOwnership, ORCH_RUN_MARKER } from '../worktree/worktree-attribution.ts'
+import { inspectTreeOwnership, readWorktreeMarker } from '../worktree/worktree-attribution.ts'
 import { attributeWorktree } from '../worktree/worktree-create.ts'
 import { applyHydration } from './canon-apply.ts'
 import { EMPTY_PROJECT_CANON_STORE_REFUSAL } from './canon-empty-store-refusal.ts'
@@ -380,12 +372,12 @@ function releaseOwnedLeftover(project: Project, path: string, port: CanonMirrorP
     project.path,
     owners.map((r) => r.id),
   )
-  let markerRun = 0
-  try {
-    markerRun = Number(readFileSync(join(path, ORCH_RUN_MARKER), 'utf8').split('\n')[0])
-  } catch {
-    markerRun = 0
-  }
+  const markerRecordId = readWorktreeMarker(path).runRecordId
+  const markerRun = markerRecordId
+    ? (db()
+        .query<{ id: number }, [string]>('SELECT id FROM run WHERE record_id=?')
+        .get(markerRecordId)?.id ?? 0)
+    : 0
   if (ownership !== 'owned' || !owners.some((r) => r.id === markerRun)) {
     throw new Error(
       'refusing unowned canon mirror worktree .claude/worktrees/canon-mirror; it was left intact',

@@ -395,13 +395,7 @@ function assertDiscardTreeOwnership(row: CleanupRow, repoRoot: string, force: bo
       )
       .all(row.id) as { id: number }[]
   ).map((turn) => turn.id)
-  const project = row.repo ? projectByName(row.repo) : projectAt(repoRoot)
-  const ownership = inspectTreeOwnership(
-    row.worktree,
-    repoRoot,
-    conversationIds,
-    project?.settings.worktree?.branch,
-  )
+  const ownership = inspectTreeOwnership(row.worktree, repoRoot, conversationIds)
   if (ownership === 'attached') {
     throw new Error(
       `refusing to remove attached tree ${row.worktree}; ` +

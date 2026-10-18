@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { addRun } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
 import { git } from '../git/git-environment.ts'
 import { recordCreatedWorktreeClaims } from '../resources/resource-claims.ts'
@@ -378,6 +379,7 @@ describe('tracked recipe execution', () => {
   })
 
   test('a failed teardown undo retains the tree and names the step', () => {
+    const runId = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
     const recipe: TrackedRecipe = { create: [step('zero'), step('one')] }
     const snapshot: RecipeSnapshot = {
       source: { path: '.orch/worktree.jsonc', commit: 'abc' },
@@ -386,7 +388,7 @@ describe('tracked recipe execution', () => {
     let removed = false
     const outcome = teardownTrackedRecipe(
       {
-        runId: 1,
+        runId,
         worktree: {
           path: '/tree',
           branch: 'branch',
@@ -522,6 +524,10 @@ describe('tracked recipe execution', () => {
   })
 
   test('builds the worker environment from recorded allocations and the root label', () => {
+    const rootId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const rootRecordId = db()
+      .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+      .get(rootId)!.record_id
     expect(
       recipeAllocationEnvironment(
         {
@@ -530,10 +536,10 @@ describe('tracked recipe execution', () => {
           databases: { app: 'app_4', audit: 'audit_4' },
           strings: { token: 'tree-4' },
         },
-        17,
+        rootId,
       ),
     ).toEqual({
-      ORCH_RUN_LABEL: 'orch.run=17',
+      ORCH_RUN_LABEL: `orch.run=${rootRecordId}`,
       ORCH_INDEX: '4',
       ORCH_PORTS_HUB: '21003',
       ORCH_PORTS_API_V2: '21004',
@@ -544,19 +550,23 @@ describe('tracked recipe execution', () => {
   })
 
   test('creation variables carry the conversation root label and derived Compose project', () => {
+    const rootId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const rootRecordId = db()
+      .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+      .get(rootId)!.record_id
     expect(
       trackedRecipeVars(
         { branch: 'DEV-596', path: '/tree' },
         { index: 6, ports: { hub: 21005 }, databases: {}, strings: {} },
-        17,
+        rootId,
         { projectName: 'My Project' },
       ),
     ).toMatchObject({
       branch: 'DEV-596',
       path: '/tree',
       index: '6',
-      label: 'orch.run=17',
-      'compose.project': 'my-project-orch-17',
+      label: `orch.run=${rootRecordId}`,
+      'compose.project': `my-project-orch-${rootId}`,
       'ports.hub': '21005',
     })
   })
@@ -595,8 +605,11 @@ describe('tracked recipe execution', () => {
         .run(nowIso(), projectId, rootId).lastInsertRowid,
     )
 
+    const rootRecordId = database
+      .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+      .get(rootId)!.record_id
     expect(trackedRecipeEnvironment(turnId)).toMatchObject({
-      ORCH_RUN_LABEL: `orch.run=${rootId}`,
+      ORCH_RUN_LABEL: `orch.run=${rootRecordId}`,
       ORCH_INDEX: '6',
     })
     expect(turnId).not.toBe(rootId)
@@ -654,6 +667,7 @@ describe('tracked recipe execution', () => {
   })
 
   test('catches rendering tree_exists=false while teardown still runs in the present tree', () => {
+    const runId = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
     const seen: { treeRoot: string; treeExists: string | undefined }[] = []
     const snapshot: RecipeSnapshot = {
       source: { path: '.orch/worktree.jsonc', commit: 'abc' },
@@ -661,7 +675,7 @@ describe('tracked recipe execution', () => {
     }
     teardownTrackedRecipe(
       {
-        runId: 1,
+        runId,
         worktree: {
           path: '/tree',
           branch: 'branch',
@@ -683,6 +697,7 @@ describe('tracked recipe execution', () => {
   })
 
   test('a missing-tree teardown uses a temporary cwd and keeps the recorded tree variables', () => {
+    const runId = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
     const seen: { treeRoot: string; treeExists: string | undefined }[] = []
     const snapshot: RecipeSnapshot = {
       source: { path: '.orch/worktree.jsonc', commit: 'abc' },
@@ -690,7 +705,7 @@ describe('tracked recipe execution', () => {
     }
     teardownTrackedRecipe(
       {
-        runId: 1,
+        runId,
         worktree: {
           path: '/tree',
           branch: 'branch',
@@ -716,6 +731,7 @@ describe('tracked recipe execution', () => {
   })
 
   test('runs serve undos before destroy undos and keeps the tree after a serve failure', () => {
+    const runId = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
     const calls: string[] = []
     const serve = step('serve')
     const destroy = step('destroy')
@@ -731,7 +747,7 @@ describe('tracked recipe execution', () => {
     let removed = false
     const outcome = teardownTrackedRecipe(
       {
-        runId: 1,
+        runId,
         worktree: {
           path: '/tree',
           branch: 'branch',

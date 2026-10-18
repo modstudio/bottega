@@ -73,6 +73,7 @@ type QuestionRow = {
   id: number
   record_id: string
   run_id: number | null
+  run_record_id: string | null
   root_id: number | null
   workflow_cursor_id: number | null
   workflow_slug: string | null
@@ -205,7 +206,7 @@ function ownerRefusal(
 function loadQuestion(questionId: number): QuestionRow {
   const row = db()
     .query(
-      `SELECT q.id, q.record_id, q.run_id, COALESCE(r.parent_run_id, r.id) root_id,
+      `SELECT q.id, q.record_id, q.run_id, r.record_id run_record_id, COALESCE(r.parent_run_id, r.id) root_id,
               q.workflow_cursor_id,c.workflow_slug,c.mode_slug,c.session_id workflow_owner,
               c.updated_at workflow_updated_at,
               q.question, q.answer, q.answer_basis,
@@ -395,6 +396,7 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
     basis: row.replacement === null ? row.answer_basis : null,
     answererKind: answererKind(row),
     runId: row.run_id,
+    runRecordId: row.run_record_id,
     workflow:
       row.workflow_cursor_id === null
         ? null
@@ -406,6 +408,7 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
     taskKey: row.launch_key,
     date: at,
     questionId: row.id,
+    questionRecordId: row.record_id,
   })
   const reference =
     requested === 'canon-proposal'

@@ -20,10 +20,11 @@ import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
 
 export function childEnv(
   a: (typeof AGENTS)[string],
-  runId?: number,
+  runRecordId?: string,
   runToken?: string,
   extra: Record<string, string> = {},
   includeStore = true,
+  runNumber?: number,
 ): Record<string, string> {
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) {
@@ -40,8 +41,9 @@ export function childEnv(
    * attach a question to another worker's run, and the ruling would be delivered
    * to whichever of them happened to be waiting.
    */
-  if (runId) env.ORCH_RUN_ID = String(runId)
-  if (runId) env.ORCH_AGENT = a.name
+  if (runRecordId) env.ORCH_RUN_ID = runRecordId
+  if (runNumber) env.ORCH_RUN_NUMBER = String(runNumber)
+  if (runRecordId) env.ORCH_AGENT = a.name
   // The credential half. The id says which run; this says the caller is
   // actually that run, and the environment of a child process is the one place
   // an unrelated process cannot read it from.

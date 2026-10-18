@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
@@ -254,8 +255,13 @@ describe('reapStale', () => {
     db()
       .query('UPDATE run SET pid=?, started_at=? WHERE id=?')
       .run(4_194_304, new Date(Date.now() - PENDING_BOOTSTRAP_MS - 1000).toISOString(), id)
+    const recordId = db()
+      .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+      .get(id)!.record_id
+    const logPath = runCoordinatorLogPath(recordId)
+    mkdirSync(dirname(logPath), { recursive: true })
     writeFileSync(
-      runCoordinatorLogPath(id),
+      logPath,
       `orch: run ${id} could not start: Error: refusing to create a worktree on branch DEV-1054-orch-7738\n`,
     )
 
@@ -277,7 +283,12 @@ describe('reapStale', () => {
       turn: 2,
     })
     db().query('UPDATE run SET pid=?, agent_pid=NULL WHERE id=?').run(4_194_304, id)
-    writeFileSync(runCoordinatorLogPath(id), 'setup began\nmodule import failed\n')
+    const recordId = db()
+      .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+      .get(id)!.record_id
+    const logPath = runCoordinatorLogPath(recordId)
+    mkdirSync(dirname(logPath), { recursive: true })
+    writeFileSync(logPath, 'setup began\nmodule import failed\n')
 
     expect(reapStale(db())).toBe(1)
     const error =

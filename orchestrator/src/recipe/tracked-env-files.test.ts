@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { addRun } from '../../test/fixtures/store.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
 import { recipeSchema } from './recipe-schema.ts'
 import { stepCommandPlan } from './recipe-step.ts'
@@ -34,13 +35,18 @@ function writeEnv(
   project: string,
   allocations: Record<string, string>,
 ) {
+  const rootRunId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
   const urls = databaseUrlSecrets(recipe, allocations, project, 'orch.run=1')
   if (!urls.ok) return urls.result
   return writeTrackedEnvFiles(
     recipe,
     {
       treeRoot: tree,
-      vars: trackedRecipeVars({}, { index: 4, ports: {}, databases: allocations, strings: {} }, 1),
+      vars: trackedRecipeVars(
+        {},
+        { index: 4, ports: {}, databases: allocations, strings: {} },
+        rootRunId,
+      ),
     },
     project,
     urls.secrets,
@@ -124,10 +130,11 @@ describe('tracked recipe database URL env placeholders', () => {
   })
 
   test('a step argument using {db.app.url} is refused as an unavailable placeholder', () => {
+    const rootRunId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const vars = trackedRecipeVars(
       {},
       { index: 4, ports: {}, databases: { app: 'tree_app_4' }, strings: {} },
-      1,
+      rootRunId,
     )
     expect(vars['db.app.url']).toBeUndefined()
     expect(
@@ -212,17 +219,23 @@ describe('tracked recipe env files stay out of git', () => {
 describe('tracked recipe Compose env placeholders', () => {
   test('writes the derived Compose project into env contents', () => {
     const { project, tree } = temporaryTree()
+    const rootRunId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const recipe = recipeSchema.parse({
       compose: { files: ['compose.yaml'] },
       create: [],
       env: [{ path: '.env', mode: 'replace', contents: 'COMPOSE_PROJECT={compose.project}\n' }],
     })
-    const vars = trackedRecipeVars({}, { index: 4, ports: {}, databases: {}, strings: {} }, 42, {
-      projectName: 'Example App',
-    })
+    const vars = trackedRecipeVars(
+      {},
+      { index: 4, ports: {}, databases: {}, strings: {} },
+      rootRunId,
+      { projectName: 'Example App' },
+    )
     expect(
       writeTrackedEnvFiles(recipe, { treeRoot: tree, vars }, project, {}, ignoredUntracked),
     ).toBeNull()
-    expect(readFileSync(join(tree, '.env'), 'utf8')).toBe('COMPOSE_PROJECT=example-app-orch-42\n')
+    expect(readFileSync(join(tree, '.env'), 'utf8')).toBe(
+      `COMPOSE_PROJECT=example-app-orch-${rootRunId}\n`,
+    )
   })
 })

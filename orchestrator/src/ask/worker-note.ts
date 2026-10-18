@@ -17,6 +17,7 @@ export type WorkerNoteFiledResult = {
 
 export type WorkerNoteRun = {
   id: number
+  recordId: string
   project: string
   projectPath: string
   tree: string
@@ -98,6 +99,7 @@ export function deriveWorkerNoteAnchor(
     project: run.project,
     files: file ? [{ ...file, path: resolve(run.projectPath, file.path) }] : [],
     run_id: run.id,
+    run_record_id: run.recordId,
     branch: null,
     commit: run.headCommit,
     session_id: run.sessionId,

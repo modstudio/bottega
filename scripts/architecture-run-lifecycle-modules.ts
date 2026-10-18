@@ -134,7 +134,9 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../worktree/worktree-types.ts',
   ]),
   module('orchestrator/src/run/run-lease.ts', [
+    '../filesystem-identity-plan.ts',
     '../database/database-location.ts',
+    '../database/db.ts',
     '../project/project-lock.ts',
     './run-alive.ts',
   ]),

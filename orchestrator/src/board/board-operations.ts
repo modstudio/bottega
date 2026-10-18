@@ -23,7 +23,7 @@ import type {
   HostedBoardStatus,
   HostedBoardThread,
 } from '../record/record-board-contract.ts'
-import { runRecordIdOrNull } from '../run/run-identifier.ts'
+import { resolveRunIdentifier, runRecordIdOrNull } from '../run/run-identifier.ts'
 import {
   acceptedAnswerNoteText,
   fileAcceptedAnswerNote,
@@ -337,7 +337,7 @@ export function hostedBoardStatusResult(
 function authorFacts(env: Environment, database = db()) {
   const actor = boardActor(env)
   const identity = architectIdentity(env)
-  const localRunId = Number(env.ORCH_RUN_ID ?? 0)
+  const localRunId = env.ORCH_RUN_ID ? resolveRunIdentifier(database, env.ORCH_RUN_ID) : 0
   const run =
     localRunId > 0
       ? database

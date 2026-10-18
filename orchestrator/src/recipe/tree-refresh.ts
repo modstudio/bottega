@@ -7,7 +7,7 @@ import { gitToplevel, inspectCheckout, resolvedPathsEqual } from '../../../share
 import { recordedChainRootsForWorktree } from '../dispatch/dispatch-preflight.ts'
 import { git, gitOk, repoRootOf } from '../git/git-environment.ts'
 import { projectAt, resolvedWorktreeTool } from '../project/projects.ts'
-import { orchRunLabel } from '../resources/docker-resources.ts'
+import { orchRunLabelForRun } from '../resources/docker-resources.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
 import { teardownVars } from './recipe-lifecycle.ts'
 import { loadTrackedRecipe } from './recipe-loader.ts'
@@ -188,7 +188,7 @@ export function refreshStepContext(input: {
       key: owner.key,
       seed: owner.seed,
       main: input.main,
-      label: orchRunLabel(owner.rootRunId),
+      label: orchRunLabelForRun(owner.rootRunId),
       treeExists: true,
       allocations: owner.snapshot.allocations,
       compose: input.recipe.compose

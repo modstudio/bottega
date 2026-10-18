@@ -35,6 +35,7 @@ import {
 
 type RunRow = {
   id: number
+  record_id: string
   parent_run_id: number | null
   repo: string | null
   project_record_id: string | null
@@ -120,13 +121,13 @@ function resolveLandingTarget(runId: number, root: RunRow, latest: RunRow) {
       project.path,
       'rev-parse',
       '--verify',
-      `refs/orch/retained/${root.id}^{commit}`,
+      `refs/orch/retained/${root.record_id}^{commit}`,
     ),
     recordedTip: root.branch_kept_tip,
   })
   if (plan.action === 'refuse' || plan.action === 'attach-recorded') {
     throw new Error(
-      `run ${runId} branch ${branch} has no recoverable tip; restore refs/heads/${branch} or refs/orch/retained/${root.id}, then retry`,
+      `run ${runId} branch ${branch} has no recoverable tip; restore refs/heads/${branch} or refs/orch/retained/${root.record_id}, then retry`,
     )
   }
   return { project, branch, plan }
@@ -295,7 +296,7 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
       recorded.branch !== branch ||
       recorded.base_commit !== plan.tip ||
       recorded.minted_branch !== null ||
-      inspectTreeOwnership(created.path, project.path, [inserted.id], tool?.branch) !== 'owned'
+      inspectTreeOwnership(created.path, project.path, [inserted.id]) !== 'owned'
     ) {
       throw new Error(
         `landing tree postcondition failed: expected ${branch} at ${plan.tip} with run ${inserted.id} ownership`,

@@ -41,6 +41,24 @@ export function resolveRunIdentifier(database: Database, input: string | number)
   )
 }
 
+export function resolveRunIdentifierOrNull(
+  database: Database,
+  input: string | number,
+): number | null {
+  const parsed = classifyRunIdentifier(input)
+  if (!parsed) return null
+  if (parsed.kind === 'number')
+    return (
+      database.query<{ id: number }, [number]>('SELECT id FROM run WHERE id=?').get(parsed.id)
+        ?.id ?? null
+    )
+  return (
+    database
+      .query<{ id: number }, [string]>('SELECT id FROM run WHERE record_id=?')
+      .get(parsed.recordId)?.id ?? null
+  )
+}
+
 export function runRecordId(database: Database, id: number): string {
   const row = database
     .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')

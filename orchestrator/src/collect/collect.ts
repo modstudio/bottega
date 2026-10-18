@@ -215,8 +215,8 @@ function evidenceNote(row: { evidence_excluded: string | null }): string {
   return row.evidence_excluded ? `\n  not routing evidence: ${row.evidence_excluded}` : ''
 }
 
-function filedNotesNote(runId: number): string {
-  const path = join(resolveRunsDirectory(process.env), String(runId), 'events.jsonl')
+function filedNotesNote(runRecordId: string): string {
+  const path = join(resolveRunsDirectory(process.env), runRecordId, 'events.jsonl')
   if (!existsSync(path)) return ''
   const notes = readFileSync(path, 'utf8')
     .split('\n')
@@ -226,8 +226,6 @@ function filedNotesNote(runId: number): string {
           type?: string
           noteLabel?: unknown
           candidates?: unknown
-          noteId?: unknown
-          candidateIds?: unknown
         }
         if (event.type === 'note' && typeof event.noteLabel === 'string') {
           return [
@@ -245,19 +243,7 @@ function filedNotesNote(runId: number): string {
             },
           ]
         }
-        // Run files live for KEEP_RUN_FILES_DAYS, so accept the numeric event shape until they age out.
-        return event.type === 'note' && Number.isSafeInteger(event.noteId)
-          ? [
-              {
-                noteLabel: String(event.noteId),
-                candidateLabels: Array.isArray(event.candidateIds)
-                  ? event.candidateIds
-                      .filter((id): id is number => Number.isSafeInteger(id))
-                      .map(String)
-                  : [],
-              },
-            ]
-          : []
+        return []
       } catch {
         return []
       }
@@ -321,7 +307,7 @@ export function branchNote(database: Database, runId: number): string {
   if (!branch) return ''
   const turn = database
     .query(
-      `SELECT base_commit, branch_kept, branch_kept_tip, changed_paths, prompt_path, repo, launch_key
+      `SELECT record_id, base_commit, branch_kept, branch_kept_tip, changed_paths, prompt_path, repo, launch_key
        FROM run WHERE id=?`,
     )
     .get(runId) as
@@ -330,13 +316,12 @@ export function branchNote(database: Database, runId: number): string {
         prompt_path: string | null
         repo: string | null
         launch_key: string | null
+        record_id: string
       })
     | null
   // Prompts and per-run artifacts share the runs directory; derive it from the
   // row rather than importing the artifact module into the degraded graph.
-  const artifacts = turn?.prompt_path
-    ? join(dirname(turn.prompt_path), String(runId), 'artifacts')
-    : null
+  const artifacts = turn?.prompt_path ? join(dirname(turn.prompt_path), 'artifacts') : null
   const retained = turn?.branch_kept
   const prune = retained ? retainedBranchPruneCommand(turn.repo, turn.launch_key) : null
   return (
@@ -428,8 +413,15 @@ function partialOutputDocument(
   )
 }
 
-function listResultArtifacts(finalId: number, presentation: CollectResultPresentation): void {
-  const dir = join(resolveRunsDirectory(process.env), String(finalId), 'artifacts')
+function listResultArtifacts(
+  database: Database,
+  finalId: number,
+  presentation: CollectResultPresentation,
+): void {
+  const run = database
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+    .get(finalId)
+  const dir = run ? join(resolveRunsDirectory(process.env), run.record_id, 'artifacts') : ''
   const files: string[] = []
   if (existsSync(dir)) {
     for (const name of readdirSync(dir, { recursive: true })) {
@@ -500,15 +492,17 @@ function presentCollectedOutput(
       return
     }
     presentation.error(`\n— INCOMPLETE partial output from run ${row.id} (${row.status}) follows`)
-    presentation.log(rewriteScratchDirPaths(partialOutputDocument(row, output), row.id, runsRoot))
+    presentation.log(
+      rewriteScratchDirPaths(partialOutputDocument(row, output), row.record_id, runsRoot),
+    )
     return
   }
   presentation.log(
     rewriteScratchDirPaths(
       rewriteFilesWrittenPaths(output, (entry) =>
-        persistedRunArtifactPath(row.id, runsRoot, entry, row.cwd),
+        persistedRunArtifactPath(row.record_id, runsRoot, entry, row.cwd),
       ) ?? output,
-      row.id,
+      row.record_id,
       runsRoot,
     ),
   )
@@ -564,7 +558,7 @@ export function collectResult(
     worktree: string | null
   } | null
   if (!row) throw new Error(`no run ${id}`)
-  if (argv.includes('--artifacts')) listResultArtifacts(chain.finalId, presentation)
+  if (argv.includes('--artifacts')) listResultArtifacts(database, chain.finalId, presentation)
 
   const asking = row.status === 'asking' ? resolveAsking(database, row.id) : null
   const outcome = outcomeOf(row)
@@ -600,7 +594,7 @@ export function collectResult(
           : `\n— run ${id} asking — recoverable: ${PLATFORM_SLUG} run continue ${asking.rootId}`) +
         baseNote +
         mcpNote(row) +
-        filedNotesNote(row.id) +
+        filedNotesNote(row.record_id) +
         evidenceNote(row),
     )
     return
@@ -610,7 +604,7 @@ export function collectResult(
       `\n— run ${id} ${row.status}: ${failureReason(row)}` +
         baseNote +
         mcpNote(row) +
-        filedNotesNote(row.id) +
+        filedNotesNote(row.record_id) +
         evidenceNote(row),
     )
     presentation.exit(1)
@@ -630,7 +624,7 @@ export function collectResult(
         ) +
         baseNote +
         mcpNote(row) +
-        filedNotesNote(row.id) +
+        filedNotesNote(row.record_id) +
         evidenceNote(row),
     )
   }

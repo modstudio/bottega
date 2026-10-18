@@ -9,7 +9,8 @@ import { MIGRATIONS_TABLE } from '../src/migrations.ts'
 import { clearOrchCache } from '../src/serve.ts'
 
 export const at = (iso: string) => new Date(iso).getTime()
-const fixtureRecordId = (id: number) => `00000000-0000-4000-8000-${String(id).padStart(12, '0')}`
+export const fixtureRecordId = (id: number) =>
+  `00000000-0000-4000-8000-${String(id).padStart(12, '0')}`
 
 export function resetFixtureStore(assertSafe?: () => void) {
   refreshKeyPrefixes()
@@ -113,6 +114,11 @@ export const runFixture = (overrides: Record<string, unknown> = {}): OrchRun => 
     ;(fixture as Record<string, unknown>).turns = (
       (fixture as Record<string, unknown>).turns as Record<string, unknown>[]
     ).map((turn) => ({ record_id: fixtureRecordId(Number(turn.id)), ...turn }))
+  }
+  if (typeof (fixture as Record<string, unknown>).retry_of === 'number') {
+    ;(fixture as Record<string, unknown>).retry_record_id = fixtureRecordId(
+      (fixture as Record<string, unknown>).retry_of as number,
+    )
   }
   return fixture as unknown as OrchRun
 }

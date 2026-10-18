@@ -27,6 +27,7 @@ import { carryMachineIdentity } from './machine-identity-store.ts'
 import {
   applyMigrations,
   applyMigrationsBefore,
+  type BeforeMigrationApply,
   migrationRefusal,
   readUserVersion,
   staleWriteRefusal,
@@ -406,7 +407,9 @@ function seedProjects(d: Database): void {
 }
 
 /** Main-checkout binary only: apply pending, ordered Drizzle migrations. */
-export function migrateDatabase(input: { beforeMigration?: string } = {}): {
+export function migrateDatabase(
+  input: { beforeMigration?: string; beforeApply?: BeforeMigrationApply } = {},
+): {
   path: string
   versions: string[]
 } {
@@ -422,7 +425,7 @@ export function migrateDatabase(input: { beforeMigration?: string } = {}): {
     const created = createDatabasePrivately(DB_PATH, (database) => {
       const versions = input.beforeMigration
         ? applyMigrationsBefore(database, input.beforeMigration)
-        : applyMigrations(database)
+        : applyMigrations(database, undefined, input.beforeApply)
       writeTransaction(() => initializeDefaultLocalProject(database, true), database)
       seedProjects(database)
       // Seeding and hygiene assume the current schema, so a partial migration skips them.
@@ -449,7 +452,7 @@ export function migrateDatabase(input: { beforeMigration?: string } = {}): {
     d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
     const versions = input.beforeMigration
       ? applyMigrationsBefore(d, input.beforeMigration)
-      : applyMigrations(d)
+      : applyMigrations(d, undefined, input.beforeApply)
     writeTransaction(() => initializeDefaultLocalProject(d, false), d)
     seedProjects(d)
     if (!input.beforeMigration) runOpenHooks('afterInitialize', d)

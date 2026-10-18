@@ -246,8 +246,11 @@ describe('operational monitor conditions', () => {
       )
     const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
       const command = args.join(' ')
+      const runRecordId = db()
+        .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+        .get(runId)!.record_id
       const stdout = command.startsWith('docker ps -a --format')
-        ? `app-orch-${runId}-web\torch.run=${runId}`
+        ? `app-orch-${runId}-web\t${runRecordId}`
         : ''
       return {
         exitCode: 0,
@@ -272,6 +275,9 @@ describe('operational monitor conditions', () => {
 
   test('a legacy absent recipe run does not offer close-out for Docker resources', async () => {
     const runId = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+    const runRecordId = db()
+      .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+      .get(runId)!.record_id
     const project = `monitor-legacy-${runId}`
     upsertProject({
       recordId: newRecordId(),
@@ -293,7 +299,7 @@ describe('operational monitor conditions', () => {
       )
     const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
       const stdout = args.join(' ').startsWith('docker ps -a --format')
-        ? `app-orch-${runId}-web\torch.run=${runId}`
+        ? `app-orch-${runId}-web\torch.run=${runRecordId}`
         : ''
       return {
         exitCode: 0,
@@ -318,12 +324,15 @@ describe('operational monitor conditions', () => {
 
   test('an absent attached tree is no longer retained for manual Docker review', async () => {
     const runId = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+    const runRecordId = db()
+      .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+      .get(runId)!.record_id
     db()
       .query('UPDATE run SET worktree=?,worktree_source=? WHERE id=?')
       .run(`/gone/orch-${runId}`, 'git', runId)
     const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
       const stdout = args.join(' ').startsWith('docker ps -a --format')
-        ? `app-orch-${runId}-web\torch.run=${runId}`
+        ? `app-orch-${runId}-web\torch.run=${runRecordId}`
         : ''
       return {
         exitCode: 0,

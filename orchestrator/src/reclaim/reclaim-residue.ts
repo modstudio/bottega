@@ -13,6 +13,7 @@ import { processStartTime, projectGitCommonDir } from '../project/project-lock.t
 import { projectByName, projects } from '../project/projects.ts'
 import { runAlive } from '../run/run-alive.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
+import { runRecordId } from '../run/run-identifier.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import { processTable } from '../run/run-process.ts'
 import {
@@ -132,7 +133,7 @@ function reclaimRefGuard(subject: string, options: Options) {
       ok: false,
       action: `refused; invariant: project is registered; fix: check ${projectName}`,
     }
-  const path = join(projectGitCommonDir(project.path), 'orch-guards', String(runId))
+  const path = join(projectGitCommonDir(project.path), 'orch-guards', runRecordId(db(), runId))
   const rows = conversationRows(runId)
   const decision = refGuardReleaseDecision({
     exists: existsSync(path),
@@ -158,7 +159,7 @@ function reclaimRefGuard(subject: string, options: Options) {
 
 function reclaimSandbox(subject: string, options: Options) {
   const runId = numericSubject(subject)
-  const path = join(RUNS_DIR, `sandbox-${runId}`)
+  const path = join(RUNS_DIR, `sandbox-${runRecordId(db(), runId)}`)
   const rows = conversationRows(runId)
   const decision = sandboxReleaseDecision({
     exists: existsSync(path),
@@ -188,7 +189,7 @@ function reclaimRetainedRef(subject: string, options: Options) {
       ok: false,
       action: `refused; invariant: project is registered; fix: check ${projectName}`,
     }
-  const ref = `refs/orch/retained/${runId}`
+  const ref = `refs/orch/retained/${runRecordId(db(), runId)}`
   const tip = refTip(project.path, ref)
   const row = db().query('SELECT status FROM run WHERE id=?').get(runId) as {
     status: string

@@ -75,9 +75,12 @@ test('a Codex worker environment uses its chain-scoped CODEX_HOME', () => {
   ).toBe('/runs/sandbox-41/codex')
 })
 
-test('a delegated worker environment names its run and selected agent', () => {
-  expect(childEnv(AGENTS.codex!, 42, 'token', {}, false)).toMatchObject({
-    ORCH_RUN_ID: '42',
+test('a worker receives UUID machine identity, a separate display number and its agent', () => {
+  const recordId = '42000000-0000-4000-8000-000000000000'
+  expect(childEnv(AGENTS.codex!, recordId, 'token', {}, false, 42)).toMatchObject({
+    ORCH_RUN_ID: recordId,
+    ORCH_RUN_NUMBER: '42',
+    ORCH_RUN_TOKEN: 'token',
     ORCH_AGENT: AGENTS.codex!.name,
   })
 })

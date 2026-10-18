@@ -63,6 +63,15 @@ type AcpTurnInput = {
   } | null
 }
 
+async function resolveWorkerRunId(value: string | undefined): Promise<number> {
+  if (!value) return 0
+  const [{ resolveRunIdentifier }, { db }] = await Promise.all([
+    import('../run/run-identifier.ts'),
+    import('../database/db.ts'),
+  ])
+  return resolveRunIdentifier(db(), value)
+}
+
 export function resolveAcpEditLocations(
   scratch: string | undefined,
   locations: Array<{ path: string }> | null | undefined,
@@ -583,7 +592,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
           )
         })
         if (fields.length === 1 && stringFields.length === 1) {
-          const runId = Number(opts.env.ORCH_RUN_ID ?? 0)
+          const runId = await resolveWorkerRunId(opts.env.ORCH_RUN_ID)
           if (runId) {
             const { ask } = await import('../ask/ask.ts')
             const { db } = await import('../database/db.ts')

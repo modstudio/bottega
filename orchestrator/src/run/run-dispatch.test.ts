@@ -1,6 +1,7 @@
 import { afterEach, expect, mock, spyOn, test } from 'bun:test'
 import type { ChildProcess, spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
+import { dirname } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -108,4 +109,37 @@ test('detach sends coordinator stdout and stderr to an append log descriptor', a
   const descriptors = stdio as ['ignore', number, number]
   expect(descriptors[1]).toBeGreaterThan(2)
   expect(descriptors[2]).toBe(descriptors[1])
+})
+
+test('two detached runs never share prompt or coordinator files', async () => {
+  process.env.ORCH_DEPTH = '0'
+  let pid = 4_200_000
+  const fakeSpawn = (() => {
+    const child = new EventEmitter() as ChildProcess
+    Object.defineProperty(child, 'pid', { value: pid++ })
+    child.unref = () => child
+    queueMicrotask(() => child.emit('spawn'))
+    return child
+  }) as typeof spawn
+  const first = await detach(
+    'summarize',
+    'first detached prompt',
+    { cwd: dir },
+    undefined,
+    fakeSpawn,
+  )
+  const second = await detach(
+    'summarize',
+    'second detached prompt',
+    { cwd: dir },
+    undefined,
+    fakeSpawn,
+  )
+  const paths = db().query<{ prompt_path: string }, [number]>(
+    'SELECT prompt_path FROM run WHERE id=?',
+  )
+  const firstPath = paths.get(first)!.prompt_path
+  const secondPath = paths.get(second)!.prompt_path
+  expect(firstPath).not.toBe(secondPath)
+  expect(dirname(firstPath)).not.toBe(dirname(secondPath))
 })
