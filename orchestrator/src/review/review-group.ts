@@ -1,15 +1,10 @@
 // concern: review-group
 /** Measures change groups and reads their recorded review rows. */
 import type { Database } from 'bun:sqlite'
-import type { ReviewRiskMap } from '../project/project-injection.ts'
 import type { Project } from '../project/projects.ts'
 import { measureChangeIdentity } from './review-pins.ts'
 import { resolveReviewMergeBase } from './review-target.ts'
-import {
-  classifyReviewTier,
-  diffNumstat,
-  type ReviewTier,
-} from './review-tier.ts'
+import { classifyReviewTier, diffNumstat, type ReviewTier } from './review-tier.ts'
 
 export type ChangeGroup = {
   project: string
@@ -67,7 +62,12 @@ type ChangeGroupOperations = {
     base: string,
     tip: string,
   ): { patchId: string; paths: string[]; message: string } | null
-  tier(cwd: string, base: string, tip: string, risk: ReviewRiskMap | undefined): ReviewTier
+  tier(
+    cwd: string,
+    base: string,
+    tip: string,
+    risk: NonNullable<Project['settings']['review']>['risk'],
+  ): ReviewTier
 }
 
 const changeGroupOperations: ChangeGroupOperations = {

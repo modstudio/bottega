@@ -8,12 +8,7 @@ import {
 } from './review-tier.ts'
 
 describe('tier range parsing', () => {
-  const precedenceCases: {
-    name: string
-    path: string
-    risk: NonNullable<Parameters<typeof classifyReviewTier>[0]['risk']>
-    expected: { risk: number; tier: number; reason: string }
-  }[] = [
+  test.each([
     ['a..b', { from: 'a', to: 'b' }],
     ['a...b', { from: 'a', to: 'b' }],
     ['v1.2..v1.3', { from: 'v1.2', to: 'v1.3' }],
@@ -294,7 +289,12 @@ describe('review tier classification', () => {
     expect(actual).toMatchObject({ risk: 0, size: 0, tier: 0 })
   })
 
-  test.each([
+  const precedenceCases: {
+    name: string
+    path: string
+    risk: NonNullable<Parameters<typeof classifyReviewTier>[0]['risk']>
+    expected: { risk: number; tier: number; reason: string }
+  }[] = [
     {
       name: 'the first overlapping project pattern wins',
       path: 'src/security.ts',
