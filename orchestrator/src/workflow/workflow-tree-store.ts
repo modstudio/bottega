@@ -4,21 +4,34 @@ import type { Database } from 'bun:sqlite'
 import { isDeepStrictEqual } from 'node:util'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
+import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
 import {
   type CatalogueSequence,
   type CatalogueStep,
   importStepCatalogue,
-  productionStepCatalogue,
+  selectedStepCatalogue,
+  stepCatalogueLocalLifecycle,
   validateStepCatalogue,
 } from './step-catalogue.ts'
+import { projectCatalogueResolutionSpace } from './workflow-resolution-space.ts'
 import type { WorkflowTreeStore } from './workflow-tree.ts'
-import { importWorkflow, productionWorkflows, validateWorkflowDefinition } from './workflows.ts'
+import {
+  importWorkflow,
+  productionWorkflows,
+  validateWorkflowDefinition,
+  workflowLocalLifecycle,
+} from './workflows.ts'
 
-export function productionWorkflowTree(d: Database = db()): WorkflowTreeStore {
+export function productionWorkflowTree(
+  d: Database = db(),
+  project: string | null = null,
+): WorkflowTreeStore {
+  const spaceId = projectCatalogueResolutionSpace(d, project)
+  const catalogue = selectedStepCatalogue(undefined, d, spaceId)
   return {
-    steps: productionStepCatalogue(d).definition.steps,
-    sequences: productionStepCatalogue(d).definition.sequences ?? [],
-    workflows: productionWorkflows(d),
+    steps: catalogue.definition.steps,
+    sequences: catalogue.definition.sequences ?? [],
+    workflows: productionWorkflows(d, spaceId),
   }
 }
 
@@ -76,11 +89,12 @@ export function importWorkflowTree(
   reason: string | undefined,
   author?: string,
   d?: Database,
-): WorkflowTreeImportResult {
+  project?: string,
+): WorkflowTreeImportResult | Promise<WorkflowTreeImportResult> {
   if (!reason?.trim()) throw new Error('reason is required')
   const database = d ?? writableDb()
   return writeTransaction(() => {
-    const production = productionWorkflowTree(database)
+    const production = productionWorkflowTree(database, project ?? null)
     const missingFlows = missingProductionFlows(tree, production)
     if (missingFlows.length) {
       throw new Error(
@@ -126,15 +140,23 @@ export function importWorkflowTree(
 
     if (!changedSteps.length && !changedSequences.length && !changedWorkflows.length)
       return { steps: [], sequences: [], workflows: [] }
-    if (changedSteps.length || changedSequences.length)
-      importStepCatalogue(catalogue, reason, author, database)
-    for (const { slug, definition } of changedWorkflows) {
-      importWorkflow(slug, definition, reason, author, database, catalogue)
-    }
-    return {
+    const result = {
       steps: changedSteps,
       sequences: changedSequences,
       workflows: changedWorkflows.map(({ slug }) => slug),
     }
+    if (currentRecordWriteDecision(database) === 'hosted')
+      return (async () => {
+        if (changedSteps.length || changedSequences.length)
+          await importStepCatalogue(catalogue, reason, author, database, project)
+        for (const { slug, definition } of changedWorkflows)
+          await importWorkflow(slug, definition, reason, author, database, catalogue, project)
+        return result
+      })()
+    if (changedSteps.length || changedSequences.length)
+      stepCatalogueLocalLifecycle.import(catalogue, reason, author, database)
+    for (const { slug, definition } of changedWorkflows)
+      workflowLocalLifecycle.import(slug, definition, reason, author, database, catalogue)
+    return result
   }, database)
 }

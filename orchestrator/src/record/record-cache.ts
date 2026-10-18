@@ -6,13 +6,14 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { encodeStoredDocAudiences } from '../doc/doc-audiences-codec.ts'
-import { rememberProjectLensSpaces } from '../lens/project-lens-space.ts'
 import { projects } from '../project/projects.ts'
+import { rememberProjectSpace } from '../project-space.ts'
 import { applySubjectRecord } from '../subject/subjects.ts'
 import { recordApiClient } from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { pullLensCatalogue } from './record-cache-lens.ts'
 import { recordCacheSpaceOwnsAddress } from './record-cache-ownership.ts'
+import { pullWorkflowCatalogue } from './record-cache-workflow.ts'
 import {
   decodeRecordCursor,
   encodeRecordCursor,
@@ -217,6 +218,7 @@ export async function pullRecordCache(local: Database = db()): Promise<{
   skippedSubjects: number
   scores: number
   lensCatalogue: number
+  workflowCatalogue: number
 }> {
   const hasMeta = local
     .query<{ n: number }, []>(
@@ -224,7 +226,15 @@ export async function pullRecordCache(local: Database = db()): Promise<{
     )
     .get()
   if (!hasMeta)
-    return { docs: 0, skippedDocs: 0, subjects: 0, skippedSubjects: 0, scores: 0, lensCatalogue: 0 }
+    return {
+      docs: 0,
+      skippedDocs: 0,
+      subjects: 0,
+      skippedSubjects: 0,
+      scores: 0,
+      lensCatalogue: 0,
+      workflowCatalogue: 0,
+    }
   const client = recordApiClient()
   const identity = await client.whoami()
   if (!identity.activeSpaceId) throw new Error(noActiveRecordSpaceRefusal())
@@ -233,7 +243,10 @@ export async function pullRecordCache(local: Database = db()): Promise<{
   const pulledSubjects = await pullSubjects(local, cache.spaces, cache.projectSpaces)
   const pulledDocs = await pullDocs(local, identity, cache.spaces, cache.projectSpaces)
   const lensCatalogue = await pullLensCatalogue(local, cache.spaces)
-  rememberProjectLensSpaces(local, cache.projectSpaces)
+  const workflowPull = await pullWorkflowCatalogue(local, cache.spaces)
+  for (const [project, spaceId] of cache.projectSpaces)
+    if (spaceId === null || workflowPull.completedSpaces.has(spaceId))
+      rememberProjectSpace(local, project, spaceId)
   let scores = 0
   let scoreCursor = readCursor(local, SCORES_CURSOR)
   for (;;) {
@@ -249,7 +262,13 @@ export async function pullRecordCache(local: Database = db()): Promise<{
     }, local)
     if (!page.nextCursor) break
   }
-  return { ...pulledDocs, ...pulledSubjects, scores, lensCatalogue }
+  return {
+    ...pulledDocs,
+    ...pulledSubjects,
+    scores,
+    lensCatalogue,
+    workflowCatalogue: workflowPull.count,
+  }
 }
 
 async function pullSubjects(

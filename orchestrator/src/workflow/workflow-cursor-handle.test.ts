@@ -10,7 +10,7 @@ import {
 import type { FloorEvidencePorts } from './workflow-floor-evidence.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
-import { promoteWorkflow, setWorkflow } from './workflows.ts'
+import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
 const context = { session: 'session-one' }
 const ports: FloorEvidencePorts = {
@@ -52,7 +52,7 @@ function database(): Database {
 }
 
 function installKeylessWorkflow(d: Database, slug: string): void {
-  const draft = setWorkflow(
+  const draft = setWorkflowLocal(
     slug,
     {
       title: 'Keyless fixture',
@@ -64,7 +64,7 @@ function installKeylessWorkflow(d: Database, slug: string): void {
     'test',
     d,
   )
-  promoteWorkflow(slug, draft.n, 'test fixture', 'test', d)
+  promoteWorkflowLocal(slug, draft.n, 'test fixture', 'test', d)
 }
 
 test('two keyless runs in one session have distinct handles and advance independently', () => {

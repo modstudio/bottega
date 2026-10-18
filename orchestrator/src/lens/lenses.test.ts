@@ -5,6 +5,7 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db, sessionId } from '../database/db.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { upsertProject } from '../project/projects.ts'
+import { rememberProjectSpace } from '../project-space.ts'
 import {
   chooseLensProfile,
   listLenses,
@@ -13,7 +14,6 @@ import {
   setLens,
   setProfile,
 } from './lenses.ts'
-import { rememberProjectLensSpace } from './project-lens-space.ts'
 
 describe('lens catalogue', () => {
   test('six seeded cores render their default profile for every registered project', () => {
@@ -234,7 +234,7 @@ describe('lens catalogue', () => {
       lensId: 'correctness',
       reason: 'test',
     })
-    rememberProjectLensSpace(db(), 'routed', newRecordId())
+    rememberProjectSpace(db(), 'routed', newRecordId())
     expect(resolveLens('correctness', 'routed')!.profiles[0]).toMatchObject({
       name: 'routed-body',
       source: 'project',
@@ -251,7 +251,7 @@ describe('lens catalogue', () => {
          FROM lens WHERE id='correctness' AND space_id IS NULL`,
       )
       .run(newRecordId(), space)
-    rememberProjectLensSpace(db(), 'hosted', space)
+    rememberProjectSpace(db(), 'hosted', space)
     expect(resolveLens('correctness', 'hosted')!.question).toBe('Hosted question?')
     expect(resolveLens('correctness', null)!.question).not.toBe('Hosted question?')
   })

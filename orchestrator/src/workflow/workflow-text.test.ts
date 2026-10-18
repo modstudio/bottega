@@ -3,8 +3,8 @@ import { describe, expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
 import {
   productionStepCatalogue,
-  promoteStepCatalogue,
-  setStepCatalogue,
+  promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
 } from './step-catalogue.ts'
 import {
   abandonWorkflowCursorByHandle,
@@ -20,7 +20,7 @@ import {
   WORKFLOW_TEXT_CURSOR_MAX_BYTES,
   workflowTextFacts,
 } from './workflow-text.ts'
-import { promoteWorkflow, setWorkflow } from './workflows.ts'
+import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
 const context = { session: 'text-owner' }
 
@@ -38,7 +38,7 @@ function database(): Database {
     JSON.stringify({ tracker: { protocol: 'hub' }, docs: { protocol: 'orch-docs' } }),
   )
   const current = productionStepCatalogue(d).definition
-  const catalogue = setStepCatalogue(
+  const catalogue = setStepCatalogueLocal(
     {
       steps: [
         ...current.steps,
@@ -58,8 +58,8 @@ function database(): Database {
     'test',
     d,
   )
-  promoteStepCatalogue(catalogue.n, 'publish fixture', 'test', d)
-  const workflow = setWorkflow(
+  promoteStepCatalogueLocal(catalogue.n, 'publish fixture', 'test', d)
+  const workflow = setWorkflowLocal(
     'text-fixture',
     {
       title: 'Text fixture',
@@ -78,7 +78,7 @@ function database(): Database {
     'test',
     d,
   )
-  promoteWorkflow('text-fixture', workflow.n, 'publish fixture', 'test', d)
+  promoteWorkflowLocal('text-fixture', workflow.n, 'publish fixture', 'test', d)
   return d
 }
 

@@ -124,6 +124,17 @@ export function lensCataloguePath(
   return `/v1/lens-catalogue/${encodeURIComponent(table)}${suffix ? `?${suffix}` : ''}`
 }
 
+export function workflowCataloguePath(
+  table: string,
+  query: { limit?: number; cursor?: string },
+): string {
+  const search = new URLSearchParams()
+  if (query.limit) search.set('limit', String(query.limit))
+  if (query.cursor) search.set('cursor', query.cursor)
+  const suffix = search.toString()
+  return `/v1/workflow-catalogue/${encodeURIComponent(table)}${suffix ? `?${suffix}` : ''}`
+}
+
 export function docSearchParams(query: {
   q: string
   scope?: string

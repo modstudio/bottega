@@ -41,6 +41,17 @@ function idleLensDeps() {
     selectProjectLensProfile: unused,
   }
 }
+function idleWorkflowDeps() {
+  const unused = async () => {
+    throw new Error('hosted workflow catalogue is unused in this fixture')
+  }
+  return {
+    listWorkflowCatalogue: async () => [],
+    draftWorkflow: unused,
+    promoteWorkflow: unused,
+    retireWorkflow: unused,
+  }
+}
 
 function idleBoardDeps(): RecordBoardDeps {
   const unused = async () => {
@@ -79,6 +90,7 @@ export function idleRecordApiDeps() {
     ...idleIdentityAndSpaceDeps(),
     ...idleBoardDeps(),
     ...idleLensDeps(),
+    ...idleWorkflowDeps(),
   }
 }
 
@@ -203,6 +215,10 @@ export function unusedBoardClientMethods(): Pick<
   | 'upsertLens'
   | 'upsertLensProfile'
   | 'selectProjectLensProfile'
+  | 'listWorkflowCatalogue'
+  | 'draftWorkflow'
+  | 'promoteWorkflow'
+  | 'retireWorkflow'
 > {
   return {
     listPublicDocs: unusedBoard,
@@ -237,6 +253,10 @@ export function unusedBoardClientMethods(): Pick<
     upsertLens: unusedSubject,
     upsertLensProfile: unusedSubject,
     selectProjectLensProfile: unusedSubject,
+    listWorkflowCatalogue: async () => ({ items: [], nextCursor: null }),
+    draftWorkflow: unusedSubject,
+    promoteWorkflow: unusedSubject,
+    retireWorkflow: unusedSubject,
   }
 }
 
@@ -281,6 +301,18 @@ export function createMemoryRecordApiClient(): RecordApiClient {
     },
     async selectProjectLensProfile() {
       throw new Error('hosted lens catalogue is unused in this fixture')
+    },
+    async listWorkflowCatalogue() {
+      return { items: [], nextCursor: null }
+    },
+    async draftWorkflow() {
+      throw new Error('hosted workflow catalogue is unused in this fixture')
+    },
+    async promoteWorkflow() {
+      throw new Error('hosted workflow catalogue is unused in this fixture')
+    },
+    async retireWorkflow() {
+      throw new Error('hosted workflow catalogue is unused in this fixture')
     },
     async applySettingsPermission() {
       throw new Error('settings permission endpoint is not implemented by the memory fixture')

@@ -101,6 +101,12 @@ import {
   upsertRecordScore,
   voidRecordRun,
 } from './record-verdicts.ts'
+import {
+  draftRecordWorkflow,
+  listRecordWorkflowCatalogue,
+  promoteRecordWorkflow,
+  retireRecordWorkflow,
+} from './record-workflow-catalogue.ts'
 
 type ServerEnvironment = Record<string, string | undefined>
 
@@ -197,6 +203,10 @@ function recordLensDependencies() {
     upsertLens: upsertRecordLens,
     upsertLensProfile: upsertRecordLensProfile,
     selectProjectLensProfile: selectRecordProjectLensProfile,
+    listWorkflowCatalogue: listRecordWorkflowCatalogue,
+    draftWorkflow: draftRecordWorkflow,
+    promoteWorkflow: promoteRecordWorkflow,
+    retireWorkflow: retireRecordWorkflow,
   }
 }
 

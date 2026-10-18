@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
+import { effectiveProjectSpace, rememberProjectSpace } from '../project-space.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import type {
   RecordLensProfileWriteResponse,
@@ -10,7 +11,6 @@ import type {
 } from '../record/record-lens-contract.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
-import { effectiveProjectLensSpace, rememberProjectLensSpace } from './project-lens-space.ts'
 
 const LENS_AXES = ['framework', 'architecture'] as const
 export type LensAxis = (typeof LENS_AXES)[number]
@@ -548,7 +548,7 @@ export async function selectProjectProfile(input: SelectProjectProfileInput) {
         nowIso(),
       )
     }, d)
-    rememberProjectLensSpace(d, project.name, spaceId)
+    rememberProjectSpace(d, project.name, spaceId)
     return {
       project: project.name,
       lens: input.lensId ?? null,
@@ -598,7 +598,7 @@ const disabledLensRefusal = (id: string, what: string) =>
 
 /** A project's hosted space resolves a lens only once that space holds the lens; until then the local catalogue does. */
 function resolutionSpace(id: string, projectName: string | null, d: Database): string | null {
-  const hosted = effectiveProjectLensSpace(d, projectName)
+  const hosted = effectiveProjectSpace(d, projectName)
   if (hosted === null) return null
   const held = d.query('SELECT 1 FROM lens WHERE id=? AND space_id=?').get(id, hosted)
   return held ? hosted : null

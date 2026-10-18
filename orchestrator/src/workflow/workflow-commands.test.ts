@@ -16,7 +16,7 @@ import {
 } from './workflow-commands.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { recordWorkflowExec, recordWorkflowProbe } from './workflow-probe.ts'
-import { promoteWorkflow, setWorkflow, type WorkflowDefinition } from './workflows.ts'
+import { promoteWorkflowLocal, setWorkflowLocal, type WorkflowDefinition } from './workflows.ts'
 
 const presentation = (lines: string[]) => ({
   log: (line: string) => lines.push(line),
@@ -101,7 +101,7 @@ test('workflow import reports a sequence-only draft as a change', () => {
 })
 
 const publishCursorWorkflow = (slug: string, modes: WorkflowDefinition['modes']) => {
-  const draft = setWorkflow(
+  const draft = setWorkflowLocal(
     slug,
     {
       title: `Cursor command ${slug}`,
@@ -112,13 +112,13 @@ const publishCursorWorkflow = (slug: string, modes: WorkflowDefinition['modes'])
     'test cursor mode resolution',
     'test',
   )
-  promoteWorkflow(slug, draft.n, 'publish', 'test')
+  promoteWorkflowLocal(slug, draft.n, 'publish', 'test')
 }
 
 test('mode-less step command resolves autonomy from the fetched catalogue step', async () => {
   registerFixtureProject('mode-less-step')
   const step = productionStepCatalogue().definition.steps.find(({ slug }) => slug === 'verify')!
-  const draft = setWorkflow(
+  const draft = setWorkflowLocal(
     'mode-less-step',
     {
       title: 'Mode-less step',
@@ -129,7 +129,7 @@ test('mode-less step command resolves autonomy from the fetched catalogue step',
     'test mode-less step command',
     'test',
   )
-  promoteWorkflow('mode-less-step', draft.n, 'publish', 'test')
+  promoteWorkflowLocal('mode-less-step', draft.n, 'publish', 'test')
   const lines: string[] = []
 
   await workflowCommand(
@@ -594,7 +594,7 @@ test('mode-less cursor verbs keep using the cursor mode after the workflow defau
     { slug: 'repair', title: 'Repair', steps },
   ])
   composeWorkflowWithCursor(slug, project, undefined, { key }, {})
-  const changed = setWorkflow(
+  const changed = setWorkflowLocal(
     slug,
     {
       title: `Cursor command ${slug}`,
@@ -608,7 +608,7 @@ test('mode-less cursor verbs keep using the cursor mode after the workflow defau
     'change the default mode',
     'test',
   )
-  promoteWorkflow(slug, changed.n, 'publish changed default', 'test')
+  promoteWorkflowLocal(slug, changed.n, 'publish changed default', 'test')
   const lines: string[] = []
   const command = (verb: string, ...tail: string[]) =>
     workflowCommand(

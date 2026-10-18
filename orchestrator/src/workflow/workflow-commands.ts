@@ -118,9 +118,9 @@ export function showWorkflowCommand(argv: string[], print: WorkflowPrint): void 
   print(showWorkflow(argv[2]!, positive(flagValue(argv, 'version'), '--version')))
 }
 
-export function promoteWorkflowCommand(argv: string[], print: WorkflowPrint): void {
+export async function promoteWorkflowCommand(argv: string[], print: WorkflowPrint): Promise<void> {
   print(
-    promoteWorkflow(
+    await promoteWorkflow(
       argv[2]!,
       positive(argv[3], 'version')!,
       flagValue(argv, 'reason'),
@@ -129,9 +129,9 @@ export function promoteWorkflowCommand(argv: string[], print: WorkflowPrint): vo
   )
 }
 
-export function retireWorkflowCommand(argv: string[], print: WorkflowPrint): void {
+export async function retireWorkflowCommand(argv: string[], print: WorkflowPrint): Promise<void> {
   print(
-    retireWorkflow(
+    await retireWorkflow(
       argv[2]!,
       positive(argv[3], 'version')!,
       flagValue(argv, 'reason'),
@@ -140,9 +140,9 @@ export function retireWorkflowCommand(argv: string[], print: WorkflowPrint): voi
   )
 }
 
-export function forkWorkflowCommand(argv: string[], print: WorkflowPrint): void {
+export async function forkWorkflowCommand(argv: string[], print: WorkflowPrint): Promise<void> {
   print(
-    forkWorkflow(
+    await forkWorkflow(
       argv[2]!,
       positive(flagValue(argv, 'from'), '--from'),
       flagValue(argv, 'reason'),
@@ -383,11 +383,11 @@ export function abandonCommand(argv: string[], print: WorkflowPrint): void {
   print(result, result)
 }
 
-export function setWorkflowCommand(argv: string[], print: WorkflowPrint): void {
+export async function setWorkflowCommand(argv: string[], print: WorkflowPrint): Promise<void> {
   const file = flagValue(argv, 'file')
   if (!file) throw new Error('file is required')
   print(
-    setWorkflow(
+    await setWorkflow(
       argv[2]!,
       JSON.parse(readFileSync(file, 'utf8')),
       flagValue(argv, 'reason'),
@@ -581,11 +581,11 @@ export function showCatalogueCommand(argv: string[], print: WorkflowPrint): void
   print(showStepCatalogue(positive(flagValue(argv, 'version'), '--version')))
 }
 
-export function setCatalogueCommand(argv: string[], print: WorkflowPrint): void {
+export async function setCatalogueCommand(argv: string[], print: WorkflowPrint): Promise<void> {
   const file = flagValue(argv, 'file')
   if (!file) throw new Error('file is required')
   print(
-    setStepCatalogue(
+    await setStepCatalogue(
       JSON.parse(readFileSync(file, 'utf8')),
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
@@ -593,9 +593,9 @@ export function setCatalogueCommand(argv: string[], print: WorkflowPrint): void 
   )
 }
 
-export function promoteCatalogueCommand(argv: string[], print: WorkflowPrint): void {
+export async function promoteCatalogueCommand(argv: string[], print: WorkflowPrint): Promise<void> {
   print(
-    promoteStepCatalogue(
+    await promoteStepCatalogue(
       positive(argv[2], 'version')!,
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
@@ -603,9 +603,9 @@ export function promoteCatalogueCommand(argv: string[], print: WorkflowPrint): v
   )
 }
 
-export function retireCatalogueCommand(argv: string[], print: WorkflowPrint): void {
+export async function retireCatalogueCommand(argv: string[], print: WorkflowPrint): Promise<void> {
   print(
-    retireStepCatalogue(
+    await retireStepCatalogue(
       positive(argv[2], 'version')!,
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
@@ -613,9 +613,9 @@ export function retireCatalogueCommand(argv: string[], print: WorkflowPrint): vo
   )
 }
 
-export function forkCatalogueCommand(argv: string[], print: WorkflowPrint): void {
+export async function forkCatalogueCommand(argv: string[], print: WorkflowPrint): Promise<void> {
   print(
-    forkStepCatalogue(
+    await forkStepCatalogue(
       positive(flagValue(argv, 'from'), '--from'),
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
@@ -650,8 +650,14 @@ export function hydrateCommand(argv: string[], presentation: WorkflowPresentatio
         'cleared by: pass --cwd for a worktree',
     )
   }
+  const project =
+    projects().find(
+      (candidate) =>
+        process.env.ORCH_MAIN_CHECKOUT &&
+        resolvedPathsEqual(candidate.path, process.env.ORCH_MAIN_CHECKOUT),
+    )?.name ?? null
   const plan = planWorkflowHydration({
-    store: productionWorkflowTree(),
+    store: productionWorkflowTree(db(), project),
     tree: collectWorkflowTree(root),
   })
   for (const { path } of plan.writes) presentation.log(`write ${path}`)
@@ -676,12 +682,19 @@ export function workflowImportLines(result: WorkflowTreeImportResult): string[] 
   ]
 }
 
-export function importCommand(argv: string[], print: WorkflowPrint): void {
+export async function importCommand(argv: string[], print: WorkflowPrint): Promise<void> {
   const root = workflowRoot(argv)
-  const result = importWorkflowTree(
+  const project = projects().find(
+    (candidate) =>
+      process.env.ORCH_MAIN_CHECKOUT &&
+      resolvedPathsEqual(candidate.path, process.env.ORCH_MAIN_CHECKOUT),
+  )?.name
+  const result = await importWorkflowTree(
     parseWorkflowTree(collectWorkflowTree(root)),
     flagValue(argv, 'reason'),
     flagValue(argv, 'author'),
+    undefined,
+    project,
   )
   print(result, workflowImportLines(result).join('\n'))
 }

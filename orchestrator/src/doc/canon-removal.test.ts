@@ -5,8 +5,8 @@ import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import {
   productionStepCatalogue,
-  promoteStepCatalogue,
-  setStepCatalogue,
+  promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
 } from '../workflow/step-catalogue.ts'
 import { removeDoc } from './docs.ts'
 
@@ -25,7 +25,7 @@ describe('stored canon removal preflight', () => {
       allowCanonBootstrap: true,
     })
     const current = productionStepCatalogue().definition
-    const draft = setStepCatalogue(
+    const draft = setStepCatalogueLocal(
       {
         steps: [
           ...current.steps,
@@ -44,7 +44,7 @@ describe('stored canon removal preflight', () => {
       'test workflow citation',
       'test',
     )
-    promoteStepCatalogue(draft.n, 'publish test workflow citation', 'test')
+    promoteStepCatalogueLocal(draft.n, 'publish test workflow citation', 'test')
 
     await expect(
       removeDoc('canon', null, targetSlug, {

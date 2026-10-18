@@ -15,6 +15,7 @@ import type { DocGenerator } from '../doc/doc-generator.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import { MISSING_HOSTED_REVISION_REMEDY, RECORD_WRITE_REMEDY } from '../doc/doc-write-allowed.ts'
 import type { VerdictInput } from '../verdict/verdict-payload.ts'
+import { classifyBoardStreamResponse } from './record-api-client-board-stream.ts'
 import { type RecordLensClient, recordLensClient } from './record-api-client-lens.ts'
 import {
   boardClaimListPath,
@@ -24,7 +25,6 @@ import {
   type RecordApiAuthentication,
   type RecordBoardMethod,
   type RecordBoardStreamOpen,
-  type RecordBoardStreamSource,
   type RecordBoardWatchMethod,
   type RecordDocOrderInput,
   type RecordDocReadMethod,
@@ -36,6 +36,7 @@ import {
   type RecordSnapshotAndPublicDocMethod,
   subjectMutationBody,
 } from './record-api-client-paths.ts'
+import { type RecordWorkflowClient, recordWorkflowClient } from './record-api-client-workflow.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import type {
   HostedBoardAcceptInput,
@@ -192,7 +193,8 @@ export type {
 } from './record-api-client-paths.ts'
 
 export type RecordApiClient = ProjectIdentityClient &
-  RecordLensClient & {
+  RecordLensClient &
+  RecordWorkflowClient & {
     whoami(): Promise<RecordIdentity>
     sync?(input: RecordSyncRequest): Promise<RecordSyncResponse>
     createOrganization(input: { name: string; slug: string }): Promise<{ id: string; slug: string }>
@@ -704,6 +706,7 @@ export function recordApiClient(request = defaultRequest): RecordApiClient {
     ...recordDocReadClient(request),
     ...recordDocWriteClient(request),
     ...recordLensClient(request),
+    ...recordWorkflowClient(request),
     ...projectIdentityClient(request),
     ...recordProjectSubjectClient(request),
     ...recordRunClient(request),
@@ -982,26 +985,6 @@ function recordApiBoardWatchClient(): Pick<RecordApiClient, RecordBoardWatchMeth
       }),
     openBoardStream: (signal) => fetchBoardStream(signal),
   }
-}
-
-function sourceFromBody(body: ReadableStream<Uint8Array>): RecordBoardStreamSource {
-  const reader = body.getReader()
-  return {
-    async read() {
-      const result = await reader.read()
-      return result.done ? null : (result.value ?? new Uint8Array())
-    },
-  }
-}
-
-export function classifyBoardStreamResponse(
-  status: number,
-  body: ReadableStream<Uint8Array> | null,
-  close: () => void,
-): RecordBoardStreamOpen {
-  if (status === 401 || status === 403) return { kind: 'unauthorized' }
-  if (status !== 200 || !body) return { kind: 'error', reason: `record API ${status}` }
-  return { kind: 'stream', source: sourceFromBody(body), close }
 }
 
 function releaseUnopenedStream(response: Response, connection: AbortController): void {

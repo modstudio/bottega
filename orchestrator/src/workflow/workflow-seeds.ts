@@ -194,7 +194,9 @@ function seedCatalogue(d: Database, now: string): void {
     revision = 6,
     reason = `seed r${revision}`
   requireValidSeedCatalogue(seeded)
-  let catalogue = d.query("SELECT id FROM step_catalogue WHERE slug='shared'").get() as {
+  let catalogue = d
+    .query("SELECT id FROM step_catalogue WHERE slug='shared' AND space_id IS NULL")
+    .get() as {
     id: number
   } | null
   if (!catalogue) {
@@ -318,7 +320,9 @@ export function seedWorkflows(d: Database): void {
     seedCatalogue(d, now)
     for (const seed of seeds) {
       const reason = `seed r${seed.revision}`
-      let workflow = d.query('SELECT id FROM workflow WHERE slug=?').get(seed.slug) as {
+      let workflow = d
+        .query('SELECT id FROM workflow WHERE slug=? AND space_id IS NULL')
+        .get(seed.slug) as {
         id: number
       } | null
       if (!workflow) {

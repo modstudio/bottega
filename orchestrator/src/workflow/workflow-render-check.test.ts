@@ -6,16 +6,16 @@ import type { WorkflowFactSource } from '../project/project-injection.ts'
 import type { Project } from '../project/projects.ts'
 import {
   productionStepCatalogue,
-  promoteStepCatalogue,
+  promoteStepCatalogueLocal,
   type StepCatalogueDefinition,
-  setStepCatalogue,
+  setStepCatalogueLocal,
 } from './step-catalogue.ts'
 import {
   checkWorkflowRendering,
   unresolvedWorkflowStepPlaceholders,
 } from './workflow-render-check.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
-import { promoteWorkflow, setWorkflow, type WorkflowDefinition } from './workflows.ts'
+import { promoteWorkflowLocal, setWorkflowLocal, type WorkflowDefinition } from './workflows.ts'
 
 const workflow = (step: string): WorkflowDefinition => ({
   title: 'Render check',
@@ -259,28 +259,33 @@ describe('workflow render check', () => {
   test('catalogue and workflow promotion refuse an unrenderable candidate with the remedy', () => {
     const catalogueDatabase = database()
     const current = productionStepCatalogue(catalogueDatabase).definition
-    const safeCatalogue = setStepCatalogue(
+    const safeCatalogue = setStepCatalogueLocal(
       { steps: [...current.steps, ...catalogue('Read the tracker facts.').steps] },
       'add safe render step',
       'test',
       catalogueDatabase,
     )
-    promoteStepCatalogue(safeCatalogue.n, 'publish safe render step', 'test', catalogueDatabase)
-    const safeWorkflow = setWorkflow(
+    promoteStepCatalogueLocal(
+      safeCatalogue.n,
+      'publish safe render step',
+      'test',
+      catalogueDatabase,
+    )
+    const safeWorkflow = setWorkflowLocal(
       'catalogue-render-guard',
       workflow('check'),
       'add render workflow',
       'test',
       catalogueDatabase,
     )
-    promoteWorkflow(
+    promoteWorkflowLocal(
       'catalogue-render-guard',
       safeWorkflow.n,
       'publish render workflow',
       'test',
       catalogueDatabase,
     )
-    const badCatalogue = setStepCatalogue(
+    const badCatalogue = setStepCatalogueLocal(
       {
         steps: productionStepCatalogue(catalogueDatabase).definition.steps.map((step) =>
           step.slug === 'check' ? { ...step, body: 'Use {{tracker.server}}.' } : step,
@@ -292,16 +297,26 @@ describe('workflow render check', () => {
     )
 
     expect(() =>
-      promoteStepCatalogue(badCatalogue.n, 'publish unrenderable step', 'test', catalogueDatabase),
+      promoteStepCatalogueLocal(
+        badCatalogue.n,
+        'publish unrenderable step',
+        'test',
+        catalogueDatabase,
+      ),
     ).toThrow(
       'project fixture, workflow catalogue-render-guard, mode default, step check, field body, placeholder tracker.server',
     )
     expect(() =>
-      promoteStepCatalogue(badCatalogue.n, 'publish unrenderable step', 'test', catalogueDatabase),
+      promoteStepCatalogueLocal(
+        badCatalogue.n,
+        'publish unrenderable step',
+        'test',
+        catalogueDatabase,
+      ),
     ).toThrow("fix the step body or the project's register entry")
 
     const workflowDatabase = database()
-    const catalogueWithBadStep = setStepCatalogue(
+    const catalogueWithBadStep = setStepCatalogueLocal(
       {
         steps: [
           ...productionStepCatalogue(workflowDatabase).definition.steps,
@@ -312,13 +327,13 @@ describe('workflow render check', () => {
       'test',
       workflowDatabase,
     )
-    promoteStepCatalogue(
+    promoteStepCatalogueLocal(
       catalogueWithBadStep.n,
       'publish unreferenced render step',
       'test',
       workflowDatabase,
     )
-    const badWorkflow = setWorkflow(
+    const badWorkflow = setWorkflowLocal(
       'workflow-render-guard',
       workflow('check'),
       'add unrenderable workflow',
@@ -327,7 +342,7 @@ describe('workflow render check', () => {
     )
 
     expect(() =>
-      promoteWorkflow(
+      promoteWorkflowLocal(
         'workflow-render-guard',
         badWorkflow.n,
         'publish unrenderable workflow',
@@ -338,7 +353,7 @@ describe('workflow render check', () => {
       'project fixture, workflow workflow-render-guard, mode default, step check, field body, placeholder tracker.server',
     )
     expect(() =>
-      promoteWorkflow(
+      promoteWorkflowLocal(
         'workflow-render-guard',
         badWorkflow.n,
         'publish unrenderable workflow',
@@ -356,33 +371,33 @@ describe('workflow render check', () => {
     test(`both promotion guards refuse an unrenderable ${label}`, () => {
       const catalogueDatabase = database()
       const current = productionStepCatalogue(catalogueDatabase).definition
-      const safeCatalogue = setStepCatalogue(
+      const safeCatalogue = setStepCatalogueLocal(
         { steps: [...current.steps, ...catalogue('Body renders.').steps] },
         'add safe field render step',
         'test',
         catalogueDatabase,
       )
-      promoteStepCatalogue(
+      promoteStepCatalogueLocal(
         safeCatalogue.n,
         'publish safe field render step',
         'test',
         catalogueDatabase,
       )
-      const safeWorkflow = setWorkflow(
+      const safeWorkflow = setWorkflowLocal(
         'catalogue-field-render-guard',
         workflow('check'),
         'add field render workflow',
         'test',
         catalogueDatabase,
       )
-      promoteWorkflow(
+      promoteWorkflowLocal(
         'catalogue-field-render-guard',
         safeWorkflow.n,
         'publish field render workflow',
         'test',
         catalogueDatabase,
       )
-      const badCatalogue = setStepCatalogue(
+      const badCatalogue = setStepCatalogueLocal(
         {
           steps: productionStepCatalogue(catalogueDatabase).definition.steps.map((step) =>
             step.slug === 'check' ? { ...step, ...changedStep } : step,
@@ -394,17 +409,17 @@ describe('workflow render check', () => {
       )
 
       expect(() =>
-        promoteStepCatalogue(badCatalogue.n, 'publish bad field', 'test', catalogueDatabase),
+        promoteStepCatalogueLocal(badCatalogue.n, 'publish bad field', 'test', catalogueDatabase),
       ).toThrow(
         `project fixture, workflow catalogue-field-render-guard, mode default, step check, field ${field}, placeholder tracker.server`,
       )
       expect(() =>
-        promoteStepCatalogue(badCatalogue.n, 'publish bad field', 'test', catalogueDatabase),
+        promoteStepCatalogueLocal(badCatalogue.n, 'publish bad field', 'test', catalogueDatabase),
       ).toThrow("fix the step body or the project's register entry")
 
       const workflowDatabase = database()
       const badStep = { ...catalogue('Body renders.').steps[0]!, ...changedStep }
-      const catalogueWithBadStep = setStepCatalogue(
+      const catalogueWithBadStep = setStepCatalogueLocal(
         {
           steps: [...productionStepCatalogue(workflowDatabase).definition.steps, badStep],
         },
@@ -412,13 +427,13 @@ describe('workflow render check', () => {
         'test',
         workflowDatabase,
       )
-      promoteStepCatalogue(
+      promoteStepCatalogueLocal(
         catalogueWithBadStep.n,
         'publish unreferenced bad field step',
         'test',
         workflowDatabase,
       )
-      const badWorkflow = setWorkflow(
+      const badWorkflow = setWorkflowLocal(
         'workflow-field-render-guard',
         workflow('check'),
         'add bad field workflow',
@@ -427,7 +442,7 @@ describe('workflow render check', () => {
       )
 
       expect(() =>
-        promoteWorkflow(
+        promoteWorkflowLocal(
           'workflow-field-render-guard',
           badWorkflow.n,
           'publish bad field workflow',
@@ -438,7 +453,7 @@ describe('workflow render check', () => {
         `project fixture, workflow workflow-field-render-guard, mode default, step check, field ${field}, placeholder tracker.server`,
       )
       expect(() =>
-        promoteWorkflow(
+        promoteWorkflowLocal(
           'workflow-field-render-guard',
           badWorkflow.n,
           'publish bad field workflow',

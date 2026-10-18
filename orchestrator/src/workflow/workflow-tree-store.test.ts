@@ -5,7 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import {
   productionStepCatalogue,
-  promoteStepCatalogue,
+  promoteStepCatalogueLocal,
   showStepCatalogue,
 } from './step-catalogue.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
@@ -16,7 +16,7 @@ import {
   composeWorkflow,
   getWorkflowStep,
   productionWorkflows,
-  promoteWorkflow,
+  promoteWorkflowLocal,
   showWorkflow,
 } from './workflows.ts'
 
@@ -31,9 +31,9 @@ const database = () => {
 const renderedTree = (d: Database) =>
   planWorkflowHydration({ store: productionWorkflowTree(d), tree: [] }).writes
 
-const importAndPromoteCurrentTree = (d: Database) => {
+const importAndPromoteCurrentTree = async (d: Database) => {
   const root = fileURLToPath(new URL('../../..', import.meta.url))
-  const imported = importWorkflowTree(
+  const imported = await importWorkflowTree(
     parseWorkflowTree(collectWorkflowTree(root)),
     'compose current tree fixture',
     'test',
@@ -43,7 +43,7 @@ const importAndPromoteCurrentTree = (d: Database) => {
     const catalogue = d
       .query("SELECT n FROM step_catalogue_version WHERE status='draft' ORDER BY n DESC LIMIT 1")
       .get() as { n: number }
-    promoteStepCatalogue(catalogue.n, 'compose current tree fixture', 'test', d)
+    promoteStepCatalogueLocal(catalogue.n, 'compose current tree fixture', 'test', d)
   }
   for (const slug of imported.workflows) {
     const workflow = d
@@ -51,28 +51,33 @@ const importAndPromoteCurrentTree = (d: Database) => {
         "SELECT v.n FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug=? AND v.status='draft'",
       )
       .get(slug) as { n: number }
-    promoteWorkflow(slug, workflow.n, 'compose current tree fixture', 'test', d)
+    promoteWorkflowLocal(slug, workflow.n, 'compose current tree fixture', 'test', d)
   }
 }
 
 describe('importWorkflowTree', () => {
-  test('the current workflow tree round-trips through import and hydrate', () => {
+  test('the current workflow tree round-trips through import and hydrate', async () => {
     const d = database()
     const root = fileURLToPath(new URL('../../..', import.meta.url))
     const tree = collectWorkflowTree(root)
 
-    const imported = importWorkflowTree(parseWorkflowTree(tree), 'validate current tree', 'test', d)
+    const imported = await importWorkflowTree(
+      parseWorkflowTree(tree),
+      'validate current tree',
+      'test',
+      d,
+    )
     const draft = d
       .query("SELECT n FROM step_catalogue_version WHERE status='draft' ORDER BY n DESC LIMIT 1")
       .get() as { n: number } | null
-    if (draft) promoteStepCatalogue(draft.n, 'round-trip fixture', 'test', d)
+    if (draft) promoteStepCatalogueLocal(draft.n, 'round-trip fixture', 'test', d)
     for (const slug of imported.workflows) {
       const workflowDraft = d
         .query(
           "SELECT v.n FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug=? AND v.status='draft'",
         )
         .get(slug) as { n: number }
-      promoteWorkflow(slug, workflowDraft.n, 'round-trip fixture', 'test', d)
+      promoteWorkflowLocal(slug, workflowDraft.n, 'round-trip fixture', 'test', d)
     }
     expect(planWorkflowHydration({ store: productionWorkflowTree(d), tree })).toEqual({
       writes: [],
@@ -80,14 +85,14 @@ describe('importWorkflowTree', () => {
     })
   })
 
-  test('an edited step becomes a catalogue draft while production remains unchanged', () => {
+  test('an edited step becomes a catalogue draft while production remains unchanged', async () => {
     const d = database()
     const production = productionStepCatalogue(d)
     const tree = renderedTree(d)
     const target = tree.find(({ path }) => path === '.agents/workflow-steps/blast-radius.md')!
     target.body = target.body.replace(/\n---\n[\s\S]*\n$/, '\n---\nAn edited lens body.\n')
 
-    const result = importWorkflowTree(parseWorkflowTree(tree), 'edit lens', 'worker', d)
+    const result = await importWorkflowTree(parseWorkflowTree(tree), 'edit lens', 'worker', d)
 
     expect(result.steps).toEqual(['blast-radius'])
     const draft = d
@@ -104,7 +109,7 @@ describe('importWorkflowTree', () => {
     ).toBe(production.definition.steps.find((step) => step.slug === 'blast-radius')?.body)
   })
 
-  test('a sequence file imports into the catalogue draft', () => {
+  test('a sequence file imports into the catalogue draft', async () => {
     const d = database()
     const tree = renderedTree(d)
     tree.push({
@@ -112,7 +117,7 @@ describe('importWorkflowTree', () => {
       body: '---\nslug: quality\ntitle: Quality\nsteps:\n  - diagnose\n  - verify\n---\n\n',
     })
 
-    const result = importWorkflowTree(parseWorkflowTree(tree), 'add sequence', 'worker', d)
+    const result = await importWorkflowTree(parseWorkflowTree(tree), 'add sequence', 'worker', d)
 
     expect(result).toEqual({ steps: [], sequences: ['quality'], workflows: [] })
     const draft = d
@@ -123,10 +128,10 @@ describe('importWorkflowTree', () => {
     ])
   })
 
-  test('the documentation apply step composes through orch-docs and array-mcp', () => {
+  test('the documentation apply step composes through orch-docs and array-mcp', async () => {
     const d = database()
     const root = fileURLToPath(new URL('../../..', import.meta.url))
-    const imported = importWorkflowTree(
+    const imported = await importWorkflowTree(
       parseWorkflowTree(collectWorkflowTree(root)),
       'compose sync docs fixture',
       'test',
@@ -135,14 +140,14 @@ describe('importWorkflowTree', () => {
     const catalogue = d
       .query("SELECT n FROM step_catalogue_version WHERE status='draft' ORDER BY n DESC LIMIT 1")
       .get() as { n: number }
-    promoteStepCatalogue(catalogue.n, 'compose fixture', 'test', d)
+    promoteStepCatalogueLocal(catalogue.n, 'compose fixture', 'test', d)
     const shipTask = d
       .query(
         "SELECT v.n FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug='ship-task' AND v.status='draft'",
       )
       .get() as { n: number }
     expect(imported.workflows).toContain('ship-task')
-    promoteWorkflow('ship-task', shipTask.n, 'compose fixture', 'test', d)
+    promoteWorkflowLocal('ship-task', shipTask.n, 'compose fixture', 'test', d)
 
     for (const [project, protocol] of [
       ['orch-docs-fixture', 'orch-docs'],
@@ -178,9 +183,9 @@ describe('importWorkflowTree', () => {
     }
   })
 
-  test('a single review state resolves both new steps in ship-task and code-review', () => {
+  test('a single review state resolves both new steps in ship-task and code-review', async () => {
     const d = database()
-    importAndPromoteCurrentTree(d)
+    await importAndPromoteCurrentTree(d)
     d.query(
       'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
     ).run(
@@ -215,9 +220,9 @@ describe('importWorkflowTree', () => {
     })
   })
 
-  test('intake carries declared signals and leaves workflows without that need unaffected', () => {
+  test('intake carries declared signals and leaves workflows without that need unaffected', async () => {
     const d = database()
-    importAndPromoteCurrentTree(d)
+    await importAndPromoteCurrentTree(d)
     d.query(
       'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
     ).run(
@@ -271,7 +276,7 @@ describe('importWorkflowTree', () => {
     ).toBe(before.count)
   })
 
-  test('a new flow may reference a new step from the same tree import', () => {
+  test('a new flow may reference a new step from the same tree import', async () => {
     const d = database()
     const productionCatalogue = productionStepCatalogue(d)
     const productionFlows = productionWorkflows(d)
@@ -303,7 +308,7 @@ describe('importWorkflowTree', () => {
       })}\n---\nA flow added in the tree.\n`,
     })
 
-    const result = importWorkflowTree(parseWorkflowTree(tree), 'add tree flow', 'worker', d)
+    const result = await importWorkflowTree(parseWorkflowTree(tree), 'add tree flow', 'worker', d)
 
     expect(result).toEqual({ steps: ['tree-step'], sequences: [], workflows: ['tree-flow'] })
     const draft = d

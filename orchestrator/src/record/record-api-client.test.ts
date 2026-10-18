@@ -14,7 +14,6 @@ import {
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
 import {
-  classifyBoardStreamResponse,
   recordApiBaseUrl,
   recordApiClient,
   recordApiSignIn,
@@ -23,6 +22,7 @@ import {
   recordIdentityResponse,
   recordInvitationListResponse,
 } from './record-api-client.ts'
+import { classifyBoardStreamResponse } from './record-api-client-board-stream.ts'
 
 describe('record HTTP authentication responses', () => {
   test('sign-in posts without an Origin and prefers the bearer response header', async () => {

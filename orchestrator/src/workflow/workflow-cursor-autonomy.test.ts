@@ -4,8 +4,8 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import {
   productionStepCatalogue,
-  promoteStepCatalogue,
-  setStepCatalogue,
+  promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
 } from './step-catalogue.ts'
 import {
   abandonWorkflowCursor,
@@ -44,7 +44,7 @@ const database = () => {
 
 function installShipToFlow(d: Database): void {
   const current = productionStepCatalogue(d).definition
-  const catalogue = setStepCatalogue(
+  const catalogue = setStepCatalogueLocal(
     {
       steps: current.steps.map((step) =>
         step.slug === 'rebase'
@@ -56,7 +56,7 @@ function installShipToFlow(d: Database): void {
     'test',
     d,
   )
-  promoteStepCatalogue(catalogue.n, 'publish ship-to cursor fixture', 'test', d)
+  promoteStepCatalogueLocal(catalogue.n, 'publish ship-to cursor fixture', 'test', d)
 }
 
 function replaceCursorAutonomy(
