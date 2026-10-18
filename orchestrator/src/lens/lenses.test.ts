@@ -241,6 +241,21 @@ describe('lens catalogue', () => {
     })
   })
 
+  test('a project routed to a hosted space that holds the lens resolves the hosted copy', () => {
+    upsertProject({ recordId: newRecordId(), name: 'hosted', path: '/tmp/hosted', settings: {} })
+    const space = newRecordId()
+    db()
+      .query(
+        `INSERT INTO lens (record_id,space_id,id,title,question,excludes,slots,version,enabled,requires_execution)
+         SELECT ?,?,id,title,'Hosted question?',excludes,slots,version,enabled,requires_execution
+         FROM lens WHERE id='correctness' AND space_id IS NULL`,
+      )
+      .run(newRecordId(), space)
+    rememberProjectLensSpace(db(), 'hosted', space)
+    expect(resolveLens('correctness', 'hosted')!.question).toBe('Hosted question?')
+    expect(resolveLens('correctness', null)!.question).not.toBe('Hosted question?')
+  })
+
   test('unknown lenses remain free-form while disabled catalogue content refuses', async () => {
     expect(resolveLens('a-live-ad-hoc-calibration-key', 'one')).toBeNull()
     const correctness = listLenses().find((lens) => lens.id === 'correctness')!
