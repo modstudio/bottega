@@ -589,6 +589,7 @@ describe('hub migration journal', () => {
       `#!/usr/bin/env bun\n` +
         `if (process.argv.includes('project')) console.log('[]')\n` +
         `else if (process.argv.includes('ruling')) console.log('[]')\n` +
+        `else if (process.argv.includes('identity-map')) console.log(${JSON.stringify(JSON.stringify([{ id: run.id, record_id: run.record_id }]))})\n` +
         `else { const i=process.argv.indexOf('--since'); if (process.argv[i+1] <= ${JSON.stringify(askedAt)}) console.log(${JSON.stringify(JSON.stringify(run))}) }\n`,
     )
     chmodSync(fakeOrch, 0o755)
