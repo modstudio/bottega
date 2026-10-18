@@ -1,13 +1,11 @@
-import { trpc } from '@bottega/hub-data/client'
 import { Button } from '@bottega/hub-ui/button'
 import { Select, type SelectOption } from '@bottega/hub-ui/listbox/select'
 import { ProjectName } from '@bottega/hub-ui/project-mark'
 import { Segmented } from '@bottega/hub-ui/segmented'
 import { collectedTime, relativeTime } from '@bottega/hub-util/format'
 import { PROJECT_FALLBACK } from '@bottega/hub-util/project'
-import { useQuery } from '@tanstack/react-query'
 import { Database, GitCommit, RadioTower } from 'lucide-react'
-import type { CSSProperties } from 'react'
+import { type CSSProperties, createContext, useContext } from 'react'
 import {
   clearFilters,
   setFilter,
@@ -143,19 +141,10 @@ export function responseSubtitle(response: {
  * project list every screen already loads.
  */
 export type ProjectColors = Record<string, { light: string | null; dark: string | null }>
-
-export function useProjectColors(enabled = true): ProjectColors {
-  const list = useQuery({ ...trpc.project.list.queryOptions(), staleTime: 60_000, enabled })
-  const out: Record<string, { light: string | null; dark: string | null }> = {}
-  for (const project of list.data ?? []) {
-    const settings = project.settings as { color?: string; colorDark?: string }
-    out[project.name] = { light: settings.color ?? null, dark: settings.colorDark ?? null }
-  }
-  return out
-}
+export const ProjectColorsContext = createContext<ProjectColors>({})
 
 export function projectVars(
-  colors: ReturnType<typeof useProjectColors>,
+  colors: ProjectColors,
   name: string | null | undefined,
 ): CSSProperties | undefined {
   const c = name ? colors[name] : undefined
@@ -171,8 +160,8 @@ export function ProjectMark({
   name: string | null | undefined
   colors?: ProjectColors
 }) {
-  const queriedColors = useProjectColors(!suppliedColors)
-  const colors = suppliedColors ?? queriedColors
+  const contextColors = useContext(ProjectColorsContext)
+  const colors = suppliedColors ?? contextColors
   const color = name ? colors[name] : undefined
   return (
     <ProjectName name={name || PROJECT_FALLBACK} color={color?.light} colorDark={color?.dark} />

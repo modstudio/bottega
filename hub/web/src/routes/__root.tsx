@@ -11,6 +11,7 @@ import {
   sameLocationOn,
 } from '@bottega/hub-data/hub-mode'
 import { waitingInboxEntries } from '@bottega/hub-data/operator-waiting'
+import { useProjectColors } from '@bottega/hub-data/use-project-colors'
 import {
   AppShell,
   type NavItem,
@@ -31,6 +32,7 @@ import {
 } from '@tanstack/react-router'
 import { useEffect } from 'react'
 import { AppMark } from '@/components/app-mark'
+import { ProjectColorsContext } from '@/components/design-system'
 import { useWindowState } from '@/lib/window'
 import { SiteFrame } from '@/site/chrome'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'
@@ -216,6 +218,7 @@ function OriginNavigation({ origin }: { origin: string }) {
 }
 
 function AppLayout({ hosted, pathname }: { hosted: boolean; pathname: string }) {
+  const projectColors = useProjectColors()
   const { counts } = useWindowState()
   const whoami = useQuery({
     ...trpc.record.whoami.queryOptions(),
@@ -263,27 +266,29 @@ function AppLayout({ hosted, pathname }: { hosted: boolean; pathname: string }) 
     whoami.data?.user && 'email' in whoami.data.user ? String(whoami.data.user.email) : null
   const spaces = recordSpaces(whoami.data?.memberships)
   return (
-    <AppShell
-      name={PLATFORM_NAME}
-      mark={mark}
-      nav={nav}
-      renderLink={renderLink}
-      isActive={isActive}
-      storageKey={RAIL_KEY}
-      railFooter={
-        <RailFooterIdentity
-          hosted={hosted}
-          email={email}
-          activeSpaceId={whoami.data?.activeSpaceId ?? null}
-          spaces={spaces}
-          onSelectSpace={(spaceId) => switchSpace.mutate({ spaceId })}
-          onSignOut={() => void signOut()}
-        />
-      }
-    >
-      <div className="mx-auto max-w-[90rem]">
-        <Outlet />
-      </div>
-    </AppShell>
+    <ProjectColorsContext.Provider value={projectColors}>
+      <AppShell
+        name={PLATFORM_NAME}
+        mark={mark}
+        nav={nav}
+        renderLink={renderLink}
+        isActive={isActive}
+        storageKey={RAIL_KEY}
+        railFooter={
+          <RailFooterIdentity
+            hosted={hosted}
+            email={email}
+            activeSpaceId={whoami.data?.activeSpaceId ?? null}
+            spaces={spaces}
+            onSelectSpace={(spaceId) => switchSpace.mutate({ spaceId })}
+            onSignOut={() => void signOut()}
+          />
+        }
+      >
+        <div className="mx-auto max-w-[90rem]">
+          <Outlet />
+        </div>
+      </AppShell>
+    </ProjectColorsContext.Provider>
   )
 }

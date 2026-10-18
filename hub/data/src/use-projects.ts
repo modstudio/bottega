@@ -11,8 +11,8 @@ function hostedProjectColors(projects: HostedProjectRow[]): HostedProjectColors 
   return colors
 }
 
-export function useHostedProjects() {
-  const query = useQuery(trpc.record.projects.queryOptions())
+export function useHostedProjects(enabled = true) {
+  const query = useQuery({ ...trpc.record.projects.queryOptions(), enabled })
   const projects = query.data ?? []
   return {
     projects,

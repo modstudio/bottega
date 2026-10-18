@@ -2,8 +2,8 @@ import { trpc } from '@bottega/hub-data/client'
 import { hostedOrigin, isHostedMode } from '@bottega/hub-data/hub-mode'
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { TaskView } from '@/components/work-view'
 import { HomePage } from '@/site/home'
+import { Flight } from './-flight'
 import { siteHead } from './-site'
 
 /** The marketing home for a signed-out hosted visitor; the app's own home for everyone else. */
@@ -12,7 +12,7 @@ function HostedIndex() {
   // fetch from here would reset a failed, dataless query to pending and unmount the page again.
   const whoami = useQuery({ ...trpc.record.whoami.queryOptions(), enabled: false })
   const signedIn = Boolean(whoami.data?.user && 'email' in whoami.data.user)
-  return signedIn ? <TaskView name="flight" /> : <HomePage />
+  return signedIn ? <Flight /> : <HomePage />
 }
 
 function HostedRoot() {
@@ -21,5 +21,5 @@ function HostedRoot() {
 
 export const Route = createFileRoute('/')({
   head: () => (isHostedMode() ? siteHead() : {}),
-  component: () => (isHostedMode() ? <HostedRoot /> : <TaskView name="flight" />),
+  component: () => (isHostedMode() ? <HostedRoot /> : <Flight />),
 })
