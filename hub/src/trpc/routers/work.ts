@@ -1,4 +1,3 @@
-import { userInfo } from 'node:os'
 import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { TASK_STATUSES } from '../../../../shared/trackers.ts'
@@ -12,7 +11,6 @@ import {
   setTaskBody,
   taskRecord,
 } from '../../task.ts'
-import { type Attribution, attributionFromInputs } from '../../task-attribution.ts'
 import { getTaskDocument, updateTaskDocument } from '../../task-document.ts'
 import { machineAttribution } from '../../task-machine-attribution.ts'
 import type { Context } from '../context.ts'
@@ -77,14 +75,6 @@ type WorkDeps = {
   updateTaskDocument: typeof updateTaskDocument
 }
 
-async function resolvedAttribution(deps: WorkDeps): Promise<Attribution> {
-  try {
-    return await deps.machineAttribution()
-  } catch {
-    return attributionFromInputs({ env: process.env, user: null, machineUser: userInfo().username })
-  }
-}
-
 function setBodyProcedure(deps: WorkDeps) {
   return t.procedure
     .input(
@@ -111,7 +101,7 @@ function commentProcedures(deps: WorkDeps) {
     comment: t.procedure
       .input(z.object({ ...taskIdentityInput, body: z.string().trim().min(1) }))
       .mutation(async ({ input: value }) => {
-        const attribution = await resolvedAttribution(deps)
+        const attribution = await deps.machineAttribution()
         return write(() => deps.commentTask(value.key, value.scope, value.body, attribution))
       }),
     editComment: t.procedure
@@ -123,7 +113,7 @@ function commentProcedures(deps: WorkDeps) {
         }),
       )
       .mutation(async ({ input: value }) => {
-        const attribution = await resolvedAttribution(deps)
+        const attribution = await deps.machineAttribution()
         return write(() =>
           deps.editTaskComment(value.key, value.scope, value.commentId, value.body, attribution),
         )
@@ -131,7 +121,7 @@ function commentProcedures(deps: WorkDeps) {
     deleteComment: t.procedure
       .input(z.object({ ...taskIdentityInput, commentId: z.string().uuid() }))
       .mutation(async ({ input: value }) => {
-        const attribution = await resolvedAttribution(deps)
+        const attribution = await deps.machineAttribution()
         return write(() =>
           deps.deleteTaskComment(value.key, value.scope, value.commentId, attribution),
         )
@@ -162,9 +152,14 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
     }))
   return t.router({
     task: t.procedure.input(z.object(taskIdentityInput)).query(async ({ input: value }) => {
+      let readerUserId: string | null = null
       try {
-        const attribution = await resolvedAttribution(deps)
-        return deps.taskRecord(value.key, value.scope, attribution.actorUserId)
+        readerUserId = (await deps.machineAttribution()).actorUserId
+      } catch {
+        // An unavailable record identity makes hosted comments non-editable, not unreadable.
+      }
+      try {
+        return deps.taskRecord(value.key, value.scope, readerUserId)
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause)
         if (message.startsWith('no task ')) throw new TRPCError({ code: 'NOT_FOUND', message })
@@ -179,7 +174,7 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
         }),
       )
       .mutation(async ({ input: value }) => {
-        const attribution = await resolvedAttribution(deps)
+        const attribution = await deps.machineAttribution()
         return write(() =>
           deps.setTask(value.key, value.scope, { status: value.status }, attribution),
         )
@@ -192,7 +187,7 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
         }),
       )
       .mutation(async ({ input: value }) => {
-        const attribution = await resolvedAttribution(deps)
+        const attribution = await deps.machineAttribution()
         return write(() =>
           deps.setTask(value.key, value.scope, { title: value.title }, attribution),
         )

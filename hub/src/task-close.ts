@@ -1,7 +1,6 @@
 import { pruneTaskBranches, releaseTaskClaims } from './orch.ts'
 import { closeTask, type TaskRow } from './task.ts'
 import type { Attribution } from './task-attribution.ts'
-import { NO_ATTRIBUTION } from './task-attribution.ts'
 import type { TaskScope } from './task-identity.ts'
 
 export async function closeThenPrune(
@@ -9,18 +8,8 @@ export async function closeThenPrune(
   scope: TaskScope,
   keepBranches: boolean,
   abandonReason: string | undefined,
-  attributionOrDependencies:
-    | Attribution
-    | {
-        close?: (
-          key: string,
-          scope: TaskScope,
-          options: { abandonReason?: string },
-        ) => Promise<TaskRow>
-        prune?: typeof pruneTaskBranches
-        releaseClaims?: typeof releaseTaskClaims
-      } = NO_ATTRIBUTION,
-  suppliedDependencies: {
+  attribution: Attribution,
+  dependencies: {
     close?: (
       key: string,
       scope: TaskScope,
@@ -31,24 +20,8 @@ export async function closeThenPrune(
     releaseClaims?: typeof releaseTaskClaims
   } = {},
 ) {
-  const attributed = 'actorUserId' in attributionOrDependencies
-  const attribution = attributed ? attributionOrDependencies : NO_ATTRIBUTION
-  const dependencies = attributed ? suppliedDependencies : attributionOrDependencies
   const closed = dependencies.close
-    ? attributed
-      ? await (dependencies.close as NonNullable<typeof suppliedDependencies.close>)(
-          key,
-          scope,
-          attribution,
-          { abandonReason },
-        )
-      : await (
-          dependencies.close as (
-            key: string,
-            scope: TaskScope,
-            options: { abandonReason?: string },
-          ) => Promise<TaskRow>
-        )(key, scope, { abandonReason })
+    ? await dependencies.close(key, scope, attribution, { abandonReason })
     : await closeTask(key, scope, attribution, { abandonReason })
   let claimReleaseError: Error | null = null
   try {

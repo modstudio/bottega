@@ -7,7 +7,11 @@ import { bindTenant } from '../../shared/record/tenant.ts'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
 import { HUB_MIGRATION_BACKFILL_VALUES } from '../test/migration-values.ts'
 import { db, writeTransaction } from './db.ts'
-import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
+import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
+import {
+  applyHostedPushChangesInTransaction,
+  decideHostedCommentPush,
+} from './hosted-push-changes.ts'
 import { upsertGitTasks } from './ingest/git-task-cache.ts'
 import { applyMigrations } from './migrations.ts'
 import { drainHostedOutbox } from './outbox.ts'
@@ -20,12 +24,14 @@ import {
   parseHostedPushItem,
 } from './push-contract.ts'
 import { closeTask, commentTask, setTask } from './task.ts'
+import { UNATTRIBUTED } from './task-attribution.ts'
 import type { HostedTaskIdentity } from './task-client.ts'
 import { deleteTaskDocument, updateTaskDocument } from './task-document.ts'
 
 const spaceId = '01990000-0000-7000-8000-000000001250'
 const taskId = '01990000-0000-7000-8000-000000001251'
 const userId = '01990000-0000-7000-8000-000000001249'
+const otherUserId = '01990000-0000-7000-8000-000000001247'
 const projectId = '01990000-0000-7000-8000-000000000075'
 const identity = { userId, spaceId }
 let database: PGlite
@@ -101,6 +107,12 @@ beforeAll(async () => {
   await database.exec(`
     INSERT INTO project (id, space_id, name, created_at)
     VALUES ('01990000-0000-7000-8000-000000000075', '${spaceId}', 'workshop', now());
+    RESET ROLE;
+    INSERT INTO "user" (id,email,name,created_at)
+    VALUES ('${otherUserId}','other@example.test','Other user',now());
+    INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+    VALUES ('01990000-0000-7000-8000-000000001246','${spaceId}','${otherUserId}','member','write',now());
+    SET ROLE ${RECORD_ACTOR_ROLE};
   `)
   await apply([
     {
@@ -131,6 +143,48 @@ beforeAll(async () => {
       },
     },
   ])
+})
+
+test('comment push authorship decision covers duplicates, ownership, and claimed authors', () => {
+  const pushed = {
+    id: 'comment-1',
+    task_key: 'DEV-1',
+    project_name: 'workshop',
+    body: 'body',
+    created_at: '2026-10-18T12:00:00.000Z',
+    updated_at: '2026-10-18T12:00:00.000Z',
+    deleted_at: null,
+    actor_user_id: userId,
+    actor_name: 'Person',
+    agent: 'codex',
+    run_id: '14372',
+  }
+  expect(decideHostedCommentPush(null, pushed, otherUserId)).toMatchObject({
+    kind: 'reject',
+    reason: expect.stringContaining('another member'),
+  })
+  expect(decideHostedCommentPush(pushed, pushed, otherUserId)).toEqual({ kind: 'duplicate' })
+  expect(
+    decideHostedCommentPush(
+      { ...pushed, actor_user_id: null },
+      { ...pushed, body: 'edit' },
+      userId,
+    ),
+  ).toMatchObject({ kind: 'reject', reason: expect.stringContaining('predates') })
+  expect(decideHostedCommentPush(pushed, { ...pushed, body: 'edit' }, otherUserId)).toMatchObject({
+    kind: 'reject',
+    reason: expect.stringContaining('another author'),
+  })
+  expect(decideHostedCommentPush(pushed, { ...pushed, body: 'edit' }, userId)).toEqual({
+    kind: 'apply',
+  })
+  expect(
+    decideHostedCommentPush(
+      pushed,
+      { ...pushed, body: 'edit', actor_name: 'Changed person' },
+      userId,
+    ),
+  ).toMatchObject({ kind: 'reject', reason: expect.stringContaining('attribution differs') })
 })
 
 afterAll(async () => {
@@ -708,18 +762,15 @@ test('offline commands later drain through the real outbox into hosted task rows
       },
     })
 
-  await setTask(
-    'GAM-320',
-    { recordId: machineTaskId },
-    { title: 'Offline title' },
-    { hosted: unavailable },
-  )
+  await setTask('GAM-320', { recordId: machineTaskId }, { title: 'Offline title' }, UNATTRIBUTED, {
+    hosted: unavailable,
+  })
   expect((await drain()).sent).toBe(1)
   expect(
     (await database.query(`SELECT title FROM hub_task WHERE id=$1`, [machineTaskId])).rows,
   ).toEqual([{ title: 'Offline title' }])
 
-  await commentTask('GAM-320', { recordId: machineTaskId }, 'Offline comment', {
+  await commentTask('GAM-320', { recordId: machineTaskId }, 'Offline comment', UNATTRIBUTED, {
     hosted: unavailable,
   })
   expect((await drain()).sent).toBe(1)
@@ -734,23 +785,19 @@ test('offline commands later drain through the real outbox into hosted task rows
     (await database.query(`SELECT title FROM hub_task_document WHERE id=$1`, [documentId])).rows,
   ).toEqual([{ title: 'Offline document' }])
 
-  await closeTask(
-    'GAM-320',
-    { recordId: machineTaskId },
-    {
-      hosted: unavailable,
-      classify: async () => ({
-        project: 'gamma',
-        key: 'GAM-320',
-        dryRun: true,
-        deleted: [],
-        kept: [],
-        operator: [],
-        wouldDelete: [],
-        errors: [],
-      }),
-    },
-  )
+  await closeTask('GAM-320', { recordId: machineTaskId }, UNATTRIBUTED, {
+    hosted: unavailable,
+    classify: async () => ({
+      project: 'gamma',
+      key: 'GAM-320',
+      dryRun: true,
+      deleted: [],
+      kept: [],
+      operator: [],
+      wouldDelete: [],
+      errors: [],
+    }),
+  })
   expect((await drain()).sent).toBe(2)
   const statusEvent = sent.find((change) => change.table === 'hub_task_status_event')
   if (!statusEvent) throw new Error('expected a drained status event')
@@ -796,7 +843,7 @@ test('comment and document pushes apply their route effects and deduplicate dele
   expect(actor_user_id).toBe(userId)
   expect([actor_name, agent, run_id]).toEqual(['Person', 'codex', '14336'])
   expect(await apply([{ ...comment, row: legacyRow }])).toEqual([
-    { id: commentId, status: 'applied' },
+    { id: commentId, status: 'duplicate' },
   ])
   expect(
     (
@@ -808,10 +855,10 @@ test('comment and document pushes apply their route effects and deduplicate dele
   ).toEqual([{ actor_user_id: userId, actor_name: 'Person', agent: 'codex', run_id: '14336' }])
   expect(
     await apply([{ ...comment, row: { ...comment.row, body: 'machine' }, fields: [] }]),
-  ).toEqual([{ id: commentId, status: 'duplicate' }])
+  ).toEqual([{ id: commentId, status: 'applied' }])
   expect(
     (await database.query(`SELECT body FROM hub_task_comment WHERE id=$1`, [commentId])).rows,
-  ).toEqual([{ body: 'offline' }])
+  ).toEqual([{ body: 'machine' }])
   const taskAfterComment = (
     await database.query<{ updated_at: Date }>(`SELECT updated_at FROM hub_task WHERE id=$1`, [
       taskId,
@@ -847,6 +894,120 @@ test('comment and document pushes apply their route effects and deduplicate dele
   expect(await apply([{ table: 'hub_task_document', id: documentId, op: 'delete' }])).toEqual([
     { id: documentId, status: 'duplicate' },
   ])
+})
+
+test('hosted comment pushes enforce authorship and permanent tombstones', async () => {
+  const at = '2026-10-18T15:00:00.000Z'
+  const makeComment = (
+    id: string,
+    actorUserId: string | null,
+  ): Extract<HostedPushChange, { table: 'hub_task_comment'; op: 'upsert' }> => ({
+    table: 'hub_task_comment',
+    id,
+    op: 'upsert',
+    row: {
+      id,
+      task_key: 'DEV-1',
+      task_id: taskId,
+      project_name: 'workshop',
+      body: 'original',
+      actor_user_id: actorUserId,
+      actor_name: actorUserId ? 'Person' : null,
+      agent: null,
+      run_id: null,
+      created_at: at,
+      updated_at: at,
+      deleted_at: null,
+    },
+  })
+
+  const owned = makeComment('01990000-0000-7000-8000-000000001311', userId)
+  expect(await apply([owned])).toEqual([{ id: owned.id, status: 'applied' }])
+  expect(
+    await apply([{ ...owned, row: { ...owned.row, body: 'other edit' } }], {
+      userId: otherUserId,
+      spaceId,
+    }),
+  ).toEqual([
+    { id: owned.id, status: 'rejected', reason: expect.stringContaining('another author') },
+  ])
+  expect(
+    await apply([{ ...owned, row: { ...owned.row, deleted_at: '2026-10-18T15:01:00.000Z' } }], {
+      userId: otherUserId,
+      spaceId,
+    }),
+  ).toEqual([
+    { id: owned.id, status: 'rejected', reason: expect.stringContaining('another author') },
+  ])
+  expect(await apply([{ ...owned, row: { ...owned.row, body: 'author edit' } }])).toEqual([
+    { id: owned.id, status: 'applied' },
+  ])
+  const deletedAt = '2026-10-18T15:02:00.000Z'
+  expect(
+    await apply([
+      {
+        ...owned,
+        row: { ...owned.row, body: 'author edit', updated_at: deletedAt, deleted_at: deletedAt },
+      },
+    ]),
+  ).toEqual([{ id: owned.id, status: 'applied' }])
+  expect(
+    await apply([
+      {
+        ...owned,
+        fields: null,
+        row: { ...owned.row, body: 'stale resurrection', updated_at: deletedAt, deleted_at: null },
+      },
+    ]),
+  ).toEqual([{ id: owned.id, status: 'rejected', reason: DELETED_ON_HOSTED_RECORD_REASON }])
+  expect(
+    (
+      await database.query<{ deleted: boolean }>(
+        `SELECT deleted_at IS NOT NULL deleted FROM hub_task_comment WHERE id=$1`,
+        [owned.id],
+      )
+    ).rows,
+  ).toEqual([{ deleted: true }])
+
+  const legacy = makeComment('01990000-0000-7000-8000-000000001312', null)
+  expect(await apply([legacy])).toEqual([{ id: legacy.id, status: 'applied' }])
+  expect(await apply([{ ...legacy, row: { ...legacy.row, body: 'claimed edit' } }])).toEqual([
+    { id: legacy.id, status: 'rejected', reason: expect.stringContaining('predates') },
+  ])
+
+  const claimed = makeComment('01990000-0000-7000-8000-000000001313', otherUserId)
+  expect(await apply([claimed])).toEqual([
+    { id: claimed.id, status: 'rejected', reason: expect.stringContaining('another member') },
+  ])
+})
+
+test('an older status-event replay without attribution matches its attributed stored row', async () => {
+  const event = {
+    ...row('01990000-0000-7000-8000-000000001314', '2026-10-18T16:00:00.000Z'),
+    actor_user_id: userId,
+    actor_name: 'Person',
+    agent: 'codex',
+    run_id: '14372',
+  }
+  expect(
+    await apply([{ table: 'hub_task_status_event', id: event.id, op: 'upsert', row: event }]),
+  ).toEqual([{ id: event.id, status: 'applied' }])
+  const { actor_user_id, actor_name, agent, run_id, ...legacy } = event
+  expect(actor_user_id).toBe(userId)
+  expect([actor_name, agent, run_id]).toEqual(['Person', 'codex', '14372'])
+  expect(
+    await apply([{ table: 'hub_task_status_event', id: event.id, op: 'upsert', row: legacy }]),
+  ).toEqual([{ id: event.id, status: 'duplicate' }])
+  expect(
+    await apply([
+      {
+        table: 'hub_task_status_event',
+        id: event.id,
+        op: 'upsert',
+        row: { ...event, actor_name: 'Changed person' },
+      },
+    ]),
+  ).toEqual([{ id: event.id, status: 'rejected', reason: expect.stringContaining('differs') }])
 })
 
 test('new child pushes require matching ids, keys, projects, and a live task', async () => {

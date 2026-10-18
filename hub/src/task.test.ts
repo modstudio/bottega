@@ -5,6 +5,7 @@ import { db, writeTransaction } from './db.ts'
 import { DUPLICATE_TITLE_FIXTURE } from './duplicate-matcher.fixture.ts'
 import { writeTrackerCache } from './ingest/trackers.ts'
 import { persistInstallBinding } from './install-binding.ts'
+import { loadOutboxChange } from './outbox-row.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
 import {
   closeTask,
@@ -19,6 +20,7 @@ import {
   showTask,
   taskRecord,
 } from './task.ts'
+import { UNATTRIBUTED } from './task-attribution.ts'
 import { taskBodyVersion } from './task-detail.ts'
 
 beforeAll(resetFixtureStore)
@@ -159,16 +161,16 @@ describe('hosted-authoritative existing-row edits', () => {
     const error = spyOn(console, 'error').mockImplementation((message) => messages.push(message))
     const log = spyOn(console, 'log').mockImplementation((message) => stdout.push(message))
     try {
-      await setTask('GAM-70', { recordId: id }, { title: 'Offline title' }, { hosted: unreachable })
-      await commentTask('GAM-70', { recordId: id }, 'offline comment', { hosted: unreachable })
-      await closeTask(
-        'GAM-70',
-        { recordId: id },
-        {
-          hosted: unreachable,
-          classify: async () => ({ ...branchClassification('GAM-70'), project: 'gamma' }),
-        },
-      )
+      await setTask('GAM-70', { recordId: id }, { title: 'Offline title' }, UNATTRIBUTED, {
+        hosted: unreachable,
+      })
+      await commentTask('GAM-70', { recordId: id }, 'offline comment', UNATTRIBUTED, {
+        hosted: unreachable,
+      })
+      await closeTask('GAM-70', { recordId: id }, UNATTRIBUTED, {
+        hosted: unreachable,
+        classify: async () => ({ ...branchClassification('GAM-70'), project: 'gamma' }),
+      })
     } finally {
       error.mockRestore()
       log.mockRestore()
@@ -191,6 +193,60 @@ describe('hosted-authoritative existing-row edits', () => {
         .all()
         .map((row) => row.table_name),
     ).toEqual(['hub_task', 'hub_task_comment', 'hub_task_status_event'])
+  })
+
+  test('an attributed status change persists attribution locally and in its hosted outbox row', async () => {
+    const id = seed('GAM-74', 'gamma')
+    const attribution = {
+      actorUserId: 'user-1',
+      actorName: 'Person',
+      agent: 'codex',
+      runId: '14372',
+    }
+    const error = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await setTask('GAM-74', { recordId: id }, { status: 'active' }, attribution, {
+        hosted: unreachable,
+      })
+    } finally {
+      error.mockRestore()
+    }
+    const event = db()
+      .query<
+        {
+          record_id: string
+          actor_user_id: string | null
+          actor_name: string | null
+          agent: string | null
+          run_id: string | null
+        },
+        [string]
+      >(
+        `SELECT record_id,actor_user_id,actor_name,agent,run_id
+         FROM task_status_event WHERE task_record_id=?`,
+      )
+      .get(id)!
+    expect(event).toMatchObject({
+      actor_user_id: attribution.actorUserId,
+      actor_name: attribution.actorName,
+      agent: attribution.agent,
+      run_id: attribution.runId,
+    })
+    const pointer = db()
+      .query<{ table_name: string; row_id: string; operation: 'upsert' | 'delete' }, [string]>(
+        `SELECT table_name,row_id,operation FROM hosted_outbox WHERE row_id=?`,
+      )
+      .get(event.record_id)!
+    const change = loadOutboxChange(db(), pointer)!.change
+    expect(change.table).toBe('hub_task_status_event')
+    if (change.table !== 'hub_task_status_event' || change.op !== 'upsert')
+      throw new Error('expected status event upsert')
+    expect(change.row).toMatchObject({
+      actor_user_id: attribution.actorUserId,
+      actor_name: attribution.actorName,
+      agent: attribution.agent,
+      run_id: attribution.runId,
+    })
   })
 
   test('an applied or rejected after-write drain reports its outcome and keeps rejections', async () => {
@@ -219,9 +275,11 @@ describe('hosted-authoritative existing-row edits', () => {
     const log = spyOn(console, 'log').mockImplementation((message) => stdout.push(message))
     try {
       const hosted = { baseUrl: 'https://hub.example.test', token: 'test', fetch }
-      await setTask('GAM-71', { recordId: sentId }, { title: 'Sent' }, { hosted })
+      await setTask('GAM-71', { recordId: sentId }, { title: 'Sent' }, UNATTRIBUTED, { hosted })
       reject = true
-      await setTask('GAM-72', { recordId: rejectedId }, { title: 'Rejected' }, { hosted })
+      await setTask('GAM-72', { recordId: rejectedId }, { title: 'Rejected' }, UNATTRIBUTED, {
+        hosted,
+      })
     } finally {
       error.mockRestore()
       log.mockRestore()
@@ -253,6 +311,7 @@ describe('hosted-authoritative existing-row edits', () => {
         'GAM-73',
         { recordId: id },
         { title: 'Queued behind collector' },
+        UNATTRIBUTED,
         {
           hosted: {
             ...hosted,
@@ -278,7 +337,9 @@ describe('hosted-authoritative existing-row edits', () => {
       createTask({ project: 'gamma', title: 'Cannot create offline' }, { hosted: unreachable }),
     ).rejects.toThrow('hosted hub unavailable')
     const id = seed('BET-70', 'beta')
-    await setTask('BET-70', { recordId: id }, { title: 'Local only' }, { hosted: { baseUrl: '' } })
+    await setTask('BET-70', { recordId: id }, { title: 'Local only' }, UNATTRIBUTED, {
+      hosted: { baseUrl: '' },
+    })
     expect(db().query(`SELECT 1 FROM hosted_outbox`).all()).toHaveLength(0)
   })
 })
@@ -519,7 +580,7 @@ describe('local task tracker', () => {
       { project: 'workshop', title: 'Inspectable task', body: 'Task body' },
       { hosted },
     )
-    const comment = await commentTask(task.key, {}, 'A useful comment', { hosted })
+    const comment = await commentTask(task.key, {}, 'A useful comment', UNATTRIBUTED, { hosted })
     expect(comment.task_record_id).toBe(task.record_id)
     const ordinaryId = Bun.randomUUIDv7()
     const handoffId = Bun.randomUUIDv7()
@@ -694,13 +755,12 @@ describe('declared project space task writes', () => {
       { project: 'gamma', title },
       { ...options, allowDuplicateReason: 'intentional duplicate' },
     )
-    await setTask(created.key, {}, { title: 'Renamed in declared space' }, options)
-    await closeTask(
-      created.key,
-      {},
-      { ...options, classify: async () => branchClassification(created.key) },
-    )
-    await commentTask(created.key, {}, 'declared space comment', options)
+    await setTask(created.key, {}, { title: 'Renamed in declared space' }, UNATTRIBUTED, options)
+    await closeTask(created.key, {}, UNATTRIBUTED, {
+      ...options,
+      classify: async () => branchClassification(created.key),
+    })
+    await commentTask(created.key, {}, 'declared space comment', UNATTRIBUTED, options)
     expect(requests).toEqual([
       { method: 'POST', pathname: '/v1/tasks', space: 'declared-gamma-space' },
       { method: 'POST', pathname: '/v1/tasks', space: 'declared-gamma-space' },
@@ -732,20 +792,16 @@ describe('local-authoritative task writes', () => {
     expect(created.source).toBe('local')
     expect(created.record_id).toBeTruthy()
 
-    const renamed = await setTask(created.key, {}, { title: 'Renamed local beta' })
+    const renamed = await setTask(created.key, {}, { title: 'Renamed local beta' }, UNATTRIBUTED)
     expect(renamed.title).toBe('Renamed local beta')
 
-    const comment = await commentTask(created.key, {}, 'a local comment')
+    const comment = await commentTask(created.key, {}, 'a local comment', UNATTRIBUTED)
     expect(comment.body).toBe('a local comment')
     expect(comment.task_record_id).toBe(created.record_id)
 
-    const closed = await closeTask(
-      created.key,
-      {},
-      {
-        classify: async (_project, key) => branchClassification(key),
-      },
-    )
+    const closed = await closeTask(created.key, {}, UNATTRIBUTED, {
+      classify: async (_project, key) => branchClassification(key),
+    })
     expect(closed.status_category).toBe('done')
     expect(closed.closed_at).toBeTruthy()
   })
@@ -753,39 +809,29 @@ describe('local-authoritative task writes', () => {
   test('set refuses a done transition with an unlanded branch without mutating', async () => {
     const created = await createTask({ project: 'beta', title: 'Unlanded set transition' })
     await expect(
-      setTask(
-        created.key,
-        {},
-        { status: 'done' },
-        {
-          classify: async (_project, key) =>
-            branchClassification(key, [
-              {
-                branch: `${key}-worker`,
-                state: 'unlanded',
-                commitsNotOnTrunk: 2,
-                command: `git branch -D ${key}-worker`,
-              },
-            ]),
-        },
-      ),
+      setTask(created.key, {}, { status: 'done' }, UNATTRIBUTED, {
+        classify: async (_project, key) =>
+          branchClassification(key, [
+            {
+              branch: `${key}-worker`,
+              state: 'unlanded',
+              commitsNotOnTrunk: 2,
+              command: `git branch -D ${key}-worker`,
+            },
+          ]),
+      }),
     ).rejects.toThrow(`${created.key}-worker: unlanded; 2 commits not on trunk`)
     expect(showTask(created.key).task.status_category).toBe('open')
   })
 
   test('set allows a done transition when every branch is landed or deleted', async () => {
     const created = await createTask({ project: 'beta', title: 'Landed set transition' })
-    const closed = await setTask(
-      created.key,
-      {},
-      { status: 'done' },
-      {
-        classify: async (_project, key) => ({
-          ...branchClassification(key),
-          wouldDelete: [`${key}-landed`],
-        }),
-      },
-    )
+    const closed = await setTask(created.key, {}, { status: 'done' }, UNATTRIBUTED, {
+      classify: async (_project, key) => ({
+        ...branchClassification(key),
+        wouldDelete: [`${key}-landed`],
+      }),
+    })
     expect(closed.status_category).toBe('done')
   })
 
@@ -793,18 +839,13 @@ describe('local-authoritative task writes', () => {
     seed('BET-998', 'beta', 'mcp')
     let classified = false
     await expect(
-      setTask(
-        'BET-998',
-        {},
-        { status: 'done' },
-        {
-          abandonReason: 'work deliberately abandoned',
-          classify: async (_project, key) => {
-            classified = true
-            return branchClassification(key)
-          },
+      setTask('BET-998', {}, { status: 'done' }, UNATTRIBUTED, {
+        abandonReason: 'work deliberately abandoned',
+        classify: async (_project, key) => {
+          classified = true
+          return branchClassification(key)
         },
-      ),
+      }),
     ).rejects.toThrow('task BET-998 is not local')
     expect(classified).toBeFalse()
     expect(showTask('BET-998').task.status_category).toBe('open')
@@ -813,26 +854,21 @@ describe('local-authoritative task writes', () => {
   test('a failed abandon comment leaves the task open', async () => {
     const created = await createTask({ project: 'beta', title: 'Failed abandon comment' })
     await expect(
-      setTask(
-        created.key,
-        {},
-        { status: 'done' },
-        {
-          abandonReason: 'work deliberately abandoned',
-          classify: async (_project, key) =>
-            branchClassification(key, [
-              {
-                branch: `${key}-worker`,
-                state: 'unlanded',
-                commitsNotOnTrunk: 1,
-                command: `git branch -D ${key}-worker`,
-              },
-            ]),
-          comment: async () => {
-            throw new Error('comment write failed')
-          },
+      setTask(created.key, {}, { status: 'done' }, UNATTRIBUTED, {
+        abandonReason: 'work deliberately abandoned',
+        classify: async (_project, key) =>
+          branchClassification(key, [
+            {
+              branch: `${key}-worker`,
+              state: 'unlanded',
+              commitsNotOnTrunk: 1,
+              command: `git branch -D ${key}-worker`,
+            },
+          ]),
+        comment: async () => {
+          throw new Error('comment write failed')
         },
-      ),
+      }),
     ).rejects.toThrow('comment write failed')
     expect(showTask(created.key).task.status_category).toBe('open')
   })

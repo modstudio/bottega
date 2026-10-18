@@ -16,8 +16,8 @@ import {
   HOSTED_TASK_TABLE,
 } from './push-contract.ts'
 import { runRef } from './reconcile.ts'
-import type { Attribution, TaskWriteMode } from './task-attribution.ts'
-import { commentAuthorDecision, NO_ATTRIBUTION } from './task-attribution.ts'
+import type { Attribution } from './task-attribution.ts'
+import { commentAuthorDecision, UNATTRIBUTED } from './task-attribution.ts'
 import { hostedCreateTask } from './task-client.ts'
 import { decideTaskClose, landingCheck } from './task-close-decision.ts'
 import { localTaskDetail, type TaskDetail, taskBodyVersion } from './task-detail.ts'
@@ -34,6 +34,7 @@ import {
   type HostedTaskWriteOptions,
   hostedTaskWriteOptions,
   registeredTaskProject,
+  type TaskWriteMode,
   taskWriteMode,
 } from './task-write-destination.ts'
 import { trackerCapabilities } from './tracker-capabilities.ts'
@@ -172,9 +173,6 @@ type DoneTransitionOptions = {
   classify?: (project: string, key: string) => Promise<BranchPruneResult>
   comment?: typeof commentTask
 }
-
-const isAttribution = (value: unknown): value is Attribution =>
-  Boolean(value && typeof value === 'object' && 'actorUserId' in value)
 
 const writeMode = taskWriteMode
 
@@ -488,7 +486,7 @@ export async function createTask(
         options.allowDuplicateReason,
         commentAt,
         true,
-        options.attribution ?? NO_ATTRIBUTION,
+        options.attribution ?? UNATTRIBUTED,
       )
   })
   if (options.allowDuplicateReason) await drainHostedEditOutbox(commentAt, options.hosted)
@@ -678,7 +676,7 @@ export async function setTaskBody(
     if (currentVersion !== expectedVersion) {
       throw new StaleTaskBodyError(current.key, expectedVersion, currentVersion)
     }
-    const row = applyLocalTaskPatch(conn, recordId, { body }, { force: true }, at, NO_ATTRIBUTION)
+    const row = applyLocalTaskPatch(conn, recordId, { body }, { force: true }, at, UNATTRIBUTED)
     if (hosted) queueHostedChange(conn, HOSTED_TASK_TABLE, row.record_id, 'upsert', at, ['body'])
     return row
   })
@@ -790,13 +788,9 @@ export async function setTask(
     body?: string
     assignee?: string | null
   },
-  attributionOrOptions:
-    | Attribution
-    | ({ force?: boolean; hosted?: HostedOptions } & DoneTransitionOptions) = NO_ATTRIBUTION,
-  suppliedOptions: { force?: boolean; hosted?: HostedOptions } & DoneTransitionOptions = {},
+  attribution: Attribution,
+  options: { force?: boolean; hosted?: HostedOptions } & DoneTransitionOptions = {},
 ): Promise<TaskRow> {
-  const attribution = isAttribution(attributionOrOptions) ? attributionOrOptions : NO_ATTRIBUTION
-  const options = isAttribution(attributionOrOptions) ? suppliedOptions : attributionOrOptions
   const upper = key.toUpperCase()
   const current = showTask(upper, scope).task
   if (current.source !== 'local') throw new Error(`task ${upper} is not local`)
@@ -843,13 +837,9 @@ export async function setTask(
 export async function closeTask(
   key: string,
   scope: TaskScope,
-  attributionOrOptions:
-    | Attribution
-    | ({ hosted?: HostedOptions } & DoneTransitionOptions) = NO_ATTRIBUTION,
-  suppliedOptions: { hosted?: HostedOptions } & DoneTransitionOptions = {},
+  attribution: Attribution,
+  options: { hosted?: HostedOptions } & DoneTransitionOptions = {},
 ) {
-  const attribution = isAttribution(attributionOrOptions) ? attributionOrOptions : NO_ATTRIBUTION
-  const options = isAttribution(attributionOrOptions) ? suppliedOptions : attributionOrOptions
   const current = showTask(key, scope).task
   if (current.status_category !== 'done') await prepareDoneTransition(current, attribution, options)
   const mode = writeMode(current.project, options.hosted)
@@ -889,11 +879,9 @@ export async function commentTask(
   key: string,
   scope: TaskScope,
   body: string,
-  attributionOrOptions: Attribution | { hosted?: HostedOptions } = NO_ATTRIBUTION,
-  suppliedOptions: { hosted?: HostedOptions } = {},
+  attribution: Attribution,
+  options: { hosted?: HostedOptions } = {},
 ): Promise<TaskComment> {
-  const attribution = isAttribution(attributionOrOptions) ? attributionOrOptions : NO_ATTRIBUTION
-  const options = isAttribution(attributionOrOptions) ? suppliedOptions : attributionOrOptions
   const upper = key.toUpperCase()
   const current = showTask(upper, scope).task
   if (current.source !== 'local') throw new Error(`task ${upper} is not local`)

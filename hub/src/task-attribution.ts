@@ -1,5 +1,6 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { classifyCaller } from '../../shared/caller-classification.ts'
+import type { TaskWriteMode } from './task-write-destination.ts'
 
 export type Attribution = {
   actorUserId: string | null
@@ -8,14 +9,12 @@ export type Attribution = {
   runId: string | null
 }
 
-export const NO_ATTRIBUTION: Attribution = {
+export const UNATTRIBUTED: Attribution = {
   actorUserId: null,
   actorName: null,
   agent: null,
   runId: null,
 }
-
-export type TaskWriteMode = 'hosted-configured' | 'local-authoritative'
 
 export type CommentAuthorDecision = { allowed: true } | { allowed: false; reason: string }
 

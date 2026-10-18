@@ -532,7 +532,8 @@ export async function mirrorCommentRow(
       actor_user_id=COALESCE(${row.actor_user_id},actor_user_id),
       actor_name=COALESCE(${row.actor_name},actor_name),agent=COALESCE(${row.agent},agent),
       run_id=COALESCE(${row.run_id},run_id),
-      updated_at=${row.updated_at}::timestamptz,deleted_at=${row.deleted_at}::timestamptz
+      updated_at=${row.updated_at}::timestamptz,
+      deleted_at=COALESCE(${row.deleted_at}::timestamptz,deleted_at)
       WHERE id=${row.id}::uuid`
     return
   }

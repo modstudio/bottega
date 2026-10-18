@@ -28,31 +28,6 @@ test('task reads disable edits when machine identity resolution throws', async (
   expect(result.comments[0]).toMatchObject({ canEdit: false, canDelete: false })
 })
 
-test('comment and status writes proceed without a member when identity resolution throws', async () => {
-  const seen: unknown[] = []
-  const router = createWorkRouter({
-    strip: (() => ({})) as never,
-    view: (async () => ({})) as never,
-    machineAttribution: (async () => {
-      throw new Error('identity offline')
-    }) as never,
-    commentTask: (async (_key: string, _scope: unknown, _body: string, attribution: unknown) => {
-      seen.push(attribution)
-    }) as never,
-    setTask: (async (_key: string, _scope: unknown, _change: unknown, attribution: unknown) => {
-      seen.push(attribution)
-    }) as never,
-  })
-  const caller = router.createCaller({})
-  await caller.comment({ key: 'DEV-1', scope: {}, body: 'Still saved' })
-  await caller.setStatus({ key: 'DEV-1', scope: {}, status: 'active' })
-  expect(seen).toHaveLength(2)
-  expect(seen).toEqual([
-    expect.objectContaining({ actorUserId: null, actorName: expect.any(String) }),
-    expect.objectContaining({ actorUserId: null, actorName: expect.any(String) }),
-  ])
-})
-
 test('setBody maps the service stale-body error to CONFLICT and leaves the body unchanged', async () => {
   const recordId = Bun.randomUUIDv7()
   const stamp = new Date().toISOString()

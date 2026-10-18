@@ -10,6 +10,8 @@ export type HostedTaskWriteOptions = {
   fetch?: TaskFetch
 }
 
+export type TaskWriteMode = 'hosted-configured' | 'local-authoritative'
+
 export function registeredTaskProject(name: string) {
   const project = projects().find((candidate) => candidate.name === name)
   if (!project) throw new Error(`unknown project '${name}'`)
@@ -21,10 +23,7 @@ export function hostedTaskWriteOptions(projectName: string, options?: HostedTask
   return recordSpace ? { ...options, recordSpace } : options
 }
 
-export function taskWriteMode(
-  projectName: string,
-  hosted?: HostedTaskWriteOptions,
-): 'hosted-configured' | 'local-authoritative' {
+export function taskWriteMode(projectName: string, hosted?: HostedTaskWriteOptions): TaskWriteMode {
   const decision = projectWriteDecisionFor(
     registeredTaskProject(projectName),
     readInstallBinding(),
