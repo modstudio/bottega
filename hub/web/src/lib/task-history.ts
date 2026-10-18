@@ -21,10 +21,12 @@ export function taskHistoryEntries(detail: TaskSheetDetail): HistoryEntry[] {
         to: event.toStatus,
       }),
     ),
+    // A run can appear once per interval, and a hosted interval may have no run id, so the row's
+    // position is what keeps each entry unique.
     ...detail.runs.map(
-      (run): HistoryEntry => ({
+      (run, index): HistoryEntry => ({
         kind: 'run',
-        id: `run:${run.id ?? ''}:${run.startedAt}:${run.agent ?? run.source ?? ''}`,
+        id: `run:${index}:${run.id ?? ''}`,
         at: run.startedAt,
         run: run.id,
         agent: run.agent ?? run.source,

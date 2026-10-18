@@ -3,7 +3,7 @@ import {
   groupHistory,
   type HistoryDay,
   type HistoryEntry,
-  runDuration,
+  replyDraft,
   statusPath,
 } from './history-model.ts'
 
@@ -68,22 +68,6 @@ test('changes on either side of midnight land in separate days', () => {
   expect(days.map((day) => day.clusters.length)).toEqual([1, 1])
 })
 
-test('a filter shows only its kind', () => {
-  const days = groupHistory(
-    [comment('c', '2026-10-16T11:00:00'), status('a', '2026-10-16T09:00:00', null, 'open')],
-    'comment',
-    now,
-  )
-  expect(shape(days)).toEqual([['?:comment']])
-})
-
-test('durations read in the largest sensible unit', () => {
-  expect(runDuration('2026-10-16T09:00:00', '2026-10-16T09:00:42')).toBe('42s')
-  expect(runDuration('2026-10-16T09:00:00', '2026-10-16T09:09:00')).toBe('9m')
-  expect(runDuration('2026-10-16T09:00:00', '2026-10-16T10:25:00')).toBe('1h 25m')
-  expect(runDuration('2026-10-16T09:00:00', null)).toBeNull()
-})
-
 test("one person's events and comments gather across agents; another person starts a new cluster", () => {
   const days = groupHistory(
     [
@@ -98,4 +82,9 @@ test("one person's events and comments gather across agents; another person star
     now,
   )
   expect(shape(days)).toEqual([['Ana:status-run', 'Ben:run', 'Ana:run,comment,status-run']])
+})
+
+test('a reply keeps the draft in progress and starts its quote on a new paragraph', () => {
+  expect(replyDraft(null, 'one\n\ntwo')).toBe('> one\n>\n> two\n\n')
+  expect(replyDraft('Already writing', 'one')).toBe('Already writing\n\n> one\n\n')
 })

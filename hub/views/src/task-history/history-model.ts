@@ -14,15 +14,7 @@ export type HistoryEntry =
       canEdit?: boolean
       canDelete?: boolean
     }
-  | {
-      kind: 'status'
-      id: string
-      at: string
-      from: string | null
-      to: string
-      actor?: string | null
-      agent?: string | null
-    }
+  | StatusEntry
   | {
       kind: 'run'
       id: string
@@ -35,11 +27,30 @@ export type HistoryEntry =
       actor?: string | null
     }
 
+/** A status change; the only entry a folded status run holds. */
+export type StatusEntry = {
+  kind: 'status'
+  id: string
+  at: string
+  from: string | null
+  to: string
+  actor?: string | null
+  agent?: string | null
+}
+
+/** A write the screen offers: refused carries the reason the reader may not. */
+export type HistoryAction<Input> = {
+  run: (input: Input) => Promise<unknown> | unknown
+  pending: boolean
+  error: string | null
+  refused?: string
+}
+
 export type HistoryKind = HistoryEntry['kind']
 export type HistoryFilter = 'all' | HistoryKind
 
 /** Consecutive status changes drawn as one line, oldest change first. */
-export type StatusRun = { kind: 'status-run'; id: string; at: string; changes: HistoryEntry[] }
+export type StatusRun = { kind: 'status-run'; id: string; at: string; changes: StatusEntry[] }
 export type HistoryItem = Exclude<HistoryEntry, { kind: 'status' }> | StatusRun
 /** One person's consecutive events, newest first, with adjacent status changes folded. */
 export type ActorCluster = { id: string; actor: string | null; items: HistoryItem[] }
@@ -116,14 +127,27 @@ export function groupHistory(
  * The statuses a run of changes passed through, oldest first, without repeats in a row. Each step
  * is keyed by the change that reached it, because a path can revisit a status.
  */
-export function statusPath(changes: readonly HistoryEntry[]): { key: string; status: string }[] {
+export function statusPath(changes: readonly StatusEntry[]): { key: string; status: string }[] {
   const path: { key: string; status: string }[] = []
   for (const change of changes) {
-    if (change.kind !== 'status') continue
     if (!path.length && change.from) path.push({ key: `${change.id}:from`, status: change.from })
     if (path.at(-1)?.status !== change.to) path.push({ key: change.id, status: change.to })
   }
   return path
+}
+
+/**
+ * The composer's draft after replying to a comment: the comment quoted, then a blank line for the
+ * answer. A draft already in progress is kept, and the quote starts its own paragraph.
+ */
+export function replyDraft(current: string | null, body: string): string {
+  const quoted = body
+    .trim()
+    .split('\n')
+    .map((line) => (line ? `> ${line}` : '>'))
+    .join('\n')
+  const kept = current?.trimEnd() ?? ''
+  return `${kept ? `${kept}\n\n` : ''}${quoted}\n\n`
 }
 
 /** A run's length as minutes, hours and minutes, or seconds when under a minute. */

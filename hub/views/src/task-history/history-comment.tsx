@@ -5,14 +5,7 @@ import { useState } from 'react'
 import { EditorBody } from '../document-editor/document-editor.tsx'
 import { Markdown } from '../markdown/markdown.tsx'
 import { historyCommentStyles } from './history-comment.styles.ts'
-
-/** A write against one comment: refused carries the reason the reader may not. */
-export type CommentWrite<Input> = {
-  run: (input: Input) => Promise<unknown> | unknown
-  pending: boolean
-  error: string | null
-  refused?: string
-}
+import type { HistoryAction } from './history-model.ts'
 
 export type HistoryCommentProps = {
   id: string
@@ -28,7 +21,7 @@ export type HistoryCommentProps = {
   onReply?: () => void
   onEditStart: () => void
   onEditEnd: () => void
-  edit?: CommentWrite<{ id: string; body: string }>
+  edit?: HistoryAction<{ id: string; body: string }>
   /** Runs a confirmed delete of this comment; absent when the reader may not delete. */
   onDelete?: () => void
   deleting?: boolean

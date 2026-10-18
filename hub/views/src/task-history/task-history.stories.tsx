@@ -119,6 +119,19 @@ export const Replying: Story = {
     action.focus()
     await userEvent.keyboard('{Enter}')
     await expect(canvas.getByRole('button', { name: 'Comment' })).toBeEnabled()
+    await expect(await canvas.findAllByText(/Phase 4 is running/)).toHaveLength(2)
+  },
+}
+/** A failed edit's error belongs to the comment that was saved, not to the next one opened. */
+export const EditErrorStaysWithItsComment: Story = {
+  args: { editComment: { ...write, error: 'The tracker refused the edit.' } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const action = canvas.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement
+    action.focus()
+    await userEvent.keyboard('{Enter}')
+    await expect(canvas.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+    await expect(canvas.queryByText('The tracker refused the edit.')).not.toBeInTheDocument()
   },
 }
 export const ConfirmingDelete: Story = {

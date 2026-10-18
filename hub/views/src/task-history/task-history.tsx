@@ -4,31 +4,25 @@ import { Segmented } from '@bottega/hub-ui/segmented'
 import { Bot, CircleDot, MessageSquare } from 'lucide-react'
 import { type ReactNode, useMemo, useRef, useState } from 'react'
 import { EditorBody } from '../document-editor/document-editor.tsx'
-import { type CommentWrite, HistoryComment } from './history-comment.tsx'
+import { HistoryComment } from './history-comment.tsx'
 import {
   type ActorCluster,
   groupHistory,
+  type HistoryAction,
   type HistoryEntry,
   type HistoryFilter,
   type HistoryItem,
   historyKinds,
+  replyDraft,
   runDuration,
   type StatusRun,
   statusPath,
 } from './history-model.ts'
 import { taskHistoryStyles } from './task-history.styles.ts'
 
-/** Adding a comment: refused carries the reason the reader may not. */
-type CommentAction = {
-  run: (body: string) => Promise<unknown> | unknown
-  pending: boolean
-  error: string | null
-  refused?: string
-}
-
 export type TaskHistoryProps = {
   entries: readonly HistoryEntry[]
-  comment: CommentAction
+  comment: HistoryAction<string>
   /** Renders a run's identifier as a link to the run, when the screen has a run page. */
   renderRun?: (run: string, children: ReactNode) => ReactNode
   /** The moment day labels are measured from; defaults to now. */
@@ -36,18 +30,10 @@ export type TaskHistoryProps = {
   /** The element id the page's contents list points at. */
   id?: string
   /** Edits a comment the reader may edit; absent where comments cannot change. */
-  editComment?: CommentWrite<{ id: string; body: string }>
+  editComment?: HistoryAction<{ id: string; body: string }>
   /** Deletes a comment the reader may delete; absent where comments cannot change. */
-  deleteComment?: CommentWrite<{ id: string }>
+  deleteComment?: HistoryAction<{ id: string }>
 }
-
-/** The reply's opening: the comment quoted, then a blank line for the answer. */
-const quote = (body: string) =>
-  `${body
-    .trim()
-    .split('\n')
-    .map((line) => (line ? `> ${line}` : '>'))
-    .join('\n')}\n\n`
 
 const FILTER_LABELS: Record<HistoryFilter, string> = {
   all: 'All',
@@ -64,7 +50,7 @@ function Composer({
   draft,
   setDraft,
 }: {
-  comment: CommentAction
+  comment: HistoryAction<string>
   /** Null while the composer is closed. */
   draft: string | null
   setDraft: (draft: string | null) => void
@@ -120,13 +106,9 @@ function Composer({
 function StatusLine({ item }: { item: StatusRun }) {
   const [open, setOpen] = useState(false)
   const path = statusPath(item.changes)
-  const created = item.changes[0]?.kind === 'status' && item.changes[0].from === null
+  const created = item.changes[0]?.from === null
   const agents = [
-    ...new Set(
-      item.changes.flatMap((change) =>
-        change.kind === 'status' && change.agent ? [change.agent] : [],
-      ),
-    ),
+    ...new Set(item.changes.flatMap((change) => (change.agent ? [change.agent] : []))),
   ]
   return (
     <div>
@@ -159,22 +141,20 @@ function StatusLine({ item }: { item: StatusRun }) {
       </div>
       {open ? (
         <div className={taskHistoryStyles().changes()}>
-          {item.changes.map((change) =>
-            change.kind === 'status' ? (
-              <div key={change.id} className={taskHistoryStyles().line()}>
-                <span className={taskHistoryStyles().lineText()}>
-                  {change.from ?? 'new'} <span className={taskHistoryStyles().arrow()}>→</span>{' '}
-                  {change.to}
-                  {change.agent ? (
-                    <span className={taskHistoryStyles().agent()}> · {change.agent}</span>
-                  ) : null}
-                </span>
-                <time className={taskHistoryStyles().time()} dateTime={change.at}>
-                  {clock(change.at)}
-                </time>
-              </div>
-            ) : null,
-          )}
+          {item.changes.map((change) => (
+            <div key={change.id} className={taskHistoryStyles().line()}>
+              <span className={taskHistoryStyles().lineText()}>
+                {change.from ?? 'new'} <span className={taskHistoryStyles().arrow()}>→</span>{' '}
+                {change.to}
+                {change.agent ? (
+                  <span className={taskHistoryStyles().agent()}> · {change.agent}</span>
+                ) : null}
+              </span>
+              <time className={taskHistoryStyles().time()} dateTime={change.at}>
+                {clock(change.at)}
+              </time>
+            </div>
+          ))}
         </div>
       ) : null}
     </div>
@@ -198,6 +178,8 @@ type CommentControls = {
   deleteComment?: TaskHistoryProps['deleteComment']
   deleted: string | null
   onDelete: (id: string) => void
+  /** The comment whose edit last ran, so its error shows under that comment only. */
+  edited: string | null
 }
 
 function CommentBlock({
@@ -207,7 +189,7 @@ function CommentBlock({
   item: Extract<HistoryItem, { kind: 'comment' }>
   controls: CommentControls
 }) {
-  const { editing, setEditing, onReply, editComment, deleteComment, deleted } = controls
+  const { editing, setEditing, onReply, editComment, deleteComment, deleted, edited } = controls
   return (
     <HistoryComment
       id={item.id}
@@ -221,7 +203,7 @@ function CommentBlock({
       onReply={onReply ? () => onReply(item.body) : undefined}
       onEditStart={() => setEditing(item.id)}
       onEditEnd={() => setEditing(null)}
-      edit={editComment}
+      edit={editComment && { ...editComment, error: edited === item.id ? editComment.error : null }}
       onDelete={
         deleteComment && !deleteComment.refused ? () => controls.onDelete(item.id) : undefined
       }
@@ -307,6 +289,7 @@ export function TaskHistory({
   const [draft, setDraft] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
   const [deleted, setDeleted] = useState<string | null>(null)
+  const [edited, setEdited] = useState<string | null>(null)
   const composer = useRef<HTMLDivElement>(null)
   const controls: CommentControls = {
     editing,
@@ -314,12 +297,19 @@ export function TaskHistory({
     onReply: comment.refused
       ? undefined
       : (body) => {
-          setDraft((current) => `${current ?? ''}${quote(body)}`)
+          setDraft((current) => replyDraft(current, body))
           composer.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
         },
-    editComment,
+    editComment: editComment && {
+      ...editComment,
+      run: (input) => {
+        setEdited(input.id)
+        return editComment.run(input)
+      },
+    },
     deleteComment,
     deleted,
+    edited,
     onDelete: (target) => {
       setDeleted(target)
       void deleteComment?.run({ id: target })
