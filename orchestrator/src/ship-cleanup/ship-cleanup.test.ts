@@ -176,3 +176,28 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
   expect(existsSync(lensArchive)).toBe(false)
   rmSync(archiveRoot, { recursive: true, force: true })
 })
+
+test('ship cleanup refuses a landed classification without a recorded landing time', () => {
+  addProject()
+  const unavailable = (): never => {
+    throw new Error('cleanup should not start')
+  }
+  const dependencies: ShipCleanupDependencies = {
+    landingState: () => 'landed',
+    closeOut: unavailable,
+    prune: unavailable,
+    measure: unavailable,
+    readerCloneArchive: unavailable,
+    remove: unavailable,
+  }
+
+  expect(() =>
+    shipCleanup('DEV-1392-c3', {
+      project: 'ship-fixture',
+      database: db(),
+      dependencies,
+    }),
+  ).toThrow(
+    `refusing ship cleanup: branch DEV-1392-c3 has no recorded landing time; cleared by: ${PLATFORM_SLUG} tree branch landed DEV-1392-c3 --pr <number>`,
+  )
+})

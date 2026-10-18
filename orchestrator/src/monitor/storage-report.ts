@@ -65,31 +65,6 @@ async function measurePath(path: string): Promise<StorageMeasurement> {
   })
 }
 
-export type StoragePathMeasurement = {
-  bytes: number
-  entries: number
-  errors: string[]
-  stoppedAtLimit: boolean
-}
-
-/** Measure selected paths with the storage report's allocated-byte and hard-link rules. */
-export function measureStoragePaths(
-  paths: readonly string[],
-  entryLimit = STORAGE_WALK_ENTRY_LIMIT,
-): StoragePathMeasurement {
-  const result = walkStoragePaths(
-    paths,
-    () => ({ kind: 'other' as const, runId: null }),
-    entryLimit,
-  )
-  return {
-    bytes: result.observations.reduce((total, entry) => total + entry.bytes, 0),
-    entries: result.entries,
-    errors: result.unreadable ? [...result.errors, result.unreadable] : result.errors,
-    stoppedAtLimit: result.stoppedAtLimit,
-  }
-}
-
 function runClassifier(
   runsRoot: string,
   promptPaths: ReadonlySet<string>,

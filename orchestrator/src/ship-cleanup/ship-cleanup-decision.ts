@@ -65,14 +65,13 @@ export function decideShipCleanup(
         scope,
         artifacts: 'ignore',
         worktreeAction: 'ignore',
-        reason:
-          !startedByLanding(run.startedAt, landingMergedAt)
-            ? `run started after branch landed at ${landingMergedAt}`
-            : !run.launchKey
-              ? 'run has no task key'
-              : !run.branch
-                ? 'run has no branch'
-                : `run belongs to branch ${run.branch}`,
+        reason: !startedByLanding(run.startedAt, landingMergedAt)
+          ? `run started after branch landed at ${landingMergedAt}`
+          : !run.launchKey
+            ? 'run has no task key'
+            : !run.branch
+              ? 'run has no branch'
+              : `run belongs to branch ${run.branch}`,
       }
     }
     if (!SHIP_CLEANUP_TERMINAL_STATUSES.has(run.status)) {

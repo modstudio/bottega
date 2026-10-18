@@ -6,7 +6,7 @@ import { join, relative, resolve } from 'node:path'
 
 export const STORAGE_WALK_ENTRY_LIMIT = 1_000_000
 
-export type StorageWalkObservation<T> = T & {
+type StorageWalkObservation<T> = T & {
   bytes: number
   hardLinkKey: string | null
 }
@@ -32,6 +32,76 @@ export function deduplicateHardLinkedBytes<T extends { bytes: number; hardLinkKe
   })
 }
 
+type PendingEntry = { root: string; path: string }
+
+function childrenOf(entry: PendingEntry): PendingEntry[] {
+  return readdirSync(entry.path).map((name) => ({
+    root: entry.root,
+    path: join(entry.path, name),
+  }))
+}
+
+function prepareRoots(
+  roots: readonly string[],
+  includeRoots: boolean,
+): { pending: PendingEntry[]; unreadable: string | null } {
+  const initial = [...new Set(roots.map((path) => resolve(path)))].map((path) => ({
+    root: path,
+    path,
+  }))
+  if (includeRoots) return { pending: initial, unreadable: null }
+  const pending: PendingEntry[] = []
+  let unreadable: string | null = null
+  for (const entry of initial) {
+    try {
+      const stat = lstatSync(entry.path)
+      if (stat.isDirectory() && !stat.isSymbolicLink()) pending.push(...childrenOf(entry))
+      else pending.push(entry)
+    } catch (cause) {
+      const error = cause as NodeJS.ErrnoException
+      if (error.code !== 'ENOENT') unreadable ??= String(error.message ?? cause)
+    }
+  }
+  return { pending, unreadable }
+}
+
+function inspectEntry<T>(
+  entry: PendingEntry,
+  classify: (root: string, relativePath: string) => T,
+): {
+  observation: StorageWalkObservation<T> | null
+  children: PendingEntry[]
+  error: string | null
+} {
+  try {
+    const stat = lstatSync(entry.path)
+    const observation = {
+      bytes: typeof stat.blocks === 'number' ? stat.blocks * 512 : stat.size,
+      hardLinkKey: stat.isFile() && stat.nlink > 1 ? `${stat.dev}:${stat.ino}` : null,
+      ...classify(entry.root, relative(entry.root, entry.path)),
+    }
+    if (!stat.isDirectory() || stat.isSymbolicLink()) {
+      return { observation, children: [], error: null }
+    }
+    try {
+      return { observation, children: childrenOf(entry), error: null }
+    } catch (cause) {
+      return {
+        observation,
+        children: [],
+        error: `${entry.path}: ${String((cause as Error).message ?? cause)}`,
+      }
+    }
+  } catch (cause) {
+    const error = cause as NodeJS.ErrnoException
+    return {
+      observation: null,
+      children: [],
+      error: error.code === 'ENOENT' ? null : `${entry.path}: ${String(error.message ?? cause)}`,
+    }
+  }
+}
+
 /** Walk roots without following symlinks, counting each hard-linked file's blocks once. */
 export function walkStoragePaths<T>(
   roots: readonly string[],
@@ -39,73 +109,23 @@ export function walkStoragePaths<T>(
   entryLimit: number,
   options: { includeRoots?: boolean } = {},
 ): StorageWalkResult<T> {
-  let pending = [...new Set(roots.map((path) => resolve(path)))].map((path) => ({
-    root: path,
-    path,
-  }))
+  const prepared = prepareRoots(roots, options.includeRoots !== false)
+  const pending = prepared.pending
   const observations: StorageWalkObservation<T>[] = []
   const errors: string[] = []
-  const seenHardLinks = new Set<string>()
   let entries = 0
   let attempted = 0
-  let unreadable: string | null = null
-
-  if (options.includeRoots === false) {
-    const children: typeof pending = []
-    for (const entry of pending) {
-      try {
-        const stat = lstatSync(entry.path)
-        if (!stat.isDirectory() || stat.isSymbolicLink()) {
-          children.push(entry)
-          continue
-        }
-        children.push(
-          ...readdirSync(entry.path).map((name) => ({
-            root: entry.root,
-            path: join(entry.path, name),
-          })),
-        )
-      } catch (cause) {
-        const error = cause as NodeJS.ErrnoException
-        if (error.code !== 'ENOENT') unreadable ??= String(error.message ?? cause)
-      }
-    }
-    pending = children
-  }
 
   while (pending.length > 0 && attempted < entryLimit) {
     const entry = pending.shift()!
     attempted++
-    try {
-      const stat = lstatSync(entry.path)
+    const inspected = inspectEntry(entry, classify)
+    if (inspected.observation) {
       entries++
-      const hardLinkKey = stat.isFile() && stat.nlink > 1 ? `${stat.dev}:${stat.ino}` : null
-      const duplicate = hardLinkKey !== null && seenHardLinks.has(hardLinkKey)
-      if (hardLinkKey !== null) seenHardLinks.add(hardLinkKey)
-      observations.push({
-        bytes: duplicate ? 0 : typeof stat.blocks === 'number' ? stat.blocks * 512 : stat.size,
-        hardLinkKey,
-        ...classify(entry.root, relative(entry.root, entry.path)),
-      })
-      if (stat.isDirectory() && !stat.isSymbolicLink()) {
-        try {
-          pending.push(
-            ...readdirSync(entry.path).map((name) => ({
-              root: entry.root,
-              path: join(entry.path, name),
-            })),
-          )
-        } catch (cause) {
-          errors.push(`${entry.path}: ${String((cause as Error).message ?? cause)}`)
-        }
-      }
-    } catch (cause) {
-      const error = cause as NodeJS.ErrnoException
-      if (error.code === 'ENOENT') continue
-      const detail = String(error.message ?? cause)
-      if (entry.path === entry.root && roots.length === 1) unreadable ??= detail
-      else errors.push(`${entry.path}: ${detail}`)
+      observations.push(inspected.observation)
     }
+    pending.push(...inspected.children)
+    if (inspected.error) errors.push(inspected.error)
   }
 
   return {
@@ -113,6 +133,6 @@ export function walkStoragePaths<T>(
     entries,
     stoppedAtLimit: pending.length > 0,
     errors,
-    unreadable,
+    unreadable: prepared.unreadable,
   }
 }

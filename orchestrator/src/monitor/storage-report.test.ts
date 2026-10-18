@@ -2,7 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { linkSync, lstatSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { formatStorageReport, measureRunStorage, measureStoragePaths } from './storage-report.ts'
+import { formatStorageReport, measureRunStorage } from './storage-report.ts'
 
 const roots: string[] = []
 afterEach(() => {
@@ -39,12 +39,6 @@ test('the bounded adapter classifies files, deduplicates hard links, and labels 
   writeFileSync(reply, 'reply')
   writeFileSync(sandboxFile, 'sandbox')
   mkdirSync(join(root, 'zz-overflow', 'a', 'b', 'c'), { recursive: true })
-
-  expect(measureStoragePaths([artifacts])).toMatchObject({
-    bytes: allocatedBytes(artifacts) + allocatedBytes(artifact),
-    entries: 3,
-    stoppedAtLimit: false,
-  })
 
   const measured = await measureRunStorage(
     root,
