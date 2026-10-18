@@ -4,7 +4,7 @@ import { Avatar } from './avatar'
 const meta = {
   title: 'Primitives/Avatar',
   component: Avatar,
-  args: { name: 'Shmuel Barkin', labelled: true },
+  args: { name: 'Shmuel Barkin', labeled: true },
 } satisfies Meta<typeof Avatar>
 export default meta
 type Story = StoryObj<typeof meta>

@@ -52,7 +52,7 @@ function dayKey(date: Date): string {
 }
 
 /** "Today", "Yesterday", then a short date, with the year only outside the current one. */
-export function historyDayLabel(at: string, now: Date): string {
+function historyDayLabel(at: string, now: Date): string {
   const date = new Date(at)
   const yesterday = new Date(now)
   yesterday.setDate(now.getDate() - 1)

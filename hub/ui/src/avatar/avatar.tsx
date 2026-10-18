@@ -1,7 +1,7 @@
 import { avatarStyles } from './avatar.styles.ts'
 
 /** The first letters of up to two words of a name. */
-export const initials = (name: string) =>
+const initials = (name: string) =>
   name
     .split(/[\s._-]+/)
     .filter(Boolean)
@@ -14,15 +14,15 @@ export const initials = (name: string) =>
  */
 export function Avatar({
   name,
-  labelled = false,
+  labeled = false,
 }: {
   name: string | null
   /** Whether to announce the name; leave off when the name is written beside the mark. */
-  labelled?: boolean
+  labeled?: boolean
 }) {
   const known = name !== null
   const mark = name ? initials(name) : null
-  if (!labelled) {
+  if (!labeled) {
     return (
       <span className={avatarStyles({ known })} aria-hidden>
         {mark}

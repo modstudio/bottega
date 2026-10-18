@@ -108,7 +108,8 @@ test('hosted task detail renders all history without mutation controls', () => {
       statusVocabulary: null,
     },
   }
-  const result = { detail, error: null, actions: {} } as UseTaskResult
+  const refused = { run: () => undefined, pending: false, error: null, refused: 'Read only' }
+  const result = { detail, error: null, actions: { comment: refused } } as unknown as UseTaskResult
   const html = renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
       <HostedTaskSheet taskKey="DEV-701" result={result} onClose={() => undefined} />
@@ -116,15 +117,12 @@ test('hosted task detail renders all history without mutation controls', () => {
   )
   expect(html).toContain('A comment')
   expect(html).toContain('DEV-701/3')
-  expect(html).toContain('Status history')
-  expect(html).toContain('Intervals')
-  expect(html).toContain('<strong>orch</strong>')
-  expect(html.indexOf('<strong>active</strong>')).toBeLessThan(
-    html.indexOf('<strong>open</strong>'),
-  )
+  expect(html).toContain('aria-label="History"')
+  expect(html).toContain(' · orch</span> · implementation')
+  expect(html).toContain('Read only')
   expect(html).toContain('No time was recorded for this task')
   expect(html).toContain('100 agent tokens')
   expect(html).not.toContain('Save document')
-  expect(html).not.toContain('Add comment')
+  expect(html).not.toContain('Add a comment')
   expect(html).not.toContain('Task status')
 })

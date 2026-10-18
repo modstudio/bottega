@@ -173,6 +173,7 @@ const hubViewFolders = [
   'rail-section',
   'contents-list',
   'document-editor',
+  'task-history',
 ]
 
 const hubViewsFolderLayerRuleName = 'hub-views-folder-has-a-layer'

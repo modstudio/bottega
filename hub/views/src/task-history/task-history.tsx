@@ -19,7 +19,7 @@ import {
 import { taskHistoryStyles } from './task-history.styles.ts'
 
 /** Adding a comment: refused carries the reason the reader may not. */
-export type CommentAction = {
+type CommentAction = {
   run: (body: string) => Promise<unknown> | unknown
   pending: boolean
   error: string | null
