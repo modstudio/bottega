@@ -13,6 +13,7 @@ import {
   HUB_UTIL_ROOT,
   HUB_VIEWS_PACKAGE,
   HUB_VIEWS_ROOT,
+  hubUtilRuntimeDependencyViolations,
   hubWorkspaceDependencies,
 } from './architecture-hub-packages.ts'
 import { isDeclaredHubUiSourceLocation } from './architecture-ui-layers.ts'
@@ -246,6 +247,7 @@ for (const subpath of Object.keys(utilPackage.exports ?? {})) {
 if (utilPackage.name !== HUB_UTIL_PACKAGE) {
   violations.push(`${relative(ROOT, utilPackagePath)}: package name must be ${HUB_UTIL_PACKAGE}`)
 }
+violations.push(...hubUtilRuntimeDependencyViolations(utilPackage))
 
 if (violations.length) {
   for (const violation of violations) console.error(violation)

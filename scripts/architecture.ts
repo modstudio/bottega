@@ -840,7 +840,7 @@ export function writeTimeArchitectureRules(): ArchitectureRule[] {
     ...uiArchitectureRules(architectureDependencyPath, HUB_UI_PACKAGE),
     ...viewArchitectureRules(architectureDependencyPath, HUB_VIEWS_PACKAGE),
     ...hubDataBoundaryRules,
-    ...hubUtilArchitectureRules(architectureDependencyPath),
+    ...hubUtilArchitectureRules(),
     hubWebViewDataRule,
   ]
 }

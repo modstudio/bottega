@@ -340,6 +340,7 @@ const rootTests = [
   './shared/self-spawn.test.ts',
   './scripts/quality/dead-code.test.ts',
   './scripts/architecture.test.ts',
+  './scripts/architecture-hub-packages.test.ts',
   './scripts/import-scanner.test.ts',
   './shared/test-substance/test-substance.test.ts',
   './shared/test-substance/no-assertion.test.ts',

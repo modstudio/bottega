@@ -46,7 +46,7 @@ exactly one export entry derived from its path. `scripts/check-hub-packages.ts` 
 dependency table and export maps; `scripts/check-architecture.ts` enforces package imports,
 layer folders, and the hub-views data and router boundary; and
 `orchestrator/hooks/hub-import-guard.py` refuses the same violations when a file is written.
-`@bottega/hub-util` holds pure helpers with no workspace or UI dependency, enforced by
+`@bottega/hub-util` holds pure helpers with no dependency beyond `shared/`, enforced by
 `scripts/check-hub-packages.ts` and `scripts/check-architecture.ts`.
 
 The UI and views packages know nothing of data access, routing or the hub mode, and their
