@@ -345,6 +345,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'tree refresh',
   'tree remove',
   'tree reseed',
+  'tree ship-cleanup',
   'workflow',
   'workflow abandon',
   'workflow attach',

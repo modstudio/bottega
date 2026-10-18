@@ -11,7 +11,11 @@ import { writableDb } from '../database/db.ts'
 import { measureStoragePaths } from '../monitor/storage-report.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
-import { decideShipCleanup, type ShipCleanupRunFact } from './ship-cleanup-decision.ts'
+import {
+  decideShipCleanup,
+  type ShipCleanupRunDecision,
+  type ShipCleanupRunFact,
+} from './ship-cleanup-decision.ts'
 
 type RunRow = {
   id: number
@@ -122,6 +126,136 @@ function removalBytes(
   return { before: before.bytes, after: after.bytes, errors }
 }
 
+function emptyReport(project: string, branch: string): ShipCleanupReport {
+  return {
+    project,
+    branch,
+    freed: { artifacts: 0, scratch: 0, worktrees: 0 },
+    removed: { artifacts: [], scratch: [], worktrees: [], branches: [] },
+    kept: [],
+    errors: [],
+  }
+}
+
+function cleanupRetry(branch: string): string {
+  return `${PLATFORM_SLUG} tree ship-cleanup ${branch}`
+}
+
+function removeRunDirectories(
+  branch: string,
+  decisions: readonly ShipCleanupRunDecision[],
+  report: ShipCleanupReport,
+  adapter: ShipCleanupDependencies,
+): void {
+  const removable = decisions.filter((decision) => decision.artifacts === 'remove')
+  for (const kind of ['artifacts', 'scratch'] as const) {
+    const paths = removable.map((run) =>
+      kind === 'artifacts' ? runArtifactsDir(run.id) : runScratchDir(run.id),
+    )
+    try {
+      const measured = removalBytes(paths, adapter)
+      report.freed[kind] = Math.max(0, measured.before - measured.after)
+      report.removed[kind].push(...removable.map((run) => run.id))
+      for (const detail of measured.errors) {
+        report.errors.push({ item: kind, detail, retry: cleanupRetry(branch) })
+      }
+    } catch (cause) {
+      report.errors.push({
+        item: kind,
+        detail: cause instanceof Error ? cause.message : String(cause),
+        retry: cleanupRetry(branch),
+      })
+    }
+  }
+}
+
+function reportKeptRuns(
+  decisions: readonly ShipCleanupRunDecision[],
+  report: ShipCleanupReport,
+): void {
+  for (const decision of decisions) {
+    if (decision.scope === 'outside' || decision.artifacts !== 'keep') continue
+    report.kept.push({
+      item:
+        `run ${decision.id} artifacts and scratch` +
+        (decision.worktreeAction === 'keep' && decision.worktree ? ' and worktree' : ''),
+      reason: decision.reason,
+      ...(!decision.judged && decision.worktreeAction === 'close'
+        ? { remedy: `${PLATFORM_SLUG} score ${decision.rootId}` }
+        : {}),
+    })
+  }
+}
+
+function closeBranchWorktrees(
+  branch: string,
+  decisions: readonly ShipCleanupRunDecision[],
+  report: ShipCleanupReport,
+  adapter: ShipCleanupDependencies,
+): void {
+  const closeRows = decisions.filter(
+    (decision) => decision.worktreeAction === 'close' && decision.worktree,
+  )
+  const worktrees = [...new Set(closeRows.flatMap((row) => (row.worktree ? [row.worktree] : [])))]
+  const before = adapter.measure(worktrees)
+  const closedRoots = new Set<number>()
+  for (const row of closeRows) {
+    if (closedRoots.has(row.rootId)) continue
+    closedRoots.add(row.rootId)
+    try {
+      const result = adapter.closeOut(row.id)
+      if (result.outcome === 'released' || result.outcome === 'absent') {
+        if (row.worktree) report.removed.worktrees.push(row.worktree)
+        continue
+      }
+      report.kept.push({ item: `run ${row.id} worktree`, reason: result.detail })
+      report.errors.push({
+        item: `run ${row.id} worktree`,
+        detail: `close-out ${result.outcome}: ${result.detail}`,
+        retry: cleanupRetry(branch),
+      })
+    } catch (cause) {
+      report.errors.push({
+        item: `run ${row.id} worktree`,
+        detail: cause instanceof Error ? cause.message : String(cause),
+        retry: cleanupRetry(branch),
+      })
+    }
+  }
+  const after = adapter.measure(worktrees)
+  report.freed.worktrees = Math.max(0, before.bytes - after.bytes)
+}
+
+function pruneMergedBranch(
+  branch: string,
+  decisions: readonly ShipCleanupRunDecision[],
+  report: ShipCleanupReport,
+  adapter: ShipCleanupDependencies,
+): void {
+  try {
+    const key = decisions.find((decision) => decision.scope !== 'outside')?.launchKey
+    if (!key) throw new Error(`no task-attributed run records branch ${branch}`)
+    const pruned = adapter.prune(report.project, branch, key)
+    report.removed.branches.push(...pruned.deleted)
+    report.kept.push(
+      ...pruned.kept.map((item) => ({ item: `branch ${item.branch}`, reason: item.reason })),
+    )
+    report.errors.push(
+      ...pruned.errors.map((detail) => ({
+        item: `branch ${branch}`,
+        detail,
+        retry: cleanupRetry(branch),
+      })),
+    )
+  } catch (cause) {
+    report.errors.push({
+      item: `branch ${branch}`,
+      detail: cause instanceof Error ? cause.message : String(cause),
+      retry: cleanupRetry(branch),
+    })
+  }
+}
+
 export function shipCleanup(
   branch: string,
   options: {
@@ -152,105 +286,11 @@ export function shipCleanup(
     )
   }
   const decisions = decideShipCleanup(branch, runFacts(project.recordId, database))
-  const report: ShipCleanupReport = {
-    project: project.name,
-    branch,
-    freed: { artifacts: 0, scratch: 0, worktrees: 0 },
-    removed: { artifacts: [], scratch: [], worktrees: [], branches: [] },
-    kept: [],
-    errors: [],
-  }
-  const removable = decisions.filter((decision) => decision.artifacts === 'remove')
-  for (const kind of ['artifacts', 'scratch'] as const) {
-    const paths = removable.map((run) =>
-      kind === 'artifacts' ? runArtifactsDir(run.id) : runScratchDir(run.id),
-    )
-    try {
-      const measured = removalBytes(paths, adapter)
-      report.freed[kind] = Math.max(0, measured.before - measured.after)
-      report.removed[kind].push(...removable.map((run) => run.id))
-      for (const detail of measured.errors) {
-        report.errors.push({
-          item: kind,
-          detail,
-          retry: `${PLATFORM_SLUG} tree ship-cleanup ${branch}`,
-        })
-      }
-    } catch (cause) {
-      report.errors.push({
-        item: kind,
-        detail: cause instanceof Error ? cause.message : String(cause),
-        retry: `${PLATFORM_SLUG} tree ship-cleanup ${branch}`,
-      })
-    }
-  }
-  for (const decision of decisions) {
-    if (decision.scope === 'outside') continue
-    if (decision.artifacts === 'keep') {
-      report.kept.push({
-        item:
-          `run ${decision.id} artifacts and scratch` +
-          (decision.worktreeAction === 'keep' && decision.worktree ? ' and worktree' : ''),
-        reason: decision.reason,
-        ...(!decision.judged && decision.worktreeAction === 'close'
-          ? { remedy: `${PLATFORM_SLUG} score ${decision.rootId}` }
-          : {}),
-      })
-    }
-  }
-  const closeRows = decisions.filter(
-    (decision) => decision.worktreeAction === 'close' && decision.worktree,
-  )
-  const worktrees = [...new Set(closeRows.flatMap((row) => (row.worktree ? [row.worktree] : [])))]
-  const worktreeBefore = adapter.measure(worktrees)
-  const closedRoots = new Set<number>()
-  for (const row of closeRows) {
-    if (closedRoots.has(row.rootId)) continue
-    closedRoots.add(row.rootId)
-    try {
-      const result = adapter.closeOut(row.id)
-      if (result.outcome === 'released' || result.outcome === 'absent') {
-        if (row.worktree) report.removed.worktrees.push(row.worktree)
-      } else {
-        report.kept.push({ item: `run ${row.id} worktree`, reason: result.detail })
-        report.errors.push({
-          item: `run ${row.id} worktree`,
-          detail: `close-out ${result.outcome}: ${result.detail}`,
-          retry: `${PLATFORM_SLUG} tree ship-cleanup ${branch}`,
-        })
-      }
-    } catch (cause) {
-      report.errors.push({
-        item: `run ${row.id} worktree`,
-        detail: cause instanceof Error ? cause.message : String(cause),
-        retry: `${PLATFORM_SLUG} tree ship-cleanup ${branch}`,
-      })
-    }
-  }
-  const worktreeAfter = adapter.measure(worktrees)
-  report.freed.worktrees = Math.max(0, worktreeBefore.bytes - worktreeAfter.bytes)
-  try {
-    const key = decisions.find((decision) => decision.scope !== 'outside')?.launchKey
-    if (!key) throw new Error(`no task-attributed run records branch ${branch}`)
-    const pruned = adapter.prune(project.name, branch, key)
-    report.removed.branches.push(...pruned.deleted)
-    report.kept.push(
-      ...pruned.kept.map((item) => ({ item: `branch ${item.branch}`, reason: item.reason })),
-    )
-    report.errors.push(
-      ...pruned.errors.map((detail) => ({
-        item: `branch ${branch}`,
-        detail,
-        retry: `${PLATFORM_SLUG} tree ship-cleanup ${branch}`,
-      })),
-    )
-  } catch (cause) {
-    report.errors.push({
-      item: `branch ${branch}`,
-      detail: cause instanceof Error ? cause.message : String(cause),
-      retry: `${PLATFORM_SLUG} tree ship-cleanup ${branch}`,
-    })
-  }
+  const report = emptyReport(project.name, branch)
+  removeRunDirectories(branch, decisions, report, adapter)
+  reportKeptRuns(decisions, report)
+  closeBranchWorktrees(branch, decisions, report, adapter)
+  pruneMergedBranch(branch, decisions, report, adapter)
   return report
 }
 

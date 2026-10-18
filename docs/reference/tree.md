@@ -14,6 +14,7 @@ worktrees and branches
 - [bottega tree refresh](#bottega-tree-refresh)
 - [bottega tree remove](#bottega-tree-remove)
 - [bottega tree reseed](#bottega-tree-reseed)
+- [bottega tree ship-cleanup](#bottega-tree-ship-cleanup)
 
 ## bottega tree
 
@@ -30,6 +31,7 @@ worktrees and branches
 - [bottega tree refresh](./tree.md#bottega-tree-refresh)
 - [bottega tree remove](./tree.md#bottega-tree-remove)
 - [bottega tree reseed](./tree.md#bottega-tree-reseed)
+- [bottega tree ship-cleanup](./tree.md#bottega-tree-ship-cleanup)
 
 ## bottega tree branch
 
@@ -154,6 +156,16 @@ replace a worktree seed and its provisions
 ### Options
 
 - `--path <tree>`: select the worktree to reseed (default: the current working directory)
+
+### Related
+
+- [bottega tree](./tree.md#bottega-tree)
+
+## bottega tree ship-cleanup
+
+**Synopsis:** `bottega tree ship-cleanup <branch>`
+
+remove ephemeral resources for a landed branch
 
 ### Related
 

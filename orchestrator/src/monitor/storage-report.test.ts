@@ -2,11 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { linkSync, lstatSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  formatStorageReport,
-  measureRunStorage,
-  measureStoragePaths,
-} from './storage-report.ts'
+import { formatStorageReport, measureRunStorage, measureStoragePaths } from './storage-report.ts'
 
 const roots: string[] = []
 afterEach(() => {

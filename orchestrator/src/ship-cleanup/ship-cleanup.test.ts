@@ -57,7 +57,11 @@ function addRun(
 
 test('ship cleanup gathers branch facts and applies only the pure decision', () => {
   const project = addProject()
-  const root = addRun(project, { judged: true, worktree: '/trees/root' })
+  const root = addRun(project, {
+    branch: 'DEV-1392-c2',
+    judged: true,
+    worktree: '/trees/root',
+  })
   const turn = addRun(project, { parent: root })
   const lens = addRun(project, { job: 'review-lens', judged: true, worktree: '/trees/lens' })
   const unscored = addRun(project, { worktree: '/trees/unscored' })

@@ -22,6 +22,19 @@ describe('ship cleanup decision', () => {
     })
   })
 
+  test('covers the root and turns of the chain that reached the merged branch', () => {
+    const decisions = decideShipCleanup('DEV-1392-c3', [
+      run({ id: 1, rootId: 1, branch: 'DEV-1392-c2' }),
+      run({ id: 2, rootId: 1, branch: 'DEV-1392-c3' }),
+      run({ id: 3, rootId: 3, branch: 'DEV-1392-c2' }),
+    ])
+    expect(decisions.map(({ id, scope }) => ({ id, scope }))).toEqual([
+      { id: 1, scope: 'chain' },
+      { id: 2, scope: 'chain' },
+      { id: 3, scope: 'outside' },
+    ])
+  })
+
   test('keeps an unscored run artifacts and names the missing verdict', () => {
     expect(decideShipCleanup('DEV-1392-c3', [run({ judged: false })])[0]).toMatchObject({
       artifacts: 'keep',

@@ -403,6 +403,25 @@ function collectMergeAdmission(
   }
 }
 
+function mergedPullRequestOutput(input: {
+  adapter: PullRequestMergeAdapter
+  database: Database
+  project: string
+  branch: string
+  mergeCommit: string
+}): string {
+  if (!input.adapter.shipCleanup) return input.mergeCommit
+  try {
+    return `${input.mergeCommit}\n${input.adapter.shipCleanup(input.project, input.branch, input.database)}`
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    return (
+      `${input.mergeCommit}\nship cleanup failed for ${input.branch}: ${detail}; ` +
+      `retry: ${PLATFORM_SLUG} tree ship-cleanup ${input.branch}`
+    )
+  }
+}
+
 export function mergePullRequest(
   target: string,
   cwd = process.cwd(),
@@ -476,14 +495,11 @@ export function mergePullRequest(
       `refusing merge because the pull request proof was not checked: ${message}; cleared by: restore forge and repository access, then ${PLATFORM_SLUG} pr merge ${target}`,
     )
   }
-  if (!adapter.shipCleanup) return mergeCommit
-  try {
-    return `${mergeCommit}\n${adapter.shipCleanup(project.name, pullRequest.headBranch, database)}`
-  } catch (cause) {
-    const detail = cause instanceof Error ? cause.message : String(cause)
-    return (
-      `${mergeCommit}\nship cleanup failed for ${pullRequest.headBranch}: ${detail}; ` +
-      `retry: ${PLATFORM_SLUG} tree ship-cleanup ${pullRequest.headBranch}`
-    )
-  }
+  return mergedPullRequestOutput({
+    adapter,
+    database,
+    project: project.name,
+    branch: pullRequest.headBranch,
+    mergeCommit,
+  })
 }

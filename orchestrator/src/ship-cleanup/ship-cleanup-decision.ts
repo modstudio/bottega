@@ -1,7 +1,7 @@
 // concern: ship cleanup decision
 /** Selects branch-owned ephemeral run data without filesystem or database access. */
 
-export const SHIP_CLEANUP_TERMINAL_STATUSES = new Set(['ok', 'failed', 'stale', 'stopped'])
+const SHIP_CLEANUP_TERMINAL_STATUSES = new Set(['ok', 'failed', 'stale', 'stopped'])
 
 export type ShipCleanupRunFact = {
   id: number
@@ -21,11 +21,15 @@ export type ShipCleanupRunDecision = ShipCleanupRunFact & {
   reason: string
 }
 
-function scopeFor(run: ShipCleanupRunFact, branch: string): ShipCleanupRunDecision['scope'] {
+function scopeFor(
+  run: ShipCleanupRunFact,
+  branch: string,
+  branchChainRoots: ReadonlySet<number>,
+): ShipCleanupRunDecision['scope'] {
   if (!run.launchKey || !run.branch) return 'outside'
   if (run.job === 'landing-tree' && run.branch === branch) return 'landing-tree'
   if (run.job === 'review-lens' && run.branch === branch) return 'review-lens'
-  return run.branch === branch ? 'chain' : 'outside'
+  return branchChainRoots.has(run.rootId) ? 'chain' : 'outside'
 }
 
 /** Decide removal independently for each run; turns inherit their root verdict in gathered facts. */
@@ -33,8 +37,19 @@ export function decideShipCleanup(
   branch: string,
   runs: readonly ShipCleanupRunFact[],
 ): ShipCleanupRunDecision[] {
+  const branchChainRoots = new Set(
+    runs
+      .filter(
+        (run) =>
+          run.launchKey &&
+          run.branch === branch &&
+          run.job !== 'review-lens' &&
+          run.job !== 'landing-tree',
+      )
+      .map((run) => run.rootId),
+  )
   return runs.map((run) => {
-    const scope = scopeFor(run, branch)
+    const scope = scopeFor(run, branch, branchChainRoots)
     if (scope === 'outside') {
       return {
         ...run,
