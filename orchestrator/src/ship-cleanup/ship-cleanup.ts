@@ -7,8 +7,9 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { findRecordedBranchLanding } from '../branch/branch-state.ts'
 import { classifyMintedBranch, pruneBranch } from '../branch/branches.ts'
-import { closeOutRun, removeLifecycleTree } from '../close/close-out.ts'
+import { closeOutRun } from '../close/close-out.ts'
 import { writableDb } from '../database/db.ts'
+import { removeHookTree } from '../hook-tree/tree.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { STORAGE_WALK_ENTRY_LIMIT, walkStoragePaths } from '../storage-walk.ts'
@@ -52,7 +53,7 @@ export type ShipCleanupDependencies = {
   }
   measure(paths: readonly string[]): { bytes: number; errors: string[]; stoppedAtLimit: boolean }
   readerCloneArchive(runId: number): string | null
-  removeLandingTree(runId: number): { outcome: string; detail: string }
+  removeLandingTree(path: string): void
   remove(path: string): void
 }
 
@@ -79,7 +80,7 @@ const dependencies: ShipCleanupDependencies = {
       throw cause
     }
   },
-  removeLandingTree: removeLifecycleTree,
+  removeLandingTree: removeHookTree,
   remove: (path) => rmSync(path, { recursive: true, force: true }),
 }
 
@@ -201,37 +202,41 @@ function closeBranchWorktrees(
   for (const row of closeRows) {
     if (closedRoots.has(row.rootId)) continue
     closedRoots.add(row.rootId)
-    try {
-      if (row.scope === 'landing-tree' && row.worktree) {
-        const result = releaseLandingTree(
-          branch,
-          { ...row, worktree: row.worktree },
-          report,
-          adapter,
-        )
-        if (result) keptLandingTrees.set(row.worktree, result)
-        continue
-      }
-      const result = adapter.closeOut(row.id)
-      if (result.outcome === 'released' || result.outcome === 'absent') {
-        if (row.worktree) report.removed.worktrees.push(row.worktree)
-        continue
-      }
-      report.kept.push({ item: `run ${row.id} worktree`, reason: result.detail })
-      report.errors.push({
-        item: `run ${row.id} worktree`,
-        detail: `close-out ${result.outcome}: ${result.detail}`,
-        retry: cleanupRetry(branch),
-      })
-    } catch (cause) {
-      report.errors.push({
-        item: `run ${row.id} worktree`,
-        detail: cause instanceof Error ? cause.message : String(cause),
-        retry: cleanupRetry(branch),
-      })
-    }
+    const remedy = closeBranchWorktree(branch, row, report, adapter)
+    if (remedy && row.worktree) keptLandingTrees.set(row.worktree, remedy)
   }
   return keptLandingTrees
+}
+
+function closeBranchWorktree(
+  branch: string,
+  row: ShipCleanupRunDecision,
+  report: ShipCleanupReport,
+  adapter: ShipCleanupDependencies,
+): string | null {
+  try {
+    if (row.scope === 'landing-tree' && row.worktree) {
+      return releaseLandingTree(branch, { ...row, worktree: row.worktree }, report, adapter)
+    }
+    const result = adapter.closeOut(row.id)
+    if (result.outcome === 'released' || result.outcome === 'absent') {
+      if (row.worktree) report.removed.worktrees.push(row.worktree)
+      return null
+    }
+    report.kept.push({ item: `run ${row.id} worktree`, reason: result.detail })
+    report.errors.push({
+      item: `run ${row.id} worktree`,
+      detail: `close-out ${result.outcome}: ${result.detail}`,
+      retry: cleanupRetry(branch),
+    })
+  } catch (cause) {
+    report.errors.push({
+      item: `run ${row.id} worktree`,
+      detail: cause instanceof Error ? cause.message : String(cause),
+      retry: cleanupRetry(branch),
+    })
+  }
+  return null
 }
 
 function releaseLandingTree(
@@ -241,26 +246,29 @@ function releaseLandingTree(
   adapter: ShipCleanupDependencies,
 ): string | null {
   const remedy = `${PLATFORM_SLUG} tree remove ${row.worktree}, then ${cleanupRetry(branch)}`
-  const result = adapter.removeLandingTree(row.id)
-  if (result.outcome === 'released' || result.outcome === 'absent') {
+  try {
+    adapter.removeLandingTree(row.worktree)
     report.removed.worktrees.push(row.worktree)
     return null
-  }
-  const cwdKept = result.detail.includes('current working directory')
-  if (cwdKept || result.outcome === 'held') {
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    const cwdKept = detail.includes('current working directory')
+    const dirtyKept = detail.includes('tree is dirty')
+    if (!cwdKept && !dirtyKept) {
+      report.errors.push({
+        item: `run ${row.id} worktree`,
+        detail,
+        retry: cleanupRetry(branch),
+      })
+      return null
+    }
     report.kept.push({
       item: `run ${row.id} worktree`,
-      reason: cwdKept ? 'the command runs from this tree' : result.detail,
+      reason: cwdKept ? 'the command runs from this tree' : detail,
       remedy,
     })
     return remedy
   }
-  report.errors.push({
-    item: `run ${row.id} worktree`,
-    detail: `tree removal ${result.outcome}: ${result.detail}`,
-    retry: cleanupRetry(branch),
-  })
-  return null
 }
 
 function removeRunStorage(

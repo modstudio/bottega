@@ -19,6 +19,7 @@ export const cleanupBoundarySpecs = [
       '../branch/branches.ts',
       '../close/close-out.ts',
       '../database/db.ts',
+      '../hook-tree/tree.ts',
       '../project/projects.ts',
       '../run/run-artifacts.ts',
       '../storage-walk.ts',

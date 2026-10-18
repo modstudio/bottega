@@ -149,7 +149,6 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
     removeLandingTree: () => {
       removedLandingTrees.push('/trees/landing')
       removed.add('/trees/landing')
-      return { outcome: 'released', detail: 'released' }
     },
   }
 
@@ -241,7 +240,7 @@ function landingTreeCleanup(input: {
     removeLandingTree: () => {
       const removal = input.removal ?? { outcome: 'released', detail: 'released' }
       if (removal.outcome === 'released') removedTrees.push(landingTree)
-      return removal
+      else throw new Error(removal.detail)
     },
     remove: () => {},
   }

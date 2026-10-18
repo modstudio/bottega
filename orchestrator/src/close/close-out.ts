@@ -1030,11 +1030,6 @@ export function closeOutRun(
   return result
 }
 
-/** Release an architect tree through the same explicit-removal path as `tree remove`. */
-export function removeLifecycleTree(runId: number): CloseOutResult {
-  return closeOutRun(runId, { intent: 'tree-remove' })
-}
-
 export function reclaimTerminalTree(
   runId: number,
   worktree: Worktree,
