@@ -1,4 +1,4 @@
-import { recordApiUrl } from './hub-mode.ts'
+import { recordErrorMessage, recordRequest } from './record-request.ts'
 
 export type OrganizationRole = 'owner' | 'admin' | 'member'
 export type OrganizationMember = {
@@ -34,23 +34,6 @@ export class OrganizationRequestError extends Error {
   }
 }
 
-function organizationUrl(path: string) {
-  const base = recordApiUrl()
-  if (!base) throw new Error('VITE_RECORD_API_URL is required')
-  return `${base}/api/auth${path}`
-}
-
-function errorMessage(body: unknown, fallback: string) {
-  if (!body || typeof body !== 'object') return fallback
-  const value = body as Record<string, unknown>
-  if (typeof value.message === 'string' && value.message) return value.message
-  if (value.error && typeof value.error === 'object') {
-    const error = value.error as Record<string, unknown>
-    if (typeof error.message === 'string' && error.message) return error.message
-  }
-  return fallback
-}
-
 function errorCode(body: unknown): string | null {
   if (!body || typeof body !== 'object') return null
   const value = body as Record<string, unknown>
@@ -63,15 +46,11 @@ function errorCode(body: unknown): string | null {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(organizationUrl(path), {
-    ...init,
-    credentials: 'include',
-    headers: init?.body ? { 'content-type': 'application/json', ...init.headers } : init?.headers,
-  })
+  const response = await recordRequest(`/api/auth${path}`, init)
   const body = await response.json().catch(() => null)
   if (!response.ok) {
     throw new OrganizationRequestError(
-      errorMessage(body, 'The request could not be completed'),
+      recordErrorMessage(body, 'The request could not be completed'),
       response.status,
       errorCode(body),
     )
