@@ -7,7 +7,6 @@ import { DB_PATH } from '../database/db.ts'
 import { projectByName, projects } from '../project/projects.ts'
 import {
   addDoctrineRule,
-  addPair,
   addSkip,
   baselineForPair,
   ledgerRef,
@@ -18,7 +17,7 @@ import {
   removeLedgerRef,
   resolveLedgerRef,
   retireDoctrineRule,
-  setBaseline,
+  setBaselineForProjects,
   setLedgerRef,
 } from './porting.ts'
 import {
@@ -65,14 +64,12 @@ export async function portCommand(
       )
     return project
   }
-  const namedPair = (sourceName: string, targetName: string, create = false) => {
+  const namedPair = (sourceName: string, targetName: string) => {
     const source = namedProject(sourceName)
     const target = namedProject(targetName)
     if (source.recordId === target.recordId)
       throw new Error('a port source and target must be different projects')
-    const pair =
-      pairByProjects(source.recordId, target.recordId) ??
-      (create ? addPair(source.recordId, target.recordId) : null)
+    const pair = pairByProjects(source.recordId, target.recordId)
     return { pair, source, target }
   }
   const output = (value: unknown, line: string) => log(has('json') ? JSON.stringify(value) : line)
@@ -256,8 +253,9 @@ export async function portCommand(
       refusePortUsage('baseline set <source> <target> <commit> [--json] | --clear')
     }
     const commit = clear ? null : (rawCommit ?? null)
-    const { pair } = namedPair(sourceName, targetName, true)
-    const baseline = setBaseline(pair!.id, commit)
+    const { source, target } = namedPair(sourceName, targetName)
+    const ids = [source.recordId, target.recordId] as const
+    const { pair, baseline } = await setBaselineForProjects(...ids, commit)
     output(
       { pair, baseline },
       commit
@@ -295,7 +293,7 @@ export async function portCommand(
       throw new Error(
         `no port pair from "${sourceName}" to "${targetName}"; set its baseline first`,
       )
-    const row = addSkip(pair.id, candidate, reason)
+    const row = await addSkip(pair.id, candidate, reason)
     output(row, `skipped ${candidate}: ${reason}`)
     return
   }
@@ -378,7 +376,7 @@ export async function portCommand(
         note: source.note,
       }
     })
-    const ref = setLedgerRef({
+    const ref = await setLedgerRef({
       taskKey,
       targetProjectId: namedProject(projectName).recordId,
       note,
@@ -393,7 +391,7 @@ export async function portCommand(
     const projectName = flag('project')
     if (!taskKey || !projectName)
       throw new Error(`${PLATFORM_SLUG} doc port ref resolve <task-key> --project PROJECT [--json]`)
-    const ref = resolveLedgerRef(namedProject(projectName).recordId, taskKey)
+    const ref = await resolveLedgerRef(namedProject(projectName).recordId, taskKey)
     if (!ref) throw new Error(`no port ledger ref for task "${projectName}:${taskKey}"`)
     output(ref, `resolved ${taskKey} at ${ref.resolved_at}`)
     return
@@ -404,7 +402,7 @@ export async function portCommand(
     const projectName = flag('project')
     if (!taskKey || !projectName)
       refusePortUsage('ref delete-error <task-key> --project PROJECT [--json]')
-    const removed = removeLedgerRef(namedProject(projectName).recordId, taskKey)
+    const removed = await removeLedgerRef(namedProject(projectName).recordId, taskKey)
     output(
       { removed },
       removed
@@ -441,7 +439,7 @@ export async function portCommand(
         : (() => {
             throw new Error('no body: pass --file F or pipe text on stdin')
           })()
-    const rule = addDoctrineRule(number, title, body)
+    const rule = await addDoctrineRule(number, title, body)
     output(rule, `added doctrine ${number}: ${title}`)
     return
   }
@@ -451,7 +449,7 @@ export async function portCommand(
     if (!Number.isInteger(number) || number <= 0) {
       throw new Error(`${PLATFORM_SLUG} doc port doctrine retire <number> [--json]`)
     }
-    const retired = retireDoctrineRule(number)
+    const retired = await retireDoctrineRule(number)
     output({ retired }, retired ? `retired doctrine ${number}` : `no active doctrine ${number}`)
     return
   }

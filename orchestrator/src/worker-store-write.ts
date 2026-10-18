@@ -3,7 +3,7 @@
 
 export type WorkerMarkers = Readonly<Record<string, string | undefined>>
 
-export type SharedTextStore = 'document' | 'workflow'
+export type SharedTextStore = 'document' | 'workflow' | 'port'
 
 export function workerStoreWriteRefusal(
   store: SharedTextStore,

@@ -21,6 +21,30 @@ const boundary = (
 
 export const recordApiBoundaries: ImportBoundary[] = [
   boundary(
+    'record-port-contract-boundary',
+    'orchestrator/src/record/record-port-contract.ts',
+    ['zod'],
+    'Keep the hosted port transport contract independent of SQL and local caches.',
+  ),
+  boundary(
+    'record-port-catalogue-boundary',
+    'orchestrator/src/record/record-port-catalogue.ts',
+    [
+      'bun',
+      '../../../shared/record/schema.ts',
+      '../../../shared/record/tenant.ts',
+      './record-cursor.ts',
+      './record-port-contract.ts',
+    ],
+    'Keep hosted port transactions behind their contract and tenant boundary.',
+  ),
+  boundary(
+    'record-api-port-boundary',
+    'orchestrator/src/record/record-api-port.ts',
+    ['hono', 'zod', './record-auth.ts', './record-cursor.ts', './record-port-contract.ts'],
+    'Keep hosted port routes independent of SQL and local caches.',
+  ),
+  boundary(
     'record-api-boundary',
     'orchestrator/src/record/record-api.ts',
     [
@@ -47,6 +71,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       './record-api-access.ts',
       './record-api-invitations.ts',
       './record-api-lens.ts',
+      './record-api-port.ts',
       './record-api-workflow.ts',
       './record-api-projects.ts',
       './record-api-releases.ts',
@@ -76,6 +101,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       './record-config.ts',
       './record-api.ts',
       './record-lens-catalogue.ts',
+      './record-port-catalogue.ts',
       './record-workflow-catalogue.ts',
       './record-auth.ts',
       './record-canon-import.ts',

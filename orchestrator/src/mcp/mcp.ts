@@ -21,7 +21,6 @@ import {
 import { resolveLens } from '../lens/lenses.ts'
 import {
   addDoctrineRule,
-  addPair,
   addSkip,
   baselineForPair,
   ledgerRef,
@@ -32,7 +31,7 @@ import {
   removeLedgerRef,
   resolveLedgerRef,
   retireDoctrineRule,
-  setBaseline,
+  setBaselineForProjects,
   setLedgerRef,
 } from '../porting/porting.ts'
 import { type Project, projectAt, projectByName, projects } from '../project/projects.ts'
@@ -213,16 +212,19 @@ function registeredProject(name: string) {
   return project
 }
 
-function registeredPair(source: string, target: string, create = false) {
+function registeredPair(source: string, target: string) {
   const sourceProject = registeredProject(source)
   const targetProject = registeredProject(target)
   if (sourceProject.recordId === targetProject.recordId) {
     throw new Error('a port source and target must be different projects')
   }
-  const pair =
-    pairByProjects(sourceProject.recordId, targetProject.recordId) ??
-    (create ? addPair(sourceProject.recordId, targetProject.recordId) : null)
+  const pair = pairByProjects(sourceProject.recordId, targetProject.recordId) ?? null
   return { sourceProject, targetProject, pair }
+}
+
+async function setNamedPortBaseline(source: string, target: string, commit: string | null) {
+  const { sourceProject, targetProject } = registeredPair(source, target)
+  return setBaselineForProjects(sourceProject.recordId, targetProject.recordId, commit)
 }
 
 const ledgerSourceSchema = z.object({
@@ -786,10 +788,8 @@ export function createDocsMcpServer(): McpServer {
         source_commit: z.string().nullable(),
       }),
     },
-    async ({ source, target, source_commit }) => {
-      const { pair } = registeredPair(source, target, true)
-      return text({ pair, baseline: setBaseline(pair!.id, source_commit) })
-    },
+    async ({ source, target, source_commit }) =>
+      text(await setNamedPortBaseline(source, target, source_commit)),
   )
 
   server.registerTool(
@@ -819,7 +819,7 @@ export function createDocsMcpServer(): McpServer {
       const { pair } = registeredPair(source, target)
       if (!pair)
         throw new Error(`no port pair from "${source}" to "${target}"; set its baseline first`)
-      return text(addSkip(pair.id, candidate, reason))
+      return text(await addSkip(pair.id, candidate, reason))
     },
   )
 
@@ -854,7 +854,7 @@ export function createDocsMcpServer(): McpServer {
     },
     async ({ project, task_key, note, sources }) =>
       text(
-        setLedgerRef({
+        await setLedgerRef({
           taskKey: task_key,
           targetProjectId: registeredProject(project).recordId,
           note,
@@ -875,7 +875,7 @@ export function createDocsMcpServer(): McpServer {
       inputSchema: z.object({ project: z.string(), task_key: z.string() }),
     },
     async ({ project, task_key }) => {
-      const ref = resolveLedgerRef(registeredProject(project).recordId, task_key)
+      const ref = await resolveLedgerRef(registeredProject(project).recordId, task_key)
       if (!ref) throw new Error(`no port ledger ref for task "${project}:${task_key}"`)
       return text(ref)
     },
@@ -889,7 +889,7 @@ export function createDocsMcpServer(): McpServer {
       inputSchema: z.object({ project: z.string(), task_key: z.string() }),
     },
     async ({ project, task_key }) =>
-      text({ removed: removeLedgerRef(registeredProject(project).recordId, task_key) }),
+      text({ removed: await removeLedgerRef(registeredProject(project).recordId, task_key) }),
   )
 
   server.registerTool(
@@ -912,7 +912,7 @@ export function createDocsMcpServer(): McpServer {
         body: z.string(),
       }),
     },
-    async ({ number, title, body }) => text(addDoctrineRule(number, title, body)),
+    async ({ number, title, body }) => text(await addDoctrineRule(number, title, body)),
   )
 
   server.registerTool(
@@ -921,7 +921,7 @@ export function createDocsMcpServer(): McpServer {
       description: 'Retire a doctrine rule without freeing its stable number.',
       inputSchema: z.object({ number: z.number().int().positive() }),
     },
-    async ({ number }) => text({ retired: retireDoctrineRule(number) }),
+    async ({ number }) => text({ retired: await retireDoctrineRule(number) }),
   )
 
   server.registerTool(

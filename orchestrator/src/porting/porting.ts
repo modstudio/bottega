@@ -1,5 +1,11 @@
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
+import { activeRecordSpace, effectiveProjectSpace } from '../project-space.ts'
+import { recordApiClient } from '../record/record-api-client.ts'
+import { applyPortWriteResponse } from '../record/record-cache-port.ts'
+import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
+import { workerStoreWriteRefusal } from '../worker-store-write.ts'
+import { overlayPortItems } from './port-overlay.ts'
 
 export type PortPair = {
   id: number
@@ -46,21 +52,58 @@ export type DoctrineRule = {
   retired_at: string | null
 }
 
-export function pairByProjects(sourceProjectId: string, targetProjectId: string): PortPair | null {
-  return db()
-    .query(
-      'SELECT id,source_project_record_id,target_project_record_id,created_at FROM port_pair WHERE source_project_record_id=? AND target_project_record_id=?',
-    )
-    .get(sourceProjectId, targetProjectId) as PortPair | null
+type SpaceRow = { space_id: string | null; record_id: string; version?: number }
+function projectName(recordId: string): string {
+  const row = db()
+    .query<{ name: string }, [string]>('SELECT name FROM project WHERE record_id=?')
+    .get(recordId)
+  if (!row) throw new Error(`unknown project record id ${recordId}`)
+  return row.name
+}
+function projectSpace(recordId: string): string | null {
+  return effectiveProjectSpace(db(), projectName(recordId))
+}
+async function hostedSpace(recordId?: string): Promise<string> {
+  const identity = await recordApiClient().whoami()
+  const spaceId = recordId ? projectSpace(recordId) : identity.activeSpaceId
+  if (!spaceId) throw new Error('record session has no active space')
+  return spaceId
+}
+function assertPortWriteAllowed(operation: string): void {
+  writableDb()
+  const refusal = workerStoreWriteRefusal('port', operation, process.env)
+  if (refusal) throw new Error(refusal)
 }
 
-export function addPair(sourceProjectId: string, targetProjectId: string, at = nowIso()): PortPair {
+export function pairByProjects(sourceProjectId: string, targetProjectId: string): PortPair | null {
+  const rows = db()
+    .query(
+      'SELECT id,source_project_record_id,target_project_record_id,created_at,space_id FROM port_pair WHERE source_project_record_id=? AND target_project_record_id=?',
+    )
+    .all(sourceProjectId, targetProjectId) as (PortPair & { space_id: string | null })[]
+  const spaceId = projectSpace(targetProjectId)
+  const selected =
+    overlayPortItems(
+      rows.filter((row) => row.space_id === null),
+      rows.filter((row) => row.space_id === spaceId),
+      (row) => `${row.source_project_record_id}:${row.target_project_record_id}`,
+    )[0] ?? null
+  if (!selected) return null
+  const { space_id: _spaceId, ...pair } = selected
+  return pair
+}
+
+export function addPairLocal(
+  sourceProjectId: string,
+  targetProjectId: string,
+  at = nowIso(),
+): PortPair {
   writableDb()
   writeTransaction(() => {
     db()
       .query(
         `INSERT INTO port_pair (record_id, source_project_record_id, target_project_record_id, created_at)
-       VALUES (?,?,?,?) ON CONFLICT(source_project_record_id, target_project_record_id) DO NOTHING`,
+       VALUES (?,?,?,?) ON CONFLICT(source_project_record_id, target_project_record_id) WHERE space_id IS NULL DO NOTHING`,
       )
       .run(newRecordId(), sourceProjectId, targetProjectId, at)
     const pair = pairByProjects(sourceProjectId, targetProjectId)!
@@ -80,7 +123,7 @@ export function baselineForPair(pairId: number): PortBaseline | null {
     .get(pairId) as PortBaseline | null
 }
 
-export function setBaseline(
+export function setBaselineLocal(
   pairId: number,
   sourceCommit: string | null,
   scannedAt: string | null = sourceCommit === null ? null : nowIso(),
@@ -97,14 +140,32 @@ export function setBaseline(
 }
 
 export function listSkips(pairId: number): PortSkip[] {
-  return db()
-    .query(
-      'SELECT id,pair_id,candidate,reason,skipped_at FROM port_skip WHERE pair_id=? ORDER BY id',
+  const pair = db()
+    .query<PortPair & { space_id: string | null }, [number]>(
+      'SELECT id,source_project_record_id,target_project_record_id,created_at,space_id FROM port_pair WHERE id=?',
     )
-    .all(pairId) as PortSkip[]
+    .get(pairId)
+  if (!pair) return []
+  const spaceId = projectSpace(pair.target_project_record_id)
+  const rows = db()
+    .query(
+      `SELECT s.id,s.pair_id,s.candidate,s.reason,s.skipped_at,p.space_id
+       FROM port_skip s JOIN port_pair p ON p.id=s.pair_id
+       WHERE p.source_project_record_id=? AND p.target_project_record_id=?
+         AND (p.space_id IS NULL OR p.space_id IS ?)
+       ORDER BY s.id`,
+    )
+    .all(pair.source_project_record_id, pair.target_project_record_id, spaceId) as (PortSkip & {
+    space_id: string | null
+  })[]
+  return overlayPortItems(
+    rows.filter((row) => row.space_id === null),
+    rows.filter((row) => row.space_id === spaceId),
+    (row) => row.candidate,
+  ).map(({ space_id: _spaceId, ...row }) => row)
 }
 
-export function addSkip(
+export function addSkipLocal(
   pairId: number,
   candidate: string,
   reason: string,
@@ -133,26 +194,33 @@ function parseStringArray(value: string): string[] {
 }
 
 export function ledgerRef(targetProjectId: string, taskKey: string): LedgerRef | null {
-  const ref = db()
-    .query(
-      'SELECT task_key,target_project_record_id,note,created_at,resolved_at FROM port_ref WHERE target_project_record_id=? AND task_key=?',
-    )
-    .get(targetProjectId, taskKey) as Omit<LedgerRef, 'sources'> | null
-  if (!ref) return null
   const rows = db()
     .query(
-      `SELECT source_project_record_id, commits, paths, note FROM port_ref_source
-     WHERE target_project_record_id=? AND task_key=? ORDER BY id`,
+      'SELECT task_key,target_project_record_id,note,created_at,resolved_at,space_id FROM port_ref WHERE target_project_record_id=? AND task_key=?',
     )
-    .all(targetProjectId, taskKey) as {
+    .all(targetProjectId, taskKey) as (Omit<LedgerRef, 'sources'> & { space_id: string | null })[]
+  const spaceId = projectSpace(targetProjectId)
+  const ref = overlayPortItems(
+    rows.filter((row) => row.space_id === null),
+    rows.filter((row) => row.space_id === spaceId),
+    (row) => `${row.target_project_record_id}:${row.task_key}`,
+  )[0]
+  if (!ref) return null
+  const sourceRows = db()
+    .query(
+      `SELECT source_project_record_id, commits, paths, note FROM port_ref_source
+     WHERE target_project_record_id=? AND task_key=? AND space_id IS ? ORDER BY id`,
+    )
+    .all(targetProjectId, taskKey, ref.space_id) as {
     source_project_record_id: string
     commits: string
     paths: string
     note: string
   }[]
+  const { space_id: _spaceId, ...visibleRef } = ref
   return {
-    ...ref,
-    sources: rows.map((row) => ({
+    ...visibleRef,
+    sources: sourceRows.map((row) => ({
       source_project_record_id: row.source_project_record_id,
       commits: parseStringArray(row.commits),
       paths: parseStringArray(row.paths),
@@ -167,12 +235,14 @@ export function listLedgerRefs(includeResolved = false): LedgerRef[] {
       `SELECT target_project_record_id,task_key FROM port_ref${includeResolved ? '' : ' WHERE resolved_at IS NULL'} ORDER BY target_project_record_id,task_key`,
     )
     .all() as { target_project_record_id: string; task_key: string }[]
-  return keys.map(
-    ({ target_project_record_id, task_key }) => ledgerRef(target_project_record_id, task_key)!,
-  )
+  const unique = new Map<string, { target_project_record_id: string; task_key: string }>()
+  for (const key of keys) unique.set(`${key.target_project_record_id}:${key.task_key}`, key)
+  return [...unique.values()]
+    .map(({ target_project_record_id, task_key }) => ledgerRef(target_project_record_id, task_key))
+    .filter((row): row is LedgerRef => Boolean(row && (includeResolved || !row.resolved_at)))
 }
 
-export function setLedgerRef(input: {
+export function setLedgerRefLocal(input: {
   taskKey: string
   targetProjectId: string
   note: string
@@ -191,7 +261,7 @@ export function setLedgerRef(input: {
     db()
       .query(
         `INSERT INTO port_ref (record_id, task_key, target_project_record_id, note, created_at) VALUES (?,?,?,?,?)
-       ON CONFLICT(target_project_record_id,task_key) DO UPDATE SET note=excluded.note`,
+       ON CONFLICT(target_project_record_id,task_key) WHERE space_id IS NULL DO UPDATE SET note=excluded.note`,
       )
       .run(
         newRecordId(),
@@ -222,7 +292,7 @@ export function setLedgerRef(input: {
   return ledgerRef(input.targetProjectId, input.taskKey)!
 }
 
-export function removeLedgerRef(targetProjectId: string, taskKey: string): boolean {
+function removeLedgerRefLocal(targetProjectId: string, taskKey: string): boolean {
   writableDb()
   return (
     db()
@@ -231,7 +301,7 @@ export function removeLedgerRef(targetProjectId: string, taskKey: string): boole
   )
 }
 
-export function resolveLedgerRef(
+export function resolveLedgerRefLocal(
   targetProjectId: string,
   taskKey: string,
   resolvedAt = nowIso(),
@@ -248,14 +318,22 @@ export function resolveLedgerRef(
 }
 
 export function listDoctrineRules(includeRetired = true): DoctrineRule[] {
-  return db()
+  const rows = db()
     .query(
-      `SELECT number,title,body,created_at,retired_at FROM port_doctrine${includeRetired ? '' : ' WHERE retired_at IS NULL'} ORDER BY number`,
+      'SELECT number,title,body,created_at,retired_at,space_id FROM port_doctrine ORDER BY number',
     )
-    .all() as DoctrineRule[]
+    .all() as (DoctrineRule & { space_id: string | null })[]
+  const spaceId = activeRecordSpace(db())
+  return overlayPortItems(
+    rows.filter((row) => row.space_id === null),
+    rows.filter((row) => row.space_id === spaceId),
+    (row) => String(row.number),
+  )
+    .filter((row) => includeRetired || row.retired_at === null)
+    .map(({ space_id: _spaceId, ...row }) => row)
 }
 
-export function addDoctrineRule(
+export function addDoctrineRuleLocal(
   number: number,
   title: string,
   body: string,
@@ -272,11 +350,217 @@ export function addDoctrineRule(
     .get(number) as DoctrineRule
 }
 
-export function retireDoctrineRule(number: number, retiredAt = nowIso()): boolean {
+export function retireDoctrineRuleLocal(number: number, retiredAt = nowIso()): boolean {
   writableDb()
   return (
     db()
       .query('UPDATE port_doctrine SET retired_at=? WHERE number=? AND retired_at IS NULL')
       .run(retiredAt, number).changes > 0
   )
+}
+
+function storedBaseline(pairId: number): (PortBaseline & SpaceRow) | null {
+  return db()
+    .query(
+      'SELECT pair_id,source_commit,scanned_at,record_id,space_id,version FROM port_baseline WHERE pair_id=?',
+    )
+    .get(pairId) as (PortBaseline & SpaceRow) | null
+}
+function storedPair(pairId: number): (PortPair & SpaceRow) | null {
+  return db()
+    .query(
+      'SELECT id,source_project_record_id,target_project_record_id,created_at,record_id,space_id FROM port_pair WHERE id=?',
+    )
+    .get(pairId) as (PortPair & SpaceRow) | null
+}
+function storedRef(targetProjectId: string, taskKey: string): SpaceRow | null {
+  const spaceId = projectSpace(targetProjectId)
+  return db()
+    .query(
+      'SELECT record_id,space_id,version FROM port_ref WHERE target_project_record_id=? AND task_key=? AND space_id IS ?',
+    )
+    .get(targetProjectId, taskKey, spaceId) as SpaceRow | null
+}
+
+export function setBaselineForProjects(
+  sourceProjectId: string,
+  targetProjectId: string,
+  sourceCommit: string | null,
+  scannedAt: string | null = sourceCommit === null ? null : nowIso(),
+) {
+  assertPortWriteAllowed('set port baseline')
+  return applyRecordWriteAuthority({
+    local: () => {
+      const pair = addPairLocal(sourceProjectId, targetProjectId)
+      return { pair, baseline: setBaselineLocal(pair.id, sourceCommit, scannedAt) }
+    },
+    hosted: async () => {
+      const spaceId = await hostedSpace(targetProjectId)
+      const currentPair = pairByProjects(sourceProjectId, targetProjectId)
+      const current = currentPair ? storedBaseline(currentPair.id) : null
+      const response = await recordApiClient().writePort!(
+        {
+          action: 'set_baseline',
+          sourceProjectId,
+          targetProjectId,
+          sourceCommit,
+          scannedAt,
+          expectedVersion: current?.space_id === spaceId ? (current.version ?? null) : null,
+        },
+        { destinationSpaceId: spaceId },
+      )
+      applyPortWriteResponse(db(), response)
+      const pair = pairByProjects(sourceProjectId, targetProjectId)!
+      return { pair, baseline: baselineForPair(pair.id)! }
+    },
+  })
+}
+
+export function addSkip(pairId: number, candidate: string, reason: string, skippedAt = nowIso()) {
+  assertPortWriteAllowed('record port skip')
+  const pair = storedPair(pairId)
+  if (!pair) throw new Error(`unknown port pair ${pairId}`)
+  return applyRecordWriteAuthority({
+    local: () => addSkipLocal(pairId, candidate, reason, skippedAt),
+    hosted: async () => {
+      const spaceId = await hostedSpace(pair.target_project_record_id)
+      const response = await recordApiClient().writePort!(
+        {
+          action: 'add_skip',
+          sourceProjectId: pair.source_project_record_id,
+          targetProjectId: pair.target_project_record_id,
+          candidate,
+          reason,
+          skippedAt,
+        },
+        { destinationSpaceId: spaceId },
+      )
+      applyPortWriteResponse(db(), response)
+      return listSkips(
+        pairByProjects(pair.source_project_record_id, pair.target_project_record_id)!.id,
+      ).find((row) => row.candidate === candidate)!
+    },
+  })
+}
+
+export function setLedgerRef(input: {
+  taskKey: string
+  targetProjectId: string
+  note: string
+  sources: LedgerSource[]
+  createdAt?: string
+}) {
+  assertPortWriteAllowed('set port ledger ref')
+  return applyRecordWriteAuthority({
+    local: () => setLedgerRefLocal(input),
+    hosted: async () => {
+      const spaceId = await hostedSpace(input.targetProjectId)
+      const current = storedRef(input.targetProjectId, input.taskKey)
+      const response = await recordApiClient().writePort!(
+        {
+          action: 'set_ref',
+          taskKey: input.taskKey,
+          targetProjectId: input.targetProjectId,
+          note: input.note,
+          sources: input.sources.map((source) => ({
+            sourceProjectId: source.source_project_record_id,
+            commits: source.commits,
+            paths: source.paths,
+            note: source.note,
+          })),
+          createdAt: input.createdAt ?? nowIso(),
+          expectedVersion: current?.space_id === spaceId ? (current.version ?? null) : null,
+        },
+        { destinationSpaceId: spaceId },
+      )
+      applyPortWriteResponse(db(), response)
+      return ledgerRef(input.targetProjectId, input.taskKey)!
+    },
+  })
+}
+
+export function resolveLedgerRef(targetProjectId: string, taskKey: string, resolvedAt = nowIso()) {
+  assertPortWriteAllowed('resolve port ledger ref')
+  return applyRecordWriteAuthority({
+    local: () => resolveLedgerRefLocal(targetProjectId, taskKey, resolvedAt),
+    hosted: async () => {
+      const spaceId = await hostedSpace(targetProjectId)
+      const current = storedRef(targetProjectId, taskKey)
+      if (!current?.version) return null
+      const response = await recordApiClient().writePort!(
+        {
+          action: 'resolve_ref',
+          targetProjectId,
+          taskKey,
+          expectedVersion: current.version,
+          at: resolvedAt,
+        },
+        { destinationSpaceId: spaceId },
+      )
+      applyPortWriteResponse(db(), response)
+      return ledgerRef(targetProjectId, taskKey)
+    },
+  })
+}
+
+export function removeLedgerRef(targetProjectId: string, taskKey: string) {
+  assertPortWriteAllowed('delete port ledger ref')
+  return applyRecordWriteAuthority({
+    local: () => removeLedgerRefLocal(targetProjectId, taskKey),
+    hosted: async () => {
+      const spaceId = await hostedSpace(targetProjectId)
+      const current = storedRef(targetProjectId, taskKey)
+      if (!current?.version) return false
+      const response = await recordApiClient().writePort!(
+        {
+          action: 'delete_ref',
+          targetProjectId,
+          taskKey,
+          expectedVersion: current.version,
+          at: nowIso(),
+        },
+        { destinationSpaceId: spaceId },
+      )
+      applyPortWriteResponse(db(), response)
+      return true
+    },
+  })
+}
+
+export function addDoctrineRule(number: number, title: string, body: string, createdAt = nowIso()) {
+  assertPortWriteAllowed('add port doctrine rule')
+  return applyRecordWriteAuthority({
+    local: () => addDoctrineRuleLocal(number, title, body, createdAt),
+    hosted: async () => {
+      const spaceId = await hostedSpace()
+      const response = await recordApiClient().writePort!(
+        { action: 'add_doctrine', number, title, body, createdAt },
+        { destinationSpaceId: spaceId },
+      )
+      applyPortWriteResponse(db(), response)
+      return listDoctrineRules().find((row) => row.number === number)!
+    },
+  })
+}
+
+export function retireDoctrineRule(number: number, retiredAt = nowIso()) {
+  assertPortWriteAllowed('retire port doctrine rule')
+  return applyRecordWriteAuthority({
+    local: () => retireDoctrineRuleLocal(number, retiredAt),
+    hosted: async () => {
+      const spaceId = await hostedSpace()
+      const current = db()
+        .query<{ version: number }, [string, number]>(
+          'SELECT version FROM port_doctrine WHERE space_id=? AND number=?',
+        )
+        .get(spaceId, number)
+      if (!current) return false
+      const response = await recordApiClient().writePort!(
+        { action: 'retire_doctrine', number, expectedVersion: current.version, retiredAt },
+        { destinationSpaceId: spaceId },
+      )
+      applyPortWriteResponse(db(), response)
+      return true
+    },
+  })
 }

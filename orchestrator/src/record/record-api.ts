@@ -24,6 +24,7 @@ import {
   registerRecordInvitationRoute,
 } from './record-api-invitations.ts'
 import { type RecordLensRouteDeps, registerRecordLensRoutes } from './record-api-lens.ts'
+import { type RecordPortRouteDeps, registerRecordPortRoutes } from './record-api-port.ts'
 import { registerPublicDocRoutes, registerSignedDocSearchRoute } from './record-api-public-docs.ts'
 import { type RecordReleaseRouteDeps, registerRecordReleaseRoutes } from './record-api-releases.ts'
 import { registerRecordRequestSpace } from './record-api-request-space.ts'
@@ -85,14 +86,13 @@ import { type RecordScore, RecordVerdictError } from './record-verdicts.ts'
 
 export const SNAPSHOT_MAX_BYTES = 1024 * 1024
 
-type ApiEnvironment = {
-  Variables: { identity: RecordIdentity; destinationSpaceId?: string }
-}
+type ApiEnvironment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
 type Deps = RecordSubjectRouteDeps &
   RecordReleaseRouteDeps &
   RecordSyncRouteDeps &
   RecordLensRouteDeps &
+  RecordPortRouteDeps &
   RecordWorkflowRouteDeps &
   RecordApiDeps
 type RecordApiDeps = RecordInvitationRouteDeps & {
@@ -281,6 +281,11 @@ const activeSpaceRemedy = `run \`${PLATFORM_SLUG} record space switch <slug>\` t
 
 const noSpace = (context: Context<ApiEnvironment>) =>
   context.json({ error: 'record session has no active space', remedy: activeSpaceRemedy }, 409)
+const catalogueRoutes = [
+  registerRecordLensRoutes,
+  registerRecordPortRoutes,
+  registerRecordWorkflowRoutes,
+]
 
 function registerSessionRoutes(app: Hono<ApiEnvironment>, deps: Deps): void {
   registerRecordInvitationRoute(app, deps)
@@ -459,8 +464,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     throw error
   }
   registerRecordWriteRoutes(app, deps, { scope, noSpace, writeError })
-  registerRecordLensRoutes(app, deps, { scope, noSpace })
-  registerRecordWorkflowRoutes(app, deps, { scope, noSpace })
+  for (const register of catalogueRoutes) register(app, deps, { scope, noSpace })
   const configBody = z.object({
     environment: z.string().min(1),
     scope: configScopeSchema,
