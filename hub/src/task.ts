@@ -16,8 +16,8 @@ import {
   HOSTED_TASK_TABLE,
 } from './push-contract.ts'
 import { runRef } from './reconcile.ts'
-import type { Attribution } from './task-attribution.ts'
-import { mayChangeComment, NO_ATTRIBUTION } from './task-attribution.ts'
+import type { Attribution, TaskWriteMode } from './task-attribution.ts'
+import { commentAuthorDecision, NO_ATTRIBUTION } from './task-attribution.ts'
 import { hostedCreateTask } from './task-client.ts'
 import { decideTaskClose, landingCheck } from './task-close-decision.ts'
 import { localTaskDetail, type TaskDetail, taskBodyVersion } from './task-detail.ts'
@@ -643,6 +643,7 @@ export function taskRecord(
       statusEvents,
     },
     readerUserId,
+    writeMode(record.task.project),
   )
 }
 
@@ -916,6 +917,7 @@ function editableComment(
   task: TaskRow,
   commentId: string,
   attribution: Attribution,
+  mode: TaskWriteMode,
 ): TaskComment {
   const project = projects().find((candidate) => candidate.name === task.project) ?? null
   const capability = trackerCapabilities({ source: task.source, project }).comment
@@ -931,12 +933,8 @@ function editableComment(
     throw new Error(
       `comment ${commentId} was not found; run ${PLATFORM_SLUG} task show ${task.key}`,
     )
-  if (attribution.actorUserId !== null && comment.actor_user_id === null)
-    throw new Error(
-      `comment ${commentId} predates recorded authorship and cannot be changed from a record-bound session; add a new comment instead`,
-    )
-  if (!mayChangeComment(comment.actor_user_id, attribution.actorUserId))
-    throw new Error(`comment ${commentId} belongs to another author; ask its author to change it`)
+  const author = commentAuthorDecision(mode, attribution.actorUserId, comment.actor_user_id)
+  if (!author.allowed) throw new Error(`comment ${commentId} ${author.reason}`)
   return comment
 }
 
@@ -957,7 +955,13 @@ export async function editTaskComment(
       .query<TaskRow, [string]>('SELECT * FROM task WHERE record_id=?')
       .get(current.record_id)
     if (!task) throw new Error(`no task ${key.toUpperCase()}`)
-    const comment = editableComment(conn, task, commentId, attribution)
+    const comment = editableComment(
+      conn,
+      task,
+      commentId,
+      attribution,
+      hosted ? 'hosted-configured' : 'local-authoritative',
+    )
     if (comment.body === body)
       throw new Error('comment body is unchanged; change the text before saving')
     conn
@@ -985,7 +989,13 @@ export async function deleteTaskComment(
       .query<TaskRow, [string]>('SELECT * FROM task WHERE record_id=?')
       .get(current.record_id)
     if (!task) throw new Error(`no task ${key.toUpperCase()}`)
-    editableComment(conn, task, commentId, attribution)
+    editableComment(
+      conn,
+      task,
+      commentId,
+      attribution,
+      hosted ? 'hosted-configured' : 'local-authoritative',
+    )
     conn
       .query('UPDATE task_comment SET updated_at=?,deleted_at=? WHERE record_id=?')
       .run(at, at, commentId)

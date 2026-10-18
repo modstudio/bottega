@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { Measures } from './measures.ts'
-import { mayChangeComment } from './task-attribution.ts'
+import { commentAuthorDecision, type TaskWriteMode } from './task-attribution.ts'
 import type { Capabilities } from './tracker-capabilities.ts'
 
 export type TaskDetail = {
@@ -128,6 +128,7 @@ export type LocalTaskDetailRows = {
 export function localTaskDetail(
   rows: LocalTaskDetailRows,
   readerUserId: string | null = null,
+  writeMode: TaskWriteMode = 'local-authoritative',
 ): TaskDetail {
   const task = rows.task
   return {
@@ -155,9 +156,11 @@ export function localTaskDetail(
       agent: row.agent,
       updatedAt: row.updated_at,
       canEdit:
-        rows.capabilities.comment.allowed && mayChangeComment(row.actor_user_id, readerUserId),
+        rows.capabilities.comment.allowed &&
+        commentAuthorDecision(writeMode, readerUserId, row.actor_user_id).allowed,
       canDelete:
-        rows.capabilities.comment.allowed && mayChangeComment(row.actor_user_id, readerUserId),
+        rows.capabilities.comment.allowed &&
+        commentAuthorDecision(writeMode, readerUserId, row.actor_user_id).allowed,
     })),
     documents: rows.documents.map((row) => ({
       id: row.id,
@@ -238,6 +241,7 @@ export function hostedTaskDetailFromRows(
         },
       },
       readerUserId,
+      'hosted-configured',
     ),
     task: {
       key: rows.task.key,

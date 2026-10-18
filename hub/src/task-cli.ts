@@ -1,10 +1,8 @@
 import { readFileSync, writeFileSync } from 'node:fs'
-import { userInfo } from 'node:os'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { PresenceOption } from './cli-command.ts'
 import { requireDatabase } from './db.ts'
-import { resolveHostedUrl } from './hosted-url.ts'
 import { credentials, Mcp } from './mcp.ts'
 import { projects } from './projects.ts'
 import {
@@ -18,8 +16,6 @@ import {
   setTask,
   showTask,
 } from './task.ts'
-import { type Attribution, attributionFromInputs } from './task-attribution.ts'
-import { hostedSignedInUser } from './task-client.ts'
 import { closeThenPrune } from './task-close.ts'
 import {
   createTaskDocument,
@@ -30,6 +26,7 @@ import {
 } from './task-document.ts'
 import { runHostedTaskMaintenance } from './task-hosted-cli.ts'
 import { importTasks } from './task-import.ts'
+import { machineAttribution } from './task-machine-attribution.ts'
 import { createAdvertisedTrackerTaskKey } from './tracker-new.ts'
 import { createTrackerOwnedTask, refreshTrackerTask } from './tracker-task-cli.ts'
 
@@ -58,10 +55,6 @@ type TaskOptions = {
 }
 
 const open = () => requireDatabase()
-const cliAttribution = async (): Promise<Attribution> => {
-  const user = resolveHostedUrl() ? await hostedSignedInUser() : null
-  return attributionFromInputs({ env: process.env, user, machineUser: userInfo().username })
-}
 const required = (options: TaskOptions, name: keyof TaskOptions): string => {
   const value = options[name]
   if (typeof value !== 'string' || !value.trim())
@@ -127,7 +120,7 @@ async function createTaskCommand(options: TaskOptions): Promise<void> {
           await createTask(input, {
             allowDuplicateReason: override,
             afterDuplicateSearch,
-            attribution: await cliAttribution(),
+            attribution: await machineAttribution(),
           })
         ).key,
       )
@@ -187,7 +180,7 @@ async function closeTask(key: string, options: TaskOptions): Promise<void> {
     { project: options.project },
     Boolean(options.keepBranches),
     optional(options, 'abandon'),
-    await cliAttribution(),
+    await machineAttribution(),
     {},
   )
   printTaskRow(closed)
@@ -352,7 +345,7 @@ function registerTaskQueryCommands(task: Command): void {
     if (!Object.keys(changes).length)
       throw new Error(`${PLATFORM_SLUG} task set requires a field to change`)
     printTaskRow(
-      await setTask(key, { project: options.project }, changes, await cliAttribution(), {
+      await setTask(key, { project: options.project }, changes, await machineAttribution(), {
         force: Boolean(options.force),
         abandonReason: optional(options, 'abandon'),
       }),
@@ -381,7 +374,7 @@ function registerTaskLifecycleCommands(task: Command): void {
         key,
         { project: taskOptions(command).project },
         text,
-        await cliAttribution(),
+        await machineAttribution(),
       )
       console.log(`${comment.task_key} commented ${comment.created_at}`)
     })
@@ -396,7 +389,7 @@ function registerTaskLifecycleCommands(task: Command): void {
         { project: taskOptions(command).project },
         commentId,
         text,
-        await cliAttribution(),
+        await machineAttribution(),
       )
       console.log(`${edited.task_key} comment ${edited.id} edited ${edited.updated_at}`)
     })
@@ -410,7 +403,7 @@ function registerTaskLifecycleCommands(task: Command): void {
         key,
         { project: taskOptions(command).project },
         commentId,
-        await cliAttribution(),
+        await machineAttribution(),
       )
       console.log(`${key.toUpperCase()} comment ${commentId} deleted`)
     })

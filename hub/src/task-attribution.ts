@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { classifyCaller } from '../../shared/caller-classification.ts'
 
 export type Attribution = {
@@ -14,11 +15,30 @@ export const NO_ATTRIBUTION: Attribution = {
   runId: null,
 }
 
-export function mayChangeComment(
-  recordedActorUserId: string | null,
+export type TaskWriteMode = 'hosted-configured' | 'local-authoritative'
+
+export type CommentAuthorDecision = { allowed: true } | { allowed: false; reason: string }
+
+export function commentAuthorDecision(
+  mode: TaskWriteMode,
   writerActorUserId: string | null,
-): boolean {
-  return writerActorUserId === null || recordedActorUserId === writerActorUserId
+  recordedActorUserId: string | null,
+): CommentAuthorDecision {
+  if (mode === 'local-authoritative') return { allowed: true }
+  if (writerActorUserId === null)
+    return {
+      allowed: false,
+      reason: `record identity could not be resolved; run \`${PLATFORM_SLUG} record login\` and retry`,
+    }
+  if (recordedActorUserId === null)
+    return {
+      allowed: false,
+      reason:
+        'predates recorded authorship and cannot be changed from a record-bound session; add a new comment instead',
+    }
+  if (recordedActorUserId !== writerActorUserId)
+    return { allowed: false, reason: 'belongs to another author; ask its author to change it' }
+  return { allowed: true }
 }
 
 export function attributionFromInputs(input: {

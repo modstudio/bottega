@@ -216,6 +216,7 @@ export const hubModuleSpecs = [
       './task-close.ts',
       './task-document.ts',
       './task-hosted-cli.ts',
+      './task-machine-attribution.ts',
       './hosted-url.ts',
       './task-import.ts',
       './tracker-new.ts',

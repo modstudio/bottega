@@ -296,6 +296,12 @@ describe('local task tracker', () => {
     await expect(editTaskComment(key, {}, comment.id, 'other', other)).rejects.toThrow(
       'another author',
     )
+    await expect(
+      editTaskComment(key, {}, comment.id, 'unknown identity', {
+        ...author,
+        actorUserId: null,
+      }),
+    ).rejects.toThrow('record login')
     await writeTransaction((conn) =>
       conn.query(`UPDATE task_comment SET actor_user_id=NULL WHERE record_id=?`).run(comment.id),
     )
