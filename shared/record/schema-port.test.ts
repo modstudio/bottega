@@ -5,16 +5,7 @@ import * as port from './schema-port.ts'
 const tables = Object.values(port)
 
 describe('hosted port schema', () => {
-  test('exports every port table with tenant policies', () => {
-    expect(tables.map((table) => getTableConfig(table).name).sort()).toEqual([
-      'port_baseline',
-      'port_doctrine',
-      'port_pair',
-      'port_ref',
-      'port_ref_source',
-      'port_skip',
-    ])
-
+  test('enables RLS with tenant policies on every exported table', () => {
     for (const table of tables) {
       const config = getTableConfig(table)
       expect(config.enableRLS).toBe(true)

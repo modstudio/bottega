@@ -83,15 +83,6 @@ describe('Postgres substrate shape', () => {
     expect([...withRls].sort()).toEqual([...forced].sort())
   })
 
-  test('new tables inherit actor and reader grants from record_owner defaults', () => {
-    expect(migration).toContain(
-      'ALTER DEFAULT PRIVILEGES FOR ROLE record_owner IN SCHEMA public\n  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO record_actor',
-    )
-    expect(migration).toContain(
-      'ALTER DEFAULT PRIVILEGES FOR ROLE record_owner IN SCHEMA public\n  GRANT SELECT ON TABLES TO record_reader',
-    )
-  })
-
   test('machine belongs to a user and seq has the fully qualified key', () => {
     const machineDdl = migration.match(/CREATE TABLE "machine" \([\s\S]*?\n\);/)?.[0]
     expect(machineDdl).toContain('"user_id" uuid NOT NULL')

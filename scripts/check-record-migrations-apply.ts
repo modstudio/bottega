@@ -52,8 +52,63 @@ const crossSpaceProofUserId = '01990000-0000-7000-8000-000000000061'
 const sameSpaceSourceProjectId = '01990000-0000-7000-8000-000000000062'
 const sameSpaceTargetProjectId = '01990000-0000-7000-8000-000000000063'
 const otherSpaceProjectId = '01990000-0000-7000-8000-000000000064'
-const sameSpacePairId = '01990000-0000-7000-8000-000000000065'
-const crossSpacePairId = '01990000-0000-7000-8000-000000000066'
+const otherSpaceTargetProjectId = '01990000-0000-7000-8000-000000000066'
+
+const catalogueProofId = (n: number) => `01990000-0000-7000-8000-${n.toString().padStart(12, '0')}`
+
+type CatalogueFixture = {
+  projectSource: string
+  projectTarget: string
+  workflow: string
+  workflowVersion: string
+  workflowEvent: string
+  stepCatalogue: string
+  stepCatalogueVersion: string
+  stepCatalogueEvent: string
+  lens: string
+  lensRevision: string
+  lensProfile: string
+  lensProfileRevision: string
+  projectLensProfile: string
+  projectLensProfileRevision: string
+  portPair: string
+  portBaseline: string
+  portRef: string
+  portRefSource: string
+  portSkip: string
+}
+
+function catalogueFixture(
+  firstId: number,
+  projectSource: string,
+  projectTarget: string,
+): CatalogueFixture {
+  const ids = Array.from({ length: 17 }, (_, index) => catalogueProofId(firstId + index))
+  return {
+    projectSource,
+    projectTarget,
+    workflow: ids[0]!,
+    workflowVersion: ids[1]!,
+    workflowEvent: ids[2]!,
+    stepCatalogue: ids[3]!,
+    stepCatalogueVersion: ids[4]!,
+    stepCatalogueEvent: ids[5]!,
+    lens: ids[6]!,
+    lensRevision: ids[7]!,
+    lensProfile: ids[8]!,
+    lensProfileRevision: ids[9]!,
+    projectLensProfile: ids[10]!,
+    projectLensProfileRevision: ids[11]!,
+    portPair: ids[12]!,
+    portBaseline: ids[13]!,
+    portRef: ids[14]!,
+    portRefSource: ids[15]!,
+    portSkip: ids[16]!,
+  }
+}
+
+const sameSpaceCatalogue = catalogueFixture(100, sameSpaceSourceProjectId, sameSpaceTargetProjectId)
+const otherSpaceCatalogue = catalogueFixture(200, otherSpaceProjectId, otherSpaceTargetProjectId)
 
 class CheckFailure extends Error {}
 
@@ -419,6 +474,113 @@ async function proofManagedCanonProjects(transaction: Transaction): Promise<void
   }
 }
 
+function catalogueFixtureSql(spaceId: string, fixture: CatalogueFixture, label: string): string {
+  return `
+    INSERT INTO workflow (id, space_id, slug, created_at)
+    VALUES ('${fixture.workflow}', '${spaceId}', '${label}-workflow', now());
+    INSERT INTO workflow_version
+      (id, space_id, workflow_id, n, status, definition, author, reason, created_at)
+    VALUES (
+      '${fixture.workflowVersion}', '${spaceId}', '${fixture.workflow}', 1, 'draft', '{}',
+      'migration-check', 'same-space proof', now()
+    );
+    INSERT INTO workflow_event
+      (id, space_id, workflow_version_id, event, author, reason, at)
+    VALUES (
+      '${fixture.workflowEvent}', '${spaceId}', '${fixture.workflowVersion}', 'set',
+      'migration-check', 'same-space proof', now()
+    );
+    INSERT INTO step_catalogue (id, space_id, slug, created_at)
+    VALUES ('${fixture.stepCatalogue}', '${spaceId}', '${label}-steps', now());
+    INSERT INTO step_catalogue_version
+      (id, space_id, catalogue_id, n, status, definition, author, reason, created_at)
+    VALUES (
+      '${fixture.stepCatalogueVersion}', '${spaceId}', '${fixture.stepCatalogue}', 1, 'draft',
+      '{}', 'migration-check', 'same-space proof', now()
+    );
+    INSERT INTO step_catalogue_event
+      (id, space_id, catalogue_version_id, event, author, reason, at)
+    VALUES (
+      '${fixture.stepCatalogueEvent}', '${spaceId}', '${fixture.stepCatalogueVersion}', 'set',
+      'migration-check', 'same-space proof', now()
+    );
+    INSERT INTO lens
+      (id, space_id, key, title, question, excludes, slots, version)
+    VALUES (
+      '${fixture.lens}', '${spaceId}', '${label}-lens', 'Proof', 'Question?', '[]', '[]', 1
+    );
+    INSERT INTO lens_revision
+      (id, space_id, lens_id, version, prior_body, reason, at)
+    VALUES (
+      '${fixture.lensRevision}', '${spaceId}', '${fixture.lens}', 1, '{}',
+      'same-space proof', now()
+    );
+    INSERT INTO lens_profile
+      (id, space_id, lens_id, axis, name, version, body)
+    VALUES (
+      '${fixture.lensProfile}', '${spaceId}', '${fixture.lens}', 'framework', 'proof', 1, '{}'
+    );
+    INSERT INTO lens_profile_revision
+      (id, space_id, profile_id, version, prior_body, reason, at)
+    VALUES (
+      '${fixture.lensProfileRevision}', '${spaceId}', '${fixture.lensProfile}', 1, '{}',
+      'same-space proof', now()
+    );
+    INSERT INTO project_lens_profile
+      (id, space_id, project_id, lens_id, axis, profile_name, selected_version)
+    VALUES (
+      '${fixture.projectLensProfile}', '${spaceId}', '${fixture.projectSource}',
+      '${fixture.lens}', 'framework', 'proof', 1
+    );
+    INSERT INTO project_lens_profile_revision
+      (id, space_id, selection_id, prior_profile_name, prior_selected_version, reason, at)
+    VALUES (
+      '${fixture.projectLensProfileRevision}', '${spaceId}', '${fixture.projectLensProfile}',
+      'proof', 1, 'same-space proof', now()
+    );
+    INSERT INTO port_pair (id, space_id, source_project_id, target_project_id, created_at)
+    VALUES (
+      '${fixture.portPair}', '${spaceId}', '${fixture.projectSource}',
+      '${fixture.projectTarget}', now()
+    );
+    INSERT INTO port_baseline (id, space_id, pair_id)
+    VALUES ('${fixture.portBaseline}', '${spaceId}', '${fixture.portPair}');
+    INSERT INTO port_ref (id, space_id, task_key, target_project_id, note, created_at)
+    VALUES (
+      '${fixture.portRef}', '${spaceId}', '${label.toUpperCase()}-1',
+      '${fixture.projectTarget}', 'proof', now()
+    );
+    INSERT INTO port_ref_source
+      (id, space_id, ref_id, source_project_id, commits, paths, note)
+    VALUES (
+      '${fixture.portRefSource}', '${spaceId}', '${fixture.portRef}', '${fixture.projectSource}',
+      '[]', '[]', 'proof'
+    );
+    INSERT INTO port_skip (id, space_id, pair_id, candidate, reason, skipped_at)
+    VALUES (
+      '${fixture.portSkip}', '${spaceId}', '${fixture.portPair}', '${label}-candidate',
+      'proof', now()
+    );
+  `
+}
+
+async function expectCrossSpaceRefusal(
+  transaction: Transaction,
+  relation: string,
+  statement: string,
+): Promise<void> {
+  await transaction.exec('SAVEPOINT cross_space_refusal')
+  let refused = false
+  try {
+    await transaction.exec(statement)
+  } catch {
+    refused = true
+  }
+  await transaction.exec('ROLLBACK TO SAVEPOINT cross_space_refusal')
+  await transaction.exec('RELEASE SAVEPOINT cross_space_refusal')
+  if (!refused) throw new CheckFailure(`DEV-1388 cross-space ${relation} relation was accepted`)
+}
+
 async function proofProjectRelationsStayWithinOneSpace(transaction: Transaction): Promise<void> {
   await transaction.exec(`
     INSERT INTO "user" (id, email, name, created_at)
@@ -432,45 +594,124 @@ async function proofProjectRelationsStayWithinOneSpace(transaction: Transaction)
       '01990000-0000-7000-8000-000000000067', '${crossSpaceProofSpaceId}',
       '${crossSpaceProofUserId}', 'owner', 'write', now()
     );
-    INSERT INTO project (id, space_id, name, created_at)
-    VALUES ('${otherSpaceProjectId}', '${crossSpaceProofSpaceId}', 'other-space-project', now());
+    INSERT INTO project (id, space_id, name, created_at) VALUES
+      ('${otherSpaceProjectId}', '${crossSpaceProofSpaceId}', 'other-space-source', now()),
+      ('${otherSpaceTargetProjectId}', '${crossSpaceProofSpaceId}', 'other-space-target', now());
+    ${catalogueFixtureSql(crossSpaceProofSpaceId, otherSpaceCatalogue, 'other')}
 
     SELECT set_config('app.space_id', '${PLATFORM_SPACE_ID}', true);
     SELECT set_config('app.user_id', '${platformOperatorId}', true);
     INSERT INTO project (id, space_id, name, created_at) VALUES
-      ('${sameSpaceSourceProjectId}', '${PLATFORM_SPACE_ID}', 'pair-source-proof', now()),
-      ('${sameSpaceTargetProjectId}', '${PLATFORM_SPACE_ID}', 'pair-target-proof', now());
-    INSERT INTO port_pair (id, space_id, source_project_id, target_project_id, created_at)
-    VALUES (
-      '${sameSpacePairId}', '${PLATFORM_SPACE_ID}', '${sameSpaceSourceProjectId}',
-      '${sameSpaceTargetProjectId}', now()
-    );
+      ('${sameSpaceSourceProjectId}', '${PLATFORM_SPACE_ID}', 'same-space-source', now()),
+      ('${sameSpaceTargetProjectId}', '${PLATFORM_SPACE_ID}', 'same-space-target', now());
+    ${catalogueFixtureSql(PLATFORM_SPACE_ID, sameSpaceCatalogue, 'same')}
   `)
 
-  await transaction.exec('SAVEPOINT cross_space_pair_refusal')
-  let refused = false
-  try {
-    await transaction.exec(`
-      INSERT INTO port_pair (id, space_id, source_project_id, target_project_id, created_at)
-      VALUES (
-        '${crossSpacePairId}', '${PLATFORM_SPACE_ID}', '${sameSpaceSourceProjectId}',
-        '${otherSpaceProjectId}', now()
-      );
-    `)
-  } catch {
-    refused = true
-    await transaction.exec('ROLLBACK TO SAVEPOINT cross_space_pair_refusal')
+  await proofSameSpaceCatalogueRelations(transaction)
+  for (const [relation, statement] of crossSpaceCatalogueRows()) {
+    await expectCrossSpaceRefusal(transaction, relation, statement)
   }
-  await transaction.exec('RELEASE SAVEPOINT cross_space_pair_refusal')
-  if (!refused) throw new CheckFailure('DEV-1388 cross-space port pair was accepted')
+}
 
-  const accepted = await transaction.query<{ total: number }>(
-    'SELECT count(*)::int AS total FROM port_pair WHERE id = $1',
-    [sameSpacePairId],
-  )
-  if (accepted.rows[0]?.total !== 1) {
-    throw new CheckFailure('DEV-1388 same-space port pair was not accepted')
+async function proofSameSpaceCatalogueRelations(transaction: Transaction): Promise<void> {
+  const rows = [
+    ['workflow_version', sameSpaceCatalogue.workflowVersion],
+    ['workflow_event', sameSpaceCatalogue.workflowEvent],
+    ['step_catalogue_version', sameSpaceCatalogue.stepCatalogueVersion],
+    ['step_catalogue_event', sameSpaceCatalogue.stepCatalogueEvent],
+    ['lens_revision', sameSpaceCatalogue.lensRevision],
+    ['lens_profile', sameSpaceCatalogue.lensProfile],
+    ['lens_profile_revision', sameSpaceCatalogue.lensProfileRevision],
+    ['project_lens_profile', sameSpaceCatalogue.projectLensProfile],
+    ['project_lens_profile_revision', sameSpaceCatalogue.projectLensProfileRevision],
+    ['port_pair', sameSpaceCatalogue.portPair],
+    ['port_baseline', sameSpaceCatalogue.portBaseline],
+    ['port_ref', sameSpaceCatalogue.portRef],
+    ['port_ref_source', sameSpaceCatalogue.portRefSource],
+    ['port_skip', sameSpaceCatalogue.portSkip],
+  ] as const
+  for (const [table, id] of rows) {
+    const accepted = await transaction.query<{ total: number }>(
+      `SELECT count(*)::int AS total FROM ${table} WHERE id = $1`,
+      [id],
+    )
+    if (accepted.rows[0]?.total !== 1) {
+      throw new CheckFailure(`DEV-1388 same-space ${table} relation was not accepted`)
+    }
   }
+}
+
+function crossSpaceCatalogueRows(): readonly (readonly [string, string])[] {
+  return [
+    [
+      'workflow version to workflow',
+      `INSERT INTO workflow_version VALUES ('${catalogueProofId(300)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.workflow}', 2, 'draft', '{}', 'migration-check', 'proof', now(), NULL, NULL)`,
+    ],
+    [
+      'workflow event to version',
+      `INSERT INTO workflow_event VALUES ('${catalogueProofId(301)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.workflowVersion}', 'set', 'migration-check', 'proof', NULL, now())`,
+    ],
+    [
+      'step catalogue version to catalogue',
+      `INSERT INTO step_catalogue_version VALUES ('${catalogueProofId(302)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.stepCatalogue}', 2, 'draft', '{}', 'migration-check', 'proof', now(), NULL, NULL)`,
+    ],
+    [
+      'step catalogue event to version',
+      `INSERT INTO step_catalogue_event VALUES ('${catalogueProofId(303)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.stepCatalogueVersion}', 'set', 'migration-check', 'proof', NULL, now())`,
+    ],
+    [
+      'lens revision to lens',
+      `INSERT INTO lens_revision VALUES ('${catalogueProofId(304)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.lens}', 2, '{}', 'proof', NULL, now())`,
+    ],
+    [
+      'lens profile to lens',
+      `INSERT INTO lens_profile VALUES ('${catalogueProofId(305)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.lens}', 'architecture', 'cross', 1, '{}', true)`,
+    ],
+    [
+      'lens profile revision to profile',
+      `INSERT INTO lens_profile_revision VALUES ('${catalogueProofId(306)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.lensProfile}', 2, '{}', 'proof', NULL, now())`,
+    ],
+    [
+      'project lens profile to project',
+      `INSERT INTO project_lens_profile VALUES ('${catalogueProofId(307)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.projectSource}', '${sameSpaceCatalogue.lens}', 'architecture', 'cross-project', 1)`,
+    ],
+    [
+      'project lens profile to lens',
+      `INSERT INTO project_lens_profile VALUES ('${catalogueProofId(308)}', '${PLATFORM_SPACE_ID}', '${sameSpaceCatalogue.projectSource}', '${otherSpaceCatalogue.lens}', 'architecture', 'cross-lens', 1)`,
+    ],
+    [
+      'project lens profile revision to selection',
+      `INSERT INTO project_lens_profile_revision VALUES ('${catalogueProofId(309)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.projectLensProfile}', 'proof', 1, 'proof', NULL, now())`,
+    ],
+    [
+      'port pair to source project',
+      `INSERT INTO port_pair VALUES ('${catalogueProofId(310)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.projectSource}', '${sameSpaceCatalogue.projectTarget}', now())`,
+    ],
+    [
+      'port pair to target project',
+      `INSERT INTO port_pair VALUES ('${catalogueProofId(311)}', '${PLATFORM_SPACE_ID}', '${sameSpaceCatalogue.projectSource}', '${otherSpaceCatalogue.projectTarget}', now())`,
+    ],
+    [
+      'port baseline to pair',
+      `INSERT INTO port_baseline VALUES ('${catalogueProofId(312)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.portPair}', NULL, NULL)`,
+    ],
+    [
+      'port ref to project',
+      `INSERT INTO port_ref VALUES ('${catalogueProofId(313)}', '${PLATFORM_SPACE_ID}', 'CROSS-1', '${otherSpaceCatalogue.projectTarget}', 'proof', now(), NULL)`,
+    ],
+    [
+      'port ref source to ref',
+      `INSERT INTO port_ref_source VALUES ('${catalogueProofId(314)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.portRef}', '${sameSpaceCatalogue.projectSource}', '[]', '[]', 'proof')`,
+    ],
+    [
+      'port ref source to project',
+      `INSERT INTO port_ref_source VALUES ('${catalogueProofId(315)}', '${PLATFORM_SPACE_ID}', '${sameSpaceCatalogue.portRef}', '${otherSpaceCatalogue.projectSource}', '[]', '[]', 'proof')`,
+    ],
+    [
+      'port skip to pair',
+      `INSERT INTO port_skip VALUES ('${catalogueProofId(316)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.portPair}', 'cross', 'proof', now())`,
+    ],
+  ] as const
 }
 
 async function proofCatalogueDefaultGrants(transaction: Transaction): Promise<void> {
