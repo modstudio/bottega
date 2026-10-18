@@ -12,6 +12,33 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 })
 
 export const recordModules: RecordModule[] = [
+  module('orchestrator/src/lens/project-lens-space.ts', ['bun:sqlite']),
+  module('orchestrator/src/record/record-lens-catalogue.ts', [
+    'bun',
+    '../../../shared/record/schema.ts',
+    '../../../shared/record/tenant.ts',
+    './record-cursor.ts',
+    './record-lens-contract.ts',
+  ]),
+  module('orchestrator/src/record/record-lens-contract.ts', ['zod']),
+  module('orchestrator/src/record/record-api-lens.ts', [
+    'hono',
+    'zod',
+    './record-auth.ts',
+    './record-cursor.ts',
+    './record-lens-contract.ts',
+  ]),
+  module('orchestrator/src/record/record-api-client-lens.ts', [
+    './record-api-client-paths.ts',
+    './record-lens-contract.ts',
+  ]),
+  module('orchestrator/src/record/record-cache-lens.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    './record-api-client.ts',
+    './record-cursor.ts',
+    './record-lens-contract.ts',
+  ]),
   module('orchestrator/src/record/record-use.ts', [
     'node:fs',
     'node:path',
@@ -20,6 +47,7 @@ export const recordModules: RecordModule[] = [
     '../../../shared/record-client-addresses.ts',
   ]),
   module('orchestrator/src/record/record-api-client-paths.ts', [
+    '../../../shared/docs.ts',
     '../../../shared/record-project-contract.ts',
   ]),
   module('orchestrator/src/record/record-doc-command-check.ts', [

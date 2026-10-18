@@ -1,6 +1,7 @@
 // concern: record-api-client
 /** Builds project-bearing record request bodies and paths without transport state. */
 
+import type { DocAudience } from '../../../shared/docs.ts'
 import {
   type RecordProject,
   RecordProjectsSchema,
@@ -110,6 +111,32 @@ export function boardClaimListPath(project: string, projectId?: string | null): 
   const search = new URLSearchParams({ project })
   if (projectId) search.set('projectId', projectId)
   return `/v1/board/claims?${search}`
+}
+
+export function lensCataloguePath(
+  table: string,
+  query: { limit?: number; cursor?: string },
+): string {
+  const search = new URLSearchParams()
+  if (query.limit) search.set('limit', String(query.limit))
+  if (query.cursor) search.set('cursor', query.cursor)
+  const suffix = search.toString()
+  return `/v1/lens-catalogue/${encodeURIComponent(table)}${suffix ? `?${suffix}` : ''}`
+}
+
+export function docSearchParams(query: {
+  q: string
+  scope?: string
+  subject?: string | null
+  audience?: DocAudience
+  acrossReadableSpaces?: boolean
+}): string {
+  const search = new URLSearchParams({ q: query.q })
+  if (query.scope) search.set('scope', query.scope)
+  if (query.subject !== undefined) search.set('subject', query.subject ?? '')
+  if (query.audience) search.set('audience', query.audience)
+  if (query.acrossReadableSpaces) search.set('acrossReadableSpaces', 'true')
+  return search.toString()
 }
 
 export function projectIdentityClient(request: RecordClientRequest): ProjectIdentityClient {

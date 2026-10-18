@@ -305,7 +305,7 @@ test('review tier reports stack and generic profile sources resolved for its pro
         },
       },
     })
-    setProfile({
+    await setProfile({
       lensId: 'correctness',
       axis: 'framework',
       name: 'bun',

@@ -36,7 +36,7 @@ export function registerLensCommands(
     )
   jsonOption(lens.command('show <lens>').description('show a review lens'))
     .allowExcessArguments(false)
-    .action((id, options) => {
+    .action(async (id, options) => {
       const argv = productArgv('lens', ['show', id], options)
       showLensCommand(argv, lensEmitter(argv, presentation))
     })
@@ -55,9 +55,9 @@ export function registerLensCommands(
     ),
   )
     .allowExcessArguments(false)
-    .action((id, options) => {
+    .action(async (id, options) => {
       const argv = productArgv('lens', ['set', id], options)
-      setLensCommand(argv, lensEmitter(argv, presentation))
+      await setLensCommand(argv, lensEmitter(argv, presentation))
     })
 
   const profile = lens
@@ -103,8 +103,8 @@ export function registerLensCommands(
     ),
   )
     .allowExcessArguments(false)
-    .action((id, options) => {
+    .action(async (id, options) => {
       const argv = productArgv('lens', ['profile', 'set', id], options)
-      setProfileCommand(argv, lensEmitter(argv, presentation))
+      await setProfileCommand(argv, lensEmitter(argv, presentation))
     })
 }

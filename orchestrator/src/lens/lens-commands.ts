@@ -49,7 +49,7 @@ const source = (argv: string[], inline: string, file: string) => {
     throw new Error(`pass exactly one of --${inline} or --${file}`)
   return path ? readFileSync(path, 'utf8') : value!
 }
-export function setLensCommand(argv: string[], emit: Emit): void {
+export async function setLensCommand(argv: string[], emit: Emit): Promise<void> {
   const flag = (name: string) => flagValue(argv, name),
     id = argv[2],
     title = flag('title'),
@@ -67,7 +67,7 @@ export function setLensCommand(argv: string[], emit: Emit): void {
       'lens set requires id, title, question, excludes, enabled, requires-execution, slots, and reason',
     )
   emit(
-    setLens({
+    await setLens({
       id,
       title,
       question,
@@ -100,14 +100,14 @@ export function showProfileCommand(argv: string[], emit: Emit): void {
   emit(row)
 }
 
-export function setProfileCommand(argv: string[], emit: Emit): void {
+export async function setProfileCommand(argv: string[], emit: Emit): Promise<void> {
   const flag = (name: string) => flagValue(argv, name),
     id = argv[3],
     reason = flag('reason')
   if (!id || !flag('axis') || !flag('name') || !reason?.trim())
     throw new Error('lens profile set requires lens, axis, name, enabled, body, and reason')
   emit(
-    setProfile({
+    await setProfile({
       lensId: id,
       axis: flag('axis')!,
       name: flag('name')!,
