@@ -682,12 +682,19 @@ export function workflowImportLines(result: WorkflowTreeImportResult): string[] 
   ]
 }
 
-export function importCommand(argv: string[], print: WorkflowPrint): void {
+export async function importCommand(argv: string[], print: WorkflowPrint): Promise<void> {
   const root = workflowRoot(argv)
-  const result = importWorkflowTree(
+  const project = projects().find(
+    (candidate) =>
+      process.env.ORCH_MAIN_CHECKOUT &&
+      resolvedPathsEqual(candidate.path, process.env.ORCH_MAIN_CHECKOUT),
+  )?.name
+  const result = await importWorkflowTree(
     parseWorkflowTree(collectWorkflowTree(root)),
     flagValue(argv, 'reason'),
     flagValue(argv, 'author'),
+    undefined,
+    project,
   )
   print(result, workflowImportLines(result).join('\n'))
 }

@@ -376,7 +376,12 @@ const workflowLifecycleFor = (knownCatalogue?: StepCatalogueDefinition) =>
   })
 const workflowLifecycle = workflowLifecycleFor()
 type LocalWorkflowRow = ReturnType<typeof workflowLifecycle.write>
-function hostedWorkflowRow(slug: string, n: number, d: Database, spaceId: string): LocalWorkflowRow {
+function hostedWorkflowRow(
+  slug: string,
+  n: number,
+  d: Database,
+  spaceId: string,
+): LocalWorkflowRow {
   const row = selectedWorkflow(slug, n, d, spaceId)
   return { ...row, owner_id: row.workflow_id }
 }
@@ -430,9 +435,13 @@ function hostedDraft(
   return applyRecordWriteAuthority({
     local: () => writeDraftLocal(slug, definition, reason, author, kind, d, knownCatalogue),
     hosted: async () => {
-      requireValid(definition, d, knownCatalogue)
       if (!reason?.trim()) throw new Error('reason is required')
       const spaceId = await hostedSpace(d, project)
+      requireValid(
+        definition,
+        undefined,
+        knownCatalogue ?? selectedStepCatalogue(undefined, d, spaceId).definition,
+      )
       const result = await recordApiClient().draftWorkflow!(
         {
           kind: 'workflow',
@@ -465,6 +474,18 @@ export function promoteWorkflow(
     hosted: async () => {
       if (!reasonValue?.trim()) throw new Error('reason is required')
       const spaceId = await hostedSpace(d)
+      const target = selectedWorkflow(slug, n, d, spaceId)
+      requireValid(
+        target.definition,
+        undefined,
+        selectedStepCatalogue(undefined, d, spaceId).definition,
+      )
+      const referenceRefusal = catalogueReferenceRefusal(
+        slug,
+        target.definition,
+        selectedStepCatalogue(undefined, d, spaceId).definition,
+      )
+      if (referenceRefusal) throw new Error(referenceRefusal)
       const current = d
         .query<{ n: number }, [string, string]>(
           `SELECT v.n FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug=? AND w.space_id=? AND v.status='production'`,
@@ -483,7 +504,7 @@ export function promoteWorkflow(
         { destinationSpaceId: spaceId },
       )
       applyWorkflowWriteResponse(d, 'workflow', result)
-    return hostedWorkflowRow(slug, n, d, spaceId)
+      return hostedWorkflowRow(slug, n, d, spaceId)
     },
   })
 }
@@ -543,7 +564,7 @@ export function retireWorkflow(
         { destinationSpaceId: spaceId },
       )
       applyWorkflowWriteResponse(d, 'workflow', result)
-    return hostedWorkflowRow(slug, n, d, spaceId)
+      return hostedWorkflowRow(slug, n, d, spaceId)
     },
   })
 }

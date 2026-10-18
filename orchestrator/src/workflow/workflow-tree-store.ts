@@ -5,6 +5,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { effectiveProjectLensSpace } from '../lens/project-lens-space.ts'
+import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
 import {
   type CatalogueSequence,
   type CatalogueStep,
@@ -82,11 +83,12 @@ export function importWorkflowTree(
   reason: string | undefined,
   author?: string,
   d?: Database,
+  project?: string,
 ): WorkflowTreeImportResult {
   if (!reason?.trim()) throw new Error('reason is required')
   const database = d ?? writableDb()
   return writeTransaction(() => {
-    const production = productionWorkflowTree(database)
+    const production = productionWorkflowTree(database, project ?? null)
     const missingFlows = missingProductionFlows(tree, production)
     if (missingFlows.length) {
       throw new Error(
@@ -132,15 +134,23 @@ export function importWorkflowTree(
 
     if (!changedSteps.length && !changedSequences.length && !changedWorkflows.length)
       return { steps: [], sequences: [], workflows: [] }
-    if (changedSteps.length || changedSequences.length)
-      importStepCatalogue(catalogue, reason, author, database)
-    for (const { slug, definition } of changedWorkflows) {
-      importWorkflow(slug, definition, reason, author, database, catalogue)
-    }
-    return {
+    const result = {
       steps: changedSteps,
       sequences: changedSequences,
       workflows: changedWorkflows.map(({ slug }) => slug),
     }
+    if (currentRecordWriteDecision(database) === 'hosted')
+      return (async () => {
+        if (changedSteps.length || changedSequences.length)
+          await importStepCatalogue(catalogue, reason, author, database, project)
+        for (const { slug, definition } of changedWorkflows)
+          await importWorkflow(slug, definition, reason, author, database, catalogue, project)
+        return result
+      })() as unknown as WorkflowTreeImportResult
+    if (changedSteps.length || changedSequences.length)
+      importStepCatalogue(catalogue, reason, author, database, project)
+    for (const { slug, definition } of changedWorkflows)
+      importWorkflow(slug, definition, reason, author, database, catalogue, project)
+    return result
   }, database)
 }

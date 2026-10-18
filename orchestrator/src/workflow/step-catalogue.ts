@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { orchDoValueOptionNames } from '../commands/do-options.ts'
 import { db, sessionId, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
+import { effectiveProjectLensSpace } from '../lens/project-lens-space.ts'
 import { workflowFactSources } from '../project/project-injection.ts'
 import { projects } from '../project/projects.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
@@ -338,10 +339,11 @@ export const setStepCatalogue = (
   d: Database = writableDb(),
 ) => catalogueDraft('set', definition, undefined, reason, author, d)
 const writeAuthor = (value?: string) => value?.trim() || sessionId() || 'unknown'
-async function activeSpace() {
+async function activeSpace(d?: Database, project?: string) {
   const identity = await recordApiClient().whoami()
-  if (!identity.activeSpaceId) throw new Error('record session has no active space')
-  return identity.activeSpaceId
+  const spaceId = project && d ? effectiveProjectLensSpace(d, project) : identity.activeSpaceId
+  if (!spaceId) throw new Error('record session has no active space')
+  return spaceId
 }
 function catalogueDraft(
   event: 'set' | 'fork' | 'import',
@@ -350,13 +352,14 @@ function catalogueDraft(
   reason: string | undefined,
   author: string | undefined,
   d: Database,
+  project?: string,
 ) {
   return applyRecordWriteAuthority({
     local: () => lifecycle.write(CATALOGUE, definition, reason, author, event, d),
     hosted: async () => {
       requireCatalogue(definition)
       if (!reason?.trim()) throw new Error('reason is required')
-      const spaceId = await activeSpace()
+      const spaceId = await activeSpace(d, project)
       const result = await recordApiClient().draftWorkflow!(
         {
           kind: 'step_catalogue',
@@ -553,6 +556,7 @@ export function importStepCatalogue(
   reason: string | undefined,
   author?: string,
   d: Database = writableDb(),
+  project?: string,
 ) {
-  return catalogueDraft('import', definition, undefined, reason, author, d)
+  return catalogueDraft('import', definition, undefined, reason, author, d, project)
 }
