@@ -5,7 +5,6 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db, sessionId } from '../database/db.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { upsertProject } from '../project/projects.ts'
-import { rememberProjectLensSpace } from './project-lens-space.ts'
 import {
   chooseLensProfile,
   listLenses,
@@ -14,6 +13,7 @@ import {
   setLens,
   setProfile,
 } from './lenses.ts'
+import { rememberProjectLensSpace } from './project-lens-space.ts'
 
 describe('lens catalogue', () => {
   test('six seeded cores render their default profile for every registered project', () => {
