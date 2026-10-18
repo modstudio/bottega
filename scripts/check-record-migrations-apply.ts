@@ -570,15 +570,22 @@ async function expectCrossSpaceRefusal(
   statement: string,
 ): Promise<void> {
   await transaction.exec('SAVEPOINT cross_space_refusal')
-  let refused = false
+  let refusal: unknown
   try {
     await transaction.exec(statement)
-  } catch {
-    refused = true
+  } catch (error) {
+    refusal = error
   }
   await transaction.exec('ROLLBACK TO SAVEPOINT cross_space_refusal')
   await transaction.exec('RELEASE SAVEPOINT cross_space_refusal')
-  if (!refused) throw new CheckFailure(`DEV-1388 cross-space ${relation} relation was accepted`)
+  if (!refusal) throw new CheckFailure(`DEV-1388 cross-space ${relation} relation was accepted`)
+  const code =
+    typeof refusal === 'object' && refusal !== null && 'code' in refusal ? refusal.code : undefined
+  if (code !== '23503') {
+    throw new CheckFailure(
+      `DEV-1388 cross-space ${relation} relation produced unexpected SQLSTATE ${String(code)}: ${errorMessage(refusal)}`,
+    )
+  }
 }
 
 async function proofProjectRelationsStayWithinOneSpace(transaction: Transaction): Promise<void> {
@@ -645,71 +652,71 @@ function crossSpaceCatalogueRows(): readonly (readonly [string, string])[] {
   return [
     [
       'workflow version to workflow',
-      `INSERT INTO workflow_version VALUES ('${catalogueProofId(300)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.workflow}', 2, 'draft', '{}', 'migration-check', 'proof', now(), NULL, NULL)`,
+      `INSERT INTO workflow_version (id, space_id, workflow_id, n, status, definition, author, reason, created_at, promoted_at, retired_at) VALUES ('${catalogueProofId(300)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.workflow}', 2, 'draft', '{}', 'migration-check', 'proof', now(), NULL, NULL)`,
     ],
     [
       'workflow event to version',
-      `INSERT INTO workflow_event VALUES ('${catalogueProofId(301)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.workflowVersion}', 'set', 'migration-check', 'proof', NULL, now())`,
+      `INSERT INTO workflow_event (id, space_id, workflow_version_id, event, author, reason, session_id, at) VALUES ('${catalogueProofId(301)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.workflowVersion}', 'set', 'migration-check', 'proof', NULL, now())`,
     ],
     [
       'step catalogue version to catalogue',
-      `INSERT INTO step_catalogue_version VALUES ('${catalogueProofId(302)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.stepCatalogue}', 2, 'draft', '{}', 'migration-check', 'proof', now(), NULL, NULL)`,
+      `INSERT INTO step_catalogue_version (id, space_id, catalogue_id, n, status, definition, author, reason, created_at, promoted_at, retired_at) VALUES ('${catalogueProofId(302)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.stepCatalogue}', 2, 'draft', '{}', 'migration-check', 'proof', now(), NULL, NULL)`,
     ],
     [
       'step catalogue event to version',
-      `INSERT INTO step_catalogue_event VALUES ('${catalogueProofId(303)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.stepCatalogueVersion}', 'set', 'migration-check', 'proof', NULL, now())`,
+      `INSERT INTO step_catalogue_event (id, space_id, catalogue_version_id, event, author, reason, session_id, at) VALUES ('${catalogueProofId(303)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.stepCatalogueVersion}', 'set', 'migration-check', 'proof', NULL, now())`,
     ],
     [
       'lens revision to lens',
-      `INSERT INTO lens_revision VALUES ('${catalogueProofId(304)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.lens}', 2, '{}', 'proof', NULL, now())`,
+      `INSERT INTO lens_revision (id, space_id, lens_id, version, prior_body, reason, session_id, at) VALUES ('${catalogueProofId(304)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.lens}', 2, '{}', 'proof', NULL, now())`,
     ],
     [
       'lens profile to lens',
-      `INSERT INTO lens_profile VALUES ('${catalogueProofId(305)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.lens}', 'architecture', 'cross', 1, '{}', true)`,
+      `INSERT INTO lens_profile (id, space_id, lens_id, axis, name, version, body, enabled) VALUES ('${catalogueProofId(305)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.lens}', 'architecture', 'cross', 1, '{}', true)`,
     ],
     [
       'lens profile revision to profile',
-      `INSERT INTO lens_profile_revision VALUES ('${catalogueProofId(306)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.lensProfile}', 2, '{}', 'proof', NULL, now())`,
+      `INSERT INTO lens_profile_revision (id, space_id, profile_id, version, prior_body, reason, session_id, at) VALUES ('${catalogueProofId(306)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.lensProfile}', 2, '{}', 'proof', NULL, now())`,
     ],
     [
       'project lens profile to project',
-      `INSERT INTO project_lens_profile VALUES ('${catalogueProofId(307)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.projectSource}', '${sameSpaceCatalogue.lens}', 'architecture', 'cross-project', 1)`,
+      `INSERT INTO project_lens_profile (id, space_id, project_id, lens_id, axis, profile_name, selected_version) VALUES ('${catalogueProofId(307)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.projectSource}', '${sameSpaceCatalogue.lens}', 'architecture', 'cross-project', 1)`,
     ],
     [
       'project lens profile to lens',
-      `INSERT INTO project_lens_profile VALUES ('${catalogueProofId(308)}', '${PLATFORM_SPACE_ID}', '${sameSpaceCatalogue.projectSource}', '${otherSpaceCatalogue.lens}', 'architecture', 'cross-lens', 1)`,
+      `INSERT INTO project_lens_profile (id, space_id, project_id, lens_id, axis, profile_name, selected_version) VALUES ('${catalogueProofId(308)}', '${PLATFORM_SPACE_ID}', '${sameSpaceCatalogue.projectSource}', '${otherSpaceCatalogue.lens}', 'architecture', 'cross-lens', 1)`,
     ],
     [
       'project lens profile revision to selection',
-      `INSERT INTO project_lens_profile_revision VALUES ('${catalogueProofId(309)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.projectLensProfile}', 'proof', 1, 'proof', NULL, now())`,
+      `INSERT INTO project_lens_profile_revision (id, space_id, selection_id, prior_profile_name, prior_selected_version, reason, session_id, at) VALUES ('${catalogueProofId(309)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.projectLensProfile}', 'proof', 1, 'proof', NULL, now())`,
     ],
     [
       'port pair to source project',
-      `INSERT INTO port_pair VALUES ('${catalogueProofId(310)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.projectSource}', '${sameSpaceCatalogue.projectTarget}', now())`,
+      `INSERT INTO port_pair (id, space_id, source_project_id, target_project_id, created_at) VALUES ('${catalogueProofId(310)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.projectSource}', '${sameSpaceCatalogue.projectTarget}', now())`,
     ],
     [
       'port pair to target project',
-      `INSERT INTO port_pair VALUES ('${catalogueProofId(311)}', '${PLATFORM_SPACE_ID}', '${sameSpaceCatalogue.projectSource}', '${otherSpaceCatalogue.projectTarget}', now())`,
+      `INSERT INTO port_pair (id, space_id, source_project_id, target_project_id, created_at) VALUES ('${catalogueProofId(311)}', '${PLATFORM_SPACE_ID}', '${sameSpaceCatalogue.projectSource}', '${otherSpaceCatalogue.projectTarget}', now())`,
     ],
     [
       'port baseline to pair',
-      `INSERT INTO port_baseline VALUES ('${catalogueProofId(312)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.portPair}', NULL, NULL)`,
+      `INSERT INTO port_baseline (id, space_id, pair_id, source_commit, scanned_at) VALUES ('${catalogueProofId(312)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.portPair}', NULL, NULL)`,
     ],
     [
       'port ref to project',
-      `INSERT INTO port_ref VALUES ('${catalogueProofId(313)}', '${PLATFORM_SPACE_ID}', 'CROSS-1', '${otherSpaceCatalogue.projectTarget}', 'proof', now(), NULL)`,
+      `INSERT INTO port_ref (id, space_id, task_key, target_project_id, note, created_at, resolved_at) VALUES ('${catalogueProofId(313)}', '${PLATFORM_SPACE_ID}', 'CROSS-1', '${otherSpaceCatalogue.projectTarget}', 'proof', now(), NULL)`,
     ],
     [
       'port ref source to ref',
-      `INSERT INTO port_ref_source VALUES ('${catalogueProofId(314)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.portRef}', '${sameSpaceCatalogue.projectSource}', '[]', '[]', 'proof')`,
+      `INSERT INTO port_ref_source (id, space_id, ref_id, source_project_id, commits, paths, note) VALUES ('${catalogueProofId(314)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.portRef}', '${sameSpaceCatalogue.projectSource}', '[]', '[]', 'proof')`,
     ],
     [
       'port ref source to project',
-      `INSERT INTO port_ref_source VALUES ('${catalogueProofId(315)}', '${PLATFORM_SPACE_ID}', '${sameSpaceCatalogue.portRef}', '${otherSpaceCatalogue.projectSource}', '[]', '[]', 'proof')`,
+      `INSERT INTO port_ref_source (id, space_id, ref_id, source_project_id, commits, paths, note) VALUES ('${catalogueProofId(315)}', '${PLATFORM_SPACE_ID}', '${sameSpaceCatalogue.portRef}', '${otherSpaceCatalogue.projectSource}', '[]', '[]', 'proof')`,
     ],
     [
       'port skip to pair',
-      `INSERT INTO port_skip VALUES ('${catalogueProofId(316)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.portPair}', 'cross', 'proof', now())`,
+      `INSERT INTO port_skip (id, space_id, pair_id, candidate, reason, skipped_at) VALUES ('${catalogueProofId(316)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.portPair}', 'cross', 'proof', now())`,
     ],
   ] as const
 }
