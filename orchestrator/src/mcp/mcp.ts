@@ -222,6 +222,11 @@ function registeredPair(source: string, target: string) {
   return { sourceProject, targetProject, pair }
 }
 
+async function setNamedPortBaseline(source: string, target: string, commit: string | null) {
+  const { sourceProject, targetProject } = registeredPair(source, target)
+  return setBaselineForProjects(sourceProject.recordId, targetProject.recordId, commit)
+}
+
 const ledgerSourceSchema = z.object({
   project: z.string().describe('Registered source project name.'),
   commits: z.array(z.string()),
@@ -783,12 +788,8 @@ export function createDocsMcpServer(): McpServer {
         source_commit: z.string().nullable(),
       }),
     },
-    async ({ source, target, source_commit }) => {
-      const { sourceProject, targetProject } = registeredPair(source, target)
-      return text(
-        await setBaselineForProjects(sourceProject.recordId, targetProject.recordId, source_commit),
-      )
-    },
+    async ({ source, target, source_commit }) =>
+      text(await setNamedPortBaseline(source, target, source_commit)),
   )
 
   server.registerTool(

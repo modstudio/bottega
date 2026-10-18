@@ -254,11 +254,8 @@ export async function portCommand(
     }
     const commit = clear ? null : (rawCommit ?? null)
     const { source, target } = namedPair(sourceName, targetName)
-    const { pair, baseline } = await setBaselineForProjects(
-      source.recordId,
-      target.recordId,
-      commit,
-    )
+    const ids = [source.recordId, target.recordId] as const
+    const { pair, baseline } = await setBaselineForProjects(...ids, commit)
     output(
       { pair, baseline },
       commit

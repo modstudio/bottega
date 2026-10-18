@@ -4,13 +4,7 @@ import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { importDoc, listDocs, removeDoc } from '../doc/docs.ts'
 import type { Project } from '../project/projects.ts'
 import { assertPortImportAllowed } from './port-import-authority.ts'
-import {
-  addDoctrineRuleLocal,
-  addPairLocal,
-  addSkipLocal,
-  setBaselineLocal,
-  setLedgerRefLocal,
-} from './porting.ts'
+import * as porting from './porting.ts'
 
 type ImportIssue = {
   kind: 'refusal' | 'exclusion'
@@ -1028,12 +1022,13 @@ export async function applyImport(
 
     const pairs = new Map<string, number>()
     for (const row of plan.pairs)
-      pairs.set(`${row.source}->${row.target}`, addPairLocal(row.sourceId, row.targetId).id)
+      pairs.set(`${row.source}->${row.target}`, porting.addPairLocal(row.sourceId, row.targetId).id)
     for (const row of plan.baselines)
-      setBaselineLocal(pairs.get(row.pairKey)!, row.sourceCommit, row.scannedAt)
-    for (const row of plan.skips) addSkipLocal(pairs.get(row.pairKey)!, row.candidate, row.reason)
-    for (const row of plan.refs) setLedgerRefLocal(row)
-    for (const row of plan.doctrine) addDoctrineRuleLocal(row.number, row.title, row.body)
+      porting.setBaselineLocal(pairs.get(row.pairKey)!, row.sourceCommit, row.scannedAt)
+    for (const row of plan.skips)
+      porting.addSkipLocal(pairs.get(row.pairKey)!, row.candidate, row.reason)
+    for (const row of plan.refs) porting.setLedgerRefLocal(row)
+    for (const row of plan.doctrine) porting.addDoctrineRuleLocal(row.number, row.title, row.body)
   })
   if (options.replace) {
     for (const doc of owned) await removeDoc(doc.scope, doc.subject, doc.slug, context)

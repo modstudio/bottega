@@ -268,7 +268,7 @@ export function setLedgerRefLocal(input: {
   return ledgerRef(input.targetProjectId, input.taskKey)!
 }
 
-export function removeLedgerRefLocal(targetProjectId: string, taskKey: string): boolean {
+function removeLedgerRefLocal(targetProjectId: string, taskKey: string): boolean {
   writableDb()
   return (
     db()
@@ -387,21 +387,6 @@ export function setBaselineForProjects(
       return { pair, baseline: baselineForPair(pair.id)! }
     },
   })
-}
-
-export function setBaseline(
-  pairId: number,
-  sourceCommit: string | null,
-  scannedAt?: string | null,
-) {
-  const pair = storedPair(pairId)
-  if (!pair) throw new Error(`unknown port pair ${pairId}`)
-  return setBaselineForProjects(
-    pair.source_project_record_id,
-    pair.target_project_record_id,
-    sourceCommit,
-    scannedAt,
-  ).then((value) => value.baseline)
 }
 
 export function addSkip(pairId: number, candidate: string, reason: string, skippedAt = nowIso()) {
