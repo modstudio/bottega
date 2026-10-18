@@ -191,6 +191,19 @@ describe('project workflow injection', () => {
     ).toEqual([
       `review.lenses.0.lens: unknown or disabled lens "nope"; choose an enabled lens from ${PLATFORM_SLUG} review lens list`,
     ])
+
+    const invalidRiskPattern = validateProjectSettings({
+      review: {
+        lenses: [],
+        risk: {
+          paths: [{ pattern: '[', tier: 2, reason: 'product source' }],
+          unlisted: 1,
+        },
+      },
+    }).join('\n')
+    expect(invalidRiskPattern).toContain('review.risk.paths.0.pattern')
+    expect(invalidRiskPattern).toContain('does not compile')
+    expect(invalidRiskPattern).toContain('replace it with a valid regular expression')
   })
 
   test('refuses unknown and repeated PHP policy rules with the register remedy', () => {

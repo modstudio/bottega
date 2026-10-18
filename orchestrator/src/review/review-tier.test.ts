@@ -93,6 +93,16 @@ describe('tier range resolution', () => {
 })
 
 describe('review tier classification', () => {
+  const classify = (
+    files: Parameters<typeof classifyReviewTier>[0]['files'],
+    risk?: Parameters<typeof classifyReviewTier>[0]['risk'],
+  ) => classifyReviewTier({ files, risk })
+
+  const webRisk = {
+    paths: [{ pattern: '^hub/web/', tier: 1 as const, reason: 'web surface' }],
+    unlisted: 2 as const,
+  }
+
   const cases = [
     {
       name: 'docs only',
@@ -130,45 +140,49 @@ describe('review tier classification', () => {
 
   for (const item of cases)
     test(item.name, () => {
-      const actual = classifyReviewTier({ files: [...item.files] })
+      const actual = classify(
+        [...item.files],
+        item.name === 'large web change' || item.name === 'nine small product files'
+          ? webRisk
+          : undefined,
+      )
       expect(actual).toMatchObject({ tier: item.tier, risk: item.risk, size: item.size })
       expect(actual.reasons.every(Boolean)).toBeTrue()
     })
 
   test('excluded churn in a mixed diff does not inflate product size', () => {
-    const actual = classifyReviewTier({
-      files: [
+    const actual = classify(
+      [
         { path: 'docs/huge.md', insertions: 1000, deletions: 0 },
         { path: 'hub/web/src/tiny.tsx', insertions: 5, deletions: 0 },
       ],
-    })
+      webRisk,
+    )
     expect(actual).toMatchObject({ risk: 1, size: 0, tier: 1 })
     expect(actual.reasons.join('\n')).toContain('5 product lines')
   })
 
   test('workflow step instructions require review', () => {
-    const actual = classifyReviewTier({
-      files: [{ path: '.agents/workflow-steps/dispatch.md', insertions: 1, deletions: 0 }],
-    })
+    const actual = classify([
+      { path: '.agents/workflow-steps/dispatch.md', insertions: 1, deletions: 0 },
+    ])
     expect(actual).toMatchObject({ risk: 1, tier: 1 })
     expect(actual.reasons.join('\n')).toContain('workflow instructions')
   })
 
   test('agent skill instructions require review', () => {
-    const actual = classifyReviewTier({
-      files: [{ path: '.agents/skills/review/SKILL.md', insertions: 1, deletions: 0 }],
-    })
+    const actual = classify([
+      { path: '.agents/skills/review/SKILL.md', insertions: 1, deletions: 0 },
+    ])
     expect(actual).toMatchObject({ risk: 1, tier: 1 })
     expect(actual.reasons.join('\n')).toContain('agent skill')
   })
 
   test('a move into workflow instructions is classified from no-renames numstat rows', () => {
-    const actual = classifyReviewTier({
-      files: [
-        { path: '.agents/rules/moved.md', insertions: 0, deletions: 12 },
-        { path: '.agents/workflow-steps/moved.md', insertions: 12, deletions: 0 },
-      ],
-    })
+    const actual = classify([
+      { path: '.agents/rules/moved.md', insertions: 0, deletions: 12 },
+      { path: '.agents/workflow-steps/moved.md', insertions: 12, deletions: 0 },
+    ])
     expect(actual).toMatchObject({ risk: 1, tier: 1 })
     expect(actual.reasons.join('\n')).toContain('workflow instructions')
   })
@@ -176,29 +190,29 @@ describe('review tier classification', () => {
   test.each(['docs/guide.md', '.agents/rules/example.md'])(
     '%s remains excluded from review',
     (path) => {
-      expect(
-        classifyReviewTier({ files: [{ path, insertions: 500, deletions: 0 }] }),
-      ).toMatchObject({ tier: 0, risk: 0, size: 0 })
+      expect(classify([{ path, insertions: 500, deletions: 0 }])).toMatchObject({
+        tier: 0,
+        risk: 0,
+        size: 0,
+      })
     },
   )
 
   test('instruction lines count toward size', () => {
-    const actual = classifyReviewTier({
-      files: [{ path: '.agents/workflows/code-review.md', insertions: 51, deletions: 0 }],
-    })
+    const actual = classify([
+      { path: '.agents/workflows/code-review.md', insertions: 51, deletions: 0 },
+    ])
     expect(actual).toMatchObject({ risk: 1, size: 2, tier: 2 })
     expect(actual.reasons.join('\n')).toContain('51 product lines')
   })
 
   test('unlisted product code defaults to risk two', () => {
-    const actual = classifyReviewTier({
-      files: [{ path: 'scripts/check.ts', insertions: 1, deletions: 0 }],
-    })
+    const actual = classify([{ path: 'scripts/check.ts', insertions: 1, deletions: 0 }])
     expect(actual).toMatchObject({ risk: 2, tier: 2 })
     expect(actual.reasons.join('\n')).toContain('unlisted product path scripts/check.ts')
   })
 
-  test('docs and tests stay risk zero inside hot directories', () => {
+  test('docs and tests stay risk zero in product directories', () => {
     for (const path of [
       'orchestrator/src/README.md',
       'orchestrator/src/x.test.ts',
@@ -207,26 +221,110 @@ describe('review tier classification', () => {
       'orchestrator/hooks/README.md',
       'orchestrator/hooks/x.test.ts',
     ]) {
-      expect(
-        classifyReviewTier({ files: [{ path, insertions: 500, deletions: 0 }] }),
-      ).toMatchObject({ tier: 0, risk: 0, size: 0 })
+      expect(classify([{ path, insertions: 500, deletions: 0 }])).toMatchObject({
+        tier: 0,
+        risk: 0,
+        size: 0,
+      })
     }
   })
 
   test('fixtures are excluded by review classification without changing FileKind', () => {
     expect(
-      classifyReviewTier({
-        files: [{ path: 'orchestrator/src/fixtures/example.ts', insertions: 500, deletions: 0 }],
-      }),
+      classify([{ path: 'orchestrator/src/fixtures/example.ts', insertions: 500, deletions: 0 }]),
     ).toMatchObject({ tier: 0, risk: 0, size: 0 })
   })
 
   test('orchestrator source under src/doc is product and counts toward size', () => {
-    const actual = classifyReviewTier({
-      files: [{ path: 'orchestrator/src/doc/docs.ts', insertions: 25, deletions: 0 }],
-    })
+    const actual = classify(
+      [{ path: 'orchestrator/src/doc/docs.ts', insertions: 25, deletions: 0 }],
+      {
+        paths: [{ pattern: '^orchestrator/src/', tier: 2, reason: 'orchestrator source' }],
+        unlisted: 2,
+      },
+    )
     expect(actual).toMatchObject({ risk: 2, size: 1, tier: 2 })
     expect(actual.reasons.join('\n')).toContain('orchestrator source')
     expect(actual.reasons.join('\n')).toContain('25 product lines')
+  })
+
+  test('a declared map pattern wins over its unlisted value', () => {
+    const actual = classifyReviewTier({
+      files: [{ path: 'src/security.ts', insertions: 1, deletions: 0 }],
+      risk: {
+        paths: [{ pattern: '^src/security\\.ts$', tier: 3, reason: 'security boundary' }],
+        unlisted: 1,
+      },
+    })
+    expect(actual).toMatchObject({ risk: 3, tier: 3 })
+    expect(actual.reasons[0]).toContain('security boundary')
+  })
+
+  test('a declared map unlisted value applies to unmatched product files', () => {
+    const actual = classifyReviewTier({
+      files: [{ path: 'src/constant.ts', insertions: 1, deletions: 0 }],
+      risk: { paths: [], unlisted: 1 },
+    })
+    expect(actual).toMatchObject({ risk: 1, tier: 1 })
+    expect(actual.reasons[0]).toContain('project unlisted risk 1 applied')
+  })
+
+  test('no declaration uses the fail-closed default without the repository shared-path rule', () => {
+    const actual = classifyReviewTier({
+      files: [{ path: 'shared/value.ts', insertions: 1, deletions: 0 }],
+    })
+    expect(actual).toMatchObject({ risk: 2, tier: 2 })
+    expect(actual.reasons[0]).toContain('fail-closed default risk 2 applied')
+    expect(actual.reasons[0]).not.toContain('cross-concern shared code')
+  })
+
+  test('excluded paths stay excluded regardless of the declared map', () => {
+    const actual = classifyReviewTier({
+      files: [{ path: 'src/value.test.ts', insertions: 500, deletions: 0 }],
+      risk: {
+        paths: [{ pattern: '.*', tier: 3, reason: 'everything' }],
+        unlisted: 2,
+      },
+    })
+    expect(actual).toMatchObject({ risk: 0, size: 0, tier: 0 })
+  })
+
+  const precedenceCases: {
+    name: string
+    path: string
+    risk: NonNullable<Parameters<typeof classifyReviewTier>[0]['risk']>
+    expected: { risk: number; tier: number; reason: string }
+  }[] = [
+    {
+      name: 'the first overlapping project pattern wins',
+      path: 'src/security.ts',
+      risk: {
+        paths: [
+          { pattern: '^src/', tier: 1, reason: 'first broad match' },
+          { pattern: '^src/security\\.ts$', tier: 3, reason: 'later exact match' },
+        ],
+        unlisted: 2,
+      },
+      expected: { risk: 1, tier: 1, reason: 'risk 1: src/security.ts (first broad match)' },
+    },
+    {
+      name: 'the universal agent-instruction pattern wins over a project catch-all',
+      path: '.agents/skills/review/SKILL.md',
+      risk: {
+        paths: [{ pattern: '.*', tier: 3, reason: 'project catch-all' }],
+        unlisted: 2,
+      },
+      expected: {
+        risk: 1,
+        tier: 1,
+        reason: 'risk 1: .agents/skills/review/SKILL.md (agent skill)',
+      },
+    },
+  ]
+
+  test.each(precedenceCases)('$name', ({ path, risk, expected }) => {
+    const actual = classify([{ path, insertions: 1, deletions: 0 }], risk)
+    expect(actual).toMatchObject({ risk: expected.risk, tier: expected.tier })
+    expect(actual.reasons[0]).toBe(expected.reason)
   })
 })

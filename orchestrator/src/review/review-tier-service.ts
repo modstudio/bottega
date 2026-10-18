@@ -12,7 +12,7 @@ export function reviewTierForRange(
   review: ReviewSettings | undefined,
 ) {
   const files = diffNumstat(repo, from, to)
-  const tier = classifyReviewTier({ files })
+  const tier = classifyReviewTier({ files, risk: review?.risk })
   const applicability = applicableReview(
     tier.tier,
     files.map(({ path }) => path),
@@ -20,6 +20,7 @@ export function reviewTierForRange(
   )
   return {
     ...tier,
+    risk_map: review?.risk ? 'project declaration' : 'fail-closed default',
     ...applicability,
   }
 }

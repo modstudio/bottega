@@ -62,13 +62,18 @@ type ChangeGroupOperations = {
     base: string,
     tip: string,
   ): { patchId: string; paths: string[]; message: string } | null
-  tier(cwd: string, base: string, tip: string): ReviewTier
+  tier(
+    cwd: string,
+    base: string,
+    tip: string,
+    risk: NonNullable<Project['settings']['review']>['risk'],
+  ): ReviewTier
 }
 
 const changeGroupOperations: ChangeGroupOperations = {
   mergeBase: resolveReviewMergeBase,
   identity: measureChangeIdentity,
-  tier: (cwd, base, tip) => classifyReviewTier({ files: diffNumstat(cwd, base, tip) }),
+  tier: (cwd, base, tip, risk) => classifyReviewTier({ files: diffNumstat(cwd, base, tip), risk }),
 }
 
 export const serializePathSet = (paths: readonly string[]): string =>
@@ -109,7 +114,7 @@ export function measureReviewChange(
     patchId: identity.patchId,
     pathSet: identity.paths,
     base,
-    tier: operations.tier(cwd, base, tip),
+    tier: operations.tier(cwd, base, tip, project.settings.review?.risk),
     message: identity.message,
   }
 }
