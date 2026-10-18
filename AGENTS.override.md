@@ -141,6 +141,20 @@ Delegation is safe only because the lifecycle prevents cheap execution from
 creating expensive rework. Surfaces return decisions rather than undigested
 data because architect attention is the scarce resource.
 
+## Design from the multi-space hosted platform
+
+Bottega runs in two modes, and both are first-class: on a machine with no
+record, and against a hosted record shared by a space's machines and members.
+Every design decision starts from the hosted, multi-space perspective, meaning
+state a space shares across machines and members, then keeps the same
+capability useful as a CLI with no record.
+
+Where a record is configured, everything a space works by or does together is
+hosted-first, and a machine keeps only what is specific to it. State that
+silently works on one machine only, when a record is configured, is a gap to
+close, not a design to extend. The seam is the doc store document
+`design-machine-hosted-seam`.
+
 ## Delegation costs nothing in judgment
 
 A change consists of decisions and execution. The architect decides what the
