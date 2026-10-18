@@ -1,5 +1,6 @@
 import { categorizeFile } from '../../../shared/file-kind.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
+import type { ReviewRiskMap } from '../project/project-injection.ts'
 
 export type ReviewTier = {
   tier: 0 | 1 | 2 | 3
@@ -65,18 +66,9 @@ export function resolveTierRange(
   return { from: facts.mergeBase, to: facts.to.commit! }
 }
 
-type ReviewRiskPath = {
-  tier: 1 | 2 | 3
-  pattern: string
-  reason: string
+type CompiledReviewRiskPath = Omit<ReviewRiskMap['paths'][number], 'pattern'> & {
+  pattern: RegExp
 }
-
-export type ReviewRiskMap = {
-  paths: readonly ReviewRiskPath[]
-  unlisted: 0 | 1 | 2
-}
-
-type CompiledReviewRiskPath = Omit<ReviewRiskPath, 'pattern'> & { pattern: RegExp }
 
 const AGENT_INSTRUCTION_PATHS: readonly CompiledReviewRiskPath[] = [
   { tier: 1, pattern: /^\.claude\/skills\//, reason: 'agent skill' },

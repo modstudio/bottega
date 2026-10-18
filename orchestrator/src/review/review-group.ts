@@ -1,13 +1,13 @@
 // concern: review-group
 /** Measures change groups and reads their recorded review rows. */
 import type { Database } from 'bun:sqlite'
+import type { ReviewRiskMap } from '../project/project-injection.ts'
 import type { Project } from '../project/projects.ts'
 import { measureChangeIdentity } from './review-pins.ts'
 import { resolveReviewMergeBase } from './review-target.ts'
 import {
   classifyReviewTier,
   diffNumstat,
-  type ReviewRiskMap,
   type ReviewTier,
 } from './review-tier.ts'
 

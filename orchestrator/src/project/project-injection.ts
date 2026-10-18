@@ -226,6 +226,7 @@ export type ReleaseSettings = z.infer<typeof releaseSchema>
 export type DocsSettings = z.infer<typeof docsSchema>
 export type ReferenceSettings = z.infer<typeof referenceSchema>
 export type SignalsSettings = z.infer<typeof signalsSchema>
+export type ReviewRiskMap = z.infer<typeof reviewRiskSchema>
 export type ReviewSettings = z.infer<typeof reviewSchema>
 export type TestSubstanceSettings = z.infer<typeof testSubstanceSchema>
 type ResolvedDocs = DocsSettings & {

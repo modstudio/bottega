@@ -2,14 +2,18 @@ import { describe, expect, test } from 'bun:test'
 import {
   classifyReviewTier,
   parseTierRange,
-  type ReviewRiskMap,
   resolveTierRange,
   type TierRangeEndpoint,
   type TierRangeFacts,
 } from './review-tier.ts'
 
 describe('tier range parsing', () => {
-  test.each([
+  const precedenceCases: {
+    name: string
+    path: string
+    risk: NonNullable<Parameters<typeof classifyReviewTier>[0]['risk']>
+    expected: { risk: number; tier: number; reason: string }
+  }[] = [
     ['a..b', { from: 'a', to: 'b' }],
     ['a...b', { from: 'a', to: 'b' }],
     ['v1.2..v1.3', { from: 'v1.2', to: 'v1.3' }],
@@ -94,31 +98,15 @@ describe('tier range resolution', () => {
 })
 
 describe('review tier classification', () => {
-  const bottegaRisk: ReviewRiskMap = {
-    paths: [
-      { pattern: '^orchestrator/src/database/db\\.ts$', tier: 3, reason: 'schema and DDL' },
-      { pattern: '^orchestrator/src/landing\\.ts$', tier: 3, reason: 'landing safety' },
-      { pattern: '^orchestrator/src/worktree\\.ts$', tier: 3, reason: 'worktree lifecycle' },
-      { pattern: '^orchestrator/src/run\\.ts$', tier: 3, reason: 'run execution' },
-      { pattern: '^orchestrator/hooks/', tier: 3, reason: 'repository hooks' },
-      { pattern: '^\\.githooks/', tier: 3, reason: 'repository hooks' },
-      { pattern: '^\\.claude/settings\\.json$', tier: 3, reason: 'agent settings' },
-      { pattern: '^shared/', tier: 3, reason: 'cross-concern shared code' },
-      { pattern: '^orchestrator/src/', tier: 2, reason: 'orchestrator source' },
-      { pattern: '^hub/src/', tier: 2, reason: 'hub backend source' },
-      { pattern: '^hub/web/', tier: 1, reason: 'hub web surface' },
-      { pattern: '^\\.claude/skills/', tier: 1, reason: 'agent skill' },
-      { pattern: '^\\.agents/skills/', tier: 1, reason: 'agent skill' },
-      {
-        pattern: '^\\.agents/(?:workflow-steps|workflows)/',
-        tier: 1,
-        reason: 'workflow instructions',
-      },
-    ],
-    unlisted: 2,
+  const classify = (
+    files: Parameters<typeof classifyReviewTier>[0]['files'],
+    risk?: Parameters<typeof classifyReviewTier>[0]['risk'],
+  ) => classifyReviewTier({ files, risk })
+
+  const webRisk = {
+    paths: [{ pattern: '^hub/web/', tier: 1 as const, reason: 'web surface' }],
+    unlisted: 2 as const,
   }
-  const classify = (files: Parameters<typeof classifyReviewTier>[0]['files']) =>
-    classifyReviewTier({ files, risk: bottegaRisk })
 
   const cases = [
     {
@@ -157,16 +145,24 @@ describe('review tier classification', () => {
 
   for (const item of cases)
     test(item.name, () => {
-      const actual = classify([...item.files])
+      const actual = classify(
+        [...item.files],
+        item.name === 'large web change' || item.name === 'nine small product files'
+          ? webRisk
+          : undefined,
+      )
       expect(actual).toMatchObject({ tier: item.tier, risk: item.risk, size: item.size })
       expect(actual.reasons.every(Boolean)).toBeTrue()
     })
 
   test('excluded churn in a mixed diff does not inflate product size', () => {
-    const actual = classify([
-      { path: 'docs/huge.md', insertions: 1000, deletions: 0 },
-      { path: 'hub/web/src/tiny.tsx', insertions: 5, deletions: 0 },
-    ])
+    const actual = classify(
+      [
+        { path: 'docs/huge.md', insertions: 1000, deletions: 0 },
+        { path: 'hub/web/src/tiny.tsx', insertions: 5, deletions: 0 },
+      ],
+      webRisk,
+    )
     expect(actual).toMatchObject({ risk: 1, size: 0, tier: 1 })
     expect(actual.reasons.join('\n')).toContain('5 product lines')
   })
@@ -221,7 +217,7 @@ describe('review tier classification', () => {
     expect(actual.reasons.join('\n')).toContain('unlisted product path scripts/check.ts')
   })
 
-  test('docs and tests stay risk zero inside hot directories', () => {
+  test('docs and tests stay risk zero in product directories', () => {
     for (const path of [
       'orchestrator/src/README.md',
       'orchestrator/src/x.test.ts',
@@ -245,9 +241,13 @@ describe('review tier classification', () => {
   })
 
   test('orchestrator source under src/doc is product and counts toward size', () => {
-    const actual = classify([
-      { path: 'orchestrator/src/doc/docs.ts', insertions: 25, deletions: 0 },
-    ])
+    const actual = classify(
+      [{ path: 'orchestrator/src/doc/docs.ts', insertions: 25, deletions: 0 }],
+      {
+        paths: [{ pattern: '^orchestrator/src/', tier: 2, reason: 'orchestrator source' }],
+        unlisted: 2,
+      },
+    )
     expect(actual).toMatchObject({ risk: 2, size: 1, tier: 2 })
     expect(actual.reasons.join('\n')).toContain('orchestrator source')
     expect(actual.reasons.join('\n')).toContain('25 product lines')
@@ -292,5 +292,39 @@ describe('review tier classification', () => {
       },
     })
     expect(actual).toMatchObject({ risk: 0, size: 0, tier: 0 })
+  })
+
+  test.each([
+    {
+      name: 'the first overlapping project pattern wins',
+      path: 'src/security.ts',
+      risk: {
+        paths: [
+          { pattern: '^src/', tier: 1, reason: 'first broad match' },
+          { pattern: '^src/security\\.ts$', tier: 3, reason: 'later exact match' },
+        ],
+        unlisted: 2,
+      },
+      expected: { risk: 1, tier: 1, reason: 'risk 1: src/security.ts (first broad match)' },
+    },
+    {
+      name: 'the universal agent-instruction pattern wins over a project catch-all',
+      path: '.agents/skills/review/SKILL.md',
+      risk: {
+        paths: [{ pattern: '.*', tier: 3, reason: 'project catch-all' }],
+        unlisted: 2,
+      },
+      expected: {
+        risk: 1,
+        tier: 1,
+        reason: 'risk 1: .agents/skills/review/SKILL.md (agent skill)',
+      },
+    },
+  ]
+
+  test.each(precedenceCases)('$name', ({ path, risk, expected }) => {
+    const actual = classify([{ path, insertions: 1, deletions: 0 }], risk)
+    expect(actual).toMatchObject({ risk: expected.risk, tier: expected.tier })
+    expect(actual.reasons[0]).toBe(expected.reason)
   })
 })
