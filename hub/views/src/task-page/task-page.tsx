@@ -24,7 +24,8 @@ export type TaskPageSave = {
   error: string | null
   refused?: string
   conflict: boolean
-  reload: () => Promise<void>
+  /** Fetches the stored task afresh; the draft restarts from what it returns. */
+  reload: () => Promise<{ title: string; body: string }>
 }
 
 type RichToolbarView = (props: { editor: Editor; linkHint?: string }) => ReactNode
@@ -64,8 +65,8 @@ function useDraft(title: string, body: string) {
     changed,
     setTitle: (next: string) => setDraft((current) => ({ ...current, title: next })),
     setBody: (next: string) => setDraft((current) => ({ ...current, body: next })),
-    start() {
-      setDraft({ title, body })
+    start(from: { title: string; body: string } = { title, body }) {
+      setDraft(from)
       setEditing(true)
     },
     stop: () => setEditing(false),
@@ -133,7 +134,7 @@ function HeaderActions({
           }
         />
       ) : canEdit ? (
-        <Button size="sm" variant="secondary" onClick={edit.start}>
+        <Button size="sm" variant="secondary" onClick={() => edit.start()}>
           <Pencil size={14} />
           Edit
         </Button>
@@ -235,7 +236,7 @@ export function TaskPage({
               <EditorBanner
                 conflict={save.conflict}
                 message={save.error}
-                onReload={() => void save.reload().then(edit.start)}
+                onReload={() => void save.reload().then((fresh) => edit.start(fresh))}
                 subject="task"
               />
             ) : null

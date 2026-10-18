@@ -1,6 +1,7 @@
 import { X } from 'lucide-react'
 import { type PointerEvent, type ReactNode, useEffect, useRef, useState } from 'react'
 import { IconButton } from '../button/button'
+import { dialogDismiss } from '../dom/dialog-dismiss.ts'
 import { bottomSheetStyles } from './bottom-sheet.styles.ts'
 
 /** Sheet heights as percentages of the viewport. */
@@ -47,13 +48,7 @@ export function BottomSheet({
     <dialog
       ref={ref}
       aria-label={title}
-      onClose={(event) => {
-        // React passes a nested dialog's close up the tree; only this dialog's own close counts.
-        if (event.target === event.currentTarget) onClose()
-      }}
-      onPointerDown={(event) => {
-        if (event.target === event.currentTarget) onClose()
-      }}
+      {...dialogDismiss(onClose)}
       style={{ height: `${height}dvh` }}
       className={bottomSheetStyles({ dragging }).root()}
     >

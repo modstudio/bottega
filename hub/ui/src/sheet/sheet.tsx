@@ -1,6 +1,7 @@
 import { X } from 'lucide-react'
 import { type ReactNode, useId, useLayoutEffect, useRef } from 'react'
 import { IconButton } from '../button/button'
+import { dialogDismiss } from '../dom/dialog-dismiss.ts'
 import { sheetStyles } from './sheet.styles.ts'
 
 /**
@@ -53,13 +54,7 @@ export function Sheet({
     <dialog
       ref={ref}
       aria-labelledby={titleId}
-      onClose={(event) => {
-        // React passes a nested dialog's close up the tree; only this dialog's own close counts.
-        if (event.target === event.currentTarget) onClose()
-      }}
-      onPointerDown={(event) => {
-        if (event.target === event.currentTarget) onClose()
-      }}
+      {...dialogDismiss(onClose)}
       className={sheetStyles({ size }).root()}
     >
       <div className={sheetStyles().frame()}>

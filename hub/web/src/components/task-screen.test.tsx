@@ -138,7 +138,7 @@ test('a hosted task renders its history, documents and measures without edit con
       setTitle: refused,
       setStatus: refused,
       setBody: refused,
-      setDocument: refused,
+      saveDraft: refused,
       comment: refused,
       editComment: refused,
       deleteComment: refused,

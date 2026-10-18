@@ -42,6 +42,8 @@ const entries: HistoryEntry[] = [
 
 const action = { run: fn(async () => {}), pending: false, error: null }
 
+const remoteBody = 'Someone else rewrote this description while you were editing.'
+
 const body = `Open a single task as a full page, borrowing from Starship and reusing the docs page.
 
 ## Layout
@@ -89,10 +91,12 @@ const docs: TaskPageDoc[] = [
 
 function Page({
   refused,
+  conflict = false,
   framed = false,
   onClose = () => {},
 }: {
   refused?: string
+  conflict?: boolean
   framed?: boolean
   onClose?: () => void
 }) {
@@ -134,8 +138,8 @@ function Page({
         pending: false,
         error: null,
         refused,
-        conflict: false,
-        reload: fn(async () => {}),
+        conflict,
+        reload: fn(async () => ({ title: 'Open a task as a full page', body: remoteBody })),
       }}
       onClose={onClose}
     />
@@ -196,9 +200,30 @@ export const GuardsADraft: Story = {
     await userEvent.click(canvas.getByRole('button', { name: 'Close task' }))
     const ask = await canvas.findByRole('dialog', { name: 'Discard unsaved changes?' })
     await userEvent.click(within(ask).getByRole('button', { name: 'Keep editing' }))
+    // The browser turns Escape into the page dialog's cancel, which must ask rather than close.
+    canvas
+      .getByRole('dialog', { name: 'Task' })
+      .dispatchEvent(new Event('cancel', { cancelable: true }))
+    const escaped = await canvas.findByRole('dialog', { name: 'Discard unsaved changes?' })
+    await userEvent.click(within(escaped).getByRole('button', { name: 'Keep editing' }))
+    // Opening a document leaves the draft, so it asks too.
+    await userEvent.click(canvas.getAllByRole('button', { name: /Plan/ })[0]!)
+    const switched = await canvas.findByRole('dialog', { name: 'Discard unsaved changes?' })
+    await userEvent.click(within(switched).getByRole('button', { name: 'Keep editing' }))
     await expect(canvas.getByRole('textbox', { name: 'Title' })).toHaveValue(
       'Open a task as a full page draft',
     )
     await expect(args.onClose).not.toHaveBeenCalled()
+  },
+}
+
+/** Reloading after a conflict restarts the draft from the stored task, not the stale one. */
+export const ReloadsAfterConflict: Story = {
+  args: { conflict: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getAllByRole('button', { name: 'Edit' })[0]!)
+    await userEvent.click(await canvas.findByRole('button', { name: 'Reload' }))
+    await expect(await canvas.findByText(remoteBody)).toBeVisible()
   },
 }

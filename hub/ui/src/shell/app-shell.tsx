@@ -10,6 +10,7 @@ import {
   useState,
 } from 'react'
 import { IconButton } from '../button/button'
+import { dialogDismiss } from '../dom/dialog-dismiss.ts'
 import { TopbarSlotProvider } from '../dom/topbar-slot'
 import { PHONE_QUERY, useMediaQuery } from '../dom/use-media-query'
 import { useStoredState } from '../dom/use-stored-state'
@@ -218,13 +219,7 @@ function MobileMenu({
     <dialog
       ref={ref}
       aria-label="Menu"
-      onClose={(event) => {
-        // React passes a nested dialog's close up the tree; only this dialog's own close counts.
-        if (event.target === event.currentTarget) onClose()
-      }}
-      onPointerDown={(event) => {
-        if (event.target === event.currentTarget) onClose()
-      }}
+      {...dialogDismiss(onClose)}
       className={appShellStyles().mobileDialog()}
     >
       <div className={appShellStyles().mobileFrame()}>

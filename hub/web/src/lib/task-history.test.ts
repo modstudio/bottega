@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test'
-import type { TaskSheetDetail } from '@/routes/-task-sheet-data'
+import type { TaskScreenDetail } from '@/routes/-task-screen-data'
 import { taskHistoryEntries } from './task-history'
 
-const run = (id: string | null, job: string): TaskSheetDetail['runs'][number] => ({
+const run = (id: string | null, job: string): TaskScreenDetail['runs'][number] => ({
   id,
   source: 'orch',
   agent: null,
@@ -36,7 +36,7 @@ test('every comment, status change and run becomes one entry with its own id', (
       },
     ],
     runs: [run(null, 'implement'), run(null, 'review'), run('7', 'fix'), run('7', 'fix')],
-  } as TaskSheetDetail
+  } as TaskScreenDetail
   const entries = taskHistoryEntries(detail)
   expect(entries.map((entry) => entry.kind)).toEqual([
     'comment',

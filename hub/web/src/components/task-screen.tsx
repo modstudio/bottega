@@ -10,13 +10,13 @@ import { X } from 'lucide-react'
 import { relativeTime } from '@/lib/format'
 import { taskHistoryEntries } from '@/lib/task-history'
 import { taskStatusLook } from '@/lib/task-status'
-import type { TaskSheetDetail, TaskSheetResult } from '@/routes/-task-sheet-data'
+import type { TaskScreenDetail, TaskScreenResult } from '@/routes/-task-screen-data'
 import { ProjectMark, SourceMark } from './design-system'
 import { MeasuresSummary } from './measure-display'
 
 type TaskStatus = 'open' | 'active' | 'review' | 'done' | 'dropped'
 
-function StatusBadge({ task }: { task: TaskSheetDetail['task'] }) {
+function StatusBadge({ task }: { task: TaskScreenDetail['task'] }) {
   if (!task.statusCategory) return <>{task.status ?? 'unknown'}</>
   return (
     <Badge {...taskStatusLook(task.statusCategory)} title={`Hub status: ${task.statusCategory}`}>
@@ -25,7 +25,7 @@ function StatusBadge({ task }: { task: TaskSheetDetail['task'] }) {
   )
 }
 
-function StatusControl({ detail, result }: { detail: TaskSheetDetail; result: TaskSheetResult }) {
+function StatusControl({ detail, result }: { detail: TaskScreenDetail; result: TaskScreenResult }) {
   const { setStatus } = result.actions
   if (!detail.capabilities.setStatus.allowed) return <StatusBadge task={detail.task} />
   return (
@@ -43,14 +43,14 @@ function StatusControl({ detail, result }: { detail: TaskSheetDetail; result: Ta
   )
 }
 
-function sourceLine(task: TaskSheetDetail['task']): string {
+function sourceLine(task: TaskScreenDetail['task']): string {
   if (task.source === 'local') return 'hub'
   if (task.source === 'git') return 'git'
   return `${task.project ?? 'external'} · ${task.sourceProtocol ?? 'tracker protocol unknown'}`
 }
 
 /** One row per refusal reason, because a hosted or remote task usually refuses every edit alike. */
-function refusalFacts(capabilities: TaskSheetDetail['capabilities']): TaskPageFact[] {
+function refusalFacts(capabilities: TaskScreenDetail['capabilities']): TaskPageFact[] {
   const reasons = new Set(
     [
       capabilities.setTitle,
@@ -63,7 +63,7 @@ function refusalFacts(capabilities: TaskSheetDetail['capabilities']): TaskPageFa
   return [...reasons].map((reason) => ({ label: 'Changes', value: reason }))
 }
 
-function taskFacts(detail: TaskSheetDetail, result: TaskSheetResult): TaskPageFact[] {
+function taskFacts(detail: TaskScreenDetail, result: TaskScreenResult): TaskPageFact[] {
   const { task } = detail
   return [
     { label: 'Status', value: <StatusControl detail={detail} result={result} /> },
@@ -85,7 +85,7 @@ function taskFacts(detail: TaskSheetDetail, result: TaskSheetResult): TaskPageFa
   ]
 }
 
-function taskDocs(detail: TaskSheetDetail): TaskPageDoc[] {
+function taskDocs(detail: TaskScreenDetail): TaskPageDoc[] {
   return detail.documents.map((document) => ({
     id: document.id,
     label: document.label,
@@ -107,24 +107,18 @@ function taskDocs(detail: TaskSheetDetail): TaskPageDoc[] {
   }))
 }
 
-function taskSave(detail: TaskSheetDetail, result: TaskSheetResult): TaskPageSave {
-  const { setTitle, setBody } = result.actions
+function taskSave(result: TaskScreenResult): TaskPageSave {
+  const { saveDraft, setBody } = result.actions
   return {
-    async run(draft) {
-      const title = draft.title.trim()
-      try {
-        if (title !== (detail.task.title ?? '').trim() && !setTitle.refused)
-          await setTitle.run(title)
-      } catch {
-        return false
-      }
-      return draft.body === (detail.task.body ?? '') ? true : setBody.run(draft.body)
+    run: saveDraft.run,
+    pending: saveDraft.pending,
+    error: saveDraft.conflict ? null : (saveDraft.error?.message ?? null),
+    refused: saveDraft.refused,
+    conflict: saveDraft.conflict,
+    async reload() {
+      const fresh = await setBody.reload()
+      return { title: fresh.task.title ?? fresh.task.key, body: fresh.task.body ?? '' }
     },
-    pending: setTitle.pending || setBody.pending,
-    error: setTitle.error?.message ?? (setBody.conflict ? null : (setBody.error?.message ?? null)),
-    refused: setTitle.refused && setBody.refused ? setBody.refused : undefined,
-    conflict: setBody.conflict,
-    reload: setBody.reload,
   }
 }
 
@@ -139,8 +133,8 @@ function LoadedTask({
   onOpenDoc,
   onClose,
 }: {
-  detail: TaskSheetDetail
-  result: TaskSheetResult
+  detail: TaskScreenDetail
+  result: TaskScreenResult
   openDoc: string | null
   onOpenDoc: (id: string | null) => void
   onClose: () => void
@@ -185,7 +179,7 @@ function LoadedTask({
           deleteComment={historyAction(result.actions.deleteComment)}
         />
       }
-      save={taskSave(detail, result)}
+      save={taskSave(result)}
       onClose={onClose}
     />
   )
@@ -200,7 +194,7 @@ export function TaskScreen({
   onClose,
 }: {
   taskKey: string
-  result: TaskSheetResult
+  result: TaskScreenResult
   openDoc: string | null
   onOpenDoc: (id: string | null) => void
   onClose: () => void
