@@ -261,10 +261,12 @@ async function selectionProfileExists(
   if (!profile?.enabled) return false
   if (input.selectedVersion === null || number(profile.version) === input.selectedVersion)
     return true
-  const revision = await tx`SELECT id FROM lens_profile_revision
+  const revision = await tx`SELECT prior_body FROM lens_profile_revision
     WHERE space_id=${input.spaceId}::uuid AND profile_id=${text(profile.id)}::uuid
       AND version=${input.selectedVersion}`
-  return Boolean(revision[0])
+  if (!revision[0]) return false
+  const snapshot = JSON.parse(text(revision[0].prior_body)) as { enabled?: unknown }
+  return snapshot.enabled === true
 }
 
 async function validatedSelectionLensId(

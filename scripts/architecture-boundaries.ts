@@ -741,6 +741,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../../../shared/record-api-url.ts',
       '../database/db.ts',
       '../doc/doc-audiences-codec.ts',
+      '../lens/project-lens-space.ts',
       '../project/projects.ts',
       '../subject/subjects.ts',
       './record-api-client.ts',

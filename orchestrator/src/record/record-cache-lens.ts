@@ -12,7 +12,6 @@ import {
 import { RECORD_LENS_TABLES, type RecordLensTable } from './record-lens-contract.ts'
 
 const LENS_CURSOR = 'record_lens_cursor'
-const PROJECT_LENS_SPACES = 'record_project_lens_spaces'
 function readCursor(local: Database, key: string): string | undefined {
   return local
     .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
@@ -34,41 +33,6 @@ function readRecordCursor(local: Database, key: string): RecordCursor | undefine
 }
 function writeRecordCursor(local: Database, key: string, cursor: RecordCursor): void {
   writeCursor(local, key, JSON.stringify(cursor))
-}
-
-export function rememberProjectLensSpaces(
-  local: Database,
-  spaces: ReadonlyMap<string, string | null>,
-): void {
-  writeCursor(local, PROJECT_LENS_SPACES, JSON.stringify(Object.fromEntries(spaces)))
-}
-
-export function rememberProjectLensSpace(
-  local: Database,
-  project: string,
-  spaceId: string | null,
-): void {
-  let spaces: Record<string, string | null> = {}
-  const stored = readCursor(local, PROJECT_LENS_SPACES)
-  try {
-    if (stored) spaces = JSON.parse(stored) as Record<string, string | null>
-  } catch {
-    spaces = {}
-  }
-  spaces[project] = spaceId
-  writeCursor(local, PROJECT_LENS_SPACES, JSON.stringify(spaces))
-}
-
-export function effectiveProjectLensSpace(local: Database, project: string | null): string | null {
-  if (!project) return null
-  const stored = readCursor(local, PROJECT_LENS_SPACES)
-  if (!stored) return null
-  try {
-    const spaces = JSON.parse(stored) as Record<string, unknown>
-    return typeof spaces[project] === 'string' ? spaces[project] : null
-  } catch {
-    return null
-  }
 }
 
 export async function pullLensCatalogue(
@@ -131,20 +95,15 @@ function applyLensRow(local: Database, item: Record<string, unknown>): void {
   const key = String(item.key)
   const row =
     local
-      .query<{ id: string; record_id: string }, [string]>(
-        'SELECT id,record_id FROM lens WHERE record_id=?',
+      .query<{ id: string; record_id: string }, [string, string]>(
+        'SELECT id,record_id FROM lens WHERE record_id=? AND space_id=?',
       )
-      .get(recordId) ??
+      .get(recordId, spaceId) ??
     local
       .query<{ id: string; record_id: string }, [string, string]>(
         'SELECT id,record_id FROM lens WHERE space_id=? AND id=?',
       )
-      .get(spaceId, key) ??
-    local
-      .query<{ id: string; record_id: string }, [string]>(
-        'SELECT id,record_id FROM lens WHERE space_id IS NULL AND id=?',
-      )
-      .get(key)
+      .get(spaceId, key)
   const values = [
     recordId,
     String(item.title),
@@ -178,8 +137,10 @@ function applyLensRevisionRow(local: Database, item: Record<string, unknown>): v
   if (!parent) throw new Error(`record cache could not resolve lens parent ${String(item.lensId)}`)
   const found =
     local
-      .query<{ id: number }, [string]>('SELECT id FROM lens_revision WHERE record_id=?')
-      .get(recordId) ??
+      .query<{ id: number }, [string, string]>(
+        'SELECT id FROM lens_revision WHERE record_id=? AND space_id=?',
+      )
+      .get(recordId, spaceId) ??
     local
       .query<{ id: number }, [string, string, number]>(
         'SELECT id FROM lens_revision WHERE space_id=? AND lens_id=? AND version=?',
@@ -225,18 +186,15 @@ function applyLensProfileRow(local: Database, item: Record<string, unknown>): vo
   if (!lens) throw new Error(`record cache could not resolve lens parent ${String(item.lensId)}`)
   const found =
     local
-      .query<{ id: number }, [string]>('SELECT id FROM lens_profile WHERE record_id=?')
-      .get(recordId) ??
+      .query<{ id: number }, [string, string]>(
+        'SELECT id FROM lens_profile WHERE record_id=? AND space_id=?',
+      )
+      .get(recordId, spaceId) ??
     local
       .query<{ id: number }, [string, string, string, string]>(
         'SELECT id FROM lens_profile WHERE space_id=? AND lens_id=? AND axis=? AND name=?',
       )
-      .get(spaceId, lens.id, String(item.axis), String(item.name)) ??
-    local
-      .query<{ id: number }, [string, string, string]>(
-        'SELECT id FROM lens_profile WHERE space_id IS NULL AND lens_id=? AND axis=? AND name=?',
-      )
-      .get(lens.id, String(item.axis), String(item.name))
+      .get(spaceId, lens.id, String(item.axis), String(item.name))
   if (found)
     local
       .query(
@@ -280,8 +238,10 @@ function applyLensProfileRevisionRow(local: Database, item: Record<string, unkno
     throw new Error(`record cache could not resolve lens profile parent ${String(item.profileId)}`)
   const found =
     local
-      .query<{ id: number }, [string]>('SELECT id FROM lens_profile_revision WHERE record_id=?')
-      .get(recordId) ??
+      .query<{ id: number }, [string, string]>(
+        'SELECT id FROM lens_profile_revision WHERE record_id=? AND space_id=?',
+      )
+      .get(recordId, spaceId) ??
     local
       .query<{ id: number }, [string, number, number]>(
         'SELECT id FROM lens_profile_revision WHERE space_id=? AND profile_id=? AND version=?',
@@ -338,8 +298,10 @@ function applyProjectLensProfileRow(local: Database, item: Record<string, unknow
     throw new Error(`record cache could not resolve lens parent ${String(item.lensId)}`)
   const found =
     local
-      .query<{ id: number }, [string]>('SELECT id FROM project_lens_profile WHERE record_id=?')
-      .get(recordId) ??
+      .query<{ id: number }, [string, string]>(
+        'SELECT id FROM project_lens_profile WHERE record_id=? AND space_id=?',
+      )
+      .get(recordId, spaceId) ??
     local
       .query<{ id: number }, [string, string, string | null, string]>(
         'SELECT id FROM project_lens_profile WHERE space_id=? AND project_record_id=? AND lens_id IS ? AND axis=?',
@@ -387,17 +349,24 @@ function applyProjectLensProfileRevisionRow(local: Database, item: Record<string
     throw new Error(
       `record cache could not resolve project lens selection parent ${String(item.selectionId)}`,
     )
-  const found = local
-    .query<{ id: number }, [string]>(
-      'SELECT id FROM project_lens_profile_revision WHERE record_id=?',
-    )
-    .get(recordId)
+  const found =
+    local
+      .query<{ id: number }, [string, string]>(
+        'SELECT id FROM project_lens_profile_revision WHERE record_id=? AND space_id=?',
+      )
+      .get(recordId, spaceId) ??
+    local
+      .query<{ id: number }, [string, number, string]>(
+        'SELECT id FROM project_lens_profile_revision WHERE space_id=? AND selection_id=? AND at=?',
+      )
+      .get(spaceId, parent.id, String(item.at))
   if (found)
     local
       .query(
-        'UPDATE project_lens_profile_revision SET space_id=?,prior_profile_name=?,prior_selected_version=?,reason=?,session_id=?,at=? WHERE id=?',
+        'UPDATE project_lens_profile_revision SET record_id=?,space_id=?,prior_profile_name=?,prior_selected_version=?,reason=?,session_id=?,at=? WHERE id=?',
       )
       .run(
+        recordId,
         spaceId,
         nullableText(item.priorProfileName),
         nullableNumber(item.priorSelectedVersion),

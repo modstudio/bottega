@@ -6,9 +6,10 @@ import {
 } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { resolveLens } from '../lens/lenses.ts'
+import { rememberProjectLensSpaces } from '../lens/project-lens-space.ts'
 import { upsertProject } from '../project/projects.ts'
 import { pullRecordCache } from './record-cache.ts'
-import { applyLensCatalogueRow, rememberProjectLensSpaces } from './record-cache-lens.ts'
+import { applyLensCatalogueRow } from './record-cache-lens.ts'
 import { encodeRecordCursor } from './record-cursor.ts'
 
 afterEach(() => installRecordApiClient(createMemoryRecordApiClient()))
@@ -104,14 +105,14 @@ function catalogueItem(
   }
 }
 
-test('lens cache reconciles by record id, natural key, insert, and seeded key', () => {
+test('lens cache reconciles hosted rows within their space and preserves the local catalogue', () => {
   const local = db()
   const byId = row('hosted-by-id')
   local
     .query(
-      "INSERT INTO lens (record_id,id,title,question,excludes,slots,version,enabled,requires_execution) VALUES (?,'old-key','Old','Q','E','{\"type\":\"object\",\"properties\":{},\"additionalProperties\":false}',1,1,0)",
+      "INSERT INTO lens (record_id,space_id,id,title,question,excludes,slots,version,enabled,requires_execution) VALUES (?,?,'old-key','Old','Q','E','{\"type\":\"object\",\"properties\":{},\"additionalProperties\":false}',1,1,0)",
     )
-    .run(byId.id)
+    .run(byId.id, byId.spaceId)
   applyLensCatalogueRow(local, 'lens', byId)
   expect(local.query("SELECT title FROM lens WHERE id='old-key'").get()).toEqual({
     title: 'Hosted hosted-by-id',
@@ -120,9 +121,9 @@ test('lens cache reconciles by record id, natural key, insert, and seeded key', 
   const natural = row('natural-key')
   local
     .query(
-      "INSERT INTO lens (record_id,id,title,question,excludes,slots,version,enabled,requires_execution) VALUES (?,'natural-key','Old','Q','E','{\"type\":\"object\",\"properties\":{},\"additionalProperties\":false}',1,1,0)",
+      "INSERT INTO lens (record_id,space_id,id,title,question,excludes,slots,version,enabled,requires_execution) VALUES (?,?,'natural-key','Old','Q','E','{\"type\":\"object\",\"properties\":{},\"additionalProperties\":false}',1,1,0)",
     )
-    .run(newRecordId())
+    .run(newRecordId(), natural.spaceId)
   applyLensCatalogueRow(local, 'lens', natural)
   expect(local.query("SELECT record_id FROM lens WHERE id='natural-key'").get()).toEqual({
     record_id: natural.id,
@@ -134,14 +135,23 @@ test('lens cache reconciles by record id, natural key, insert, and seeded key', 
     record_id: inserted.id,
   })
 
-  const seeded = row('correctness')
+  const localSeed = local
+    .query<{ record_id: string; title: string }, []>(
+      "SELECT record_id,title FROM lens WHERE id='correctness' AND space_id IS NULL",
+    )
+    .get()!
+  const seeded = row('correctness', localSeed.record_id)
+  const localTitle = localSeed.title
   applyLensCatalogueRow(local, 'lens', seeded)
   expect(local.query("SELECT COUNT(*) AS n FROM lens WHERE id='correctness'").get()).toEqual({
-    n: 1,
+    n: 2,
   })
-  expect(local.query("SELECT record_id FROM lens WHERE id='correctness'").get()).toEqual({
-    record_id: seeded.id,
-  })
+  expect(
+    local
+      .query("SELECT record_id FROM lens WHERE id='correctness' AND space_id=?")
+      .get(seeded.spaceId),
+  ).toEqual({ record_id: seeded.id })
+  expect(resolveLens('correctness', null, local)).toMatchObject({ title: localTitle })
 })
 
 test('two spaces keep the same lens key isolated after later hosted revisions', () => {
@@ -315,4 +325,56 @@ test('an unresolved child rolls back its stream cursor', async () => {
       )
       .get(),
   ).toBeNull()
+})
+
+test('a failed lens pull keeps project routing on the prior complete catalogue', async () => {
+  const local = db()
+  const oldSpace = '01990000-0000-7000-8000-0000000000d1'
+  const newSpace = '01990000-0000-7000-8000-0000000000d2'
+  const projectId = newRecordId()
+  upsertProject({
+    recordId: projectId,
+    name: 'moving-project',
+    path: '/tmp/moving-project',
+    settings: { space: 'new-space' },
+  })
+  const oldLens = {
+    ...row('routed-lens'),
+    spaceId: oldSpace,
+    slots:
+      '{"type":"object","properties":{"guidance":{"type":"string"}},"additionalProperties":false}',
+  }
+  applyLensCatalogueRow(local, 'lens', oldLens)
+  applyLensCatalogueRow(
+    local,
+    'lens_profile',
+    profileRow(oldSpace, oldLens.id, '{"guidance":"prior complete catalogue"}'),
+  )
+  rememberProjectLensSpaces(local, new Map([['moving-project', oldSpace]]))
+
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: newRecordId(), email: 'pull@example.test' },
+      activeSpaceId: oldSpace,
+      personalSpaceId: oldSpace,
+      memberships: [
+        { space_id: oldSpace, slug: 'old-space', permission: 'write' },
+        { space_id: newSpace, slug: 'new-space', permission: 'write' },
+      ],
+    }),
+    listLensCatalogue: async (table, _query, destination) => {
+      if (destination?.destinationSpaceId === newSpace && table === 'lens_profile')
+        throw new Error('lens pull interrupted')
+      return { items: [], nextCursor: null }
+    },
+  })
+
+  expect(resolveLens('routed-lens', 'moving-project', local)?.body).toContain(
+    'prior complete catalogue',
+  )
+  await expect(pullRecordCache(local)).rejects.toThrow('lens pull interrupted')
+  expect(resolveLens('routed-lens', 'moving-project', local)?.body).toContain(
+    'prior complete catalogue',
+  )
 })

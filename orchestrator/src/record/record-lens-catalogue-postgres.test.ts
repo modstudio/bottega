@@ -138,4 +138,79 @@ postgres('hosted lens catalogue compare-and-set writers', () => {
     expect(rejected).toMatchObject({ reason: expect.any(RecordLensError) })
     expect((rejected as PromiseRejectedResult).reason.status).toBe(409)
   })
+
+  test('selection refuses missing profiles, missing versions, and disabled historical versions without writes', async () => {
+    const lensKey = 'selection-validation-lens'
+    await upsertRecordLens({
+      ...tenant(),
+      key: lensKey,
+      title: 'Selection validation',
+      question: 'Valid?',
+      excludes: 'Nothing.',
+      slots: '{}',
+      enabled: true,
+      requiresExecution: false,
+      expectedVersion: null,
+      reason: 'create',
+    })
+    await upsertRecordLensProfile({
+      ...tenant(),
+      lensKey,
+      axis: 'architecture',
+      name: 'historical',
+      body: '{}',
+      enabled: false,
+      expectedVersion: null,
+      reason: 'create disabled history',
+    })
+    await upsertRecordLensProfile({
+      ...tenant(),
+      lensKey,
+      axis: 'architecture',
+      name: 'historical',
+      body: '{}',
+      enabled: true,
+      expectedVersion: 1,
+      reason: 'enable current',
+    })
+    const selection = {
+      ...tenant(),
+      projectId,
+      lensKey,
+      axis: 'architecture' as const,
+      profileName: 'historical',
+      selectedVersion: 1,
+      expectedSelectionVersion: null,
+      reason: 'invalid selection',
+    }
+
+    await expect(selectRecordProjectLensProfile(selection)).rejects.toMatchObject({ status: 422 })
+    await expect(
+      selectRecordProjectLensProfile({
+        ...selection,
+        profileName: 'missing',
+        selectedVersion: null,
+      }),
+    ).rejects.toMatchObject({ status: 422 })
+    await expect(
+      selectRecordProjectLensProfile({ ...selection, selectedVersion: 99 }),
+    ).rejects.toMatchObject({ status: 422 })
+
+    const sql = new SQL(url!)
+    try {
+      const [counts] = await sql`SELECT
+        (SELECT count(*)::integer FROM project_lens_profile selection
+          JOIN lens ON lens.id=selection.lens_id
+          WHERE selection.space_id=${spaceId}::uuid AND selection.project_id=${projectId}::uuid
+            AND lens.key=${lensKey}) selections,
+        (SELECT count(*)::integer FROM project_lens_profile_revision revision
+          JOIN project_lens_profile selection ON selection.id=revision.selection_id
+          JOIN lens ON lens.id=selection.lens_id
+          WHERE revision.space_id=${spaceId}::uuid AND selection.project_id=${projectId}::uuid
+            AND lens.key=${lensKey}) revisions`
+      expect(counts).toEqual({ selections: 0, revisions: 0 })
+    } finally {
+      await sql.close()
+    }
+  })
 })

@@ -12,6 +12,7 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 })
 
 export const recordModules: RecordModule[] = [
+  module('orchestrator/src/lens/project-lens-space.ts', ['bun:sqlite']),
   module('orchestrator/src/record/record-lens-catalogue.ts', [
     'bun',
     '../../../shared/record/schema.ts',

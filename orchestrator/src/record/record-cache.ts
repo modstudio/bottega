@@ -6,11 +6,12 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { encodeStoredDocAudiences } from '../doc/doc-audiences-codec.ts'
+import { rememberProjectLensSpaces } from '../lens/project-lens-space.ts'
 import { projects } from '../project/projects.ts'
 import { applySubjectRecord } from '../subject/subjects.ts'
 import { recordApiClient } from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import { pullLensCatalogue, rememberProjectLensSpaces } from './record-cache-lens.ts'
+import { pullLensCatalogue } from './record-cache-lens.ts'
 import { recordCacheSpaceOwnsAddress } from './record-cache-ownership.ts'
 import {
   decodeRecordCursor,
@@ -229,10 +230,10 @@ export async function pullRecordCache(local: Database = db()): Promise<{
   if (!identity.activeSpaceId) throw new Error(noActiveRecordSpaceRefusal())
   rememberSignedInRecordUser(identity.user, local)
   const cache = recordCacheSpaces(identity)
-  rememberProjectLensSpaces(local, cache.projectSpaces)
   const pulledSubjects = await pullSubjects(local, cache.spaces, cache.projectSpaces)
   const pulledDocs = await pullDocs(local, identity, cache.spaces, cache.projectSpaces)
   const lensCatalogue = await pullLensCatalogue(local, cache.spaces)
+  rememberProjectLensSpaces(local, cache.projectSpaces)
   let scores = 0
   let scoreCursor = readCursor(local, SCORES_CURSOR)
   for (;;) {

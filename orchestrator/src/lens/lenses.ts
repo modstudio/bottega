@@ -3,7 +3,6 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
-import { effectiveProjectLensSpace, rememberProjectLensSpace } from '../record/record-cache-lens.ts'
 import type {
   RecordLensProfileWriteResponse,
   RecordLensWriteResponse,
@@ -11,6 +10,7 @@ import type {
 } from '../record/record-lens-contract.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
+import { effectiveProjectLensSpace, rememberProjectLensSpace } from './project-lens-space.ts'
 
 const LENS_AXES = ['framework', 'architecture'] as const
 export type LensAxis = (typeof LENS_AXES)[number]
