@@ -56,6 +56,7 @@ import {
 import { resolveQuestionIdentifier } from '../run/question-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { answerCommand, continueCommand, retryCommand } from '../run/run-message-commands.ts'
+import { formatShipCleanup, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import { ORCH_DO_OPTIONS } from './do-options.ts'
 import { registerLensCommands } from './lens.ts'
 import { collect, log, productArgv, rawArgv, write, writeStdout } from './support.ts'
@@ -245,6 +246,11 @@ function registerTreeCommands(program: Command): void {
     .option('--path <tree>', 'select the worktree to reseed', process.cwd())
     .allowExcessArguments(false)
     .action((seed, options) => treeReseedCommand(options.path, seed, { log }))
+  tree
+    .command('ship-cleanup <branch>')
+    .description('remove ephemeral resources for a landed branch')
+    .allowExcessArguments(false)
+    .action((branch) => log(formatShipCleanup(shipCleanup(branch))))
 }
 
 export function register(program: Command, dependencies: LogicDependencies = {}): void {

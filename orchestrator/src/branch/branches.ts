@@ -19,6 +19,7 @@ import { settleDeletedBranch } from './branch-settlement.ts'
 import {
   type BranchLandingRecord,
   type BranchStateDecision,
+  branchMatchesFilter,
   decideBranchState,
   decideProtectedBranch,
   decidePruneEligibility,
@@ -300,6 +301,7 @@ function branchReportFor(
   project: Project,
   options: {
     key?: string
+    branch?: string
     allLocal?: boolean
     repairLandings?: boolean
     dryRunLandingRepair?: boolean
@@ -336,7 +338,7 @@ function branchReportFor(
   for (const run of runs) {
     if (!run.minted_branch || !branches.has(run.minted_branch)) continue
     const key = run.launch_key ?? 'unkeyed'
-    if (options.key !== undefined && key !== options.key) continue
+    if (!branchMatchesFilter(run.minted_branch, key, options)) continue
     if (
       decideProtectedBranch({
         branch: run.minted_branch,
@@ -615,6 +617,7 @@ function observationError(project: Project, error: unknown): BranchReportProject
 export function branchesReport(options: {
   project?: string
   key?: string
+  branch?: string
   allLocal?: boolean
   repairLandings?: boolean
   dryRunLandingRepair?: boolean
@@ -742,25 +745,30 @@ function deleteAndSettleBranch(
   }
 }
 
+/** Prune one exact run-minted branch without widening through its task key. */
+export const pruneBranch = (options: { project: string; branch: string; dryRun?: boolean }) =>
+  pruneBranches(options)
+
 /** Observe once, then delete only branches whose safety facts still hold. */
 export function pruneBranches(options: {
   project: string
-  key: string
+  key?: string
+  branch?: string
   dryRun?: boolean
 }): BranchPruneReport {
   const observed = branchesReport({
     project: options.project,
     key: options.key,
+    branch: options.branch,
     repairLandings: true,
     dryRunLandingRepair: options.dryRun,
   })
   const projectReport = observed.projects[0]!
   if (projectReport.error) throw new Error(projectReport.error)
   const project = projectByName(options.project)!
-  const keyReport = projectReport.keys.find((candidate) => candidate.key === options.key)
   const report: BranchPruneReport = {
     project: options.project,
-    key: options.key,
+    key: options.key ?? null,
     allLocal: false,
     dryRun: options.dryRun ?? false,
     deleted: [],
@@ -772,7 +780,11 @@ export function pruneBranches(options: {
     observations: projectReport.observations,
     errors: [],
   }
-  for (const row of keyReport?.branches ?? []) {
+  const rows =
+    options.key === undefined
+      ? projectReport.keys.flatMap((candidate) => candidate.branches)
+      : (projectReport.keys.find((candidate) => candidate.key === options.key)?.branches ?? [])
+  for (const row of rows) {
     if (listOperatorBranch(row, report)) continue
     if (report.dryRun) {
       if (!tipStillEligible(project, row, report)) continue

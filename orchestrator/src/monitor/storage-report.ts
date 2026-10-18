@@ -1,9 +1,8 @@
 // concern: storage-report
 /** Bounded filesystem adapter used by machine storage and disk pressure monitoring. */
 
-import { lstatSync, readdirSync, statfsSync } from 'node:fs'
-import { lstat } from 'node:fs/promises'
-import { dirname, join, relative, resolve } from 'node:path'
+import { statfsSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   resolveHubDatabase,
@@ -13,25 +12,18 @@ import {
 } from '../../../shared/state-directory.ts'
 import { db } from '../database/db.ts'
 import { isProjectRepository, projects } from '../project/projects.ts'
+import { STORAGE_WALK_ENTRY_LIMIT, walkStoragePaths } from '../storage-walk.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 import {
-  deduplicateHardLinkedBytes,
   diskPressureCondition,
   type LargestRuns,
   largestRuns,
-  STORAGE_WALK_ENTRY_LIMIT,
   type StorageKindSummary,
   type StorageMeasurement,
   type StorageVolume,
   storageMeasurement,
 } from './storage-conditions.ts'
 
-type WalkObservation = {
-  bytes: number
-  hardLinkKey: string | null
-  kind: RunStorageKind
-  runId: number | null
-}
 type RunStorageKind = 'artifacts' | 'scratch' | 'sandboxes' | 'prompts' | 'replies' | 'other'
 
 export type StorageReport = {
@@ -52,160 +44,18 @@ export type StorageReport = {
   volume: StorageVolume
 }
 
-type WalkResult = {
-  observations: WalkObservation[]
-  entries: number
-  stoppedAtLimit: boolean
-  errors: string[]
-  unreadable: string | null
-}
-
-async function walk(
+function walk(
   root: string,
   classify: (relativePath: string) => { kind: RunStorageKind; runId: number | null },
   entryLimit = STORAGE_WALK_ENTRY_LIMIT,
-): Promise<WalkResult> {
-  const start = startWalk(root, classify)
-  if (start.completed) return start.completed
-  const pending = start.pending
-  const observations: WalkObservation[] = []
-  const errors: string[] = []
-  let cursor = 0
-  let entries = 0
-  let attempted = 0
-  const concurrency = 256
-  while (cursor < pending.length && attempted < entryLimit) {
-    const batch = pending.slice(
-      cursor,
-      Math.min(pending.length, cursor + concurrency, cursor + entryLimit - attempted),
-    )
-    cursor += batch.length
-    attempted += batch.length
-    const inspected = await Promise.all(batch.map((path) => inspectEntry(root, path, classify)))
-    for (const item of inspected) {
-      if (item.error) errors.push(item.error)
-      if (!item.observation) continue
-      entries++
-      observations.push(item.observation)
-      pending.push(...item.children)
-    }
-  }
-  return {
-    observations: deduplicateHardLinkedBytes(observations),
-    entries,
-    stoppedAtLimit: attempted >= entryLimit && cursor < pending.length,
-    errors,
-    unreadable: null,
-  }
-}
-
-function startWalk(
-  root: string,
-  classify: (relativePath: string) => { kind: RunStorageKind; runId: number | null },
-): { completed: WalkResult | null; pending: string[] } {
-  try {
-    const rootStat = lstatSync(root)
-    if (!rootStat.isDirectory()) {
-      return {
-        completed: {
-          observations: [
-            {
-              bytes: typeof rootStat.blocks === 'number' ? rootStat.blocks * 512 : rootStat.size,
-              hardLinkKey:
-                rootStat.isFile() && rootStat.nlink > 1 ? `${rootStat.dev}:${rootStat.ino}` : null,
-              ...classify(''),
-            },
-          ],
-          entries: 1,
-          stoppedAtLimit: false,
-          errors: [],
-          unreadable: null,
-        },
-        pending: [],
-      }
-    }
-  } catch (cause) {
-    const error = cause as NodeJS.ErrnoException
-    if (error.code === 'ENOENT')
-      return {
-        completed: {
-          observations: [],
-          entries: 0,
-          stoppedAtLimit: false,
-          errors: [],
-          unreadable: null,
-        },
-        pending: [],
-      }
-    return {
-      completed: {
-        observations: [],
-        entries: 0,
-        stoppedAtLimit: false,
-        errors: [],
-        unreadable: String(error.message ?? cause),
-      },
-      pending: [],
-    }
-  }
-  try {
-    return {
-      completed: null,
-      pending: readdirSync(root).map((name) => join(root, name)),
-    }
-  } catch (cause) {
-    return {
-      completed: {
-        observations: [],
-        entries: 0,
-        stoppedAtLimit: false,
-        errors: [],
-        unreadable: String((cause as Error).message ?? cause),
-      },
-      pending: [],
-    }
-  }
-}
-
-async function inspectEntry(
-  root: string,
-  path: string,
-  classify: (relativePath: string) => { kind: RunStorageKind; runId: number | null },
-): Promise<{ observation: WalkObservation | null; children: string[]; error: string | null }> {
-  try {
-    const stat = await lstat(path)
-    const observation = {
-      bytes: typeof stat.blocks === 'number' ? stat.blocks * 512 : stat.size,
-      hardLinkKey: stat.isFile() && stat.nlink > 1 ? `${stat.dev}:${stat.ino}` : null,
-      ...classify(relative(root, path)),
-    }
-    if (!stat.isDirectory() || stat.isSymbolicLink()) {
-      return { observation, children: [], error: null }
-    }
-    try {
-      return {
-        observation,
-        children: readdirSync(path).map((name) => join(path, name)),
-        error: null,
-      }
-    } catch (cause) {
-      return {
-        observation,
-        children: [],
-        error: `${path}: ${String((cause as Error).message ?? cause)}`,
-      }
-    }
-  } catch (cause) {
-    return {
-      observation: null,
-      children: [],
-      error: `${path}: ${String((cause as Error).message ?? cause)}`,
-    }
-  }
+): ReturnType<typeof walkStoragePaths<ReturnType<typeof classify>>> {
+  return walkStoragePaths([root], (_root, relativePath) => classify(relativePath), entryLimit, {
+    includeRoots: false,
+  })
 }
 
 async function measurePath(path: string): Promise<StorageMeasurement> {
-  const result = await walk(path, () => ({ kind: 'other', runId: null }))
+  const result = walk(path, () => ({ kind: 'other', runId: null }))
   return storageMeasurement({
     bytes: result.observations.reduce((total, entry) => total + entry.bytes, 0),
     entries: result.entries,
@@ -260,7 +110,7 @@ export async function measureRunStorage(
   const replies = new Set(
     rows.flatMap((row) => (row.output_path ? [resolve(row.output_path)] : [])),
   )
-  const runWalk = await walk(runsPath, runClassifier(runsPath, prompts, replies), entryLimit)
+  const runWalk = walk(runsPath, runClassifier(runsPath, prompts, replies), entryLimit)
   const partial = Boolean(runWalk.stoppedAtLimit || runWalk.errors.length || runWalk.unreadable)
   const kinds = Object.fromEntries(
     (['artifacts', 'scratch', 'sandboxes', 'prompts', 'replies', 'other'] as const).map((kind) => {

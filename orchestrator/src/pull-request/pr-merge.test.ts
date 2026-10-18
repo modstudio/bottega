@@ -59,6 +59,7 @@ function adapter(
       prNumber: number,
       database: ReturnType<typeof db>,
     ) => number | null
+    shipCleanup?: () => string
   } = {},
 ): PullRequestMergeAdapter {
   return {
@@ -88,6 +89,7 @@ function adapter(
     enqueue: () => {},
     now: Date.now,
     wait: () => {},
+    ...(input.shipCleanup ? { shipCleanup: input.shipCleanup } : {}),
   }
 }
 
@@ -124,6 +126,23 @@ test('an injected forge adapter merges all-passing checks with the method, subje
   )
   expect(commit).toBe('merged-oid')
   expect(calls).toEqual([['squash', 'Prove the pull request head (#42)', 'head-commit']])
+})
+
+test('a cleanup failure reports its retry without undoing a successful merge', () => {
+  registerProject(['test'])
+  const output = mergePullRequest(
+    '42',
+    cwd,
+    adapter({
+      checks: [{ name: 'test', bucket: 'pass', state: 'SUCCESS', link: '' }],
+      shipCleanup: () => {
+        throw new Error('close-out unavailable')
+      },
+    }),
+  )
+  expect(output).toBe(
+    `merge-commit\nship cleanup failed for ${pullRequest.headBranch}: close-out unavailable; retry: ${PLATFORM_SLUG} tree ship-cleanup ${pullRequest.headBranch}`,
+  )
 })
 
 test('an injected forge adapter exposes a pending required check without merging', () => {

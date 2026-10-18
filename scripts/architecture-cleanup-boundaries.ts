@@ -1,5 +1,42 @@
 export const cleanupBoundarySpecs = [
   {
+    name: 'ship-cleanup-decision-boundary',
+    file: 'orchestrator/src/ship-cleanup/ship-cleanup-decision.ts',
+    allowed: [],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep ship cleanup selection pure and independent of filesystems, stores, commands, and processes.',
+  },
+  {
+    name: 'ship-cleanup-boundary',
+    file: 'orchestrator/src/ship-cleanup/ship-cleanup.ts',
+    allowed: [
+      'bun:sqlite',
+      'node:fs',
+      'node:path',
+      '../../../shared/brand.ts',
+      '../branch/branch-state.ts',
+      '../branch/branches.ts',
+      '../close/close-out.ts',
+      '../database/db.ts',
+      '../project/projects.ts',
+      '../run/run-artifacts.ts',
+      '../storage-walk.ts',
+      './ship-cleanup-decision.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep ship cleanup as the adapter over the pure ruling, existing close-out, exact branch prune, and shared storage walk.',
+  },
+  {
+    name: 'storage-walk-boundary',
+    file: 'orchestrator/src/storage-walk.ts',
+    allowed: ['node:fs', 'node:path'],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep the bounded allocated-byte traversal neutral and independent of cleanup and monitoring policy.',
+  },
+  {
     name: 'cleanup-sweep-boundary',
     file: 'orchestrator/src/cleanup/cleanup-sweep.ts',
     allowed: [

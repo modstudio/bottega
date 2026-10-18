@@ -1,10 +1,9 @@
 import { describe, expect, test } from 'bun:test'
+import { deduplicateHardLinkedBytes, STORAGE_WALK_ENTRY_LIMIT } from '../storage-walk.ts'
 import {
-  deduplicateHardLinkedBytes,
   diskPressureCondition,
   FREE_SPACE_ABSOLUTE_FLOOR_BYTES,
   largestRuns,
-  STORAGE_WALK_ENTRY_LIMIT,
   storageMeasurement,
   storagePressureDecision,
 } from './storage-conditions.ts'

@@ -14,6 +14,17 @@ export function pullRequestCarriesKey(
 
 export type PatchEquivalentForm = 'commits' | 'individual' | 'squash'
 
+export function branchMatchesFilter(
+  branch: string,
+  key: string,
+  filter: { branch?: string; key?: string },
+): boolean {
+  return (
+    (filter.branch === undefined || branch === filter.branch) &&
+    (filter.key === undefined || key === filter.key)
+  )
+}
+
 type RecordedBranchLanding = {
   number: number
   mergeCommit: string | null

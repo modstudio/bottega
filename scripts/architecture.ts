@@ -4,6 +4,7 @@ import { boardModules } from './architecture-board-modules.ts'
 import { importBoundaries } from './architecture-boundaries.ts'
 import { branchModuleSpecs } from './architecture-branch-modules.ts'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
+import { cleanupBoundarySpecs } from './architecture-cleanup-boundaries.ts'
 import {
   cliCompositionRule,
   cliConcernEntries,
@@ -120,6 +121,7 @@ export const modules: ArchitectureModule[] = [
     module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed]),
   ),
   ...coreModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
+  ...cleanupBoundarySpecs.map((spec) => module(spec.file, [...spec.allowed])),
   module('orchestrator/src/doc/doc-search.ts', [
     '../../../shared/self-spawn.ts',
     '../../../shared/orch-contract.ts',
