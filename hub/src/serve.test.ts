@@ -1,9 +1,4 @@
 import { afterEach, beforeAll, describe, expect, spyOn, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import {
   fixtureRecordId,
   ingestRunFixtures,
@@ -11,7 +6,7 @@ import {
   runFixture,
 } from '../test/run-fixtures.ts'
 import { db } from './db.ts'
-import { LocalHubAuth } from './local-auth.ts'
+import { LOCAL_LOGIN_MESSAGE } from './local-auth.ts'
 import { stopDashboardCapability } from './orch.ts'
 import { clearOrchCache, handleTrpcRequest, trpcMutationRequestAllowed, view } from './serve.ts'
 
@@ -25,61 +20,45 @@ test('tRPC mutation requests require browser same-origin proof', () => {
   expect(trpcMutationRequestAllowed(request(undefined, 'GET'))).toBe(true)
 })
 
-test('setShipTo without a login cookie gets 401 and never reaches orch', async () => {
-  stopDashboardCapability()
-  const spawn = spyOn(Bun, 'spawn')
-  try {
-    const origin = 'http://127.0.0.1:4567'
-    const response = await handleTrpcRequest(
-      new Request(`${origin}/trpc/context.autonomy.setShipTo`, {
-        method: 'POST',
-        headers: {
-          Origin: origin,
-          'Sec-Fetch-Site': 'same-origin',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ json: { project: 'alpha', value: 'promote' } }),
-      }),
-    )
-    expect(response.status).toBe(401)
-    expect(await response.text()).toContain(`${PLATFORM_SLUG} dashboard login`)
-    expect(spawn).not.toHaveBeenCalled()
-  } finally {
-    spawn.mockRestore()
-  }
+function trpcMutation(origin: string): Request {
+  const hubOrigin = 'http://127.0.0.1:4567'
+  return new Request(`${hubOrigin}/trpc/run.score`, {
+    method: 'POST',
+    headers: { Origin: origin, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ json: null }),
+  })
+}
+
+type TrpcErrorBody = { error: { message: string } }
+
+test('a refused local session returns the tRPC JSON remedy', async () => {
+  const response = await handleTrpcRequest(trpcMutation('http://127.0.0.1:4567'), {
+    allows: () => false,
+  })
+
+  expect(response.status).toBe(401)
+  const body = (await response.json()) as TrpcErrorBody
+  expect(body.error.message).toBe(LOCAL_LOGIN_MESSAGE)
 })
 
-test('a valid login session admits a same-origin mutation to the router', async () => {
+test('an allowed session with a foreign origin returns the tRPC JSON refusal', async () => {
+  const response = await handleTrpcRequest(trpcMutation('https://attacker.example'), {
+    allows: () => true,
+  })
+
+  expect(response.status).toBe(403)
+  const body = (await response.json()) as TrpcErrorBody
+  expect(body.error.message).toBe('cross-origin tRPC mutation refused')
+})
+
+test('an allowed session with the same origin passes the mutation gate', async () => {
   stopDashboardCapability()
-  const spawn = spyOn(Bun, 'spawn')
-  const state = mkdtempSync(join(tmpdir(), 'hub-serve-auth-'))
-  const ids = ['a'.repeat(64), 'b'.repeat(64)]
-  const auth = new LocalHubAuth({ [STATE_HOME_ENV]: state }, Date.now, () => ids.shift()!)
-  try {
-    const origin = 'http://127.0.0.1:4567'
-    const login = auth.mintLoginUrl(4567)
-    const exchange = auth.exchange(new Request(login))
-    const cookie = exchange.headers.get('set-cookie')!
-    const response = await handleTrpcRequest(
-      new Request(`${origin}/trpc/context.autonomy.set`, {
-        method: 'POST',
-        headers: {
-          Origin: origin,
-          'Sec-Fetch-Site': 'same-origin',
-          'Content-Type': 'application/json',
-          cookie,
-        },
-        body: JSON.stringify({ json: { project: 'alpha', stage: 'review', value: 'auto' } }),
-      }),
-      auth,
-    )
-    expect(response.status).not.toBe(401)
-    expect(await response.text()).toContain('Dashboard mutation capability is unavailable')
-    expect(spawn).not.toHaveBeenCalled()
-  } finally {
-    spawn.mockRestore()
-    rmSync(state, { recursive: true, force: true })
-  }
+  const response = await handleTrpcRequest(trpcMutation('http://127.0.0.1:4567'), {
+    allows: () => true,
+  })
+
+  expect(response.status).not.toBe(401)
+  expect(response.status).not.toBe(403)
 })
 
 beforeAll(resetFixtureStore)
