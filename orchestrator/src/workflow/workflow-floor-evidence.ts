@@ -177,8 +177,12 @@ function runHasRecordedArtifacts(
   runId: number,
   runsDir = resolveRunsDirectory(process.env),
 ): boolean {
-  const artifacts = runArtifactsDir(runId, runsDir)
-  const reply = join(runScratchDir(runId, runsDir), 'reply.json')
+  const recordId = db()
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+    .get(runId)?.record_id
+  if (!recordId) return false
+  const artifacts = runArtifactsDir(recordId, runsDir)
+  const reply = join(runScratchDir(recordId, runsDir), 'reply.json')
   if (existsSync(reply)) return true
   return existsSync(artifacts) && readdirSync(artifacts).length > 0
 }

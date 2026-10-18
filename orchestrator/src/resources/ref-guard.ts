@@ -21,8 +21,13 @@ import {
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { db } from '../database/db.ts'
+import type {
+  FilesystemIdentityPlan,
+  FilesystemIdentityProject,
+  FilesystemIdentityRun,
+} from '../filesystem-identity-plan.ts'
 import { commonGitDir, gitConfigOk, linkedWorktreePaths } from '../git/git-environment.ts'
-import { ORCH_RUN_MARKER } from '../worktree/worktree-attribution.ts'
+import { readWorktreeMarker, worktreeNameRunId } from '../worktree/worktree-attribution.ts'
 import { resolveRefGuardHook } from './ref-guard-runtime.ts'
 import { installWorkerHooks } from './worker-hooks.ts'
 
@@ -111,6 +116,93 @@ const REF_GUARD_STAGE_PREFIX = '.orch-hooks-'
 
 const UNMARKED_GUARD_PREFIX = 'unmarked-'
 
+const refGuardName = (recordId: string): string => recordId
+const legacyRefGuardNumber = (name: string): string | null =>
+  /^[1-9]\d*$/.test(name) ? name : null
+
+export type RefGuardMigrationCandidate = {
+  directory: string
+  name: string
+  destinationExists: boolean
+}
+
+export function planRefGuardMigration(
+  candidates: readonly RefGuardMigrationCandidate[],
+  runs: ReadonlyMap<string, FilesystemIdentityRun>,
+): FilesystemIdentityPlan {
+  const plan: FilesystemIdentityPlan = { mapped: [], collisions: [], unmapped: [] }
+  for (const candidate of candidates) {
+    const number = legacyRefGuardNumber(candidate.name)
+    if (!number) continue
+    const source = join(candidate.directory, candidate.name)
+    const run = runs.get(number)
+    if (!run) {
+      plan.unmapped.push({ source, number })
+      continue
+    }
+    const move = {
+      source,
+      destination: join(candidate.directory, refGuardName(run.recordId)),
+      run,
+      payload: undefined,
+    }
+    ;(candidate.destinationExists ? plan.collisions : plan.mapped).push(move)
+  }
+  return plan
+}
+
+function refGuardMigrationDirectory(project: FilesystemIdentityProject): string | null {
+  if (!existsSync(project.path)) return null
+  try {
+    lstatSync(join(project.path, '.git'))
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw new Error(
+      `${project.name}: repository metadata could not be read: ${(error as Error).message}`,
+    )
+  }
+  const common = commonGitDir(project.path)
+  if (!common) throw new Error(`${project.name}: git common directory could not be read`)
+  const directory = join(common, 'orch-guards')
+  return existsSync(directory) ? directory : null
+}
+
+function refGuardMigrationNames(project: FilesystemIdentityProject, directory: string): string[] {
+  try {
+    return readdirSync(directory)
+  } catch (error) {
+    throw new Error(
+      `${project.name}: ref-guard directory could not be read: ${(error as Error).message}`,
+    )
+  }
+}
+
+export function discoverRefGuardMigration(
+  projects: readonly FilesystemIdentityProject[],
+  runs: ReadonlyMap<string, FilesystemIdentityRun>,
+): FilesystemIdentityPlan {
+  const candidates: RefGuardMigrationCandidate[] = []
+  for (const project of projects) {
+    const directory = refGuardMigrationDirectory(project)
+    if (!directory) continue
+    for (const name of refGuardMigrationNames(project, directory)) {
+      const number = legacyRefGuardNumber(name)
+      const run = number ? runs.get(number) : undefined
+      candidates.push({
+        directory,
+        name,
+        destinationExists: Boolean(run && existsSync(join(directory, refGuardName(run.recordId)))),
+      })
+    }
+  }
+  return planRefGuardMigration(candidates, runs)
+}
+
+export function applyRefGuardMigration(plan: FilesystemIdentityPlan): number {
+  for (const move of plan.mapped) renameSync(move.source, move.destination)
+  return plan.mapped.length
+}
+
 /**
  * The guard directory's name. A tree orch cut carries its run id in the
  * marker; a tree built by hand (the lifecycle harness, an operator landing a
@@ -122,8 +214,8 @@ const UNMARKED_GUARD_PREFIX = 'unmarked-'
  * hand-made tree is rare.
  */
 function refGuardOwner(cwd: string): string {
-  const value = markedWorktreeRunId(cwd)
-  if (value !== null) return String(value)
+  const value = worktreeNameRunId(cwd)
+  if (value !== null) return value
   let real = cwd
   try {
     real = realpathSync(cwd)
@@ -134,12 +226,12 @@ function refGuardOwner(cwd: string): string {
 }
 
 export function markedWorktreeRunId(cwd: string): number | null {
-  try {
-    const value = Number(readFileSync(join(cwd, ORCH_RUN_MARKER), 'utf8').split('\n', 1)[0])
-    return Number.isInteger(value) && value > 0 ? value : null
-  } catch {
-    return null
-  }
+  const value = readWorktreeMarker(cwd).runRecordId
+  if (!value) return null
+  return (
+    db().query<{ id: number }, [string]>('SELECT id FROM run WHERE record_id=?').get(value)?.id ??
+    null
+  )
 }
 
 function refGuardCheckpoint(name: string): void {
@@ -158,8 +250,7 @@ function cleanupRefGuardLitter(gitDir: string, hookDir?: string): void {
       rmSync(join(gitDir, name), { recursive: true, force: true })
       continue
     }
-    if (!/^\d+$/.test(name)) continue
-    const run = db().query(`SELECT status, worktree FROM run WHERE id=?`).get(Number(name)) as {
+    const run = db().query(`SELECT status, worktree FROM run WHERE record_id=?`).get(name) as {
       status: string
       worktree: string | null
     } | null
@@ -360,7 +451,11 @@ export function prepareSharedRefGuard(
 export function removeSharedRefGuard(cwd: string, runId: number): void {
   const commonDir = commonGitDir(cwd)
   if (!commonDir) return
-  rmSync(join(commonDir, 'orch-guards', String(runId)), {
+  const owner = db()
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+    .get(runId)
+  if (!owner) return
+  rmSync(join(commonDir, 'orch-guards', owner.record_id), {
     recursive: true,
     force: true,
   })

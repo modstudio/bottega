@@ -99,7 +99,11 @@ function markWorktree(
   repoRoot: string,
   source: NonNullable<Worktree['source']>,
 ): void {
-  writeFileSync(join(path, ORCH_RUN_MARKER), `${runId}\n${repoRoot}\nsource: ${source}\n`)
+  const owner = db()
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+    .get(runId)
+  if (!owner) throw new Error(`cannot mark worktree: no run ${runId}`)
+  writeFileSync(join(path, ORCH_RUN_MARKER), `${owner.record_id}\n${repoRoot}\nsource: ${source}\n`)
   const exclude = resolve(path, git(['rev-parse', '--git-path', 'info/exclude'], path))
   const existing = existsSync(exclude) ? readFileSync(exclude, 'utf8') : ''
   if (!existing.split('\n').includes(ORCH_RUN_MARKER)) {

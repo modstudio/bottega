@@ -185,6 +185,17 @@ const CANON_SOURCE_PROMPT_RESERVE_BYTES =
     ),
   ) + 2
 
+const PROMPT_SIZE_RUN_RECORD_ID = '00000000-0000-7000-8000-000000000000'
+
+function runEvidence(jobName: string, findingsJob: boolean, declaredDeliverables: string[]) {
+  return assessEvidencePrompt({
+    findingsJob,
+    verifyClaimJob: jobName === 'verify-claim',
+    readerJob: isReaderJob(jobName),
+    declaredDeliverables,
+  })
+}
+
 export async function run(opts: {
   job: string
   prompt: string
@@ -314,8 +325,7 @@ export async function run(opts: {
     resolveReviewTarget(opts.job, opts.cwd ?? process.cwd(), opts.review, opts.carry)
   const implicitReview = implicitReviewClaim(callerCwd, !!reviewTarget, !!requestedJob.findings)
   const coverageBase = reviewTarget?.base ?? implicitReview.coverageBase
-  // Programmatic callers get the same ordering guarantee as the CLI: a bad
-  // ref is refused before a run row or worktree exists.
+  // Programmatic callers also refuse a bad ref before a run row or worktree exists.
   if (opts.base) {
     const internalRepositoryFailover = opts.automaticFailover && requestedJob.needs.readsRepo
     if (opts.job !== 'implement' && opts.job !== 'fix' && !internalRepositoryFailover) {
@@ -347,8 +357,7 @@ export async function run(opts: {
   // endpoint is healthy, and when it is not it replaces a run that was going to
   // fail anyway.
   //
-  // Awaited before pick() so the router sees the result, and cached for the
-  // process so a fan-out probes once rather than per run.
+  // Awaited before pick() and cached so a fan-out probes once rather than per run.
   const health = await ensureLocalHealth()
   // Down, so ask it to come back — and then carry on without it.
   //
@@ -372,7 +381,7 @@ export async function run(opts: {
    * The caller's prompt is stored unwrapped at prompt_path so `bottega run retry` can
    * re-send it and wrap once. The bound text — preamble plus prompt — is what
    * the agent is actually sent, hashed and routed, and is written beside it as
-   * `.bound.txt`. Wrapping it further down would send a payload the database
+   * `bound-prompt.txt`. Wrapping it further down would send a payload the database
    * no longer described.
    *
    * Whether a contract is required is derived from `writesRepo`: changing
@@ -477,7 +486,6 @@ export async function run(opts: {
           taskRulings: rulingsSection,
           spec: originalPrompt,
         })
-
   prompt = bindReviewInstructions({
     prompt,
     findings: Boolean(requestedJob.findings),
@@ -489,12 +497,7 @@ export async function run(opts: {
     lens: opts.lens,
     repo: runProjectName,
   })
-  const evidencePrompt = assessEvidencePrompt({
-    findingsJob: Boolean(requestedJob.findings),
-    verifyClaimJob: opts.job === 'verify-claim',
-    readerJob: isReaderJob(opts.job),
-    declaredDeliverables,
-  })
+  const evidencePrompt = runEvidence(opts.job, Boolean(requestedJob.findings), declaredDeliverables)
   if (evidencePrompt.readerInstruction && resume.isFirstTurn) {
     prompt = `${evidencePrompt.readerInstruction}\n\n${prompt}`
   }
@@ -504,7 +507,7 @@ export async function run(opts: {
       opts.job,
       selectAgentForTransport(requestedTransport, opts.agent),
       Buffer.byteLength(prompt) +
-        replyFileBytes(replySchemaName, runScratchDir(Number.MAX_SAFE_INTEGER)) +
+        replyFileBytes(replySchemaName, runScratchDir(PROMPT_SIZE_RUN_RECORD_ID)) +
         (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0) +
         (requiresCanonSource ? CANON_SOURCE_PROMPT_RESERVE_BYTES : 0),
       true,
@@ -578,7 +581,6 @@ export async function run(opts: {
     }
     prompt += `\n\n${suffix}`
   }
-
   let { deferredCwdMcpPreflight, mcpConnection } = prepareRunMcpPreflight({
     mcpRequest,
     callerCwd,
@@ -633,9 +635,10 @@ export async function run(opts: {
   const unique = opts.reserveId ?? `x${randomUUID().slice(0, 8)}`
   const paths = runFilePaths(RUNS_DIR, Date.now(), unique, name, opts.job)
   const stamp = paths.output.slice(RUNS_DIR.length + 1, -4)
-  const outPath = paths.output
+  let outPath = paths.output
   let {
     promptPath,
+    outputPath: claimedOutputPath,
     originalSchemaPath,
     textReplyContract,
     schemaPath,
@@ -663,7 +666,6 @@ export async function run(opts: {
   } = await claimRun({
     opts,
     runsDir: RUNS_DIR,
-    paths,
     stamp,
     name,
     generatedSchema,
@@ -697,6 +699,7 @@ export async function run(opts: {
     replySchemaName,
     carriedQuestionIds: carriedRulings.rulings.map((ruling) => ruling.questionId),
   })
+  outPath = claimedOutputPath
   const initialBoard = await board(claimedBoundPrompt, promptPath, claim.id, resume.isFirstTurn)
   prompt = initialBoard.prompt
   mcpConnection = claimedMcpConnection
@@ -755,6 +758,7 @@ export async function run(opts: {
       sandbox: sandboxSelection.sandbox,
       runDir: sandboxRunDir,
       runId: claim.id,
+      runRecordId: claim.recordId,
       runToken,
       environment: gitConfigEnvironment ?? {},
       grokEnvironment: grokMcpEnvironment,

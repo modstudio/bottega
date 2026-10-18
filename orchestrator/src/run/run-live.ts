@@ -153,7 +153,7 @@ export type LiveInput = {
   repoJob: boolean
   name: string
   worktree: Worktree | null
-  claim: { id: number }
+  claim: { id: number; recordId: string }
   provisionedMcpConfig: { measure<T>(operation: () => T): T } | null
   reviewTarget: { branch: string; commit: string; base: string } | null
   sandboxSelection: SandboxSelection
@@ -228,6 +228,17 @@ export type LiveResult = {
   askLoopback: AskLoopback | null
   mcpSetupHeader: string | null
   workerEvents: StreamEvent[]
+}
+
+type ConfiguredAsk = Parameters<typeof recordConfiguredAsk>[0]
+
+function recordRunAsk(
+  runId: number,
+  sandbox: ConfiguredAsk['sandbox'],
+  transport: ConfiguredAsk['transport'],
+  startOpts: ConfiguredAsk['startOpts'],
+): void {
+  recordConfiguredAsk({ runId, sandbox, transport, startOpts })
 }
 
 function applyRunWallDeadline(input: {
@@ -380,8 +391,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       cwd,
       prompt,
       outPath,
-      // ACP creates its initial session with session/new. Grok also mints an id
-      // for its CLI launch, but treating that fresh id as resumable makes ACP
+      // ACP uses session/new; treating Grok's fresh CLI id as resumable makes ACP
       // issue session/load against a session that cannot exist yet.
       session:
         transportName === 'acp' && opts.resume?.kind === 'continue'
@@ -409,7 +419,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         .carriesVendorSession,
       env: childEnv(
         a,
-        claim.id,
+        claim.recordId,
         runToken,
         {
           ...(gitConfigEnvironment ?? {}),
@@ -420,14 +430,10 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
           ...(askLoopback ? { ORCH_ASK_URL: askLoopback.url } : {}),
         },
         repoJob,
+        claim.id,
       ),
     }
-    recordConfiguredAsk({
-      runId: claim.id,
-      sandbox: sandboxSelection.sandbox,
-      transport: t,
-      startOpts,
-    })
+    recordRunAsk(claim.id, sandboxSelection.sandbox, t, startOpts)
     const handle =
       opts.resume?.session && opts.resume.kind === 'continue'
         ? await t.resume({
@@ -465,7 +471,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
               last_event_at=COALESCE(last_event_at, ?) WHERE id=?`,
       )
       .run(vendorPid, vendorPgid, vendorStartTime, nowIso(), claim.id)
-
     const createCheckpoint = (final = false) => {
       if (!writesJob || !worktree || !launchKey) return null
       const result = checkpointRun({

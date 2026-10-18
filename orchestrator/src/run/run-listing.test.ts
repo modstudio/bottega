@@ -182,6 +182,18 @@ describe('run listing', () => {
     )
   })
 
+  test('runs --id resolves a machine UUID without deriving identity from its number', async () => {
+    const id = insert('ok')
+    const recordId = db()
+      .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+      .get(id)!.record_id
+    expect(runJson((await command({ id: [recordId], json: true }))[0]!)).toMatchObject({
+      id,
+      record_id: recordId,
+      requested_record_id: recordId,
+    })
+  })
+
   test('runs --id preserves both requested identities when they resolve to one root', async () => {
     const root = insert('asking')
     const turn = insert('ok')

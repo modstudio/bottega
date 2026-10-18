@@ -1,6 +1,7 @@
 // concern: run-board-prompt
 /** Adds addressed board context after a run row exists, without changing its compiled canon pack. */
 import { writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { claimRunBoardNotices } from '../board/board-delivery.ts'
 import { BOARD_DELIVERY_MAX_CHARS, BOARD_DELIVERY_MAX_MESSAGES } from '../board/board-render.ts'
 import { db } from '../database/db.ts'
@@ -90,7 +91,7 @@ export async function prepareLaterRunBoardPrompt(
 }
 
 export function persistBoundPrompt(promptPath: string, prompt: string, runId: number): void {
-  writeFileSync(promptPath.replace(/\.prompt\.txt$/, '.bound.txt'), prompt)
+  writeFileSync(join(dirname(promptPath), 'bound-prompt.txt'), prompt)
   db()
     .query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE id=?')
     .run(sha(prompt), Buffer.byteLength(prompt), runId)

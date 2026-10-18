@@ -6,7 +6,6 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
-import { runFilePaths } from './run-artifacts.ts'
 import { claimRun } from './run-claim.ts'
 
 test("a later findings turn inherits its root's implicit review branch", async () => {
@@ -46,7 +45,6 @@ test("a later findings turn inherits its root's implicit review branch", async (
   const head = Bun.spawnSync(['git', 'rev-parse', 'HEAD'], { cwd: repository })
     .stdout.toString()
     .trim()
-  const paths = runFilePaths(runsDir, Date.now(), 'later', 'codex', 'review-lens')
 
   try {
     const claimed = await claimRun({
@@ -63,7 +61,6 @@ test("a later findings turn inherits its root's implicit review branch", async (
         },
       },
       runsDir,
-      paths,
       stamp: 'later-findings-claim',
       name: 'codex',
       generatedSchema: null,

@@ -27,7 +27,7 @@ import {
   classifiedDockerResources,
   dockerNetworkInventory,
   dockerRunResources,
-  orchRunLabel,
+  orchRunLabelForRun,
 } from '../resources/docker-resources.ts'
 import { gitLocks, worktreeIndexLockForPath } from '../resources/git-locks.ts'
 import { terminalDockerRetentionReasonForRun } from '../resources/resource-ownership.ts'
@@ -140,7 +140,7 @@ function recipeDatabaseObservations(
     .filter((claim) => claim.allocation_key.startsWith('postgres:'))
     .map((claim) => ({
       database: claim.allocation_key.slice('postgres:'.length),
-      ownerLabel: orchRunLabel(claim.root_run_id),
+      ownerLabel: orchRunLabelForRun(claim.root_run_id),
     }))
   return {
     conditions: [

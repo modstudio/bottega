@@ -6,6 +6,7 @@
 import { type ChildProcess, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { closeSync, existsSync, mkdirSync, openSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 /**
  * Claim a run id, hand the work to a process that outlives this one, and return.
  *
@@ -32,12 +33,21 @@ import { projectByName } from '../project/projects.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
 import type { DetachSpec } from '../route/failover.ts'
 import { runAlive } from './run-alive.ts'
-import { RUNS_DIR, runFilePaths } from './run-artifacts.ts'
+import { RUNS_DIR } from './run-artifacts.ts'
 import { runCoordinatorLogPath } from './run-coordinator-log.ts'
 import { runLeaseState } from './run-lease.ts'
 import { ensureDispatchMcpMainStack } from './run-mcp-main-stack.ts'
 import { repoOf } from './run-project-context.ts'
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
+
+function writeDetachedPrompt(runsDir: string, recordId: string, prompt: string): string {
+  const runDirectory = join(runsDir, recordId)
+  mkdirSync(runDirectory, { recursive: true })
+  const promptPath = join(runDirectory, 'prompt.txt')
+  writeFileSync(promptPath, prompt)
+  return promptPath
+}
+
 export async function detach(
   jobName: string,
   prompt: string,
@@ -161,7 +171,7 @@ export async function detach(
              WHERE (id = ? OR parent_run_id = ?) AND status = 'running'
           )
         )
-       RETURNING id`,
+       RETURNING id, record_id`,
       )
       .get(
         newRecordId(),
@@ -186,7 +196,7 @@ export async function detach(
         identity.parent_run_id,
         identity.parent_run_id,
         identity.parent_run_id,
-      ) as { id: number } | null
+      ) as { id: number; record_id: string } | null
     const deliveryRoot =
       spec.resume?.parent ??
       (spec.retryOf
@@ -234,14 +244,13 @@ export async function detach(
       `run ${spec.resume!.parent} already has running turn ${running.id} (turn ${running.turn})`,
     )
   }
-  const { id } = claimed
+  const { id, record_id: recordId } = claimed
   let coordinatorLogFd: number | null = null
   let handoffStep = 'write prompt artifact'
   try {
     // The row now exists, so its id replaces that temporary random name and is
     // also stored on the row for run() to reuse rather than creating a second file.
-    const promptPath = runFilePaths(runsDir, Date.now(), id, 'detach', jobName).prompt
-    writeFileSync(promptPath, prompt)
+    const promptPath = writeDetachedPrompt(runsDir, recordId, prompt)
     handoffStep = 'record prompt artifact'
     db().query('UPDATE run SET prompt_path=? WHERE id=?').run(promptPath, id)
 
@@ -283,7 +292,7 @@ export async function detach(
     handoffStep = 'resolve coordinator working directory'
     const spawnFacts = callerCheckoutFacts(cwd)
     handoffStep = 'open coordinator log'
-    coordinatorLogFd = openSync(runCoordinatorLogPath(id, runsDir), 'a', 0o600)
+    coordinatorLogFd = openSync(runCoordinatorLogPath(recordId, runsDir), 'a', 0o600)
     const spawnOpts = {
       cwd: spawnCwd(
         cwd,

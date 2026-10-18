@@ -31,10 +31,11 @@ describe('isUnmarkedBorrowedReaderClone', () => {
 })
 
 const base: TreeOwnershipInput = {
-  conversationRunIds: [40, 41],
-  directoryName: 'technical/DEV-560-orch-40',
+  conversationRunIds: [
+    '40000000-0000-4000-8000-000000000000',
+    '41000000-0000-4000-8000-000000000000',
+  ],
   repoRoot: '/projects/alpha',
-  branchTemplate: 'technical/{key}-orch-{id}',
   checkout: true,
   marker: { state: 'absent' },
 }
@@ -44,7 +45,11 @@ describe('treeOwnership', () => {
     expect(
       treeOwnership({
         ...base,
-        marker: { state: 'present', runId: 41, repoRoot: '/projects/alpha' },
+        marker: {
+          state: 'present',
+          runRecordId: '41000000-0000-4000-8000-000000000000',
+          repoRoot: '/projects/alpha',
+        },
       }),
     ).toBe('owned')
   })
@@ -53,7 +58,11 @@ describe('treeOwnership', () => {
     expect(
       treeOwnership({
         ...base,
-        marker: { state: 'present', runId: 42, repoRoot: '/projects/alpha' },
+        marker: {
+          state: 'present',
+          runRecordId: '42000000-0000-4000-8000-000000000000',
+          repoRoot: '/projects/alpha',
+        },
       }),
     ).toBe('attached')
   })
@@ -62,17 +71,17 @@ describe('treeOwnership', () => {
     expect(
       treeOwnership({
         ...base,
-        marker: { state: 'present', runId: 40, repoRoot: '/projects/starship' },
+        marker: {
+          state: 'present',
+          runRecordId: '40000000-0000-4000-8000-000000000000',
+          repoRoot: '/projects/starship',
+        },
       }),
     ).toBe('attached')
   })
 
-  test('owns a legacy orch directory naming a turn in the conversation', () => {
-    expect(treeOwnership({ ...base, directoryName: 'orch-41' })).toBe('owned')
-  })
-
-  test('attaches a task-branch directory without a marker', () => {
-    expect(treeOwnership({ ...base, directoryName: 'STAR-5502' })).toBe('attached')
+  test('does not infer ownership from a legacy numeric directory name', () => {
+    expect(treeOwnership(base)).toBe('attached')
   })
 
   test('keeps a checkout whose marker cannot be read', () => {

@@ -15,13 +15,18 @@ afterEach(() => {
 
 test('a terminal child leaves its live conversation resource untouched', () => {
   const parent = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+  const parentRecordId = db()
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+    .get(parent)!.record_id
   const failed = addRun({ agent: 'codex', job: 'implement', status: 'failed', parent, turn: 2 })
   db().query('UPDATE run SET worktree=? WHERE id=?').run(dir, parent)
   const commands: string[] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     const command = args.join(' ')
     commands.push(command)
-    if (command.startsWith('docker ps -a')) return result(`app-orch-${parent}-web`)
+    if (command.startsWith('docker ps -a')) {
+      return result(`app-orch-${parent}-web\t${parentRecordId}\t\t`)
+    }
     if (command.startsWith('docker volume ls')) return result('')
     if (command === 'docker network ls --format {{.Name}}') return result('')
     return result('')

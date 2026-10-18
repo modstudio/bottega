@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { STATE_HOME_ENV } from '../../shared/state-directory.ts'
-import { ingestRunFixtures, resetFixtureStore, runFixture } from '../test/run-fixtures.ts'
+import {
+  fixtureRecordId,
+  ingestRunFixtures,
+  resetFixtureStore,
+  runFixture,
+} from '../test/run-fixtures.ts'
 import { db } from './db.ts'
 import { LocalHubAuth } from './local-auth.ts'
 import { stopDashboardCapability } from './orch.ts'
@@ -92,8 +97,8 @@ describe('run ingest', () => {
     })
     await ingestRunFixtures(run)
     const interval = db()
-      .query(`SELECT task_key, via FROM interval WHERE ref = 'orch:9801'`)
-      .get() as { task_key: string; via: string }
+      .query('SELECT task_key, via FROM interval WHERE ref = ?')
+      .get(`orch:${fixtureRecordId(9801)}`) as { task_key: string; via: string }
     expect(interval).toEqual({ task_key: 'DEV-3000', via: 'launch_key' })
 
     const state = {

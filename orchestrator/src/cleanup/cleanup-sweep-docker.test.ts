@@ -13,6 +13,10 @@ afterEach(() => {
   mock.restore()
 })
 
+const runRecordId = (runId: number) =>
+  db().query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?').get(runId)!
+    .record_id
+
 test('a project-scoped sweep previews reclamation only for that project', () => {
   const alphaRun = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
   const bravoRun = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
@@ -43,7 +47,9 @@ test('a project-scoped sweep previews reclamation only for that project', () => 
     const command = args.join(' ')
     commands.push(command)
     if (command.startsWith('docker ps -a --format'))
-      return result(`app-orch-${alphaRun}-web\napp-orch-${bravoRun}-web`)
+      return result(
+        `app-orch-${alphaRun}-web\t${runRecordId(alphaRun)}\napp-orch-${bravoRun}-web\t${runRecordId(bravoRun)}`,
+      )
     if (command.startsWith('docker volume ls --format')) return result('')
     if (command === 'docker network ls --format {{.Name}}') return result('')
     return result('', 1, `unexpected command: ${command}`)
@@ -73,7 +79,8 @@ test('a project-scoped sweep still finds Docker resources after the project is r
   db().query('UPDATE project SET name=? WHERE record_id=?').run(newName, recordId)
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     const command = args.join(' ')
-    if (command.startsWith('docker ps -a --format')) return result(`app-orch-${run}-web`)
+    if (command.startsWith('docker ps -a --format'))
+      return result(`app-orch-${run}-web\t${runRecordId(run)}`)
     if (command.startsWith('docker volume ls --format')) return result('')
     if (command === 'docker network ls --format {{.Name}}') return result('')
     return result('', 1, `unexpected command: ${command}`)
@@ -415,7 +422,7 @@ function mockDockerForRun(runId: number, commands: string[]): void {
     const command = args.join(' ')
     commands.push(command)
     if (command.startsWith('docker ps -a --format'))
-      return result(removed ? '' : `app-orch-${runId}-web`)
+      return result(removed ? '' : `app-orch-${runId}-web\t${runRecordId(runId)}`)
     if (command.startsWith('docker volume ls --format')) return result('')
     if (command === 'docker network ls --format {{.Name}}') return result('')
     if (command === `docker rm -f app-orch-${runId}-web`) {

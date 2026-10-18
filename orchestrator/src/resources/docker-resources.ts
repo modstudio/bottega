@@ -1,4 +1,8 @@
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import { db } from '../database/db.ts'
+import { readWorktreeMarker } from '../worktree/worktree-attribution.ts'
 import { markMainCheckoutResources } from './docker-main-checkout.ts'
 
 const DOCKER_INVENTORY_TIMEOUT_MS = 1_000
@@ -126,30 +130,60 @@ function list(
   }
 }
 
-/** The one identity rule shared by worktree names and their Docker resources. */
-export function orchRunId(name: string): number | null {
-  const match = name.match(/(?:^|[/_-])orch-(\d+)(?=[/_-]|$)/)
-  if (!match) return null
-  return Number(match[1])
+export function orchRunLabel(rootRunRecordId: string): string {
+  if (!hasRecordIdShape(rootRunRecordId)) throw new Error('Docker run owner must be a run UUID')
+  return `${ORCH_RUN_LABEL_KEY}=${rootRunRecordId.toLowerCase()}`
 }
 
-export function orchRunLabel(rootRunId: number): string {
-  return `${ORCH_RUN_LABEL_KEY}=${rootRunId}`
+export function orchRunLabelForRun(rootRunId: number): string {
+  const owner = db()
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+    .get(rootRunId)
+  if (!owner) throw new Error(`no run ${rootRunId} for Docker ownership label`)
+  return orchRunLabel(owner.record_id)
 }
 
-export function runIdFromLabels(labels: Record<string, string> | null | undefined): number | null {
+export function runIdFromLabels(labels: Record<string, string> | null | undefined): string | null {
   const value = labels?.[ORCH_RUN_LABEL_KEY]
-  if (!value || !/^\d+$/.test(value)) return null
-  const runId = Number(value)
-  return Number.isSafeInteger(runId) ? runId : null
+  return value && hasRecordIdShape(value) ? value.toLowerCase() : null
 }
 
 export function dockerRunResource(
-  name: string,
+  _name: string,
   labels?: Record<string, string> | null,
-): { runId: number } | null {
-  const runId = runIdFromLabels(labels) ?? orchRunId(name)
-  return runId === null ? null : { runId }
+): { runRecordId: string } | null {
+  const runRecordId = runIdFromLabels(labels)
+  return runRecordId === null ? null : { runRecordId }
+}
+
+function localRunId(runRecordId: string | null): number | null {
+  if (runRecordId === null) return null
+  return (
+    db().query<{ id: number }, [string]>('SELECT id FROM run WHERE record_id=?').get(runRecordId)
+      ?.id ?? null
+  )
+}
+
+function attributedRunId(labels: Record<string, string>, workingDir: string | null): number | null {
+  const labeled = runIdFromLabels(labels)
+  if (labeled) return localRunId(labeled)
+  if (!workingDir) return null
+  const marker = readWorktreeMarker(workingDir)
+  if (!marker.runRecordId || !marker.repoRoot) return null
+  const owner = db()
+    .query<{ id: number; path: string }, [string]>(
+      `SELECT run.id,project.path FROM run
+       JOIN project ON project.record_id=run.project_record_id
+       WHERE run.record_id=?`,
+    )
+    .get(marker.runRecordId)
+  if (!owner) return null
+  try {
+    if (realpathSync(marker.repoRoot) !== realpathSync(owner.path)) return null
+  } catch {
+    if (resolve(marker.repoRoot) !== resolve(owner.path)) return null
+  }
+  return owner.id
 }
 
 export type UnattributableDockerResource = {
@@ -187,12 +221,8 @@ function classifyListedRows(
   for (const row of listed) {
     const workingDir = row.labels['com.docker.compose.project.working_dir'] ?? null
     const composeProject = row.labels['com.docker.compose.project'] ?? null
-    const parsed =
-      dockerRunResource(row.name, row.labels) ??
-      (composeProject ? dockerRunResource(composeProject) : null) ??
-      (workingDir ? dockerRunResource(workingDir) : null)
-    if (parsed)
-      resources.push({ kind, name: row.name, runId: parsed.runId, composeProject, workingDir })
+    const runId = attributedRunId(row.labels, workingDir)
+    if (runId !== null) resources.push({ kind, name: row.name, runId, composeProject, workingDir })
     else if (workingDir?.includes('/.claude/worktrees/'))
       unattributable.push({
         kind,
@@ -213,10 +243,7 @@ function classifyNetworkRows(networks: DockerNetwork[]): {
   const resources: DockerResource[] = []
   const unattributable: UnattributableDockerResource[] = []
   for (const network of networks) {
-    const runId =
-      network.runId ??
-      (network.composeProject ? orchRunId(network.composeProject) : null) ??
-      (network.workingDir ? orchRunId(network.workingDir) : null)
+    const runId = network.runId ?? attributedRunId({}, network.workingDir)
     if (runId !== null)
       resources.push({
         kind: 'network',
@@ -261,9 +288,7 @@ function listedComposeFacts(
     kind === 'volume'
       ? listed.flatMap((row): UnattributedComposeDockerResource[] => {
           const composeProject = row.labels['com.docker.compose.project']
-          const attributed =
-            dockerRunResource(row.name, row.labels) ||
-            (composeProject ? dockerRunResource(composeProject) : null)
+          const attributed = dockerRunResource(row.name, row.labels)
           if (!composeProject || row.labels['com.docker.compose.project.working_dir'] || attributed)
             return []
           return [
@@ -334,11 +359,7 @@ export function dockerRunResources(mainCheckoutPaths: string[] = []): DockerInve
               name,
               composeProject,
               workingDir,
-              runAttributed: Boolean(
-                dockerRunResource(name, labels) ||
-                  dockerRunResource(composeProject) ||
-                  (workingDir && dockerRunResource(workingDir)),
-              ),
+              runAttributed: Boolean(attributedRunId(labels, workingDir) !== null),
               mainCheckout: false,
             },
           ]
@@ -457,7 +478,7 @@ export function dockerNetworkInventory(): DockerNetworkInventory {
         name: row.Name,
         createdAt: row.Created ?? null,
         workingDir: row.Labels?.['com.docker.compose.project.working_dir'] ?? null,
-        runId: runIdFromLabels(row.Labels) ?? orchRunId(row.Name),
+        runId: localRunId(runIdFromLabels(row.Labels)),
         composeProject: row.Labels?.['com.docker.compose.project'] ?? null,
       })),
     }

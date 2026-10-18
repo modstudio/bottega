@@ -200,6 +200,7 @@ export type ObservedDeadRun = { id: number; reason: string }
 
 type RunningRow = {
   id: number
+  record_id: string
   pid: number | null
   agent_pid: number | null
   agent: string
@@ -248,10 +249,28 @@ function runningDisposition(row: RunningRow, now: number): RunningDisposition {
     : 'dead'
 }
 
+function coordinatorSetupDeathError(rows: RunningRow[], id: number): string {
+  return coordinatorSetupError(rows.find((candidate) => candidate.id === id)!.record_id)
+}
+
+function finalizeReapedRuns(
+  database: Database,
+  ended: number[],
+  setupDeaths: number[],
+  localMachineId: string,
+  finishedAt: string,
+): void {
+  if (!ended.length) return
+  rollUpReapedRoots(database, ended, new Set(setupDeaths), localMachineId, finishedAt)
+  for (const id of ended) teardownTerminalRunResources(database, id)
+}
+
 export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
   const now = Date.now()
   const rows = d
-    .query(`SELECT id, pid, agent_pid, agent, started_at FROM run WHERE status='running'`)
+    .query(
+      `SELECT id, record_id, pid, agent_pid, agent, started_at FROM run WHERE status='running'`,
+    )
     .all() as RunningRow[]
 
   const dead: number[] = []
@@ -285,7 +304,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
         id,
         reason: `pending coordinator was abandoned after ${PENDING_BOOTSTRAP_MS}ms`,
       })),
-      ...setupDeaths.map((id) => ({ id, reason: coordinatorSetupError(id) })),
+      ...setupDeaths.map((id) => ({ id, reason: coordinatorSetupDeathError(rows, id) })),
     ]
   }
   const ended = [...dead, ...abandonedBootstraps, ...setupDeaths]
@@ -297,7 +316,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
               error=? WHERE id=? AND status='running'`,
     )
     for (const id of abandonedBootstraps) {
-      const error = coordinatorSetupError(id)
+      const error = coordinatorSetupDeathError(rows, id)
       writeTransaction(() => {
         if (update.run(error, id).changes !== 1) return
         const authority = runMutationAuthority(d, id)
@@ -313,7 +332,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
         WHERE id=? AND status='running'`,
     )
     for (const id of setupDeaths) {
-      const error = coordinatorSetupError(id)
+      const error = coordinatorSetupDeathError(rows, id)
       writeTransaction(() => {
         if (update.run(error, id).changes !== 1) return
         const authority = runMutationAuthority(d, id)
@@ -353,9 +372,6 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
       }, d)
     }
   }
-  if (ended.length) {
-    rollUpReapedRoots(d, ended, new Set(setupDeaths), localMachineId, finishedAt)
-    for (const id of ended) teardownTerminalRunResources(d, id)
-  }
+  finalizeReapedRuns(d, ended, setupDeaths, localMachineId, finishedAt)
   return dead.length + abandonedBootstraps.length + setupDeaths.length
 }

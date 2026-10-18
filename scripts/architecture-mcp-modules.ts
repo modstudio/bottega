@@ -44,6 +44,7 @@ export const mcpModules: McpModule[] = [
     '../ask/worker-auth.ts',
     '../database/db.ts',
     '../project/projects.ts',
+    '../run/run-identifier.ts',
   ]),
   module('orchestrator/src/mcp/mcp-operator-tools.ts', [
     '@modelcontextprotocol/sdk/server/mcp.js',

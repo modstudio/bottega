@@ -16,21 +16,24 @@ export function renderRulingFileText(input: {
   basis?: string | null
   answererKind: string | null
   runId: number | null
+  runRecordId: string | null
   workflow?: { slug: string; mode: string; cursorId: number } | null
   taskKey: string | null
   date: string
   questionId: number
+  questionRecordId: string
 }): string {
   return [
     '---',
-    `question_id: ${input.questionId}`,
+    `question_id: ${input.questionRecordId}`,
+    `question_number: ${input.questionId}`,
     ...(input.runId === null && input.workflow
       ? [
           `workflow: ${input.workflow.slug}`,
           `workflow_mode: ${input.workflow.mode}`,
           `workflow_cursor: ${input.workflow.cursorId}`,
         ]
-      : [`run: ${input.runId}`]),
+      : [`run: ${input.runRecordId}`, `run_number: ${input.runId}`]),
     `task: ${input.taskKey ?? 'none'}`,
     `date: ${input.date}`,
     `answerer: ${input.answererKind ?? 'unknown'}`,

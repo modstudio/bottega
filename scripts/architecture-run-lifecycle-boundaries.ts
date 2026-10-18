@@ -68,6 +68,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
     [
       'node:fs',
       'node:path',
+      '../filesystem-identity-plan.ts',
       '../artifact-paths.ts',
       '../database/database-location.ts',
       '../database/db.ts',
@@ -132,6 +133,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       'node:child_process',
       'node:crypto',
       'node:fs',
+      'node:path',
       '../../../shared/record-id.ts',
       '../../../shared/self-spawn.ts',
       '../../../shared/process-identity.ts',
@@ -180,6 +182,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       '../events.ts',
       '../idle-kill.ts',
       './live-run-member.ts',
+      './run-identifier.ts',
       './question-open.ts',
       './synthetic-lifecycle-job.ts',
     ],

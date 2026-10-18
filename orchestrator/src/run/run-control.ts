@@ -362,6 +362,10 @@ function continuationTree(
   latest: ChainTurn,
   project: Project | null,
 ) {
+  const runRecordId = db()
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+    .get(id)?.record_id
+  if (!runRecordId) throw new Error(`no run ${id}`)
   const latestBranchTip =
     latest.branch && project
       ? gitContext(project.path, 'rev-parse', '--verify', `refs/heads/${latest.branch}^{commit}`)
@@ -400,7 +404,7 @@ function continuationTree(
             project.path,
             'rev-parse',
             '--verify',
-            `refs/orch/retained/${id}^{commit}`,
+            `refs/orch/retained/${runRecordId}^{commit}`,
           ),
           recordedTip: row.branch_kept_tip,
         })

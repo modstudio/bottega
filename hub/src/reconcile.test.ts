@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, spyOn, test } from 'bun:test'
-import { resetFixtureStore } from '../test/run-fixtures.ts'
+import { fixtureRecordId, resetFixtureStore } from '../test/run-fixtures.ts'
 
 const { db, writeTransaction } = await import('./db.ts')
 const { indexRunAnswers, reconcileOpenIntervals, runRef, statusFor } = await import(
@@ -28,11 +28,11 @@ function orchAnswers(rows: object[]) {
       'list',
       '--json',
       '--id',
-      '1205',
+      fixtureRecordId(1205),
       '--id',
-      '1206',
+      fixtureRecordId(1206),
       '--id',
-      '9999',
+      fixtureRecordId(9999),
     ])
     expect(args).not.toContain('--since')
     return {
@@ -127,15 +127,17 @@ function chain(row: {
       status: turn.status,
     })),
     requested_id: row.requested_id,
+    requested_record_id:
+      row.requested_id === undefined ? undefined : fixtureRecordId(row.requested_id),
     resolved_from: row.resolved_from,
   } as Parameters<typeof indexRunAnswers>[0][number]
 }
 
 describe('open interval reconciliation', () => {
   test('dry-run reports terminal, live, and unknown rows without writing', async () => {
-    add('interval-1', 'orch:1205', '2026-09-03T00:00:01.000Z')
-    add('interval-2', 'orch:1206', '2026-09-03T00:00:02.000Z')
-    add('interval-3', 'orch:9999', '2026-09-03T00:00:03.000Z')
+    add('interval-1', `orch:${fixtureRecordId(1205)}`, '2026-09-03T00:00:01.000Z')
+    add('interval-2', `orch:${fixtureRecordId(1206)}`, '2026-09-03T00:00:02.000Z')
+    add('interval-3', `orch:${fixtureRecordId(9999)}`, '2026-09-03T00:00:03.000Z')
     const spawn = orchAnswers([
       { id: 1205, status: 'ok' },
       { id: 1206, status: 'running' },
@@ -150,8 +152,8 @@ describe('open interval reconciliation', () => {
         ['interval-1', 'ok', 7_200_000],
       ])
       expect(result.leftOpen.map((row) => [row.record_id, row.reason])).toEqual([
-        ['interval-2', 'run 1206 is still running'],
-        ['interval-3', 'run 9999 is unknown to orch; needs a decision'],
+        ['interval-2', `run ${fixtureRecordId(1206)} is still running`],
+        ['interval-3', `run ${fixtureRecordId(9999)} is unknown to orch; needs a decision`],
       ])
       expect(db().query('SELECT record_id, open FROM interval ORDER BY record_id').all()).toEqual([
         { record_id: 'interval-1', open: 1 },
@@ -206,7 +208,7 @@ describe('open interval reconciliation', () => {
 
   test('bare turn ref resolves to the turn status (mutation: index answers only by id)', () => {
     expect(
-      statusOf('orch:2072', [
+      statusOf(`orch:${fixtureRecordId(2072)}`, [
         chain({
           id: 2032,
           status: 'ok',
@@ -223,7 +225,7 @@ describe('open interval reconciliation', () => {
 
   test('bare root ref still resolves to the root status (mutation: read a turn when resolved_from is not turn)', () => {
     expect(
-      statusOf('orch:2032', [
+      statusOf(`orch:${fixtureRecordId(2032)}`, [
         chain({
           id: 2032,
           status: 'ok',

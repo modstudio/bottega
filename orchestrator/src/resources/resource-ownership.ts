@@ -4,10 +4,10 @@
  */
 import type { Database } from 'bun:sqlite'
 import { appendFileSync, existsSync, mkdirSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname } from 'node:path'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import { resolveRunsDirectory } from '../database/database-location.ts'
 import { nowIso, sessionId } from '../database/db.ts'
+import { runEventsPath } from '../events.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
 import { realpathOrSpelled, withoutTrailingSeparators } from '../git/checkout-identity.ts'
 import { repoRootOf } from '../git/git-environment.ts'
@@ -485,7 +485,7 @@ export function teardownTerminalRunResources(
   }
   if (result.failures.size) {
     try {
-      const path = join(resolveRunsDirectory(process.env), String(runId), 'events.jsonl')
+      const path = runEventsPath(runId)
       mkdirSync(dirname(path), { recursive: true })
       appendFileSync(
         path,

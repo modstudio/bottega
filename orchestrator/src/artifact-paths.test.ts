@@ -17,21 +17,22 @@ test('path containment accepts only the directory itself and slash descendants',
 
 test('named artifact plans resolve sources, destinations, and already-persisted entries', () => {
   const runs = join('/tmp', 'orch-runs')
-  const scratch = runScratchDir(42, runs)
-  const artifacts = runArtifactsDir(42, runs)
+  const id = '11111111-1111-4111-8111-111111111111'
+  const scratch = runScratchDir(id, runs)
+  const artifacts = runArtifactsDir(id, runs)
   const worktree = join('/tmp', 'orch-tree')
 
-  expect(namedArtifactPlan(42, runs, join(scratch, 'nested', 'table.json'), worktree)).toEqual({
+  expect(namedArtifactPlan(id, runs, join(scratch, 'nested', 'table.json'), worktree)).toEqual({
     source: join(artifacts, 'nested', 'table.json'),
     destination: join(artifacts, 'nested', 'table.json'),
     alreadyInPlace: true,
   })
-  expect(namedArtifactPlan(42, runs, join(artifacts, 'report.md'), worktree)).toEqual({
+  expect(namedArtifactPlan(id, runs, join(artifacts, 'report.md'), worktree)).toEqual({
     source: join(artifacts, 'report.md'),
     destination: join(artifacts, 'report.md'),
     alreadyInPlace: true,
   })
-  expect(namedArtifactPlan(42, runs, 'reports/findings.json', worktree)).toEqual({
+  expect(namedArtifactPlan(id, runs, 'reports/findings.json', worktree)).toEqual({
     source: join(worktree, 'reports', 'findings.json'),
     destination: join(artifacts, 'findings.json'),
     alreadyInPlace: false,
@@ -40,30 +41,31 @@ test('named artifact plans resolve sources, destinations, and already-persisted 
 
 test('persisted artifact paths follow the scratch rename and named-file copies', () => {
   const runs = join('/tmp', 'orch-runs')
-  const scratch = runScratchDir(42, runs)
-  const artifacts = runArtifactsDir(42, runs)
+  const id = '22222222-2222-4222-8222-222222222222'
+  const scratch = runScratchDir(id, runs)
+  const artifacts = runArtifactsDir(id, runs)
   const worktree = join('/tmp', 'orch-tree')
 
-  expect(persistedRunArtifactPath(42, runs, join(scratch, 'reply.json'), worktree)).toBe(
+  expect(persistedRunArtifactPath(id, runs, join(scratch, 'reply.json'), worktree)).toBe(
     join(artifacts, 'reply.json'),
   )
-  expect(persistedRunArtifactPath(42, runs, join(scratch, 'nested', 'table.json'), worktree)).toBe(
+  expect(persistedRunArtifactPath(id, runs, join(scratch, 'nested', 'table.json'), worktree)).toBe(
     join(artifacts, 'nested', 'table.json'),
   )
   expect(
-    persistedRunArtifactPath(42, runs, join(artifacts, 'nested', 'table.json'), worktree),
+    persistedRunArtifactPath(id, runs, join(artifacts, 'nested', 'table.json'), worktree),
   ).toBe(join(artifacts, 'nested', 'table.json'))
-  expect(persistedRunArtifactPath(42, runs, '/tmp/elsewhere/evidence.json', worktree)).toBe(
+  expect(persistedRunArtifactPath(id, runs, '/tmp/elsewhere/evidence.json', worktree)).toBe(
     join(artifacts, 'evidence.json'),
   )
-  expect(persistedRunArtifactPath(42, runs, 'reports/findings.json', worktree)).toBe(
+  expect(persistedRunArtifactPath(id, runs, 'reports/findings.json', worktree)).toBe(
     join(artifacts, 'findings.json'),
   )
 })
 
 test('a scratch path inside a prose string field is rewritten to the artifacts path', () => {
   const runs = join('/tmp', 'orch-runs')
-  const id = 11055
+  const id = '33333333-3333-4333-8333-333333333333'
   const input = JSON.stringify({
     summary: `screenshot at ${join(runScratchDir(id, runs), 'header-strip.png')}`,
   })
@@ -76,8 +78,8 @@ test('a scratch path inside a prose string field is rewritten to the artifacts p
 
 test('a prefix-sharing run id and a scratchpad sibling stay untouched', () => {
   const runs = join('/tmp', 'orch-runs')
-  const id = 11055
-  const other = join(runScratchDir(110550, runs), 'shot.png')
+  const id = '44444444-4444-4444-8444-444444444444'
+  const other = join(runScratchDir('44444444-4444-4444-8444-444444444445', runs), 'shot.png')
   const sibling = join(runs, String(id), 'scratchpad', 'notes.md')
   const text = `${other} ${sibling}`
   expect(rewriteScratchDirPaths(text, id, runs)).toBe(text)
@@ -85,13 +87,13 @@ test('a prefix-sharing run id and a scratchpad sibling stay untouched', () => {
 
 test('the bare scratch directory path is rewritten', () => {
   const runs = join('/tmp', 'orch-runs')
-  const id = 11055
+  const id = '55555555-5555-4555-8555-555555555555'
   expect(rewriteScratchDirPaths(runScratchDir(id, runs), id, runs)).toBe(runArtifactsDir(id, runs))
 })
 
 test('sibling scratch names stay untouched and a JSON bare scratch dir is rewritten', () => {
   const runs = join('/tmp', 'orch-runs')
-  const id = 11055
+  const id = '66666666-6666-4666-8666-666666666666'
   const scratch = runScratchDir(id, runs)
   const artifacts = runArtifactsDir(id, runs)
   const siblings = [

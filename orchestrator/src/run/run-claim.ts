@@ -71,7 +71,7 @@ import { closeRunChainQuestions, QUESTION_CLOSE_ATTEMPT_FAILED_OVER } from './qu
 import { resumeCreationOptions } from './resume-tree.ts'
 import {
   noRepoIsolatePath,
-  type runFilePaths,
+  prepareFiles,
   runScratchDir,
   writeDispatchState,
   writeGeneratedSchema,
@@ -126,7 +126,6 @@ type ClaimOptions = {
 export type ClaimInput = {
   opts: ClaimOptions
   runsDir: string
-  paths: ReturnType<typeof runFilePaths>
   stamp: string
   name: string
   generatedSchema: unknown
@@ -191,7 +190,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   let {
     opts,
     runsDir,
-    paths,
     stamp,
     name,
     generatedSchema,
@@ -231,17 +229,15 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     opts.resume?.parent ?? null,
   )
   const claimedPrompt = opts.reserveId
-    ? (
+    ? ((
         db().query('SELECT prompt_path FROM run WHERE id=?').get(opts.reserveId) as {
           prompt_path: string | null
         } | null
-      )?.prompt_path
+      )?.prompt_path ?? null)
     : null
-  const promptPath = claimedPrompt ?? paths.prompt
-  writeFileSync(promptPath, originalPrompt)
-  // Beside the prompt it wraps, whatever that file is called: a detached run's
-  // prompt path was named by detach() before this stamp existed.
-
+  const recordId = recordIdForClaim(opts.reserveId)
+  const { promptPath, outputPath } = prepareFiles(runsDir, recordId, claimedPrompt, originalPrompt)
+  // Beside the prompt it wraps; detach() may already have named that prompt path.
   /**
    * The return contract, written to disk because that is how both agents take
    * one: codex's `--output-schema` wants a path and grok's `--json-schema`
@@ -266,7 +262,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       : originalSchemaPath
 
   const started = Date.now()
-  const recordId = recordIdForClaim(opts.reserveId)
   const head = originalPrompt.slice(0, 200).replace(/\s+/g, ' ')
   const inheritedLaunch =
     resume.workspaceSource === 'retained' ? inheritedRunFacts(opts.resume!.parent) : null
@@ -510,10 +505,10 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       keepTree?.reason ?? null,
       claim.id,
     )
-  const scratchDir = runScratchDir(claim.id)
+  const scratchDir = runScratchDir(recordId)
   mkdirSync(scratchDir, { recursive: true })
   prompt = `${replyFileInstruction(replySchemaName, scratchDir)}\n\n${prompt}`
-  writeFileSync(promptPath.replace(/\.prompt\.txt$/, '.bound.txt'), prompt)
+  writeFileSync(join(dirname(promptPath), 'bound-prompt.txt'), prompt)
   db()
     .query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE id=?')
     .run(sha(prompt), Buffer.byteLength(prompt), claim.id)
@@ -542,12 +537,14 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   let mcpTrustGranted = false,
     taskBranchAttachment = false
   let grokMcpEnvironment: Record<string, string> = {}
-  const sandboxRoot = (
-    db().query('SELECT COALESCE(parent_run_id,id) AS id FROM run WHERE id=?').get(claim.id) as {
-      id: number
-    }
-  ).id
-  const sandboxRunDir = join(runsDir, `sandbox-${sandboxRoot}`)
+  const sandboxRoot = db()
+    .query<{ id: number; record_id: string }, [number]>(
+      `SELECT root.id,root.record_id FROM run member
+       JOIN run root ON root.id=COALESCE(member.parent_run_id,member.id)
+       WHERE member.id=?`,
+    )
+    .get(claim.id)!
+  const sandboxRunDir = join(runsDir, `sandbox-${sandboxRoot.record_id}`)
   const sandboxRunDirExisted = existsSync(sandboxRunDir)
   const attachedTree = resolvedTaskBranch?.worktree ?? null
   const claimTreePlan = decideClaimTreePlan({
@@ -635,7 +632,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             if (result.changes !== 1)
               throw new Error(`run ${claim.id} could not record its worktree`)
             recordCreatedWorktreeClaims(db(), {
-              rootRunId: sandboxRoot,
+              rootRunId: sandboxRoot.id,
               runId: claim.id,
               projectId: runProjectId,
               owned: true,
@@ -652,7 +649,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         > = (resource) => {
           writeTransaction(() => {
             const identity = {
-              rootRunId: sandboxRoot,
+              rootRunId: sandboxRoot.id,
               runId: claim.id,
               projectId: runProjectId,
               claimedAt: nowIso(),
@@ -667,7 +664,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         const claimRecipeServePort = () =>
           writeTransaction(() =>
             claimRecipePort(db(), {
-              rootRunId: sandboxRoot,
+              rootRunId: sandboxRoot.id,
               runId: claim.id,
               projectId: runProjectId,
               claimedAt: nowIso(),
@@ -919,7 +916,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       // The original file remains the caller's resumable spec. The bound file
       // and row describe what was actually sent after the worktree had an
       // address, which is the evidence an audit needs.
-      writeFileSync(promptPath.replace(/\.prompt\.txt$/, '.bound.txt'), prompt)
+      writeFileSync(join(dirname(promptPath), 'bound-prompt.txt'), prompt)
       db()
         .query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE id=?')
         .run(sha(prompt), Buffer.byteLength(prompt), claim.id)
@@ -947,7 +944,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         () =>
           writeTransaction(() => {
             recordSandboxDirectoryClaim(db(), {
-              rootRunId: sandboxRoot,
+              rootRunId: sandboxRoot.id,
               runId: claim.id,
               projectId: runProjectId,
               path: sandboxRunDir,
@@ -1000,7 +997,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
                 .query('UPDATE run SET mcp_trust_path=? WHERE id=?')
                 .run(added.length ? JSON.stringify(added) : null, claim.id)
               recordTrustEntryClaims(db(), {
-                rootRunId: sandboxRoot,
+                rootRunId: sandboxRoot.id,
                 runId: claim.id,
                 projectId: runProjectId,
                 headings: added,
@@ -1071,13 +1068,14 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
 
   return {
     promptPath,
+    outputPath,
     originalSchemaPath,
     textReplyContract,
     schemaPath,
     started,
     launchKey,
     runToken,
-    claim,
+    claim: { ...claim, recordId },
     keepTree,
     scratchDir,
     worktree,

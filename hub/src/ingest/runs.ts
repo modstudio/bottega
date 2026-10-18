@@ -2,7 +2,7 @@ import type { Database } from 'bun:sqlite'
 import type { OrchRun, RulingListRow } from '../../../shared/orch-contract.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { attributeRun, refreshKeyPrefixes } from '../attribute.ts'
-import { nowIso, writeTransaction } from '../db.ts'
+import { db, nowIso, writeTransaction } from '../db.ts'
 import { intervalOwningProject } from '../interval-project-correction.ts'
 import { readRuns, readWorkflowRulings } from '../orch.ts'
 import { projectRecordIdFor } from '../project-record-id.ts'
@@ -19,20 +19,176 @@ export type { OrchRun } from '../../../shared/orch-contract.ts'
  * "a database per concern" line stops being true, and the CLI is a published
  * interface that can keep working when the schema behind it moves.
  */
-function rootRef(id: number) {
+function rootRef(id: string) {
   return `orch:${id}`
 }
 
-function runRef(rootId: number, questionRunId: number, hasTurns: boolean) {
+function runRef(rootId: string, questionRunId: string, hasTurns: boolean) {
   return hasTurns ? `orch:${rootId}:turn:${questionRunId}` : `orch:${rootId}`
 }
 
-function deliveryRunRef(run: OrchRun, receivingRunId: number | null): string | null {
+type RunRefConversionReport = { interval: number; question: number; question_delivery: number }
+type RefRow = { row_id: number; value: string }
+
+function legacyRunRef(value: string): { root: string; turn: string | null } | null {
+  const match = /^orch:([1-9]\d*)(?::turn:([1-9]\d*))?$/.exec(value)
+  return match ? { root: match[1]!, turn: match[2] ?? null } : null
+}
+
+function convertReferenceRows(
+  table: 'question' | 'question_delivery',
+  column: string,
+  rows: RefRow[],
+  convert: (value: string) => string | null,
+  update: (target: string, rowId: number) => void,
+  report: RunRefConversionReport,
+  missing: string[],
+): void {
+  for (const row of rows.filter((candidate) => legacyRunRef(candidate.value))) {
+    const target = convert(row.value)
+    if (!target) {
+      missing.push(`${table}.${column} ${row.row_id}: ${row.value}`)
+      continue
+    }
+    if (target !== row.value) {
+      update(target, row.row_id)
+      report[table]++
+    }
+  }
+}
+
+function convertIntervalRefs(
+  conn: Database,
+  convert: (value: string) => string | null,
+  report: RunRefConversionReport,
+  missing: string[],
+): void {
+  const rows = conn
+    .query<{ record_id: string; ref: string }, []>(
+      "SELECT record_id,ref FROM interval WHERE ref LIKE 'orch:%'",
+    )
+    .all()
+    .filter((row) => legacyRunRef(row.ref))
+  const update = conn.query('UPDATE interval SET ref=? WHERE record_id=?')
+  for (const row of rows) {
+    const target = convert(row.ref)
+    if (!target) {
+      missing.push(`interval ${row.record_id}: ${row.ref}`)
+      continue
+    }
+    if (target === row.ref) continue
+    const collision = conn
+      .query<{ record_id: string }, [string, string]>(
+        'SELECT record_id FROM interval WHERE ref=? AND record_id<>? LIMIT 1',
+      )
+      .get(target, row.record_id)
+    if (collision)
+      throw new Error(
+        `refusing numeric run-ref conversion: interval ${row.record_id} maps to ${target}, already held by ${collision.record_id}`,
+      )
+    update.run(target, row.record_id)
+    report.interval++
+  }
+}
+
+/** Convert the three durable Hub columns that mirror orchestrator run identity. */
+export function convertLegacyRunRefs(
+  conn: Database,
+  runs: readonly OrchRun[],
+): RunRefConversionReport {
+  const identities = new Map<string, string>()
+  for (const run of runs) {
+    identities.set(String(run.id), run.record_id)
+    for (const turn of run.turns ?? []) identities.set(String(turn.id), turn.record_id)
+  }
+  const convert = (value: string): string | null => {
+    const parsed = legacyRunRef(value)
+    if (!parsed) return value
+    const root = identities.get(parsed.root)
+    const turn = parsed.turn ? identities.get(parsed.turn) : null
+    if (!root || (parsed.turn && !turn)) return null
+    return parsed.turn ? `orch:${root}:turn:${turn}` : `orch:${root}`
+  }
+  const report: RunRefConversionReport = { interval: 0, question: 0, question_delivery: 0 }
+  const missing: string[] = []
+  convertIntervalRefs(conn, convert, report, missing)
+  convertReferenceRows(
+    'question',
+    'run_ref',
+    conn
+      .query<{ row_id: number; value: string }, []>(
+        "SELECT question_id row_id,run_ref value FROM question WHERE run_ref LIKE 'orch:%'",
+      )
+      .all(),
+    convert,
+    (target, rowId) =>
+      conn.query('UPDATE question SET run_ref=? WHERE question_id=?').run(target, rowId),
+    report,
+    missing,
+  )
+  convertReferenceRows(
+    'question',
+    'root_ref',
+    conn
+      .query<{ row_id: number; value: string }, []>(
+        "SELECT question_id row_id,root_ref value FROM question WHERE root_ref LIKE 'orch:%'",
+      )
+      .all(),
+    convert,
+    (target, rowId) =>
+      conn.query('UPDATE question SET root_ref=? WHERE question_id=?').run(target, rowId),
+    report,
+    missing,
+  )
+  convertReferenceRows(
+    'question_delivery',
+    'run_ref',
+    conn
+      .query<{ row_id: number; value: string }, []>(
+        "SELECT rowid row_id,run_ref value FROM question_delivery WHERE run_ref LIKE 'orch:%'",
+      )
+      .all(),
+    convert,
+    (target, rowId) =>
+      conn.query('UPDATE question_delivery SET run_ref=? WHERE rowid=?').run(target, rowId),
+    report,
+    missing,
+  )
+  if (missing.length)
+    throw new Error(`numeric run refs have no orchestrator UUID mapping:\n${missing.join('\n')}`)
+  return report
+}
+
+function hasLegacyRunRefs(conn: Database): boolean {
+  const rows = [
+    ...conn
+      .query<{ value: string }, []>("SELECT ref value FROM interval WHERE ref LIKE 'orch:%'")
+      .all(),
+    ...conn
+      .query<{ value: string }, []>(
+        "SELECT run_ref value FROM question WHERE run_ref LIKE 'orch:%'",
+      )
+      .all(),
+    ...conn
+      .query<{ value: string }, []>(
+        "SELECT root_ref value FROM question WHERE root_ref LIKE 'orch:%'",
+      )
+      .all(),
+    ...conn
+      .query<{ value: string }, []>(
+        "SELECT run_ref value FROM question_delivery WHERE run_ref LIKE 'orch:%'",
+      )
+      .all(),
+  ]
+  return rows.some((row) => legacyRunRef(row.value))
+}
+
+function deliveryRunRef(run: OrchRun, receivingRunId: string | null): string | null {
   if (receivingRunId == null) return null
   const belongsToChain =
-    receivingRunId === run.id || run.turns?.some((turn) => turn.id === receivingRunId)
+    receivingRunId === run.record_id || run.turns?.some((turn) => turn.record_id === receivingRunId)
   return belongsToChain && run.turns
-    ? `orch:${run.id}:turn:${receivingRunId}`
+    ? `orch:${run.record_id}:turn:${receivingRunId}`
     : `orch:${receivingRunId}`
 }
 
@@ -64,13 +220,13 @@ function questionReplacer(conn: Database) {
   const deleteRootQuestions = conn.query(`DELETE FROM question WHERE root_ref = ?`)
 
   return (run: OrchRun, taskKey: string | null) => {
-    const root = rootRef(run.id)
+    const root = rootRef(run.record_id)
     const hasTurns = Boolean(run.turns)
     deleteRootQuestions.run(root)
     for (const question of run.questions) {
       upsertQuestion.run(
         question.id,
-        runRef(run.id, question.run_id, hasTurns),
+        runRef(run.record_id, question.run_record_id, hasTurns),
         root,
         taskKey,
         run.session_id,
@@ -87,7 +243,7 @@ function questionReplacer(conn: Database) {
       for (const delivery of question.deliveries) {
         insertQuestionDelivery.run(
           question.id,
-          deliveryRunRef(run, delivery.run_id),
+          deliveryRunRef(run, delivery.run_record_id),
           delivery.mode,
           delivery.outcome,
           delivery.at,
@@ -182,6 +338,7 @@ type OrchIntervalRow = {
 
 type OrchTurnLike = {
   id: number
+  record_id: string
   started_at: string
   latency_ms: number | null
   status: string
@@ -204,7 +361,7 @@ function orchIntervalRow(
     status: 'row',
     value: {
       source: 'orch',
-      ref: run.turns ? `orch:${run.id}:turn:${turn.id}` : `orch:${run.id}`,
+      ref: run.turns ? `orch:${run.record_id}:turn:${turn.record_id}` : `orch:${run.record_id}`,
       start_at: new Date(start).toISOString(),
       end_at: new Date(end).toISOString(),
       task_key: attribution.key,
@@ -289,14 +446,14 @@ function orchIntervalWriter(conn: Database) {
      WHERE source = 'orch' AND open = 1 AND (ref = ? OR ref LIKE ?)`,
   )
   return {
-    closeReplaced(retryOf: number) {
+    closeReplaced(retryOf: string) {
       closeReplaced.run(`orch:${retryOf}`, `orch:%:turn:${retryOf}`)
     },
     close(ref: string) {
       close.run(ref)
     },
     replaceChain(
-      rootId: number,
+      rootId: string,
       rows: readonly OrchIntervalRow[],
       preservedRefs: ReadonlySet<string>,
     ) {
@@ -327,21 +484,21 @@ function ingestOneRun(
     for (const turn of turns) {
       const built = orchIntervalRow(run, turn, attribution, now)
       if (built.status === 'skip') {
-        preservedRefs.add(`orch:${run.id}:turn:${turn.id}`)
+        preservedRefs.add(`orch:${run.record_id}:turn:${turn.record_id}`)
         skipped++
         continue
       }
       recomputed.push(built.value)
     }
-    writer.replaceChain(run.id, recomputed, preservedRefs)
+    writer.replaceChain(run.record_id, recomputed, preservedRefs)
     return { rows: recomputed.length, skipped }
   }
   const built = orchIntervalRow(run, turns[0]!, attribution, now)
   if (built.status === 'skip') {
-    if (built.close) writer.close(`orch:${run.id}`)
+    if (built.close) writer.close(`orch:${run.record_id}`)
     return { rows: 0, skipped: 1 }
   }
-  writer.replaceRef(`orch:${run.id}`, [built.value])
+  writer.replaceRef(`orch:${run.record_id}`, [built.value])
   return { rows: 1, skipped: 0 }
 }
 
@@ -377,7 +534,8 @@ function ingestRunRows(
     // while its successor is present. Close the predecessor from the handoff
     // itself; waiting to see that old row again leaves its last open sample
     // growing forever. retry_of may name either a root or a resumed child.
-    if (run.retry_of != null) writer.closeReplaced(run.retry_of)
+    const retryRecordId = (run as OrchRun & { retry_record_id?: string | null }).retry_record_id
+    if (retryRecordId) writer.closeReplaced(retryRecordId)
     const result = ingestOneRun(run, attribution, writer, now)
     rows += result.rows
     skipped += result.skipped
@@ -394,7 +552,12 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
   // Snapshot time, not completion: anything that happens during the read is
   // re-fetched next time. Overlap is cheap; a missed answer is not.
   const snapshot = nowIso()
-  const [runs, workflowQuestions] = await Promise.all([readRuns(since), readWorkflowRulings(since)])
+  let [runs, workflowQuestions] = await Promise.all([readRuns(since), readWorkflowRulings(since)])
+  const legacyRefs = hasLegacyRunRefs(db())
+  if (legacyRefs) runs = await readRuns('1970-01-01T00:00:00.000Z')
   const now = Date.now()
-  return writeTransaction((conn) => ingestRunRows(conn, runs, workflowQuestions, now, snapshot))
+  return writeTransaction((conn) => {
+    if (legacyRefs) convertLegacyRunRefs(conn, runs)
+    return ingestRunRows(conn, runs, workflowQuestions, now, snapshot)
+  })
 }

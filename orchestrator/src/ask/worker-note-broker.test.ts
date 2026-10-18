@@ -11,6 +11,9 @@ afterEach(() => mock.restore())
 
 test('host broker derives run facts and completes a requested note', async () => {
   const runId = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
+  const runRecordId = db()
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+    .get(runId)!.record_id
   const project = db()
     .query(
       `INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?) RETURNING record_id AS id`,
@@ -37,6 +40,7 @@ test('host broker derives run facts and completes a requested note', async () =>
     const filed = await requestWorkerNote(
       {
         id: runId,
+        recordId: runRecordId,
         project: 'worker-note-broker',
         projectPath: '/projects/main',
         tree: '/runs/tree',
@@ -57,6 +61,7 @@ test('host broker derives run facts and completes a requested note', async () =>
     expect(seen).toEqual([
       {
         id: runId,
+        recordId: runRecordId,
         project: 'worker-note-broker',
         projectPath: '/projects/main',
         tree: '/runs/tree',

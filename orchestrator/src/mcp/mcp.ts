@@ -3,6 +3,7 @@ import { serveStdio } from '@modelcontextprotocol/server/stdio'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, enableSchemaReload, sessionId } from '../database/db.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { registerStandardRuntime } from '../runtime/runtime-registration.ts'
 
 registerStandardRuntime()
@@ -242,7 +243,7 @@ export async function fileIssue(
   let worker: WorkerReporter | null = null
   let reporterId: string | number = session ?? ''
   if (reporter.kind === 'session' && !session) {
-    const runId = Number(process.env.ORCH_RUN_ID ?? 0)
+    const runId = resolveRunIdentifier(db(), process.env.ORCH_RUN_ID ?? '')
     const token = process.env.ORCH_RUN_TOKEN ?? ''
     if (!strictlyAuthenticatedWorkerRun(runId, token)) {
       throw new Error('cannot file issue: the reporting session is not available')

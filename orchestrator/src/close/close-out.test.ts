@@ -76,10 +76,12 @@ function closeOutFixture(
   const head = '1234567890abcdef1234567890abcdef12345678'
   mkdirSync(join(repo, '.git'), { recursive: true })
   mkdirSync(tree, { recursive: true })
-  writeFileSync(
-    join(tree, '.orch-run'),
-    `${ownership === 'owned' ? id : id + 1}\n${repo}\nsource: git\n`,
-  )
+  const ownerRecordId =
+    ownership === 'owned'
+      ? db().query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?').get(id)!
+          .record_id
+      : newRecordId()
+  writeFileSync(join(tree, '.orch-run'), `${ownerRecordId}\n${repo}\nsource: git\n`)
   upsertProject({ recordId: newRecordId(), name: project, path: repo, settings: { trunk: 'main' } })
   db()
     .query(

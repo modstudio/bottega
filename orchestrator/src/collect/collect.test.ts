@@ -1,12 +1,12 @@
 import { describe, expect, spyOn, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { appendRunEvent } from '../events.ts'
+import { appendRunEvent, runEventsPath } from '../events.ts'
 import {
   branchNote,
   collectResult,
@@ -549,15 +549,15 @@ describe('collection records', () => {
     )
   })
 
-  test(`${PLATFORM_SLUG} run result lists worker-filed notes and near-duplicate candidates`, () => {
+  test(`${PLATFORM_SLUG} run result ignores legacy numeric note events`, () => {
     const id = addRun({ agent: 'codex', job: 'review-lens' })
-    appendRunEvent(id, {
-      ts: new Date().toISOString(),
-      type: 'note',
-      noteId: 71,
-      candidateIds: [8, 13],
-    })
-    expect(recordedResult(id).errors.join('\n')).toContain('notes:     71 (near 8, 13)')
+    const eventsPath = runEventsPath(id)
+    mkdirSync(dirname(eventsPath), { recursive: true })
+    writeFileSync(
+      eventsPath,
+      `${JSON.stringify({ ts: new Date().toISOString(), type: 'note', noteId: 71, candidateIds: [8, 13] })}\n`,
+    )
+    expect(recordedResult(id).errors.join('\n')).not.toContain('notes:')
   })
 
   test(`${PLATFORM_SLUG} run result lists labels from new worker note events`, () => {

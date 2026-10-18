@@ -19,7 +19,6 @@ import {
   withWorktreeLease,
   worktreeLeaseName,
 } from '../project/project-lock.ts'
-import { projectAt, projectByName } from '../project/projects.ts'
 import {
   type ResourceClaimState,
   recordRetainedRefClaim,
@@ -33,6 +32,7 @@ import {
   worktreePathSpellings,
 } from '../resources/resource-ownership.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
+import { runRecordId } from '../run/run-identifier.ts'
 import { removeFreeRunLease } from '../run/run-lease.ts'
 import { processTable, terminateRunProcesses } from '../run/run-process.ts'
 import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
@@ -70,6 +70,9 @@ import {
   retainedBranchPruneCommand,
   retainedBranchReason,
 } from './retained-branch.ts'
+
+const retainedRefForRun = (tip: string | null, runId: number) =>
+  tip ? `refs/orch/retained/${runRecordId(db(), runId)}` : null
 
 export type CloseOutResult = {
   runId: number
@@ -265,7 +268,7 @@ export function releaseSandboxDirectoryForConversation(
     worktreeState?: ResourceClaimState | 'no-tree'
   } = {},
 ): SandboxReleaseResult {
-  const path = join(RUNS_DIR, `sandbox-${rootId}`)
+  const path = join(RUNS_DIR, `sandbox-${runRecordId(db(), rootId)}`)
   const turns = db()
     .query('SELECT status FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
     .all(rootId, rootId) as { status: string }[]
@@ -456,14 +459,7 @@ function presentTreeOwnershipResult(input: {
   dryRun?: boolean
 }): CloseOutResult | null {
   if (input.treeAbsent) return null
-  const branchTemplate = (input.repo ? projectByName(input.repo) : projectAt(input.treePath))
-    ?.settings.worktree?.branch
-  const ownership = inspectTreeOwnership(
-    input.treePath,
-    input.repoRoot,
-    input.conversationIds,
-    branchTemplate,
-  )
+  const ownership = inspectTreeOwnership(input.treePath, input.repoRoot, input.conversationIds)
   return ownershipCloseOutResult({
     runId: input.runId,
     treePath: input.treePath,
@@ -771,7 +767,7 @@ function attemptCloseOutRun(
               }
             const archivedScratchPath = archive.path
             const branchSnapshot = retainedBranch ? branchTip(repoRoot, retainedBranch) : null
-            const retainedRef = branchSnapshot ? `refs/orch/retained/${row.root_id}` : null
+            const retainedRef = retainedRefForRun(branchSnapshot, row.root_id)
             const pinFailure = protectRetainedBranch({
               repoRoot,
               retainedRef,

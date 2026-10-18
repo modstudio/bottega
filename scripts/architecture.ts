@@ -516,6 +516,7 @@ export const modules: ArchitectureModule[] = [
   ...projectModules,
   module('orchestrator/src/resources/ref-guard.ts', [
     '../database/db.ts',
+    '../filesystem-identity-plan.ts',
     '../../../shared/process-identity.ts',
     '../worktree/worktree-attribution.ts',
     '../git/git-environment.ts',
@@ -551,6 +552,7 @@ export const modules: ArchitectureModule[] = [
     '../run/run-process.ts',
     '../run/run-alive.ts',
     '../run/run-lease.ts',
+    '../run/run-identifier.ts',
   ]),
   ...runLifecycleModules,
   module('orchestrator/src/review/review-calibration.ts', [

@@ -94,6 +94,7 @@ export async function prepareWorkerHomeLaunch(input: {
   sandbox: RunSandbox
   runDir: string
   runId: number
+  runRecordId: string
   runToken: string
   environment: Record<string, string>
   grokEnvironment: Record<string, string>
@@ -114,7 +115,7 @@ export async function prepareWorkerHomeLaunch(input: {
   )
   const environment = childEnv(
     input.agent,
-    input.runId,
+    input.runRecordId,
     input.runToken,
     {
       ...input.environment,
@@ -123,6 +124,7 @@ export async function prepareWorkerHomeLaunch(input: {
       ...grokReaderScope?.environment,
     },
     input.includeStore,
+    input.runId,
   )
   const codexMcpCatalogues = await preflightCodexMcpCatalogues(input.codexMcpScope, environment)
   return {

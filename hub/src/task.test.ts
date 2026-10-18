@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { resetFixtureStore } from '../test/run-fixtures.ts'
+import { fixtureRecordId, resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { DUPLICATE_TITLE_FIXTURE } from './duplicate-matcher.fixture.ts'
 import { writeTrackerCache } from './ingest/trackers.ts'
@@ -635,14 +635,14 @@ describe('local task tracker', () => {
         .query(
           `INSERT INTO interval
         (record_id, task_key, project, source, agent, job, start_at, end_at, vendor_tokens, ref, open)
-       VALUES (?, ?, 'workshop', 'orch', 'codex', 'implement', ?, ?, 123, 'orch:1812', 0)`,
+       VALUES (?, ?, 'workshop', 'orch', 'codex', 'implement', ?, ?, 123, '${`orch:${fixtureRecordId(1812)}`}', 0)`,
         )
         .run('interval-root', task.key, '2026-09-05T10:00:00.000Z', '2026-09-05T10:01:00.000Z')
       conn
         .query(
           `INSERT INTO interval
         (record_id, task_key, project, source, agent, job, start_at, end_at, vendor_tokens, ref, open)
-       VALUES (?, ?, 'workshop', 'orch', 'codex', 'implement', ?, ?, 45, 'orch:1812:turn:1813', 0)`,
+       VALUES (?, ?, 'workshop', 'orch', 'codex', 'implement', ?, ?, 45, '${`orch:${fixtureRecordId(1812)}:turn:${fixtureRecordId(1813)}`}', 0)`,
         )
         .run('interval-turn', task.key, '2026-09-05T10:02:00.000Z', '2026-09-05T10:03:00.000Z')
     })
@@ -667,8 +667,8 @@ describe('local task tracker', () => {
     expect(result.documents.map((document) => document.id)).toEqual([handoffId, ordinaryId])
     expect(result.documents[0]?.body).toBe('# Handoff')
     expect(result.runs).toEqual([
-      expect.objectContaining({ id: '1813', agent: 'codex' }),
-      expect.objectContaining({ id: '1812', agent: 'codex' }),
+      expect.objectContaining({ id: fixtureRecordId(1813), agent: 'codex' }),
+      expect.objectContaining({ id: fixtureRecordId(1812), agent: 'codex' }),
     ])
     expect(taskRecord(task.key).task.key).toBe(task.key)
   })

@@ -703,6 +703,9 @@ describe('the live ask channel always answers', () => {
       expect(seen).toEqual([
         {
           id: run,
+          recordId: db()
+            .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+            .get(run)!.record_id,
           project: project.name,
           projectPath: '/projects/worker-note',
           tree: '/runs/review-tree',

@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
@@ -302,7 +302,7 @@ test('the adapter retains selected scratch files and records every dropped byte'
   writeFileSync(join(scratch, 'nested', 'deep', 'named.txt'), 'named evidence')
   writeFileSync(join(scratch, 'nested', 'deep', 'unmentioned.txt'), 'drop me')
   writeFileSync(join(scratch, 'summary.txt'), 'summary')
-  const resultPath = join(process.env.ORCH_RUNS!, String(id), 'result.json')
+  const resultPath = join(dirname(scratch), 'result.json')
   writeFileSync(resultPath, '{}')
 
   persistRunArtifacts(id, [join(scratch, 'nested', 'deep', 'named.txt')], null, {

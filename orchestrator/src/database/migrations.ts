@@ -13,6 +13,10 @@ export const JOURNAL_WHEN_ORDER = 'migration journal when values must be strictl
 const BACKFILL_UNCLOSED = 'migration backfill blocks must be closed by -- /BACKFILL'
 
 type JournalEntry = { idx: number; when: number; tag: string }
+export type BeforeMigrationApply = {
+  migration: string
+  action(database: Database): void
+}
 type ColumnShape = {
   table: string
   name: string
@@ -618,7 +622,12 @@ function adoptBaseline(d: Database, folder: string): string[] {
   return [entry.tag]
 }
 
-function applyMigrationRange(d: Database, folder: string, beforeMigration?: string): string[] {
+function applyMigrationRange(
+  d: Database,
+  folder: string,
+  beforeMigration?: string,
+  beforeApply?: BeforeMigrationApply,
+): string[] {
   d.exec('PRAGMA busy_timeout = 15000')
   const journal = migrationJournal(folder)
   const boundary = beforeMigration
@@ -643,6 +652,7 @@ function applyMigrationRange(d: Database, folder: string, beforeMigration?: stri
     }
     const allowed = new Set(allowedEntries.map((entry) => entry.tag))
     for (const entry of state.pending.filter((entry) => allowed.has(entry.tag))) {
+      if (beforeApply?.migration === entry.tag) beforeApply.action(d)
       createMigrationsTable(d)
       if (BACKFILL_SCHEMA_BOUNDARIES.has(entry.tag)) {
         const boundary = allowedEntries.findIndex((candidate) => candidate.tag === entry.tag)
@@ -690,8 +700,12 @@ function applyMigrationRange(d: Database, folder: string, beforeMigration?: stri
 }
 
 /** Apply the complete pending journal and re-run every shipped backfill. */
-export function applyMigrations(d: Database, folder = MIGRATIONS_FOLDER): string[] {
-  return applyMigrationRange(d, folder)
+export function applyMigrations(
+  d: Database,
+  folder = MIGRATIONS_FOLDER,
+  beforeApply?: BeforeMigrationApply,
+): string[] {
+  return applyMigrationRange(d, folder, undefined, beforeApply)
 }
 
 /** Apply pending entries up to, but not including, one named migration. */

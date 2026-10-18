@@ -5,15 +5,10 @@ import { readRunsById } from './orch.ts'
 import { indexRunAnswers, runRef } from './reconcile.ts'
 
 const FIXTURE_SESSIONS = new Set(['sess-a', 'sess-b', 'sess-old', 'sess-probe'])
+const fixtureRunRecordId = (id: number) => `00000000-0000-4000-8000-${String(id).padStart(12, '0')}`
 const FIXTURE_INTERVAL_REFS = new Set([
-  'orch:9103',
-  'orch:9105',
-  'orch:9108',
-  'orch:9201',
-  'orch:9401',
-  'orch:9901',
-  'orch:10001',
-  'orch:9301:turn:9302',
+  ...[9103, 9105, 9108, 9201, 9401, 9901, 10001].map((id) => `orch:${fixtureRunRecordId(id)}`),
+  `orch:${fixtureRunRecordId(9301)}:turn:${fixtureRunRecordId(9302)}`,
 ])
 const FIXTURE_TASKS = [
   { key: 'ALP-899', project: 'alpha', title: 'No assignment field' },
@@ -61,7 +56,7 @@ export function fixtureQuestionsWithoutRuns(
 
 export function fixtureIntervalsWithoutRuns(
   intervals: FixtureInterval[],
-  answersById: ReadonlyMap<number, unknown>,
+  answersById: ReadonlyMap<string, unknown>,
 ): FixtureInterval[] {
   return intervals.filter((interval) => {
     if (interval.source !== 'orch') return false

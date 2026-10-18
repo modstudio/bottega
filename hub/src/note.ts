@@ -51,6 +51,7 @@ export type NoteAnchor = {
   project: string
   files: { path: string; line: number; content: string }[]
   run_id: number | null
+  run_record_id?: string | null
   branch: string | null
   commit: string | null
   session_id: string | null
@@ -70,6 +71,7 @@ const noteAnchorSchema: z.ZodType<NoteAnchor> = z.object({
     }),
   ),
   run_id: z.number().nullable(),
+  run_record_id: z.string().uuid().nullable().optional(),
   branch: z.string().nullable(),
   commit: z.string().nullable(),
   session_id: z.string().nullable(),
@@ -269,13 +271,15 @@ export function deriveNoteAnchor(text: string, cwd = process.cwd(), env = proces
   if (!project) throw new Error(`cannot file note: no registered project contains ${cwd}`)
   const projectPath = projects().find((candidate) => candidate.name === project)?.path ?? cwd
   const files = deriveNoteFileAnchors(text, projectPath)
-  const run = Number(env.ORCH_RUN_ID ?? 0)
+  const runRecordId = env.ORCH_RUN_ID
+  const runNumber = Number(env.ORCH_RUN_NUMBER)
   return {
     id: newRecordId(),
     cwd,
     project,
     files,
-    run_id: Number.isSafeInteger(run) && run > 0 ? run : null,
+    run_id: Number.isSafeInteger(runNumber) && runNumber > 0 ? runNumber : null,
+    run_record_id: runRecordId && hasRecordIdShape(runRecordId) ? runRecordId.toLowerCase() : null,
     branch: git(cwd, 'branch', '--show-current') || null,
     commit: git(cwd, 'rev-parse', 'HEAD') || null,
     session_id: env.CLAUDE_CODE_SESSION_ID ?? env.CODEX_THREAD_ID ?? null,
@@ -749,20 +753,20 @@ export type StaleResult = {
 }
 
 type StaleDeps = {
-  runExists(ids: number[]): Promise<Set<number>>
+  runExists(ids: string[]): Promise<Set<string>>
   git(cwd: string, ...args: string[]): string | null
   now(): Date
   hosted: NoteClientOptions
 }
 
-async function defaultRunExists(ids: number[]): Promise<Set<number>> {
+async function defaultRunExists(ids: string[]): Promise<Set<string>> {
   const rows = await readRunsById(ids)
-  return new Set(rows.flatMap((row) => ('unknown' in row ? [] : [row.id])))
+  return new Set(rows.flatMap((row) => ('unknown' in row ? [] : [row.record_id])))
 }
 
 function vanishedReason(
   note: NoteRow,
-  existingRuns: Set<number>,
+  existingRuns: Set<string>,
   runGit: StaleDeps['git'],
 ): string | null {
   const registered = projects().find((project) => project.name === note.project)
@@ -780,12 +784,14 @@ function vanishedAnchorReason(
   anchor: NoteAnchor,
   projectPath: string,
   trunk: string,
-  existingRuns: Set<number>,
+  existingRuns: Set<string>,
   runGit: StaleDeps['git'],
 ): string | null {
   const fileReason = vanishedFileReason(anchor)
   if (fileReason) return fileReason
-  if (anchor.run_id && !existingRuns.has(anchor.run_id)) return `run ${anchor.run_id} aged out`
+  if (anchor.run_record_id && !existingRuns.has(anchor.run_record_id)) {
+    return `run ${anchor.run_id ?? anchor.run_record_id} aged out`
+  }
   if (anchor.branch && anchor.branch !== trunk) {
     if (!runGit(projectPath, 'show-ref', '--verify', `refs/heads/${anchor.branch}`))
       return `branch ${anchor.branch} was deleted`
@@ -816,7 +822,7 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
   const runIds = [
     ...new Set(
       notes.flatMap((note) =>
-        note.anchors.flatMap((anchor) => (anchor.run_id ? [anchor.run_id] : [])),
+        note.anchors.flatMap((anchor) => (anchor.run_record_id ? [anchor.run_record_id] : [])),
       ),
     ),
   ]

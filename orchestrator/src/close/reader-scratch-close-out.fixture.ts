@@ -1,5 +1,5 @@
 import { spyOn } from 'bun:test'
-import { mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
@@ -66,6 +66,11 @@ export function closeOutFixture(options: { submodule?: boolean } = {}) {
        worktree_source='clone',head_commit=? WHERE id=?`,
     )
     .run(project, worktree, worktree, head, head, id)
+  const recordId = db()
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+    .get(id)!.record_id
+  writeFileSync(join(worktree, '.orch-run'), `${recordId}\n${repo}\nsource: clone\n`)
+  appendFileSync(join(worktree, '.git', 'info', 'exclude'), '.orch-run\n')
   const realSpawnSync = Bun.spawnSync
   spyOn(Bun, 'spawnSync').mockImplementation(((command: string[], spawnOptions?: object) =>
     command[0] === 'ps'

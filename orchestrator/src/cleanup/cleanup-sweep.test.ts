@@ -21,6 +21,10 @@ test('a live run-named directory with unknown root project ownership is kept and
   const tree = join(projectPath, '.claude', 'worktrees', `orch-${run}`)
   mkdirSync(tree, { recursive: true })
   writeFileSync(join(tree, '.git'), 'gitdir: unavailable\n')
+  const runRecordId = db()
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+    .get(run)!.record_id
+  writeFileSync(join(tree, '.orch-run'), `${runRecordId}\n${projectPath}\nsource: git\n`)
   upsertProject({
     recordId: newRecordId(),
     name,
@@ -82,6 +86,10 @@ test('an orphan directory with a conflicting conversation member is kept and rep
   const tree = join(projectPath, '.claude', 'worktrees', `orch-${root}`)
   mkdirSync(tree, { recursive: true })
   writeFileSync(join(tree, '.git'), 'gitdir: unavailable\n')
+  const rootRecordId = db()
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+    .get(root)!.record_id
+  writeFileSync(join(tree, '.orch-run'), `${rootRecordId}\n${projectPath}\nsource: git\n`)
   upsertProject({
     recordId: projectRecordId,
     name,

@@ -556,13 +556,15 @@ describe('suggestion notes', () => {
     const file = join(scratch, 'anchor.ts')
     writeFileSync(file, 'first\nanchored line\n')
     const anchor = deriveNoteAnchor(`inspect ${file}:2`, '/fixtures/repos/workshop', {
-      ORCH_RUN_ID: '42',
+      ORCH_RUN_ID: '42000000-0000-4000-8000-000000000000',
+      ORCH_RUN_NUMBER: '42',
       CLAUDE_CODE_SESSION_ID: 'session-42',
     } as NodeJS.ProcessEnv)
     expect(anchor).toMatchObject({
       project: 'workshop',
       cwd: '/fixtures/repos/workshop',
       run_id: 42,
+      run_record_id: '42000000-0000-4000-8000-000000000000',
       session_id: 'session-42',
     })
     expect(anchor.files).toEqual([])
@@ -709,7 +711,11 @@ describe('suggestion notes', () => {
     }
     const anchors = [
       { ...base, files: [{ path: file, line: 1, content: 'old' }] },
-      { ...base, run_id: 999 },
+      {
+        ...base,
+        run_id: 999,
+        run_record_id: '99999999-9999-4999-8999-999999999999',
+      },
       { ...base, branch: 'deleted-branch' },
       { ...base, commit: 'old-commit' },
     ]

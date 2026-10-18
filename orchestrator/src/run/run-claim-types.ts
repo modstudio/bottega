@@ -7,13 +7,14 @@ import type { Worktree } from '../worktree/worktree-types.ts'
 
 export type ClaimResult = {
   promptPath: string
+  outputPath: string
   originalSchemaPath: string | undefined
   textReplyContract: boolean
   schemaPath: string | undefined
   started: number
   launchKey: string | null
   runToken: string
-  claim: { id: number }
+  claim: { id: number; recordId: string }
   keepTree: KeepTreeExemption | undefined
   scratchDir: string
   worktree: Worktree | null

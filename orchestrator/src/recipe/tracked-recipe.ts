@@ -8,7 +8,7 @@ import { settleCreateTimeBranchCleanup } from '../branch/create-time-settlement.
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { git } from '../git/git-environment.ts'
 import { projects, type WorktreeTool } from '../project/projects.ts'
-import { dockerRunResources, orchRunLabel } from '../resources/docker-resources.ts'
+import { dockerRunResources, orchRunLabelForRun } from '../resources/docker-resources.ts'
 import {
   claimDatabaseName,
   claimIndex,
@@ -299,7 +299,7 @@ export function recipeAllocationEnvironment(
   rootRunId?: number,
 ): Record<string, string> {
   const environment: Record<string, string> = {}
-  if (rootRunId !== undefined) environment.ORCH_RUN_LABEL = orchRunLabel(rootRunId)
+  if (rootRunId !== undefined) environment.ORCH_RUN_LABEL = orchRunLabelForRun(rootRunId)
   if (!allocations) return environment
   environment.ORCH_INDEX = String(allocations.index)
   for (const [name, port] of Object.entries(allocations.ports)) {
@@ -323,7 +323,7 @@ export function trackedRecipeVars(
   const vars: Record<string, string> = {
     ...staticVars,
     index: String(allocations.index),
-    label: orchRunLabel(rootRunId),
+    label: orchRunLabelForRun(rootRunId),
     tree_exists: 'true',
     ...(compose ? { 'compose.project': composeProjectName(compose.projectName, rootRunId) } : {}),
   }
@@ -872,7 +872,7 @@ export function teardownTrackedRecipe(
     key: stored.key,
     seed: stored.seed,
     main: input.worktree.repoRoot,
-    label: orchRunLabel(stored.rootRunId ?? readSnapshot(input.runId).rootRunId),
+    label: orchRunLabelForRun(stored.rootRunId ?? readSnapshot(input.runId).rootRunId),
     treeExists,
     allocations: stored.snapshot.allocations,
     compose: composeVariableIdentity(stored.snapshot.recipe, stored.projectName, stored.rootRunId),

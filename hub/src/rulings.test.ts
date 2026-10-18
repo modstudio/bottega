@@ -1,5 +1,10 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
-import { ingestRunFixtures, resetFixtureStore, runFixture } from '../test/run-fixtures.ts'
+import {
+  fixtureRecordId,
+  ingestRunFixtures,
+  resetFixtureStore,
+  runFixture,
+} from '../test/run-fixtures.ts'
 import { db } from './db.ts'
 import { listOpenRulings, measureRulings, rulingsPayload, rulingsStaleAfter } from './rulings.ts'
 
@@ -36,8 +41,16 @@ describe('run ingest', () => {
       )
       .all() as { question_id: number; run_ref: string; root_ref: string }[]
     expect(stored).toEqual([
-      { question_id: 20, run_ref: 'orch:9301:turn:9301', root_ref: 'orch:9301' },
-      { question_id: 21, run_ref: 'orch:9301:turn:9302', root_ref: 'orch:9301' },
+      {
+        question_id: 20,
+        run_ref: `orch:${fixtureRecordId(9301)}:turn:${fixtureRecordId(9301)}`,
+        root_ref: `orch:${fixtureRecordId(9301)}`,
+      },
+      {
+        question_id: 21,
+        run_ref: `orch:${fixtureRecordId(9301)}:turn:${fixtureRecordId(9302)}`,
+        root_ref: `orch:${fixtureRecordId(9301)}`,
+      },
     ])
 
     const clock = Date.parse('2026-09-04T20:00:00.000Z')
