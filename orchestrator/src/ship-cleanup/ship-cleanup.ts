@@ -5,11 +5,11 @@ import type { Database } from 'bun:sqlite'
 import { readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { findRecordedBranchLanding } from '../branch/branch-state.ts'
+import { type BranchPruneKeptReason, findRecordedBranchLanding } from '../branch/branch-state.ts'
 import { classifyMintedBranch, pruneBranch } from '../branch/branches.ts'
 import { closeOutRun } from '../close/close-out.ts'
 import { writableDb } from '../database/db.ts'
-import { removeHookTree } from '../hook-tree/tree.ts'
+import { type HookTreeRemovalResult, removeHookTreeResult } from '../hook-tree/tree.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { STORAGE_WALK_ENTRY_LIMIT, walkStoragePaths } from '../storage-walk.ts'
@@ -49,12 +49,12 @@ export type ShipCleanupDependencies = {
     branch: string,
   ): {
     deleted: string[]
-    kept: { branch: string; reason: string }[]
+    kept: { branch: string; reason: BranchPruneKeptReason }[]
     errors: string[]
   }
   measure(paths: readonly string[]): { bytes: number; errors: string[]; stoppedAtLimit: boolean }
   readerCloneArchive(runId: number): string | null
-  removeLandingTree(path: string): void
+  removeLandingTree(path: string): HookTreeRemovalResult
   runsFromTree(path: string): boolean
   remove(path: string): void
 }
@@ -82,7 +82,7 @@ const dependencies: ShipCleanupDependencies = {
       throw cause
     }
   },
-  removeLandingTree: removeHookTree,
+  removeLandingTree: removeHookTreeResult,
   runsFromTree: (path) => removalWorkingDirectoryRefusal(path, '') !== null,
   remove: (path) => rmSync(path, { recursive: true, force: true }),
 }
@@ -257,23 +257,21 @@ function releaseLandingTree(
     })
     return remedy
   }
-  try {
-    adapter.removeLandingTree(row.worktree)
+  const result = adapter.removeLandingTree(row.worktree)
+  if (result.outcome === 'released') {
     report.removed.worktrees.push(row.worktree)
     return null
-  } catch (cause) {
-    const detail = cause instanceof Error ? cause.message : String(cause)
-    if (!detail.includes('tree is dirty')) {
-      report.errors.push({
-        item: `run ${row.id} worktree`,
-        detail,
-        retry: cleanupRetry(branch),
-      })
-      return null
-    }
-    report.kept.push({ item: `run ${row.id} worktree`, reason: detail, remedy })
+  }
+  if (result.outcome === 'kept') {
+    report.kept.push({ item: `run ${row.id} worktree`, reason: result.reason, remedy })
     return remedy
   }
+  report.errors.push({
+    item: `run ${row.id} worktree`,
+    detail: result.detail,
+    retry: cleanupRetry(branch),
+  })
+  return null
 }
 
 function removeRunStorage(

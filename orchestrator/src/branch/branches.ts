@@ -99,7 +99,7 @@ export type BranchPruneReport = {
   dryRun: boolean
   deleted: string[]
   wouldDelete: string[]
-  kept: { branch: string; reason: string }[]
+  kept: { branch: string; reason: import('./branch-state.ts').BranchPruneKeptReason }[]
   operator: {
     branch: string
     state: 'unlanded' | 'unknown'

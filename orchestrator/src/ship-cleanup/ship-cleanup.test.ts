@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import type { BranchPruneKeptReason } from '../branch/branch-state.ts'
 import { db } from '../database/db.ts'
+import type { HookTreeRemovalResult } from '../hook-tree/tree.ts'
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { type ShipCleanupDependencies, shipCleanup } from './ship-cleanup.ts'
 
@@ -150,6 +152,7 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
     removeLandingTree: () => {
       removedLandingTrees.push('/trees/landing')
       removed.add('/trees/landing')
+      return { outcome: 'released' }
     },
   }
 
@@ -212,9 +215,9 @@ test('ship cleanup refuses a landed classification without a recorded landing ti
 })
 
 function landingTreeCleanup(input: {
-  removal?: { outcome: string; detail: string }
+  removal?: HookTreeRemovalResult
   runsFromTree?: boolean
-  pruneKept?: { branch: string; reason: string }[]
+  pruneKept?: { branch: string; reason: BranchPruneKeptReason }[]
 }): {
   report: ReturnType<typeof shipCleanup>
   landingTree: string
@@ -242,9 +245,9 @@ function landingTreeCleanup(input: {
     readerCloneArchive: () => null,
     runsFromTree: () => input.runsFromTree ?? false,
     removeLandingTree: () => {
-      const removal = input.removal ?? { outcome: 'released', detail: 'released' }
+      const removal = input.removal ?? { outcome: 'released' }
       if (removal.outcome === 'released') removedTrees.push(landingTree)
-      else throw new Error(removal.detail)
+      return removal
     },
     remove: () => {},
   }
@@ -288,8 +291,8 @@ test('ship cleanup keeps its current landing tree and checked-out branch without
 test('ship cleanup keeps a dirty landing tree and names its dirty paths', () => {
   const result = landingTreeCleanup({
     removal: {
-      outcome: 'held',
-      detail: 'landing tree held by its invoking session: tree is dirty: tracked.ts, new file.ts',
+      outcome: 'kept',
+      reason: 'landing tree held by its invoking session: tree is dirty: tracked.ts, new file.ts',
     },
   })
 
