@@ -18,6 +18,11 @@ export type RunArtifactListingEntry = {
   linkText?: string
 }
 
+export type ArtifactReaderReply = {
+  files_written?: string[] | null
+  deliverables: Array<{ name: string; content: string }>
+}
+
 type RunArtifactDropReason =
   | 'copy'
   | 'dependency'
@@ -46,17 +51,50 @@ const parts = (path: string) => path.split('/').filter(Boolean)
 const atOrBelow = (path: string, directory: string) =>
   directory === '.' || path === directory || path.startsWith(`${directory}/`)
 
+/** Ordered, deduplicated paths the parsed reply or its raw text names. */
+export function namedRunArtifactPaths(
+  reply: ArtifactReaderReply | null,
+  rawReply: string,
+  scratch: string,
+  artifacts: string,
+): string[] {
+  const paths = [
+    ...(reply?.files_written ?? []),
+    ...(reply?.deliverables.flatMap(({ name, content }) =>
+      [name, content].filter((value) => /(?:^|\/)\.?[^/]+\.[^/]+$/.test(value.trim())),
+    ) ?? []),
+  ]
+  const roots = [scratch, artifacts]
+  let cursor = 0
+  while (cursor < rawReply.length) {
+    const next = roots
+      .map((root) => ({ root, index: rawReply.indexOf(root, cursor) }))
+      .filter(({ index }) => index >= 0)
+      .sort((a, b) => a.index - b.index)[0]
+    if (!next) break
+    let end = next.index + next.root.length
+    while (end < rawReply.length && !/[\s"'`<>]/.test(rawReply[end]!)) end++
+    paths.push(rawReply.slice(next.index, end).replace(/[),.;:]+$/, ''))
+    cursor = end
+  }
+  return paths.filter((path, index) => paths.indexOf(path) === index)
+}
+
 function excludedDirectories(
   entries: RunArtifactListingEntry[],
 ): Map<string, RunArtifactDropReason> {
   const candidates = new Map<string, RunArtifactDropReason>()
   for (const entry of entries) {
-    if (entry.kind !== 'directory') continue
     const segments = parts(entry.path)
     const name = segments.at(-1)
-    if (name === '.git') candidates.set(segments.slice(0, -1).join('/') || '.', 'copy')
-    else if (name && DEPENDENCY_DIRECTORIES.has(name)) candidates.set(entry.path, 'dependency')
-    else if (name && BUILD_OUTPUT_DIRECTORIES.has(name)) candidates.set(entry.path, 'build output')
+    if (name === '.git') {
+      const copy = segments.length === 1 ? entry.path : segments.slice(0, -1).join('/')
+      candidates.set(copy, 'copy')
+    } else if (entry.kind === 'directory' && name && DEPENDENCY_DIRECTORIES.has(name)) {
+      candidates.set(entry.path, 'dependency')
+    } else if (entry.kind === 'directory' && name && BUILD_OUTPUT_DIRECTORIES.has(name)) {
+      candidates.set(entry.path, 'build output')
+    }
   }
   const selected = new Map<string, RunArtifactDropReason>()
   for (const [path, reason] of [...candidates].sort(

@@ -128,7 +128,7 @@ import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
 import { resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
-import { finishRun } from './run-terminal.ts'
+import { finishRun, type TerminalInput } from './run-terminal.ts'
 import type { RunResult } from './run-types.ts'
 import * as workerHome from './run-worker-home.ts'
 import { renderTaskRulings } from './task-rulings.ts'
@@ -918,7 +918,6 @@ export async function run(opts: {
   }
 
   bindSignals()
-
   // Declared out here because the `finally` has to be able to write a terminal
   // row whatever happened inside: the row is already claiming to be running, and
   // the one thing worse than a failed run is one that never says it stopped.
@@ -1108,7 +1107,7 @@ export async function run(opts: {
         checkReviewedCommit: checksReviewedCommit(Boolean(requestedJob.findings), repoJob),
         output,
         confinementEvent,
-        resolvedDialect,
+        parsedReply: resolvedDialect.parse(output).reply as TerminalInput['parsedReply'],
         runProjectName,
         mcpConnection,
         mcpMode,

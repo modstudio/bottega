@@ -33,6 +33,7 @@ import { teardownTerminalRunResources } from '../resources/resource-ownership.ts
 import { KEEP_RUN_FILES_DAYS } from './run-artifact-limits.ts'
 import {
   decideRunArtifactRetention,
+  namedRunArtifactPaths,
   type RunArtifactListingEntry,
 } from './run-artifact-retention.ts'
 
@@ -50,6 +51,7 @@ import {
  * that no longer exists.
  */
 export { KEEP_RUN_FILES_DAYS } from './run-artifact-limits.ts'
+export { namedRunArtifactPaths }
 
 /**
  * Where prompt and output files live. By default they sit beside the resolved
@@ -290,22 +292,6 @@ function listArtifacts(source: string, logical: string, listed: Map<string, List
     listArtifacts(join(source, name), logical ? `${logical}/${name}` : name, listed)
 }
 
-function citedRunPaths(reply: string, scratch: string, artifacts: string): string[] {
-  const paths: string[] = []
-  for (const root of [scratch, artifacts]) {
-    let cursor = 0
-    while (cursor >= 0) {
-      cursor = reply.indexOf(root, cursor)
-      if (cursor < 0) break
-      let end = cursor + root.length
-      while (end < reply.length && !/[\s"'`<>]/.test(reply[end]!)) end++
-      paths.push(reply.slice(cursor, end).replace(/[),.;:]+$/, ''))
-      cursor = end
-    }
-  }
-  return paths
-}
-
 function recordArtifactByteTotals(id: number, keptBytes: number, droppedBytes: number): void {
   const path = runTerminalResultPath(id)
   if (!existsSync(path)) return
@@ -319,9 +305,8 @@ type ArtifactCollectionInput = {
   id: number
   scratch: string
   artifacts: string
-  filesWritten: string[] | null
+  namedPaths: string[]
   worktreePath: string | null
-  reply: string
   diff?: string
 }
 
@@ -331,27 +316,34 @@ function collectNamedCandidates(
 ): { namedLogical: string[]; failures: string[] } {
   const failures: string[] = []
   const namedLogical: string[] = []
-  for (const named of [
-    ...(input.filesWritten ?? []),
-    ...citedRunPaths(input.reply, input.scratch, input.artifacts),
-  ]) {
-    const artifact = namedArtifactPlan(input.id, RUNS_DIR, named, input.worktreePath)
-    const logical = relative(input.artifacts, artifact.destination)
-    if (namedLogical.includes(logical)) continue
-    namedLogical.push(logical)
-    try {
-      const source = isPathAtOrBelow(named, input.scratch) ? named : artifact.source
-      if (!existsSync(source)) throw new Error('source does not exist')
-      if (!artifact.alreadyInPlace && !isPathAtOrBelow(source, input.scratch)) {
-        listArtifacts(source, logical, listed)
-      }
-    } catch (error) {
-      failures.push(
-        `could not copy named file ${artifact.source} to ${artifact.destination}: ${error instanceof Error ? error.message : String(error)}`,
-      )
-    }
+  for (const named of input.namedPaths) {
+    const failure = collectNamedCandidate(input, named, listed, namedLogical)
+    if (failure) failures.push(failure)
   }
   return { namedLogical, failures }
+}
+
+function collectNamedCandidate(
+  input: ArtifactCollectionInput,
+  named: string,
+  listed: Map<string, ListedArtifact>,
+  namedLogical: string[],
+): string | null {
+  const artifact = namedArtifactPlan(input.id, RUNS_DIR, named, input.worktreePath)
+  const logical = relative(input.artifacts, artifact.destination) || '.'
+  if (namedLogical.includes(logical)) return null
+  namedLogical.push(logical)
+  if (logical === '.') return null
+  try {
+    const source = isPathAtOrBelow(named, input.scratch) ? named : artifact.source
+    if (!existsSync(source)) throw new Error('source does not exist')
+    if (!artifact.alreadyInPlace && !isPathAtOrBelow(source, input.scratch)) {
+      listArtifacts(source, logical, listed)
+    }
+    return null
+  } catch (error) {
+    return `could not copy named file ${artifact.source} to ${artifact.destination}: ${error instanceof Error ? error.message : String(error)}`
+  }
 }
 
 function collectArtifactCandidates(input: ArtifactCollectionInput): {
@@ -414,10 +406,9 @@ function publishRetainedArtifacts(input: {
 
 export function persistRunArtifacts(
   id: number,
-  filesWritten: string[] | null,
+  namedPaths: string[] | null,
   worktree: { path: string } | null,
   changes: { diff?: string } | null,
-  reply = '',
 ): void {
   const scratch = runScratchDir(id)
   const artifacts = runArtifactsDir(id)
@@ -427,9 +418,8 @@ export function persistRunArtifacts(
     id,
     scratch,
     artifacts,
-    filesWritten,
+    namedPaths: namedPaths ?? [],
     worktreePath: worktree?.path ?? null,
-    reply,
     diff: changes?.diff,
   })
   if (failures.length > 0) throw new Error(failures.join('\n'))
