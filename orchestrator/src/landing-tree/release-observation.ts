@@ -44,7 +44,19 @@ export function observeLandingTreeRelease(row: LandingTreeReleaseRow): LandingTr
     if (!row.treeExists) return landingTreeReleaseDecision(decisionFacts, false, false)
     const cleanStatus = git(['status', '--porcelain=v1', '--untracked-files=all'], row.worktree)
     if (cleanStatus !== '') {
-      return landingTreeReleaseDecision(decisionFacts, false, false)
+      const decision = landingTreeReleaseDecision(decisionFacts, false, false)
+      return decision.action === 'keep'
+        ? {
+            ...decision,
+            reason:
+              `${decision.reason}: ` +
+              cleanStatus
+                .split('\n')
+                .map((line) => line.slice(3).trim())
+                .filter(Boolean)
+                .join(', '),
+          }
+        : decision
     }
     if (row.explicitTreeRemovalRequested) {
       return landingTreeReleaseDecision(decisionFacts, true, false)

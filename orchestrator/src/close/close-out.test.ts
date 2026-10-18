@@ -403,7 +403,7 @@ test('landing-tree sweep rechecks cleanliness under the close-out lock', () => {
 
     expect(result).toMatchObject({
       outcome: 'held',
-      detail: 'landing tree held by session owner: tree is dirty',
+      detail: 'landing tree held by session owner: tree is dirty: hanged.ts',
     })
     expect(existsSync(fixture.tree)).toBe(true)
   } finally {

@@ -163,9 +163,22 @@ export function decideBranchState(input: {
   return decide({ state: 'unlanded' })
 }
 
-type PruneEligibility =
+export type PruneEligibility =
   | { eligible: true }
   | { eligible: false; reason: 'state' | 'checked-out' | 'live' | 'tip-moved' }
+
+type PruneEligibilityReason = Extract<PruneEligibility, { eligible: false }>['reason']
+
+export type BranchPruneKeptReason =
+  | PruneEligibilityReason
+  | 'held'
+  | 'protected'
+  | 'unlanded'
+  | 'unknown'
+  | `base of live run ${number} (${string})`
+  | 'tip could not be rechecked'
+  | `registered ${ProtectedBranchKind}`
+  | 'deletion failed'
 
 export function isPruneSafeLandingState(
   state: BranchLanding['state'],

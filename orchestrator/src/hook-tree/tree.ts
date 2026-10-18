@@ -200,7 +200,20 @@ export function createHookTree(input: {
   }
 }
 
-export function removeHookTree(requestedPath: string): void {
+export type HookTreeRemovalResult =
+  | { outcome: 'released' }
+  | { outcome: 'kept'; reason: string }
+  | { outcome: 'failed'; detail: string }
+
+export function removeHookTreeResult(requestedPath: string): HookTreeRemovalResult {
+  try {
+    return removeRecordedHookTree(requestedPath)
+  } catch (cause) {
+    return { outcome: 'failed', detail: cause instanceof Error ? cause.message : String(cause) }
+  }
+}
+
+function removeRecordedHookTree(requestedPath: string): HookTreeRemovalResult {
   const wanted = canonicalPath(requestedPath)
   const recordedOwners = (
     db().query(`SELECT id,job,worktree FROM run WHERE worktree IS NOT NULL ORDER BY id`).all() as {
@@ -243,7 +256,13 @@ export function removeHookTree(requestedPath: string): void {
   }
   writableDb()
   const result = closeOutRun(owners[0]!.id, { intent: 'tree-remove' })
-  if (!['released', 'absent'].includes(result.outcome)) {
-    throw new Error(`tree teardown ${result.outcome}: ${result.detail}`)
-  }
+  if (result.outcome === 'released' || result.outcome === 'absent') return { outcome: 'released' }
+  if (result.outcome === 'held') return { outcome: 'kept', reason: result.detail }
+  return { outcome: 'failed', detail: `tree teardown ${result.outcome}: ${result.detail}` }
+}
+
+export function removeHookTree(requestedPath: string): void {
+  const result = removeHookTreeResult(requestedPath)
+  if (result.outcome === 'kept') throw new Error(`tree teardown held: ${result.reason}`)
+  if (result.outcome === 'failed') throw new Error(result.detail)
 }
