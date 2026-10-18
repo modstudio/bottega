@@ -16,13 +16,13 @@ import type { MonitorCondition } from './monitor-types.ts'
 import {
   deduplicateHardLinkedBytes,
   diskPressureCondition,
+  type LargestRuns,
   largestRuns,
   STORAGE_WALK_ENTRY_LIMIT,
-  storageMeasurement,
-  type LargestRuns,
   type StorageKindSummary,
   type StorageMeasurement,
   type StorageVolume,
+  storageMeasurement,
 } from './storage-conditions.ts'
 
 type WalkObservation = {
