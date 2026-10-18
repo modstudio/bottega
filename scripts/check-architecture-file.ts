@@ -3,11 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { ICruiseResult } from 'dependency-cruiser'
-import {
-  dependencyCruiserConfig,
-  hubWebViewDataRule,
-  writeTimeArchitectureRules,
-} from './architecture.ts'
+import { dependencyCruiserConfig, writeTimeArchitectureRules } from './architecture.ts'
 import { runArchitectureCruise } from './architecture-cruise.ts'
 import {
   hubDataPackageName,
@@ -20,17 +16,6 @@ import {
 } from './architecture-ui-layers.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
-const VIEW_DATA_BASELINE = new Set<string>(
-  JSON.parse(
-    readFileSync(
-      join(
-        ROOT,
-        'scripts/quality/hub-web-views-do-not-fetch-data-or-read-hub-mode-known-violations.json',
-      ),
-      'utf8',
-    ),
-  ) as string[],
-)
 const target = process.argv[2]
 const original = process.argv[3] ?? target
 const checkoutRoot = process.argv[4] ?? ROOT
@@ -118,9 +103,6 @@ function appliesToOriginalPath(ruleName: string) {
 const findings = result.summary.violations.filter(({ from, rule }) => {
   if (rule.severity !== 'error') return false
   if (from === target && !appliesToOriginalPath(rule.name)) return false
-  if (rule.name === hubWebViewDataRule.name) {
-    return from !== target || !VIEW_DATA_BASELINE.has(original)
-  }
   return true
 })
 

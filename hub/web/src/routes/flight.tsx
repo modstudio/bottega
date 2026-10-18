@@ -1,10 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { TaskView } from '@/components/work-view'
+import { Flight } from './-flight'
 
 export const Route = createFileRoute('/flight')({
-  component: () => (
-    <>
-      <TaskView name="flight" />
-    </>
-  ),
+  component: Flight,
 })

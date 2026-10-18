@@ -832,8 +832,6 @@ const { viewDataRule: hubWebViewDataRule, boundaryRules: hubDataBoundaryRules } 
     hubDataRouterException,
   )
 
-export { hubWebViewDataRule }
-
 /** The manifest-owned rule set enforced against every proposed hub source write. */
 export function writeTimeArchitectureRules(): ArchitectureRule[] {
   return [

@@ -1,6 +1,3 @@
-import { type BoardResponse, type FlightResponse, trpc } from '@bottega/hub-data/client'
-import { isHostedMode } from '@bottega/hub-data/hub-mode'
-import { waitingByRun } from '@bottega/hub-data/operator-waiting'
 import { Badge } from '@bottega/hub-ui/badge'
 import { LiveDot } from '@bottega/hub-ui/badge/live-dot'
 import { TextButton } from '@bottega/hub-ui/button'
@@ -22,7 +19,6 @@ import {
 } from '@bottega/hub-ui/table'
 import { compactTokens, duration, relativeTime, vendorFigures } from '@bottega/hub-util/format'
 import { taskStatusLook } from '@bottega/hub-views/status-look/task-status'
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import {
   ArrowDown,
@@ -33,14 +29,14 @@ import {
   LayoutGrid,
   Rows3,
 } from 'lucide-react'
-import { type ReactNode, useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useContext, useEffect, useMemo, useState } from 'react'
 import { Collection, type CollectionChildRow, type CollectionColumn } from '@/components/collection'
 import {
+  ProjectColorsContext,
   ProjectMark,
   projectVars,
   responseSubtitle,
   SourceMark,
-  useProjectColors,
   useWindowFilters,
   WindowControl,
 } from '@/components/design-system'
@@ -49,10 +45,80 @@ import { useDetailPanel } from '@/lib/detail-panel'
 import { setWorkCounts, useWindowState } from '@/lib/window'
 
 type WorkName = 'flight' | 'done'
-type TaskData = FlightResponse['data']
-type TaskRow = TaskData['rows'][number]
+type ChromeResponse = {
+  engaged: string
+  activeAgents: string[]
+  tasksShipped: number
+  collectedAt: string | null
+  servingSince: string
+  counts: { flight: number; done: number; runs: number }
+}
+type TaskRun = {
+  id: number | string
+  root_id?: number | string
+  agent: string | null
+  job: string | null
+  start: string
+  ms: number
+  running: boolean
+  tokens: number
+  costUsd: number | null
+}
+type TaskRow = {
+  spaceId?: string
+  spaceName?: string
+  key: string | null
+  recordId?: string
+  project: string | null
+  title: string | null
+  status: string | null
+  statusCategory: string | null
+  source: string | null
+  sourceProtocol: string | null
+  engagedMs: number
+  engaged: string
+  claudeTokens: number
+  vendors: { agent: string; tokens: number; costUsd: number | null; runs: number }[]
+  workingNow: boolean
+  lastAt: number
+  runs: TaskRun[]
+}
+type TaskData = {
+  rows: TaskRow[]
+  dropped: { reason: string; tasks: number; engaged: string }[]
+  unmappedStatuses: { count: number; words: string[] }
+  facets: Facets
+}
+type TaskResponse = ChromeResponse & { data: TaskData }
 type Run = TaskRow['runs'][number]
 type Facets = { projects: string[]; agents: string[]; sources: string[] }
+type WaitingRow = { kind: 'question' | 'workflow'; id: number; run_id: number | null }
+type WaitingByRun = ReadonlyMap<string, WaitingRow>
+const EMPTY_WAITING_BY_RUN: WaitingByRun = new Map()
+
+type BoardCard = {
+  spaceId?: string
+  spaceName?: string
+  key: string
+  recordId?: string
+  project: string | null
+  title: string | null
+  assignee: string | null
+  status: string | null
+  statusCategory: string | null
+  source: string
+  sourceProtocol: string | null
+  workingNow: boolean
+}
+type BoardResponse = ChromeResponse & {
+  data: {
+    cards: BoardCard[]
+    totals: { status: Record<string, number>; project: Record<string, number> }
+    scoped: boolean
+    filters: { project: string; source?: string }
+    facets: Facets
+  }
+}
 
 const number = new Intl.NumberFormat('en-US')
 
@@ -90,7 +156,7 @@ function WindowChrome({
 }: {
   title: string
   response: Pick<
-    FlightResponse,
+    ChromeResponse,
     'engaged' | 'activeAgents' | 'tasksShipped' | 'collectedAt' | 'servingSince' | 'counts'
   >
   facets: Facets
@@ -160,11 +226,7 @@ const columns = [
 
 type Sort = { col: (typeof columns)[number]['id']; dir: 1 | -1 }
 
-function runCells(
-  run: Run,
-  now: number,
-  waiting: ReturnType<typeof waitingByRun>,
-): CollectionChildRow['cells'] {
+function runCells(run: Run, now: number, waiting: WaitingByRun): CollectionChildRow['cells'] {
   return {
     task: <span className="pl-4">{run.agent ?? '-'}</span>,
     title: <span className="block truncate">{run.job || ''}</span>,
@@ -247,6 +309,7 @@ function TaskTable({
   facets,
   onDropdown,
   panel,
+  waitingByRun,
 }: {
   rows: TaskRow[]
   from: WorkName
@@ -254,6 +317,7 @@ function TaskTable({
   facets: Facets
   onDropdown: (open: boolean) => void
   panel?: ReactNode
+  waitingByRun: WaitingByRun
 }) {
   const navigate = useNavigate()
   const filters = useWindowFilters({ ...facets, onOpenChange: onDropdown })
@@ -261,14 +325,6 @@ function TaskTable({
   const now = useNow()
   const [sort, setSort] = useState<Sort>({ col: 'updated', dir: -1 })
   const [opened, setOpened] = useState<Set<string>>(() => new Set())
-  const waiting = useQuery({
-    ...trpc.operator.waiting.queryOptions(undefined, { refetchInterval: 20_000 }),
-    enabled: !isHostedMode() && from === 'flight',
-  })
-  const waitingRuns = waitingByRun(
-    rows.flatMap((row) => row.runs ?? []),
-    waiting.data ?? [],
-  )
   const sorted = useMemo(() => {
     const column = columns.find((candidate) => candidate.id === sort.col) ?? columns[5]
     return [...rows].sort((a, b) => {
@@ -353,7 +409,7 @@ function TaskTable({
         const visible = row.key && opened.has(row.key) ? runs : runs.filter((run) => run.running)
         return visible.map((run) => ({
           key: `${run.start}:${run.agent}:${run.job}`,
-          cells: runCells(run, now, waitingRuns),
+          cells: runCells(run, now, waitingByRun),
         }))
       }}
       empty={{ title: 'No tasks.' }}
@@ -409,12 +465,14 @@ function TaskContent({
   fetchedAt,
   onDropdown,
   panel,
+  waitingByRun,
 }: {
   name: WorkName
   data: TaskData
   fetchedAt: number
   onDropdown: (open: boolean) => void
   panel?: ReactNode
+  waitingByRun: WaitingByRun
 }) {
   const window = useWindowState()
   const tasks = data.rows.filter((row) => row.key)
@@ -431,6 +489,7 @@ function TaskContent({
           facets={data.facets}
           onDropdown={onDropdown}
           panel={panel}
+          waitingByRun={waitingByRun}
         />
       ) : (
         <EmptyState
@@ -502,84 +561,52 @@ function TaskContent({
   )
 }
 
-function useTaskViewQuery(
-  name: WorkName,
-  input: {
-    hours: 24 | 48 | 168 | 720
-    filters: { agent: string; project: string; source: string }
-  },
-  menus: number,
-) {
-  const hosted = isHostedMode()
-  const common = {
-    placeholderData: keepPreviousData,
-    refetchInterval: (menus ? false : 10_000) as false | number,
-  }
-  const hostedFlight = useQuery({
-    ...trpc.record.flight.queryOptions(input),
-    ...common,
-    enabled: hosted && name === 'flight',
-  })
-  const hostedDone = useQuery({
-    ...trpc.record.done.queryOptions(input),
-    ...common,
-    enabled: hosted && name === 'done',
-  })
-  const localFlight = useQuery({
-    ...trpc.work.flight.queryOptions(input),
-    ...common,
-    enabled: !hosted && name === 'flight',
-  })
-  const localDone = useQuery({
-    ...trpc.work.done.queryOptions(input),
-    ...common,
-    enabled: !hosted && name === 'done',
-  })
-  return hosted
-    ? name === 'flight'
-      ? hostedFlight
-      : hostedDone
-    : name === 'flight'
-      ? localFlight
-      : localDone
-}
-
-export function TaskView({ name }: { name: WorkName }) {
-  const window = useWindowState()
-  const [menus, setMenus] = useState(0)
-  // Keep the last result on screen while a new filter or window loads: a pending
-  // state here unmounts the toolbar, which destroys the control being used.
-  const query = useTaskViewQuery(name, { hours: window.hours, filters: window.filters }, menus)
-  const dropdown = (open: boolean) => setMenus((count) => Math.max(0, count + (open ? 1 : -1)))
+export function TaskView({
+  name,
+  response,
+  pending,
+  error,
+  fetchedAt,
+  waitingByRun = EMPTY_WAITING_BY_RUN,
+  onDropdown,
+}: {
+  name: WorkName
+  response: TaskResponse | undefined
+  pending: boolean
+  error: string | null
+  fetchedAt: number
+  waitingByRun?: WaitingByRun
+  onDropdown(open: boolean): void
+}) {
   const panel = useDetailPanel()
-  if (query.isPending) return <p className="text-text-muted">Loading {name}...</p>
-  if (query.error)
+  if (pending) return <p className="text-text-muted">Loading {name}...</p>
+  if (error)
     return (
       <p data-tone="error" className="text-status-text">
-        {query.error.message}
+        {error}
       </p>
     )
-  const response = query.data as FlightResponse
+  if (!response) return null
   return (
     <section>
       <WindowChrome
         title={name === 'flight' ? 'In flight' : 'Done'}
         response={response}
         facets={response.data.facets}
-        onDropdown={dropdown}
+        onDropdown={onDropdown}
       />
       <TaskContent
         name={name}
         data={response.data}
-        fetchedAt={query.dataUpdatedAt}
-        onDropdown={dropdown}
+        fetchedAt={fetchedAt}
+        onDropdown={onDropdown}
         panel={panel}
+        waitingByRun={waitingByRun}
       />
     </section>
   )
 }
 
-type BoardCard = BoardResponse['data']['cards'][number]
 type BoardGroup = 'status' | 'project'
 type BoardLayout = 'cards' | 'table'
 
@@ -600,7 +627,7 @@ function BoardOwner({ card }: { card: BoardCard }) {
 }
 
 function BoardCardView({ card }: { card: BoardCard }) {
-  const colors = useProjectColors()
+  const colors = useContext(ProjectColorsContext)
   return (
     <Link
       to="/board/tasks/$key"
@@ -633,41 +660,22 @@ function BoardCardView({ card }: { card: BoardCard }) {
   )
 }
 
-function useBoardQuery(
-  input: {
-    hours: 24 | 48 | 168 | 720
-    filters: { agent: string; project: string; source: string }
-  },
-  menus: number,
-) {
-  const hosted = isHostedMode()
-  const common = {
-    placeholderData: keepPreviousData,
-    refetchInterval: (menus ? false : 10_000) as false | number,
-  }
-  const hostedQuery = useQuery({
-    ...trpc.record.board.queryOptions(input),
-    ...common,
-    enabled: hosted,
-  })
-  const localQuery = useQuery({
-    ...trpc.work.board.queryOptions(input),
-    ...common,
-    enabled: !hosted,
-  })
-  return hosted ? hostedQuery : localQuery
-}
-
-export function BoardView() {
+export function BoardView({
+  response,
+  pending,
+  error,
+  onDropdown,
+}: {
+  response: BoardResponse | undefined
+  pending: boolean
+  error: string | null
+  onDropdown(open: boolean): void
+}) {
   const navigate = useNavigate()
   const boardPanel = useDetailPanel()
-  const window = useWindowState()
-  const [menus, setMenus] = useState(0)
   const [settings, setSettings] = useState(readBoardSettings)
   const [search, setSearch] = useState('')
   const [why, setWhy] = useState(false)
-  const query = useBoardQuery({ hours: window.hours, filters: window.filters }, menus)
-  const dropdown = (open: boolean) => setMenus((count) => Math.max(0, count + (open ? 1 : -1)))
   const remember = (next: Partial<typeof settings>) =>
     setSettings((current) => {
       const value = { ...current, ...next }
@@ -678,14 +686,14 @@ export function BoardView() {
       }
       return value
     })
-  if (query.isPending) return <p className="text-text-muted">Loading board...</p>
-  if (query.error)
+  if (pending) return <p className="text-text-muted">Loading board...</p>
+  if (error)
     return (
       <p data-tone="error" className="text-status-text">
-        {query.error.message}
+        {error}
       </p>
     )
-  const response = query.data as BoardResponse
+  if (!response) return null
   const all = response.data.cards
   const q = search.trim().toLowerCase()
   const cards = q
@@ -730,7 +738,7 @@ export function BoardView() {
         title="Board"
         response={response}
         facets={response.data.facets}
-        onDropdown={dropdown}
+        onDropdown={onDropdown}
         headerFilters
       />
       <Docked panel={boardPanel}>

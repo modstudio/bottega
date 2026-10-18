@@ -24,12 +24,19 @@
     "./record-request": "./src/record-request.ts",
     "./use-health": "./src/use-health.ts",
     "./use-machine-permission": "./src/use-machine-permission.ts",
+    "./use-board": "./src/use-board.ts",
+    "./use-operator-waiting": "./src/use-operator-waiting.ts",
+    "./use-project-colors": "./src/use-project-colors.ts",
     "./use-projects": "./src/use-projects.ts",
+    "./use-ratio": "./src/use-ratio.ts",
     "./use-reports": "./src/use-reports.ts",
     "./use-reviews": "./src/use-reviews.ts",
     "./use-routing": "./src/use-routing.ts",
+    "./use-spend": "./src/use-spend.ts",
     "./use-task": "./src/use-task.ts",
-    "./transport": "./src/transport.ts"
+    "./use-task-list": "./src/use-task-list.ts",
+    "./transport": "./src/transport.ts",
+    "./window-input": "./src/window-input.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.100.9",

@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Glob } from 'bun'
@@ -15,10 +14,6 @@ import {
 import { importSpecifiers } from './import-scanner.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
-const HUB_WEB_DATA_ACCESS_BASELINE = join(
-  ROOT,
-  'scripts/quality/hub-web-views-do-not-fetch-data-or-read-hub-mode-known-violations.json',
-)
 const CONCERN = /^\/\/ concern: ([a-z0-9-]+)$/
 const manifestFiles = new Set(modules.map(({ file }) => file))
 const manifestRules = new Set(architectureRules().forbidden.map(({ name }) => name))
@@ -103,42 +98,15 @@ const cruise = await runArchitectureCruise({
   stdout: 'pipe',
 })
 
-const HUB_WEB_DATA_ACCESS_RULE = 'hub-web-views-do-not-fetch-data-or-read-hub-mode'
-const baseline = JSON.parse(readFileSync(HUB_WEB_DATA_ACCESS_BASELINE, 'utf8')) as string[]
-const baselineFiles = new Set(baseline)
 const result = architectureResult(cruise.stdout)
 const current = result.summary.violations
-const currentBaselineFiles = new Set(
-  current.filter(({ rule }) => rule.name === HUB_WEB_DATA_ACCESS_RULE).map(({ from }) => from),
-)
-const staleBaselineFiles = baseline.filter((file) => !currentBaselineFiles.has(file))
-const remainingErrorViolations = current.filter(
-  ({ from, rule }) =>
-    rule.severity === 'error' &&
-    (rule.name !== HUB_WEB_DATA_ACCESS_RULE || !baselineFiles.has(from)),
-)
+const errorViolations = current.filter(({ rule }) => rule.severity === 'error')
 
-for (const file of staleBaselineFiles) {
-  console.error(
-    `${file} (${HUB_WEB_DATA_ACCESS_RULE}): stale known violation; delete this stale entry from scripts/quality/hub-web-views-do-not-fetch-data-or-read-hub-mode-known-violations.json`,
-  )
-}
-
-if (staleBaselineFiles.length || remainingErrorViolations.length) {
-  const generatedDirectory = mkdtempSync(join(tmpdir(), 'architecture-known-violations-'))
-  const generatedBaseline = join(generatedDirectory, 'known-violations.json')
-  const knownViolations = current.filter(
-    ({ from, rule }) => rule.name === HUB_WEB_DATA_ACCESS_RULE && baselineFiles.has(from),
-  )
-  try {
-    writeFileSync(generatedBaseline, JSON.stringify(knownViolations, null, 2))
-    await runArchitectureCruise({
-      entries: ARCHITECTURE_CRUISE_ROOTS,
-      extraArgs: ['--output-type', 'err-long', '--ignore-known', generatedBaseline],
-    })
-  } finally {
-    rmSync(generatedDirectory, { recursive: true, force: true })
-  }
+if (errorViolations.length) {
+  await runArchitectureCruise({
+    entries: ARCHITECTURE_CRUISE_ROOTS,
+    extraArgs: ['--output-type', 'err-long'],
+  })
   process.exit(1)
 }
 

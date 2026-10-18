@@ -1,5 +1,3 @@
-import { trpc } from '@bottega/hub-data/client'
-import { isHostedMode } from '@bottega/hub-data/hub-mode'
 import { Badge } from '@bottega/hub-ui/badge'
 import { PageHeader, SectionTitle } from '@bottega/hub-ui/page-header'
 import { StatRow, StatTile } from '@bottega/hub-ui/stat'
@@ -12,20 +10,97 @@ import {
   TableRow,
 } from '@bottega/hub-ui/table'
 import { compactTokens, duration } from '@bottega/hub-util/format'
-import { useQuery } from '@tanstack/react-query'
-import type { inferRouterOutputs } from '@trpc/server'
 import { useEffect } from 'react'
 import { responseSubtitle, WindowControl } from '@/components/design-system'
-import { setWorkCounts, useWindowState } from '@/lib/window'
-import type { AppRouter } from '../../../src/trpc/router.ts'
+import { setWorkCounts } from '@/lib/window'
 
-type Outputs = inferRouterOutputs<AppRouter>['insight']
-type InsightName = keyof Outputs
-type RatioData = Outputs['ratio']['data']
-type SpendData = Outputs['spend']['data']
-type RoutingData = Outputs['routing']['data']
-type HealthData = Outputs['health']['data']
-type Strip = Omit<Outputs['ratio'], 'view' | 'data'>
+type InsightName = 'ratio' | 'spend' | 'routing' | 'health'
+type Strip = {
+  engaged: string
+  activeAgents: string[]
+  tasksShipped: number
+  collectedAt: string | null
+  servingSince: string
+  counts: { flight: number; done: number; runs: number }
+}
+type RatioData = {
+  days: { day: string; ratio: number | null; excluded: string | null }[]
+  perTask: number | null
+  tokens: number
+  tasks: number
+  usableDays: number
+  direction: string
+  changePct: number | null
+}
+type SpendData = {
+  days: number
+  from: string
+  lineMix: Record<string, number>
+  numerators: { kind: string; name: string; total: number }[]
+  denominators: Record<string, number>
+}
+type RoutingData = {
+  unscored: number
+  matrix: {
+    job: string
+    promptBucket: 'small' | 'large' | null
+    agent: string
+    runs: number
+    failures: number
+    lat: number | null
+    judged: number
+    pts: number
+  }[]
+  guide: {
+    job: string
+    promptBucket: 'small' | 'large' | null
+    best: unknown
+    quickest: unknown
+    untried: string[] | null
+    provisional?: boolean
+  }[]
+  totals: { runs: number; failed: number }
+  stale: number
+  health: {
+    agent: string
+    billing: string
+    cooling: string | null
+    lastStatus: string | null
+    lastKind: string | null
+    minsAgo: number | null
+  }[]
+  blockerDays: number
+  blockers:
+    | {
+        source: string
+        kind: string | null
+        example: string | null
+        runs: number
+        projects: number
+        agents: string[] | null
+      }[]
+    | null
+  spawns?: { decision: string; why: string; n: number }[]
+  byRepo?: { repo: string; agent: string; runs: number; toks: number }[]
+}
+type HealthData = {
+  header: string
+  classes: {
+    kind: string
+    count: number
+    totalTimeMs: number
+    meanTimeMs: number
+    lastSeen: string | null
+    sparkline: { day: string; count: number }[]
+  }[]
+  landingRefusals: number
+  falseVerdicts: { kind: string; falseVerdicts: number; verdicts: number; rate: number }[]
+  provenance?: { agent: string; substituted: number; silent: number }[]
+}
+type InsightResponse = Strip & {
+  view: InsightName
+  data: RatioData | SpendData | RoutingData | HealthData
+}
 
 const number = new Intl.NumberFormat('en-US')
 
@@ -660,139 +735,37 @@ export function HealthView({ data }: { data: HealthData }) {
   )
 }
 
-function RatioQuery() {
-  return isHostedMode() ? <HostedRatioQuery /> : <LocalRatioQuery />
-}
-
-function LocalRatioQuery() {
-  const windowState = useWindowState()
-  const input = { hours: windowState.hours, filters: windowState.filters }
-  const query = useQuery(trpc.insight.ratio.queryOptions(input, { refetchInterval: 10_000 }))
-  if (query.isPending) return <p className="text-text-muted">Loading ratio...</p>
-  if (query.error)
+export function InsightView({
+  name,
+  response,
+  pending,
+  error,
+}: {
+  name: InsightName
+  response: InsightResponse | undefined
+  pending: boolean
+  error: string | null
+}) {
+  if (pending) return <p className="text-text-muted">Loading {name}...</p>
+  if (error)
     return (
       <p data-tone="error" className="text-status-text">
-        could not load: {query.error.message}
+        could not load: {error}
       </p>
     )
+  if (!response) return null
   return (
     <section>
-      <InsightChrome title="Ratio" response={query.data} />
-      <RatioView data={query.data.data} />
+      <InsightChrome title={name.charAt(0).toUpperCase() + name.slice(1)} response={response} />
+      {name === 'health' ? (
+        <HealthView data={response.data as HealthData} />
+      ) : name === 'ratio' ? (
+        <RatioView data={response.data as RatioData} />
+      ) : name === 'spend' ? (
+        <SpendView data={response.data as SpendData} />
+      ) : (
+        <RoutingView data={response.data as RoutingData} />
+      )}
     </section>
   )
-}
-
-function HostedRatioQuery() {
-  const windowState = useWindowState()
-  const query = useQuery(
-    trpc.record.ratio.queryOptions(
-      { hours: windowState.hours, filters: { ...windowState.filters, source: '' } },
-      { refetchInterval: 10_000 },
-    ),
-  )
-  if (query.isPending) return <p className="text-text-muted">Loading ratio...</p>
-  if (query.error)
-    return (
-      <p data-tone="error" className="text-status-text">
-        could not load: {query.error.message}
-      </p>
-    )
-  return (
-    <section>
-      <InsightChrome title="Ratio" response={query.data} />
-      <RatioView data={query.data.data} />
-    </section>
-  )
-}
-
-function SpendQuery() {
-  return isHostedMode() ? <HostedSpendQuery /> : <LocalSpendQuery />
-}
-
-function LocalSpendQuery() {
-  const windowState = useWindowState()
-  const input = { hours: windowState.hours, filters: windowState.filters }
-  const query = useQuery(trpc.insight.spend.queryOptions(input, { refetchInterval: 10_000 }))
-  if (query.isPending) return <p className="text-text-muted">Loading spend...</p>
-  if (query.error)
-    return (
-      <p data-tone="error" className="text-status-text">
-        could not load: {query.error.message}
-      </p>
-    )
-  return (
-    <section>
-      <InsightChrome title="Spend" response={query.data} />
-      <SpendView data={query.data.data} />
-    </section>
-  )
-}
-
-function HostedSpendQuery() {
-  const windowState = useWindowState()
-  const query = useQuery(
-    trpc.record.spend.queryOptions(
-      { hours: windowState.hours, filters: { ...windowState.filters, source: '' } },
-      { refetchInterval: 10_000 },
-    ),
-  )
-  if (query.isPending) return <p className="text-text-muted">Loading spend...</p>
-  if (query.error)
-    return (
-      <p data-tone="error" className="text-status-text">
-        could not load: {query.error.message}
-      </p>
-    )
-  return (
-    <section>
-      <InsightChrome title="Spend" response={query.data} />
-      <SpendView data={query.data.data} />
-    </section>
-  )
-}
-
-function RoutingQuery() {
-  const windowState = useWindowState()
-  const input = { hours: windowState.hours, filters: windowState.filters }
-  const query = useQuery(trpc.insight.routing.queryOptions(input, { refetchInterval: 30_000 }))
-  if (query.isPending) return <p className="text-text-muted">Loading routing...</p>
-  if (query.error)
-    return (
-      <p data-tone="error" className="text-status-text">
-        could not load: {query.error.message}
-      </p>
-    )
-  return (
-    <section>
-      <InsightChrome title="Routing" response={query.data} />
-      <RoutingView data={query.data.data} />
-    </section>
-  )
-}
-
-function HealthQuery() {
-  const windowState = useWindowState()
-  const input = { hours: windowState.hours, filters: windowState.filters }
-  const query = useQuery(trpc.insight.health.queryOptions(input, { refetchInterval: 30_000 }))
-  if (query.isPending) return <p className="text-text-muted">Loading health...</p>
-  if (query.error)
-    return (
-      <p data-tone="error" className="text-status-text">
-        could not load: {query.error.message}
-      </p>
-    )
-  return (
-    <section>
-      <InsightChrome title="Health" response={query.data} />
-      <HealthView data={query.data.data} />
-    </section>
-  )
-}
-
-export function InsightView({ name }: { name: InsightName }) {
-  if (name === 'health') return <HealthQuery />
-  if (name === 'ratio') return <RatioQuery />
-  if (name === 'spend') return <SpendQuery />
-  return <RoutingQuery />
 }
