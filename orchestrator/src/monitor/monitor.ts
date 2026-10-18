@@ -86,6 +86,7 @@ import {
 } from './orphan-inventory-conditions.ts'
 import { observeRatchetedRuleRefills } from './ratcheted-rule-conditions.ts'
 import { observeProjectReleaseLive } from './release-live-observation.ts'
+import { diskPressureObservation } from './storage-report.ts'
 
 const TERMINAL_STATUSES = new Set(['ok', 'failed', 'stale', 'stopped'])
 const TERMINAL_CLOSE_OUT_NOTICE_KINDS = {
@@ -554,6 +555,9 @@ export async function monitor(
       ageMs: condition.ageMs ?? age(condition.since, clock),
     } as MonitorCondition)
   const reclaimProject = projectAt(process.cwd())
+  const diskPressure = await diskPressureObservation(clock)
+  conditions.push(...diskPressure.conditions)
+  errors.push(...diskPressure.errors)
   const ratchetedRuleRefills = observeRatchetedRuleRefills(
     projects().filter(isProjectRepository),
     database,
