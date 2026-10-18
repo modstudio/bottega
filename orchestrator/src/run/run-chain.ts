@@ -12,7 +12,7 @@ export function chainTerminationAtForRoot(database: Database, rootId: number): s
     .get(rootId, rootId) as { started_at: string; latency_ms: number | null; status: string } | null
   if (
     !terminal ||
-    !['ok', 'failed', 'stale'].includes(terminal.status) ||
+    !['ok', 'failed', 'stale', 'stopped'].includes(terminal.status) ||
     terminal.latency_ms === null
   ) {
     return null

@@ -98,14 +98,16 @@ export const cleanupBoundarySpecs = [
       '../../../shared/record-id.ts',
       '../close/close-out.ts',
       '../database/db.ts',
+      '../evidence/evidence-query.ts',
       '../run/run-artifacts.ts',
+      '../run/run-chain.ts',
       '../storage-walk.ts',
       './cleanup.ts',
       './run-leftover-decision.ts',
     ],
     typeOnlyAllowed: [],
     reason:
-      'Keep the scheduled leftover adapter limited to the pure ruling, run paths, cleanup, and the shared storage walk.',
+      'Keep the scheduled leftover adapter limited to the pure ruling, canonical evidence and chain facts, run paths, cleanup, and the shared storage walk.',
   },
   {
     name: 'cleanup-sweep-decisions-boundary',

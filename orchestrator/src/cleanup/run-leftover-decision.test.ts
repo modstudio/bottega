@@ -46,6 +46,7 @@ describe('scheduled run leftover decision', () => {
     expect(decideRunLeftover(facts({ kind: 'artifacts', judged: false }))).toEqual({
       action: 'keep',
       reason: 'run has no recorded verdict',
+      remedy: 'score',
     })
   })
 

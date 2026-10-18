@@ -427,12 +427,12 @@ function sweepExpiredRunStore(
   selectedProject: Project | null,
   presentation: CleanupPresentation,
 ): ReturnType<typeof sweepRunLeftovers> {
-  const judgedRootIds = sweepUnjudgedRuns(dryRun, selectedProject, presentation)
+  const evidenceClosedRootIds = sweepUnjudgedRuns(dryRun, selectedProject, presentation)
   return sweepRunLeftovers({
     dryRun,
     projectRecordId: selectedProject?.recordId ?? null,
     presentation,
-    judgedRootIds,
+    evidenceClosedRootIds,
   })
 }
 

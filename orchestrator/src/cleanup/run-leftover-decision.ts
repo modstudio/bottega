@@ -18,7 +18,7 @@ export type RunLeftoverFacts = {
 
 export type RunLeftoverDecision =
   | { action: 'remove'; reason: string }
-  | { action: 'keep'; reason: string }
+  | { action: 'keep'; reason: string; remedy?: 'score' }
 
 /** Decide one directory without knowing the filesystem, database, or clock source. */
 export function decideRunLeftover(facts: RunLeftoverFacts): RunLeftoverDecision {
@@ -37,6 +37,6 @@ export function decideRunLeftover(facts: RunLeftoverFacts): RunLeftoverDecision 
   if (facts.finishedAt >= cutoff)
     return { action: 'keep', reason: 'run is not older than the run leftover age cap' }
   if (facts.kind === 'artifacts' && !facts.judged)
-    return { action: 'keep', reason: 'run has no recorded verdict' }
+    return { action: 'keep', reason: 'run has no recorded verdict', remedy: 'score' }
   return { action: 'remove', reason: 'terminal run is older than the run leftover age cap' }
 }

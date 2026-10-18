@@ -124,19 +124,23 @@ describe('scheduled run leftover sweep adapter', () => {
       presentation: presentation([]),
       clock,
       runsDir: root,
-      judgedRootIds: new Set([runId]),
+      evidenceClosedRootIds: new Set([runId]),
       remove: removeCandidate,
     })
     expect(dry.freed.artifacts).toBeGreaterThan(0)
     expect(existsSync(artifacts)).toBeTrue()
   })
 
-  test('removes an old orphan and keeps a young orphan', () => {
+  test('removes only old run-shaped orphans and keeps young and owned directories', () => {
     const root = runsRoot()
     const oldOrphan = join(root, newRecordId())
     const youngOrphan = join(root, newRecordId())
+    const ownedDirectories = ['.signals', 'leases', 'orphans', 'gate-timings'].map((name) =>
+      join(root, name),
+    )
     directory(oldOrphan)
     directory(youngOrphan, new Date(clock))
+    for (const path of ownedDirectories) directory(path)
     const lines: string[] = []
 
     sweepRunLeftovers({
@@ -150,6 +154,71 @@ describe('scheduled run leftover sweep adapter', () => {
 
     expect(existsSync(oldOrphan)).toBeFalse()
     expect(existsSync(youngOrphan)).toBeTrue()
+    expect(ownedDirectories.every(existsSync)).toBeTrue()
     expect(lines.join('\n')).toContain(`kept orphan ${youngOrphan}`)
+    for (const path of ownedDirectories) expect(lines.join('\n')).not.toContain(path)
+  })
+
+  test('keeps every directory and frees no bytes for an old live run', () => {
+    const root = runsRoot()
+    const runId = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'asking',
+      startedAt: old.toISOString(),
+    })
+    const paths = [
+      runScratchDir(runId, root),
+      noRepoIsolatePath(runId, root),
+      runArtifactsDir(runId, root),
+      runSandboxDir(runId, root),
+    ]
+    for (const path of paths) directory(path)
+    const lines: string[] = []
+
+    const result = sweepRunLeftovers({
+      dryRun: false,
+      projectRecordId: null,
+      presentation: presentation(lines),
+      clock,
+      runsDir: root,
+      remove: removeCandidate,
+    })
+
+    expect(paths.every(existsSync)).toBeTrue()
+    expect(Object.values(result.freed).every((bytes) => bytes === 0)).toBeTrue()
+    for (const path of paths) {
+      expect(
+        lines.some((line) => line.includes(path) && line.includes('run is live (asking)')),
+      ).toBeTrue()
+    }
+  })
+
+  test('reports the sandbox release decision reason when it remains held', () => {
+    const runId = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'ok',
+      startedAt: old.toISOString(),
+    })
+    const sandbox = runSandboxDir(runId)
+    const worktree = join(runsRoot(), 'held-worktree')
+    directory(sandbox)
+    directory(worktree)
+    roots.push(sandbox)
+    db().query('UPDATE run SET worktree=? WHERE id=?').run(worktree, runId)
+    const lines: string[] = []
+
+    const result = sweepRunLeftovers({
+      dryRun: false,
+      projectRecordId: null,
+      presentation: presentation(lines),
+      clock,
+    })
+
+    expect(existsSync(sandbox)).toBeTrue()
+    expect(result.freed.sandbox).toBe(0)
+    expect(lines.some((line) => line.startsWith(`kept sandbox ${sandbox}: `))).toBeTrue()
+    expect(lines.join('\n')).not.toContain('removal failed')
   })
 })

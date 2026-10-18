@@ -8,6 +8,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { releaseSandboxDirectoryForConversation } from '../close/close-out.ts'
 import { db } from '../database/db.ts'
+import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
 import {
   noRepoIsolatePath,
   RUNS_DIR,
@@ -15,6 +16,7 @@ import {
   runSandboxDir,
   runScratchDir,
 } from '../run/run-artifacts.ts'
+import { chainTerminationAtForRoot } from '../run/run-chain.ts'
 import { STORAGE_WALK_ENTRY_LIMIT, walkStoragePaths } from '../storage-walk.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import {
@@ -28,11 +30,8 @@ type RunRow = {
   record_id: string
   parent_run_id: number | null
   status: string
-  started_at: string
-  latency_ms: number | null
-  last_event_at: string | null
-  evidence_excluded: string | null
   project_record_id: string | null
+  judged: number
 }
 
 type Measurement = {
@@ -43,15 +42,6 @@ type Measurement = {
 }
 
 const KINDS = ['scratch', 'sandbox', 'isolate', 'artifacts', 'orphan'] as const
-
-function finishedAt(row: RunRow): number | null {
-  const started = Date.parse(row.started_at)
-  if (Number.isFinite(started) && row.latency_ms !== null && Number.isFinite(row.latency_ms))
-    return started + row.latency_ms
-  const lastEvent = row.last_event_at === null ? Number.NaN : Date.parse(row.last_event_at)
-  if (Number.isFinite(lastEvent)) return lastEvent
-  return Number.isFinite(started) ? started : null
-}
 
 function measure(path: string, includeAge: boolean): Measurement {
   const walked = walkStoragePaths(
@@ -108,25 +98,21 @@ function removeCandidate(
   candidate: Candidate,
   dryRun: boolean,
   remove: SweepInput['remove'],
-): void {
+): string | null {
   if (remove) {
     remove(candidate, dryRun)
-    return
+    return null
   }
   if (candidate.kind === 'sandbox') {
-    const result = releaseSandboxDirectoryForConversation(candidate.runId!, {
-      dryRun,
-      expiredTerminal: true,
-    })
-    if (result.outcome !== 'released') throw new Error(result.detail)
-    return
+    const result = releaseSandboxDirectoryForConversation(candidate.runId!, { dryRun })
+    return result.outcome === 'released' ? null : result.detail
   }
   if (!dryRun) rmSync(candidate.path, { recursive: true })
+  return null
 }
 
 function candidateRemedy(candidate: Candidate): string {
-  return candidate.decision.action === 'keep' &&
-    candidate.decision.reason === 'run has no recorded verdict'
+  return candidate.decision.action === 'keep' && candidate.decision.remedy === 'score'
     ? `; remedy: ${scoreRemedy(candidate.runId!)}`
     : ''
 }
@@ -161,7 +147,11 @@ function applyCandidate(
   const measurement = candidate.measurement ?? measure(candidate.path, false)
   if (!measurement.complete) partial.add(candidate.kind)
   try {
-    removeCandidate(candidate, dryRun, remove)
+    const keptReason = removeCandidate(candidate, dryRun, remove)
+    if (keptReason !== null) {
+      presentation.log(`kept ${candidate.kind} ${candidate.path}: ${keptReason}`)
+      return false
+    }
     freed[candidate.kind] += measurement.bytes
     if (measurement.detail)
       presentation.log(
@@ -179,47 +169,13 @@ function applyCandidate(
 function rowsForSweep(database: Database, projectRecordId: string | null): RunRow[] {
   return database
     .query(
-      `SELECT id,record_id,parent_run_id,status,started_at,latency_ms,last_event_at,
-              evidence_excluded,project_record_id
-         FROM run
-        WHERE ? IS NULL OR project_record_id=?
-        ORDER BY id`,
+      `SELECT r.id,r.record_id,r.parent_run_id,r.status,r.project_record_id,
+              ${EVIDENCE_CLOSED_SQL} AS judged
+         FROM run r ${chainScoreJoin('r', 's')}
+        WHERE ? IS NULL OR r.project_record_id=?
+        ORDER BY r.id`,
     )
     .all(projectRecordId, projectRecordId) as RunRow[]
-}
-
-function judgedRoots(rows: readonly RunRow[], database: Database): Set<number> {
-  const rootIds = new Set(rows.map((row) => row.parent_run_id ?? row.id))
-  const scored = new Set(
-    (database.query('SELECT run_id FROM score').all() as { run_id: number }[]).map(
-      (row) => row.run_id,
-    ),
-  )
-  return new Set(
-    rows.flatMap((row) => {
-      const rootId = row.parent_run_id ?? row.id
-      return rootIds.has(rootId) && (scored.has(rootId) || row.evidence_excluded !== null)
-        ? [rootId]
-        : []
-    }),
-  )
-}
-
-function conversationFacts(
-  rows: readonly RunRow[],
-  rootId: number,
-): { status: string; finishedAt: number | null } {
-  const turns = rows.filter((row) => (row.parent_run_id ?? row.id) === rootId)
-  const live = turns.find((row) => !['ok', 'failed', 'stale', 'stopped'].includes(row.status))
-  const finishes = turns.flatMap((row) => {
-    const time = finishedAt(row)
-    return time === null ? [] : [time]
-  })
-  return {
-    status: live?.status ?? turns.at(-1)?.status ?? 'unknown',
-    finishedAt:
-      finishes.length === turns.length && finishes.length > 0 ? Math.max(...finishes) : null,
-  }
 }
 
 type SweepInput = {
@@ -229,7 +185,7 @@ type SweepInput = {
   clock?: number
   database?: Database
   runsDir?: string
-  judgedRootIds?: ReadonlySet<number>
+  evidenceClosedRootIds?: ReadonlySet<number>
   remove?: (
     candidate: { path: string; kind: RunLeftoverKind; runId: number | null },
     dryRun: boolean,
@@ -244,18 +200,23 @@ type SweepState = {
 function sweepRecordedLeftovers(
   input: SweepInput,
   rows: readonly RunRow[],
-  judged: ReadonlySet<number>,
   clock: number,
   state: SweepState,
 ): boolean {
   const runsDir = input.runsDir ?? RUNS_DIR
+  const terminationByRoot = new Map<number, number | null>()
   let failed = false
   for (const row of rows) {
     const rootId = row.parent_run_id ?? row.id
+    if (!terminationByRoot.has(rootId)) {
+      const termination = chainTerminationAtForRoot(input.database ?? db(), rootId)
+      const timestamp = termination === null ? Number.NaN : Date.parse(termination)
+      terminationByRoot.set(rootId, Number.isFinite(timestamp) ? timestamp : null)
+    }
     const facts = {
       runStatus: row.status,
-      finishedAt: finishedAt(row),
-      judged: judged.has(rootId),
+      finishedAt: terminationByRoot.get(rootId) ?? null,
+      judged: Boolean(row.judged) || (input.evidenceClosedRootIds?.has(rootId) ?? false),
       newestEntryAt: null,
       clock,
     }
@@ -275,7 +236,6 @@ function sweepRecordedLeftovers(
       failed ||= candidateFailed
     }
     if (rootId !== row.id) continue
-    const conversation = conversationFacts(rows, rootId)
     const sandboxFailed = applyCandidate(
       {
         path: runSandboxDir(rootId, runsDir),
@@ -283,9 +243,9 @@ function sweepRecordedLeftovers(
         runId: rootId,
         decision: decideRunLeftover({
           kind: 'sandbox',
-          runStatus: conversation.status,
-          finishedAt: conversation.finishedAt,
-          judged: judged.has(rootId),
+          runStatus: row.status,
+          finishedAt: facts.finishedAt,
+          judged: facts.judged,
           newestEntryAt: null,
           clock,
         }),
@@ -312,11 +272,11 @@ function sweepOrphans(
   const claimed = new Set(rows.map((row) => row.record_id.toLowerCase()))
   let failed = false
   for (const entry of readdirSync(runsDir, { withFileTypes: true })) {
-    if (!entry.isDirectory() || entry.name === 'isolates') continue
+    if (!entry.isDirectory()) continue
     const identity = entry.name.startsWith('sandbox-')
       ? entry.name.slice('sandbox-'.length)
       : entry.name
-    if (hasRecordIdShape(identity) && claimed.has(identity.toLowerCase())) continue
+    if (!hasRecordIdShape(identity) || claimed.has(identity.toLowerCase())) continue
     const path = join(runsDir, entry.name)
     const measurement = measure(path, true)
     const decision = decideRunLeftover({
@@ -363,13 +323,11 @@ export function sweepRunLeftovers(input: SweepInput): {
   const database = input.database ?? db()
   const clock = input.clock ?? Date.now()
   const rows = rowsForSweep(database, input.projectRecordId)
-  const judged = judgedRoots(rows, database)
-  for (const rootId of input.judgedRootIds ?? []) judged.add(rootId)
   const state: SweepState = {
     freed: Object.fromEntries(KINDS.map((kind) => [kind, 0])) as Record<RunLeftoverKind, number>,
     partial: new Set(),
   }
-  const recordedFailed = sweepRecordedLeftovers(input, rows, judged, clock, state)
+  const recordedFailed = sweepRecordedLeftovers({ ...input, database }, rows, clock, state)
   const orphanFailed = sweepOrphans(input, rows, clock, state)
   reportFreed(input, state)
   return { failed: recordedFailed || orphanFailed, freed: state.freed }
