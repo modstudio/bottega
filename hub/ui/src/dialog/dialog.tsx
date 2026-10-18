@@ -50,7 +50,10 @@ export function Dialog({
       aria-label={chromeless ? title : undefined}
       aria-labelledby={chromeless ? undefined : titleId}
       aria-describedby={!chromeless && description ? descriptionId : undefined}
-      onClose={() => onOpenChange(false)}
+      onClose={(event) => {
+        // React passes a nested dialog's close up the tree; only this dialog's own close counts.
+        if (event.target === event.currentTarget) onOpenChange(false)
+      }}
       onPointerDown={(event) => {
         // The backdrop belongs to the dialog element; its content fills the box.
         if (event.target === event.currentTarget) onOpenChange(false)

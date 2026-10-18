@@ -53,7 +53,10 @@ export function Sheet({
     <dialog
       ref={ref}
       aria-labelledby={titleId}
-      onClose={onClose}
+      onClose={(event) => {
+        // React passes a nested dialog's close up the tree; only this dialog's own close counts.
+        if (event.target === event.currentTarget) onClose()
+      }}
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) onClose()
       }}

@@ -100,8 +100,9 @@ export function useTask(key: string, recordId?: string) {
         refused: refusal(capability?.setStatus),
       },
       setBody: {
-        run: async (body: string) => {
-          if (!detail || refusal(capability?.setBody)) return
+        /** Whether the body was saved; a refusal or failure leaves its reason on the action. */
+        run: async (body: string): Promise<boolean> => {
+          if (!detail || refusal(capability?.setBody)) return false
           try {
             await setBody.mutateAsync({
               ...localInput,
@@ -109,8 +110,9 @@ export function useTask(key: string, recordId?: string) {
               expectedVersion: detail.bodyVersion,
             })
             await refresh()
+            return true
           } catch {
-            return
+            return false
           }
         },
         pending: setBody.isPending,

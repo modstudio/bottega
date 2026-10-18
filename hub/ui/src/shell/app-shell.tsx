@@ -218,7 +218,10 @@ function MobileMenu({
     <dialog
       ref={ref}
       aria-label="Menu"
-      onClose={onClose}
+      onClose={(event) => {
+        // React passes a nested dialog's close up the tree; only this dialog's own close counts.
+        if (event.target === event.currentTarget) onClose()
+      }}
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) onClose()
       }}
