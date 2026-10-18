@@ -33,11 +33,6 @@ export type RecordSnapshotAndPublicDocMethod =
   | 'getPublicDoc'
   | 'searchPublicDocs'
 export type RecordDocReadMethod = 'searchDocs' | 'listDocs' | 'getDoc' | 'listRevisions'
-export type RecordLensMethod =
-  | 'listLensCatalogue'
-  | 'upsertLens'
-  | 'upsertLensProfile'
-  | 'selectProjectLensProfile'
 export type RecordDocWriteMethod =
   | 'upsertDoc'
   | 'reorderDocs'

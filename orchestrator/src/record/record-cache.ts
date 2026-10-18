@@ -252,36 +252,41 @@ export async function pullRecordCache(local: Database = db()): Promise<{
 }
 
 async function pullLensCatalogue(local: Database, spaces: readonly string[]): Promise<number> {
-  const client = recordApiClient()
   let count = 0
   for (const spaceId of spaces)
-    for (const table of RECORD_LENS_TABLES) {
-      const cursorKey = `${LENS_CURSOR}:${spaceId}:${table}`
-      let cursor = readRecordCursor(local, cursorKey)
-      let requestCursor = cursor ? encodeRecordCursor(cursor) : undefined
-      for (;;) {
-        const page = await client.listLensCatalogue(
-          table,
-          { limit: 100, cursor: requestCursor },
-          { destinationSpaceId: spaceId },
-        )
-        if (!page.items.length) break
-        writeTransaction(() => {
-          for (const item of page.items) {
-            applyLensCatalogueRow(local, table, item)
-            count++
-            cursor = {
-              at: String(item[table.includes('revision') ? 'at' : 'updatedAt']),
-              id: String(item.id),
-            }
-          }
-          if (page.endCursor) cursor = decodeRecordCursor(page.endCursor)
-          if (cursor) writeRecordCursor(local, cursorKey, cursor)
-        }, local)
-        if (!page.nextCursor) break
-        requestCursor = page.nextCursor
+    for (const table of RECORD_LENS_TABLES) count += await pullLensTable(local, spaceId, table)
+  return count
+}
+
+async function pullLensTable(local: Database, spaceId: string, table: RecordLensTable) {
+  const cursorKey = `${LENS_CURSOR}:${spaceId}:${table}`
+  let cursor = readRecordCursor(local, cursorKey)
+  let requestCursor = cursor ? encodeRecordCursor(cursor) : undefined
+  let count = 0
+  for (;;) {
+    const page = await recordApiClient().listLensCatalogue(
+      table,
+      { limit: 100, cursor: requestCursor },
+      { destinationSpaceId: spaceId },
+    )
+    if (!page.items.length) break
+    writeTransaction(() => {
+      for (const item of page.items) {
+        applyLensCatalogueRow(local, table, item)
+        count++
       }
-    }
+      const last = page.items.at(-1)!
+      cursor = page.endCursor
+        ? decodeRecordCursor(page.endCursor)
+        : {
+            at: String(last[table.includes('revision') ? 'at' : 'updatedAt']),
+            id: String(last.id),
+          }
+      if (cursor) writeRecordCursor(local, cursorKey, cursor)
+    }, local)
+    if (!page.nextCursor) break
+    requestCursor = page.nextCursor
+  }
   return count
 }
 
@@ -291,234 +296,227 @@ export function applyLensCatalogueRow(
   table: RecordLensTable,
   item: Record<string, unknown>,
 ): void {
+  lensRowApplicators[table](local, item)
+}
+
+const nullableText = (value: unknown) => (value == null ? null : String(value))
+const nullableNumber = (value: unknown) => (value == null ? null : Number(value))
+
+function applyLensRow(local: Database, item: Record<string, unknown>): void {
   const recordId = String(item.id)
-  const nullableText = (value: unknown) => (value == null ? null : String(value))
-  const nullableNumber = (value: unknown) => (value == null ? null : Number(value))
-  if (table === 'lens') {
-    const key = String(item.key)
-    const row =
-      local
-        .query<{ id: string }, [string]>('SELECT id FROM lens WHERE record_id=?')
-        .get(recordId) ??
-      local.query<{ id: string }, [string]>('SELECT id FROM lens WHERE id=?').get(key)
-    if (row)
-      local
-        .query(
-          'UPDATE lens SET record_id=?,title=?,question=?,excludes=?,slots=?,version=?,enabled=?,requires_execution=? WHERE id=?',
-        )
-        .run(
-          recordId,
-          String(item.title),
-          String(item.question),
-          String(item.excludes),
-          String(item.slots),
-          Number(item.version),
-          item.enabled ? 1 : 0,
-          item.requiresExecution ? 1 : 0,
-          row.id,
-        )
-    else
-      local
-        .query(
-          'INSERT INTO lens (record_id,id,title,question,excludes,slots,version,enabled,requires_execution) VALUES (?,?,?,?,?,?,?,?,?)',
-        )
-        .run(
-          recordId,
-          key,
-          String(item.title),
-          String(item.question),
-          String(item.excludes),
-          String(item.slots),
-          Number(item.version),
-          item.enabled ? 1 : 0,
-          item.requiresExecution ? 1 : 0,
-        )
-    return
-  }
-  if (table === 'lens_revision') {
-    const parent = local
-      .query<{ id: string }, [string]>('SELECT id FROM lens WHERE record_id=?')
-      .get(String(item.lensId))
-    if (!parent)
-      throw new Error(`record cache could not resolve lens parent ${String(item.lensId)}`)
-    const found =
-      local
-        .query<{ id: number }, [string]>('SELECT id FROM lens_revision WHERE record_id=?')
-        .get(recordId) ??
-      local
-        .query<{ id: number }, [string, number]>(
-          'SELECT id FROM lens_revision WHERE lens_id=? AND version=?',
-        )
-        .get(parent.id, Number(item.version))
-    if (found)
-      local
-        .query(
-          'UPDATE lens_revision SET record_id=?,prior_body=?,reason=?,session_id=?,at=? WHERE id=?',
-        )
-        .run(
-          recordId,
-          String(item.priorBody),
-          String(item.reason),
-          nullableText(item.sessionId),
-          String(item.at),
-          found.id,
-        )
-    else
-      local
-        .query(
-          'INSERT INTO lens_revision (record_id,lens_id,version,prior_body,reason,session_id,at) VALUES (?,?,?,?,?,?,?)',
-        )
-        .run(
-          recordId,
-          parent.id,
-          Number(item.version),
-          String(item.priorBody),
-          String(item.reason),
-          nullableText(item.sessionId),
-          String(item.at),
-        )
-    return
-  }
-  if (table === 'lens_profile') {
-    const lens = local
-      .query<{ id: string }, [string]>('SELECT id FROM lens WHERE record_id=?')
-      .get(String(item.lensId))
-    if (!lens) throw new Error(`record cache could not resolve lens parent ${String(item.lensId)}`)
-    const found =
-      local
-        .query<{ id: number }, [string]>('SELECT id FROM lens_profile WHERE record_id=?')
-        .get(recordId) ??
-      local
-        .query<{ id: number }, [string, string, string]>(
-          'SELECT id FROM lens_profile WHERE lens_id=? AND axis=? AND name=?',
-        )
-        .get(lens.id, String(item.axis), String(item.name))
-    if (found)
-      local
-        .query(
-          'UPDATE lens_profile SET record_id=?,lens_id=?,version=?,body=?,enabled=? WHERE id=?',
-        )
-        .run(
-          recordId,
-          lens.id,
-          Number(item.version),
-          String(item.body),
-          item.enabled ? 1 : 0,
-          found.id,
-        )
-    else
-      local
-        .query(
-          'INSERT INTO lens_profile (record_id,lens_id,axis,name,version,body,enabled) VALUES (?,?,?,?,?,?,?)',
-        )
-        .run(
-          recordId,
-          lens.id,
-          String(item.axis),
-          String(item.name),
-          Number(item.version),
-          String(item.body),
-          item.enabled ? 1 : 0,
-        )
-    return
-  }
-  if (table === 'lens_profile_revision') {
-    const parent = local
-      .query<{ id: number }, [string]>('SELECT id FROM lens_profile WHERE record_id=?')
-      .get(String(item.profileId))
-    if (!parent)
-      throw new Error(
-        `record cache could not resolve lens profile parent ${String(item.profileId)}`,
+  const key = String(item.key)
+  const row =
+    local.query<{ id: string }, [string]>('SELECT id FROM lens WHERE record_id=?').get(recordId) ??
+    local.query<{ id: string }, [string]>('SELECT id FROM lens WHERE id=?').get(key)
+  const values = [
+    recordId,
+    String(item.title),
+    String(item.question),
+    String(item.excludes),
+    String(item.slots),
+    Number(item.version),
+    item.enabled ? 1 : 0,
+    item.requiresExecution ? 1 : 0,
+  ]
+  if (row)
+    local
+      .query(
+        'UPDATE lens SET record_id=?,title=?,question=?,excludes=?,slots=?,version=?,enabled=?,requires_execution=? WHERE id=?',
       )
-    const found =
-      local
-        .query<{ id: number }, [string]>('SELECT id FROM lens_profile_revision WHERE record_id=?')
-        .get(recordId) ??
-      local
-        .query<{ id: number }, [number, number]>(
-          'SELECT id FROM lens_profile_revision WHERE profile_id=? AND version=?',
-        )
-        .get(parent.id, Number(item.version))
-    if (found)
-      local
-        .query(
-          'UPDATE lens_profile_revision SET record_id=?,prior_body=?,reason=?,session_id=?,at=? WHERE id=?',
-        )
-        .run(
-          recordId,
-          String(item.priorBody),
-          String(item.reason),
-          nullableText(item.sessionId),
-          String(item.at),
-          found.id,
-        )
-    else
-      local
-        .query(
-          'INSERT INTO lens_profile_revision (record_id,profile_id,version,prior_body,reason,session_id,at) VALUES (?,?,?,?,?,?,?)',
-        )
-        .run(
-          recordId,
-          parent.id,
-          Number(item.version),
-          String(item.priorBody),
-          String(item.reason),
-          nullableText(item.sessionId),
-          String(item.at),
-        )
-    return
-  }
-  if (table === 'project_lens_profile') {
-    const project = local
-      .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE record_id=?')
-      .get(String(item.projectId))
-    if (!project)
-      throw new Error(`record cache could not resolve project parent ${String(item.projectId)}`)
-    const lens =
-      item.lensId == null
-        ? null
-        : local
-            .query<{ id: string }, [string]>('SELECT id FROM lens WHERE record_id=?')
-            .get(String(item.lensId))
-    if (item.lensId != null && !lens)
-      throw new Error(`record cache could not resolve lens parent ${String(item.lensId)}`)
-    const found =
-      local
-        .query<{ id: number }, [string]>('SELECT id FROM project_lens_profile WHERE record_id=?')
-        .get(recordId) ??
-      local
-        .query<{ id: number }, [string, string | null, string]>(
-          'SELECT id FROM project_lens_profile WHERE project_record_id=? AND lens_id IS ? AND axis=?',
-        )
-        .get(project.record_id, lens?.id ?? null, String(item.axis))
-    if (found)
-      local
-        .query(
-          'UPDATE project_lens_profile SET record_id=?,profile_name=?,selected_version=?,selection_version=? WHERE id=?',
-        )
-        .run(
-          recordId,
-          String(item.profileName),
-          nullableNumber(item.selectedVersion),
-          Number(item.selectionVersion),
-          found.id,
-        )
-    else
-      local
-        .query(
-          'INSERT INTO project_lens_profile (record_id,project_record_id,lens_id,axis,profile_name,selected_version,selection_version) VALUES (?,?,?,?,?,?,?)',
-        )
-        .run(
-          recordId,
-          project.record_id,
-          lens?.id ?? null,
-          String(item.axis),
-          String(item.profileName),
-          nullableNumber(item.selectedVersion),
-          Number(item.selectionVersion),
-        )
-    return
-  }
+      .run(...values, row.id)
+  else
+    local
+      .query(
+        'INSERT INTO lens (record_id,id,title,question,excludes,slots,version,enabled,requires_execution) VALUES (?,?,?,?,?,?,?,?,?)',
+      )
+      .run(recordId, key, ...values.slice(1))
+}
+
+function applyLensRevisionRow(local: Database, item: Record<string, unknown>): void {
+  const recordId = String(item.id)
+  const parent = local
+    .query<{ id: string }, [string]>('SELECT id FROM lens WHERE record_id=?')
+    .get(String(item.lensId))
+  if (!parent) throw new Error(`record cache could not resolve lens parent ${String(item.lensId)}`)
+  const found =
+    local
+      .query<{ id: number }, [string]>('SELECT id FROM lens_revision WHERE record_id=?')
+      .get(recordId) ??
+    local
+      .query<{ id: number }, [string, number]>(
+        'SELECT id FROM lens_revision WHERE lens_id=? AND version=?',
+      )
+      .get(parent.id, Number(item.version))
+  if (found)
+    local
+      .query(
+        'UPDATE lens_revision SET record_id=?,prior_body=?,reason=?,session_id=?,at=? WHERE id=?',
+      )
+      .run(
+        recordId,
+        String(item.priorBody),
+        String(item.reason),
+        nullableText(item.sessionId),
+        String(item.at),
+        found.id,
+      )
+  else
+    local
+      .query(
+        'INSERT INTO lens_revision (record_id,lens_id,version,prior_body,reason,session_id,at) VALUES (?,?,?,?,?,?,?)',
+      )
+      .run(
+        recordId,
+        parent.id,
+        Number(item.version),
+        String(item.priorBody),
+        String(item.reason),
+        nullableText(item.sessionId),
+        String(item.at),
+      )
+}
+
+function applyLensProfileRow(local: Database, item: Record<string, unknown>): void {
+  const recordId = String(item.id)
+  const lens = local
+    .query<{ id: string }, [string]>('SELECT id FROM lens WHERE record_id=?')
+    .get(String(item.lensId))
+  if (!lens) throw new Error(`record cache could not resolve lens parent ${String(item.lensId)}`)
+  const found =
+    local
+      .query<{ id: number }, [string]>('SELECT id FROM lens_profile WHERE record_id=?')
+      .get(recordId) ??
+    local
+      .query<{ id: number }, [string, string, string]>(
+        'SELECT id FROM lens_profile WHERE lens_id=? AND axis=? AND name=?',
+      )
+      .get(lens.id, String(item.axis), String(item.name))
+  if (found)
+    local
+      .query('UPDATE lens_profile SET record_id=?,lens_id=?,version=?,body=?,enabled=? WHERE id=?')
+      .run(
+        recordId,
+        lens.id,
+        Number(item.version),
+        String(item.body),
+        item.enabled ? 1 : 0,
+        found.id,
+      )
+  else
+    local
+      .query(
+        'INSERT INTO lens_profile (record_id,lens_id,axis,name,version,body,enabled) VALUES (?,?,?,?,?,?,?)',
+      )
+      .run(
+        recordId,
+        lens.id,
+        String(item.axis),
+        String(item.name),
+        Number(item.version),
+        String(item.body),
+        item.enabled ? 1 : 0,
+      )
+}
+
+function applyLensProfileRevisionRow(local: Database, item: Record<string, unknown>): void {
+  const recordId = String(item.id)
+  const parent = local
+    .query<{ id: number }, [string]>('SELECT id FROM lens_profile WHERE record_id=?')
+    .get(String(item.profileId))
+  if (!parent)
+    throw new Error(`record cache could not resolve lens profile parent ${String(item.profileId)}`)
+  const found =
+    local
+      .query<{ id: number }, [string]>('SELECT id FROM lens_profile_revision WHERE record_id=?')
+      .get(recordId) ??
+    local
+      .query<{ id: number }, [number, number]>(
+        'SELECT id FROM lens_profile_revision WHERE profile_id=? AND version=?',
+      )
+      .get(parent.id, Number(item.version))
+  if (found)
+    local
+      .query(
+        'UPDATE lens_profile_revision SET record_id=?,prior_body=?,reason=?,session_id=?,at=? WHERE id=?',
+      )
+      .run(
+        recordId,
+        String(item.priorBody),
+        String(item.reason),
+        nullableText(item.sessionId),
+        String(item.at),
+        found.id,
+      )
+  else
+    local
+      .query(
+        'INSERT INTO lens_profile_revision (record_id,profile_id,version,prior_body,reason,session_id,at) VALUES (?,?,?,?,?,?,?)',
+      )
+      .run(
+        recordId,
+        parent.id,
+        Number(item.version),
+        String(item.priorBody),
+        String(item.reason),
+        nullableText(item.sessionId),
+        String(item.at),
+      )
+}
+
+function applyProjectLensProfileRow(local: Database, item: Record<string, unknown>): void {
+  const recordId = String(item.id)
+  const project = local
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE record_id=?')
+    .get(String(item.projectId))
+  if (!project)
+    throw new Error(`record cache could not resolve project parent ${String(item.projectId)}`)
+  const lens =
+    item.lensId == null
+      ? null
+      : local
+          .query<{ id: string }, [string]>('SELECT id FROM lens WHERE record_id=?')
+          .get(String(item.lensId))
+  if (item.lensId != null && !lens)
+    throw new Error(`record cache could not resolve lens parent ${String(item.lensId)}`)
+  const found =
+    local
+      .query<{ id: number }, [string]>('SELECT id FROM project_lens_profile WHERE record_id=?')
+      .get(recordId) ??
+    local
+      .query<{ id: number }, [string, string | null, string]>(
+        'SELECT id FROM project_lens_profile WHERE project_record_id=? AND lens_id IS ? AND axis=?',
+      )
+      .get(project.record_id, lens?.id ?? null, String(item.axis))
+  if (found)
+    local
+      .query(
+        'UPDATE project_lens_profile SET record_id=?,profile_name=?,selected_version=?,selection_version=? WHERE id=?',
+      )
+      .run(
+        recordId,
+        String(item.profileName),
+        nullableNumber(item.selectedVersion),
+        Number(item.selectionVersion),
+        found.id,
+      )
+  else
+    local
+      .query(
+        'INSERT INTO project_lens_profile (record_id,project_record_id,lens_id,axis,profile_name,selected_version,selection_version) VALUES (?,?,?,?,?,?,?)',
+      )
+      .run(
+        recordId,
+        project.record_id,
+        lens?.id ?? null,
+        String(item.axis),
+        String(item.profileName),
+        nullableNumber(item.selectedVersion),
+        Number(item.selectionVersion),
+      )
+}
+
+function applyProjectLensProfileRevisionRow(local: Database, item: Record<string, unknown>): void {
+  const recordId = String(item.id)
   const parent = local
     .query<{ id: number }, [string]>('SELECT id FROM project_lens_profile WHERE record_id=?')
     .get(String(item.selectionId))
@@ -558,6 +556,18 @@ export function applyLensCatalogueRow(
         nullableText(item.sessionId),
         String(item.at),
       )
+}
+
+const lensRowApplicators: Record<
+  RecordLensTable,
+  (local: Database, item: Record<string, unknown>) => void
+> = {
+  lens: applyLensRow,
+  lens_revision: applyLensRevisionRow,
+  lens_profile: applyLensProfileRow,
+  lens_profile_revision: applyLensProfileRevisionRow,
+  project_lens_profile: applyProjectLensProfileRow,
+  project_lens_profile_revision: applyProjectLensProfileRevisionRow,
 }
 
 async function pullSubjects(

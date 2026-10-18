@@ -88,6 +88,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'lens_profile.version',
     'lens_profile_revision.version',
     'lens_revision.version',
+    'project_lens_profile.selection_version',
     'metric.claude_tokens',
     'metric.cache_read',
     'metric.messages',

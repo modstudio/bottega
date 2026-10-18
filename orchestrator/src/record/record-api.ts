@@ -286,6 +286,16 @@ function registerSessionRoutes(app: Hono<ApiEnvironment>, deps: Deps): void {
   registerRecordSyncRoute(app, deps)
 }
 
+function registerCatalogueWriteRoutes(
+  app: Hono<ApiEnvironment>,
+  deps: Deps,
+  ports: Parameters<typeof registerRecordWriteRoutes>[2] &
+    Parameters<typeof registerRecordLensRoutes>[2],
+): void {
+  registerRecordWriteRoutes(app, deps, ports)
+  registerRecordLensRoutes(app, deps, ports)
+}
+
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   const app = new Hono<ApiEnvironment>()
   registerRecordCors(app, deps.allowedOrigins)
@@ -442,8 +452,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     }
     throw error
   }
-  registerRecordWriteRoutes(app, deps, { scope, noSpace, writeError })
-  registerRecordLensRoutes(app, deps, { scope, noSpace })
+  registerCatalogueWriteRoutes(app, deps, { scope, noSpace, writeError })
   const encoded = (value: Uint8Array) => Buffer.from(value).toString('base64url')
   const decoded = (value: string) => new Uint8Array(Buffer.from(value, 'base64url'))
   const jsonWrap = (wrap: ConfigWrapInput) => ({

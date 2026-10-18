@@ -381,6 +381,45 @@ function versionedProfile(profile: ProfileRow, version: number | null, d: Databa
     enabled: snapshot.enabled ? 1 : 0,
   }
 }
+
+function validateSelectedProfile(
+  d: Database,
+  axis: LensAxis,
+  name: string,
+  lensId: string | undefined,
+  version: number | undefined,
+): void {
+  const cores = lensId
+    ? ([d.query(`SELECT ${LENS_COLUMNS} FROM lens WHERE id=? AND enabled=1`).get(lensId)].filter(
+        Boolean,
+      ) as CoreRow[])
+    : (d
+        .query(
+          `SELECT DISTINCT l.id,l.title,l.question,l.excludes,l.slots,l.version,l.enabled,l.requires_execution FROM lens l JOIN lens_profile p ON p.lens_id=l.id WHERE l.enabled=1 AND p.axis=? ORDER BY l.id`,
+        )
+        .all(axis) as CoreRow[])
+  if (lensId && !cores.length) throw new Error(`no enabled lens "${lensId}"`)
+  if (!cores.length) throw new Error(`no enabled lenses declare axis ${axis}`)
+  const missing = cores.filter((core) => {
+    const profile = d
+      .query(
+        `SELECT ${PROFILE_COLUMNS} FROM lens_profile WHERE lens_id=? AND axis=? AND name=? AND enabled=1`,
+      )
+      .get(core.id, axis, name) as ProfileRow | null
+    if (!profile) return true
+    try {
+      versionedProfile(profile, version ?? null, d)
+      return false
+    } catch {
+      return true
+    }
+  })
+  if (missing.length)
+    throw new Error(
+      `profile ${axis}/${name}${version ? ` version ${version}` : ''} is missing or disabled for lenses: ${missing.map((core) => core.id).join(', ')}`,
+    )
+}
+
 export async function selectProjectProfile(input: {
   project: string
   axis: string
@@ -397,41 +436,7 @@ export async function selectProjectProfile(input: {
   if (!project) throw new Error(`no project "${input.project}"`)
   if (input.version !== undefined && (!Number.isInteger(input.version) || input.version < 1))
     throw new Error('version must be a positive integer')
-  let cores: CoreRow[]
-  if (input.lensId) {
-    const core = d
-      .query(`SELECT ${LENS_COLUMNS} FROM lens WHERE id=? AND enabled=1`)
-      .get(input.lensId) as CoreRow | null
-    if (!core) throw new Error(`no enabled lens "${input.lensId}"`)
-    cores = [core]
-  } else
-    cores = d
-      .query(
-        `SELECT DISTINCT l.id,l.title,l.question,l.excludes,l.slots,l.version,l.enabled,l.requires_execution FROM lens l JOIN lens_profile p ON p.lens_id=l.id WHERE l.enabled=1 AND p.axis=? ORDER BY l.id`,
-      )
-      .all(axis) as CoreRow[]
-  const missing: string[] = []
-  for (const core of cores) {
-    const p = d
-      .query(
-        `SELECT ${PROFILE_COLUMNS} FROM lens_profile WHERE lens_id=? AND axis=? AND name=? AND enabled=1`,
-      )
-      .get(core.id, axis, input.name) as ProfileRow | null
-    if (!p) {
-      missing.push(core.id)
-      continue
-    }
-    try {
-      versionedProfile(p, input.version ?? null, d)
-    } catch {
-      missing.push(core.id)
-    }
-  }
-  if (missing.length)
-    throw new Error(
-      `profile ${axis}/${input.name}${input.version ? ` version ${input.version}` : ''} is missing or disabled for lenses: ${missing.join(', ')}`,
-    )
-  if (!cores.length) throw new Error(`no enabled lenses declare axis ${axis}`)
+  validateSelectedProfile(d, axis, input.name, input.lensId, input.version)
   const prior = d
     .query(
       'SELECT id,record_id,profile_name,selected_version,selection_version FROM project_lens_profile WHERE project_record_id=? AND lens_id IS ? AND axis=?',
@@ -445,14 +450,15 @@ export async function selectProjectProfile(input: {
   } | null
   const writeLocal = (hosted?: RecordProjectLensSelectionResponse) => {
     writeTransaction(() => {
-      d.query(`INSERT INTO project_lens_profile (record_id,project_record_id,lens_id,axis,profile_name,selected_version) VALUES (?,?,?,?,?,?)
-      ON CONFLICT DO UPDATE SET record_id=excluded.record_id,profile_name=excluded.profile_name,selected_version=excluded.selected_version,selection_version=selection_version+1`).run(
+      d.query(`INSERT INTO project_lens_profile (record_id,project_record_id,lens_id,axis,profile_name,selected_version,selection_version) VALUES (?,?,?,?,?,?,?)
+      ON CONFLICT DO UPDATE SET record_id=excluded.record_id,profile_name=excluded.profile_name,selected_version=excluded.selected_version,selection_version=excluded.selection_version`).run(
         hosted?.selection.id ?? prior?.record_id ?? newRecordId(),
         project.recordId,
         input.lensId ?? null,
         axis,
         input.name,
         input.version ?? null,
+        hosted?.selection.selectionVersion ?? (prior?.selection_version ?? 0) + 1,
       )
       const selection = d
         .query(
