@@ -1,6 +1,6 @@
 import { StatRow, StatTile } from '@bottega/hub-ui/stat'
+import { compactTokens } from '@bottega/hub-util/format'
 import type { ReactNode } from 'react'
-import { compactTokens } from '@/lib/format'
 
 const hour = (ms: number) =>
   `${(ms / 3_600_000).toLocaleString(undefined, { maximumFractionDigits: 1 })} hours`

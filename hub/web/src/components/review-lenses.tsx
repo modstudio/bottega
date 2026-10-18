@@ -3,12 +3,12 @@ import { Button } from '@bottega/hub-ui/button'
 import { Companion } from '@bottega/hub-ui/companion'
 import { DisplayRow, FieldSection } from '@bottega/hub-ui/form-layout'
 import { PageHeader } from '@bottega/hub-ui/page-header'
+import { runEasternTime } from '@bottega/hub-util/format'
 import { useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { type ProjectColors, ProjectMark } from '@/components/design-system'
 import { useDetailPanel } from '@/lib/detail-panel'
-import { runEasternTime } from '@/lib/format'
 
 type HostedReview = {
   id: string

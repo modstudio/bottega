@@ -7,13 +7,13 @@ import { Companion } from '@bottega/hub-ui/companion'
 import { Input } from '@bottega/hub-ui/field/input'
 import { DisplayRow } from '@bottega/hub-ui/form-layout'
 import { Segmented } from '@bottega/hub-ui/segmented'
+import { duration, relativeTime } from '@bottega/hub-util/format'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Copy } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { type ReviewLens, ReviewLensList } from '@/components/review-lenses'
 import { WaitingBadge } from '@/components/waiting-badge'
-import { duration, relativeTime } from '@/lib/format'
 
 const DELIVERIES = ['none', 'partial', 'full'] as const
 const QUALITIES = ['wrong', 'mixed', 'right'] as const

@@ -16,11 +16,11 @@ import {
   TableHeader,
   TableRow,
 } from '@bottega/hub-ui/table'
+import { hourOfDayLabel, sendTimestamp } from '@bottega/hub-util/format'
+import { DEFAULT_ZONE, TIME_ZONES, WEEKDAYS, type Weekday } from '@bottega/hub-util/report-arrival'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
-import { hourOfDayLabel, sendTimestamp } from '@/lib/format'
-import { DEFAULT_ZONE, TIME_ZONES, WEEKDAYS, type Weekday } from '@/lib/report-arrival'
 
 type Settings = RecordSettingsResponse
 type Subscription = Settings['subscriptions'][number]

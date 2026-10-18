@@ -173,6 +173,7 @@ const hubViewFolders = [
   'rail-section',
   'contents-list',
   'document-editor',
+  'status-look',
   'task-history',
   'task-page',
 ]

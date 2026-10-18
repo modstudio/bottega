@@ -3,11 +3,11 @@ import { Button } from '@bottega/hub-ui/button'
 import { Select, type SelectOption } from '@bottega/hub-ui/listbox/select'
 import { ProjectName } from '@bottega/hub-ui/project-mark'
 import { Segmented } from '@bottega/hub-ui/segmented'
+import { collectedTime, relativeTime } from '@bottega/hub-util/format'
+import { PROJECT_FALLBACK } from '@bottega/hub-util/project'
 import { useQuery } from '@tanstack/react-query'
 import { Database, GitCommit, RadioTower } from 'lucide-react'
 import type { CSSProperties } from 'react'
-import { collectedTime, relativeTime } from '@/lib/format'
-import { PROJECT_FALLBACK } from '@/lib/project'
 import {
   clearFilters,
   setFilter,

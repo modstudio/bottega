@@ -10,6 +10,7 @@
     "hub/deploy/site",
     "hub/data",
     "hub/ui",
+    "hub/util",
     "hub/views",
     "hub/web",
     "retrieval"

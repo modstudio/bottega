@@ -3,11 +3,11 @@ import { type WaitingInboxEntry, waitingInboxEntries } from '@bottega/hub-data/o
 import { Badge } from '@bottega/hub-ui/badge'
 import { Identifier } from '@bottega/hub-ui/identifier'
 import { PageHeader } from '@bottega/hub-ui/page-header'
+import { relativeTime } from '@bottega/hub-util/format'
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { Collection, type CollectionColumn } from '@/components/collection'
-import { relativeTime } from '@/lib/format'
 
 export const Route = createFileRoute('/inbox')({ component: InboxPage })
 

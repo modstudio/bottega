@@ -1,0 +1,20 @@
+{
+  "name": "@bottega/hub-util",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "exports": {
+    "./format": "./src/format.ts",
+    "./project": "./src/project.ts",
+    "./record-spaces": "./src/record-spaces.ts",
+    "./report-arrival": "./src/report-arrival.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^6.0.3"
+  }
+}

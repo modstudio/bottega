@@ -9,6 +9,7 @@ COPY hub/package.json hub/package.json
 COPY hub/deploy/site/package.json hub/deploy/site/package.json
 COPY hub/data/package.json hub/data/package.json
 COPY hub/ui/package.json hub/ui/package.json
+COPY hub/util/package.json hub/util/package.json
 COPY hub/views/package.json hub/views/package.json
 COPY hub/web/package.json hub/web/package.json
 COPY retrieval/package.json retrieval/package.json

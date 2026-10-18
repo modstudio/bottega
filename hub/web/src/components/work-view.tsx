@@ -5,6 +5,7 @@ import { Badge } from '@bottega/hub-ui/badge'
 import { LiveDot } from '@bottega/hub-ui/badge/live-dot'
 import { TextButton } from '@bottega/hub-ui/button'
 import { Docked } from '@bottega/hub-ui/companion'
+import { useNow } from '@bottega/hub-ui/dom/clock'
 import { EmptyState } from '@bottega/hub-ui/empty-state'
 import { Input } from '@bottega/hub-ui/field/input'
 import { Identifier } from '@bottega/hub-ui/identifier'
@@ -19,6 +20,8 @@ import {
   TableHeader,
   TableRow,
 } from '@bottega/hub-ui/table'
+import { compactTokens, duration, relativeTime, vendorFigures } from '@bottega/hub-util/format'
+import { taskStatusLook } from '@bottega/hub-views/status-look/task-status'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import {
@@ -42,10 +45,7 @@ import {
   WindowControl,
 } from '@/components/design-system'
 import { WaitingBadge } from '@/components/waiting-badge'
-import { useNow } from '@/lib/clock'
 import { useDetailPanel } from '@/lib/detail-panel'
-import { compactTokens, duration, relativeTime, vendorFigures } from '@/lib/format'
-import { taskStatusLook } from '@/lib/task-status'
 import { setWorkCounts, useWindowState } from '@/lib/window'
 
 type WorkName = 'flight' | 'done'

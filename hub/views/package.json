@@ -49,6 +49,8 @@
     "./styles/doc-editor-rich": "./src/styles/doc-editor-rich.css",
     "./styles/doc-editor": "./src/styles/doc-editor.css",
     "./styles/markdown": "./src/styles/markdown.css",
+    "./status-look/task-status": "./src/status-look/task-status.ts",
+    "./status-look/verdict-tone": "./src/status-look/verdict-tone.ts",
     "./task-history": "./src/task-history/task-history.tsx",
     "./task-history/history-comment": "./src/task-history/history-comment.tsx",
     "./task-history/history-comment.styles": "./src/task-history/history-comment.styles.ts",
