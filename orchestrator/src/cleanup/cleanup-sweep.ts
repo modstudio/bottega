@@ -63,6 +63,7 @@ import { reclaimSweptDockerResources } from './cleanup-sweep-docker.ts'
 import { pruneSweptProjectBranches, reclaimAbsentTrustEntries } from './cleanup-sweep-reclaim.ts'
 import { sweepUnattendedResidue } from './cleanup-sweep-residue.ts'
 import { pruneReaderCloneArchives } from './reader-clone-archive-retention.ts'
+import { sweepRunLeftovers } from './run-leftover-sweep.ts'
 import { sweepStrayWorktreeDirectories } from './stray-worktree-sweep.ts'
 
 function reapExpiredBoardMessages(dryRun: boolean): void {
@@ -439,8 +440,9 @@ function sweepUnjudgedRuns(
   dry: boolean,
   selectedProject: { name: string } | null,
   presentation: CleanupPresentation,
-): void {
+): Set<number> {
   const now = Date.now()
+  const evidenceExcluded = new Set<number>()
   let expired = 0
   let kept = 0
   for (const row of unjudgedRuns(selectedProject?.name ?? null)) {
@@ -457,12 +459,14 @@ function sweepUnjudgedRuns(
     }
     if (dry || expireUnjudgedRun(row, shouldExpireUnjudgedOwner, UNJUDGED_OWNER_WINDOW_MS)) {
       expired++
+      evidenceExcluded.add(row.id)
       presentation.log(`${dry ? 'would expire' : 'expired'} unjudged run ${row.id}`)
     } else {
       kept++
     }
   }
   presentation.log(`\n${dry ? 'would expire' : 'expired'} unjudged ${expired}, kept ${kept}`)
+  return evidenceExcluded
 }
 
 type RecordedSweepState = {
@@ -659,7 +663,13 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     presentation: options.presentation,
     trust: trustObservation,
   })
-  sweepUnjudgedRuns(dry, selectedProject, options.presentation)
+  const sweepExcludedRoots = sweepUnjudgedRuns(dry, selectedProject, options.presentation)
+  const runLeftovers = sweepRunLeftovers({
+    dryRun: dry,
+    projectRecordId: selectedProject?.recordId ?? null,
+    presentation: options.presentation,
+    judgedRootIds: sweepExcludedRoots,
+  })
   const rows = (
     db()
       .query(
@@ -693,7 +703,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     absent: 0,
     forgotten: 0,
   }
-  let cleanupFailed = archiveRetention.failed > 0
+  let cleanupFailed = archiveRetention.failed > 0 || runLeftovers.failed
   cleanupFailed ||= sweepIdleMainStacks({
     database: db(),
     projects: sweepProjects,
