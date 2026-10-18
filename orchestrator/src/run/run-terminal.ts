@@ -124,6 +124,16 @@ type TerminalMcpRuling = {
   requiredFailure: string | null
 } | null
 
+function readerArtifactPaths(job: string, output: string): string[] | null {
+  if (!isReaderJob(job)) return null
+  const reply = parseReaderOutput(output)
+  if (!reply) return null
+  const delivered = reply.deliverables.flatMap(({ name, content }) =>
+    [name, content].filter((value) => /(?:^|\/)\.?[^/]+\.[^/]+$/.test(value.trim())),
+  )
+  return [...(reply.files_written ?? []), ...delivered]
+}
+
 export function recordArtifactPersistenceFailure(
   database: Database,
   input: {
@@ -854,12 +864,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   }
 
   try {
-    persistRunArtifacts(
-      claim.id,
-      isReaderJob(opts.job) ? (parseReaderOutput(output)?.files_written ?? null) : null,
-      worktree,
-      changes,
-    )
+    persistRunArtifacts(claim.id, readerArtifactPaths(opts.job, output), worktree, changes, output)
   } catch (e) {
     artifactsPersisted = false
     const persistenceError = `artifact persistence failed for ${runArtifactsDir(claim.id)}: ${String((e as Error)?.message ?? e)}`

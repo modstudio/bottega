@@ -6,22 +6,23 @@
  */
 import {
   copyFileSync,
-  cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
+  mkdtempSync,
   readdirSync,
   readFileSync,
-  realpathSync,
+  readlinkSync,
   renameSync,
   rmSync,
   statSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import {
   runArtifactsDir as artifactDirectory,
+  isPathAtOrBelow,
   namedArtifactPlan,
   runScratchDir as scratchDirectory,
 } from '../artifact-paths.ts'
@@ -29,6 +30,14 @@ import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { CONNECTION_SCHEMA_INVARIANT } from '../database/migrations.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
+import {
+  decideRunArtifactRetention,
+  OUTSIDE_DEPTH_AGGREGATE_FILE_LIMIT,
+  RUN_ARTIFACT_BUILD_OUTPUT_DIRECTORIES,
+  RUN_ARTIFACT_FILE_CAP_BYTES,
+  RUN_ARTIFACT_TOTAL_CAP_BYTES,
+  type RunArtifactListingEntry,
+} from './run-artifact-retention.ts'
 
 /**
  * How long a run's prompt and reply are kept on disk.
@@ -44,6 +53,12 @@ import { teardownTerminalRunResources } from '../resources/resource-ownership.ts
  * that no longer exists.
  */
 export const KEEP_RUN_FILES_DAYS = 30
+export {
+  OUTSIDE_DEPTH_AGGREGATE_FILE_LIMIT,
+  RUN_ARTIFACT_BUILD_OUTPUT_DIRECTORIES,
+  RUN_ARTIFACT_FILE_CAP_BYTES,
+  RUN_ARTIFACT_TOTAL_CAP_BYTES,
+}
 
 /**
  * Where prompt and output files live. By default they sit beside the resolved
@@ -260,63 +275,53 @@ export function readDispatchState(id: number): DispatchState {
   }
 }
 
-function mergeScratchEntry(source: string, destination: string): void {
-  if (
-    existsSync(destination) &&
-    lstatSync(source).isDirectory() &&
-    lstatSync(destination).isDirectory()
-  ) {
-    for (const entry of readdirSync(source)) {
-      mergeScratchEntry(join(source, entry), join(destination, entry))
-    }
-    rmSync(source, { recursive: true })
+type ListedArtifact = RunArtifactListingEntry & { source: string }
+
+function listArtifacts(source: string, logical: string, listed: Map<string, ListedArtifact>): void {
+  const stat = lstatSync(source)
+  if (stat.isSymbolicLink()) {
+    listed.set(logical, {
+      path: logical,
+      kind: 'symlink',
+      size: stat.size,
+      linkText: readlinkSync(source),
+      source,
+    })
     return
   }
-  rmSync(destination, { recursive: true, force: true })
-  renameSync(source, destination)
+  if (stat.isFile()) {
+    listed.set(logical, { path: logical, kind: 'file', size: stat.size, source })
+    return
+  }
+  if (!stat.isDirectory()) return
+  listed.set(logical, { path: logical, kind: 'directory', size: stat.size, source })
+  for (const name of readdirSync(source))
+    listArtifacts(join(source, name), logical ? `${logical}/${name}` : name, listed)
 }
 
-function moveScratchArtifacts(scratch: string, artifacts: string): void {
-  if (!existsSync(scratch)) {
-    mkdirSync(artifacts, { recursive: true })
-    return
+function citedRunPaths(reply: string, scratch: string, artifacts: string): string[] {
+  const paths: string[] = []
+  for (const root of [scratch, artifacts]) {
+    let cursor = 0
+    while (cursor >= 0) {
+      cursor = reply.indexOf(root, cursor)
+      if (cursor < 0) break
+      let end = cursor + root.length
+      while (end < reply.length && !/[\s"'`<>]/.test(reply[end]!)) end++
+      paths.push(reply.slice(cursor, end).replace(/[),.;:]+$/, ''))
+      cursor = end
+    }
   }
-  if (!existsSync(artifacts)) {
-    renameSync(scratch, artifacts)
-    return
-  }
-  for (const entry of readdirSync(scratch)) {
-    mergeScratchEntry(join(scratch, entry), join(artifacts, entry))
-  }
-  rmSync(scratch, { recursive: true })
+  return paths
 }
 
-function persistNamedArtifact(
-  id: number,
-  named: string,
-  worktreePath: string | null,
-): string | null {
-  const plan = namedArtifactPlan(id, RUNS_DIR, named, worktreePath)
-  if (plan.alreadyInPlace && existsSync(plan.source)) return null
-  try {
-    if (!existsSync(plan.source)) throw new Error('source does not exist')
-    const source = lstatSync(plan.source).isSymbolicLink() ? realpathSync(plan.source) : plan.source
-    const sourceStat = statSync(source)
-    if (sourceStat.isDirectory()) {
-      cpSync(source, plan.destination, {
-        recursive: true,
-        verbatimSymlinks: true,
-        dereference: false,
-      })
-    } else if (sourceStat.isFile()) {
-      if (source !== plan.destination) copyFileSync(source, plan.destination)
-    } else {
-      throw new Error('source is not a file or directory')
-    }
-    return null
-  } catch (error) {
-    return `could not copy named file ${plan.source} to ${plan.destination}: ${error instanceof Error ? error.message : String(error)}`
-  }
+function recordArtifactByteTotals(id: number, keptBytes: number, droppedBytes: number): void {
+  const path = runTerminalResultPath(id)
+  if (!existsSync(path)) return
+  const result = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
+  result.artifactBytesKept = keptBytes
+  result.artifactBytesDropped = droppedBytes
+  writeFileSync(path, JSON.stringify(result))
 }
 
 export function persistRunArtifacts(
@@ -324,16 +329,66 @@ export function persistRunArtifacts(
   filesWritten: string[] | null,
   worktree: { path: string } | null,
   changes: { diff?: string } | null,
+  reply = '',
 ): void {
   const scratch = runScratchDir(id)
   const artifacts = runArtifactsDir(id)
-  mkdirSync(join(RUNS_DIR, String(id)), { recursive: true })
-  moveScratchArtifacts(scratch, artifacts)
-  if (changes?.diff) writeFileSync(join(artifacts, 'worktree.diff'), changes.diff)
+  const runDirectory = join(RUNS_DIR, String(id))
+  mkdirSync(runDirectory, { recursive: true })
+  const listed = new Map<string, ListedArtifact>()
+  if (existsSync(artifacts)) {
+    for (const name of readdirSync(artifacts)) {
+      if (name !== 'dropped.json') listArtifacts(join(artifacts, name), name, listed)
+    }
+  }
+  if (existsSync(scratch)) {
+    for (const name of readdirSync(scratch)) listArtifacts(join(scratch, name), name, listed)
+  }
   const failures: string[] = []
-  for (const named of filesWritten ?? []) {
-    const failure = persistNamedArtifact(id, named, worktree?.path ?? null)
-    if (failure) failures.push(failure)
+  const namedLogical: string[] = []
+  for (const named of [...(filesWritten ?? []), ...citedRunPaths(reply, scratch, artifacts)]) {
+    const artifact = namedArtifactPlan(id, RUNS_DIR, named, worktree?.path ?? null)
+    const logical = relative(artifacts, artifact.destination)
+    if (namedLogical.includes(logical)) continue
+    namedLogical.push(logical)
+    try {
+      const source = isPathAtOrBelow(named, scratch) ? named : artifact.source
+      if (!existsSync(source)) throw new Error('source does not exist')
+      if (!artifact.alreadyInPlace && !isPathAtOrBelow(source, scratch)) {
+        listArtifacts(source, logical, listed)
+      }
+    } catch (error) {
+      failures.push(
+        `could not copy named file ${artifact.source} to ${artifact.destination}: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
   }
   if (failures.length > 0) throw new Error(failures.join('\n'))
+  if (changes?.diff) {
+    listed.set('worktree.diff', {
+      path: 'worktree.diff',
+      kind: 'file',
+      size: Buffer.byteLength(changes.diff),
+      source: '',
+    })
+  }
+  const plan = decideRunArtifactRetention([...listed.values()], namedLogical)
+  const stage = mkdtempSync(join(runDirectory, '.artifacts-'))
+  try {
+    for (const kept of plan.kept) {
+      const entry = listed.get(kept)!
+      const destination = join(stage, kept)
+      mkdirSync(dirname(destination), { recursive: true })
+      if (kept === 'worktree.diff' && changes?.diff) writeFileSync(destination, changes.diff)
+      else copyFileSync(entry.source, destination)
+    }
+    writeFileSync(join(stage, 'dropped.json'), JSON.stringify(plan.dropped, null, 2))
+    rmSync(artifacts, { recursive: true, force: true })
+    renameSync(stage, artifacts)
+    rmSync(scratch, { recursive: true, force: true })
+    recordArtifactByteTotals(id, plan.keptBytes, plan.droppedBytes)
+  } catch (error) {
+    rmSync(stage, { recursive: true, force: true })
+    throw error
+  }
 }

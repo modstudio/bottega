@@ -1,11 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import {
   existsSync,
-  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
-  readlinkSync,
   rmSync,
   symlinkSync,
   utimesSync,
@@ -180,13 +178,21 @@ test('a listed directory is copied recursively without following its symlinks', 
     persistRunArtifacts(id, [evidence], null, null)
     const copied = join(runArtifactsDir(id), 'evidence')
     expect(readFileSync(join(copied, 'target.txt'), 'utf8')).toBe('target\n')
-    expect(lstatSync(join(copied, 'link.txt')).isSymbolicLink()).toBe(true)
-    expect(readlinkSync(join(copied, 'link.txt'))).toBe('target.txt')
+    expect(existsSync(join(copied, 'link.txt'))).toBe(false)
+    expect(
+      JSON.parse(readFileSync(join(runArtifactsDir(id), 'dropped.json'), 'utf8')),
+    ).toContainEqual(
+      expect.objectContaining({
+        path: 'evidence/link.txt',
+        reason: 'symlink',
+        linkText: 'target.txt',
+      }),
+    )
   } finally {
     rmSync(outside, { recursive: true, force: true })
   }
 })
-test('a listed symlink to a directory is materialized before its source is reclaimed', () => {
+test('a listed symlink to a directory is recorded without following it', () => {
   const id = addRun({ agent: 'codex', job: 'understand' })
   const outside = mkdtempSync(join(tmpdir(), 'orch-linked-artifact-directory-'))
   const source = join(outside, 'source')
@@ -198,12 +204,14 @@ test('a listed symlink to a directory is materialized before its source is recla
   persistRunArtifacts(id, [linked], null, null)
   rmSync(outside, { recursive: true, force: true })
 
-  const copied = join(runArtifactsDir(id), 'linked-evidence')
-  expect(lstatSync(copied).isDirectory()).toBe(true)
-  expect(lstatSync(copied).isSymbolicLink()).toBe(false)
-  expect(readFileSync(join(copied, 'result.txt'), 'utf8')).toBe('durable\n')
+  expect(existsSync(join(runArtifactsDir(id), 'linked-evidence'))).toBe(false)
+  expect(
+    JSON.parse(readFileSync(join(runArtifactsDir(id), 'dropped.json'), 'utf8')),
+  ).toContainEqual(
+    expect.objectContaining({ path: 'linked-evidence', reason: 'symlink', linkText: source }),
+  )
 })
-test('all named artifacts are attempted before copy failures are reported together', () => {
+test('all named artifacts are checked before copy failures are reported together', () => {
   const id = addRun({ agent: 'codex', job: 'diagnose' })
   const tree = mkdtempSync(join(tmpdir(), 'orch-multiple-artifact-failures-'))
   writeFileSync(join(tree, 'first-good.txt'), 'first\n')
@@ -217,8 +225,8 @@ test('all named artifacts are attempted before copy failures are reported togeth
         null,
       ),
     ).toThrow(/first-missing\.txt[\s\S]*second-missing\.txt/)
-    expect(readFileSync(join(runArtifactsDir(id), 'first-good.txt'), 'utf8')).toBe('first\n')
-    expect(readFileSync(join(runArtifactsDir(id), 'last-good.txt'), 'utf8')).toBe('last\n')
+    expect(existsSync(join(runArtifactsDir(id), 'first-good.txt'))).toBe(false)
+    expect(existsSync(join(runArtifactsDir(id), 'last-good.txt'))).toBe(false)
   } finally {
     rmSync(tree, { recursive: true, force: true })
   }
@@ -253,7 +261,7 @@ test('an artifact copy failure records a harness failure and preserves the tree'
       `could not copy named file ${join(tree, 'missing-evidence.txt')}`,
     )
     expect(existsSync(tree)).toBe(true)
-    expect(existsSync(runArtifactsDir(id))).toBe(true)
+    expect(existsSync(runArtifactsDir(id))).toBe(false)
   } finally {
     rmSync(tree, { recursive: true, force: true })
   }
@@ -267,6 +275,39 @@ test('an artifact persistence failure cannot overwrite a concurrent operator sto
   } finally {
     rmSync(tree, { recursive: true, force: true })
   }
+})
+
+test('the adapter retains selected scratch files and records every dropped byte', () => {
+  const id = addRun({ agent: 'codex', job: 'diagnose' })
+  const scratch = runScratchDir(id)
+  mkdirSync(join(scratch, 'repo', '.git'), { recursive: true })
+  writeFileSync(join(scratch, 'repo', '.git', 'config'), 'git metadata')
+  writeFileSync(join(scratch, 'repo', 'source.ts'), 'source')
+  mkdirSync(join(scratch, 'nested', 'deep'), { recursive: true })
+  writeFileSync(join(scratch, 'nested', 'deep', 'named.txt'), 'named evidence')
+  writeFileSync(join(scratch, 'nested', 'deep', 'unmentioned.txt'), 'drop me')
+  writeFileSync(join(scratch, 'summary.txt'), 'summary')
+  const resultPath = join(process.env.ORCH_RUNS!, String(id), 'result.json')
+  writeFileSync(resultPath, '{}')
+
+  persistRunArtifacts(id, [join(scratch, 'nested', 'deep', 'named.txt')], null, {
+    diff: 'diff --git a/a b/a\n',
+  })
+
+  expect(readFileSync(join(runArtifactsDir(id), 'summary.txt'), 'utf8')).toBe('summary')
+  expect(readFileSync(join(runArtifactsDir(id), 'nested', 'deep', 'named.txt'), 'utf8')).toBe(
+    'named evidence',
+  )
+  expect(existsSync(join(runArtifactsDir(id), 'repo'))).toBe(false)
+  expect(existsSync(join(runArtifactsDir(id), 'nested', 'deep', 'unmentioned.txt'))).toBe(false)
+  expect(JSON.parse(readFileSync(join(runArtifactsDir(id), 'dropped.json'), 'utf8'))).toEqual([
+    { path: 'nested/deep/unmentioned.txt', size: 7, reason: 'outside retention depth' },
+    { path: 'repo', size: 18, reason: 'copy', fileCount: 2 },
+  ])
+  expect(JSON.parse(readFileSync(resultPath, 'utf8'))).toEqual({
+    artifactBytesKept: 40,
+    artifactBytesDropped: 25,
+  })
 })
 test(`${PLATFORM_SLUG} run retry preserves a reader root deliverable contract and timeout`, () => {
   const root = addRun({ agent: 'codex', job: 'understand' })
