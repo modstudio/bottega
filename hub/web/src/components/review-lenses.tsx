@@ -1,16 +1,12 @@
-import { trpc } from '@bottega/hub-data/client'
 import { Badge } from '@bottega/hub-ui/badge'
 import { Button } from '@bottega/hub-ui/button'
 import { Companion } from '@bottega/hub-ui/companion'
 import { DisplayRow, FieldSection } from '@bottega/hub-ui/form-layout'
 import { PageHeader } from '@bottega/hub-ui/page-header'
-import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
-import { useState } from 'react'
 import { Collection, type CollectionColumn } from '@/components/collection'
-import { ProjectMark } from '@/components/design-system'
-import { hostedProjectColors } from '@/components/hosted-projects'
+import { type ProjectColors, ProjectMark } from '@/components/design-system'
 import { useDetailPanel } from '@/lib/detail-panel'
 import { runEasternTime } from '@/lib/format'
 
@@ -88,24 +84,19 @@ export function ReviewLensList({ lenses }: { lenses: ReviewLens[] }) {
   )
 }
 
-export function HostedReviews() {
-  return <HostedReviewsList />
-}
-
-function HostedReviewsList() {
+export function HostedReviews({
+  rows,
+  colors,
+  pending,
+  loadMore,
+}: {
+  rows: HostedReview[]
+  colors: ProjectColors
+  pending: boolean
+  loadMore: { run(): void; pending: boolean; error: string | null; available: boolean }
+}) {
   const panel = useDetailPanel()
   const navigate = useNavigate()
-  const [pages, setPages] = useState<HostedReview[][]>([])
-  const [cursor, setCursor] = useState<string | undefined>(undefined)
-  const projects = useQuery(trpc.record.projects.queryOptions())
-  const colors = hostedProjectColors(projects.data ?? [])
-  const query = useQuery(trpc.record.reviews.queryOptions({ limit: 20, cursor }))
-  const applied = query.data
-  const rows = applied
-    ? cursor
-      ? [...pages.flat(), ...applied.items]
-      : applied.items
-    : pages.flat()
 
   const columns: CollectionColumn<HostedReview>[] = [
     {
@@ -142,11 +133,11 @@ function HostedReviewsList() {
     <section>
       <PageHeader
         title="Reviews"
-        subtitle={query.isPending && !rows.length ? 'Loading reviews...' : `${rows.length} loaded`}
+        subtitle={pending && !rows.length ? 'Loading reviews...' : `${rows.length} loaded`}
       />
-      {query.error ? (
+      {loadMore.error ? (
         <p data-tone="error" className="text-status-text">
-          could not load: {query.error.message}
+          could not load: {loadMore.error}
         </p>
       ) : null}
       <Collection
@@ -159,20 +150,12 @@ function HostedReviewsList() {
         onOpen={(row) =>
           void navigate({ to: '/reviews/$id', params: { id: row.id }, resetScroll: false })
         }
-        empty={{ title: query.isPending ? 'Loading reviews...' : 'No reviews in this space.' }}
+        empty={{ title: pending ? 'Loading reviews...' : 'No reviews in this space.' }}
       />
-      {applied?.nextCursor ? (
+      {loadMore.available ? (
         <div className="mt-4">
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={query.isFetching}
-            onClick={() => {
-              setPages((current) => [...current, applied.items])
-              setCursor(applied.nextCursor ?? undefined)
-            }}
-          >
-            {query.isFetching ? 'Loading...' : 'Load more'}
+          <Button variant="secondary" size="sm" disabled={loadMore.pending} onClick={loadMore.run}>
+            {loadMore.pending ? 'Loading...' : 'Load more'}
           </Button>
         </div>
       ) : null}
@@ -180,26 +163,43 @@ function HostedReviewsList() {
   )
 }
 
-export function HostedReviewDetail({ id }: { id: string }) {
-  const navigate = useNavigate()
-  const detail = useQuery(trpc.record.review.queryOptions({ id }))
-  const projects = useQuery(trpc.record.projects.queryOptions())
-  const colors = hostedProjectColors(projects.data ?? [])
-  const close = () => void navigate({ to: '/reviews', resetScroll: false })
-  const review = detail.data
+type HostedReviewDetail = {
+  lenses?: unknown[] | null
+  projectName?: string | null
+  tier?: number | null
+  spaceName: string
+  recordedAt: string
+  completedAt?: string | null
+}
 
-  if (detail.isPending) {
+export function HostedReviewDetail({
+  id,
+  review,
+  colors,
+  pending,
+  error,
+}: {
+  id: string
+  review: HostedReviewDetail | null
+  colors: ProjectColors
+  pending: boolean
+  error: string | null
+}) {
+  const navigate = useNavigate()
+  const close = () => void navigate({ to: '/reviews', resetScroll: false })
+
+  if (pending) {
     return (
       <Companion onClose={close} title={`Review ${id}`} subtitle="Loading review...">
         <p className="text-text-muted">Loading...</p>
       </Companion>
     )
   }
-  if (detail.error || !review) {
+  if (error || !review) {
     return (
       <Companion onClose={close} title={`Review ${id}`}>
         <p data-tone="error" className="text-status-text">
-          Could not load this review. {detail.error?.message ?? 'Not found'}
+          Could not load this review. {error ?? 'Not found'}
         </p>
       </Companion>
     )

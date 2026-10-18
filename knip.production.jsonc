@@ -112,6 +112,9 @@
       "entry": ["src/cli.ts!", "src/hosted.ts!"],
       "project": ["src/**/*.ts!", "!src/**/*.test.ts", "!src/**/*.fixture*.ts", "!test/**/*.ts"]
     },
+    "hub/data": {
+      "project": ["src/**/*.ts!", "!src/**/*.test.ts", "!test/**/*.ts"]
+    },
     "hub/ui": {
       "entry": [".storybook/preview.css!"]
     },

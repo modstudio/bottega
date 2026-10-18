@@ -1,5 +1,6 @@
 import { type ProjectRow, queryClient, trpc } from '@bottega/hub-data/client'
 import { isHostedMode } from '@bottega/hub-data/hub-mode'
+import { useHostedProjects } from '@bottega/hub-data/use-projects'
 import { Badge } from '@bottega/hub-ui/badge'
 import { Button } from '@bottega/hub-ui/button'
 import { Checkbox } from '@bottega/hub-ui/checkbox'
@@ -53,13 +54,17 @@ function useProjects() {
 export const Route = createFileRoute('/projects')({ component: ProjectsRoute })
 
 function ProjectsRoute() {
-  if (isHostedMode()) return <HostedProjects />
+  if (isHostedMode()) return <HostedProjectsRoute />
   return (
     <>
       <ProjectsPage />
       <Outlet />
     </>
   )
+}
+
+function HostedProjectsRoute() {
+  return <HostedProjects {...useHostedProjects()} />
 }
 
 function ProjectsPage() {

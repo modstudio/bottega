@@ -1,10 +1,5 @@
 [
   "hub/web/src/components/design-system.tsx",
-  "hub/web/src/components/hosted-insights.tsx",
-  "hub/web/src/components/hosted-projects.tsx",
-  "hub/web/src/components/hosted-reports.tsx",
   "hub/web/src/components/insight-view.tsx",
-  "hub/web/src/components/machine-permission-editor.tsx",
-  "hub/web/src/components/review-lenses.tsx",
   "hub/web/src/components/work-view.tsx"
 ]

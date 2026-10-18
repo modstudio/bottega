@@ -1,5 +1,4 @@
 import { afterAll, afterEach, beforeAll, expect, test } from 'bun:test'
-import { GlobalRegistrator } from '@happy-dom/global-registrator'
 import { QueryClientProvider } from '@tanstack/react-query'
 import type * as TestingLibrary from '@testing-library/react/pure'
 import { createElement, type ReactNode } from 'react'
@@ -11,7 +10,6 @@ let registeredFetch: typeof globalThis.fetch
 let fetchHandler: typeof globalThis.fetch
 
 beforeAll(async () => {
-  GlobalRegistrator.register({ url: 'http://localhost' })
   registeredFetch = globalThis.fetch
   globalThis.fetch = ((...args) => fetchHandler(...args)) as typeof globalThis.fetch
   window.fetch = globalThis.fetch
@@ -26,7 +24,6 @@ afterEach(() => {
 afterAll(async () => {
   globalThis.fetch = registeredFetch
   window.fetch = registeredFetch
-  await GlobalRegistrator.unregister()
 })
 
 const capability = { allowed: true as const }
