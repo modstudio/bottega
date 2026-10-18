@@ -4,8 +4,7 @@ import type { HistoryEntry } from './history-model'
 import { TaskHistory } from './task-history'
 
 const now = new Date('2026-10-16T15:00:00')
-const shmuel = { name: 'Shmuel', kind: 'person' as const }
-const claude = { name: 'Claude', kind: 'agent' as const }
+const shmuel = 'Shmuel'
 const entries: HistoryEntry[] = [
   { kind: 'status', id: 's1', at: '2026-10-15T09:12:00', from: null, to: 'open', actor: shmuel },
   {
@@ -23,7 +22,8 @@ const entries: HistoryEntry[] = [
     at: '2026-10-16T08:40:00',
     from: 'open',
     to: 'active',
-    actor: claude,
+    actor: shmuel,
+    agent: 'Claude',
   },
   {
     kind: 'run',
@@ -34,6 +34,7 @@ const entries: HistoryEntry[] = [
     job: 'understand',
     endedAt: '2026-10-16T08:50:00',
     running: false,
+    actor: shmuel,
   },
   {
     kind: 'status',
@@ -41,7 +42,8 @@ const entries: HistoryEntry[] = [
     at: '2026-10-16T11:02:00',
     from: 'active',
     to: 'review',
-    actor: claude,
+    actor: shmuel,
+    agent: 'Claude',
   },
   {
     kind: 'status',
@@ -49,7 +51,8 @@ const entries: HistoryEntry[] = [
     at: '2026-10-16T11:05:00',
     from: 'review',
     to: 'active',
-    actor: claude,
+    actor: shmuel,
+    agent: 'Claude',
   },
   {
     kind: 'run',
@@ -60,6 +63,7 @@ const entries: HistoryEntry[] = [
     job: 'implement',
     endedAt: null,
     running: true,
+    actor: shmuel,
   },
   {
     kind: 'comment',
@@ -67,6 +71,7 @@ const entries: HistoryEntry[] = [
     at: '2026-10-16T14:45:00',
     body: 'Phase 4 is running; the page waits on its `TaskDetail` contract.',
     actor: shmuel,
+    agent: 'Claude',
     canEdit: true,
     canDelete: true,
   },

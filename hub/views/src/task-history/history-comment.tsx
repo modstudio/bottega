@@ -20,6 +20,8 @@ export type HistoryCommentProps = {
   body: string
   /** Who wrote it, when the record says. */
   author: string | null
+  /** The agent that wrote it for the author, if one did. */
+  agent?: string | null
   /** Whether this reader may change this comment; the screen's data decides. */
   canEdit?: boolean
   canDelete?: boolean
@@ -121,7 +123,8 @@ function Editor({
 
 /** One comment in the history feed: a head with its actions and time, then its prose. */
 export function HistoryComment(props: HistoryCommentProps) {
-  const { at, body, author, canEdit, canDelete, time, editing, onReply, onEditStart, edit } = props
+  const { at, body, author, agent, canEdit, canDelete, time, editing, onReply, onEditStart, edit } =
+    props
   const { onDelete, deleting, deleteError } = props
   const [confirming, setConfirming] = useState(false)
   const actions: Action[] = [
@@ -138,6 +141,7 @@ export function HistoryComment(props: HistoryCommentProps) {
       <div className={historyCommentStyles().head()}>
         <span className={historyCommentStyles().kind()}>
           {author ? <span className={historyCommentStyles().author()}>{author}</span> : 'Comment'}
+          {agent ? ` · ${agent}` : null}
         </span>
         {confirming ? (
           <span className={historyCommentStyles().confirm()}>

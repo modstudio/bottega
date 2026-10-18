@@ -23,6 +23,7 @@ export const taskHistoryStyles = variant({
     lineText: 'min-w-0 flex-1',
     strong: 'font-medium text-text-primary',
     arrow: 'text-text-muted',
+    agent: 'text-text-muted',
     time: 'shrink-0 font-mono text-text-muted text-xs tabular-nums',
     toggle: 'shrink-0 cursor-pointer font-mono text-text-muted text-xs hover:text-text-primary',
     changes: 'mt-1 ml-1 flex flex-col gap-1 border-border-default border-l pl-3',

@@ -9,7 +9,6 @@ import {
   type ActorCluster,
   type CommentEntry,
   groupHistory,
-  type HistoryActor,
   type HistoryEntry,
   type HistoryFilter,
   type HistoryItem,
@@ -123,6 +122,13 @@ function StatusLine({ item }: { item: StatusRun }) {
   const [open, setOpen] = useState(false)
   const path = statusPath(item.changes)
   const created = item.changes[0]?.kind === 'status' && item.changes[0].from === null
+  const agents = [
+    ...new Set(
+      item.changes.flatMap((change) =>
+        change.kind === 'status' && change.agent ? [change.agent] : [],
+      ),
+    ),
+  ]
   return (
     <div>
       <div className={taskHistoryStyles().line()}>
@@ -134,6 +140,9 @@ function StatusLine({ item }: { item: StatusRun }) {
               <span className={taskHistoryStyles().strong()}>{step.status}</span>
             </span>
           ))}
+          {agents.length ? (
+            <span className={taskHistoryStyles().agent()}> · {agents.join(', ')}</span>
+          ) : null}
         </span>
         {item.changes.length > 1 ? (
           <button
@@ -157,6 +166,9 @@ function StatusLine({ item }: { item: StatusRun }) {
                 <span className={taskHistoryStyles().lineText()}>
                   {change.from ?? 'new'} <span className={taskHistoryStyles().arrow()}>→</span>{' '}
                   {change.to}
+                  {change.agent ? (
+                    <span className={taskHistoryStyles().agent()}> · {change.agent}</span>
+                  ) : null}
                 </span>
                 <time className={taskHistoryStyles().time()} dateTime={change.at}>
                   {clock(change.at)}
@@ -196,7 +208,8 @@ function CommentBlock({ item, controls }: { item: CommentEntry; controls: Commen
       id={item.id}
       at={item.at}
       body={item.body}
-      author={item.actor?.name ?? null}
+      author={item.actor ?? null}
+      agent={item.agent ?? null}
       canEdit={item.canEdit}
       canDelete={item.canDelete}
       time={clock(item.at)}
@@ -216,24 +229,20 @@ function CommentBlock({ item, controls }: { item: CommentEntry; controls: Commen
 
 function RunLine({
   item,
-  actor,
   renderRun,
 }: {
   item: Extract<HistoryItem, { kind: 'run' }>
-  actor: HistoryActor | null
   renderRun: TaskHistoryProps['renderRun']
 }) {
   const label = item.run ? `Run #${item.run}` : 'Run'
   const duration = runDuration(item.at, item.endedAt)
-  /* The cluster's name already says which agent, unless someone else is the actor. */
-  const agent = item.agent && item.agent !== actor?.name ? item.agent : null
   return (
     <div className={taskHistoryStyles().line()}>
       <span className={taskHistoryStyles().lineText()}>
         <span className={taskHistoryStyles().strong()}>
           {item.run && renderRun ? renderRun(item.run, label) : label}
         </span>
-        {agent ? ` · ${agent}` : ''}
+        {item.agent ? ` · ${item.agent}` : ''}
         {item.job ? ` · ${item.job}` : ''}
         {item.running ? (
           <>
@@ -261,16 +270,14 @@ function ClusterBlock({
 }) {
   return (
     <div>
-      {cluster.actor ? (
-        <div className={taskHistoryStyles().author()}>{cluster.actor.name}</div>
-      ) : null}
+      {cluster.actor ? <div className={taskHistoryStyles().author()}>{cluster.actor}</div> : null}
       {cluster.items.map((item) => (
         <div key={`${item.kind}:${item.id}`} className={taskHistoryStyles().row()}>
           <Glyph kind={item.kind} />
           {item.kind === 'status-run' ? (
             <StatusLine item={item} />
           ) : (
-            <RunLine item={item} actor={cluster.actor} renderRun={renderRun} />
+            <RunLine item={item} renderRun={renderRun} />
           )}
         </div>
       ))}
@@ -343,7 +350,7 @@ export function TaskHistory({
               <div className={taskHistoryStyles().day()}>{day.label}</div>
               {day.blocks.map((block) => (
                 <div key={`${block.kind}:${block.id}`} className={taskHistoryStyles().entry()}>
-                  <Avatar name={block.actor?.name ?? null} kind={block.actor?.kind} />
+                  <Avatar name={block.actor ?? null} />
                   {block.kind === 'comment' ? (
                     <CommentBlock item={block} controls={controls} />
                   ) : (
