@@ -232,6 +232,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'record publish',
   'record pull',
   'record push',
+  'record push-catalogues',
   'record push-docs',
   'record redact-synced',
   'record sign-in',

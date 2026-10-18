@@ -31,7 +31,7 @@ export class RecordPortError extends Error {
 const uuid = z.string().uuid()
 const iso = z.string().datetime({ offset: true })
 const common = { id: uuid, spaceId: uuid }
-export const recordPortRows = {
+const recordPortRows = {
   port_doctrine: z.object({
     ...common,
     number: z.number().int().positive(),

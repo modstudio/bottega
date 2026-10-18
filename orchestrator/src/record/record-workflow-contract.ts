@@ -54,7 +54,7 @@ const event = z.object({
   sessionId: z.string().nullable(),
   at: iso,
 })
-export const recordWorkflowRowSchemas = {
+const recordWorkflowRowSchemas = {
   step_catalogue: identity,
   step_catalogue_version: version,
   step_catalogue_event: event,

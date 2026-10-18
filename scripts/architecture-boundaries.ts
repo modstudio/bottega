@@ -625,7 +625,11 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'record-api-client-port-boundary',
     'orchestrator/src/record/record-api-client-port.ts',
-    ['./record-api-client-paths.ts', './record-port-contract.ts'],
+    [
+      './record-api-client-paths.ts',
+      './record-catalogue-contract.ts',
+      './record-port-contract.ts',
+    ],
     'Keep the port HTTP client dependent only on its transport contract.',
   ),
   boundary(
@@ -942,6 +946,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../evidence/evidence-query.ts',
       '../run/run-liveness.ts',
       '../workflow/workflow-seeds.ts',
+      '../lens/lens-seeds.ts',
     ],
     'Enforce the store-hooks concern boundary.',
   ),

@@ -13,10 +13,6 @@ import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { sendRecordInvitationEmail } from '../mail/invitation-mailer.ts'
 import { sendPasswordResetEmail } from '../mail/password-reset-mailer.ts'
 import { RECORD_INVITATION_EXPIRES_IN_SECONDS } from './record-invitation.ts'
-import {
-  ensureSpaceBuiltIns,
-  ensureSpaceBuiltInsWithTransaction,
-} from './record-space-built-ins.ts'
 
 export { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 
@@ -82,7 +78,17 @@ export async function ensurePersonalSpace(
   })
 }
 
-function personalSpacePort(client: SQL): PersonalSpacePort {
+type SpaceBuiltInsPort = {
+  ensure(input: { url: string; userId: string; spaceId: string; spaceIds: string[] }): Promise<unknown>
+  ensureWithTransaction(tx: SQL, spaceId: string): Promise<unknown>
+}
+
+const noSpaceBuiltIns: SpaceBuiltInsPort = {
+  ensure: async () => {},
+  ensureWithTransaction: async () => {},
+}
+
+function personalSpacePort(client: SQL, builtIns: SpaceBuiltInsPort): PersonalSpacePort {
   return {
     async find(userId) {
       return client.begin(async (tx) => {
@@ -99,7 +105,7 @@ function personalSpacePort(client: SQL): PersonalSpacePort {
         if (!row?.id) return null
         const id = String(row.id)
         await tx`SELECT set_config('app.space_id', ${id}, true)`
-        await ensureSpaceBuiltInsWithTransaction(tx, id)
+        await builtIns.ensureWithTransaction(tx, id)
         return { id, name: String(row.name), slug: String(row.slug) }
       })
     },
@@ -144,7 +150,7 @@ function personalSpacePort(client: SQL): PersonalSpacePort {
           UPDATE "user" SET personal_space_id=${input.id}::uuid, updated_at=now()
           WHERE id=${input.userId}::uuid
         `
-        await ensureSpaceBuiltInsWithTransaction(tx, input.id)
+        await builtIns.ensureWithTransaction(tx, input.id)
         return { id: input.id, name: String(owner.name), slug: input.slug }
       })
     },
@@ -231,6 +237,7 @@ export function recordAuth(
   authDatabaseUrl?: string,
   sendReset: ResetPasswordSender = sendPasswordResetEmail,
   sendInvitation: InvitationSender = sendRecordInvitationEmail,
+  builtIns: SpaceBuiltInsPort = noSpaceBuiltIns,
 ) {
   const secret = environment.BETTER_AUTH_SECRET
   if (!secret) throw new Error('BETTER_AUTH_SECRET is required for record authentication')
@@ -241,7 +248,7 @@ export function recordAuth(
   // commands from reserving the database's entire connection budget before garbage collection.
   const client = new SQL(url, { max: 1 })
   const authClient = authDatabaseUrl ? new SQL(authDatabaseUrl, { max: 1 }) : client
-  const personalSpaces = personalSpacePort(client)
+  const personalSpaces = personalSpacePort(client, builtIns)
   const invitationOnlySignUp = Object.assign(
     async (input: unknown) => {
       const context = input as { path?: string; body?: Record<string, unknown> }
@@ -305,7 +312,7 @@ export function recordAuth(
         requireEmailVerificationOnInvitation: false,
         organizationHooks: {
           afterCreateOrganization: async ({ organization: created, user: owner }) => {
-            await ensureSpaceBuiltIns({
+            await builtIns.ensure({
               url,
               userId: owner.id,
               spaceId: created.id,

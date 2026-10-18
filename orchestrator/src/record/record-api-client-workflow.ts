@@ -4,7 +4,7 @@ import { type RecordRequestDestination, workflowCataloguePath } from './record-a
 import {
   type RecordCatalogueImportResult,
   recordCatalogueImportResultSchema,
-} from './record-lens-contract.ts'
+} from './record-catalogue-contract.ts'
 import {
   type RecordWorkflowDraftInput,
   type RecordWorkflowImportInput,

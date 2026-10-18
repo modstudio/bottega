@@ -5,6 +5,9 @@ import { z } from 'zod'
 import { lensCataloguePath, type RecordRequestDestination } from './record-api-client-paths.ts'
 import {
   type RecordCatalogueImportResult,
+  recordCatalogueImportResultSchema,
+} from './record-catalogue-contract.ts'
+import {
   type RecordLensImportInput,
   type RecordLensProfileWriteInput,
   type RecordLensProfileWriteResponse,
@@ -13,7 +16,6 @@ import {
   type RecordLensWriteResponse,
   type RecordProjectLensSelectionInput,
   type RecordProjectLensSelectionResponse,
-  recordCatalogueImportResultSchema,
   recordLensPageSchema,
   recordLensProfileWriteResponseSchema,
   recordLensWriteResponseSchema,

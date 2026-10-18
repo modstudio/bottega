@@ -20,7 +20,7 @@ type Plan = {
   skipped: Array<{ kind: string; id: string; reason: string }>
 }
 const iso = () => new Date().toISOString()
-const rows = <T>(local: Database, sql: string) => local.query(sql).all() as T[]
+const rows = <T>(local: Database, statementText: string) => local.query(statementText).all() as T[]
 
 function lensPlan(local: Database, activeSpaceId: string): RecordLensImportInput {
   const now = iso()
@@ -321,7 +321,7 @@ function portPlan(local: Database, activeSpaceId: string, skipped: Plan['skipped
   return plans
 }
 
-export function planCataloguePush(local: Database, activeSpaceId: string): Plan {
+function planCataloguePush(local: Database, activeSpaceId: string): Plan {
   const skipped: Plan['skipped'] = []
   return {
     lens: lensPlan(local, activeSpaceId),

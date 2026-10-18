@@ -2,7 +2,8 @@
 /** Atomically imports complete catalogue snapshots without changing matched hosted rows. */
 import { SQL } from 'bun'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
-import type { RecordCatalogueImportResult, RecordLensImportInput } from './record-lens-contract.ts'
+import type { RecordCatalogueImportResult } from './record-catalogue-contract.ts'
+import type { RecordLensImportInput } from './record-lens-contract.ts'
 import type { RecordPortImportInput } from './record-port-contract.ts'
 import type { RecordWorkflowImportInput } from './record-workflow-contract.ts'
 

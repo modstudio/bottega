@@ -25,7 +25,7 @@ const iso = z.string().datetime({ offset: true })
 const axis = z.enum(['framework', 'architecture'])
 const common = { id: uuid, spaceId: uuid }
 export const recordLensTableSchema = z.enum(RECORD_LENS_TABLES)
-export const recordLensRowSchemas = {
+const recordLensRowSchemas = {
   lens: z.object({
     ...common,
     key: z.string().min(1),
@@ -97,13 +97,6 @@ export const recordLensImportSchema = z.object({
   project_lens_profile_revision: z.array(recordLensRowSchemas.project_lens_profile_revision),
 })
 export type RecordLensImportInput = z.infer<typeof recordLensImportSchema>
-export const recordCatalogueImportResultSchema = z.object({
-  inserted: z.number().int().nonnegative(),
-  alreadyPresent: z.number().int().nonnegative(),
-  skipped: z.array(z.object({ id: z.string(), reason: z.string() })),
-})
-export type RecordCatalogueImportResult = z.infer<typeof recordCatalogueImportResultSchema>
-
 const pageFields = {
   nextCursor: z.string().nullable(),
   endCursor: z.string().nullable().optional(),

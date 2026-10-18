@@ -12,6 +12,12 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 })
 
 export const recordModules: RecordModule[] = [
+  module('orchestrator/src/lens/lens-built-ins.ts', []),
+  module('orchestrator/src/lens/lens-seeds.ts', [
+    'bun:sqlite',
+    '../../../shared/record-id.ts',
+    './lens-built-ins.ts',
+  ]),
   module('orchestrator/src/project-space.ts', ['bun:sqlite']),
   module('orchestrator/src/porting/port-overlay.ts', []),
   module('orchestrator/src/porting/port-import-authority.ts', [
@@ -25,7 +31,35 @@ export const recordModules: RecordModule[] = [
     './record-cursor.ts',
     './record-lens-contract.ts',
   ]),
+  module('orchestrator/src/record/record-catalogue-import.ts', [
+    'bun',
+    '../../../shared/record/tenant.ts',
+    './record-catalogue-contract.ts',
+    './record-lens-contract.ts',
+    './record-port-contract.ts',
+    './record-workflow-contract.ts',
+  ]),
+  module('orchestrator/src/record/record-space-built-ins.ts', [
+    'bun',
+    '../../../shared/record/schema.ts',
+    '../../../shared/record/tenant.ts',
+    '../lens/lens-built-ins.ts',
+    '../workflow/workflow-seeds.ts',
+  ]),
+  module('orchestrator/src/record/record-push-catalogues.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    '../project-space.ts',
+    './record-api-client.ts',
+    './record-cache.ts',
+    './record-lens-contract.ts',
+    './record-port-contract.ts',
+    './record-project-destination.ts',
+    './record-sync.ts',
+    './record-workflow-contract.ts',
+  ]),
   module('orchestrator/src/record/record-lens-contract.ts', ['zod']),
+  module('orchestrator/src/record/record-catalogue-contract.ts', ['zod']),
   module('orchestrator/src/record/record-api-lens.ts', [
     'hono',
     'zod',
@@ -38,6 +72,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-api-client-lens.ts', [
     './record-api-client-paths.ts',
+    './record-catalogue-contract.ts',
     './record-lens-contract.ts',
   ]),
   module('orchestrator/src/record/record-cache-lens.ts', [
@@ -64,6 +99,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-api-client-workflow.ts', [
     './record-api-client-paths.ts',
+    './record-catalogue-contract.ts',
     './record-workflow-contract.ts',
   ]),
   module('orchestrator/src/record/record-cache-workflow.ts', [
@@ -300,6 +336,7 @@ export const recordModules: RecordModule[] = [
     './record-public-doc-designation.ts',
     './record-space-move.ts',
     './record-space.ts',
+    './record-space-built-ins.ts',
     './record-tunnel-error.ts',
   ]),
   module('orchestrator/src/record/record-tunnel-error.ts', []),

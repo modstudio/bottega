@@ -7,7 +7,7 @@ import {
   BUILT_IN_LENS_DEFAULT_PROFILE,
   BUILT_IN_LENS_SLOTS,
   BUILT_IN_LENSES,
-} from '../lens/lens-seeds.ts'
+} from '../lens/lens-built-ins.ts'
 import { builtInWorkflowCatalogue } from '../workflow/workflow-seeds.ts'
 
 type Tenant = { url: string } & TenantPrincipal
