@@ -203,11 +203,6 @@ function recordLensDependencies() {
     upsertLens: upsertRecordLens,
     upsertLensProfile: upsertRecordLensProfile,
     selectProjectLensProfile: selectRecordProjectLensProfile,
-  }
-}
-
-function recordWorkflowDependencies() {
-  return {
     listWorkflowCatalogue: listRecordWorkflowCatalogue,
     draftWorkflow: draftRecordWorkflow,
     promoteWorkflow: promoteRecordWorkflow,
@@ -237,7 +232,6 @@ export async function startRecordApiServer(environment: ServerEnvironment = proc
     upsertProject: upsertRecordProject,
     retireProject: retireRecordProject,
     ...recordLensDependencies(),
-    ...recordWorkflowDependencies(),
     listSubjects: listRecordSubjects,
     addSubject: addRecordSubject,
     renameSubject: renameRecordSubject,

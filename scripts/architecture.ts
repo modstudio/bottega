@@ -722,6 +722,7 @@ export const modules: ArchitectureModule[] = [
     'node:util',
     '../database/db.ts',
     '../lens/project-lens-space.ts',
+    '../record/record-write-authority.ts',
     './step-catalogue.ts',
     './workflow-step-sequences.ts',
     './workflow-tree.ts',

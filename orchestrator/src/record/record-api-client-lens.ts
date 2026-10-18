@@ -2,6 +2,7 @@
 /** Implements decoded lens catalogue requests outside the main client file ceiling. */
 
 import { lensCataloguePath, type RecordRequestDestination } from './record-api-client-paths.ts'
+import { type RecordWorkflowClient, recordWorkflowClient } from './record-api-client-workflow.ts'
 import {
   type RecordLensProfileWriteInput,
   type RecordLensProfileWriteResponse,
@@ -15,12 +16,13 @@ import {
   recordLensWriteResponseSchema,
   recordProjectLensSelectionResponseSchema,
 } from './record-lens-contract.ts'
+export type RecordCatalogueClient = RecordLensClient & RecordWorkflowClient
 
 type Request = <T>(
   path: string,
   init?: RequestInit & { schema?: (body: unknown) => T; destinationSpaceId?: string },
 ) => Promise<T>
-export type RecordLensClient = {
+type RecordLensClient = {
   listLensCatalogue(
     table: RecordLensTable,
     query: { limit?: number; cursor?: string },
@@ -44,7 +46,7 @@ export type RecordLensClient = {
   ): Promise<RecordProjectLensSelectionResponse>
 }
 
-export const recordLensClient = (request: Request): RecordLensClient => ({
+export const recordLensClient = (request: Request): RecordCatalogueClient => ({
   listLensCatalogue: (table, query, destination) =>
     request(lensCataloguePath(table, query), {
       ...destination,
@@ -71,4 +73,5 @@ export const recordLensClient = (request: Request): RecordLensClient => ({
       ...destination,
       schema: (body) => recordProjectLensSelectionResponseSchema.parse(body),
     }),
+  ...recordWorkflowClient(request),
 })

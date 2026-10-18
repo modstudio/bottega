@@ -669,6 +669,14 @@ function missingWorkflowArguments(
     .map(({ name, description }) => ({ name, description }))
 }
 
+function workflowProject(projectName: string, d: Database) {
+  const row = d
+    .query('SELECT name,stack,settings FROM project WHERE name=? AND retired_at IS NULL')
+    .get(projectName) as { name: string; stack: string | null; settings: string | null } | null
+  if (!row) throw new Error(`unknown project "${projectName}"`)
+  return { name: row.name, stack: row.stack, settings: JSON.parse(row.settings ?? '{}') }
+}
+
 export function composeWorkflow(
   slug: string,
   projectName: string,
@@ -693,15 +701,7 @@ export function composeWorkflow(
   if (refusal) throw new Error(refusal)
   const missing = missingWorkflowArguments(definition, mode ? [mode] : [], args)
   if (missing.length) needs.arguments = missing
-  const projectRow = d
-    .query('SELECT name,stack,settings FROM project WHERE name=? AND retired_at IS NULL')
-    .get(projectName) as { name: string; stack: string | null; settings: string | null } | null
-  if (!projectRow) throw new Error(`unknown project "${projectName}"`)
-  const project = {
-    name: projectRow.name,
-    stack: projectRow.stack,
-    settings: JSON.parse(projectRow.settings ?? '{}'),
-  }
+  const project = workflowProject(projectName, d)
   const selectedSlugs = mode
     ? expandWorkflowSteps(mode.steps, catalogue.definition.sequences ?? [])
     : []
@@ -822,15 +822,7 @@ export function getWorkflowStep(
   )
   if (missing.length)
     throw new Error(`missing required arguments: ${missing.map(({ name }) => name).join(', ')}`)
-  const projectRow = d
-    .query('SELECT name,stack,settings FROM project WHERE name=? AND retired_at IS NULL')
-    .get(projectName) as { name: string; stack: string | null; settings: string | null } | null
-  if (!projectRow) throw new Error(`unknown project "${projectName}"`)
-  const project = {
-    name: projectRow.name,
-    stack: projectRow.stack,
-    settings: JSON.parse(projectRow.settings ?? '{}'),
-  }
+  const project = workflowProject(projectName, d)
   const effectiveAutonomy =
     autonomy ??
     resolveAutonomy(

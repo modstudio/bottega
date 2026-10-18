@@ -2,6 +2,10 @@
 /** Exposes validated tenant-bound lens catalogue routes. */
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
+import {
+  type RecordWorkflowRouteDeps,
+  registerRecordWorkflowRoutes,
+} from './record-api-workflow.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { decodeRecordCursor, pageRecordItems, type RecordCursor } from './record-cursor.ts'
 import {
@@ -18,7 +22,7 @@ import {
 
 type Environment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
-export type RecordLensRouteDeps = {
+type RecordLensRouteDeps = {
   listLensCatalogue(
     input: Tenant & {
       table: RecordLensTable
@@ -30,13 +34,14 @@ export type RecordLensRouteDeps = {
   upsertLensProfile(input: Tenant & RecordLensProfileWriteInput): Promise<unknown>
   selectProjectLensProfile(input: Tenant & RecordProjectLensSelectionInput): Promise<unknown>
 }
+export type CatalogueDeps = RecordLensRouteDeps & RecordWorkflowRouteDeps
 type Ports = {
   scope(context: Context<Environment>): Tenant | null
   noSpace(context: Context<Environment>): Response
 }
 const limit = z.coerce.number().int().min(1).max(100).default(20)
 
-export function registerRecordLensRoutes(
+function registerRecordLensRoutes(
   app: Hono<Environment>,
   deps: RecordLensRouteDeps,
   ports: Ports,
@@ -113,4 +118,13 @@ export function registerRecordLensRoutes(
       return failure(context, error)
     }
   })
+}
+
+export function registerCatalogues(
+  app: Hono<Environment>,
+  deps: CatalogueDeps,
+  ports: Ports,
+): void {
+  registerRecordLensRoutes(app, deps, ports)
+  registerRecordWorkflowRoutes(app, deps, ports)
 }
