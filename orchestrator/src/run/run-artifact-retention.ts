@@ -1,18 +1,12 @@
 // concern: run-artifact-retention
 /** Pure policy for selecting the bounded files a finished run retains. */
 
-export const RUN_ARTIFACT_FILE_CAP_BYTES = 5 * 1024 * 1024
-export const RUN_ARTIFACT_TOTAL_CAP_BYTES = 25 * 1024 * 1024
-export const OUTSIDE_DEPTH_AGGREGATE_FILE_LIMIT = 10
-export const RUN_ARTIFACT_BUILD_OUTPUT_DIRECTORIES = [
-  'dist',
-  'build',
-  'out',
-  '.next',
-  'coverage',
-  '.turbo',
-  '.cache',
-] as const
+import {
+  OUTSIDE_DEPTH_AGGREGATE_FILE_LIMIT,
+  RUN_ARTIFACT_BUILD_OUTPUT_DIRECTORIES,
+  RUN_ARTIFACT_FILE_CAP_BYTES,
+  RUN_ARTIFACT_TOTAL_CAP_BYTES,
+} from './run-artifact-limits.ts'
 
 const DEPENDENCY_DIRECTORIES = new Set(['node_modules', 'vendor', '.venv', 'target'])
 const BUILD_OUTPUT_DIRECTORIES = new Set<string>(RUN_ARTIFACT_BUILD_OUTPUT_DIRECTORIES)
@@ -24,7 +18,7 @@ export type RunArtifactListingEntry = {
   linkText?: string
 }
 
-export type RunArtifactDropReason =
+type RunArtifactDropReason =
   | 'copy'
   | 'dependency'
   | 'build output'
@@ -33,7 +27,7 @@ export type RunArtifactDropReason =
   | 'outside retention depth'
   | 'symlink'
 
-export type RunArtifactDrop = {
+type RunArtifactDrop = {
   path: string
   size: number
   reason: RunArtifactDropReason
@@ -89,6 +83,40 @@ function aggregateDrop(
   }
 }
 
+function recordOutsideDepthDrops(
+  files: RunArtifactListingEntry[],
+  namedPaths: string[],
+  dropped: RunArtifactDrop[],
+): Set<RunArtifactListingEntry> {
+  const outside = files.filter(
+    (entry) =>
+      entry.path !== 'worktree.diff' &&
+      !namedPaths.some((named) => atOrBelow(entry.path, named)) &&
+      parts(entry.path).length > 2,
+  )
+  for (const [directory, group] of Map.groupBy(outside, (entry) =>
+    parts(entry.path).slice(0, 2).join('/'),
+  )) {
+    if (group.length > OUTSIDE_DEPTH_AGGREGATE_FILE_LIMIT) {
+      dropped.push({
+        path: directory,
+        size: group.reduce((sum, entry) => sum + entry.size, 0),
+        reason: 'outside retention depth',
+        fileCount: group.length,
+      })
+    } else {
+      dropped.push(
+        ...group.map((entry) => ({
+          path: entry.path,
+          size: entry.size,
+          reason: 'outside retention depth' as const,
+        })),
+      )
+    }
+  }
+  return new Set(outside)
+}
+
 export function decideRunArtifactRetention(
   listing: RunArtifactListingEntry[],
   namedPaths: string[],
@@ -113,36 +141,8 @@ export function decideRunArtifactRetention(
 
   const files = entries.filter((entry) => entry.kind === 'file' && !excludedPaths.has(entry))
   const namedRank = (path: string) => namedPaths.findIndex((named) => atOrBelow(path, named))
-  const outside = files.filter(
-    (entry) =>
-      entry.path !== 'worktree.diff' && namedRank(entry.path) < 0 && parts(entry.path).length > 2,
-  )
-  const outsideGroups = new Map<string, RunArtifactListingEntry[]>()
-  for (const entry of outside) {
-    const directory = parts(entry.path).slice(0, 2).join('/')
-    const group = outsideGroups.get(directory) ?? []
-    group.push(entry)
-    outsideGroups.set(directory, group)
-  }
-  const outsideAggregated = new Set<RunArtifactListingEntry>()
-  for (const [directory, group] of outsideGroups) {
-    if (group.length > OUTSIDE_DEPTH_AGGREGATE_FILE_LIMIT) {
-      dropped.push({
-        path: directory,
-        size: group.reduce((sum, entry) => sum + entry.size, 0),
-        reason: 'outside retention depth',
-        fileCount: group.length,
-      })
-      for (const entry of group) outsideAggregated.add(entry)
-    }
-  }
-  for (const entry of outside) {
-    if (!outsideAggregated.has(entry)) {
-      dropped.push({ path: entry.path, size: entry.size, reason: 'outside retention depth' })
-    }
-  }
-
-  const eligible = files.filter((entry) => !outside.includes(entry))
+  const outside = recordOutsideDepthDrops(files, namedPaths, dropped)
+  const eligible = files.filter((entry) => !outside.has(entry))
   eligible.sort((a, b) => {
     if (a.path === 'worktree.diff') return -1
     if (b.path === 'worktree.diff') return 1

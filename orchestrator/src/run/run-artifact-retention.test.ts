@@ -1,8 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { RUN_ARTIFACT_FILE_CAP_BYTES, RUN_ARTIFACT_TOTAL_CAP_BYTES } from './run-artifact-limits.ts'
 import {
   decideRunArtifactRetention,
-  RUN_ARTIFACT_FILE_CAP_BYTES,
-  RUN_ARTIFACT_TOTAL_CAP_BYTES,
   type RunArtifactListingEntry,
 } from './run-artifact-retention.ts'
 
