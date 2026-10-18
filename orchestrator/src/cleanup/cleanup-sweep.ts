@@ -1,12 +1,12 @@
 /** Cleanup sweep knows worktree ownership, leases and the cleanup lock, resource reclamation, and branch retention. It must not know transports, routing, reviews, contracts, the CLI, or durable execution. */
-import { existsSync, lstatSync, readdirSync, realpathSync } from 'node:fs'
+import { existsSync, readdirSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { stampEndedClaims } from '../board/board-claim-service.ts'
 import { reapBoardReach } from '../board/board-reach.ts'
 import { reapBoardMessages } from '../board/board-service.ts'
-import { closeOutRun, releaseSandboxDirectoryForConversation } from '../close/close-out.ts'
+import { closeOutRun } from '../close/close-out.ts'
 import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { expireUnjudgedRun, unjudgedRuns } from '../evidence/unjudged-expiry.ts'
 import { shouldSweepHookTree } from '../hook-tree/hook-tree.ts'
@@ -22,7 +22,6 @@ import type { DockerResource } from '../resources/docker-resources.ts'
 import { sweepIdleMainStacks } from '../resources/main-stack.ts'
 import { liveWorktreeSharers } from '../resources/resource-ownership.ts'
 import { runAlive } from '../run/run-alive.ts'
-import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { auditRunMutation } from '../run/run-authority.ts'
 import { removeFreeRunLease, runLeaseIds, runLeaseState } from '../run/run-lease.ts'
 import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
@@ -63,6 +62,7 @@ import { reclaimSweptDockerResources } from './cleanup-sweep-docker.ts'
 import { pruneSweptProjectBranches, reclaimAbsentTrustEntries } from './cleanup-sweep-reclaim.ts'
 import { sweepUnattendedResidue } from './cleanup-sweep-residue.ts'
 import { pruneReaderCloneArchives } from './reader-clone-archive-retention.ts'
+import { sweepRunLeftovers } from './run-leftover-sweep.ts'
 import { sweepStrayWorktreeDirectories } from './stray-worktree-sweep.ts'
 
 function reapExpiredBoardMessages(dryRun: boolean): void {
@@ -297,11 +297,9 @@ function printSweepKept(
   dry: boolean,
   force: boolean,
   presentation: CleanupPresentation,
-  sandbox: { released: number; kept: number },
 ): void {
   presentation.log(
-    `\n${dry ? 'would reclaim' : 'reclaimed'} ${released}, already absent ${absent}, forgotten ${forgotten}, kept ${kept.length}; ` +
-      `${dry ? 'would release' : 'released'} sandbox ${sandbox.released}, kept sandbox ${sandbox.kept}`,
+    `\n${dry ? 'would reclaim' : 'reclaimed'} ${released}, already absent ${absent}, forgotten ${forgotten}, kept ${kept.length}`,
   )
   const listAll = dry
   const fits = kept.length <= KEPT_ROW_LIMIT
@@ -323,50 +321,6 @@ function printSweepKept(
     if (force) parts.push('--force')
     presentation.log(`  ${parts.join(' ')} lists every kept row`)
   }
-}
-
-function directorySize(path: string): number {
-  const entry = lstatSync(path)
-  if (!entry.isDirectory()) return entry.size
-  return readdirSync(path).reduce((total, name) => total + directorySize(join(path, name)), 0)
-}
-
-function sweepSandboxDirectory(
-  path: string,
-  rootId: number,
-  dry: boolean,
-  presentation: CleanupPresentation,
-): 'released' | 'kept' {
-  try {
-    const bytes = directorySize(path)
-    const result = releaseSandboxDirectoryForConversation(rootId, { dryRun: dry })
-    if (result.outcome === 'released') {
-      presentation.log(`${dry ? 'would release' : 'released'} sandbox ${rootId} ${bytes}`)
-      return 'released'
-    }
-    presentation.log(`kept sandbox ${rootId}: ${result.detail}`)
-  } catch (error) {
-    presentation.log(`kept sandbox ${rootId}: ${String((error as Error).message ?? error)}`)
-  }
-  return 'kept'
-}
-
-function sweepSandboxDirectories(
-  dry: boolean,
-  presentation: CleanupPresentation,
-): { released: number; kept: number } {
-  const counts = { released: 0, kept: 0 }
-  if (!existsSync(RUNS_DIR)) return counts
-  for (const entry of readdirSync(RUNS_DIR, { withFileTypes: true })) {
-    const match = entry.isDirectory() ? /^sandbox-([0-9a-f-]{36})$/i.exec(entry.name) : null
-    if (!match) continue
-    const rootId = db()
-      .query<{ id: number }, [string]>('SELECT id FROM run WHERE record_id=?')
-      .get(match[1]!.toLowerCase())?.id
-    if (rootId === undefined) continue
-    counts[sweepSandboxDirectory(join(RUNS_DIR, entry.name), rootId, dry, presentation)]++
-  }
-  return counts
 }
 
 function reportClosedSweepRow(
@@ -439,8 +393,9 @@ function sweepUnjudgedRuns(
   dry: boolean,
   selectedProject: { name: string } | null,
   presentation: CleanupPresentation,
-): void {
+): Set<number> {
   const now = Date.now()
+  const evidenceExcluded = new Set<number>()
   let expired = 0
   let kept = 0
   for (const row of unjudgedRuns(selectedProject?.name ?? null)) {
@@ -457,12 +412,28 @@ function sweepUnjudgedRuns(
     }
     if (dry || expireUnjudgedRun(row, shouldExpireUnjudgedOwner, UNJUDGED_OWNER_WINDOW_MS)) {
       expired++
+      evidenceExcluded.add(row.id)
       presentation.log(`${dry ? 'would expire' : 'expired'} unjudged run ${row.id}`)
     } else {
       kept++
     }
   }
   presentation.log(`\n${dry ? 'would expire' : 'expired'} unjudged ${expired}, kept ${kept}`)
+  return evidenceExcluded
+}
+
+function sweepExpiredRunStore(
+  dryRun: boolean,
+  selectedProject: Project | null,
+  presentation: CleanupPresentation,
+): ReturnType<typeof sweepRunLeftovers> {
+  const evidenceClosedRootIds = sweepUnjudgedRuns(dryRun, selectedProject, presentation)
+  return sweepRunLeftovers({
+    dryRun,
+    projectRecordId: selectedProject?.recordId ?? null,
+    presentation,
+    evidenceClosedRootIds,
+  })
 }
 
 type RecordedSweepState = {
@@ -659,7 +630,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     presentation: options.presentation,
     trust: trustObservation,
   })
-  sweepUnjudgedRuns(dry, selectedProject, options.presentation)
+  const runLeftovers = sweepExpiredRunStore(dry, selectedProject, options.presentation)
   const rows = (
     db()
       .query(
@@ -693,7 +664,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     absent: 0,
     forgotten: 0,
   }
-  let cleanupFailed = archiveRetention.failed > 0
+  let cleanupFailed = archiveRetention.failed > 0 || runLeftovers.failed
   cleanupFailed ||= sweepIdleMainStacks({
     database: db(),
     projects: sweepProjects,
@@ -957,8 +928,6 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     leaked,
   })
 
-  const sandboxCounts = sweepSandboxDirectories(dry, options.presentation)
-
   const branchCleanupFailed = pruneSweptProjectBranches({
     dryRun: dry,
     projects: sweepProjects,
@@ -974,7 +943,6 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     dry,
     options.force,
     options.presentation,
-    sandboxCounts,
   )
   if (cleanupFailed) options.presentation.setExitCode(1)
 }

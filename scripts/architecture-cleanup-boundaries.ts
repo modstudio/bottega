@@ -47,6 +47,7 @@ export const cleanupBoundarySpecs = [
       './cleanup-sweep-decisions.ts',
       './cleanup-sweep-reclaim.ts',
       './cleanup-sweep-residue.ts',
+      './run-leftover-sweep.ts',
       './reader-clone-archive-retention.ts',
       './stray-worktree-sweep.ts',
       './cleanup-sweep-docker.ts',
@@ -77,6 +78,36 @@ export const cleanupBoundarySpecs = [
     typeOnlyAllowed: [],
     reason:
       'Keep cleanup-sweep independent of transports, routing, reviews, contracts, the CLI, and durable execution.',
+  },
+  {
+    name: 'run-leftover-decision-boundary',
+    file: 'orchestrator/src/cleanup/run-leftover-decision.ts',
+    allowed: ['../run/run-artifact-limits.ts'],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep scheduled leftover selection pure and independent of filesystems, stores, commands, and processes.',
+  },
+  {
+    name: 'run-leftover-sweep-boundary',
+    file: 'orchestrator/src/cleanup/run-leftover-sweep.ts',
+    allowed: [
+      'bun:sqlite',
+      'node:fs',
+      'node:path',
+      '../../../shared/brand.ts',
+      '../../../shared/record-id.ts',
+      '../close/close-out.ts',
+      '../database/db.ts',
+      '../evidence/evidence-query.ts',
+      '../run/run-artifacts.ts',
+      '../run/run-chain.ts',
+      '../storage-walk.ts',
+      './cleanup.ts',
+      './run-leftover-decision.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep the scheduled leftover adapter limited to the pure ruling, canonical evidence and chain facts, run paths, cleanup, and the shared storage walk.',
   },
   {
     name: 'cleanup-sweep-decisions-boundary',

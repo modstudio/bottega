@@ -88,6 +88,11 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
     'cleanup query composes the shared chain-score join fragment',
   ),
   ...exempt(
+    'orchestrator/src/cleanup/run-leftover-sweep.ts',
+    ['bbd0d631ee06b26f'],
+    'run leftover query composes the shared evidence closure and chain-score join fragments',
+  ),
+  ...exempt(
     'orchestrator/src/review/review-triage.ts',
     ['60be11d3441ca974'],
     'triage query interpolates a runtime-sized lens predicate',

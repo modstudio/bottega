@@ -214,6 +214,10 @@ export function noRepoIsolatePath(id: number, runsDir = RUNS_DIR): string {
   return join(runsDir, 'isolates', runStorageKey(id))
 }
 
+export function runSandboxDir(id: number, runsDir = RUNS_DIR): string {
+  return join(runsDir, `sandbox-${runStorageKey(id)}`)
+}
+
 export const runArtifactsDir = (id: number | string, runsDir = RUNS_DIR): string =>
   artifactDirectory(runStorageKey(id), runsDir)
 
