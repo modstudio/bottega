@@ -4,6 +4,7 @@ Unattended daily maintenance for the machine, run by `launchd`.
 
 | Job | When | What |
 |-----|------|------|
+| Docker prune | 05:30 | build cache older than seven days and dangling images |
 | Homebrew upgrade | 06:00 | `brew update`, `upgrade`, then `cleanup`, non-interactively |
 | Projects refresh | 06:30 | each project's own `scripts/sync/main` |
 | Local model tunnel | always, when configured | SSH local forwarding, kept alive |
@@ -71,6 +72,7 @@ ops/
 |-- bin/
 |   |-- lib-logrotate.sh
 |   |-- brew-auto-upgrade.sh
+|   |-- docker-prune.sh
 |   `-- projects-morning-refresh.sh
 |-- launchd/*.plist.template
 `-- install.sh
@@ -88,6 +90,7 @@ Dated, pruned after 30 days:
 
 ```
 ~/Library/Logs/brew-upgrade/YYYY-MM-DD.log
+~/Library/Logs/docker-prune/YYYY-MM-DD.log
 ~/Library/Logs/projects-refresh/YYYY-MM-DD.log
 ```
 
