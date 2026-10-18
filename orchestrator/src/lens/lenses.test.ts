@@ -5,6 +5,7 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db, sessionId } from '../database/db.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { upsertProject } from '../project/projects.ts'
+import { rememberProjectLensSpace } from './project-lens-space.ts'
 import {
   chooseLensProfile,
   listLenses,
@@ -213,6 +214,30 @@ describe('lens catalogue', () => {
       prior_profile_name: 'node',
       prior_selected_version: null,
       reason: 'return to baseline',
+    })
+  })
+
+  test('a project routed to a hosted space without the lens keeps its local catalogue body', async () => {
+    upsertProject({ recordId: newRecordId(), name: 'routed', path: '/tmp/routed', settings: {} })
+    await setProfile({
+      lensId: 'correctness',
+      axis: 'framework',
+      name: 'routed-body',
+      body: '{"framework_guidance":"Routed.","commands":"bun test"}',
+      enabled: true,
+      reason: 'test',
+    })
+    await selectProjectProfile({
+      project: 'routed',
+      axis: 'framework',
+      name: 'routed-body',
+      lensId: 'correctness',
+      reason: 'test',
+    })
+    rememberProjectLensSpace(db(), 'routed', newRecordId())
+    expect(resolveLens('correctness', 'routed')!.profiles[0]).toMatchObject({
+      name: 'routed-body',
+      source: 'project',
     })
   })
 
