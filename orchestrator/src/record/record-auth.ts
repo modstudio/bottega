@@ -13,6 +13,10 @@ import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { sendRecordInvitationEmail } from '../mail/invitation-mailer.ts'
 import { sendPasswordResetEmail } from '../mail/password-reset-mailer.ts'
 import { RECORD_INVITATION_EXPIRES_IN_SECONDS } from './record-invitation.ts'
+import {
+  ensureSpaceBuiltIns,
+  ensureSpaceBuiltInsWithTransaction,
+} from './record-space-built-ins.ts'
 
 export { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 
@@ -92,9 +96,11 @@ function personalSpacePort(client: SQL): PersonalSpacePort {
             AND m.id IS NOT NULL
         `
         const row = rows[0]
-        return row?.id
-          ? { id: String(row.id), name: String(row.name), slug: String(row.slug) }
-          : null
+        if (!row?.id) return null
+        const id = String(row.id)
+        await tx`SELECT set_config('app.space_id', ${id}, true)`
+        await ensureSpaceBuiltInsWithTransaction(tx, id)
+        return { id, name: String(row.name), slug: String(row.slug) }
       })
     },
     async create(input) {
@@ -138,6 +144,7 @@ function personalSpacePort(client: SQL): PersonalSpacePort {
           UPDATE "user" SET personal_space_id=${input.id}::uuid, updated_at=now()
           WHERE id=${input.userId}::uuid
         `
+        await ensureSpaceBuiltInsWithTransaction(tx, input.id)
         return { id: input.id, name: String(owner.name), slug: input.slug }
       })
     },
@@ -296,6 +303,16 @@ export function recordAuth(
         invitationExpiresIn: RECORD_INVITATION_EXPIRES_IN_SECONDS,
         // Invitation ids are unguessable and are delivered only in the invitation email.
         requireEmailVerificationOnInvitation: false,
+        organizationHooks: {
+          afterCreateOrganization: async ({ organization: created, user: owner }) => {
+            await ensureSpaceBuiltIns({
+              url,
+              userId: owner.id,
+              spaceId: created.id,
+              spaceIds: [created.id],
+            })
+          },
+        },
         sendInvitationEmail: async ({ id, email, organization: invitedSpace, inviter, role }) => {
           if (!hubUrl)
             throw new Error(

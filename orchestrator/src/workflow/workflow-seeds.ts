@@ -188,6 +188,24 @@ function workflowDefinition(seed: LegacySeed) {
   }
 }
 
+/** The hosted built-in installer consumes the exact definitions used by local seeding. */
+export function builtInWorkflowCatalogue() {
+  return {
+    stepCatalogue: {
+      slug: 'shared',
+      definition: seedDefinition(catalogueDefinition()),
+      author: 'seed',
+      reason: 'seed r6',
+    },
+    workflows: seeds.map((seed) => ({
+      slug: seed.slug,
+      definition: seedDefinition(workflowDefinition(seed)),
+      author: 'seed',
+      reason: `seed r${seed.revision}`,
+    })),
+  }
+}
+
 function seedCatalogue(d: Database, now: string): void {
   const seeded = catalogueDefinition(),
     seededDefinition = JSON.stringify(seeded),

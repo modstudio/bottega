@@ -70,6 +70,7 @@ export const recordWorkflowPageSchema = (table: RecordWorkflowTable) =>
     endCursor: z.string().nullable().optional(),
   })
 export const recordWorkflowImportSchema = z.object({
+  dryRun: z.boolean().default(false),
   step_catalogue: z.array(recordWorkflowRowSchemas.step_catalogue),
   step_catalogue_version: z.array(recordWorkflowRowSchemas.step_catalogue_version),
   step_catalogue_event: z.array(recordWorkflowRowSchemas.step_catalogue_event),

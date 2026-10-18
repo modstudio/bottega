@@ -98,6 +98,7 @@ export const recordPortPageSchema = (table: RecordPortTable) =>
     endCursor: z.string().nullable().optional(),
   })
 export const recordPortImportSchema = z.object({
+  dryRun: z.boolean().default(false),
   replace: z.boolean().default(false),
   port_doctrine: z.array(recordPortRows.port_doctrine),
   port_pair: z.array(recordPortRows.port_pair),

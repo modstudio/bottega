@@ -86,6 +86,8 @@ export function registerRecordPortRoutes(
     if (!active) return ports.noSpace(context)
     const body = recordPortImportSchema.safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid port catalogue import' }, 400)
+    if (body.data.replace)
+      return context.json({ error: 'replacing hosted port items is not supported' }, 409)
     if (!deps.importPortCatalogue)
       return context.json({ error: 'port catalogue import is unavailable' }, 503)
     return context.json(await deps.importPortCatalogue({ ...active, ...body.data }))

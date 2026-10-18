@@ -43,5 +43,6 @@ export type RecordSyncOptions = {
   client?: {
     whoami: RecordApiClient['whoami']
     sync: NonNullable<RecordApiClient['sync']>
+    ensureSpaceBuiltIns?: RecordApiClient['ensureSpaceBuiltIns']
   }
 }

@@ -17,7 +17,14 @@ async function tenant<T>(input: Tenant, use: (tx: SQL) => Promise<T>): Promise<T
     return await client.begin(async (tx) => {
       await bindTenant(tx, input)
       await tx`SELECT id FROM space WHERE id=${input.spaceId}::uuid FOR UPDATE`
-      return use(tx)
+      const dryRun = 'dryRun' in input && input.dryRun === true
+      if (dryRun) await tx`SAVEPOINT catalogue_import_dry_run`
+      const result = await use(tx)
+      if (dryRun) {
+        await tx`ROLLBACK TO SAVEPOINT catalogue_import_dry_run`
+        await tx`RELEASE SAVEPOINT catalogue_import_dry_run`
+      }
+      return result
     })
   } finally {
     await client.close()
@@ -273,13 +280,6 @@ export async function importRecordPortCatalogue(input: Tenant & RecordPortImport
         await tx`INSERT INTO port_skip (id,space_id,pair_id,candidate,reason,skipped_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${pairId}::uuid,${row.candidate},${row.reason},${row.skippedAt}::timestamptz)`
         result.inserted++
       }
-    }
-    if (input.replace) {
-      const now = new Date().toISOString(),
-        refIds = input.port_ref.map((row) => row.id),
-        sourceIds = input.port_ref_source.map((row) => row.id)
-      await tx`UPDATE port_ref SET deleted_at=${now}::timestamptz,updated_at=${now}::timestamptz,version=version+1 WHERE space_id=${input.spaceId}::uuid AND deleted_at IS NULL AND id NOT IN ${tx(refIds.length ? refIds : ['00000000-0000-0000-0000-000000000000'])}`
-      await tx`UPDATE port_ref_source SET deleted_at=${now}::timestamptz,updated_at=${now}::timestamptz WHERE space_id=${input.spaceId}::uuid AND deleted_at IS NULL AND id NOT IN ${tx(sourceIds.length ? sourceIds : ['00000000-0000-0000-0000-000000000000'])}`
     }
     return result
   })

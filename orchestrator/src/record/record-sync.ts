@@ -614,6 +614,9 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   const client = options.client ?? recordApiClient()
   if (!client.sync) throw new Error('record API client does not provide evidence sync')
   const session = await client.whoami()
+  if (session.activeSpaceId && client.ensureSpaceBuiltIns) {
+    await client.ensureSpaceBuiltIns({ destinationSpaceId: session.activeSpaceId })
+  }
   const memberships = parseRecordSpaceMemberships(session.memberships)
   const blocked: BlockedOutboxRow[] = []
   let pushed = 0

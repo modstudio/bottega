@@ -5,6 +5,7 @@ import { db } from '../database/db.ts'
 import { activeRecordSpace, effectiveProjectSpace } from '../project-space.ts'
 import type { RecordApiClient, RecordRequestDestination } from './record-api-client.ts'
 import { recordApiClient } from './record-api-client.ts'
+import { pullRecordCache } from './record-cache.ts'
 import type { RecordLensImportInput } from './record-lens-contract.ts'
 import type { RecordPortImportInput } from './record-port-contract.ts'
 import { noActiveRecordSpaceRefusal } from './record-project-destination.ts'
@@ -24,6 +25,7 @@ const rows = <T>(local: Database, sql: string) => local.query(sql).all() as T[]
 function lensPlan(local: Database, activeSpaceId: string): RecordLensImportInput {
   const now = iso()
   return {
+    dryRun: false,
     lens: rows<Record<string, unknown>>(local, 'SELECT * FROM lens WHERE space_id IS NULL').map(
       (r) => ({
         id: String(r.record_id),
@@ -81,7 +83,7 @@ function lensPlan(local: Database, activeSpaceId: string): RecordLensImportInput
     })),
     project_lens_profile: rows<Record<string, unknown>>(
       local,
-      `SELECT s.*,p.record_id project_record_id,l.record_id lens_record_id FROM project_lens_profile s JOIN project p ON p.id=s.project_id LEFT JOIN lens l ON l.id=s.lens_id WHERE s.space_id IS NULL`,
+      `SELECT s.*,l.record_id lens_record_id FROM project_lens_profile s LEFT JOIN lens l ON l.id=s.lens_id AND l.space_id IS NULL WHERE s.space_id IS NULL`,
     ).map((r) => ({
       id: String(r.record_id),
       spaceId: activeSpaceId,
@@ -159,6 +161,7 @@ function workflowPlan(local: Database, activeSpaceId: string): RecordWorkflowImp
   const step = kind('step_catalogue'),
     workflow = kind('workflow')
   return {
+    dryRun: false,
     step_catalogue: step.identities,
     step_catalogue_version: step.versions,
     step_catalogue_event: step.events,
@@ -170,6 +173,7 @@ function workflowPlan(local: Database, activeSpaceId: string): RecordWorkflowImp
 
 function emptyPort(): RecordPortImportInput {
   return {
+    dryRun: false,
     replace: false,
     port_doctrine: [],
     port_pair: [],
@@ -182,7 +186,8 @@ function emptyPort(): RecordPortImportInput {
 
 function portPlan(local: Database, activeSpaceId: string, skipped: Plan['skipped']) {
   const plans = new Map<string, RecordPortImportInput>(),
-    active = emptyPort()
+    active = emptyPort(),
+    now = iso()
   plans.set(activeSpaceId, active)
   active.port_doctrine = rows<Record<string, unknown>>(
     local,
@@ -196,13 +201,13 @@ function portPlan(local: Database, activeSpaceId: string, skipped: Plan['skipped
     createdAt: String(r.created_at),
     retiredAt: r.retired_at == null ? null : String(r.retired_at),
     version: Number(r.version),
-    updatedAt: String(r.updated_at ?? r.created_at),
+    updatedAt: String(r.created_at),
   }))
   const pairSpace = new Map<string, string>(),
     refSpace = new Map<string, string>()
   for (const r of rows<Record<string, unknown>>(
     local,
-    `SELECT pp.*,sp.name source_name,tp.name target_name,sp.record_id source_record_id,tp.record_id target_record_id FROM port_pair pp JOIN project sp ON sp.id=pp.source_project_id JOIN project tp ON tp.id=pp.target_project_id WHERE pp.space_id IS NULL`,
+    `SELECT pp.*,sp.name source_name,tp.name target_name FROM port_pair pp JOIN project sp ON sp.record_id=pp.source_project_record_id JOIN project tp ON tp.record_id=pp.target_project_record_id WHERE pp.space_id IS NULL`,
   )) {
     const source = effectiveProjectSpace(local, String(r.source_name)),
       target = effectiveProjectSpace(local, String(r.target_name))
@@ -221,8 +226,8 @@ function portPlan(local: Database, activeSpaceId: string, skipped: Plan['skipped
     plan.port_pair.push({
       id: String(r.record_id),
       spaceId: target,
-      sourceProjectId: String(r.source_record_id),
-      targetProjectId: String(r.target_record_id),
+      sourceProjectId: String(r.source_project_record_id),
+      targetProjectId: String(r.target_project_record_id),
       createdAt: String(r.created_at),
     })
   }
@@ -235,21 +240,19 @@ function portPlan(local: Database, activeSpaceId: string, skipped: Plan['skipped
       skipped.push({ kind: 'port_baseline', id: String(r.record_id), reason: 'pair was skipped' })
       continue
     }
-    plans
-      .get(space)!
-      .port_baseline.push({
-        id: String(r.record_id),
-        spaceId: space,
-        pairId: String(r.pair_record_id),
-        sourceCommit: r.source_commit == null ? null : String(r.source_commit),
-        scannedAt: r.scanned_at == null ? null : String(r.scanned_at),
-        version: Number(r.version),
-        updatedAt: String(r.updated_at),
-      })
+    plans.get(space)!.port_baseline.push({
+      id: String(r.record_id),
+      spaceId: space,
+      pairId: String(r.pair_record_id),
+      sourceCommit: r.source_commit == null ? null : String(r.source_commit),
+      scannedAt: r.scanned_at == null ? null : String(r.scanned_at),
+      version: Number(r.version),
+      updatedAt: now,
+    })
   }
   for (const r of rows<Record<string, unknown>>(
     local,
-    `SELECT pr.*,p.name project_name,p.record_id project_record_id FROM port_ref pr JOIN project p ON p.id=pr.target_project_id WHERE pr.space_id IS NULL`,
+    `SELECT pr.*,p.name project_name FROM port_ref pr JOIN project p ON p.record_id=pr.target_project_record_id WHERE pr.space_id IS NULL`,
   )) {
     const space = effectiveProjectSpace(local, String(r.project_name))
     if (!space) {
@@ -267,37 +270,35 @@ function portPlan(local: Database, activeSpaceId: string, skipped: Plan['skipped
       id: String(r.record_id),
       spaceId: space,
       taskKey: String(r.task_key),
-      targetProjectId: String(r.project_record_id),
+      targetProjectId: String(r.target_project_record_id),
       note: String(r.note),
       createdAt: String(r.created_at),
       resolvedAt: r.resolved_at == null ? null : String(r.resolved_at),
-      deletedAt: r.deleted_at == null ? null : String(r.deleted_at),
+      deletedAt: null,
       version: Number(r.version),
-      updatedAt: String(r.updated_at),
+      updatedAt: now,
     })
   }
   for (const r of rows<Record<string, unknown>>(
     local,
-    `SELECT s.*,r.record_id ref_record_id,p.record_id project_record_id FROM port_ref_source s JOIN port_ref r ON r.id=s.ref_id JOIN project p ON p.id=s.source_project_id WHERE s.space_id IS NULL`,
+    `SELECT s.*,r.record_id ref_record_id FROM port_ref_source s JOIN port_ref r ON r.target_project_record_id=s.target_project_record_id AND r.task_key=s.task_key AND r.space_id IS NULL WHERE s.space_id IS NULL`,
   )) {
     const space = refSpace.get(String(r.ref_record_id))
     if (!space) {
       skipped.push({ kind: 'port_ref_source', id: String(r.record_id), reason: 'ref was skipped' })
       continue
     }
-    plans
-      .get(space)!
-      .port_ref_source.push({
-        id: String(r.record_id),
-        spaceId: space,
-        refId: String(r.ref_record_id),
-        sourceProjectId: String(r.project_record_id),
-        commits: String(r.commits),
-        paths: String(r.paths),
-        note: String(r.note),
-        deletedAt: r.deleted_at == null ? null : String(r.deleted_at),
-        updatedAt: String(r.updated_at),
-      })
+    plans.get(space)!.port_ref_source.push({
+      id: String(r.record_id),
+      spaceId: space,
+      refId: String(r.ref_record_id),
+      sourceProjectId: String(r.source_project_record_id),
+      commits: String(r.commits),
+      paths: String(r.paths),
+      note: String(r.note),
+      deletedAt: null,
+      updatedAt: now,
+    })
   }
   for (const r of rows<Record<string, unknown>>(
     local,
@@ -308,16 +309,14 @@ function portPlan(local: Database, activeSpaceId: string, skipped: Plan['skipped
       skipped.push({ kind: 'port_skip', id: String(r.record_id), reason: 'pair was skipped' })
       continue
     }
-    plans
-      .get(space)!
-      .port_skip.push({
-        id: String(r.record_id),
-        spaceId: space,
-        pairId: String(r.pair_record_id),
-        candidate: String(r.candidate),
-        reason: String(r.reason),
-        skippedAt: String(r.skipped_at),
-      })
+    plans.get(space)!.port_skip.push({
+      id: String(r.record_id),
+      spaceId: space,
+      pairId: String(r.pair_record_id),
+      candidate: String(r.candidate),
+      reason: String(r.reason),
+      skippedAt: String(r.skipped_at),
+    })
   }
   return plans
 }
@@ -350,26 +349,53 @@ export async function pushCataloguesCommand(
   )
   for (const skip of plan.skipped)
     presentation.log(`skipped ${skip.kind} ${skip.id}: ${skip.reason}`)
-  if (options.dryRun) return
   if (!client.importLensCatalogue || !client.importWorkflowCatalogue || !client.importPortCatalogue)
     throw new Error(
       'record API does not support catalogue imports; deploy the matching record API, then retry',
     )
   const destination: RecordRequestDestination = { destinationSpaceId: active }
-  const lens = await client.importLensCatalogue(plan.lens, destination),
-    workflow = await client.importWorkflowCatalogue(plan.workflow, destination)
+  const lens = await client.importLensCatalogue(
+      { ...plan.lens, dryRun: options.dryRun },
+      destination,
+    ),
+    workflow = await client.importWorkflowCatalogue(
+      { ...plan.workflow, dryRun: options.dryRun },
+      destination,
+    )
   presentation.log(
     `lens: inserted ${lens.inserted}, already present ${lens.alreadyPresent}, skipped ${lens.skipped.length}`,
   )
   presentation.log(
     `workflow: inserted ${workflow.inserted}, already present ${workflow.alreadyPresent}, skipped ${workflow.skipped.length}`,
   )
+  let portInserted = 0,
+    portPresent = 0,
+    portSkipped = 0
   for (const [spaceId, port] of plan.ports) {
-    const result = await client.importPortCatalogue(port, { destinationSpaceId: spaceId })
+    const result = await client.importPortCatalogue(
+      { ...port, dryRun: options.dryRun },
+      { destinationSpaceId: spaceId },
+    )
+    portInserted += result.inserted
+    portPresent += result.alreadyPresent
+    portSkipped += result.skipped.length
+    for (const skip of result.skipped) presentation.log(`skipped port ${skip.id}: ${skip.reason}`)
+    if (options.dryRun) continue
     presentation.log(
       `port ${spaceId}: inserted ${result.inserted}, already present ${result.alreadyPresent}, skipped ${result.skipped.length}`,
     )
   }
-  if (!client.sync) throw new Error('record API does not support sync; deploy the matching record API, then retry')
-  await (dependencies.sync ?? syncRecord)({ local, client: client as RecordApiClient & { sync: NonNullable<RecordApiClient['sync']> } })
+  if (options.dryRun) {
+    presentation.log(
+      `dry run port: would insert ${portInserted}, already present ${portPresent}, skipped ${portSkipped + plan.skipped.length}`,
+    )
+    return
+  }
+  if (!client.sync)
+    throw new Error('record API does not support sync; deploy the matching record API, then retry')
+  await (dependencies.sync ?? syncRecord)({
+    local,
+    client: client as RecordApiClient & { sync: NonNullable<RecordApiClient['sync']> },
+  })
+  if (dependencies.client) await pullRecordCache(local)
 }

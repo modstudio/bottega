@@ -91,6 +91,7 @@ import { getRecordReview, listRecordReviews } from './record-reviews.ts'
 import { getRecordRun, listRecordRuns, viewRecordRuns } from './record-runs.ts'
 import { applyRecordSettingsPermission } from './record-settings.ts'
 import { listRecordSnapshots, upsertRecordSnapshot } from './record-snapshots.ts'
+import { ensureSpaceBuiltIns } from './record-space-built-ins.ts'
 import {
   addRecordSubject,
   defineRecordSubject,
@@ -205,6 +206,7 @@ function recordDocDependencies() {
 
 function recordLensDependencies() {
   return {
+    ensureSpaceBuiltIns,
     listLensCatalogue: listRecordLensCatalogue,
     upsertLens: upsertRecordLens,
     upsertLensProfile: upsertRecordLensProfile,

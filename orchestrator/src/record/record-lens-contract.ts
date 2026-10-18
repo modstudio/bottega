@@ -88,6 +88,7 @@ export const recordLensRowSchemas = {
 } as const
 
 export const recordLensImportSchema = z.object({
+  dryRun: z.boolean().default(false),
   lens: z.array(recordLensRowSchemas.lens),
   lens_revision: z.array(recordLensRowSchemas.lens_revision),
   lens_profile: z.array(recordLensRowSchemas.lens_profile),

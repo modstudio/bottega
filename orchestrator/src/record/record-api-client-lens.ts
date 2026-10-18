@@ -1,6 +1,7 @@
 // concern: record-api-client
 /** Implements decoded lens catalogue requests outside the main client file ceiling. */
 
+import { z } from 'zod'
 import { lensCataloguePath, type RecordRequestDestination } from './record-api-client-paths.ts'
 import {
   type RecordCatalogueImportResult,
@@ -24,6 +25,9 @@ type Request = <T>(
   init?: RequestInit & { schema?: (body: unknown) => T; destinationSpaceId?: string },
 ) => Promise<T>
 export type RecordLensClient = {
+  ensureSpaceBuiltIns?(
+    destination?: RecordRequestDestination,
+  ): Promise<{ inserted: number; alreadyPresent: number }>
   listLensCatalogue(
     table: RecordLensTable,
     query: { limit?: number; cursor?: string },
@@ -52,6 +56,13 @@ export type RecordLensClient = {
 }
 
 export const recordLensClient = (request: Request): RecordLensClient => ({
+  ensureSpaceBuiltIns: (destination) =>
+    request('/v1/catalogues/ensure-built-ins', {
+      method: 'POST',
+      ...destination,
+      schema: (body) =>
+        z.object({ inserted: z.number().int(), alreadyPresent: z.number().int() }).parse(body),
+    }),
   listLensCatalogue: (table, query, destination) =>
     request(lensCataloguePath(table, query), {
       ...destination,

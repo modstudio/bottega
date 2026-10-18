@@ -21,6 +21,7 @@ import {
 type Environment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
 export type RecordLensRouteDeps = {
+  ensureSpaceBuiltIns?(input: Tenant): Promise<unknown>
   listLensCatalogue(
     input: Tenant & {
       table: RecordLensTable
@@ -50,6 +51,13 @@ export function registerRecordLensRoutes(
       : (() => {
           throw error
         })()
+  app.post('/v1/catalogues/ensure-built-ins', async (context) => {
+    const active = ports.scope(context)
+    if (!active) return ports.noSpace(context)
+    if (!deps.ensureSpaceBuiltIns)
+      return context.json({ error: 'catalogue built-in installation is unavailable' }, 503)
+    return context.json(await deps.ensureSpaceBuiltIns(active))
+  })
   app.get('/v1/lens-catalogue/:table', async (context) => {
     const active = ports.scope(context)
     if (!active) return ports.noSpace(context)
