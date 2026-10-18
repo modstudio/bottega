@@ -130,6 +130,7 @@ test('the detached spec mapping forwards every field to run', () => {
         nominatingRuns: [{ id: 11, sessionId: 'session-a' }],
         trunk: 'main',
         worktree: null,
+        worktreeOwnerJob: null,
       },
     }),
   ).toMatchObject({

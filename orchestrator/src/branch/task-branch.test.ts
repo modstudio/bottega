@@ -1,7 +1,10 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
+import { mkdirSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { addRun } from '../../test/fixtures/store.ts'
+import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { claimTreePlanForCandidate } from '../run/run-claim-plan.ts'
 import {
   GH_TARGETED_MERGED_PR_LIMIT,
   type GitHubPullRequest,
@@ -11,6 +14,7 @@ import {
   decideTaskBranchLanding,
   decideTaskBranchPullRequestCheck,
   isTaskBranchSuperseded,
+  resolveTaskBranch,
   selectMaximalTaskBranchCandidates,
   type TaskBranchCandidate,
   type TaskBranchRunRow,
@@ -18,8 +22,120 @@ import {
   taskBranchCandidacySql,
   taskBranchContainedTips,
   taskBranchLandingRefusalMessage,
+  taskBranchLandingTreeRefusal,
   taskBranchReuseNotice,
 } from './task-branch.ts'
+
+afterEach(() => {
+  mock.restore()
+  rmSync(join(dir, 'landing-tree-owner-repo'), { recursive: true, force: true })
+})
+
+function spawnResult(stdout = '', exitCode = 0): ReturnType<typeof Bun.spawnSync> {
+  return {
+    exitCode,
+    stdout: Buffer.from(stdout),
+    stderr: Buffer.from(exitCode === 0 ? '' : 'failed'),
+    success: exitCode === 0,
+    exitedDueToTimeout: false,
+  } as ReturnType<typeof Bun.spawnSync>
+}
+
+test('an evidence-excluded landing-tree owner refuses dispatch planning', () => {
+  const repo = join(dir, 'landing-tree-owner-repo')
+  const landingTree = join(repo, '.claude', 'worktrees', 'orch-14488')
+  mkdirSync(landingTree, { recursive: true })
+  const projectId = (
+    db()
+      .query(
+        `INSERT INTO project (record_id,name,path,stack,settings)
+         VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,NULL,'{"trunk":"main"}') RETURNING record_id`,
+      )
+      .get('landing-tree-owner-fixture', repo) as { record_id: string }
+  ).record_id
+  const writer = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'ok',
+    session: 'session-a',
+  })
+  db()
+    .query(
+      `UPDATE run SET launch_key='DEV-1398',branch='DEV-1398-orch-14461',project_record_id=?
+      WHERE id=?`,
+    )
+    .run(projectId, writer)
+  const landing = addRun({ agent: 'codex', job: 'landing-tree', status: 'running' })
+  db()
+    .query(
+      `UPDATE run SET worktree=?,project_record_id=?,
+       evidence_excluded='landing tree lifecycle row; not agent execution'
+      WHERE id=?`,
+    )
+    .run(landingTree, projectId, landing)
+  const newerTerminalOwner = addRun({ agent: 'codex', job: 'implement', status: 'stale' })
+  db()
+    .query(
+      `UPDATE run SET worktree=?,project_record_id=?,
+       evidence_excluded='superseded fixture owner'
+      WHERE id=?`,
+    )
+    .run(landingTree, projectId, newerTerminalOwner)
+
+  const originalSpawnSync = Bun.spawnSync
+  spyOn(Bun, 'spawnSync').mockImplementation(((argv: string[], options?: object) => {
+    if (argv[0] === 'gh') return spawnResult('[]')
+    if (argv[0] !== 'git') return originalSpawnSync(argv, options as never)
+    const command = argv.join(' ')
+    if (command.includes('rev-parse --local-env-vars')) {
+      return spawnResult('GIT_DIR\nGIT_WORK_TREE\n')
+    }
+    if (command.includes('rev-parse --path-format=absolute --git-dir')) return spawnResult('', 1)
+    if (command.includes('rev-parse --path-format=absolute --show-toplevel')) {
+      return spawnResult(`${repo}\n`)
+    }
+    if (command.includes('rev-parse --path-format=absolute --git-common-dir')) {
+      return spawnResult(`${join(repo, '.git')}\n`)
+    }
+    if (command.includes('rev-parse --verify --end-of-options main^{commit}')) {
+      return spawnResult('trunk-tip\n')
+    }
+    if (
+      command.includes(
+        'rev-parse --verify --end-of-options refs/heads/DEV-1398-orch-14461^{commit}',
+      )
+    ) {
+      return spawnResult('writer-tip\n')
+    }
+    if (command.includes('merge-base trunk-tip writer-tip')) return spawnResult('merge-base\n')
+    if (command.includes('rev-list --count merge-base..writer-tip')) return spawnResult('1\n')
+    if (command.includes('cherry trunk-tip writer-tip')) return spawnResult('+ writer-tip\n')
+    if (command.includes('rev-parse --verify writer-tip^{tree}')) return spawnResult('tree-tip\n')
+    if (command.includes('commit-tree tree-tip')) return spawnResult('squash-tip\n')
+    if (command.includes('cherry trunk-tip squash-tip')) return spawnResult('+ squash-tip\n')
+    if (command.includes('worktree list --porcelain')) {
+      return spawnResult(
+        `worktree ${repo}\nbranch refs/heads/main\n\n` +
+          `worktree ${landingTree}\nbranch refs/heads/DEV-1398-orch-14461\n`,
+      )
+    }
+    throw new Error(`unexpected git fixture command: ${command}`)
+  }) as typeof Bun.spawnSync)
+
+  const candidate = resolveTaskBranch(repo, 'DEV-1398')
+  expect(candidate?.worktree?.path).toBe(landingTree)
+  expect(() =>
+    claimTreePlanForCandidate({
+      candidate,
+      forbidsRepo: false,
+      repoJob: true,
+      hasWorktree: false,
+      refusalMessage: taskBranchLandingTreeRefusal,
+    }),
+  ).toThrow(
+    `refusing task branch DEV-1398-orch-14461: it is checked out in architect landing tree ${landingTree}.`,
+  )
+})
 
 const row = (
   id: number,
@@ -263,6 +379,7 @@ const branchCandidate = (
   nominatingRuns: [{ id: commitCount, sessionId: 'session-a' }],
   trunk: 'develop',
   worktree: null,
+  worktreeOwnerJob: null,
   ...extras,
 })
 
@@ -398,6 +515,7 @@ test('task branch reuse notice names branch, tip, contributing runs, and start-o
       ],
       trunk: 'main',
       worktree: null,
+      worktreeOwnerJob: null,
     }),
   ).toBe(
     '! continuing task branch DEV-832-orch-5186 at tip abc123 (runs 5186, 5190); use --base main to start over',

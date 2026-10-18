@@ -21,6 +21,7 @@ const candidate = {
   ],
   trunk: 'main',
   worktree: null,
+  worktreeOwnerJob: null,
 }
 
 describe('task branch nominating session ownership', () => {

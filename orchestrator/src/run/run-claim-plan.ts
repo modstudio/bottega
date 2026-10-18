@@ -7,7 +7,12 @@
 import type { ResumeCreationLifecycle } from './resume-tree.ts'
 
 export type ClaimTreePlanFacts = {
-  hasResolvedTaskWorktree: boolean
+  resolvedTaskWorktree: {
+    path: string
+    branch: string
+    ownerJob: string | null
+    freshBase: string
+  } | null
   forbidsRepo: boolean
   repoJob: boolean
   hasWorktree: boolean
@@ -15,9 +20,12 @@ export type ClaimTreePlanFacts = {
 
 export type ClaimTreePlanRuling =
   | { mode: 'attach' }
+  | { mode: 'refuse'; path: string; branch: string; freshBase: string }
   | { mode: 'isolate' }
   | { mode: 'create' }
   | { mode: 'caller' }
+
+type AcceptedClaimTreePlan = Exclude<ClaimTreePlanRuling, { mode: 'refuse' }>
 
 export type RetryRootTreeValidation = { branch: string; tip: string }
 
@@ -43,10 +51,50 @@ export function claimedRunBranch(
 
 /** Decide the claimed run's working-tree mode before performing any effects. */
 export function decideClaimTreePlan(facts: ClaimTreePlanFacts): ClaimTreePlanRuling {
-  if (facts.hasResolvedTaskWorktree) return { mode: 'attach' }
+  if (facts.resolvedTaskWorktree?.ownerJob === 'landing-tree') {
+    return {
+      mode: 'refuse',
+      path: facts.resolvedTaskWorktree.path,
+      branch: facts.resolvedTaskWorktree.branch,
+      freshBase: facts.resolvedTaskWorktree.freshBase,
+    }
+  }
+  if (facts.resolvedTaskWorktree) return { mode: 'attach' }
   if (facts.forbidsRepo) return { mode: 'isolate' }
   if (facts.repoJob && !facts.hasWorktree) return { mode: 'create' }
   return { mode: 'caller' }
+}
+
+/** Adapt one resolved task-branch candidate into a pre-effect claim plan. */
+export function claimTreePlanForCandidate<T extends { path: string }>(input: {
+  candidate: {
+    branch: string
+    trunk: string
+    worktree: T | null
+    worktreeOwnerJob: string | null
+  } | null
+  forbidsRepo: boolean
+  repoJob: boolean
+  hasWorktree: boolean
+  refusalMessage: (refusal: Extract<ClaimTreePlanRuling, { mode: 'refuse' }>) => string
+}) {
+  const attachedTree = input.candidate?.worktree ?? null
+  const claimTreePlan = decideClaimTreePlan({
+    resolvedTaskWorktree:
+      input.candidate && attachedTree
+        ? {
+            path: attachedTree.path,
+            branch: input.candidate.branch,
+            ownerJob: input.candidate.worktreeOwnerJob,
+            freshBase: input.candidate.trunk,
+          }
+        : null,
+    forbidsRepo: input.forbidsRepo,
+    repoJob: input.repoJob,
+    hasWorktree: input.hasWorktree,
+  })
+  if (claimTreePlan.mode === 'refuse') throw new Error(input.refusalMessage(claimTreePlan))
+  return { attachedTree, claimTreePlan: claimTreePlan as AcceptedClaimTreePlan }
 }
 
 export function resumeCreationLifecycle(facts: {

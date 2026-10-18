@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import type { Agent } from '../agent/agents.ts'
 import { settleCreateTimeBranchCleanup } from '../branch/create-time-settlement.ts'
-import type { TaskBranchCandidate } from '../branch/task-branch.ts'
+import { type TaskBranchCandidate, taskBranchLandingTreeRefusal } from '../branch/task-branch.ts'
 import type { Pack } from '../canon/canon.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { replyFileInstruction, TEXT_REPLY_SCHEMA } from '../contract/contract.ts'
@@ -79,7 +79,7 @@ import {
 import { inheritedRunFacts } from './run-claim-inheritance.ts'
 import {
   claimedRunBranch,
-  decideClaimTreePlan,
+  claimTreePlanForCandidate,
   resumeCreationLifecycle,
   resumeCreationTool,
   retryRootTreeValidation,
@@ -312,6 +312,13 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       resolvedTaskBranch = null
     }
   }
+  const { attachedTree, claimTreePlan } = claimTreePlanForCandidate({
+    candidate: resolvedTaskBranch,
+    forbidsRepo,
+    repoJob,
+    hasWorktree: Boolean(opts.resume?.worktree),
+    refusalMessage: taskBranchLandingTreeRefusal,
+  })
   const existingBranch = resumePlan?.branch ?? resolvedTaskBranch?.branch
   assertBranchHasNoAliveOwner({
     branch: existingBranch,
@@ -546,13 +553,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     .get(claim.id)!
   const sandboxRunDir = join(runsDir, `sandbox-${sandboxRoot.record_id}`)
   const sandboxRunDirExisted = existsSync(sandboxRunDir)
-  const attachedTree = resolvedTaskBranch?.worktree ?? null
-  const claimTreePlan = decideClaimTreePlan({
-    hasResolvedTaskWorktree: attachedTree !== null,
-    forbidsRepo,
-    repoJob,
-    hasWorktree: Boolean(worktree),
-  })
   /**
    * Cutting the worktree can FAIL, and the row already exists by now.
    *
