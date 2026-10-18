@@ -75,6 +75,7 @@ function reapExpiredBoardMessages(dryRun: boolean): void {
 
 export type SweepOptions = {
   dryRun: boolean
+  verbose?: boolean
   project?: string
   force: boolean
   presentation: CleanupPresentation
@@ -423,13 +424,14 @@ function sweepUnjudgedRuns(
 }
 
 function sweepExpiredRunStore(
-  dryRun: boolean,
+  options: Pick<SweepOptions, 'dryRun' | 'verbose'>,
   selectedProject: Project | null,
   presentation: CleanupPresentation,
 ): ReturnType<typeof sweepRunLeftovers> {
-  const evidenceClosedRootIds = sweepUnjudgedRuns(dryRun, selectedProject, presentation)
+  const evidenceClosedRootIds = sweepUnjudgedRuns(options.dryRun, selectedProject, presentation)
   return sweepRunLeftovers({
-    dryRun,
+    dryRun: options.dryRun,
+    verbose: options.verbose,
     projectRecordId: selectedProject?.recordId ?? null,
     presentation,
     evidenceClosedRootIds,
@@ -630,7 +632,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     presentation: options.presentation,
     trust: trustObservation,
   })
-  const runLeftovers = sweepExpiredRunStore(dry, selectedProject, options.presentation)
+  const runLeftovers = sweepExpiredRunStore(options, selectedProject, options.presentation)
   const rows = (
     db()
       .query(

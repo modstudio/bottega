@@ -22,6 +22,7 @@ import type { CleanupPresentation } from './cleanup.ts'
 import {
   decideRunLeftover,
   type RunLeftoverDecision,
+  type RunLeftoverKeepReason,
   type RunLeftoverKind,
 } from './run-leftover-decision.ts'
 
@@ -82,10 +83,6 @@ function directoryPresent(path: string): { present: boolean; reason: string | nu
   }
 }
 
-function scoreRemedy(runId: number): string {
-  return `${PLATFORM_SLUG} score ${runId}`
-}
-
 type Candidate = {
   path: string
   kind: RunLeftoverKind
@@ -94,27 +91,123 @@ type Candidate = {
   measurement?: Measurement
 }
 
+export const RUN_LEFTOVER_REPORT_EXAMPLES = 5
+
+export type KeptRunLeftover = {
+  path: string
+  kind: RunLeftoverKind
+  runId: number | null
+  reason: RunLeftoverKeepReason
+  status?: string
+  detail?: string
+  bytes: number
+  complete: boolean
+  remedy?: 'score'
+}
+
+type KeptGroup = readonly KeptRunLeftover[]
+
+function keptNoun(items: KeptGroup): string {
+  const kinds = new Set(items.map((item) => item.kind))
+  if (kinds.size !== 1) return 'run leftovers'
+  const plural = items.length === 1 ? '' : 's'
+  switch (items[0]!.kind) {
+    case 'scratch':
+      return `run scratch director${plural ? 'ies' : 'y'}`
+    case 'sandbox':
+      return `run sandbox${plural === '' ? '' : 'es'}`
+    case 'isolate':
+      return `run isolate${plural}`
+    case 'artifacts':
+      return `run artifact${plural}`
+    case 'orphan':
+      return `orphan run director${plural ? 'ies' : 'y'}`
+  }
+}
+
+function keptGroupLines(
+  reason: RunLeftoverKeepReason,
+  items: KeptGroup,
+  verbose: boolean,
+): string[] {
+  const remedy = items.some((item) => item.remedy === 'score')
+    ? [`  ${PLATFORM_SLUG} score pending lists every unjudged run`]
+    : []
+  if (verbose)
+    return [
+      ...items.map(
+        (item) => `kept ${item.kind} ${item.path}: ${keptReasonClause(item.reason, item, true)}`,
+      ),
+      ...remedy,
+    ]
+  const bytes = items.reduce((total, item) => total + item.bytes, 0)
+  const qualifier = items.every((item) => item.complete) ? '' : 'at least '
+  const usesRunIds = items.every((item) => item.remedy === 'score' && item.runId !== null)
+  const examples = items
+    .slice(0, RUN_LEFTOVER_REPORT_EXAMPLES)
+    .map((item) => (usesRunIds ? String(item.runId) : item.path))
+  const more = items.length - examples.length
+  return [
+    `kept ${items.length} ${keptNoun(items)} ${keptReasonClause(reason, items[0]!, false)} (${qualifier}${bytes} bytes); example ${usesRunIds ? 'runs' : 'paths'}: ${examples.join(', ')}${more > 0 ? `; and ${more} more` : ''}`,
+    ...remedy,
+  ]
+}
+
+function keptReasonClause(
+  reason: RunLeftoverKeepReason,
+  item: KeptRunLeftover,
+  verbose: boolean,
+): string {
+  switch (reason) {
+    case 'live':
+      return `live${verbose ? ` (${item.status ?? 'unknown'})` : ''}`
+    case 'recently finished':
+      return 'not older than the run leftover age cap'
+    case 'finish time unknown':
+      return 'whose run finish time could not be established'
+    case 'no recorded verdict':
+      return 'with no recorded verdict'
+    case 'orphan age unknown':
+      return `whose age could not be established${verbose && item.detail ? `: ${item.detail}` : ''}`
+    case 'young orphan':
+      return 'not older than the run leftover age cap'
+    case 'sandbox held':
+      return `held by the sandbox release decision${verbose && item.detail ? `: ${item.detail}` : ''}`
+  }
+}
+
+/** Format measured policy-kept candidates without knowing the filesystem or presentation. */
+export function keptRunLeftoverLines(kept: readonly KeptRunLeftover[], verbose: boolean): string[] {
+  const groups = new Map<RunLeftoverKeepReason, KeptRunLeftover[]>()
+  for (const item of kept) {
+    const group = groups.get(item.reason) ?? []
+    group.push(item)
+    groups.set(item.reason, group)
+  }
+  return [...groups].flatMap(([reason, items]) => keptGroupLines(reason, items, verbose))
+}
+
 function removeCandidate(
   candidate: Candidate,
   dryRun: boolean,
   remove: SweepInput['remove'],
-): string | null {
+):
+  | { action: 'removed' }
+  | { action: 'kept'; reason: 'sandbox held'; detail: string }
+  | { action: 'failed'; detail: string } {
   if (remove) {
     remove(candidate, dryRun)
-    return null
+    return { action: 'removed' }
   }
   if (candidate.kind === 'sandbox') {
     const result = releaseSandboxDirectoryForConversation(candidate.runId!, { dryRun })
-    return result.outcome === 'released' ? null : result.detail
+    if (result.outcome !== 'kept') return { action: 'removed' }
+    if (result.detail.startsWith('sandbox directory removal failed:'))
+      return { action: 'failed', detail: result.detail }
+    return { action: 'kept', reason: 'sandbox held', detail: result.detail }
   }
   if (!dryRun) rmSync(candidate.path, { recursive: true })
-  return null
-}
-
-function candidateRemedy(candidate: Candidate): string {
-  return candidate.decision.action === 'keep' && candidate.decision.remedy === 'score'
-    ? `; remedy: ${scoreRemedy(candidate.runId!)}`
-    : ''
+  return { action: 'removed' }
 }
 
 function applyCandidate(
@@ -123,15 +216,11 @@ function applyCandidate(
   presentation: CleanupPresentation,
   freed: Record<RunLeftoverKind, number>,
   partial: Set<RunLeftoverKind>,
+  kept: KeptRunLeftover[],
   remove: SweepInput['remove'],
 ): boolean {
   const state = directoryPresent(candidate.path)
-  const remedy = candidateRemedy(candidate)
   if (!state.present) {
-    if (remedy)
-      presentation.log(
-        `kept ${candidate.kind} for run ${candidate.runId}: ${candidate.decision.reason}${remedy}`,
-      )
     return false
   }
   if (state.reason) {
@@ -139,18 +228,39 @@ function applyCandidate(
     return false
   }
   if (candidate.decision.action === 'keep') {
-    presentation.log(
-      `kept ${candidate.kind} ${candidate.path}: ${candidate.decision.reason}${remedy}`,
-    )
+    const measurement = candidate.measurement ?? measure(candidate.path, false)
+    kept.push({
+      path: candidate.path,
+      kind: candidate.kind,
+      runId: candidate.runId,
+      reason: candidate.decision.reason,
+      status: candidate.decision.status,
+      detail: candidate.decision.detail,
+      bytes: measurement.bytes,
+      complete: measurement.complete,
+      remedy: candidate.decision.remedy,
+    })
     return false
   }
   const measurement = candidate.measurement ?? measure(candidate.path, false)
   if (!measurement.complete) partial.add(candidate.kind)
   try {
-    const keptReason = removeCandidate(candidate, dryRun, remove)
-    if (keptReason !== null) {
-      presentation.log(`kept ${candidate.kind} ${candidate.path}: ${keptReason}`)
+    const removal = removeCandidate(candidate, dryRun, remove)
+    if (removal.action === 'kept') {
+      kept.push({
+        path: candidate.path,
+        kind: candidate.kind,
+        runId: candidate.runId,
+        reason: removal.reason,
+        detail: removal.detail,
+        bytes: measurement.bytes,
+        complete: measurement.complete,
+      })
       return false
+    }
+    if (removal.action === 'failed') {
+      presentation.log(`kept ${candidate.kind} ${candidate.path}: ${removal.detail}`)
+      return true
     }
     freed[candidate.kind] += measurement.bytes
     if (measurement.detail)
@@ -180,6 +290,7 @@ function rowsForSweep(database: Database, projectRecordId: string | null): RunRo
 
 type SweepInput = {
   dryRun: boolean
+  verbose?: boolean
   projectRecordId: string | null
   presentation: CleanupPresentation
   clock?: number
@@ -195,6 +306,7 @@ type SweepInput = {
 type SweepState = {
   freed: Record<RunLeftoverKind, number>
   partial: Set<RunLeftoverKind>
+  kept: KeptRunLeftover[]
 }
 
 function sweepRecordedLeftovers(
@@ -231,6 +343,7 @@ function sweepRecordedLeftovers(
         input.presentation,
         state.freed,
         state.partial,
+        state.kept,
         input.remove,
       )
       failed ||= candidateFailed
@@ -254,6 +367,7 @@ function sweepRecordedLeftovers(
       input.presentation,
       state.freed,
       state.partial,
+      state.kept,
       input.remove,
     )
     failed ||= sandboxFailed
@@ -291,7 +405,8 @@ function sweepOrphans(
       ? decision
       : {
           action: 'keep' as const,
-          reason: `orphan age could not be established: ${measurement.detail ?? 'storage walk was incomplete'}`,
+          reason: 'orphan age unknown' as const,
+          detail: measurement.detail ?? 'storage walk was incomplete',
         }
     const orphanFailed = applyCandidate(
       { path, kind: 'orphan', runId: null, decision: ruling, measurement },
@@ -299,6 +414,7 @@ function sweepOrphans(
       input.presentation,
       state.freed,
       state.partial,
+      state.kept,
       input.remove,
     )
     failed ||= orphanFailed
@@ -326,9 +442,12 @@ export function sweepRunLeftovers(input: SweepInput): {
   const state: SweepState = {
     freed: Object.fromEntries(KINDS.map((kind) => [kind, 0])) as Record<RunLeftoverKind, number>,
     partial: new Set(),
+    kept: [],
   }
   const recordedFailed = sweepRecordedLeftovers({ ...input, database }, rows, clock, state)
   const orphanFailed = sweepOrphans(input, rows, clock, state)
+  for (const line of keptRunLeftoverLines(state.kept, input.verbose ?? false))
+    input.presentation.log(line)
   reportFreed(input, state)
   return { failed: recordedFailed || orphanFailed, freed: state.freed }
 }
