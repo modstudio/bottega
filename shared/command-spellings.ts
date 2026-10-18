@@ -294,6 +294,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'run continue',
   'run diff',
   'run discard',
+  'run identity-map',
   'run list',
   'run peek',
   'run reconcile',

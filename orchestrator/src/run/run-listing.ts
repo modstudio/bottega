@@ -2,6 +2,7 @@
 /** Knows run list and state rendering. Must not know run control, transports, routing, the CLI, or worktrees. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { RunIdentity } from '../../../shared/orch-contract.ts'
 import { resolveFailover } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
@@ -18,6 +19,10 @@ import type {
 } from './question-vocabulary.ts'
 import { classifyRunIdentifier, resolveRunIdentifierOrNull } from './run-identifier.ts'
 import { agentWorkValue } from './synthetic-lifecycle-job.ts'
+
+export function runIdentityMap(): RunIdentity[] {
+  return db().query<RunIdentity, []>('SELECT id, record_id FROM run ORDER BY id').all()
+}
 
 function questionDeliveries(questionId: number) {
   return db()

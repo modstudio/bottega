@@ -59,6 +59,8 @@ import {
   OrchUnknownRunSchema,
   type RulingListRow,
   RulingListSchema,
+  type RunIdentity,
+  RunIdentityListSchema,
 } from '../../shared/orch-contract.ts'
 import { bottegaEntryArgv } from '../../shared/self-spawn.ts'
 import {
@@ -105,6 +107,7 @@ export type { BoardListInput, BoardPostInput } from './board-contract.ts'
 
 let dashboardCapability: { dir: string; path: string; token: string } | null = null
 const RUNS_DEADLINE_MS = 60_000
+const RUN_IDENTITY_MAP_DEADLINE_MS = 20_000
 
 /** Resolve the executable for every call made by a long-lived hub process. */
 export function resolveOrchExecutable(): string {
@@ -310,6 +313,12 @@ export async function readRuns(since: string): Promise<OrchRun[]> {
     await orchProcess(['run', 'list', '--json', '--since', since], RUNS_DEADLINE_MS),
   )
   return rows.filter((row): row is OrchRun => !('unknown' in row))
+}
+
+export async function readRunIdentityMap(): Promise<RunIdentity[]> {
+  return RunIdentityListSchema.parse(
+    JSON.parse(await orchProcess(['run', 'identity-map'], RUN_IDENTITY_MAP_DEADLINE_MS)),
+  )
 }
 
 export const readWorkflowRulings = (since: string): Promise<RulingListRow[]> =>
