@@ -1,7 +1,24 @@
-// concern: record-api-lens-schemas
-/** Validates lens catalogue requests and responses at transport edges. */
+// concern: record-lens-contract
+/** Pure transport contract for the hosted lens catalogue. */
 import { z } from 'zod'
-import { RECORD_LENS_TABLES } from './record-lens-catalogue.ts'
+
+export const RECORD_LENS_TABLES = [
+  'lens',
+  'lens_revision',
+  'lens_profile',
+  'lens_profile_revision',
+  'project_lens_profile',
+  'project_lens_profile_revision',
+] as const
+export type RecordLensTable = (typeof RECORD_LENS_TABLES)[number]
+
+export class RecordLensError extends Error {
+  readonly status: number
+  constructor(message: string, status = 409) {
+    super(message)
+    this.status = status
+  }
+}
 
 const uuid = z.string().uuid()
 const iso = z.string().datetime({ offset: true })
@@ -69,11 +86,12 @@ export const recordLensRowSchemas = {
     at: iso,
   }),
 } as const
+
 const pageFields = {
   nextCursor: z.string().nullable(),
   endCursor: z.string().nullable().optional(),
 }
-export const recordLensPageSchema = (table: keyof typeof recordLensRowSchemas) =>
+export const recordLensPageSchema = (table: RecordLensTable) =>
   z.object({ items: z.array(recordLensRowSchemas[table]), ...pageFields })
 
 const context = { reason: z.string().trim().min(1), sessionId: z.string().nullable().optional() }
@@ -106,6 +124,10 @@ export const recordProjectLensSelectionSchema = z.object({
   expectedSelectionVersion: z.number().int().positive().nullable(),
   ...context,
 })
+
+export type RecordLensWriteInput = z.infer<typeof recordLensUpsertSchema>
+export type RecordLensProfileWriteInput = z.infer<typeof recordLensProfileUpsertSchema>
+export type RecordProjectLensSelectionInput = z.infer<typeof recordProjectLensSelectionSchema>
 
 export const recordLensWriteResponseSchema = z.object({
   lens: recordLensRowSchemas.lens,

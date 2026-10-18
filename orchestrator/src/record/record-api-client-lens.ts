@@ -10,13 +10,11 @@ import {
   recordLensProfileWriteResponseSchema,
   recordLensWriteResponseSchema,
   recordProjectLensSelectionResponseSchema,
-} from './record-api-lens-schemas.ts'
-import type {
-  RecordLensProfileWriteInput,
-  RecordLensTable,
-  RecordLensWriteInput,
-  RecordProjectLensSelectionInput,
-} from './record-lens-catalogue.ts'
+  type RecordLensProfileWriteInput,
+  type RecordLensTable,
+  type RecordLensWriteInput,
+  type RecordProjectLensSelectionInput,
+} from './record-lens-contract.ts'
 
 type Request = <T>(
   path: string,

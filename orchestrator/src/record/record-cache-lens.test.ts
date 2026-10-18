@@ -1,7 +1,12 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
-import { applyLensCatalogueRow } from './record-cache.ts'
+import { resolveLens } from '../lens/lenses.ts'
+import { upsertProject } from '../project/projects.ts'
+import {
+  applyLensCatalogueRow,
+  rememberProjectLensSpaces,
+} from './record-cache-lens.ts'
 
 const row = (key: string, id = newRecordId()) => ({
   id,
@@ -14,6 +19,18 @@ const row = (key: string, id = newRecordId()) => ({
   version: 4,
   enabled: true,
   requiresExecution: false,
+  updatedAt: new Date().toISOString(),
+})
+
+const profileRow = (spaceId: string, lensId: string, body: string, id = newRecordId()) => ({
+  id,
+  spaceId,
+  lensId,
+  axis: 'framework',
+  name: 'default',
+  version: 1,
+  body,
+  enabled: true,
   updatedAt: new Date().toISOString(),
 })
 
@@ -54,5 +71,45 @@ test('lens cache reconciles by record id, natural key, insert, and seeded key', 
   })
   expect(local.query("SELECT record_id FROM lens WHERE id='correctness'").get()).toEqual({
     record_id: seeded.id,
+  })
+})
+
+test('two spaces keep the same lens key isolated after later hosted revisions', () => {
+  const local = db()
+  const spaceA = newRecordId()
+  const spaceB = newRecordId()
+  const lensA = { ...row('shared-lens'), spaceId: spaceA, title: 'Space A' }
+  const lensB = { ...row('shared-lens'), spaceId: spaceB, title: 'Space B' }
+  lensA.slots = lensB.slots =
+    '{"type":"object","properties":{"guidance":{"type":"string"}},"additionalProperties":false}'
+  applyLensCatalogueRow(local, 'lens', lensA)
+  applyLensCatalogueRow(local, 'lens', lensB)
+  const profileA = profileRow(spaceA, lensA.id, '{"guidance":"A first"}')
+  const profileB = profileRow(spaceB, lensB.id, '{"guidance":"B first"}')
+  applyLensCatalogueRow(local, 'lens_profile', profileA)
+  applyLensCatalogueRow(local, 'lens_profile', profileB)
+  upsertProject({ recordId: newRecordId(), name: 'space-a-project', path: '/tmp/a', settings: {} })
+  upsertProject({ recordId: newRecordId(), name: 'space-b-project', path: '/tmp/b', settings: {} })
+  rememberProjectLensSpaces(
+    local,
+    new Map([
+      ['space-a-project', spaceA],
+      ['space-b-project', spaceB],
+    ]),
+  )
+
+  expect(resolveLens('shared-lens', 'space-a-project')?.body).toBe('GUIDANCE\nA first')
+  expect(resolveLens('shared-lens', 'space-b-project')?.body).toBe('GUIDANCE\nB first')
+
+  applyLensCatalogueRow(local, 'lens', { ...lensB, version: 5, title: 'Space B later' })
+  applyLensCatalogueRow(local, 'lens_profile', {
+    ...profileB,
+    version: 2,
+    body: '{"guidance":"B later"}',
+  })
+  expect(resolveLens('shared-lens', 'space-a-project')?.body).toBe('GUIDANCE\nA first')
+  expect(resolveLens('shared-lens', 'space-b-project')).toMatchObject({
+    title: 'Space B later',
+    body: 'GUIDANCE\nB later',
   })
 })

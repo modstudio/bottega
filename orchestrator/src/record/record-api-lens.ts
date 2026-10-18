@@ -7,24 +7,28 @@ import {
   recordLensTableSchema,
   recordLensUpsertSchema,
   recordProjectLensSelectionSchema,
-} from './record-api-lens-schemas.ts'
+} from './record-lens-contract.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import { decodeRecordCursor, pageRecordItems } from './record-cursor.ts'
 import {
-  type listRecordLensCatalogue,
   RecordLensError,
-  type selectRecordProjectLensProfile,
-  type upsertRecordLens,
-  type upsertRecordLensProfile,
-} from './record-lens-catalogue.ts'
+  type RecordLensProfileWriteInput,
+  type RecordLensTable,
+  type RecordLensWriteInput,
+  type RecordProjectLensSelectionInput,
+} from './record-lens-contract.ts'
+import { decodeRecordCursor, pageRecordItems, type RecordCursor } from './record-cursor.ts'
 
 type Environment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
 export type RecordLensRouteDeps = {
-  listLensCatalogue: typeof listRecordLensCatalogue
-  upsertLens: typeof upsertRecordLens
-  upsertLensProfile: typeof upsertRecordLensProfile
-  selectProjectLensProfile: typeof selectRecordProjectLensProfile
+  listLensCatalogue(input: Tenant & {
+    table: RecordLensTable
+    limit: number
+    cursor: RecordCursor | null
+  }): Promise<Record<string, unknown>[]>
+  upsertLens(input: Tenant & RecordLensWriteInput): Promise<unknown>
+  upsertLensProfile(input: Tenant & RecordLensProfileWriteInput): Promise<unknown>
+  selectProjectLensProfile(input: Tenant & RecordProjectLensSelectionInput): Promise<unknown>
 }
 type Ports = {
   scope(context: Context<Environment>): Tenant | null
@@ -39,7 +43,7 @@ export function registerRecordLensRoutes(
 ): void {
   const failure = (context: Context<Environment>, error: unknown) =>
     error instanceof RecordLensError
-      ? context.json({ error: error.message }, error.status as 404 | 409)
+      ? context.json({ error: error.message }, error.status as 404 | 409 | 422)
       : (() => {
           throw error
         })()
