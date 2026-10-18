@@ -42,7 +42,7 @@ describe('task attribution', () => {
     })
     expect(commentAuthorDecision('hosted-configured', null, 'user-1')).toMatchObject({
       allowed: false,
-      reason: expect.stringContaining('record login'),
+      reason: expect.stringContaining('record sign-in'),
     })
   })
 

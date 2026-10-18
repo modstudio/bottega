@@ -28,7 +28,7 @@ export function commentAuthorDecision(
   if (writerActorUserId === null)
     return {
       allowed: false,
-      reason: `record identity could not be resolved; run \`${PLATFORM_SLUG} record login\` and retry`,
+      reason: `record identity could not be resolved; run \`${PLATFORM_SLUG} record sign-in\` and retry`,
     }
   if (recordedActorUserId === null)
     return {

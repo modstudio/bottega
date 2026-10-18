@@ -301,7 +301,7 @@ describe('local task tracker', () => {
         ...author,
         actorUserId: null,
       }),
-    ).rejects.toThrow('record login')
+    ).rejects.toThrow('record sign-in')
     await writeTransaction((conn) =>
       conn.query(`UPDATE task_comment SET actor_user_id=NULL WHERE record_id=?`).run(comment.id),
     )
