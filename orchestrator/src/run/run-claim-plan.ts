@@ -4,7 +4,6 @@
  * lifecycle facts. Must not create trees, touch stores, or run processes.
  */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ResumeCreationLifecycle } from './resume-tree.ts'
 
 export type ClaimTreePlanFacts = {
@@ -25,6 +24,8 @@ export type ClaimTreePlanRuling =
   | { mode: 'isolate' }
   | { mode: 'create' }
   | { mode: 'caller' }
+
+type AcceptedClaimTreePlan = Exclude<ClaimTreePlanRuling, { mode: 'refuse' }>
 
 export type RetryRootTreeValidation = { branch: string; tip: string }
 
@@ -64,15 +65,36 @@ export function decideClaimTreePlan(facts: ClaimTreePlanFacts): ClaimTreePlanRul
   return { mode: 'caller' }
 }
 
-/** Compose the operator remedy when an architect landing tree owns the reused branch. */
-export function claimTreePlanRefusal(
-  refusal: Extract<ClaimTreePlanRuling, { mode: 'refuse' }>,
-): string {
-  return (
-    `refusing task branch ${refusal.branch}: it is checked out in architect landing tree ${refusal.path}.\n` +
-    `cleared by: ${PLATFORM_SLUG} tree remove ${refusal.path}, then dispatch again; ` +
-    `or dispatch again with --base ${refusal.freshBase} to start a fresh branch`
-  )
+/** Adapt one resolved task-branch candidate into a pre-effect claim plan. */
+export function claimTreePlanForCandidate<T extends { path: string }>(input: {
+  candidate: {
+    branch: string
+    trunk: string
+    worktree: T | null
+    worktreeOwnerJob: string | null
+  } | null
+  forbidsRepo: boolean
+  repoJob: boolean
+  hasWorktree: boolean
+  refusalMessage: (refusal: Extract<ClaimTreePlanRuling, { mode: 'refuse' }>) => string
+}) {
+  const attachedTree = input.candidate?.worktree ?? null
+  const claimTreePlan = decideClaimTreePlan({
+    resolvedTaskWorktree:
+      input.candidate && attachedTree
+        ? {
+            path: attachedTree.path,
+            branch: input.candidate.branch,
+            ownerJob: input.candidate.worktreeOwnerJob,
+            freshBase: input.candidate.trunk,
+          }
+        : null,
+    forbidsRepo: input.forbidsRepo,
+    repoJob: input.repoJob,
+    hasWorktree: input.hasWorktree,
+  })
+  if (claimTreePlan.mode === 'refuse') throw new Error(input.refusalMessage(claimTreePlan))
+  return { attachedTree, claimTreePlan: claimTreePlan as AcceptedClaimTreePlan }
 }
 
 export function resumeCreationLifecycle(facts: {

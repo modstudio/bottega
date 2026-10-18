@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import type { Agent } from '../agent/agents.ts'
 import { settleCreateTimeBranchCleanup } from '../branch/create-time-settlement.ts'
-import type { TaskBranchCandidate } from '../branch/task-branch.ts'
+import { type TaskBranchCandidate, taskBranchLandingTreeRefusal } from '../branch/task-branch.ts'
 import type { Pack } from '../canon/canon.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { replyFileInstruction, TEXT_REPLY_SCHEMA } from '../contract/contract.ts'
@@ -79,6 +79,7 @@ import {
 import { inheritedRunFacts } from './run-claim-inheritance.ts'
 import {
   claimedRunBranch,
+  claimTreePlanForCandidate,
   resumeCreationLifecycle,
   resumeCreationTool,
   retryRootTreeValidation,
@@ -90,10 +91,7 @@ import { prepareResumeBranchIfNeeded, restoreResumeIfNeeded } from './run-resume
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 import { assertRetryRootWorkspace } from './run-retry-claim.ts'
-import {
-  taskBranchClaimTreePlan,
-  taskBranchResolution,
-} from './run-task-branch-resolution.ts'
+import { taskBranchResolution } from './run-task-branch-resolution.ts'
 import { resolveRunTaskRecordId } from './run-task-reference.ts'
 import {
   grokReaderServersForRun,
@@ -314,11 +312,12 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       resolvedTaskBranch = null
     }
   }
-  const { attachedTree, claimTreePlan } = taskBranchClaimTreePlan({
-    resolvedTaskBranch,
+  const { attachedTree, claimTreePlan } = claimTreePlanForCandidate({
+    candidate: resolvedTaskBranch,
     forbidsRepo,
     repoJob,
     hasWorktree: Boolean(opts.resume?.worktree),
+    refusalMessage: taskBranchLandingTreeRefusal,
   })
   const existingBranch = resumePlan?.branch ?? resolvedTaskBranch?.branch
   assertBranchHasNoAliveOwner({

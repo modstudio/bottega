@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { taskBranchLandingTreeRefusal } from '../branch/task-branch.ts'
 import {
   claimedRunBranch,
-  claimTreePlanRefusal,
   decideClaimTreePlan,
   resumeCreationLifecycle,
   resumeCreationTool,
@@ -121,7 +121,7 @@ describe('claim tree plan', () => {
       freshBase: 'main',
     })
     if (ruling.mode !== 'refuse') throw new Error('expected a landing-tree refusal')
-    expect(claimTreePlanRefusal(ruling)).toBe(
+    expect(taskBranchLandingTreeRefusal(ruling)).toBe(
       'refusing task branch DEV-1398-writer: it is checked out in architect landing tree /tmp/DEV-1398-landing.\n' +
         `cleared by: ${PLATFORM_SLUG} tree remove /tmp/DEV-1398-landing, then dispatch again; ` +
         'or dispatch again with --base main to start a fresh branch',

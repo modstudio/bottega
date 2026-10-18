@@ -40,6 +40,19 @@ export type TaskBranchCandidate = {
   worktreeOwnerJob: string | null
 }
 
+/** Compose the operator remedy when an architect landing tree owns the reused branch. */
+export function taskBranchLandingTreeRefusal(refusal: {
+  path: string
+  branch: string
+  freshBase: string
+}): string {
+  return (
+    `refusing task branch ${refusal.branch}: it is checked out in architect landing tree ${refusal.path}.\n` +
+    `cleared by: ${PLATFORM_SLUG} tree remove ${refusal.path}, then dispatch again; ` +
+    `or dispatch again with --base ${refusal.freshBase} to start a fresh branch`
+  )
+}
+
 export type TaskBranchRunRow = {
   id: number
   parent_run_id: number | null
@@ -404,8 +417,7 @@ function resolvedTaskBranchWorktree(input: {
 }): { worktree: Worktree | null; ownerJob: string | null } {
   if (!input.path) return { worktree: null, ownerJob: null }
   const owner = input.rows.find(
-    (row) =>
-      row.worktree && realpathOrSpelled(row.worktree) === realpathOrSpelled(input.path!),
+    (row) => row.worktree && realpathOrSpelled(row.worktree) === realpathOrSpelled(input.path!),
   )
   const source = owner?.worktree_source
   return {
