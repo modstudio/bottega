@@ -597,7 +597,7 @@ export async function projectCommand(
         `${PLATFORM_SLUG} project select-profile <project> --axis A --name N [--lens ID] [--version N] --reason TEXT`,
       )
     const version = versionText === undefined ? undefined : Number(versionText)
-    const result = selectProjectProfile({
+    const result = await selectProjectProfile({
       project: name,
       axis,
       name: profile,

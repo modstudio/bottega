@@ -69,7 +69,7 @@ describe('lens catalogue', () => {
     ).toEqual({ name: 'default', version: null, source: 'generic' })
   })
 
-  test('an enabled stack profile wins while a disabled one falls through to generic', () => {
+  test('an enabled stack profile wins while a disabled one falls through to generic', async () => {
     upsertProject({
       recordId: newRecordId(),
       name: 'stacked',
@@ -77,7 +77,7 @@ describe('lens catalogue', () => {
       stack: 'node',
       settings: {},
     })
-    setProfile({
+    await setProfile({
       lensId: 'correctness',
       axis: 'framework',
       name: 'node',
@@ -89,7 +89,7 @@ describe('lens catalogue', () => {
       profiles: [{ name: 'node', source: 'stack' }],
       body: expect.stringContaining('FRAMEWORK GUIDANCE\nNode.'),
     })
-    setProfile({
+    await setProfile({
       lensId: 'correctness',
       axis: 'framework',
       name: 'node',
@@ -103,8 +103,8 @@ describe('lens catalogue', () => {
     })
   })
 
-  test('renders declared slots in schema order and omits empty sections', () => {
-    setLens({
+  test('renders declared slots in schema order and omits empty sections', async () => {
+    await setLens({
       id: 'custom-sections',
       title: 'Custom sections',
       question: 'What does it find?',
@@ -118,7 +118,7 @@ describe('lens catalogue', () => {
       requiresExecution: false,
       reason: 'custom section fixture',
     })
-    setProfile({
+    await setProfile({
       lensId: 'custom-sections',
       axis: 'framework',
       name: 'default',
@@ -138,10 +138,10 @@ describe('lens catalogue', () => {
     }
   })
 
-  test('profile validation refuses undeclared slots and project selection binds one shared row', () => {
+  test('profile validation refuses undeclared slots and project selection binds one shared row', async () => {
     upsertProject({ recordId: newRecordId(), name: 'one', path: '/tmp/one', settings: {} })
     upsertProject({ recordId: newRecordId(), name: 'two', path: '/tmp/two', settings: {} })
-    expect(() =>
+    await expect(
       setProfile({
         lensId: 'correctness',
         axis: 'framework',
@@ -150,8 +150,8 @@ describe('lens catalogue', () => {
         enabled: true,
         reason: 'test',
       }),
-    ).toThrow('undeclared slot')
-    setProfile({
+    ).rejects.toThrow('undeclared slot')
+    await setProfile({
       lensId: 'correctness',
       axis: 'framework',
       name: 'node',
@@ -159,7 +159,7 @@ describe('lens catalogue', () => {
       enabled: true,
       reason: 'test',
     })
-    selectProjectProfile({
+    await selectProjectProfile({
       project: 'one',
       axis: 'framework',
       name: 'node',
@@ -178,7 +178,7 @@ describe('lens catalogue', () => {
       session_id: sessionId(),
       at: expect.any(String),
     })
-    selectProjectProfile({
+    await selectProjectProfile({
       project: 'two',
       axis: 'framework',
       name: 'node',
@@ -195,7 +195,7 @@ describe('lens catalogue', () => {
       name: 'node',
       source: 'project',
     })
-    selectProjectProfile({
+    await selectProjectProfile({
       project: 'one',
       axis: 'framework',
       name: 'default',
@@ -216,10 +216,10 @@ describe('lens catalogue', () => {
     })
   })
 
-  test('unknown lenses remain free-form while disabled catalogue content refuses', () => {
+  test('unknown lenses remain free-form while disabled catalogue content refuses', async () => {
     expect(resolveLens('a-live-ad-hoc-calibration-key', 'one')).toBeNull()
     const correctness = listLenses().find((lens) => lens.id === 'correctness')!
-    setLens({
+    await setLens({
       id: correctness.id,
       title: correctness.title,
       question: correctness.question,
@@ -235,10 +235,10 @@ describe('lens catalogue', () => {
     expect(() => resolveLens('correctness', 'one')).toThrow('cleared by:')
   })
 
-  test('a disabled unselected profile does not introduce its axis', () => {
+  test('a disabled unselected profile does not introduce its axis', async () => {
     upsertProject({ recordId: newRecordId(), name: 'one', path: '/tmp/one', settings: {} })
     const before = resolveLens('correctness', 'one')
-    setProfile({
+    await setProfile({
       lensId: 'correctness',
       axis: 'architecture',
       name: 'retired',

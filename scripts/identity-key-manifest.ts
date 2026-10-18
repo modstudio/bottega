@@ -245,6 +245,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'lens_profile.version',
     'lens_profile_revision.version',
     'project_lens_profile.selected_version',
+    'project_lens_profile.selection_version',
     'project_lens_profile_revision.prior_selected_version',
     'port_doctrine.number',
   ]),

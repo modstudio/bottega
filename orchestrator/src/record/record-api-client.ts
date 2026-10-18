@@ -15,8 +15,10 @@ import type { DocGenerator } from '../doc/doc-generator.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import { MISSING_HOSTED_REVISION_REMEDY, RECORD_WRITE_REMEDY } from '../doc/doc-write-allowed.ts'
 import type { VerdictInput } from '../verdict/verdict-payload.ts'
+import { type RecordLensClient, recordLensClient } from './record-api-client-lens.ts'
 import {
   boardClaimListPath,
+  docSearchParams,
   type ProjectIdentityClient,
   projectIdentityClient,
   type RecordApiAuthentication,
@@ -34,7 +36,6 @@ import {
   type RecordSnapshotAndPublicDocMethod,
   subjectMutationBody,
 } from './record-api-client-paths.ts'
-
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import type {
   HostedBoardAcceptInput,
@@ -190,197 +191,209 @@ export type {
   RecordRequestDestination,
 } from './record-api-client-paths.ts'
 
-export type RecordApiClient = ProjectIdentityClient & {
-  whoami(): Promise<RecordIdentity>
-  sync?(input: RecordSyncRequest): Promise<RecordSyncResponse>
-  createOrganization(input: { name: string; slug: string }): Promise<{ id: string; slug: string }>
-  setActiveOrganization(input: {
-    organizationId?: string
-    organizationSlug?: string
-  }): Promise<{ id: string; slug: string }>
-  listInvitations(): Promise<HostedRecordInvitation[]>
-  acceptInvitation(invitationId: string): Promise<{ invitation: { organizationId: string } }>
-  inviteMember(input: {
-    email: string
-    role: 'member' | 'admin' | 'owner'
-    organizationId: string
-  }): Promise<{ id: string }>
-  putSnapshot(
-    kind: SnapshotKind,
-    input: { machineId: string; payload: unknown },
-  ): Promise<{ takenAt: string }>
-  listSnapshots(): Promise<{
-    items: Array<{
-      id: string
-      kind: SnapshotKind
-      machineId: string
-      payload: unknown
-      takenAt: string
+export type RecordApiClient = ProjectIdentityClient &
+  RecordLensClient & {
+    whoami(): Promise<RecordIdentity>
+    sync?(input: RecordSyncRequest): Promise<RecordSyncResponse>
+    createOrganization(input: { name: string; slug: string }): Promise<{ id: string; slug: string }>
+    setActiveOrganization(input: {
+      organizationId?: string
+      organizationSlug?: string
+    }): Promise<{ id: string; slug: string }>
+    listInvitations(): Promise<HostedRecordInvitation[]>
+    acceptInvitation(invitationId: string): Promise<{ invitation: { organizationId: string } }>
+    inviteMember(input: {
+      email: string
+      role: 'member' | 'admin' | 'owner'
+      organizationId: string
+    }): Promise<{ id: string }>
+    putSnapshot(
+      kind: SnapshotKind,
+      input: { machineId: string; payload: unknown },
+    ): Promise<{ takenAt: string }>
+    listSnapshots(): Promise<{
+      items: Array<{
+        id: string
+        kind: SnapshotKind
+        machineId: string
+        payload: unknown
+        takenAt: string
+      }>
     }>
-  }>
-  listPublicDocs(): Promise<{ items: PublicRecordDocTreeItem[] }>
-  getPublicDoc(id: string): Promise<PublicRecordDoc>
-  searchPublicDocs(query: string): Promise<{ items: RecordDocSearchMatch[] }>
-  searchDocs(query: {
-    q: string
-    scope?: string
-    subject?: string | null
-    audience?: DocAudience
-    acrossReadableSpaces?: boolean
-  }): Promise<{ items: RecordDocSearchMatch[] }>
-  listDocs(
-    query: {
+    listPublicDocs(): Promise<{ items: PublicRecordDocTreeItem[] }>
+    getPublicDoc(id: string): Promise<PublicRecordDoc>
+    searchPublicDocs(query: string): Promise<{ items: RecordDocSearchMatch[] }>
+    searchDocs(query: {
+      q: string
       scope?: string
       subject?: string | null
       audience?: DocAudience
-      status?: DocStatus
+      acrossReadableSpaces?: boolean
+    }): Promise<{ items: RecordDocSearchMatch[] }>
+    listDocs(
+      query: {
+        scope?: string
+        subject?: string | null
+        audience?: DocAudience
+        status?: DocStatus
+        updatedSince?: string
+        limit?: number
+        cursor?: string | null
+        includeDeleted?: boolean
+        kind?: DocKind
+        acrossReadableSpaces?: boolean
+      },
+      destination?: RecordRequestDestination,
+    ): Promise<{
+      items: Record<string, unknown>[]
+      nextCursor: string | null
+      endCursor?: string | null
+    }>
+    getDoc(id: string, destination?: RecordRequestDestination): Promise<Record<string, unknown>>
+    listRevisions(
+      id: string,
+      destination?: RecordRequestDestination,
+    ): Promise<Record<string, unknown>[]>
+    upsertDoc(
+      input: RecordDocUpsertInput,
+      destination?: RecordRequestDestination,
+    ): Promise<RecordDocWriteResponse<{ id: string; revisionId: string }>>
+    reorderDocs(
+      input: RecordDocOrderInput,
+      destination?: RecordRequestDestination,
+    ): Promise<{ orderedIds: string[] }>
+    applySettingsPermission(
+      input: Omit<RecordSettingsPermissionInput, 'url' | 'userId' | 'spaceId' | 'spaceIds'>,
+      destination?: RecordRequestDestination,
+    ): Promise<RecordSettingsPermissionResult>
+    importDoc(
+      input: RecordDocImportInput,
+      destination?: RecordRequestDestination,
+    ): Promise<RecordDocImportResult>
+    importCanon(
+      input: RecordCanonImportInput,
+      destination?: RecordRequestDestination,
+    ): Promise<RecordCanonImportResult>
+    deleteDoc(
+      id: string,
+      input: {
+        reason: string
+        author: string
+        expectedRevision?: string
+        generator?: DocGenerator
+      },
+      destination?: RecordRequestDestination,
+    ): Promise<{ id: string; revisionId: string }>
+    consumeDoc(
+      id: string,
+      input: { reason: string; author: string; expectedRevision?: string },
+      destination?: RecordRequestDestination,
+    ): Promise<{ id: string; revisionId: string; alreadyConsumed: boolean }>
+    restoreDoc(
+      id: string,
+      input: { revisionId: string; reason: string; author: string; expectedRevision?: string },
+      destination?: RecordRequestDestination,
+    ): Promise<{ id: string; revisionId: string }>
+    renameSubject(
+      input: {
+        from: string
+        to: string
+        count: number
+      },
+      destination?: RecordRequestDestination,
+    ): Promise<{ docs: number; revisions: number }>
+    listProjectSubjects(
+      query: {
+        project?: string
+        projectId?: string | null
+        includeRetired?: boolean
+        order?: 'catalog' | 'updated'
+        cursor?: string
+        limit?: number
+      },
+      destination?: RecordRequestDestination,
+    ): Promise<{ items: RecordSubject[]; nextCursor: string | null; endCursor?: string | null }>
+    addProjectSubject(
+      input: {
+        id: string
+        project: string
+        projectId?: string | null
+        name: string
+        definition: string
+      },
+      destination?: RecordRequestDestination,
+    ): Promise<RecordSubject>
+    renameProjectSubject(
+      input: { project: string; projectId?: string | null; id: string; name: string },
+      destination?: RecordRequestDestination,
+    ): Promise<RecordSubject>
+    defineProjectSubject(
+      input: { project: string; projectId?: string | null; id: string; definition: string },
+      destination?: RecordRequestDestination,
+    ): Promise<RecordSubject>
+    reorderProjectSubjects(
+      input: { project: string; projectId?: string | null; ids: string[] },
+      destination?: RecordRequestDestination,
+    ): Promise<{ items: RecordSubject[] }>
+    retireProjectSubject(
+      input: { project: string; projectId?: string | null; id: string },
+      destination?: RecordRequestDestination,
+    ): Promise<RecordSubject>
+    putScore(runId: string, input: VerdictInput): Promise<void>
+    voidRun(runId: string, input: { reason: string }): Promise<void>
+    unvoidRun(runId: string, input: { note: string }): Promise<void>
+    listScores(query: {
       updatedSince?: string
       limit?: number
       cursor?: string | null
-      includeDeleted?: boolean
-      kind?: DocKind
-      acrossReadableSpaces?: boolean
-    },
-    destination?: RecordRequestDestination,
-  ): Promise<{
-    items: Record<string, unknown>[]
-    nextCursor: string | null
-    endCursor?: string | null
-  }>
-  getDoc(id: string, destination?: RecordRequestDestination): Promise<Record<string, unknown>>
-  listRevisions(
-    id: string,
-    destination?: RecordRequestDestination,
-  ): Promise<Record<string, unknown>[]>
-  upsertDoc(
-    input: RecordDocUpsertInput,
-    destination?: RecordRequestDestination,
-  ): Promise<RecordDocWriteResponse<{ id: string; revisionId: string }>>
-  reorderDocs(
-    input: RecordDocOrderInput,
-    destination?: RecordRequestDestination,
-  ): Promise<{ orderedIds: string[] }>
-  applySettingsPermission(
-    input: Omit<RecordSettingsPermissionInput, 'url' | 'userId' | 'spaceId' | 'spaceIds'>,
-    destination?: RecordRequestDestination,
-  ): Promise<RecordSettingsPermissionResult>
-  importDoc(
-    input: RecordDocImportInput,
-    destination?: RecordRequestDestination,
-  ): Promise<RecordDocImportResult>
-  importCanon(
-    input: RecordCanonImportInput,
-    destination?: RecordRequestDestination,
-  ): Promise<RecordCanonImportResult>
-  deleteDoc(
-    id: string,
-    input: { reason: string; author: string; expectedRevision?: string; generator?: DocGenerator },
-    destination?: RecordRequestDestination,
-  ): Promise<{ id: string; revisionId: string }>
-  consumeDoc(
-    id: string,
-    input: { reason: string; author: string; expectedRevision?: string },
-    destination?: RecordRequestDestination,
-  ): Promise<{ id: string; revisionId: string; alreadyConsumed: boolean }>
-  restoreDoc(
-    id: string,
-    input: { revisionId: string; reason: string; author: string; expectedRevision?: string },
-    destination?: RecordRequestDestination,
-  ): Promise<{ id: string; revisionId: string }>
-  renameSubject(
-    input: {
-      from: string
-      to: string
-      count: number
-    },
-    destination?: RecordRequestDestination,
-  ): Promise<{ docs: number; revisions: number }>
-  listProjectSubjects(
-    query: {
-      project?: string
-      projectId?: string | null
-      includeRetired?: boolean
-      order?: 'catalog' | 'updated'
-      cursor?: string
+    }): Promise<{ items: Record<string, unknown>[]; nextCursor: string | null }>
+    counts(
+      destination?: RecordRequestDestination,
+    ): Promise<{ docs: number; revisions: number; scores: number; voids: number }>
+    listBoardMessages(query?: HostedBoardOverviewFilters): Promise<HostedBoardOverview>
+    postBoardMessage(input: HostedBoardPostInput): Promise<HostedBoardMessage>
+    replyBoardMessage(rootId: string, input: HostedBoardReplyInput): Promise<HostedBoardMessage>
+    withdrawBoardMessage(id: string, input?: HostedBoardSessionInput): Promise<HostedBoardMessage>
+    acceptBoardAnswer(id: string, input: HostedBoardAcceptInput): Promise<HostedBoardThread>
+    takeBoardFilingLease(id: string, input?: HostedBoardSessionInput): Promise<HostedBoardMessage>
+    completeBoardFilingLease(
+      id: string,
+      input: HostedBoardFilingCompleteInput,
+    ): Promise<HostedBoardMessage>
+    failBoardFilingLease(id: string, input: HostedBoardFilingFailInput): Promise<HostedBoardMessage>
+    getBoardThread(id: string): Promise<HostedBoardThread>
+    getBoardStatus(id: string): Promise<HostedBoardStatus>
+    putBoardReceipt(
+      input: HostedBoardReceiptInput,
+      signal?: AbortSignal,
+    ): Promise<HostedBoardReceipt>
+    listBoardChanges(query: {
+      after?: string
       limit?: number
-    },
-    destination?: RecordRequestDestination,
-  ): Promise<{ items: RecordSubject[]; nextCursor: string | null; endCursor?: string | null }>
-  addProjectSubject(
-    input: {
-      id: string
+      signal?: AbortSignal
+    }): Promise<HostedBoardChanges>
+    takeBoardClaim(
+      input: HostedBoardTakeClaimInput,
+    ): Promise<HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }>
+    renewBoardClaim(
+      id: string,
+      input?: { holderSession?: string | null },
+    ): Promise<HostedBoardClaim>
+    releaseBoardClaim(
+      id: string,
+      input?: { holderSession?: string | null },
+    ): Promise<HostedBoardClaim>
+    listBoardClaims(
+      project: string,
+      projectId?: string | null,
+    ): Promise<{ claims: HostedBoardClaim[] }>
+    releaseBoardTaskClaims(input: {
       project: string
       projectId?: string | null
-      name: string
-      definition: string
-    },
-    destination?: RecordRequestDestination,
-  ): Promise<RecordSubject>
-  renameProjectSubject(
-    input: { project: string; projectId?: string | null; id: string; name: string },
-    destination?: RecordRequestDestination,
-  ): Promise<RecordSubject>
-  defineProjectSubject(
-    input: { project: string; projectId?: string | null; id: string; definition: string },
-    destination?: RecordRequestDestination,
-  ): Promise<RecordSubject>
-  reorderProjectSubjects(
-    input: { project: string; projectId?: string | null; ids: string[] },
-    destination?: RecordRequestDestination,
-  ): Promise<{ items: RecordSubject[] }>
-  retireProjectSubject(
-    input: { project: string; projectId?: string | null; id: string },
-    destination?: RecordRequestDestination,
-  ): Promise<RecordSubject>
-  putScore(runId: string, input: VerdictInput): Promise<void>
-  voidRun(runId: string, input: { reason: string }): Promise<void>
-  unvoidRun(runId: string, input: { note: string }): Promise<void>
-  listScores(query: {
-    updatedSince?: string
-    limit?: number
-    cursor?: string | null
-  }): Promise<{ items: Record<string, unknown>[]; nextCursor: string | null }>
-  counts(
-    destination?: RecordRequestDestination,
-  ): Promise<{ docs: number; revisions: number; scores: number; voids: number }>
-  listBoardMessages(query?: HostedBoardOverviewFilters): Promise<HostedBoardOverview>
-  postBoardMessage(input: HostedBoardPostInput): Promise<HostedBoardMessage>
-  replyBoardMessage(rootId: string, input: HostedBoardReplyInput): Promise<HostedBoardMessage>
-  withdrawBoardMessage(id: string, input?: HostedBoardSessionInput): Promise<HostedBoardMessage>
-  acceptBoardAnswer(id: string, input: HostedBoardAcceptInput): Promise<HostedBoardThread>
-  takeBoardFilingLease(id: string, input?: HostedBoardSessionInput): Promise<HostedBoardMessage>
-  completeBoardFilingLease(
-    id: string,
-    input: HostedBoardFilingCompleteInput,
-  ): Promise<HostedBoardMessage>
-  failBoardFilingLease(id: string, input: HostedBoardFilingFailInput): Promise<HostedBoardMessage>
-  getBoardThread(id: string): Promise<HostedBoardThread>
-  getBoardStatus(id: string): Promise<HostedBoardStatus>
-  putBoardReceipt(input: HostedBoardReceiptInput, signal?: AbortSignal): Promise<HostedBoardReceipt>
-  listBoardChanges(query: {
-    after?: string
-    limit?: number
-    signal?: AbortSignal
-  }): Promise<HostedBoardChanges>
-  takeBoardClaim(
-    input: HostedBoardTakeClaimInput,
-  ): Promise<HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }>
-  renewBoardClaim(id: string, input?: { holderSession?: string | null }): Promise<HostedBoardClaim>
-  releaseBoardClaim(
-    id: string,
-    input?: { holderSession?: string | null },
-  ): Promise<HostedBoardClaim>
-  listBoardClaims(
-    project: string,
-    projectId?: string | null,
-  ): Promise<{ claims: HostedBoardClaim[] }>
-  releaseBoardTaskClaims(input: {
-    project: string
-    projectId?: string | null
-    key: string
-  }): Promise<{ released: number }>
-  openBoardStream(signal?: AbortSignal): Promise<RecordBoardStreamOpen>
-}
+      key: string
+    }): Promise<{ released: number }>
+    openBoardStream(signal?: AbortSignal): Promise<RecordBoardStreamOpen>
+  }
 
 const INJECT_KEY = Symbol.for('orch.record-api-client')
 type InjectSlot = { current: RecordApiClient | null }
@@ -469,12 +482,10 @@ export function recordAuthRefusal(status: number, body: unknown, headers: Header
   return recordApiUnreachable(new Error(message))
 }
 
-type RecordEmailAuthResult = { token: string; user: Record<string, unknown> }
-
 async function recordEmailAuthRequest(
   path: '/api/auth/sign-in/email' | '/api/auth/sign-up/email',
   body: Record<string, string>,
-): Promise<RecordEmailAuthResult> {
+) {
   let response: Response
   try {
     response = await fetch(`${recordApiBaseUrl()}${path}`, {
@@ -590,21 +601,6 @@ async function publicRequest<T>(path: string): Promise<T> {
   return body as T
 }
 
-function docSearchParams(query: {
-  q: string
-  scope?: string
-  subject?: string | null
-  audience?: DocAudience
-  acrossReadableSpaces?: boolean
-}): string {
-  const search = new URLSearchParams({ q: query.q })
-  if (query.scope) search.set('scope', query.scope)
-  if (query.subject !== undefined) search.set('subject', query.subject ?? '')
-  if (query.audience) search.set('audience', query.audience)
-  if (query.acrossReadableSpaces) search.set('acrossReadableSpaces', 'true')
-  return search.toString()
-}
-
 function ids(body: unknown): RecordDocWriteResponse<{ id: string; revisionId: string }> {
   const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
   if (typeof record.id !== 'string' || typeof record.revisionId !== 'string') {
@@ -707,6 +703,7 @@ export function recordApiClient(request = defaultRequest): RecordApiClient {
     ...recordSnapshotAndPublicDocClient(request),
     ...recordDocReadClient(request),
     ...recordDocWriteClient(request),
+    ...recordLensClient(request),
     ...projectIdentityClient(request),
     ...recordProjectSubjectClient(request),
     ...recordRunClient(request),

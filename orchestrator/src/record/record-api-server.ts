@@ -65,6 +65,12 @@ import {
   restoreRecordDoc,
   upsertRecordDoc,
 } from './record-docs.ts'
+import {
+  listRecordLensCatalogue,
+  selectRecordProjectLensProfile,
+  upsertRecordLens,
+  upsertRecordLensProfile,
+} from './record-lens-catalogue.ts'
 import { listPendingRecordInvitations } from './record-pending-invitations.ts'
 import { listRecordProjects, retireRecordProject, upsertRecordProject } from './record-projects.ts'
 import {
@@ -185,6 +191,15 @@ function recordDocDependencies() {
   }
 }
 
+function recordLensDependencies() {
+  return {
+    listLensCatalogue: listRecordLensCatalogue,
+    upsertLens: upsertRecordLens,
+    upsertLensProfile: upsertRecordLensProfile,
+    selectProjectLensProfile: selectRecordProjectLensProfile,
+  }
+}
+
 export async function startRecordApiServer(environment: ServerEnvironment = process.env) {
   const config = recordApiServerConfig(environment)
   const auth = recordAuth(config.recordUrl, environment, config.authDatabaseUrl)
@@ -206,6 +221,7 @@ export async function startRecordApiServer(environment: ServerEnvironment = proc
     readProjects: listRecordProjects,
     upsertProject: upsertRecordProject,
     retireProject: retireRecordProject,
+    ...recordLensDependencies(),
     listSubjects: listRecordSubjects,
     addSubject: addRecordSubject,
     renameSubject: renameRecordSubject,

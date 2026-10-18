@@ -30,6 +30,18 @@ function idleIdentityAndSpaceDeps(): { listInvitations: () => Promise<[]> } {
   return { listInvitations: async () => [] }
 }
 
+function idleLensDeps() {
+  const unused = async () => {
+    throw new Error('hosted lens catalogue is unused in this fixture')
+  }
+  return {
+    listLensCatalogue: async () => [],
+    upsertLens: unused,
+    upsertLensProfile: unused,
+    selectProjectLensProfile: unused,
+  }
+}
+
 function idleBoardDeps(): RecordBoardDeps {
   const unused = async () => {
     throw new RecordBoardError('hosted board is not configured', 400)
@@ -66,6 +78,7 @@ export function idleRecordApiDeps() {
     },
     ...idleIdentityAndSpaceDeps(),
     ...idleBoardDeps(),
+    ...idleLensDeps(),
   }
 }
 
@@ -186,6 +199,10 @@ export function unusedBoardClientMethods(): Pick<
   | 'defineProjectSubject'
   | 'reorderProjectSubjects'
   | 'retireProjectSubject'
+  | 'listLensCatalogue'
+  | 'upsertLens'
+  | 'upsertLensProfile'
+  | 'selectProjectLensProfile'
 > {
   return {
     listPublicDocs: unusedBoard,
@@ -216,6 +233,10 @@ export function unusedBoardClientMethods(): Pick<
     defineProjectSubject: unusedSubject,
     reorderProjectSubjects: unusedSubject,
     retireProjectSubject: unusedSubject,
+    listLensCatalogue: async () => ({ items: [], nextCursor: null }),
+    upsertLens: unusedSubject,
+    upsertLensProfile: unusedSubject,
+    selectProjectLensProfile: unusedSubject,
   }
 }
 
@@ -249,6 +270,18 @@ export function createMemoryRecordApiClient(): RecordApiClient {
   return {
     ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
+    async listLensCatalogue() {
+      return { items: [], nextCursor: null }
+    },
+    async upsertLens() {
+      throw new Error('hosted lens catalogue is unused in this fixture')
+    },
+    async upsertLensProfile() {
+      throw new Error('hosted lens catalogue is unused in this fixture')
+    },
+    async selectProjectLensProfile() {
+      throw new Error('hosted lens catalogue is unused in this fixture')
+    },
     async applySettingsPermission() {
       throw new Error('settings permission endpoint is not implemented by the memory fixture')
     },

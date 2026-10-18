@@ -2,6 +2,14 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
+import { recordApiClient } from '../record/record-api-client.ts'
+import type {
+  RecordLensProfileWriteResponse,
+  RecordLensWriteResponse,
+  RecordProjectLensSelectionResponse,
+} from '../record/record-api-lens-schemas.ts'
+import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
+import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 
 const LENS_AXES = ['framework', 'architecture'] as const
 export type LensAxis = (typeof LENS_AXES)[number]
@@ -170,7 +178,7 @@ export function showLens(id: string, database: Database = db()) {
     profiles: profiles.map((p) => ({ ...p, enabled: !!p.enabled, body: JSON.parse(p.body) })),
   }
 }
-export function setLens(input: {
+export async function setLens(input: {
   id: string
   title: string
   question: string
@@ -188,49 +196,76 @@ export function setLens(input: {
   nonempty(input.reason, 'reason')
   slotNames(input.slots)
   const d = db()
-  writeTransaction(() => {
-    const prior = d
-      .query(`SELECT ${LENS_COLUMNS} FROM lens WHERE id=?`)
-      .get(input.id) as CoreRow | null
-    if (!prior)
-      d.query(
-        'INSERT INTO lens (record_id,id,title,question,excludes,slots,version,enabled,requires_execution) VALUES (?,?,?,?,?,?,1,?,?)',
-      ).run(
-        newRecordId(),
-        input.id,
-        input.title,
-        input.question,
-        input.excludes,
-        input.slots,
-        input.enabled ? 1 : 0,
-        input.requiresExecution ? 1 : 0,
-      )
-    else {
-      d.query(
-        'INSERT INTO lens_revision (record_id,lens_id,version,prior_body,reason,session_id,at) VALUES (?,?,?,?,?,?,?)',
-      ).run(
-        newRecordId(),
-        input.id,
-        prior.version,
-        coreSnapshot(prior),
-        input.reason,
-        sessionId(),
-        nowIso(),
-      )
-      d.query(
-        'UPDATE lens SET title=?,question=?,excludes=?,slots=?,version=version+1,enabled=?,requires_execution=? WHERE id=?',
-      ).run(
-        input.title,
-        input.question,
-        input.excludes,
-        input.slots,
-        input.enabled ? 1 : 0,
-        input.requiresExecution ? 1 : 0,
-        input.id,
-      )
-    }
-  }, d)
-  return showLens(input.id, d)
+  const prior = d
+    .query(`SELECT ${LENS_COLUMNS} FROM lens WHERE id=?`)
+    .get(input.id) as CoreRow | null
+  const writeLocal = (hosted?: RecordLensWriteResponse) => {
+    writeTransaction(() => {
+      if (!prior)
+        d.query(
+          'INSERT INTO lens (record_id,id,title,question,excludes,slots,version,enabled,requires_execution) VALUES (?,?,?,?,?,?,1,?,?)',
+        ).run(
+          hosted?.lens.id ?? newRecordId(),
+          input.id,
+          input.title,
+          input.question,
+          input.excludes,
+          input.slots,
+          input.enabled ? 1 : 0,
+          input.requiresExecution ? 1 : 0,
+        )
+      else {
+        d.query(
+          'INSERT INTO lens_revision (record_id,lens_id,version,prior_body,reason,session_id,at) VALUES (?,?,?,?,?,?,?)',
+        ).run(
+          hosted?.revision?.id ?? newRecordId(),
+          input.id,
+          prior.version,
+          coreSnapshot(prior),
+          input.reason,
+          sessionId(),
+          nowIso(),
+        )
+        d.query(
+          'UPDATE lens SET record_id=?,title=?,question=?,excludes=?,slots=?,version=?,enabled=?,requires_execution=? WHERE id=?',
+        ).run(
+          hosted?.lens.id ??
+            (
+              d.query('SELECT record_id FROM lens WHERE id=?').get(input.id) as {
+                record_id: string
+              }
+            ).record_id,
+          input.title,
+          input.question,
+          input.excludes,
+          input.slots,
+          hosted?.lens.version ?? prior.version + 1,
+          input.enabled ? 1 : 0,
+          input.requiresExecution ? 1 : 0,
+          input.id,
+        )
+      }
+    }, d)
+    return showLens(input.id, d)!
+  }
+  return applyRecordWriteAuthority({
+    local: () => writeLocal(),
+    hosted: async () => {
+      const result = await recordApiClient().upsertLens({
+        key: input.id,
+        title: input.title,
+        question: input.question,
+        excludes: input.excludes,
+        slots: input.slots,
+        enabled: input.enabled,
+        requiresExecution: input.requiresExecution,
+        expectedVersion: prior?.version ?? null,
+        reason: input.reason,
+        sessionId: sessionId(),
+      })
+      return writeLocal(result)
+    },
+  })
 }
 export function listProfiles(lensId?: string, database: Database = db()) {
   const rows = database
@@ -246,7 +281,7 @@ export function showProfile(lensId: string, axis: string, name: string, database
     .get(lensId, axisValue(axis), name) as ProfileRow | null
   return row ? { ...row, enabled: !!row.enabled, body: JSON.parse(row.body) } : null
 }
-export function setProfile(input: {
+export async function setProfile(input: {
   lensId: string
   axis: string
   name: string
@@ -264,34 +299,66 @@ export function setProfile(input: {
     .get(input.lensId) as CoreRow | null
   if (!core) throw new Error(`no lens "${input.lensId}"`)
   profileValues(input.body, core.slots)
-  writeTransaction(() => {
-    const prior = d
-      .query(`SELECT ${PROFILE_COLUMNS} FROM lens_profile WHERE lens_id=? AND axis=? AND name=?`)
-      .get(input.lensId, axis, input.name) as ProfileRow | null
-    if (!prior)
-      d.query(
-        'INSERT INTO lens_profile (record_id,lens_id,axis,name,version,body,enabled) VALUES (?,?,?,?,1,?,?)',
-      ).run(newRecordId(), input.lensId, axis, input.name, input.body, input.enabled ? 1 : 0)
-    else {
-      d.query(
-        'INSERT INTO lens_profile_revision (record_id,profile_id,version,prior_body,reason,session_id,at) VALUES (?,?,?,?,?,?,?)',
-      ).run(
-        newRecordId(),
-        prior.id,
-        prior.version,
-        profileSnapshot(prior),
-        input.reason,
-        sessionId(),
-        nowIso(),
-      )
-      d.query('UPDATE lens_profile SET version=version+1,body=?,enabled=? WHERE id=?').run(
-        input.body,
-        input.enabled ? 1 : 0,
-        prior.id,
-      )
-    }
-  }, d)
-  return showProfile(input.lensId, axis, input.name, d)
+  const prior = d
+    .query(`SELECT ${PROFILE_COLUMNS} FROM lens_profile WHERE lens_id=? AND axis=? AND name=?`)
+    .get(input.lensId, axis, input.name) as ProfileRow | null
+  const writeLocal = (hosted?: RecordLensProfileWriteResponse) => {
+    writeTransaction(() => {
+      if (!prior)
+        d.query(
+          'INSERT INTO lens_profile (record_id,lens_id,axis,name,version,body,enabled) VALUES (?,?,?,?,1,?,?)',
+        ).run(
+          hosted?.profile.id ?? newRecordId(),
+          input.lensId,
+          axis,
+          input.name,
+          input.body,
+          input.enabled ? 1 : 0,
+        )
+      else {
+        d.query(
+          'INSERT INTO lens_profile_revision (record_id,profile_id,version,prior_body,reason,session_id,at) VALUES (?,?,?,?,?,?,?)',
+        ).run(
+          hosted?.revision?.id ?? newRecordId(),
+          prior.id,
+          prior.version,
+          profileSnapshot(prior),
+          input.reason,
+          sessionId(),
+          nowIso(),
+        )
+        d.query('UPDATE lens_profile SET record_id=?,version=?,body=?,enabled=? WHERE id=?').run(
+          hosted?.profile.id ??
+            (
+              d.query('SELECT record_id FROM lens_profile WHERE id=?').get(prior.id) as {
+                record_id: string
+              }
+            ).record_id,
+          hosted?.profile.version ?? prior.version + 1,
+          input.body,
+          input.enabled ? 1 : 0,
+          prior.id,
+        )
+      }
+    }, d)
+    return showProfile(input.lensId, axis, input.name, d)!
+  }
+  return applyRecordWriteAuthority({
+    local: () => writeLocal(),
+    hosted: async () => {
+      const result = await recordApiClient().upsertLensProfile({
+        lensKey: input.lensId,
+        axis,
+        name: input.name,
+        body: input.body,
+        enabled: input.enabled,
+        expectedVersion: prior?.version ?? null,
+        reason: input.reason,
+        sessionId: sessionId(),
+      })
+      return writeLocal(result)
+    },
+  })
 }
 
 function versionedProfile(profile: ProfileRow, version: number | null, d: Database): ProfileRow {
@@ -314,7 +381,7 @@ function versionedProfile(profile: ProfileRow, version: number | null, d: Databa
     enabled: snapshot.enabled ? 1 : 0,
   }
 }
-export function selectProjectProfile(input: {
+export async function selectProjectProfile(input: {
   project: string
   axis: string
   name: string
@@ -365,49 +432,78 @@ export function selectProjectProfile(input: {
       `profile ${axis}/${input.name}${input.version ? ` version ${input.version}` : ''} is missing or disabled for lenses: ${missing.join(', ')}`,
     )
   if (!cores.length) throw new Error(`no enabled lenses declare axis ${axis}`)
-  writeTransaction(() => {
-    const prior = d
-      .query(
-        'SELECT id,profile_name,selected_version FROM project_lens_profile WHERE project_record_id=? AND lens_id IS ? AND axis=?',
-      )
-      .get(project.recordId, input.lensId ?? null, axis) as {
-      id: number
-      profile_name: string
-      selected_version: number | null
-    } | null
-    d.query(`INSERT INTO project_lens_profile (record_id,project_record_id,lens_id,axis,profile_name,selected_version) VALUES (?,?,?,?,?,?)
-      ON CONFLICT DO UPDATE SET profile_name=excluded.profile_name,selected_version=excluded.selected_version`).run(
-      newRecordId(),
-      project.recordId,
-      input.lensId ?? null,
-      axis,
-      input.name,
-      input.version ?? null,
+  const prior = d
+    .query(
+      'SELECT id,record_id,profile_name,selected_version,selection_version FROM project_lens_profile WHERE project_record_id=? AND lens_id IS ? AND axis=?',
     )
-    const selection = d
-      .query(
-        'SELECT id FROM project_lens_profile WHERE project_record_id=? AND lens_id IS ? AND axis=?',
+    .get(project.recordId, input.lensId ?? null, axis) as {
+    id: number
+    profile_name: string
+    selected_version: number | null
+    selection_version: number
+    record_id: string
+  } | null
+  const writeLocal = (hosted?: RecordProjectLensSelectionResponse) => {
+    writeTransaction(() => {
+      d.query(`INSERT INTO project_lens_profile (record_id,project_record_id,lens_id,axis,profile_name,selected_version) VALUES (?,?,?,?,?,?)
+      ON CONFLICT DO UPDATE SET record_id=excluded.record_id,profile_name=excluded.profile_name,selected_version=excluded.selected_version,selection_version=selection_version+1`).run(
+        hosted?.selection.id ?? prior?.record_id ?? newRecordId(),
+        project.recordId,
+        input.lensId ?? null,
+        axis,
+        input.name,
+        input.version ?? null,
       )
-      .get(project.recordId, input.lensId ?? null, axis) as { id: number }
-    d.query(`INSERT INTO project_lens_profile_revision
+      const selection = d
+        .query(
+          'SELECT id FROM project_lens_profile WHERE project_record_id=? AND lens_id IS ? AND axis=?',
+        )
+        .get(project.recordId, input.lensId ?? null, axis) as { id: number }
+      d.query(`INSERT INTO project_lens_profile_revision
       (record_id,selection_id,prior_profile_name,prior_selected_version,reason,session_id,at) VALUES (?,?,?,?,?,?,?)`).run(
-      newRecordId(),
-      selection.id,
-      prior?.profile_name ?? null,
-      prior?.selected_version ?? null,
-      input.reason,
-      sessionId(),
-      nowIso(),
-    )
-  }, d)
-  return {
-    project: project.name,
-    lens: input.lensId ?? null,
-    axis,
-    name: input.name,
-    version: input.version ?? null,
-    reason: input.reason,
+        hosted?.revision.id ?? newRecordId(),
+        selection.id,
+        prior?.profile_name ?? null,
+        prior?.selected_version ?? null,
+        input.reason,
+        sessionId(),
+        nowIso(),
+      )
+    }, d)
+    return {
+      project: project.name,
+      lens: input.lensId ?? null,
+      axis,
+      name: input.name,
+      version: input.version ?? null,
+      reason: input.reason,
+    }
   }
+  return applyRecordWriteAuthority({
+    local: () => writeLocal(),
+    hosted: async () => {
+      const client = recordApiClient()
+      const destinationSpaceId = await requireProjectRecordDestination(
+        project.name,
+        project.settings,
+        client,
+      )
+      const result = await client.selectProjectLensProfile(
+        {
+          projectId: project.recordId,
+          lensKey: input.lensId ?? null,
+          axis,
+          profileName: input.name,
+          selectedVersion: input.version ?? null,
+          expectedSelectionVersion: prior?.selection_version ?? null,
+          reason: input.reason,
+          sessionId: sessionId(),
+        },
+        { destinationSpaceId },
+      )
+      return writeLocal(result)
+    },
+  })
 }
 
 const disabledLensRefusal = (id: string, what: string) =>

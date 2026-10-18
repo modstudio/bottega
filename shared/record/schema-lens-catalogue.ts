@@ -160,11 +160,7 @@ export const projectLensProfile = pgTable.withRLS(
       .on(table.spaceId, table.projectId, table.axis)
       .where(sql`${table.lensId} IS NULL`),
     sameSpaceIdentity('project_lens_profile_space_id_unique', table),
-    index('project_lens_profile_space_updated_id_idx').on(
-      table.spaceId,
-      table.updatedAt,
-      table.id,
-    ),
+    index('project_lens_profile_space_updated_id_idx').on(table.spaceId, table.updatedAt, table.id),
     foreignKey({
       columns: [table.spaceId, table.projectId],
       foreignColumns: [project.spaceId, project.id],
