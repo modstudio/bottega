@@ -5,9 +5,9 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { orchDoValueOptionNames } from '../commands/do-options.ts'
 import { db, sessionId, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
-import { effectiveProjectSpace } from '../project-space.ts'
 import { workflowFactSources } from '../project/project-injection.ts'
 import { projects } from '../project/projects.ts'
+import { effectiveProjectSpace } from '../project-space.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { applyWorkflowWriteResponse } from '../record/record-cache-workflow.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
@@ -468,7 +468,7 @@ export const retireStepCatalogue = (
     },
   })
 }
-export const retireStepCatalogueLocal = (
+const retireStepCatalogueLocal = (
   n: number,
   reason: string | undefined,
   author?: string,
@@ -612,9 +612,17 @@ export function importStepCatalogue(
   assertCatalogueWriteAllowed('import step catalogue')
   return catalogueDraft('import', definition, undefined, reason, author, d, project)
 }
-export const importStepCatalogueLocal = (
+const importStepCatalogueLocal = (
   definition: unknown,
   reason: string | undefined,
   author?: string,
   d: Database = writableDb(),
 ) => lifecycle.write(CATALOGUE, definition, reason, author, 'import', d)
+
+export const stepCatalogueLocalLifecycle = {
+  set: setStepCatalogueLocal,
+  promote: promoteStepCatalogueLocal,
+  retire: retireStepCatalogueLocal,
+  fork: forkStepCatalogueLocal,
+  import: importStepCatalogueLocal,
+}

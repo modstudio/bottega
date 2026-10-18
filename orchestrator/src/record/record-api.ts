@@ -24,15 +24,15 @@ import {
   registerRecordInvitationRoute,
 } from './record-api-invitations.ts'
 import { type RecordLensRouteDeps, registerRecordLensRoutes } from './record-api-lens.ts'
-import {
-  type RecordWorkflowRouteDeps,
-  registerRecordWorkflowRoutes,
-} from './record-api-workflow.ts'
 import { registerPublicDocRoutes, registerSignedDocSearchRoute } from './record-api-public-docs.ts'
 import { type RecordReleaseRouteDeps, registerRecordReleaseRoutes } from './record-api-releases.ts'
 import { registerRecordRequestSpace } from './record-api-request-space.ts'
 import { type RecordSubjectRouteDeps, registerRecordSubjectRoutes } from './record-api-subjects.ts'
 import { type RecordSyncRouteDeps, registerRecordSyncRoute } from './record-api-sync.ts'
+import {
+  type RecordWorkflowRouteDeps,
+  registerRecordWorkflowRoutes,
+} from './record-api-workflow.ts'
 import { registerRecordWriteRoutes } from './record-api-write-routes.ts'
 import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import { RecordBoardError } from './record-board-contract.ts'
@@ -287,17 +287,20 @@ function registerSessionRoutes(app: Hono<ApiEnvironment>, deps: Deps): void {
   registerRecordSyncRoute(app, deps)
 }
 
-function registerCatalogueWriteRoutes(
-  app: Hono<ApiEnvironment>,
-  deps: Deps,
-  ports: Parameters<typeof registerRecordWriteRoutes>[2] &
-    Parameters<typeof registerRecordLensRoutes>[2] &
-    Parameters<typeof registerRecordWorkflowRoutes>[2],
-): void {
-  registerRecordWriteRoutes(app, deps, ports)
-  registerRecordLensRoutes(app, deps, ports)
-  registerRecordWorkflowRoutes(app, deps, ports)
-}
+const encoded = (value: Uint8Array) => Buffer.from(value).toString('base64url')
+const decoded = (value: string) => new Uint8Array(Buffer.from(value, 'base64url'))
+const jsonWrap = (wrap: ConfigWrapInput) => ({
+  ...wrap,
+  enc: encoded(wrap.enc),
+  ciphertext: encoded(wrap.ciphertext),
+})
+const inputWrap = (wrap: z.infer<typeof wrapSchema>): ConfigWrapInput => ({
+  ...wrap,
+  enc: decoded(wrap.enc),
+  ciphertext: decoded(wrap.ciphertext),
+})
+const configAddress = z.object({ environment: z.string().min(1), scope: configScopeSchema })
+const configList = z.object({ environment: z.string().min(1).optional() })
 
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   const app = new Hono<ApiEnvironment>()
@@ -455,24 +458,9 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     }
     throw error
   }
-  registerCatalogueWriteRoutes(app, deps, { scope, noSpace, writeError })
-  const encoded = (value: Uint8Array) => Buffer.from(value).toString('base64url')
-  const decoded = (value: string) => new Uint8Array(Buffer.from(value, 'base64url'))
-  const jsonWrap = (wrap: ConfigWrapInput) => ({
-    ...wrap,
-    enc: encoded(wrap.enc),
-    ciphertext: encoded(wrap.ciphertext),
-  })
-  const inputWrap = (wrap: z.infer<typeof wrapSchema>): ConfigWrapInput => ({
-    ...wrap,
-    enc: decoded(wrap.enc),
-    ciphertext: decoded(wrap.ciphertext),
-  })
-  const configAddress = z.object({
-    environment: z.string().min(1),
-    scope: configScopeSchema,
-  })
-  const configList = z.object({ environment: z.string().min(1).optional() })
+  registerRecordWriteRoutes(app, deps, { scope, noSpace, writeError })
+  registerRecordLensRoutes(app, deps, { scope, noSpace })
+  registerRecordWorkflowRoutes(app, deps, { scope, noSpace })
   const configBody = z.object({
     environment: z.string().min(1),
     scope: configScopeSchema,

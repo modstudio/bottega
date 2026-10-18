@@ -3,7 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { effectiveProjectSpace } from '../project-space.ts'
 
-export function catalogueResolutionSpace(
+function catalogueResolutionSpace(
   routedSpaceId: string | null,
   hostedHasProductionCatalogue: boolean,
 ): string | null {

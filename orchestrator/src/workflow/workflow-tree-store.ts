@@ -9,17 +9,17 @@ import {
   type CatalogueSequence,
   type CatalogueStep,
   importStepCatalogue,
-  importStepCatalogueLocal,
   selectedStepCatalogue,
+  stepCatalogueLocalLifecycle,
   validateStepCatalogue,
 } from './step-catalogue.ts'
-import type { WorkflowTreeStore } from './workflow-tree.ts'
 import { projectCatalogueResolutionSpace } from './workflow-resolution-space.ts'
+import type { WorkflowTreeStore } from './workflow-tree.ts'
 import {
   importWorkflow,
-  importWorkflowLocal,
   productionWorkflows,
   validateWorkflowDefinition,
+  workflowLocalLifecycle,
 } from './workflows.ts'
 
 export function productionWorkflowTree(
@@ -154,9 +154,9 @@ export function importWorkflowTree(
         return result
       })()
     if (changedSteps.length || changedSequences.length)
-      importStepCatalogueLocal(catalogue, reason, author, database)
+      stepCatalogueLocalLifecycle.import(catalogue, reason, author, database)
     for (const { slug, definition } of changedWorkflows)
-      importWorkflowLocal(slug, definition, reason, author, database, catalogue)
+      workflowLocalLifecycle.import(slug, definition, reason, author, database, catalogue)
     return result
   }, database)
 }

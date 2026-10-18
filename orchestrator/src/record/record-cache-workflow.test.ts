@@ -5,13 +5,13 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
-import { effectiveProjectSpace, rememberProjectSpace } from '../project-space.ts'
 import { upsertProject } from '../project/projects.ts'
+import { effectiveProjectSpace, rememberProjectSpace } from '../project-space.ts'
 import { productionStepCatalogue } from '../workflow/step-catalogue.ts'
 import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
 import { productionWorkflows } from '../workflow/workflows.ts'
-import { applyWorkflowCatalogueRow, pullWorkflowCatalogue } from './record-cache-workflow.ts'
 import { pullRecordCache } from './record-cache.ts'
+import { applyWorkflowCatalogueRow, pullWorkflowCatalogue } from './record-cache-workflow.ts'
 
 afterEach(() => installRecordApiClient(createMemoryRecordApiClient()))
 const at = '2026-10-18T12:00:00.000Z'

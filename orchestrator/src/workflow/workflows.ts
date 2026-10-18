@@ -1,8 +1,8 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, sessionId, writableDb } from '../database/db.ts'
-import { effectiveProjectSpace } from '../project-space.ts'
 import { projects } from '../project/projects.ts'
+import { effectiveProjectSpace } from '../project-space.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { applyWorkflowWriteResponse } from '../record/record-cache-workflow.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
@@ -29,6 +29,7 @@ import {
   workflowCompositionFactExtras,
 } from './workflow-project-facts.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
+import { projectWorkflowResolutionSpace } from './workflow-resolution-space.ts'
 import type { WorkflowModeStepList } from './workflow-step-reference.ts'
 import {
   expandWorkflowSteps,
@@ -42,7 +43,6 @@ import {
   resolveWorkflowStepTemplates,
   resolveWorkflowTemplate,
 } from './workflow-template.ts'
-import { projectWorkflowResolutionSpace } from './workflow-resolution-space.ts'
 
 export type { WorkflowDefinition } from './workflow-definition.ts'
 
@@ -633,7 +633,7 @@ export function forkWorkflow(
     },
   })
 }
-export function forkWorkflowLocal(
+function forkWorkflowLocal(
   slug: string,
   from: number | undefined,
   reason: string | undefined,
@@ -949,3 +949,11 @@ export const importWorkflowLocal = (
   d: Database = writableDb(),
   knownCatalogue?: StepCatalogueDefinition,
 ) => writeDraftLocal(slug, definition, reason, author, 'import', d, knownCatalogue)
+
+export const workflowLocalLifecycle = {
+  set: setWorkflowLocal,
+  promote: promoteWorkflowLocal,
+  retire: retireWorkflowLocal,
+  fork: forkWorkflowLocal,
+  import: importWorkflowLocal,
+}

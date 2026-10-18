@@ -8,7 +8,12 @@ import {
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
-import { composeWorkflow, getWorkflowStep, promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
+import {
+  composeWorkflow,
+  getWorkflowStep,
+  promoteWorkflowLocal,
+  setWorkflowLocal,
+} from './workflows.ts'
 
 const release = {
   rungs: [{ name: 'production', branch: 'production', deploy: 'bun run deploy' }],

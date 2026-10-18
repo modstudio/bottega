@@ -4,7 +4,11 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { removeProject, upsertProject } from '../project/projects.ts'
-import { promoteWorkflowLocal, setWorkflowLocal, type WorkflowDefinition } from '../workflow/workflows.ts'
+import {
+  promoteWorkflowLocal,
+  setWorkflowLocal,
+  type WorkflowDefinition,
+} from '../workflow/workflows.ts'
 import { createDocsMcpServer } from './mcp.ts'
 import { bindWorkflowPromptArguments, workflowPromptDefinitions } from './mcp-prompts.ts'
 

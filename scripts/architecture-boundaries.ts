@@ -705,6 +705,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../doc/doc-write-allowed.ts',
       '../verdict/verdict-payload.ts',
       './record-auth.ts',
+      './record-api-client-board-stream.ts',
       './record-api-client-paths.ts',
       './record-api-client-lens.ts',
       './record-api-client-workflow.ts',

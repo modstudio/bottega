@@ -889,7 +889,12 @@ describe('workflow versions and project composition', () => {
     }
     const flow = setWorkflowLocal('sequence-guard', definition, 'use sequence', 'test', d)
     promoteWorkflowLocal('sequence-guard', flow.n, 'publish', 'test', d)
-    const withoutSequence = setStepCatalogueLocal({ steps: current.steps }, 'drop sequence', 'test', d)
+    const withoutSequence = setStepCatalogueLocal(
+      { steps: current.steps },
+      'drop sequence',
+      'test',
+      d,
+    )
     expect(() => promoteStepCatalogueLocal(withoutSequence.n, 'publish', 'test', d)).toThrow(
       'sequence "quality" is absent from the catalogue',
     )

@@ -31,7 +31,13 @@ const database = () => {
 describe('versioned lifecycle retirement', () => {
   test('retires a draft, preserves its null promotion time, and records the event', () => {
     const d = database()
-    const draft = setWorkflowLocal('withdraw-draft', definition('Withdraw draft'), 'create', 'writer', d)
+    const draft = setWorkflowLocal(
+      'withdraw-draft',
+      definition('Withdraw draft'),
+      'create',
+      'writer',
+      d,
+    )
 
     const retired = retireWorkflowLocal('withdraw-draft', draft.n, 'superseded', 'architect', d)
 
@@ -69,7 +75,13 @@ describe('versioned lifecycle retirement', () => {
 
   test('refuses an already-retired version and names its state', () => {
     const d = database()
-    const draft = setWorkflowLocal('retired-state', definition('Retired state'), 'create', 'writer', d)
+    const draft = setWorkflowLocal(
+      'retired-state',
+      definition('Retired state'),
+      'create',
+      'writer',
+      d,
+    )
     retireWorkflowLocal('retired-state', draft.n, 'withdraw', 'architect', d)
 
     expect(() =>
@@ -79,7 +91,13 @@ describe('versioned lifecycle retirement', () => {
 
   test('does not list a withdrawn draft as the current draft', () => {
     const d = database()
-    const draft = setWorkflowLocal('draft-listing', definition('Draft listing'), 'create', 'writer', d)
+    const draft = setWorkflowLocal(
+      'draft-listing',
+      definition('Draft listing'),
+      'create',
+      'writer',
+      d,
+    )
     retireWorkflowLocal('draft-listing', draft.n, 'withdraw', 'architect', d)
 
     expect(listWorkflows(d).find(({ slug }) => slug === 'draft-listing')).toMatchObject({

@@ -15,6 +15,7 @@ import {
   recordLensWriteResponseSchema,
   recordProjectLensSelectionResponseSchema,
 } from './record-lens-contract.ts'
+
 type Request = <T>(
   path: string,
   init?: RequestInit & { schema?: (body: unknown) => T; destinationSpaceId?: string },

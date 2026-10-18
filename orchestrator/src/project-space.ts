@@ -18,13 +18,6 @@ function write(local: Database, value: string): void {
     .run(PROJECT_SPACES, value)
 }
 
-export function rememberProjectSpaces(
-  local: Database,
-  spaces: ReadonlyMap<string, string | null>,
-): void {
-  write(local, JSON.stringify(Object.fromEntries(spaces)))
-}
-
 export function rememberProjectSpace(
   local: Database,
   project: string,
