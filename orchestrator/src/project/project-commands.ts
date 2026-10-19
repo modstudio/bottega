@@ -6,8 +6,13 @@
 import { existsSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { tryWriteContention, writeTransaction } from '../database/db.ts'
+import { db, tryWriteContention, writeTransaction } from '../database/db.ts'
 import { listLenses, selectProjectProfile } from '../lens/lenses.ts'
+import { rememberProjectSpace } from '../project-space.ts'
+import {
+  pullRecordCataloguesForSpace,
+  RecordCataloguePullError,
+} from '../record/record-cache-catalogues.ts'
 import { lifecycleForm } from '../worktree/worktree-lifecycle.ts'
 import { migrateCreate } from '../worktree/worktree-template.ts'
 import { projectAddDecision } from './project-add-record.ts'
@@ -41,8 +46,8 @@ type ProjectFlags = {
 }
 type ProjectPresentation = { log(...values: unknown[]): void; cwd(): string }
 
-const enabledLensIds = (): string[] =>
-  listLenses()
+const enabledLensIds = (spaceId: string | null = null): string[] =>
+  listLenses(db(), spaceId)
     .filter((lens) => lens.enabled)
     .map((lens) => lens.id)
 
@@ -139,6 +144,22 @@ export type AddProjectInput = {
   selectedSpace?: string
 }
 
+async function pullProjectAddCatalogues(
+  input: AddProjectInput,
+  targetSpace: { id: string; label: string },
+): Promise<void> {
+  try {
+    await pullRecordCataloguesForSpace(db(), targetSpace.id)
+  } catch (error) {
+    if (!(error instanceof RecordCataloguePullError)) throw error
+    const retry = `${PLATFORM_SLUG} project add ${JSON.stringify(input.path)} --name ${JSON.stringify(input.name)}${input.selectedSpace ? ` --space ${JSON.stringify(input.selectedSpace)}` : ''}`
+    throw new Error(
+      `failed to pull ${error.stream} catalogue for record space ${targetSpace.label}: ${error.message}\ncleared by: restore access to that hosted stream, then retry \`${retry}\``,
+      { cause: error },
+    )
+  }
+}
+
 export async function addProject(
   input: AddProjectInput,
   requireMembership: (space: string) => Promise<unknown>,
@@ -148,18 +169,19 @@ export async function addProject(
     validateKeyPrefixes: Object.hasOwn(input.settings, 'keyPrefixes'),
     currentProjectName: input.name,
     register: projects(),
-    enabledLensIds: enabledLensIds(),
   })
   if (malformed.length) throw new Error(malformed.join('\n'))
   await validateDeclaredSpace(input.settings, requireMembership)
-  const decision = await projectAddDecision({
+  const resolved = await projectAddDecision({
     name: input.name,
     requestedStack: input.stack,
     stackWasRequested: input.stackWasRequested === true,
     requestedSettings: input.settings,
     selectedSpace: input.selectedSpace,
   })
+  const { decision, targetSpace } = resolved
   if (decision.kind === 'refuse') throw new Error(decision.reason)
+  if (targetSpace) await pullProjectAddCatalogues(input, targetSpace)
   const candidate = {
     recordId: decision.kind === 'adopt' ? decision.recordId : newRecordId(),
     name: input.name,
@@ -173,7 +195,7 @@ export async function addProject(
     validateKeyPrefixes: Object.hasOwn(candidate.settings, 'keyPrefixes'),
     currentProjectName: input.name,
     register: projects(),
-    enabledLensIds: enabledLensIds(),
+    enabledLensIds: enabledLensIds(targetSpace?.id ?? null),
   })
   if (adoptedMalformed.length) throw new Error(adoptedMalformed.join('\n'))
   const incomplete = incompleteWorktreeProblems(candidate)
@@ -183,6 +205,7 @@ export async function addProject(
   const recordId =
     decision.kind === 'adopt' ? decision.recordId : await writeHostedProject(candidate)
   upsertProject({ ...candidate, recordId })
+  if (targetSpace) rememberProjectSpace(db(), input.name, targetSpace.id)
   const project = projectByName(input.name)
   if (!project) throw new Error(`project ${input.name} was not registered`)
   return {
