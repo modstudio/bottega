@@ -308,6 +308,10 @@ postgres('hosted catalogue bulk imports', () => {
     const verify = new SQL(setupUrl!)
     try {
       expect([
+        ...(await verify`SELECT generation FROM step_catalogue WHERE space_id=${spaceId}::uuid AND slug='shared'`),
+        ...(await verify`SELECT generation FROM workflow WHERE space_id=${spaceId}::uuid AND slug='fix-defect'`),
+      ]).toEqual([{ generation: 2 }, { generation: 2 }])
+      expect([
         ...(await verify`SELECT n,status,author FROM step_catalogue_version WHERE space_id=${spaceId}::uuid ORDER BY n`),
       ]).toEqual([
         { n: 1, status: 'draft', author: 'machine' },
