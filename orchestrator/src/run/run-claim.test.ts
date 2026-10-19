@@ -15,14 +15,14 @@ test("a later findings turn inherits its root's implicit review branch", async (
     .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
     .get(reserved)!.record_id
   expect(reservedRecordId[14]).toBe('7')
-  const carriedQuestionId = (
+  const carriedQuestionRecordId = (
     db()
-      .query<{ id: number }, [string, string]>(
-        `INSERT INTO question (record_id,run_record_id,asked_at,question)
-         VALUES (?,?,'2026-10-14','Which?') RETURNING id`,
+      .query<{ record_id: string }, [string, string]>(
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question)
+         VALUES (1,?,?,'2026-10-14','Which?') RETURNING record_id`,
       )
-      .get(newRecordId(), root) as { id: number }
-  ).id
+      .get(newRecordId(), root) as { record_id: string }
+  ).record_id
   db().query('UPDATE run SET branch=? WHERE record_id=?').run('DEV-1147-reviewed', root)
   const runsDir = mkdtempSync(join(tmpdir(), 'later-findings-claim-'))
   const repository = join(runsDir, 'repository')
@@ -92,7 +92,7 @@ test("a later findings turn inherits its root's implicit review branch", async (
       usingMcp: false,
       startedByUserId: null,
       replySchemaName: 'WORKER_SCHEMA',
-      carriedQuestionIds: [carriedQuestionId],
+      carriedQuestionIds: [carriedQuestionRecordId],
     })
 
     expect(claimed.claim.id).toBe(reserved)

@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   applyMigrations,
+  applyMigrationsBefore,
   canonicalSchemaHash,
-  expectedSchemaHash,
   MIGRATIONS_FOLDER,
   migrationJournal,
 } from './migrations.ts'
@@ -179,7 +179,9 @@ test('score gate claim and audit identity migration fills ids, keeps rows and ke
         (database.query(`SELECT count(*) AS n FROM ${table}`).get() as { n: number }).n,
       ]),
     )
-    expect(applyMigrations(database)).toContain('0107_score_gate_claim_audit_record_identity')
+    expect(applyMigrationsBefore(database, '0125_question_uuid_key')).toContain(
+      '0107_score_gate_claim_audit_record_identity',
+    )
     for (const table of TABLES) {
       expect(database.query(`SELECT count(*) AS n FROM ${table}`).get()).toEqual({
         n: before[table],
@@ -240,7 +242,7 @@ test('score gate claim and audit identity migration fills ids, keeps rows and ke
     expect(database.query('PRAGMA foreign_key_check').all()).toEqual([])
     const fresh = new Database(':memory:')
     fresh.exec('PRAGMA foreign_keys=ON')
-    applyMigrations(fresh)
+    applyMigrationsBefore(fresh, '0125_question_uuid_key')
     const schemaRows = (subject: Database) =>
       subject
         .query(
@@ -251,7 +253,6 @@ test('score gate claim and audit identity migration fills ids, keeps rows and ke
     expect(schemaRows(database)).toEqual(schemaRows(fresh))
     expect(canonicalSchemaHash(database)).toBe(canonicalSchemaHash(fresh))
     fresh.close()
-    expect(canonicalSchemaHash(database)).toBe(expectedSchemaHash())
   } finally {
     database.close()
     rmSync(folder, { recursive: true, force: true })

@@ -59,7 +59,7 @@ const migratedThrough = (lastIndex: number, path = ':memory:') => {
   )
   const database = new Database(path)
   database.exec('PRAGMA foreign_keys = ON')
-  applyMigrations(database, folder)
+  applyMigrations(database, folder, HUB_MIGRATION_BACKFILL_VALUES)
   rmSync(folder, { recursive: true, force: true })
   return database
 }
@@ -519,15 +519,21 @@ describe('hub migration journal', () => {
     d.query(`INSERT INTO setting(key,value) VALUES ('collect.runs.at',?)`).run(
       JSON.stringify(currentWatermark),
     )
-    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual(
-      tagsFrom('0010_question_delivery'),
-    )
+    expect(
+      applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES, [
+        { number: 7001, record_id: '00000000-0000-4000-8000-000000007001' },
+      ]),
+    ).toEqual(tagsFrom('0010_question_delivery'))
     const rewound = JSON.parse(
       d.query<{ value: string }, []>("SELECT value FROM setting WHERE key='collect.runs.at'").get()!
         .value,
     ) as string
     expect(rewound < askedAt).toBe(true)
-    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual([])
+    expect(
+      applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES, [
+        { number: 7001, record_id: '00000000-0000-4000-8000-000000007001' },
+      ]),
+    ).toEqual([])
     expect(
       JSON.parse(
         d
@@ -609,11 +615,15 @@ describe('hub migration journal', () => {
     expect(collected.exitCode, collected.stderr.toString()).toBe(0)
 
     const upgraded = new Database(path)
+    expect(upgraded.query('SELECT answerer_kind FROM question WHERE number=7001').get()).toEqual({
+      answerer_kind: 'operator',
+    })
     expect(
-      upgraded.query('SELECT answerer_kind FROM question WHERE question_id=7001').get(),
-    ).toEqual({ answerer_kind: 'operator' })
-    expect(
-      upgraded.query('SELECT mode,outcome FROM question_delivery WHERE question_id=7001').all(),
+      upgraded
+        .query(
+          "SELECT mode,outcome FROM question_delivery WHERE question_record_id='00000000-0000-4000-8000-000000007001'",
+        )
+        .all(),
     ).toEqual([{ mode: 'resume', outcome: 'delivered' }])
     upgraded.close()
     rmSync(dir, { recursive: true, force: true })
@@ -638,12 +648,15 @@ describe('hub migration journal', () => {
        VALUES (40,'orch:40','resume','delivered','2026-09-21',NULL)`,
     ).run()
 
-    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual(
-      tagsFrom('0013_workflow_questions'),
-    )
+    const questionRecordId = '00000000-0000-4000-8000-000000000040'
+    expect(
+      applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES, [
+        { number: 40, record_id: questionRecordId },
+      ]),
+    ).toEqual(tagsFrom('0013_workflow_questions'))
     expect(d.query('SELECT * FROM question_delivery').all()).toEqual([
       {
-        question_id: 40,
+        question_record_id: questionRecordId,
         run_ref: 'orch:40',
         mode: 'resume',
         outcome: 'delivered',
@@ -652,13 +665,10 @@ describe('hub migration journal', () => {
       },
     ])
     expect(d.query('PRAGMA foreign_key_check').all()).toEqual([])
-    const next = d
-      .query(
-        `INSERT INTO question (run_ref,root_ref,asked_at,asked_via)
-         VALUES ('orch:next','orch:next','2026-09-22','reply') RETURNING question_id`,
-      )
-      .get() as { question_id: number }
-    expect(next.question_id).toBeGreaterThan(90)
+    expect(d.query('SELECT record_id,number FROM question').get()).toEqual({
+      record_id: questionRecordId,
+      number: 40,
+    })
     d.close()
   })
 

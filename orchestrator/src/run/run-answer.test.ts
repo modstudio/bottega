@@ -12,7 +12,6 @@ import { db } from '../database/db.ts'
 import { gitContext } from '../git/git-environment.ts'
 import { upsertProject } from '../project/projects.ts'
 import { answerRun as answerRunService, retryRun } from './run-answer.ts'
-import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
 import type { detach } from './run-dispatch.ts'
 import { answerInputFromArgv } from './run-message-commands.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
@@ -52,35 +51,6 @@ const answerRun = async (
 const retry = (id: string, options: { agent?: string; model?: string } = {}) =>
   retryRun(id, { ...options, flags }, helpers)
 
-describe('answer run liveness', () => {
-  test('a continuation child asking under an ok root proceeds', () => {
-    expect(
-      answerRunLivenessRefusal({ status: 'ok', voided: false }, [{ owner_status: 'asking' }]),
-    ).toBeNull()
-  })
-
-  test('a voided root refuses', () => {
-    expect(
-      answerRunLivenessRefusal({ status: 'asking', voided: true }, [{ owner_status: 'asking' }]),
-    ).toBe('voided')
-  })
-
-  test('all terminal owners refuse with an owner status', () => {
-    expect(
-      answerRunLivenessRefusal({ status: 'running', voided: false }, [
-        { owner_status: 'failed' },
-        { owner_status: 'stopped' },
-      ]),
-    ).toBe('failed')
-  })
-
-  test('a root that is itself asking proceeds', () => {
-    expect(
-      answerRunLivenessRefusal({ status: 'asking', voided: false }, [{ owner_status: 'asking' }]),
-    ).toBeNull()
-  })
-})
-
 function insert(status: string, job = 'file-question', recordId = newRecordId()): string {
   return (
     db()
@@ -93,11 +63,11 @@ function insert(status: string, job = 'file-question', recordId = newRecordId())
 }
 
 function newQuestionSql(): string {
-  return `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`
+  return `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`
 }
 
 function returningQuestionSql(): string {
-  return `${newQuestionSql()} RETURNING id`
+  return `${newQuestionSql()} RETURNING number`
 }
 
 const priorEnv: Record<string, string | undefined> = {}
@@ -129,7 +99,7 @@ describe('run answers', () => {
       .run('orch-test-session', 'valid-session', prompt, dir, id)
     db()
       .query(
-        `INSERT INTO question (record_id,run_record_id,asked_at,question,awaiting_operator_at) VALUES ('${newRecordId()}',?,?,?,?)`,
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question,awaiting_operator_at) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?)`,
       )
       .run(id, new Date().toISOString(), 'which shape?', new Date().toISOString())
     await answerRun(
@@ -154,7 +124,7 @@ describe('run answers', () => {
     expect(
       db()
         .query(
-          'SELECT run_record_id,mode,outcome,error FROM question_delivery WHERE question_id=(SELECT id FROM question WHERE run_record_id=?)',
+          'SELECT run_record_id,mode,outcome,error FROM question_delivery WHERE question_record_id=(SELECT record_id FROM question WHERE run_record_id=?)',
         )
         .get(id),
     ).toEqual({ run_record_id: null, mode: 'record-only', outcome: 'delivered', error: null })
@@ -188,7 +158,7 @@ describe('run answers', () => {
     expect(
       db()
         .query(
-          'SELECT run_record_id,mode,outcome,error FROM question_delivery WHERE question_id=(SELECT id FROM question WHERE run_record_id=?)',
+          'SELECT run_record_id,mode,outcome,error FROM question_delivery WHERE question_record_id=(SELECT record_id FROM question WHERE run_record_id=?)',
         )
         .get(id),
     ).toEqual({ run_record_id: childId, mode: 'resume', outcome: 'delivered', error: null })
@@ -237,7 +207,7 @@ describe('run answers', () => {
     expect(
       db()
         .query(
-          'SELECT run_record_id,mode,outcome,error FROM question_delivery WHERE question_id=(SELECT id FROM question WHERE run_record_id=?)',
+          'SELECT run_record_id,mode,outcome,error FROM question_delivery WHERE question_record_id=(SELECT record_id FROM question WHERE run_record_id=?)',
         )
         .get(id),
     ).toEqual({
@@ -291,13 +261,13 @@ describe('run answers', () => {
     for (let i = 1; i <= 6; i++)
       db().query(newQuestionSql()).run(id, new Date().toISOString(), `q${i}?`)
     const questions = db()
-      .query('SELECT id, question FROM question WHERE run_record_id=? ORDER BY id')
-      .all(id) as { id: number; question: string }[]
+      .query('SELECT number, question FROM question WHERE run_record_id=? ORDER BY number')
+      .all(id) as { number: number; question: string }[]
     const argv: string[] = []
     for (const question of questions) {
-      const path = trackResidue(join(dir, `answer-large-${question.id}.txt`))
+      const path = trackResidue(join(dir, `answer-large-${question.number}.txt`))
       writeFileSync(path, body)
-      argv.push(`--q${question.id}`, '--file', path)
+      argv.push(`--q${question.number}`, '--file', path)
     }
     const assembled = Buffer.byteLength(
       packedResumePrompt(
@@ -333,7 +303,7 @@ describe('run answers', () => {
     })
     db().query('UPDATE run SET pid=? WHERE record_id=?').run(process.pid, child)
     const addQuestion = db().query(
-      `INSERT INTO question (record_id,run_record_id, asked_at, question) VALUES (?,?,?,?)`,
+      `INSERT INTO question (number,record_id,run_record_id, asked_at, question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),?,?,?,?)`,
     )
     addQuestion.run(newRecordId(), root, new Date().toISOString(), 'root question?')
     addQuestion.run(newRecordId(), child, new Date().toISOString(), 'child question?')
@@ -395,7 +365,7 @@ test('answer says an existing ruling stuck and reports the current status', asyn
   const id = insert('failed', 'implement')
   db()
     .query(
-      `INSERT INTO question (record_id,run_record_id,question,answer,asked_at,answered_at) VALUES ('${newRecordId()}',?,?,?,?,?)`,
+      `INSERT INTO question (number,record_id,run_record_id,question,answer,asked_at,answered_at) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?,?)`,
     )
     .run(id, 'which way?', 'the ruled way', new Date().toISOString(), new Date().toISOString())
   await expect(
@@ -462,12 +432,14 @@ test('answer --q<id> --file reads the file and never stores the flag name', asyn
     .query('UPDATE run SET session_id=?,vendor_session=? WHERE record_id=?')
     .run('orch-test-session', 'vendor', id)
   const q = (
-    db().query(returningQuestionSql()).get(id, new Date().toISOString(), 'which?') as { id: number }
-  ).id
+    db().query(returningQuestionSql()).get(id, new Date().toISOString(), 'which?') as {
+      number: number
+    }
+  ).number
   const path = trackResidue(join(dir, `q-${q}.txt`))
   writeFileSync(path, 'file ruling')
   await answerRun(id, { argv: [`--q${q}`, '--file', path], recordOnly: true, flags }, helpers)
-  expect(db().query('SELECT answer FROM question WHERE id=?').get(q)).toEqual({
+  expect(db().query('SELECT answer FROM question WHERE number=?').get(q)).toEqual({
     answer: 'file ruling',
   })
 })
@@ -507,10 +479,18 @@ test('multi-question answer mixes positional --q text with per-question --file',
     .query('UPDATE run SET session_id=?,vendor_session=? WHERE record_id=?')
     .run('orch-test-session', 'vendor', id)
   const add = db().query(
-    `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES (?,?,?,?) RETURNING id`,
+    `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),?,?,?,?) RETURNING number`,
   )
-  const first = (add.get(newRecordId(), id, new Date().toISOString(), 'one?') as { id: number }).id
-  const second = (add.get(newRecordId(), id, new Date().toISOString(), 'two?') as { id: number }).id
+  const first = (
+    add.get(newRecordId(), id, new Date().toISOString(), 'one?') as {
+      number: number
+    }
+  ).number
+  const second = (
+    add.get(newRecordId(), id, new Date().toISOString(), 'two?') as {
+      number: number
+    }
+  ).number
   const path = trackResidue(join(dir, `multi-${id}.txt`))
   writeFileSync(path, 'second ruling')
   await answerRun(
@@ -523,7 +503,7 @@ test('multi-question answer mixes positional --q text with per-question --file',
     helpers,
   )
   expect(
-    db().query('SELECT answer FROM question WHERE run_record_id=? ORDER BY id').all(id),
+    db().query('SELECT answer FROM question WHERE run_record_id=? ORDER BY number').all(id),
   ).toEqual([{ answer: 'first ruling' }, { answer: 'second ruling' }])
 })
 
@@ -533,14 +513,14 @@ test('a UUID selector answers only the named question', async () => {
     .query('UPDATE run SET session_id=?,vendor_session=? WHERE record_id=?')
     .run('orch-test-session', 'vendor', id)
   const add = db().query(
-    `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES (?,?,?,?) RETURNING id,record_id`,
+    `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),?,?,?,?) RETURNING number,record_id`,
   )
   const first = add.get(newRecordId(), id, new Date().toISOString(), 'one?') as {
-    id: number
+    number: number
     record_id: string
   }
   const second = add.get(newRecordId(), id, new Date().toISOString(), 'two?') as {
-    id: number
+    number: number
     record_id: string
   }
   await answerRun(
@@ -549,10 +529,10 @@ test('a UUID selector answers only the named question', async () => {
     helpers,
   )
   expect(
-    db().query('SELECT id,answer FROM question WHERE run_record_id=? ORDER BY id').all(id),
+    db().query('SELECT number,answer FROM question WHERE run_record_id=? ORDER BY number').all(id),
   ).toEqual([
-    { id: first.id, answer: null },
-    { id: second.id, answer: 'second only' },
+    { number: first.number, answer: null },
+    { number: second.number, answer: 'second only' },
   ])
 })
 
@@ -612,13 +592,15 @@ test('a --q naming a question that is not open on this chain refuses the whole c
     .query('UPDATE run SET session_id=?,vendor_session=? WHERE record_id IN (?,?)')
     .run('orch-test-session', 'vendor', id, other)
   const own = (
-    db().query(returningQuestionSql()).get(id, new Date().toISOString(), 'own?') as { id: number }
-  ).id
+    db().query(returningQuestionSql()).get(id, new Date().toISOString(), 'own?') as {
+      number: number
+    }
+  ).number
   const foreign = (
     db().query(returningQuestionSql()).get(other, new Date().toISOString(), 'foreign?') as {
-      id: number
+      number: number
     }
-  ).id
+  ).number
   await expect(
     answerRun(
       id,
@@ -626,7 +608,9 @@ test('a --q naming a question that is not open on this chain refuses the whole c
       helpers,
     ),
   ).rejects.toThrow('belongs to run')
-  expect(db().query('SELECT answer FROM question WHERE id=?').get(own)).toEqual({ answer: null })
+  expect(db().query('SELECT answer FROM question WHERE number=?').get(own)).toEqual({
+    answer: null,
+  })
 })
 
 test('a closed or duplicate --q refuses the whole command', async () => {
@@ -635,8 +619,10 @@ test('a closed or duplicate --q refuses the whole command', async () => {
     .query('UPDATE run SET session_id=?,vendor_session=? WHERE record_id=?')
     .run('orch-test-session', 'vendor', id)
   const q = (
-    db().query(returningQuestionSql()).get(id, new Date().toISOString(), 'own?') as { id: number }
-  ).id
+    db().query(returningQuestionSql()).get(id, new Date().toISOString(), 'own?') as {
+      number: number
+    }
+  ).number
   await expect(
     answerRun(
       id,
@@ -644,7 +630,7 @@ test('a closed or duplicate --q refuses the whole command', async () => {
       helpers,
     ),
   ).rejects.toThrow('more than once')
-  expect(db().query('SELECT answer FROM question WHERE id=?').get(q)).toEqual({ answer: null })
+  expect(db().query('SELECT answer FROM question WHERE number=?').get(q)).toEqual({ answer: null })
 })
 
 test('answer --file refuses invalid UTF-8 at the byte offset', async () => {
@@ -713,9 +699,13 @@ test('a partial numeric multi-question ruling names the single-command rule', as
     .query('UPDATE run SET session_id=?,vendor_session=? WHERE record_id=?')
     .run('orch-test-session', 'vendor', id)
   const add = db().query(
-    `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES (?,?,?,?) RETURNING id`,
+    `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),?,?,?,?) RETURNING number`,
   )
-  const first = (add.get(newRecordId(), id, new Date().toISOString(), 'one?') as { id: number }).id
+  const first = (
+    add.get(newRecordId(), id, new Date().toISOString(), 'one?') as {
+      number: number
+    }
+  ).number
   add.get(newRecordId(), id, new Date().toISOString(), 'two?')
   await expect(
     answerRun(id, { argv: [`--q${first}`, 'yes'], recordOnly: true, flags }, helpers),
@@ -780,21 +770,21 @@ test('UI operator answers require the hub dashboard capability', async () => {
   const id = insert('asking', 'implement')
   const question = db()
     .query(returningQuestionSql())
-    .get(id, new Date().toISOString(), 'which?') as { id: number }
+    .get(id, new Date().toISOString(), 'which?') as { number: number }
   delete process.env.CLAUDE_CODE_SESSION_ID
   delete process.env.ORCH_DEPTH
   await expect(
     answerRun(
       id,
       {
-        argv: [`--q${question.id}`, 'use it', '--from-operator', '--channel', 'ui'],
+        argv: [`--q${question.number}`, 'use it', '--from-operator', '--channel', 'ui'],
         recordOnly: false,
         flags,
       },
       { ...helpers, dashboardAuthorized: () => false },
     ),
   ).rejects.toThrow('--channel ui requires the hub dashboard capability')
-  expect(db().query('SELECT answer FROM question WHERE id=?').get(question.id)).toEqual({
+  expect(db().query('SELECT answer FROM question WHERE number=?').get(question.number)).toEqual({
     answer: null,
   })
 })
@@ -806,7 +796,7 @@ test('UI operator answers a foreign-owned chain without adopting it and resumes 
     .run('dispatching-session', 'vendor', id)
   const question = db()
     .query(returningQuestionSql())
-    .get(id, new Date().toISOString(), 'which?') as { id: number }
+    .get(id, new Date().toISOString(), 'which?') as { number: number }
   delete process.env.CLAUDE_CODE_SESSION_ID
   delete process.env.ORCH_DEPTH
   let resumedSession: string | null | undefined
@@ -824,7 +814,13 @@ test('UI operator answers a foreign-owned chain without adopting it and resumes 
   const result = await answerRun(
     id,
     {
-      argv: [`--q${question.id}`, 'use the existing shape', '--from-operator', '--channel', 'ui'],
+      argv: [
+        `--q${question.number}`,
+        'use the existing shape',
+        '--from-operator',
+        '--channel',
+        'ui',
+      ],
       recordOnly: false,
       json: true,
       flags,
@@ -846,8 +842,8 @@ test('UI operator answers a foreign-owned chain without adopting it and resumes 
   })
   expect(
     db()
-      .query('SELECT answered_by,answerer_kind,answer_channel FROM question WHERE id=?')
-      .get(question.id),
+      .query('SELECT answered_by,answerer_kind,answer_channel FROM question WHERE number=?')
+      .get(question.number),
   ).toEqual({ answered_by: 'operator via hub', answerer_kind: 'operator', answer_channel: 'ui' })
   expect(
     db()
@@ -990,8 +986,8 @@ describe('retry command', () => {
       db()
         .query(
           `INSERT INTO question
-             (record_id,run_record_id, asked_at, question, answer, answered_at, delivery_pending_at)
-           VALUES ('${newRecordId()}',?,?,?,?,?,?) RETURNING id`,
+             (number,record_id,run_record_id, asked_at, question, answer, answered_at, delivery_pending_at)
+           VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?,?,?) RETURNING number`,
         )
         .get(
           id,
@@ -1000,8 +996,8 @@ describe('retry command', () => {
           'use the existing shape',
           new Date().toISOString(),
           new Date().toISOString(),
-        ) as { id: number }
-    ).id
+        ) as { number: number }
+    ).number
     const dispatch: typeof detach = async () => {
       throw new Error('fixture retry dispatch failed')
     }
@@ -1011,7 +1007,9 @@ describe('retry command', () => {
     )
     expect(
       db()
-        .query('SELECT run_record_id,mode,outcome,error FROM question_delivery WHERE question_id=?')
+        .query(
+          'SELECT run_record_id,mode,outcome,error FROM question_delivery WHERE question_record_id=(SELECT record_id FROM question WHERE number=?)',
+        )
         .get(questionId),
     ).toEqual({
       run_record_id: null,

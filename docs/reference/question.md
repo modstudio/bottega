@@ -7,6 +7,7 @@ open worker questions and rulings
 - [bottega question](#bottega-question)
 - [bottega question answer](#bottega-question-answer)
 - [bottega question close](#bottega-question-close)
+- [bottega question identity-map](#bottega-question-identity-map)
 - [bottega question inbox](#bottega-question-inbox)
 - [bottega question ruling](#bottega-question-ruling)
 - [bottega question ruling file](#bottega-question-ruling-file)
@@ -25,6 +26,7 @@ open worker questions and rulings
 
 - [bottega question answer](./question.md#bottega-question-answer)
 - [bottega question close](./question.md#bottega-question-close)
+- [bottega question identity-map](./question.md#bottega-question-identity-map)
 - [bottega question inbox](./question.md#bottega-question-inbox)
 - [bottega question ruling](./question.md#bottega-question-ruling)
 - [bottega question stats](./question.md#bottega-question-stats)
@@ -52,6 +54,16 @@ close a question without recording a ruling
 ### Options
 
 - `--reason <text>`: record why the question is closed
+
+### Related
+
+- [bottega question](./question.md#bottega-question)
+
+## bottega question identity-map
+
+**Synopsis:** `bottega question identity-map`
+
+print numeric question identities and their durable record ids as JSON
 
 ### Related
 

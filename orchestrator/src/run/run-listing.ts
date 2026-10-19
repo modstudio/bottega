@@ -24,18 +24,18 @@ export function runIdentityMap(): RunIdentity[] {
   return db().query<RunIdentity, []>('SELECT number, record_id FROM run ORDER BY number').all()
 }
 
-function questionDeliveries(questionId: number) {
+function questionDeliveries(questionRecordId: string) {
   return db()
     .query(
-      `SELECT delivery.id, delivery.question_id, question.record_id AS question_record_id,
+      `SELECT delivery.id,question.number question_id,delivery.question_record_id,
               delivery_run.number AS run_number, delivery.run_record_id,
               delivery.mode, delivery.outcome, delivery.at, delivery.error
          FROM question_delivery delivery
-         JOIN question ON question.id=delivery.question_id
+         JOIN question ON question.record_id=delivery.question_record_id
          LEFT JOIN run delivery_run ON delivery_run.record_id=delivery.run_record_id
-        WHERE delivery.question_id=? ORDER BY delivery.id`,
+        WHERE delivery.question_record_id=? ORDER BY delivery.id`,
     )
-    .all(questionId) as {
+    .all(questionRecordId) as {
     id: number
     question_id: number
     question_record_id: string
@@ -296,16 +296,16 @@ export async function runListingCommand(
       ? (
           db()
             .query(
-              `SELECT q.id, q.record_id, q.run_record_id, owner.number AS run_number,
+              `SELECT q.number,q.record_id,q.run_record_id,owner.number AS run_number,
                       q.asked_at, q.answered_at, q.asked_via,
                       q.answerer_kind, q.answer_channel, q.overturned_at,
                       q.closed_at, q.close_reason
          FROM question q JOIN run owner ON owner.record_id = q.run_record_id
         WHERE owner.record_id = ? OR owner.parent_run_record_id = ?
-        ORDER BY q.id`,
+        ORDER BY q.number`,
             )
             .all(String(r.record_id), String(r.record_id)) as {
-            id: number
+            number: number
             record_id: string
             run_record_id: string
             run_number: number
@@ -319,7 +319,7 @@ export async function runListingCommand(
             close_reason: string | null
           }[]
         ).map((q) => ({
-          id: q.id,
+          id: q.number,
           record_id: q.record_id,
           run_record_id: q.run_record_id,
           run_number: q.run_number,
@@ -331,7 +331,7 @@ export async function runListingCommand(
           overturned_at: q.overturned_at ?? null,
           closed_at: q.closed_at ?? null,
           close_reason: q.close_reason ?? null,
-          deliveries: questionDeliveries(q.id),
+          deliveries: questionDeliveries(q.record_id),
         }))
       : undefined
     return [

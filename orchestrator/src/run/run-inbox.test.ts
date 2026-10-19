@@ -66,9 +66,9 @@ test('scoped inbox JSON identifies an unregistered cwd', async () => {
 const question = (run: string, text: string) =>
   db()
     .query(
-      `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?) RETURNING id`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?) RETURNING number`,
     )
-    .get(run, new Date().toISOString(), text) as { id: number }
+    .get(run, new Date().toISOString(), text) as { number: number }
 
 const runNumber = (recordId: string): number =>
   (db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as { number: number })
@@ -97,8 +97,8 @@ test('inbox does not list a closed question', async () => {
   const run = addRun({ agent: 'codex', job: 'implement', status: 'stopped' })
   const inserted = question(run, 'obsolete question')
   db()
-    .query("UPDATE question SET closed_at='2026-09-29',close_reason='chain-stopped' WHERE id=?")
-    .run(inserted.id)
+    .query("UPDATE question SET closed_at='2026-09-29',close_reason='chain-stopped' WHERE number=?")
+    .run(inserted.number)
   expect(await inbox({ all: true })).not.toContain('obsolete question')
   expect(JSON.parse(await inbox({ all: true, json: true }))).toEqual([])
 })
@@ -108,8 +108,8 @@ test('inbox shows an overturned ruling and its reason', async () => {
   db()
     .query(
       `INSERT INTO question
-        (record_id,run_record_id,asked_at,question,answer,answered_at,overturned_at,overturned_by,overturn_reason)
-       VALUES ('${newRecordId()}',?,'2026-09-20','Which?','Old','2026-09-21','2026-09-22','owner','Wrong evidence')`,
+        (number,record_id,run_record_id,asked_at,question,answer,answered_at,overturned_at,overturned_by,overturn_reason)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'2026-09-20','Which?','Old','2026-09-21','2026-09-22','owner','Wrong evidence')`,
     )
     .run(run)
   const output = await inbox({ all: true })
@@ -120,8 +120,8 @@ test('inbox shows a filed ruling ref', async () => {
   db()
     .query(
       `INSERT INTO question
-        (record_id,run_record_id,asked_at,question,answer,answered_at,filed_as,filed_ref,filed_at)
-       VALUES ('${newRecordId()}',?,'2026-09-20','Which?','Keep it.','2026-09-21','doc','12@rev-1','2026-09-22')`,
+        (number,record_id,run_record_id,asked_at,question,answer,answered_at,filed_as,filed_ref,filed_at)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'2026-09-20','Which?','Keep it.','2026-09-21','doc','12@rev-1','2026-09-22')`,
     )
     .run(run)
   const output = await inbox({ all: true })
@@ -135,8 +135,8 @@ test('inbox shows a canon filing label and UUID', async () => {
   db()
     .query(
       `INSERT INTO question
-        (record_id,run_record_id,asked_at,question,answer,answered_at,filed_as,filed_record_id,filed_label,filed_at)
-       VALUES ('${newRecordId()}',?,'2026-09-20','Which?','Keep it.','2026-09-21','canon-proposal',
+        (number,record_id,run_record_id,asked_at,question,answer,answered_at,filed_as,filed_record_id,filed_label,filed_at)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'2026-09-20','Which?','Keep it.','2026-09-21','canon-proposal',
                '11111111-1111-4111-8111-111111111111','${PLATFORM_SLUG}#44','2026-09-22')`,
     )
     .run(run)
@@ -202,10 +202,10 @@ test('inbox lists workflow questions with their identity and answer command', as
     )
     .run()
   const inserted = db()
-    .query<{ id: number }, []>(
+    .query<{ number: number }, []>(
       `INSERT INTO question
-      (record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,workflow_step_ordinal,workflow_step_slug)
-     VALUES ('${newRecordId()}',1,'DEV-1069','2026-10-01','Which fix?','workflow',3,'fix') RETURNING id`,
+      (number,record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,workflow_step_ordinal,workflow_step_slug)
+     VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',1,'DEV-1069','2026-10-01','Which fix?','workflow',3,'fix') RETURNING number`,
     )
     .get()!
 
@@ -218,7 +218,7 @@ test('inbox lists workflow questions with their identity and answer command', as
   expect(JSON.parse(await inbox({ all: true, json: true }))).toContainEqual(
     expect.objectContaining({
       kind: 'workflow',
-      question_id: inserted.id,
+      question_id: inserted.number,
       workflow: 'fixture-workflow',
       project: 'fixture',
       mode: 'default',
@@ -244,8 +244,8 @@ test('inbox gives no answer command for a foreign-owned workflow question', asyn
   db()
     .query(
       `INSERT INTO question
-      (record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,workflow_step_ordinal,workflow_step_slug)
-     VALUES ('${newRecordId()}',1,'DEV-1069','2026-10-01','Which fix?','workflow',3,'fix')`,
+      (number,record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,workflow_step_ordinal,workflow_step_slug)
+     VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',1,'DEV-1069','2026-10-01','Which fix?','workflow',3,'fix')`,
     )
     .run()
 
@@ -327,7 +327,7 @@ test('inbox --all --active --json includes active foreign and omits terminal que
   question(active, 'active?')
   db()
     .query(
-      `INSERT INTO question (record_id,run_record_id,asked_at,question,answer,answered_at) VALUES ('${newRecordId()}',?,?,?,?,?)`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question,answer,answered_at) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?,?)`,
     )
     .run(active, new Date().toISOString(), 'already answered?', 'ruled', new Date().toISOString())
   question(terminal, 'terminal?')
@@ -420,7 +420,7 @@ test('inbox marks an answered-but-undelivered chain stranded', async () => {
   })
   db()
     .query(
-      `INSERT INTO question (record_id,run_record_id,asked_at,question,answer,answered_at,delivery_pending_at) VALUES ('${newRecordId()}',?,?,?,?,?,?)`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question,answer,answered_at,delivery_pending_at) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?,?,?)`,
     )
     .run(
       id,
@@ -441,7 +441,7 @@ test('close-out retires a stale chain pending delivery from the inbox', async ()
   })
   db()
     .query(
-      `INSERT INTO question (record_id,run_record_id,asked_at,question,answer,answered_at,delivery_pending_at) VALUES ('${newRecordId()}',?,?,?,?,?,?)`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question,answer,answered_at,delivery_pending_at) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?,?,?)`,
     )
     .run(
       id,
@@ -459,7 +459,7 @@ test('close-out retires a stale chain pending delivery from the inbox', async ()
   expect(
     db()
       .query(
-        'SELECT outcome,error FROM question_delivery WHERE question_id=(SELECT id FROM question WHERE run_record_id=?)',
+        'SELECT outcome,error FROM question_delivery WHERE question_record_id=(SELECT record_id FROM question WHERE run_record_id=?)',
       )
       .get(id),
   ).toEqual({ outcome: 'retired', error: 'chain-terminal' })

@@ -284,8 +284,8 @@ function gatherRuling(
       },
       [number]
     >(
-      `SELECT id,answered_at,answerer_kind,workflow_cursor_id,workflow_step_ordinal,workflow_step_slug
-         FROM question WHERE id=?`,
+      `SELECT number id,answered_at,answerer_kind,workflow_cursor_id,workflow_step_ordinal,workflow_step_slug
+         FROM question WHERE number=?`,
     )
     .get(id)
   if (!row) throw new Error(`--ruling ${id} does not exist`)
@@ -405,7 +405,7 @@ function loadAdoptionReasons(
   return d
     .query<{ reason: string | null }, [number, string]>(
       `SELECT a.reason
-         FROM question q JOIN question_mutation_audit a ON a.question_id=q.id
+         FROM question q JOIN question_mutation_audit a ON a.question_record_id=q.record_id
         WHERE q.workflow_cursor_id=? AND a.action='rule' AND a.actor_session=?`,
     )
     .all(cursorId, actorSession)

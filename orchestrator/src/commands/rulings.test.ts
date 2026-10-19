@@ -36,12 +36,12 @@ function answeredQuestion(project: string): number {
     db()
       .query(
         `INSERT INTO question
-          (record_id,run_record_id,asked_at,question,answer,answered_at,answered_by,answerer_kind,answer_channel)
-         VALUES ('${newRecordId()}',?,'2026-10-01','Which shape?','Keep it.','2026-10-01',?,'operator','cli')
-         RETURNING id`,
+          (number,record_id,run_record_id,asked_at,question,answer,answered_at,answered_by,answerer_kind,answer_channel)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'2026-10-01','Which shape?','Keep it.','2026-10-01',?,'operator','cli')
+         RETURNING number`,
       )
-      .get(runId, SESSION) as { id: number }
-  ).id
+      .get(runId, SESSION) as { number: number }
+  ).number
 }
 
 async function fileThroughCli(questionId: number): Promise<void> {
@@ -55,14 +55,14 @@ test('CLI ruling file --as doc allows an architect caller and refuses a worker c
   upsertProject({ recordId: newRecordId(), name: project, path: process.cwd() })
   const allowed = answeredQuestion(project)
   await fileThroughCli(allowed)
-  expect(db().query('SELECT filed_as FROM question WHERE id=?').get(allowed)).toEqual({
+  expect(db().query('SELECT filed_as FROM question WHERE number=?').get(allowed)).toEqual({
     filed_as: 'doc',
   })
 
   const refused = answeredQuestion(project)
   process.env.ORCH_RUN_ID = 'ruling-cli-worker'
   await expect(fileThroughCli(refused)).rejects.toThrow('a worker cannot file its ruling')
-  expect(db().query('SELECT filed_as FROM question WHERE id=?').get(refused)).toEqual({
+  expect(db().query('SELECT filed_as FROM question WHERE number=?').get(refused)).toEqual({
     filed_as: null,
   })
 })

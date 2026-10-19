@@ -341,7 +341,7 @@ test('run UUID-key migration changes only run identity in rebuilt schema objects
   const after = new Database(':memory:')
   try {
     applyMigrationsBefore(before, '0124_run_uuid_key')
-    applyMigrations(after)
+    applyMigrationsBefore(after, '0125_question_uuid_key')
     for (const table of REBUILT_TABLES) {
       expect(columns(after, table), `${table} columns`).toEqual(
         expectedColumns(table, columns(before, table)),
@@ -394,7 +394,7 @@ test('run UUID-key migration preserves every run relationship and display number
       ]),
     )
 
-    expect(applyMigrations(database)).toEqual(['0124_run_uuid_key'])
+    expect(applyMigrationsBefore(database, '0125_question_uuid_key')).toEqual(['0124_run_uuid_key'])
     expect(database.query('SELECT number FROM run ORDER BY number').all()).toEqual([
       { number: root },
       { number: turn },
@@ -439,7 +439,7 @@ test('run UUID-key migration reorders compared pairs by UUID without losing the 
       SELECT MIN(id),MAX(id),'2026-10-18','pair-record' FROM run WHERE record_id IN ('zzzz','aaaa');
     `)
 
-    expect(applyMigrations(database)).toEqual(['0124_run_uuid_key'])
+    expect(applyMigrationsBefore(database, '0125_question_uuid_key')).toEqual(['0124_run_uuid_key'])
     expect(database.query('SELECT * FROM compared_pair').all()).toEqual([
       {
         run_a_record_id: 'aaaa',
@@ -464,7 +464,9 @@ test('run UUID-key migration refuses an unmapped child with its count', () => {
          VALUES (?,'2026-10-18','store','orch','wait',999999)`,
       )
       .run(newRecordId())
-    expect(() => applyMigrations(database)).toThrow('contention.run_id=1')
+    expect(() => applyMigrationsBefore(database, '0125_question_uuid_key')).toThrow(
+      'contention.run_id=1',
+    )
   } finally {
     database.close()
   }
@@ -476,10 +478,12 @@ test('run number allocation starts after every previously issued number and neve
     applyMigrationsBefore(database, '0124_run_uuid_key')
     insertRun(database)
     database.query("UPDATE sqlite_sequence SET seq=50 WHERE name='run'").run()
-    expect(applyMigrations(database)).toEqual(['0124_run_uuid_key'])
-    expect(database.query('SELECT last_number FROM run_number_counter').get()).toEqual({
-      last_number: 50,
-    })
+    const applied = applyMigrations(database)
+    expect(applied[0]).toBe('0124_run_uuid_key')
+    expect(applied.slice(1)).toContain('0125_question_uuid_key')
+    expect(
+      database.query("SELECT last_number FROM entity_number_counter WHERE entity='run'").get(),
+    ).toEqual({ last_number: 50 })
 
     const reservedId = newRecordId()
     database

@@ -45,6 +45,11 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
   ),
   ...exempt(
     'orchestrator/src/database/migrations.ts',
+    ['0651cf428a37b47f', '4a0ead7d36fbbeb7'],
+    'question migration orphan preflight reads controlled legacy table/column names before the UUID-key rebuild',
+  ),
+  ...exempt(
+    'orchestrator/src/database/migrations.ts',
     ['4ec7c53222c8a758', 'a29c2123a01df1d0'],
     'migration runner executes SQL loaded from journal files',
   ),
@@ -201,6 +206,11 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
     'hub/src/migrations.ts',
     ['4ec7c53222c8a758', 'a29c2123a01df1d0'],
     'migration runner executes SQL loaded from journal files',
+  ),
+  ...exempt(
+    'hub/src/migrations.ts',
+    ['b2041b8ea9401e3a', '01327b044ca67dd7', 'e769288de6fcaf17'],
+    'question identity input is prepared against the legacy and migration-staging schemas',
   ),
   ...exempt(
     'hub/src/ingest/git-task-cache.ts',

@@ -127,14 +127,18 @@ export function runDetail(id: string, receipt = false) {
     .all(rootId)
   const questions = db()
     .query(
-      `SELECT q.id,q.record_id,owner.number AS run_id,owner.record_id AS run_record_id,
+      `SELECT q.number,q.record_id,owner.number AS run_id,owner.record_id AS run_record_id,
               q.asked_at,q.question,q.answer,q.answered_at,q.answered_by,
               q.overturned_at,q.overturned_by,q.overturn_reason,q.replacement,
               q.filed_as,q.filed_ref,q.filed_record_id,q.filed_label,q.filed_at
          FROM question q JOIN run owner ON owner.record_id=q.run_record_id
-        WHERE owner.record_id=? OR owner.parent_run_record_id=? ORDER BY q.id`,
+        WHERE owner.record_id=? OR owner.parent_run_record_id=? ORDER BY q.number`,
     )
-    .all(rootId, rootId) as Record<string, unknown>[]
+    .all(rootId, rootId)
+    .map((question) => {
+      const { number, ...row } = question as Record<string, unknown> & { number: number }
+      return { id: number, ...row }
+    })
   return {
     ...row,
     requested_id: id,
@@ -155,10 +159,13 @@ export function runDetail(id: string, receipt = false) {
     reviews: reviewsForRun(id),
     messages,
     audit,
-    questions: questions.map((question) => ({
-      ...question,
-      ruling_status: rulingStatus(question.overturned_at, question.answered_at),
-    })),
+    questions: questions.map((question) => {
+      const row = question as unknown as Record<string, unknown> & {
+        overturned_at: string | null
+        answered_at: string | null
+      }
+      return { ...row, ruling_status: rulingStatus(row.overturned_at, row.answered_at) }
+    }),
     // Runs recorded before prompts were kept on disk have only the head.
     promptTruncated: !row.prompt_path,
   }

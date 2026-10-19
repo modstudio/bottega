@@ -20,6 +20,7 @@ const FIXTURE_TASKS = [
 ] as const
 
 export type FixtureQuestion = {
+  record_id: string
   question_id: number
   run_ref: string
   root_ref: string
@@ -90,7 +91,7 @@ export async function reclaimFixtureQuestions(
   const database = db()
   const questions = database
     .query(
-      'SELECT question_id,run_ref,root_ref,task_key,session_id FROM question ORDER BY question_id',
+      'SELECT record_id,number question_id,run_ref,root_ref,task_key,session_id FROM question ORDER BY number',
     )
     .all() as FixtureQuestion[]
   const refs = new Set(
@@ -140,8 +141,8 @@ export async function reclaimFixtureQuestions(
       .all() as FixtureTask[]
     selectedTasks = fixtureTasksToReclaim(tasks, registeredProjects)
     if (selected.length || selectedIntervals.length || selectedTasks.length) {
-      const removeQuestion = connection.query('DELETE FROM question WHERE question_id=?')
-      for (const row of selected) removeQuestion.run(row.question_id)
+      const removeQuestion = connection.query('DELETE FROM question WHERE record_id=?')
+      for (const row of selected) removeQuestion.run(row.record_id)
       const removeInterval = connection.query('DELETE FROM interval WHERE record_id=?')
       for (const interval of selectedIntervals) removeInterval.run(interval.record_id)
       const removeTask = connection.query('DELETE FROM task WHERE record_id=?')

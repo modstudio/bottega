@@ -5,6 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { callerIdentity, db } from '../database/db.ts'
+import { nextQuestionNumber } from './question-number.ts'
 import { questionOpenSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import { rulingActor } from './question-vocabulary.ts'
@@ -65,7 +66,7 @@ export function authorizeWorkflowQuestionMutation(input: {
 
 export function auditQuestionMutation(
   input: {
-    questionId: number
+    questionId: string
     action: QuestionMutationAction
     actor: string | null
     at: string
@@ -76,7 +77,7 @@ export function auditQuestionMutation(
 ): void {
   database
     .query(
-      `INSERT INTO question_mutation_audit (record_id,question_id,action,actor_session,at,reason)
+      `INSERT INTO question_mutation_audit (record_id,question_record_id,action,actor_session,at,reason)
        VALUES (?,?,?,?,?,?)`,
     )
     .run(
@@ -99,10 +100,10 @@ export function upsertWorkflowQuestion(
     at: string
   },
   database: Database = db(),
-): number {
+): { recordId: string; number: number } {
   const open = database
-    .query<{ id: number }, [number]>(
-      `SELECT id FROM question
+    .query<{ record_id: string; number: number }, [number]>(
+      `SELECT record_id,number FROM question
        WHERE workflow_cursor_id=? AND ${questionOpenSql('question')}`,
     )
     .get(input.cursorId)
@@ -110,21 +111,29 @@ export function upsertWorkflowQuestion(
     database
       .query(
         `UPDATE question SET question=?,workflow_key=?,workflow_step_ordinal=?,workflow_step_slug=?,
-         revision=revision+1 WHERE id=?`,
+         revision=revision+1 WHERE record_id=?`,
       )
-      .run(input.question, input.workflowKey || null, input.stepOrdinal, input.stepSlug, open.id)
-    enqueueQuestionRecord(database, open.id)
-    return open.id
+      .run(
+        input.question,
+        input.workflowKey || null,
+        input.stepOrdinal,
+        input.stepSlug,
+        open.record_id,
+      )
+    enqueueQuestionRecord(database, open.record_id)
+    return { recordId: open.record_id, number: open.number }
   }
+  const recordId = newRecordId()
   const inserted = database
-    .query<{ id: number }, (string | number | null)[]>(
+    .query<{ record_id: string; number: number }, (string | number | null)[]>(
       `INSERT INTO question
-        (record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at,
+        (record_id,number,workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at,
          workflow_step_ordinal,workflow_step_slug)
-       VALUES (?,?,?,?,?, 'workflow', ?,?,?) RETURNING id`,
+       VALUES (?,?,?,?,?,?, 'workflow', ?,?,?) RETURNING record_id,number`,
     )
     .get(
-      newRecordId(),
+      recordId,
+      nextQuestionNumber(database),
       input.cursorId,
       input.workflowKey || null,
       input.at,
@@ -134,13 +143,13 @@ export function upsertWorkflowQuestion(
       input.stepSlug,
     )
   if (!inserted) throw new Error('workflow question was not recorded')
-  enqueueQuestionRecord(database, inserted.id)
-  return inserted.id
+  enqueueQuestionRecord(database, inserted.record_id)
+  return { recordId: inserted.record_id, number: inserted.number }
 }
 
 export function answerWorkflowQuestion(
   input: {
-    questionId: number
+    questionId: string
     cursorId: number
     ruling: string
     basis?: string | null
@@ -156,7 +165,7 @@ export function answerWorkflowQuestion(
     .query(
       `UPDATE question SET answer=?,answer_basis=?,answered_at=?,answered_by=?,answerer_kind=?,answer_channel=?,
         revision=revision+1
-       WHERE id=? AND workflow_cursor_id=? AND ${questionOpenSql('question')}`,
+       WHERE record_id=? AND workflow_cursor_id=? AND ${questionOpenSql('question')}`,
     )
     .run(
       input.ruling,

@@ -63,12 +63,12 @@ describe('relay', () => {
     const owner = run()
     const question = db()
       .query(
-        `INSERT INTO question (record_id,run_record_id,asked_at,question,answer,answered_at)
-         VALUES ('${newRecordId()}',?,'2026-09-25','Which?','This.','2026-09-25') RETURNING id`,
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question,answer,answered_at)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'2026-09-25','Which?','This.','2026-09-25') RETURNING record_id`,
       )
-      .get(owner.id) as { id: number }
-    expect(() => relayQuestion(owner.id, question.id, 'operator must decide')).toThrow(
-      `question ${question.id} is already answered`,
+      .get(owner.id) as { record_id: string }
+    expect(() => relayQuestion(owner.id, question.record_id, 'operator must decide')).toThrow(
+      `question ${question.record_id} is already answered`,
     )
   })
 
@@ -76,20 +76,20 @@ describe('relay', () => {
     const owner = run()
     const question = db()
       .query(
-        `INSERT INTO question (record_id,run_record_id,asked_at,question)
-         VALUES ('${newRecordId()}',?,'2026-09-25','Which?') RETURNING id`,
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'2026-09-25','Which?') RETURNING record_id`,
       )
-      .get(owner.id) as { id: number }
+      .get(owner.id) as { record_id: string }
     const noNotification = () => {}
-    relayQuestion(owner.id, question.id, 'operator must decide', db(), noNotification)
+    relayQuestion(owner.id, question.record_id, 'operator must decide', db(), noNotification)
     const first = db()
-      .query('SELECT awaiting_operator_at,relayed_by FROM question WHERE id=?')
-      .get(question.id)
-    relayQuestion(owner.id, question.id, 'still needs operator', db(), noNotification)
+      .query('SELECT awaiting_operator_at,relayed_by FROM question WHERE record_id=?')
+      .get(question.record_id)
+    relayQuestion(owner.id, question.record_id, 'still needs operator', db(), noNotification)
     expect(
       db()
-        .query('SELECT awaiting_operator_at,relayed_by FROM question WHERE id=?')
-        .get(question.id),
+        .query('SELECT awaiting_operator_at,relayed_by FROM question WHERE record_id=?')
+        .get(question.record_id),
     ).toEqual(first)
     expect(
       db()
@@ -109,11 +109,11 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
   const question = db()
     .query(
       `INSERT INTO question
-        (record_id,run_record_id,asked_at,question,options,recommendation,why,awaiting_operator_at)
-       VALUES ('${newRecordId()}',?,'2026-09-25','Run question?', '["a","b"]','a','because','2026-09-25')
-       RETURNING id`,
+        (number,record_id,run_record_id,asked_at,question,options,recommendation,why,awaiting_operator_at)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'2026-09-25','Run question?', '["a","b"]','a','because','2026-09-25')
+       RETURNING record_id,number`,
     )
-    .get(owner.id) as { id: number }
+    .get(owner.id) as { record_id: string; number: number }
   const cursor = db()
     .query(
       `INSERT INTO workflow_cursor
@@ -126,8 +126,8 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
   db()
     .query(
       `INSERT INTO question
-      (record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at)
-     VALUES ('${newRecordId()}',?,'DEV-943','2026-09-25','Workflow question?','workflow','2026-09-25')`,
+      (number,record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at)
+     VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'DEV-943','2026-09-25','Workflow question?','workflow','2026-09-25')`,
     )
     .run(cursor.id)
 
@@ -135,7 +135,7 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
   expect(waiting).toMatchObject([
     {
       kind: 'question',
-      id: question.id,
+      id: question.number,
       run_record_id: owner.id,
       project: 'fixture',
       task_key: 'DEV-943',
@@ -146,7 +146,7 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
       why: 'because',
       waiting_since: '2026-09-25',
       episode: '2026-09-25',
-      answer_command: `${PLATFORM_SLUG} question answer ${owner.number} --q${question.id} --from-operator "<ruling>"`,
+      answer_command: `${PLATFORM_SLUG} question answer ${owner.number} --q${question.number} --from-operator "<ruling>"`,
     },
     {
       kind: 'workflow',
@@ -178,10 +178,10 @@ test('notification claims return each waiting episode once', () => {
   const owner = run()
   const question = db()
     .query(
-      `INSERT INTO question (record_id,run_record_id,asked_at,question,awaiting_operator_at)
-       VALUES ('${newRecordId()}',?,'2026-09-25','Question?','2026-09-25') RETURNING id`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question,awaiting_operator_at)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'2026-09-25','Question?','2026-09-25') RETURNING record_id,number`,
     )
-    .get(owner.id) as { id: number }
+    .get(owner.id) as { record_id: string; number: number }
   const cursor = db()
     .query(
       `INSERT INTO workflow_cursor
@@ -194,19 +194,19 @@ test('notification claims return each waiting episode once', () => {
   db()
     .query(
       `INSERT INTO question
-      (record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at)
-     VALUES ('${newRecordId()}',?,'DEV-943','2026-09-25','Workflow?','workflow','2026-09-25')`,
+      (number,record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at)
+     VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'DEV-943','2026-09-25','Workflow?','workflow','2026-09-25')`,
     )
     .run(cursor.id)
   const first = claimOperatorNotifications(db())
   expect(first.map(({ kind, id }) => ({ kind, id }))).toEqual([
-    { kind: 'question', id: question.id },
+    { kind: 'question', id: question.number },
     { kind: 'workflow', id: cursor.id },
   ])
   expect(first[0]?.notification).toEqual({
     title: 'Ruling needed: fixture DEV-943',
     body: 'Question?',
-    link: `http://127.0.0.1:7778/inbox/question/${question.id}`,
+    link: `http://127.0.0.1:7778/inbox/question/${question.number}`,
   })
   const notificationIds = db()
     .query<{ record_id: string }, []>('SELECT record_id FROM operator_notification ORDER BY kind')
@@ -236,8 +236,8 @@ test('notification claims return each waiting episode once', () => {
   db()
     .query(
       `INSERT INTO question
-      (record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at)
-     VALUES ('${newRecordId()}',?,'DEV-943','2026-09-27','Again?','workflow','2026-09-27')`,
+      (number,record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at)
+     VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'DEV-943','2026-09-27','Again?','workflow','2026-09-27')`,
     )
     .run(cursor.id)
   expect(
@@ -255,12 +255,12 @@ test('a no-project question lists and notifies without a project label', () => {
   db().query('UPDATE run SET repo=NULL,launch_key=NULL WHERE record_id=?').run(owner.id)
   const question = db()
     .query(
-      `INSERT INTO question (record_id,run_record_id,asked_at,question,awaiting_operator_at)
-       VALUES ('${newRecordId()}',?,'2026-09-25','No project?','2026-09-25') RETURNING id`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question,awaiting_operator_at)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'2026-09-25','No project?','2026-09-25') RETURNING number`,
     )
-    .get(owner.id) as { id: number }
+    .get(owner.id) as { number: number }
 
-  expect(operatorWaiting()).toMatchObject([{ id: question.id, project: null }])
+  expect(operatorWaiting()).toMatchObject([{ id: question.number, project: null }])
   expect(claimOperatorNotifications(db())[0]?.notification.title).toBe('Ruling needed')
 })
 

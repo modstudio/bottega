@@ -114,8 +114,8 @@ describe('reapStale', () => {
     const root = addRun({ agent: 'grok', job: 'implement', status: 'asking' })
     db()
       .query(
-        `INSERT INTO question (record_id,run_record_id, asked_at, question, answer, answered_at)
-       VALUES ('${newRecordId()}',?,?,?,?,?)`,
+        `INSERT INTO question (number,record_id,run_record_id, asked_at, question, answer, answered_at)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?,?)`,
       )
       .run(root, nowIso(), 'answered', 'the ruling', nowIso())
     const child = addRun({
@@ -172,8 +172,8 @@ describe('reapStale', () => {
     db()
       .query(
         `INSERT INTO question
-          (record_id,run_record_id,asked_at,question,answer,answered_at,delivery_pending_at)
-         VALUES ('${newRecordId()}',?,?,?,?,?,?)`,
+          (number,record_id,run_record_id,asked_at,question,answer,answered_at,delivery_pending_at)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?,?,?)`,
       )
       .run(root, nowIso(), 'answered', 'the ruling', nowIso(), nowIso())
     const child = addRun({
@@ -196,7 +196,7 @@ describe('reapStale', () => {
       db()
         .query(
           `SELECT outcome,error FROM question_delivery
-           WHERE question_id=(SELECT id FROM question WHERE run_record_id=?)`,
+           WHERE question_record_id=(SELECT record_id FROM question WHERE run_record_id=?)`,
         )
         .get(root),
     ).toEqual({ outcome: 'retired', error: 'chain-stale' })

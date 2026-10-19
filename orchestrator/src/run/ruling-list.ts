@@ -22,7 +22,7 @@ export function listRulings(options: {
   }
   const rows = db()
     .query(
-      `SELECT q.id,q.record_id,q.run_record_id,r.number AS run_number,
+      `SELECT q.number,q.record_id,q.run_record_id,r.number AS run_number,
               q.workflow_cursor_id,q.workflow_key,
               COALESCE(r.repo,c.project) project,c.workflow_slug,c.mode_slug,
               COALESCE(r.session_id,c.session_id) session_id,
@@ -33,8 +33,13 @@ export function listRulings(options: {
          FROM question q LEFT JOIN run r ON r.record_id=q.run_record_id
          LEFT JOIN workflow_cursor c ON c.id=q.workflow_cursor_id
         ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
-        ORDER BY q.id`,
+        ORDER BY q.number`,
     )
     .all(...values)
-  return RulingListSchema.parse(rows)
+  return RulingListSchema.parse(
+    (rows as Array<Record<string, unknown> & { number: number }>).map(({ number, ...row }) => ({
+      id: number,
+      ...row,
+    })),
+  )
 }

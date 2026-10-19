@@ -24,7 +24,7 @@ function fixture(): Database {
     );
     CREATE TABLE score (id INTEGER PRIMARY KEY, run_record_id TEXT, note TEXT);
     CREATE TABLE question (
-      id INTEGER PRIMARY KEY, run_record_id TEXT, question TEXT, options TEXT,
+      record_id TEXT PRIMARY KEY, number INTEGER NOT NULL UNIQUE, run_record_id TEXT, question TEXT, options TEXT,
       recommendation TEXT, why TEXT, answer TEXT
     );
     CREATE TABLE review_lens (id INTEGER PRIMARY KEY, run_record_id TEXT);
@@ -46,7 +46,7 @@ describe('record search', () => {
     d.exec(`
       INSERT INTO run VALUES ('01990000-0000-7000-8000-000000000001', 1, NULL, 'DEV-203', '2026-09-01T00:00:00Z', '${output}');
       INSERT INTO score VALUES (1, '01990000-0000-7000-8000-000000000001', 'A substantial scoring note that does not repeat its task key.');
-      INSERT INTO question VALUES (1, '01990000-0000-7000-8000-000000000001', 'Which primitive?', NULL, NULL, NULL, 'Use read-tree.');
+      INSERT INTO question VALUES ('01990000-0000-7000-8000-000000000101', 1, '01990000-0000-7000-8000-000000000001', 'Which primitive?', NULL, NULL, NULL, 'Use read-tree.');
       INSERT INTO review_lens VALUES (1, '01990000-0000-7000-8000-000000000001');
       INSERT INTO review_finding VALUES (1, 1, 'major', 'file.ts:4', 'The guard is process-local.', 'Move it to the repository hook.', 'accepted', NULL);
     `)

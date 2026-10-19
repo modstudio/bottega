@@ -22,14 +22,14 @@ describe('overturn ruling', () => {
     const question = db()
       .query(
         `INSERT INTO question
-          (record_id,run_record_id,asked_at,question,answer,answered_at,answered_by,answerer_kind,answer_channel)
-         VALUES ('${newRecordId()}',?,'2026-09-20','Which way?','Old ruling','2026-09-21','owner-session','agent','cli')
-         RETURNING id`,
+          (number,record_id,run_record_id,asked_at,question,answer,answered_at,answered_by,answerer_kind,answer_channel)
+         VALUES (1,'${newRecordId()}',?,'2026-09-20','Which way?','Old ruling','2026-09-21','owner-session','agent','cli')
+         RETURNING record_id`,
       )
-      .get(run) as { id: number }
+      .get(run) as { record_id: string }
 
     overturnRuling({
-      questionId: question.id,
+      questionId: question.record_id,
       reason: 'New evidence contradicted it.',
       replacement: 'Use the replacement.',
       fromOperator: true,
@@ -37,8 +37,8 @@ describe('overturn ruling', () => {
 
     expect(
       db()
-        .query(`SELECT overturned_by,overturn_reason,replacement FROM question WHERE id=?`)
-        .get(question.id),
+        .query(`SELECT overturned_by,overturn_reason,replacement FROM question WHERE record_id=?`)
+        .get(question.record_id),
     ).toEqual({
       overturned_by: 'operator via owner-session',
       overturn_reason: 'New evidence contradicted it.',
@@ -66,15 +66,15 @@ describe('overturn ruling', () => {
     const question = db()
       .query(
         `INSERT INTO question
-          (record_id,workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,answered_by,
+          (number,record_id,workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,answered_by,
            answerer_kind,answer_channel,asked_via)
-         VALUES ('${newRecordId()}',?,'DEV-964','2026-09-20','Which way?','Old','2026-09-21',
-                 'owner-session','agent','cli','workflow') RETURNING id`,
+         VALUES (1,'${newRecordId()}',?,'DEV-964','2026-09-20','Which way?','Old','2026-09-21',
+                 'owner-session','agent','cli','workflow') RETURNING record_id`,
       )
-      .get(cursor.id) as { id: number }
+      .get(cursor.id) as { record_id: string }
 
     overturnRuling({
-      questionId: question.id,
+      questionId: question.record_id,
       reason: 'Changed.',
       replacement: 'New.',
       fromOperator: false,
@@ -99,10 +99,10 @@ describe('overturn ruling', () => {
     const question = db()
       .query(
         `INSERT INTO question
-          (record_id,workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,asked_via)
-         VALUES ('${newRecordId()}',?,'DEV-964','2026-09-20','Which?','Old','2026-09-21','workflow') RETURNING id`,
+          (number,record_id,workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,asked_via)
+         VALUES (1,'${newRecordId()}',?,'DEV-964','2026-09-20','Which?','Old','2026-09-21','workflow') RETURNING record_id`,
       )
-      .get(cursor.id) as { id: number }
+      .get(cursor.id) as { record_id: string }
     db()
       .query('UPDATE workflow_cursor SET updated_at=? WHERE id=?')
       .run(new Date().toISOString(), cursor.id)
@@ -110,14 +110,14 @@ describe('overturn ruling', () => {
 
     expect(() =>
       overturnRuling({
-        questionId: question.id,
+        questionId: question.record_id,
         reason: 'Changed.',
         replacement: 'New.',
         fromOperator: false,
       }),
     ).toThrow('owned by session owner-session')
     overturnRuling({
-      questionId: question.id,
+      questionId: question.record_id,
       reason: 'Changed.',
       replacement: 'New.',
       fromOperator: true,

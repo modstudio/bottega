@@ -696,7 +696,7 @@ export async function run(opts: {
     usingMcp,
     startedByUserId,
     replySchemaName,
-    carriedQuestionIds: carriedRulings.rulings.map((ruling) => ruling.questionId),
+    carriedQuestionIds: carriedRulings.rulings.map((ruling) => ruling.questionRecordId),
   })
   outPath = claimedOutputPath
   const initialBoard = await board(claimedBoundPrompt, promptPath, claim.id, resume.isFirstTurn)

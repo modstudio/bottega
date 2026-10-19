@@ -34,7 +34,7 @@ export function recordWorkflowSelfRuling(
   const refusal = selfRulingRefusal(input.resolvedAutonomy, input.floors, basis)
   if (refusal) throw new Error(refusal)
   const at = nowIso()
-  const questionId = upsertWorkflowQuestion(
+  const question = upsertWorkflowQuestion(
     {
       cursorId: input.cursorId,
       workflowKey: input.workflowKey,
@@ -47,7 +47,7 @@ export function recordWorkflowSelfRuling(
   )
   answerWorkflowQuestion(
     {
-      questionId,
+      questionId: question.recordId,
       cursorId: input.cursorId,
       ruling,
       basis,
@@ -58,5 +58,5 @@ export function recordWorkflowSelfRuling(
     },
     database,
   )
-  return { questionId }
+  return { questionId: question.number }
 }

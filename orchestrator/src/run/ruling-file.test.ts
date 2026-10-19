@@ -34,14 +34,14 @@ function addAnsweredQuestion(
     overturned?: { reason: string; replacement: string | null }
     launchKey?: string
   } = {},
-): number {
-  const id = (
+): string {
+  const recordId = (
     db()
       .query(
         `INSERT INTO question
-          (record_id,run_record_id,asked_at,question,answer,answered_at,answered_by,answerer_kind,answer_channel)
-         VALUES ('${newRecordId()}',?,'2026-09-20',?,?, '2026-09-21',?,?, 'cli')
-         RETURNING id`,
+          (number,record_id,run_record_id,asked_at,question,answer,answered_at,answered_by,answerer_kind,answer_channel)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'2026-09-20',?,?, '2026-09-21',?,?, 'cli')
+         RETURNING record_id`,
       )
       .get(
         runId,
@@ -49,22 +49,26 @@ function addAnsweredQuestion(
         extras.answer ?? 'Keep the existing one.',
         extras.answeredBy ?? 'operator via owner-session',
         extras.answererKind ?? 'operator',
-      ) as { id: number }
-  ).id
+      ) as { record_id: string }
+  ).record_id
   if (extras.overturned) {
     db()
       .query(
         `UPDATE question
             SET overturned_at='2026-09-22', overturned_by='operator via owner-session',
                 overturn_reason=?, replacement=?
-          WHERE id=?`,
+          WHERE record_id=?`,
       )
-      .run(extras.overturned.reason, extras.overturned.replacement, id)
+      .run(extras.overturned.reason, extras.overturned.replacement, recordId)
   }
   if (extras.launchKey)
     db().query('UPDATE run SET launch_key=? WHERE record_id=?').run(extras.launchKey, runId)
-  return id
+  return recordId
 }
+
+const questionNumber = (recordId: string): number =>
+  (db().query('SELECT number FROM question WHERE record_id=?').get(recordId) as { number: number })
+    .number
 
 const stores = (overrides: Partial<RulingFileStores> = {}): RulingFileStores => ({
   writeDoc: async () => ({ id: 12, revision: 'rev-1' }),
@@ -102,16 +106,16 @@ describe('file ruling', () => {
     const question = db()
       .query(
         `INSERT INTO question
-          (record_id,workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,answered_by,
+          (number,record_id,workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,answered_by,
            answerer_kind,answer_channel,asked_via)
-         VALUES ('${newRecordId()}',?,'DEV-964','2026-09-20','Proceed?','Yes.','2026-09-21','owner-session',
-                 'agent','cli','workflow') RETURNING id`,
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'DEV-964','2026-09-20','Proceed?','Yes.','2026-09-21','owner-session',
+                 'agent','cli','workflow') RETURNING record_id`,
       )
-      .get(cursor.id) as { id: number }
+      .get(cursor.id) as { record_id: string }
     const writes: Array<{ subject: string | null; body: string }> = []
 
     await file(
-      { questionId: question.id, as: 'doc' },
+      { questionId: question.record_id, as: 'doc' },
       stores({
         writeDoc: async (input) => {
           writes.push({ subject: input.subject, body: input.body })
@@ -150,19 +154,19 @@ describe('file ruling', () => {
     const question = db()
       .query(
         `INSERT INTO question
-          (record_id,workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,asked_via)
-         VALUES ('${newRecordId()}',?,'DEV-964','2026-09-20','Proceed?','Yes.','2026-09-21','workflow') RETURNING id`,
+          (number,record_id,workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,asked_via)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'DEV-964','2026-09-20','Proceed?','Yes.','2026-09-21','workflow') RETURNING record_id`,
       )
-      .get(cursor.id) as { id: number }
+      .get(cursor.id) as { record_id: string }
     db()
       .query('UPDATE workflow_cursor SET updated_at=? WHERE id=?')
       .run(new Date().toISOString(), cursor.id)
     process.env.CLAUDE_CODE_SESSION_ID = 'foreign-session'
 
-    await expect(file({ questionId: question.id, as: 'doc' })).rejects.toThrow(
+    await expect(file({ questionId: question.record_id, as: 'doc' })).rejects.toThrow(
       'owned by session owner-session',
     )
-    await file({ questionId: question.id, as: 'doc', fromOperator: true })
+    await file({ questionId: question.record_id, as: 'doc', fromOperator: true })
     expect(db().query('SELECT action,actor_session FROM question_mutation_audit').all()).toEqual([
       { action: 'file', actor_session: 'foreign-session' },
     ])
@@ -188,30 +192,27 @@ describe('file ruling', () => {
         },
       }),
     )
+    const identity = db()
+      .query('SELECT number,record_id FROM question WHERE record_id=?')
+      .get(questionId) as { number: number; record_id: string }
     expect(result).toMatchObject({
-      question_id: questionId,
+      question_id: identity.number,
       filed_as: 'doc',
       filed_ref: '12@rev-1',
       filed_record_id: null,
       filed_label: null,
       filed_at: expect.any(String),
     })
-    expect(result.question_record_id).toBe(
-      (
-        db().query('SELECT record_id FROM question WHERE id=?').get(questionId) as {
-          record_id: string
-        }
-      ).record_id,
-    )
+    expect(result.question_record_id).toBe(identity.record_id)
     expect(writes).toEqual([
       {
         scope: 'project',
         subject: PLATFORM_SLUG,
-        slug: `which-shape-should-this-take-q${questionId}`,
+        slug: `which-shape-should-this-take-q${identity.number}`,
         title: 'Which shape should this take?',
         body: expect.stringContaining('question: |'),
         delivery: 'demand',
-        reason: `file ruling ${questionId}`,
+        reason: `file ruling ${identity.number}`,
       },
     ])
     expect(writes[0]).toEqual(
@@ -225,7 +226,7 @@ describe('file ruling', () => {
       }),
     )
     expect(
-      db().query('SELECT filed_as, filed_ref FROM question WHERE id=?').get(questionId),
+      db().query('SELECT filed_as, filed_ref FROM question WHERE record_id=?').get(questionId),
     ).toEqual({ filed_as: 'doc', filed_ref: '12@rev-1' })
     expect(
       db().query("SELECT action, reason FROM run_mutation_audit WHERE action='file'").get(),
@@ -290,7 +291,9 @@ describe('file ruling', () => {
     ])
     expect(
       db()
-        .query('SELECT filed_as, filed_ref, filed_record_id, filed_label FROM question WHERE id=?')
+        .query(
+          'SELECT filed_as, filed_ref, filed_record_id, filed_label FROM question WHERE record_id=?',
+        )
         .get(questionId),
     ).toEqual({
       filed_as: 'canon-proposal',
@@ -310,13 +313,13 @@ describe('file ruling', () => {
     const questionId = (
       db()
         .query(
-          `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,'2026-09-20','Which?')
-           RETURNING id`,
+          `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'2026-09-20','Which?')
+           RETURNING record_id`,
         )
-        .get(run) as { id: number }
-    ).id
+        .get(run) as { record_id: string }
+    ).record_id
     await expect(file({ questionId, as: 'doc' })).rejects.toThrow(
-      `question ${questionId} is unanswered`,
+      `question ${questionNumber(questionId)} is unanswered`,
     )
   })
 
@@ -326,7 +329,7 @@ describe('file ruling', () => {
       overturned: { reason: 'Withdrawn', replacement: null },
     })
     await expect(file({ questionId, as: 'doc' })).rejects.toThrow(
-      `question ${questionId} was overturned without a replacement`,
+      `question ${questionNumber(questionId)} was overturned without a replacement`,
     )
   })
 
@@ -341,7 +344,7 @@ describe('file ruling', () => {
     const questionId = addAnsweredQuestion(run)
     await file({ questionId, as: 'doc' })
     await expect(file({ questionId, as: 'doc' })).rejects.toThrow(
-      `question ${questionId} is already filed as doc at 12@rev-1`,
+      `question ${questionNumber(questionId)} is already filed as doc at 12@rev-1`,
     )
   })
 
@@ -356,7 +359,7 @@ describe('file ruling', () => {
     const questionId = addAnsweredQuestion(run)
     await file({ questionId, as: 'doc' })
     await expect(file({ questionId, as: 'canon' })).rejects.toThrow(
-      `question ${questionId} is already filed as doc at 12@rev-1`,
+      `question ${questionNumber(questionId)} is already filed as doc at 12@rev-1`,
     )
   })
 
@@ -420,7 +423,7 @@ describe('file ruling', () => {
     ).rejects.toThrow(`run ${run} is owned by session owner-session`)
     expect(writes).toEqual([])
     expect(
-      db().query('SELECT filed_as, filed_ref FROM question WHERE id=?').get(questionId),
+      db().query('SELECT filed_as, filed_ref FROM question WHERE record_id=?').get(questionId),
     ).toEqual({ filed_as: null, filed_ref: null })
     expect(db().query("SELECT action FROM run_mutation_audit WHERE action='file'").get()).toBeNull()
   })
@@ -450,7 +453,7 @@ describe('file ruling', () => {
     const stored = getDoc(
       'project',
       PLATFORM_SLUG,
-      `which-shape-should-dev-963-take-q${questionId}`,
+      `which-shape-should-dev-963-take-q${questionNumber(questionId)}`,
     )
     expect(stored?.delivery).toBe('demand')
     expect(stored?.body).toContain('Which shape should DEV-963 take?')

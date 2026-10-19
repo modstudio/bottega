@@ -54,10 +54,12 @@ describe('run ingest', () => {
     const report = writeTransaction((conn) => {
       conn.query('UPDATE interval SET ref=? WHERE ref=?').run('orch:9080:turn:9081', intervalRef)
       conn
-        .query('UPDATE question SET run_ref=?,root_ref=? WHERE question_id=?')
+        .query('UPDATE question SET run_ref=?,root_ref=? WHERE number=?')
         .run('orch:9080:turn:9081', 'orch:9080', 9080)
       conn
-        .query('UPDATE question_delivery SET run_ref=? WHERE question_id=?')
+        .query(
+          'UPDATE question_delivery SET run_ref=? WHERE question_record_id=(SELECT record_id FROM question WHERE number=?)',
+        )
         .run('orch:9080:turn:9081', 9080)
       return convertLegacyRunRefs(conn, identityMap(run))
     })
@@ -67,17 +69,22 @@ describe('run ingest', () => {
         .query<{ record_id: string }, [string]>('SELECT record_id FROM interval WHERE ref=?')
         .get(intervalRef)?.record_id,
     ).toBe(original)
+    expect(db().query('SELECT run_ref,root_ref FROM question WHERE number=?').get(9080)).toEqual({
+      run_ref: turnRef(9080, 9081),
+      root_ref: ref(9080),
+    })
     expect(
-      db().query('SELECT run_ref,root_ref FROM question WHERE question_id=?').get(9080),
-    ).toEqual({ run_ref: turnRef(9080, 9081), root_ref: ref(9080) })
-    expect(
-      db().query('SELECT run_ref FROM question_delivery WHERE question_id=?').get(9080),
+      db()
+        .query(
+          'SELECT run_ref FROM question_delivery WHERE question_record_id=(SELECT record_id FROM question WHERE number=?)',
+        )
+        .get(9080),
     ).toEqual({ run_ref: turnRef(9080, 9081) })
 
     expect(() =>
       writeTransaction((conn) => {
         conn.query('UPDATE interval SET ref=? WHERE ref=?').run('orch:9080:turn:9081', intervalRef)
-        conn.query('UPDATE question SET root_ref=? WHERE question_id=?').run('orch:99999', 9080)
+        conn.query('UPDATE question SET root_ref=? WHERE number=?').run('orch:99999', 9080)
         return convertLegacyRunRefs(conn, identityMap(run))
       }),
     ).toThrow('numeric run refs have no orchestrator UUID mapping')
@@ -86,11 +93,11 @@ describe('run ingest', () => {
         .query<{ ref: string }, [string]>('SELECT ref FROM interval WHERE record_id=?')
         .get(original),
     ).toEqual({ ref: intervalRef })
-    expect(db().query('SELECT root_ref FROM question WHERE question_id=?').get(9080)).toEqual({
+    expect(db().query('SELECT root_ref FROM question WHERE number=?').get(9080)).toEqual({
       root_ref: ref(9080),
     })
     writeTransaction((conn) => {
-      conn.query('DELETE FROM question WHERE question_id=?').run(9080)
+      conn.query('DELETE FROM question WHERE number=?').run(9080)
       conn.query('DELETE FROM interval WHERE ref LIKE ?').run(`${ref(9080)}%`)
     })
   })
@@ -106,20 +113,18 @@ describe('run ingest', () => {
         .query('UPDATE interval SET ref=? WHERE ref=?')
         .run('orch:9082:turn:9083', turnRef(9082, 9083))
       conn
-        .query('UPDATE question SET run_ref=?,root_ref=? WHERE question_id=?')
+        .query('UPDATE question SET run_ref=?,root_ref=? WHERE number=?')
         .run('orch:9082:turn:9083', 'orch:9082', 9082)
     })
 
     await ingestStdout(JSON.stringify(run), '[]', JSON.stringify(identityMap(run)))
 
-    expect(
-      db().query('SELECT run_ref,root_ref FROM question WHERE question_id=?').get(9082),
-    ).toEqual({
+    expect(db().query('SELECT run_ref,root_ref FROM question WHERE number=?').get(9082)).toEqual({
       run_ref: turnRef(9082, 9083),
       root_ref: ref(9082),
     })
     writeTransaction((conn) => {
-      conn.query('DELETE FROM question WHERE question_id=?').run(9082)
+      conn.query('DELETE FROM question WHERE number=?').run(9082)
       conn.query('DELETE FROM interval WHERE ref LIKE ?').run(`${ref(9082)}%`)
     })
   })
@@ -180,7 +185,7 @@ describe('run ingest', () => {
       db()
         .query(
           `SELECT run_ref,root_ref,workflow_cursor_id,workflow_key,project,asked_via
-           FROM question WHERE question_id=8001`,
+           FROM question WHERE number=8001`,
         )
         .get(),
     ).toEqual({
@@ -482,11 +487,11 @@ describe('run ingest', () => {
 
     const questions = db()
       .query(
-        `SELECT question_id, run_ref, root_ref, task_key, session_id, asked_at, answered_at
-         FROM question WHERE root_ref = '${ref(9201)}' ORDER BY question_id`,
+        `SELECT number, run_ref, root_ref, task_key, session_id, asked_at, answered_at
+         FROM question WHERE root_ref = '${ref(9201)}' ORDER BY number`,
       )
       .all() as {
-      question_id: number
+      number: number
       run_ref: string
       root_ref: string
       task_key: string | null
@@ -496,7 +501,7 @@ describe('run ingest', () => {
     }[]
     expect(questions).toEqual([
       {
-        question_id: 11,
+        number: 11,
         run_ref: ref(9201),
         root_ref: ref(9201),
         task_key: 'ALP-118',
@@ -505,7 +510,7 @@ describe('run ingest', () => {
         answered_at: null,
       },
       {
-        question_id: 12,
+        number: 12,
         run_ref: ref(9201),
         root_ref: ref(9201),
         task_key: 'ALP-118',
@@ -568,7 +573,7 @@ describe('run ingest', () => {
     expect(
       db()
         .query(
-          `SELECT asked_via, answerer_kind, answer_channel, overturned_at FROM question WHERE question_id = 50`,
+          `SELECT asked_via, answerer_kind, answer_channel, overturned_at FROM question WHERE number = 50`,
         )
         .get(),
     ).toEqual({
@@ -580,8 +585,8 @@ describe('run ingest', () => {
     expect(
       db()
         .query(
-          `SELECT run_ref, mode, outcome, at, error FROM question_delivery
-           WHERE question_id = 50 ORDER BY at`,
+          `SELECT d.run_ref, d.mode, d.outcome, d.at, d.error FROM question_delivery d
+           JOIN question q ON q.record_id=d.question_record_id WHERE q.number = 50 ORDER BY d.at`,
         )
         .all(),
     ).toEqual([
@@ -621,7 +626,8 @@ describe('run ingest', () => {
     expect(
       db()
         .query(
-          `SELECT run_ref, mode, outcome, at, error FROM question_delivery WHERE question_id = 50`,
+          `SELECT d.run_ref, d.mode, d.outcome, d.at, d.error FROM question_delivery d
+           JOIN question q ON q.record_id=d.question_record_id WHERE q.number = 50`,
         )
         .all(),
     ).toEqual([
@@ -677,20 +683,21 @@ describe('run ingest', () => {
     expect(
       db()
         .query(
-          `SELECT question_id,run_ref,mode,outcome,error FROM question_delivery
-           WHERE question_id IN (61,62) ORDER BY question_id`,
+          `SELECT q.number,d.run_ref,d.mode,d.outcome,d.error FROM question_delivery d
+           JOIN question q ON q.record_id=d.question_record_id
+           WHERE q.number IN (61,62) ORDER BY q.number`,
         )
         .all(),
     ).toEqual([
       {
-        question_id: 61,
+        number: 61,
         run_ref: null,
         mode: 'record-only',
         outcome: 'retired',
         error: 'chain-terminal',
       },
       {
-        question_id: 62,
+        number: 62,
         run_ref: ref(9270),
         mode: 'live',
         outcome: 'delivered',
@@ -770,7 +777,7 @@ describe('run ingest', () => {
       ),
     ).rejects.toThrow('line 1 missing questions[0].answered_at')
     expect(collectRunsAt()).toBe(prior)
-    expect(db().query(`SELECT 1 FROM question WHERE question_id = 71`).get()).toBeNull()
+    expect(db().query(`SELECT 1 FROM question WHERE number = 71`).get()).toBeNull()
   })
 
   test('an invalid asked_at refuses the batch', async () => {
@@ -784,7 +791,7 @@ describe('run ingest', () => {
       ),
     ).rejects.toThrow('line 1 missing questions[0].asked_at')
     expect(collectRunsAt()).toBe(prior)
-    expect(db().query(`SELECT 1 FROM question WHERE question_id = 72`).get()).toBeNull()
+    expect(db().query(`SELECT 1 FROM question WHERE number = 72`).get()).toBeNull()
   })
 
   test('a run_number outside the published root and turns refuses the batch', async () => {
@@ -800,6 +807,6 @@ describe('run ingest', () => {
       ),
     ).rejects.toThrow('line 1 missing questions[0].run_record_id')
     expect(collectRunsAt()).toBe(prior)
-    expect(db().query(`SELECT 1 FROM question WHERE question_id = 73`).get()).toBeNull()
+    expect(db().query(`SELECT 1 FROM question WHERE number = 73`).get()).toBeNull()
   })
 })

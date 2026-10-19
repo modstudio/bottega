@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   applyMigrations,
+  applyMigrationsBefore,
   canonicalSchemaHash,
-  expectedSchemaHash,
   MIGRATIONS_FOLDER,
   migrationJournal,
 } from './migrations.ts'
@@ -61,7 +61,9 @@ test('run and question identity migration fills nulls, keeps identities, and pre
       )
       .run(missingQuestion.id, missingRun.id)
 
-    expect(applyMigrations(database)).toContain('0104_run_question_record_identity')
+    expect(applyMigrationsBefore(database, '0125_question_uuid_key')).toContain(
+      '0104_run_question_record_identity',
+    )
     const runIds = database
       .query<{ number: number; record_id: string }, []>(
         'SELECT number,record_id FROM run ORDER BY number',
@@ -90,7 +92,7 @@ test('run and question identity migration fills nulls, keeps identities, and pre
     expect(database.query('PRAGMA foreign_key_check').all()).toEqual([])
     const fresh = new Database(':memory:')
     fresh.exec('PRAGMA foreign_keys=ON')
-    applyMigrations(fresh)
+    applyMigrationsBefore(fresh, '0125_question_uuid_key')
     const schemaRows = (subject: Database) =>
       subject
         .query(
@@ -101,7 +103,6 @@ test('run and question identity migration fills nulls, keeps identities, and pre
     expect(schemaRows(database)).toEqual(schemaRows(fresh))
     expect(canonicalSchemaHash(database)).toBe(canonicalSchemaHash(fresh))
     fresh.close()
-    expect(canonicalSchemaHash(database)).toBe(expectedSchemaHash())
   } finally {
     database.close()
     rmSync(folder, { recursive: true, force: true })

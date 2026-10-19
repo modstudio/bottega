@@ -109,7 +109,7 @@ describe('run ingest', () => {
         ],
       }),
     )
-    const row = db().query(`SELECT answered_at FROM question WHERE question_id = 61`).get() as {
+    const row = db().query(`SELECT answered_at FROM question WHERE number = 61`).get() as {
       answered_at: string
     }
     expect(row.answered_at).toBe('2026-09-04T07:30:00.000Z')
@@ -150,7 +150,7 @@ describe('run ingest', () => {
           questions: [{ id: 1001, run_id: 10001, asked_at: snapshot, answered_at: answeredAt }],
         }),
       )
-      const row = db().query(`SELECT answered_at FROM question WHERE question_id = 1001`).get() as {
+      const row = db().query(`SELECT answered_at FROM question WHERE number = 1001`).get() as {
         answered_at: string
       }
       expect(row.answered_at).toBe(answeredAt)

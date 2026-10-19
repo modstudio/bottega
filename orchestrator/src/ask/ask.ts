@@ -57,6 +57,7 @@ import { JOBS } from '../jobs/jobs.ts'
 import { checkMessages, messageArchitect } from '../mailbox/mailbox.ts'
 import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
 import { machineId } from '../record/machine-identity.ts'
+import { nextQuestionNumber } from '../run/question-number.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { ASKED_VIA_LIVE, ASKED_VIA_REPLY, type AskedVia } from '../run/question-vocabulary.ts'
 import { runScratchDir } from '../run/run-artifacts.ts'
@@ -102,15 +103,17 @@ function recordQuestion(input: {
   why?: string | null
   askedVia: AskedVia
   awaitingOperatorAt: string | null
-}): number {
+}): string {
+  const recordId = newRecordId()
   const inserted = db()
-    .query(
+    .query<{ record_id: string }, (string | number | null)[]>(
       `INSERT INTO question
-       (record_id, run_record_id, asked_at, question, options, recommendation, why, asked_via, awaiting_operator_at)
-       VALUES (?,?,?,?,?,?,?,?,?) RETURNING id`,
+       (record_id,number,run_record_id,asked_at,question,options,recommendation,why,asked_via,awaiting_operator_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
     )
     .get(
-      newRecordId(),
+      recordId,
+      nextQuestionNumber(db()),
       input.runId,
       input.askedAt,
       input.question,
@@ -119,9 +122,10 @@ function recordQuestion(input: {
       input.why ?? null,
       input.askedVia,
       input.awaitingOperatorAt,
-    ) as { id: number }
-  enqueueQuestionRecord(db(), inserted.id)
-  return inserted.id
+    )
+  if (!inserted) throw new Error('question was not recorded')
+  enqueueQuestionRecord(db(), inserted.record_id)
+  return inserted.record_id
 }
 
 export function recordReplyQuestions(input: {

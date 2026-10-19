@@ -398,6 +398,15 @@ const RunIdentitySchema = z
 export const RunIdentityListSchema = z.array(RunIdentitySchema)
 export type RunIdentity = z.infer<typeof RunIdentitySchema>
 
+const QuestionIdentitySchema = z
+  .object({
+    number: z.number().int().positive(),
+    record_id: z.string().uuid(),
+  })
+  .strict()
+export const QuestionIdentityListSchema = z.array(QuestionIdentitySchema)
+export type QuestionIdentity = z.infer<typeof QuestionIdentitySchema>
+
 const guideCandidate = z
   .object({
     agent: z.string(),

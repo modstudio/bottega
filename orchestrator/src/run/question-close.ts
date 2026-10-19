@@ -25,27 +25,27 @@ export type QuestionCloseReason =
   | 'advanced-without-ruling'
   | 'abandoned'
 
-function questionIdsForRunChain(database: Database, rootId: string): number[] {
+function questionIdsForRunChain(database: Database, rootId: string): string[] {
   return database
-    .query<{ id: number }, [string, string]>(
-      `SELECT q.id FROM question q JOIN run owner ON owner.record_id=q.run_record_id
+    .query<{ record_id: string }, [string, string]>(
+      `SELECT q.record_id FROM question q JOIN run owner ON owner.record_id=q.run_record_id
        WHERE (owner.record_id=? OR owner.parent_run_record_id=?) AND ${questionOpenSql('q')}
-       ORDER BY q.id`,
+       ORDER BY q.number`,
     )
     .all(rootId, rootId)
-    .map((row) => row.id)
+    .map((row) => row.record_id)
 }
 
 export function closeQuestions(
   database: Database,
-  questionIds: readonly number[],
+  questionIds: readonly string[],
   reason: QuestionCloseReason,
   actor: string | null = sessionId(),
   at: string = nowIso(),
 ): number {
   const update = database.query(
     `UPDATE question SET closed_at=?,close_reason=?,revision=revision+1
-     WHERE id=? AND ${questionOpenSql('question')}`,
+     WHERE record_id=? AND ${questionOpenSql('question')}`,
   )
   let closed = 0
   for (const questionId of questionIds) {
@@ -83,17 +83,17 @@ export function retireRunChainQuestionDeliveries(
     .get(rootId, rootId)
   if (live) return 0
   const questionIds = database
-    .query<{ id: number }, [string, string]>(
-      `SELECT q.id FROM question q JOIN run owner ON owner.record_id=q.run_record_id
+    .query<{ record_id: string }, [string, string]>(
+      `SELECT q.record_id FROM question q JOIN run owner ON owner.record_id=q.run_record_id
        WHERE (owner.record_id=? OR owner.parent_run_record_id=?)
          AND q.answered_at IS NOT NULL AND q.delivery_pending_at IS NOT NULL
-       ORDER BY q.id`,
+       ORDER BY q.number`,
     )
     .all(rootId, rootId)
-    .map((row) => row.id)
+    .map((row) => row.record_id)
   const update = database.query(
     `UPDATE question SET delivery_pending_at=NULL,revision=revision+1
-     WHERE id=? AND answered_at IS NOT NULL AND delivery_pending_at IS NOT NULL`,
+     WHERE record_id=? AND answered_at IS NOT NULL AND delivery_pending_at IS NOT NULL`,
   )
   let retired = 0
   for (const questionId of questionIds) {
@@ -116,7 +116,7 @@ export function retireRunChainQuestionDeliveries(
 }
 
 export function closeQuestionByOperator(
-  questionId: number,
+  questionId: string,
   reasonText: string,
   database: Database = db(),
 ): void {
@@ -133,7 +133,7 @@ export function closeQuestionByOperator(
         root_id: string | null
         latest_status: string | null
       },
-      [number]
+      [string]
     >(
       `SELECT q.answered_at,q.closed_at,q.run_record_id,q.workflow_cursor_id,c.state cursor_state,
               COALESCE(owner.parent_run_record_id,owner.record_id) root_id,
@@ -144,7 +144,7 @@ export function closeQuestionByOperator(
          FROM question q
          LEFT JOIN run owner ON owner.record_id=q.run_record_id
          LEFT JOIN workflow_cursor c ON c.id=q.workflow_cursor_id
-        WHERE q.id=?`,
+        WHERE q.record_id=?`,
     )
     .get(questionId)
   if (!row) throw new Error(`no question ${questionId}`)

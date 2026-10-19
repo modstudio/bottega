@@ -66,7 +66,7 @@ type WorkflowInboxQuestion = {
 }
 
 type QueriedInboxQuestion = {
-  id: number
+  number: number
   record_id: string
   run_record_id: string
   run_number: number
@@ -120,14 +120,14 @@ function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
   const defaultProject = !scoped && !input.all ? projectAt(process.cwd()) : null
   const rows = db()
     .query(
-      `SELECT q.id,q.record_id,q.asked_at,q.question,c.id cursor_id,c.project,c.project_record_id,c.workflow_slug,c.mode_slug,c.args,
+      `SELECT q.number,q.record_id,q.asked_at,q.question,c.id cursor_id,c.project,c.project_record_id,c.workflow_slug,c.mode_slug,c.args,
               c.ordinal,c.step_slug,c.session_id
          FROM question q JOIN workflow_cursor c ON c.id=q.workflow_cursor_id
         WHERE c.state='awaiting-ruling' AND ${questionOpenSql('q')}
-        ORDER BY q.asked_at,q.id`,
+        ORDER BY q.asked_at,q.number`,
     )
     .all() as Array<{
-    id: number
+    number: number
     record_id: string
     asked_at: string
     question: string
@@ -155,7 +155,7 @@ function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
     const canAnswer = row.session_id === null || (sid !== null && row.session_id === sid)
     return {
       kind: 'workflow',
-      question_id: row.id,
+      question_id: row.number,
       question_record_id: row.record_id,
       workflow: row.workflow_slug,
       project: row.project,
@@ -206,7 +206,7 @@ export async function queryInbox(
     'CASE WHEN r.session_id IS NOT NULL AND seen.last_seen >= ? THEN 1 ELSE 0 END'
   const queriedRows = db()
     .query(
-      `SELECT q.id, q.record_id, q.run_record_id, r.number AS run_number,
+      `SELECT q.number,q.record_id,q.run_record_id,r.number AS run_number,
             q.asked_at, q.question, q.options, q.recommendation, q.why,
             q.answered_at, q.overturned_at, q.overturned_by, q.overturn_reason, q.replacement,
             q.filed_as, q.filed_ref, q.filed_record_id, q.filed_label, q.filed_at,
@@ -218,7 +218,7 @@ export async function queryInbox(
        JOIN run root ON root.record_id = COALESCE(r.parent_run_record_id, r.record_id)
        ${seenJoin}
       WHERE q.closed_at IS NULL
-      ORDER BY q.run_record_id, q.id`,
+      ORDER BY q.run_record_id,q.number`,
     )
     .all(cutoff) as QueriedInboxQuestion[]
   const isLive = (question: (typeof queriedRows)[number]) =>
@@ -243,7 +243,7 @@ export async function queryInbox(
     questions: [
       ...visible.map(
         (q): InboxQuestion => ({
-          question_id: q.id,
+          question_id: q.number,
           question_record_id: q.record_id,
           run_record_id: q.run_record_id,
           run_number: q.run_number,
@@ -418,7 +418,7 @@ export async function runInboxCommand(
     'CASE WHEN r.session_id IS NOT NULL AND seen.last_seen >= ? THEN 1 ELSE 0 END'
   const queriedRows = db()
     .query(
-      `SELECT q.id, q.run_record_id, r.number AS run_number, q.asked_at, q.question, q.options, q.recommendation, q.why,
+      `SELECT q.number,q.run_record_id,r.number AS run_number,q.asked_at,q.question,q.options,q.recommendation,q.why,
             q.answered_at,
             q.answer, q.overturned_at, q.overturned_by, q.overturn_reason, q.replacement,
             q.filed_as, q.filed_ref, q.filed_record_id, q.filed_label, q.filed_at,
@@ -431,10 +431,10 @@ export async function runInboxCommand(
        JOIN run root ON root.record_id = COALESCE(r.parent_run_record_id, r.record_id)
        ${seenJoin}
       WHERE q.closed_at IS NULL
-      ORDER BY q.run_record_id, q.id`,
+      ORDER BY q.run_record_id,q.number`,
     )
     .all(cutoff) as {
-    id: number
+    number: number
     run_record_id: string
     run_number: number
     asked_at: string
@@ -541,7 +541,7 @@ export async function runInboxCommand(
       lastRun = q.run_record_id
     }
     lastRoot = q.root_id
-    log(`  [q${q.id}] ${q.question}`)
+    log(`  [q${q.number}] ${q.question}`)
     if (q.why) log(`        why: ${q.why}`)
     const opts = q.options ? (JSON.parse(q.options) as string[]) : []
     for (const o of opts) log(`        - ${o}`)
@@ -583,7 +583,7 @@ export async function runInboxCommand(
     for (const q of visible) {
       const liveness = q.session_recent ? 'live' : 'unknown'
       log(
-        `\n  [q${q.id}] run ${q.run_number} · ${q.job} · ${q.agent}` +
+        `\n  [q${q.number}] run ${q.run_number} · ${q.job} · ${q.agent}` +
           `${q.repo ? ` · ${q.repo}` : ''} · owner ${q.session_id ?? 'unknown'} · ` +
           `liveness ${liveness} · waiting ${dur(Date.now() - Date.parse(q.asked_at))}`,
       )
@@ -601,7 +601,7 @@ export async function runInboxCommand(
       `\nrun ${q.root_id} · ${q.agent}/${q.job}${q.repo ? ` · ${q.repo}` : ''} · ` +
         `${status} (terminal)`,
     )
-    log(`  [q${q.id}] ${q.question}`)
+    log(`  [q${q.number}] ${q.question}`)
     presentOverturn(q, log)
     presentFiled(q, log)
   }

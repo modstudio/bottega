@@ -527,8 +527,8 @@ async function releaseEvalOwnedScratchWorktree(repo: string, runId: string | nul
 function terminaliseJudgedProbe(runId: string): void {
   const answeredAt = nowIso()
   const questions = db()
-    .query<{ id: number }, [string]>(
-      `SELECT id FROM question WHERE run_record_id=? AND ${questionOpenSql('question')}`,
+    .query<{ record_id: string }, [string]>(
+      `SELECT record_id FROM question WHERE run_record_id=? AND ${questionOpenSql('question')}`,
     )
     .all(runId)
   const answered = db()
@@ -547,7 +547,7 @@ function terminaliseJudgedProbe(runId: string): void {
     .run(runId)
   if (answered.changes || terminalised.changes) {
     auditRunMutation(runMutationActor(runId), 'canon-eval')
-    for (const question of questions) enqueueQuestionRecord(db(), question.id)
+    for (const question of questions) enqueueQuestionRecord(db(), question.record_id)
   }
 }
 

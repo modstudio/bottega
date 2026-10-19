@@ -57,6 +57,8 @@ import {
   OrchRunSchema,
   OrchStateSchema,
   OrchUnknownRunSchema,
+  type QuestionIdentity,
+  QuestionIdentityListSchema,
   type RulingListRow,
   RulingListSchema,
   type RunIdentity,
@@ -318,6 +320,12 @@ export async function readRuns(since: string): Promise<OrchRun[]> {
 export async function readRunIdentityMap(): Promise<RunIdentity[]> {
   return RunIdentityListSchema.parse(
     JSON.parse(await orchProcess(['run', 'identity-map'], RUN_IDENTITY_MAP_DEADLINE_MS)),
+  )
+}
+
+export async function readQuestionIdentityMap(): Promise<QuestionIdentity[]> {
+  return QuestionIdentityListSchema.parse(
+    JSON.parse(await orchProcess(['question', 'identity-map'], RUN_IDENTITY_MAP_DEADLINE_MS)),
   )
 }
 

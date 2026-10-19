@@ -134,16 +134,21 @@ export async function retryCommand(
 }
 
 function answeredQuestionIds(runId: string, rulings: AnswerRunInput['rulings']): number[] {
-  if (typeof rulings !== 'string') return rulings.map((ruling) => ruling.questionId)
+  if (typeof rulings !== 'string') {
+    const number = db().query<{ number: number }, [string]>(
+      'SELECT number FROM question WHERE record_id=?',
+    )
+    return rulings.map((ruling) => number.get(ruling.questionId)!.number)
+  }
   return (
     db()
       .query(
-        `SELECT q.id FROM question q JOIN run owner ON owner.record_id=q.run_record_id
+        `SELECT q.number FROM question q JOIN run owner ON owner.record_id=q.run_record_id
           WHERE (owner.record_id=? OR owner.parent_run_record_id=?) AND ${questionOpenSql('q')}
-          ORDER BY q.id`,
+          ORDER BY q.number`,
       )
-      .all(runId, runId) as { id: number }[]
-  ).map((row) => row.id)
+      .all(runId, runId) as { number: number }[]
+  ).map((row) => row.number)
 }
 
 export async function answerCommand(

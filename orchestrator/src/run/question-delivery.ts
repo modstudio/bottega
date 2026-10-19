@@ -7,7 +7,7 @@ import { db } from '../database/db.ts'
 import type { QuestionDeliveryMode, QuestionDeliveryOutcome } from './question-vocabulary.ts'
 
 export function appendQuestionDeliveries(
-  questionIds: number[],
+  questionIds: string[],
   delivery: {
     runId: string | null
     mode: QuestionDeliveryMode
@@ -18,7 +18,7 @@ export function appendQuestionDeliveries(
   database: Database = db(),
 ): void {
   const insert = database.query(
-    `INSERT INTO question_delivery (record_id, question_id, run_record_id, mode, outcome, at, error)
+    `INSERT INTO question_delivery (record_id,question_record_id,run_record_id,mode,outcome,at,error)
      VALUES (?,?,?,?,?,?,?)`,
   )
   for (const questionId of questionIds) {

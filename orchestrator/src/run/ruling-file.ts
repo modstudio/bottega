@@ -59,7 +59,7 @@ export type RulingFileStores = {
 }
 
 export type FileRulingInput = {
-  questionId: number
+  questionId: string
   as: RulingFileAs
   scope?: string
   subject?: string
@@ -70,8 +70,8 @@ export type FileRulingInput = {
 }
 
 type QuestionRow = {
-  id: number
   record_id: string
+  number: number
   run_record_id: string | null
   root_id: string | null
   workflow_cursor_id: number | null
@@ -151,24 +151,24 @@ function refusal(
   if (decision.kind === 'allow') return null
   if (decision.code === 'unanswered') {
     return (
-      `question ${row.id} is unanswered and has no ruling to file; ` +
+      `question ${row.number} is unanswered and has no ruling to file; ` +
       `record its ruling first with ${questionRulingRemedy(row)}`
     )
   }
   if (decision.code === 'overturned-without-replacement') {
     return (
-      `question ${row.id} was overturned without a replacement; ` +
-      `file the replacement first with ${PLATFORM_SLUG} question ruling overturn ${row.id} --because ... --replacement "<ruling>"`
+      `question ${row.number} was overturned without a replacement; ` +
+      `file the replacement first with ${PLATFORM_SLUG} question ruling overturn ${row.number} --because ... --replacement "<ruling>"`
     )
   }
   if (decision.code === 'already-filed') {
     return (
-      `question ${row.id} is already filed as ${row.filed_as} at ${filingDisplay(row)}; ` +
+      `question ${row.number} is already filed as ${row.filed_as} at ${filingDisplay(row)}; ` +
       `inspect that filing rather than filing again`
     )
   }
   if (decision.code === 'canon-direct') {
-    return `canon is never written directly; file a canon proposal with ${PLATFORM_SLUG} question ruling file ${row.id} --as canon`
+    return `canon is never written directly; file a canon proposal with ${PLATFORM_SLUG} question ruling file ${row.number} --as canon`
   }
   if (decision.code === 'operator-attribution') return '--channel ui requires --from-operator'
   if (decision.code === 'dashboard-capability') {
@@ -204,10 +204,10 @@ function ownerRefusal(
   )
 }
 
-function loadQuestion(questionId: number): QuestionRow {
+function loadQuestion(questionId: string): QuestionRow {
   const row = db()
     .query(
-      `SELECT q.id, q.record_id, q.run_record_id, r.record_id run_record_id, COALESCE(r.parent_run_record_id, r.record_id) root_id,
+      `SELECT q.number,q.record_id,q.run_record_id,r.record_id run_record_id,COALESCE(r.parent_run_record_id,r.record_id) root_id,
               q.workflow_cursor_id,c.workflow_slug,c.mode_slug,c.session_id workflow_owner,
               c.updated_at workflow_updated_at,
               q.question, q.answer, q.answer_basis,
@@ -218,7 +218,7 @@ function loadQuestion(questionId: number): QuestionRow {
          FROM question q LEFT JOIN run r ON r.record_id = q.run_record_id
          LEFT JOIN workflow_cursor c ON c.id=q.workflow_cursor_id
          LEFT JOIN project p ON p.record_id=c.project_record_id AND p.retired_at IS NULL
-         WHERE q.id=?`,
+         WHERE q.record_id=?`,
     )
     .get(questionId) as QuestionRow | null
   if (!row)
@@ -254,11 +254,11 @@ async function writeDocFiling(
   const saved = await stores.writeDoc({
     scope,
     subject: docSubject(scope, input.subject, row.repo),
-    slug: rulingDocSlug(title, row.id),
+    slug: rulingDocSlug(title, row.number),
     title,
     body,
     delivery: 'demand',
-    reason: `file ruling ${row.id}`,
+    reason: `file ruling ${row.number}`,
   })
   return {
     filed_ref: filedDocRef(saved.id, saved.revision),
@@ -298,7 +298,7 @@ const filingResult = (
   reference: FilingReference,
   filedAt: string,
 ) => ({
-  question_id: row.id,
+  question_id: row.number,
   question_record_id: row.record_id,
   filed_as: filedAs,
   filed_ref: reference.filed_ref,
@@ -323,7 +323,7 @@ function recordFiling(
     .query(
       `UPDATE question SET filed_as=?, filed_ref=?, filed_record_id=?, filed_label=?,
          filed_at=?, revision=revision+1
-        WHERE id=? AND filed_as IS NULL`,
+        WHERE record_id=? AND filed_as IS NULL`,
     )
     .run(
       requested,
@@ -331,19 +331,21 @@ function recordFiling(
       reference.filed_record_id,
       reference.filed_label,
       at,
-      row.id,
+      row.record_id,
     )
   if (changed.changes === 1) return
   const current = db()
-    .query('SELECT filed_as, filed_ref, filed_record_id, filed_label FROM question WHERE id=?')
-    .get(row.id) as (FilingReference & { filed_as: string | null }) | null
+    .query(
+      'SELECT filed_as, filed_ref, filed_record_id, filed_label FROM question WHERE record_id=?',
+    )
+    .get(row.record_id) as (FilingReference & { filed_as: string | null }) | null
   if (current?.filed_as) {
     throw new Error(
-      `question ${row.id} is already filed as ${current.filed_as} at ${filingDisplay(current)}; ` +
+      `question ${row.number} is already filed as ${current.filed_as} at ${filingDisplay(current)}; ` +
         `inspect that filing rather than filing again`,
     )
   }
-  throw new Error(`question ${row.id} changed before it was filed`)
+  throw new Error(`question ${row.number} changed before it was filed`)
 }
 
 export async function fileRuling(input: FileRulingInput, stores: RulingFileStores) {
@@ -387,7 +389,7 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
   })
   if (!ruling) {
     throw new Error(
-      `question ${row.id} has no effective ruling to file; ` +
+      `question ${row.number} has no effective ruling to file; ` +
         `record its ruling first with ${questionRulingRemedy(row)}`,
     )
   }
@@ -409,7 +411,7 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
           },
     taskKey: row.launch_key,
     date: at,
-    questionId: row.id,
+    questionId: row.number,
     questionRecordId: row.record_id,
   })
   const reference =
@@ -422,14 +424,14 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
     if (row.run_record_id !== null) auditRunMutation(authority!, 'file', `as ${requested}`)
     else
       auditQuestionMutation({
-        questionId: row.id,
+        questionId: row.record_id,
         action: 'file',
         actor,
         at,
         reason: `as ${requested}`,
         adoptionReason,
       })
-    enqueueQuestionRecord(db(), row.id)
+    enqueueQuestionRecord(db(), row.record_id)
   })
   return filingResult(row, requested, reference, at)
 }

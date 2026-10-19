@@ -37,16 +37,16 @@ function assignWorkflowTaskKey(row: AdoptionCursor, key: string, d: Database): v
   row.workflow_key = key
   row.args = JSON.stringify(adoptedArgs)
   const questions = d
-    .query<{ id: number }, [number]>(
-      'SELECT id FROM question WHERE workflow_cursor_id=? ORDER BY id',
+    .query<{ record_id: string }, [number]>(
+      'SELECT record_id FROM question WHERE workflow_cursor_id=? ORDER BY number',
     )
     .all(row.id)
   for (const question of questions) {
-    d.query('UPDATE question SET workflow_key=?,revision=revision+1 WHERE id=?').run(
+    d.query('UPDATE question SET workflow_key=?,revision=revision+1 WHERE record_id=?').run(
       key,
-      question.id,
+      question.record_id,
     )
-    enqueueQuestionRecord(d, question.id)
+    enqueueQuestionRecord(d, question.record_id)
   }
 }
 

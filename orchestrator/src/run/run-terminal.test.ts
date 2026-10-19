@@ -61,7 +61,7 @@ test('a failed non-failover child closes its question before the root inherits f
   })
   db()
     .query(
-      `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
     )
     .run(child, '2026-09-29', 'What should happen?')
 

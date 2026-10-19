@@ -39,7 +39,7 @@ test('heartbeat reports both an answerable question and a stalled current turn',
   ).number
   db()
     .query(
-      `INSERT INTO question (record_id,run_record_id,asked_at,question,why) VALUES ('${newRecordId()}',?,?,?,?)`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question,why) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?)`,
     )
     .run(root, new Date().toISOString(), 'which way?', 'the fixture needs both conditions')
 

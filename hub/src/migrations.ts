@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { readInstallAsset } from '../../shared/embedded-assets.ts'
 import { assetPath } from '../../shared/install-root.ts'
+import type { QuestionIdentity } from '../../shared/orch-contract.ts'
 export const MIGRATIONS_FOLDER = assetPath('hub', 'migrations')
 export const MIGRATIONS_TABLE = 'hub_migrations'
 export const SCHEMA_LOCK_TABLE = 'hub_schema_lock'
@@ -164,6 +165,10 @@ function migrationState(
         ? (applied.at(-1)?.version ?? String(applied.at(-1)?.created_at))
         : null,
   }
+}
+
+export function pendingMigrationTags(d: Database, folder = MIGRATIONS_FOLDER): string[] {
+  return migrationState(d, folder).pending.map((entry) => entry.tag)
 }
 
 export function migrationRefusal(d: Database): string | null {
@@ -639,6 +644,7 @@ export function applyMigrations(
   d: Database,
   folder = MIGRATIONS_FOLDER,
   backfillValues: BackfillValues = {},
+  questionIdentities: readonly QuestionIdentity[] = [],
 ): string[] {
   d.exec('PRAGMA busy_timeout = 15000')
   d.exec('BEGIN IMMEDIATE')
@@ -654,6 +660,55 @@ export function applyMigrations(
     }
     for (const entry of state.pending) {
       createMigrationsTable(d)
+      if (entry.tag === '0036_question_uuid_key') {
+        const byNumber = new Map(questionIdentities.map((row) => [row.number, row.record_id]))
+        const inventories = [
+          {
+            table: 'question',
+            numbers: d
+              .query<{ number: number }, []>('SELECT DISTINCT question_id number FROM question')
+              .all(),
+          },
+          {
+            table: 'question_delivery',
+            numbers: d
+              .query<{ number: number }, []>(
+                'SELECT DISTINCT question_id number FROM question_delivery',
+              )
+              .all(),
+          },
+          {
+            table: 'operator_waiting_email',
+            numbers: d
+              .query<{ number: number }, []>(
+                "SELECT DISTINCT item_id number FROM operator_waiting_email WHERE kind='question'",
+              )
+              .all(),
+          },
+        ]
+        const missing = inventories
+          .map(({ table, numbers }) => ({
+            table,
+            numbers: numbers
+              .filter((row) => !byNumber.has(row.number))
+              .map((row) => row.number)
+              .sort((a, b) => a - b),
+          }))
+          .filter((row) => row.numbers.length)
+        if (missing.length)
+          throw new Error(
+            `refusing question UUID migration: orchestrator identity map is missing Hub question numbers ` +
+              `${missing.map((row) => `${row.table} [${row.numbers.join(', ')}]`).join('; ')}; ` +
+              `restore the matching orchestrator store and rerun ${PLATFORM_SLUG} machine migrate`,
+          )
+        d.exec(
+          'CREATE TABLE question_identity_map_input(number INTEGER PRIMARY KEY,record_id TEXT NOT NULL UNIQUE)',
+        )
+        const insert = d.query(
+          'INSERT INTO question_identity_map_input(number,record_id) VALUES (?,?)',
+        )
+        for (const row of questionIdentities) insert.run(row.number, row.record_id)
+      }
       executeMigrationSource(d, migrationSource(entry, folder))
       recordMigration(d, entry, folder)
       stampUserVersion(d, entry.idx + 1)

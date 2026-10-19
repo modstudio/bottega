@@ -60,6 +60,7 @@ export const ROUTES = (
     route('run show', 'orch', 'run'),
     route('run list', 'orch', 'runs'),
     route('run identity-map', 'orch', 'run-identities'),
+    route('question identity-map', 'orch', 'question-identities'),
     ...[
       'diff',
       'state',

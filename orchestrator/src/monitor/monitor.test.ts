@@ -505,7 +505,7 @@ describe('operational monitor conditions', () => {
     })
     db()
       .query(
-        `INSERT INTO question (record_id,id, run_record_id, asked_at, question) VALUES ('${newRecordId()}',?,?,?,?)`,
+        `INSERT INTO question (record_id,number, run_record_id, asked_at, question) VALUES ('${newRecordId()}',?,?,?,?)`,
       )
       .run(2000, runId, '2026-09-04T19:30:00.000Z', 'which way?')
     const clock = Date.parse('2026-09-04T20:00:00.000Z')
@@ -607,8 +607,8 @@ describe('operational monitor conditions', () => {
     })
     db()
       .query(
-        `INSERT INTO question (record_id,run_record_id,asked_at,question,why,answer,answered_at)
-         VALUES ('${newRecordId()}',?,?,?,?,?,?)`,
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question,why,answer,answered_at)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?,?,?)`,
       )
       .run(id, nowIso(), 'fixture question', 'catches stale asking status', 'answered', nowIso())
     const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((cmd: string[]) => {

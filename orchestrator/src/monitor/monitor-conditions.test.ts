@@ -170,8 +170,8 @@ describe('stalled run monitor condition', () => {
 function insertAnsweredQuestion(runId: string): void {
   db()
     .query(
-      `INSERT INTO question (record_id,run_record_id,asked_at,question,why,answer,answered_at)
-       VALUES ('${newRecordId()}',?,?,?,?,?,?)`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question,why,answer,answered_at)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?,?,?)`,
     )
     .run(runId, nowIso(), 'which way?', 'needed', 'go left', nowIso())
 }
@@ -814,7 +814,7 @@ describe('operational monitor conditions', () => {
     })
     db()
       .query(
-        `INSERT INTO question (record_id,run_record_id, asked_at, question) VALUES ('${newRecordId()}',?,?,?)`,
+        `INSERT INTO question (number,record_id,run_record_id, asked_at, question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
       )
       .run(child, nowIso(), 'and now what?')
     expect(askingRuns().map((run) => run.record_id)).toEqual([])

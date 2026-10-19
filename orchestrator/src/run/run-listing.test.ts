@@ -104,7 +104,7 @@ describe('run listing', () => {
     const id = insert('asking')
     db()
       .query(
-        `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
       )
       .run(id, new Date().toISOString(), 'which shape?')
     expect((await command()).join('\n')).toMatch(
@@ -300,7 +300,7 @@ describe('run listing', () => {
     })
     db()
       .query(
-        `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
       )
       .run(id, '2026-09-04T19:55:00.000Z', 'need a ruling')
     const row = runJson((await command({ json: true, since: ['2026-09-04T18:00:00.000Z'] }))[0]!)
@@ -319,7 +319,7 @@ describe('run listing', () => {
     })
     db()
       .query(
-        `INSERT INTO question (record_id,run_record_id,asked_at,question,answered_at) VALUES ('${newRecordId()}',?,?,?,?)`,
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question,answered_at) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?)`,
       )
       .run(id, '2026-09-04T16:00:00.000Z', 'need a ruling', '2026-09-04T19:55:00.000Z')
     const question = runJson(
@@ -338,8 +338,8 @@ describe('run listing', () => {
     })
     db()
       .query(
-        `INSERT INTO question (record_id,run_record_id,asked_at,question,closed_at,close_reason)
-         VALUES ('${newRecordId()}',?,?,?,?,?)`,
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question,closed_at,close_reason)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?,?)`,
       )
       .run(
         id,
@@ -361,8 +361,8 @@ describe('run listing', () => {
     const id = insert('ok')
     db()
       .query(
-        `INSERT INTO question (record_id,run_record_id,asked_at,question,closed_at,close_reason)
-         VALUES ('${newRecordId()}',?,?,?,?,?)`,
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question,closed_at,close_reason)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?,?)`,
       )
       .run(
         id,
@@ -387,7 +387,7 @@ describe('run listing', () => {
     })
     db()
       .query(
-        `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
       )
       .run(id, '2026-09-04T16:00:00.000Z', 'still waiting')
     expect(
@@ -465,8 +465,8 @@ describe('run listing', () => {
     db()
       .query(
         `INSERT INTO question
-           (record_id,run_record_id,asked_at,question,answered_at,asked_via,answerer_kind,answer_channel)
-         VALUES ('${newRecordId()}',?,?,?,?,?,?,?)`,
+           (number,record_id,run_record_id,asked_at,question,answered_at,asked_via,answerer_kind,answer_channel)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?,?,?,?)`,
       )
       .run(
         root,
@@ -479,18 +479,20 @@ describe('run listing', () => {
       )
     db()
       .query(
-        `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
       )
       .run(child, '2026-09-04T10:10:00.000Z', 'child q')
-    const rootQuestion = db().query('SELECT id FROM question WHERE run_record_id=?').get(root) as {
-      id: number
+    const rootQuestion = db()
+      .query('SELECT record_id FROM question WHERE run_record_id=?')
+      .get(root) as {
+      record_id: string
     }
     db()
       .query(
-        `INSERT INTO question_delivery (record_id, question_id,run_record_id,mode,outcome,at,error)
+        `INSERT INTO question_delivery (record_id, question_record_id,run_record_id,mode,outcome,at,error)
          VALUES ('${newRecordId()}', ?,?,?,?,?,?)`,
       )
-      .run(rootQuestion.id, child, 'resume', 'delivered', '2026-09-04T10:06:00.000Z', null)
+      .run(rootQuestion.record_id, child, 'resume', 'delivered', '2026-09-04T10:06:00.000Z', null)
     const row = runJson((await command({ json: true, id: [String(root)] }))[0]!)
     expect(row.questions).toEqual([
       expect.objectContaining({
@@ -502,7 +504,7 @@ describe('run listing', () => {
         deliveries: [
           expect.objectContaining({
             id: expect.any(Number),
-            question_id: rootQuestion.id,
+            question_record_id: rootQuestion.record_id,
             run_record_id: child,
             mode: 'resume',
             outcome: 'delivered',
