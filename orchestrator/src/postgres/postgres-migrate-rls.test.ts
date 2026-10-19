@@ -134,7 +134,7 @@ realPostgres('RLS proof against real Postgres', () => {
         ('${ids.REVIEW_A}', '${ids.SPACE_A}', '${ids.PROJECT_A}', '${ids.MACHINE_A}', now(), now(), now()),
         ('${ids.REVIEW_B}', '${ids.SPACE_B}', '${ids.PROJECT_B}', '${ids.MACHINE_A}', now(), now(), now());
       INSERT INTO review_lens
-        (id, space_id, review_record_id, run_record_id, machine_id, lens, agent,
+        (id, space_id, review_id, run_id, machine_id, lens, agent,
          standards_read, files_covered, commands_run, could_not_verify, mcp_tools, docs_read,
          substitutes, created_at, updated_at)
       VALUES
@@ -143,7 +143,7 @@ realPostgres('RLS proof against real Postgres', () => {
         ('01990000-0000-7000-8000-00000000005b', '${ids.SPACE_B}', '${ids.REVIEW_B}', '${ids.RUN_B}', '${ids.MACHINE_A}',
          'craft', 'proof', '[]', '[]', '[]', '[]', '[]', '[]', '[]', now(), now());
       INSERT INTO review_finding
-        (id, space_id, review_record_id, review_lens_record_id, machine_id, ordinal, severity,
+        (id, space_id, review_id, review_lens_id, machine_id, ordinal, severity,
          location, evidence, proposed_correction, created_at, updated_at)
       VALUES
         ('01990000-0000-7000-8000-00000000006a', '${ids.SPACE_A}', '${ids.REVIEW_A}', '01990000-0000-7000-8000-00000000005a', '${ids.MACHINE_A}', 1, 'major', 'a', 'a', 'a', now(), now()),
@@ -159,7 +159,7 @@ realPostgres('RLS proof against real Postgres', () => {
         ('01990000-0000-7000-8000-00000000008a', '${ids.SPACE_A}', '${ids.PROJECT_A}', '${ids.MACHINE_A}', 'a', 'tip', 'tree', 'reason', now(), now(), now()),
         ('01990000-0000-7000-8000-00000000008b', '${ids.SPACE_B}', '${ids.PROJECT_B}', '${ids.MACHINE_A}', 'b', 'tip', 'tree', 'reason', now(), now(), now());
       INSERT INTO landing_review_carry
-        (id, space_id, project_id, machine_id, branch, tip, tree, review_record_id,
+        (id, space_id, project_id, machine_id, branch, tip, tree, review_id,
          reviewed_commit, reviewed_tree, patch_id, old_base, new_base, at, created_at, updated_at)
       VALUES
         ('01990000-0000-7000-8000-00000000009a', '${ids.SPACE_A}', '${ids.PROJECT_A}', '${ids.MACHINE_A}', 'a', 'tip', 'tree', '${ids.REVIEW_A}', 'commit', 'tree', 'patch', 'old', 'new', now(), now(), now()),
@@ -376,7 +376,7 @@ realPostgres('RLS proof against real Postgres', () => {
        SELECT count(*) FROM membership WHERE space_id='${authSpaceA}';
        SELECT count(*) FROM space WHERE id='${authSpaceB}';
        SELECT count(*) FROM project WHERE id='${authProjectA}';
-       SELECT count(*) FROM run WHERE record_id='${authRunA}';`,
+       SELECT count(*) FROM run WHERE id='${authRunA}';`,
     )
     expect(visible.code, visible.stderr).toBe(0)
     expect(visible.stdout.split('\n')).toEqual(['1', '0', '1', '0', '0'])
@@ -683,13 +683,13 @@ realPostgres('RLS proof against real Postgres', () => {
             'proof','proof','http',1,'http',false,'ok',1,false,false,false,now(),now()),
            ('${httpRunOlder}','${identity.activeSpaceId}','${httpProject}','${ids.MACHINE_A}',now() - interval '1 minute',
             'proof','proof','older',1,'older',false,'ok',1,false,false,false,now(),now());
-         INSERT INTO run_score (run_record_id,space_id,delivery,quality,fidelity,note,scored_at,scored_by,updated_at)
+         INSERT INTO run_score (run_id,space_id,delivery,quality,fidelity,note,scored_at,scored_by,updated_at)
            VALUES ('${httpRun}','${identity.activeSpaceId}','full','right','faithful','good',now(),'architect',now());
          INSERT INTO review (id,space_id,project_id,machine_id,recorded_at,created_at,updated_at)
            VALUES ('${httpReview}','${identity.activeSpaceId}','${httpProject}','${ids.MACHINE_A}',now(),now(),now());
-         INSERT INTO review_lens (id,space_id,review_record_id,run_id,machine_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,mcp_tools,docs_read,substitutes,created_at,updated_at)
+         INSERT INTO review_lens (id,space_id,review_id,run_id,machine_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,mcp_tools,docs_read,substitutes,created_at,updated_at)
            VALUES ('${httpLens}','${identity.activeSpaceId}','${httpReview}','${httpRun}','${ids.MACHINE_A}','correctness','proof','[]','[]','[]','[]','[]','[]','[]',now(),now());
-         INSERT INTO review_finding (id,space_id,review_record_id,review_lens_record_id,machine_id,ordinal,severity,location,evidence,proposed_correction,created_at,updated_at)
+         INSERT INTO review_finding (id,space_id,review_id,review_lens_id,machine_id,ordinal,severity,location,evidence,proposed_correction,created_at,updated_at)
            VALUES ('${httpFinding}','${identity.activeSpaceId}','${httpReview}','${httpLens}','${ids.MACHINE_A}',1,'major','file:1','evidence','fix',now(),now());`,
     )
 
