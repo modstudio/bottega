@@ -14,6 +14,10 @@ import {
   RECORD_PUBLIC_ROLE,
   RECORD_READER_ROLE,
 } from '../shared/record/schema.ts'
+import {
+  applyHostedProjectCleanupProof,
+  seedHostedProjectCleanupProof,
+} from './record-hosted-project-cleanup-proof.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const migrationsFolder = join(root, 'shared', 'record', 'migrations')
@@ -858,6 +862,7 @@ async function applyAndProveMigration(
   if (migration.name === hubProjectIdentityExpand) await proofHubProjectIdentityExpand(transaction)
   if (migration.name === hubProjectIdentityBackfill)
     await proofHubProjectIdentityBackfill(transaction)
+  await applyHostedProjectCleanupProof(transaction, migration)
 }
 
 async function seedMigrationProof(transaction: Transaction, name: string): Promise<void> {
@@ -866,6 +871,7 @@ async function seedMigrationProof(transaction: Transaction, name: string): Promi
   if (name === boardSharedSpacesMigration) await seedBoardThreadAuthorBackfill(transaction)
   if (name === docJsonbArrayRepair) await seedDocJsonbArrayRepair(transaction)
   if (name === hubProjectIdentityExpand) await seedHubProjectIdentityBackfill(transaction)
+  await seedHostedProjectCleanupProof(transaction, name)
 }
 
 async function proofBoardNotifications(database: PGlite): Promise<void> {

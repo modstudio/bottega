@@ -87,7 +87,7 @@ realPostgres('Bun SQL jsonb binding', () => {
           SELECT jsonb_typeof(d.source_files) AS doc_source_files,
             jsonb_typeof(r.source_files) AS revision_source_files,
             jsonb_typeof(r.related_subject_ids) AS revision_related_subject_ids
-          FROM doc d JOIN doc_revision r ON r.record_id=d.latest_revision_id
+          FROM doc d JOIN doc_revision r ON r.id=d.latest_revision_id
           WHERE d.id=${written.id}::uuid
         `
       expect([...storedTypes]).toEqual([

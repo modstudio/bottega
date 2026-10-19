@@ -127,6 +127,8 @@ try {
     CREATE DATABASE workflow_catalogue OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE lens_catalogue OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE port_catalogue OWNER ${RECORD_OWNER_ROLE};
+    CREATE DATABASE hosted_project_cleanup_migration OWNER ${RECORD_OWNER_ROLE};
+    CREATE DATABASE hosted_project_cleanup_collision OWNER ${RECORD_OWNER_ROLE};
   `)
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'recipient_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'hosted_task_id_migration')
@@ -143,6 +145,8 @@ try {
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'workflow_catalogue')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'lens_catalogue')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'port_catalogue')
+  postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'hosted_project_cleanup_migration')
+  postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'hosted_project_cleanup_collision')
 
   const ownerUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/postgres`
   const actorUrl = `postgres://${RECORD_ACTOR_ROLE}:actor-password@127.0.0.1:${port}/postgres`
@@ -162,6 +166,23 @@ try {
   const workflowCatalogueUrl = `postgres://postgres:postgres@127.0.0.1:${port}/workflow_catalogue`
   const lensCatalogueUrl = `postgres://postgres:postgres@127.0.0.1:${port}/lens_catalogue`
   const portCatalogueUrl = `postgres://postgres:postgres@127.0.0.1:${port}/port_catalogue`
+  const hostedProjectCleanupMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/hosted_project_cleanup_migration`
+  const hostedProjectCleanupCollisionUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/hosted_project_cleanup_collision`
+
+  const hostedProjectCleanupMigration = await run(
+    [
+      'bun',
+      'test',
+      '--timeout',
+      '30000',
+      'src/postgres/postgres-migrate-hosted-project-cleanup.test.ts',
+    ],
+    {
+      ORCH_TEST_HOSTED_PROJECT_CLEANUP_URL: hostedProjectCleanupMigrationUrl,
+      ORCH_TEST_HOSTED_PROJECT_CLEANUP_COLLISION_URL: hostedProjectCleanupCollisionUrl,
+    },
+  )
+  if (hostedProjectCleanupMigration !== 0) process.exit(hostedProjectCleanupMigration)
 
   const boardSharedSpaceMigration = await run(
     [
@@ -369,6 +390,8 @@ try {
         DROP DATABASE IF EXISTS workflow_catalogue WITH (FORCE);
         DROP DATABASE IF EXISTS lens_catalogue WITH (FORCE);
         DROP DATABASE IF EXISTS port_catalogue WITH (FORCE);
+        DROP DATABASE IF EXISTS hosted_project_cleanup_migration WITH (FORCE);
+        DROP DATABASE IF EXISTS hosted_project_cleanup_collision WITH (FORCE);
         REASSIGN OWNED BY ${RECORD_OWNER_ROLE} TO postgres;
         DROP OWNED BY ${RECORD_OWNER_ROLE};
         DROP OWNED BY ${RECORD_ACTOR_ROLE};

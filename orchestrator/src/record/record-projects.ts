@@ -49,16 +49,15 @@ async function renameHostedDocSubjects(
   from: string,
   to: string,
 ): Promise<void> {
-  const projectScopes = tx.array(['project', 'resume', 'canon', 'settings'], 'text')
   await tx`
     UPDATE doc SET subject=${to}, updated_at=now()
     WHERE space_id=${spaceId}::uuid AND subject=${from}
-      AND (project_id=${projectId}::uuid OR (project_id IS NULL AND scope=ANY(${projectScopes})))
+      AND project_id=${projectId}::uuid
   `
   await tx`
     UPDATE doc_revision SET subject=${to}
     WHERE space_id=${spaceId}::uuid AND subject=${from}
-      AND (project_id=${projectId}::uuid OR (project_id IS NULL AND scope=ANY(${projectScopes})))
+      AND project_id=${projectId}::uuid
   `
 }
 
@@ -80,18 +79,15 @@ async function renameHostedHubProjectNames(
 ): Promise<void> {
   for (const table of HUB_PROJECT_NAME_TABLES) {
     await tx`UPDATE ${tx.unsafe(table)} SET project_name=${input.to}
-      WHERE project_id=${input.projectId}::uuid
-         OR (project_id IS NULL AND space_id=${input.spaceId}::uuid AND project_name=${input.from})`
+      WHERE project_id=${input.projectId}::uuid`
   }
   await tx`
     UPDATE hub_task SET project=${input.to}
     WHERE project_id=${input.projectId}::uuid
-       OR (project_id IS NULL AND space_id=${input.spaceId}::uuid AND project=${input.from})
   `
   await tx`
     UPDATE hub_note SET project=${input.to}
     WHERE project_id=${input.projectId}::uuid
-       OR (project_id IS NULL AND space_id=${input.spaceId}::uuid AND project=${input.from})
   `
 }
 

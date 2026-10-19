@@ -304,7 +304,7 @@ export function registerProjectSpaceProofs(input: {
     expect(destinationFacts.stdout.split('\n')).toEqual(['0', '0'])
   })
 
-  test('a hosted rename leaves no hub row naming the old project', async () => {
+  test('a hosted rename changes rows by project id and leaves null project rows unchanged', async () => {
     input.setToken(input.token())
     const space = (await recordMemberships()).activeSpaceId
     if (!space) throw new Error('rename proof has no active space')
@@ -404,11 +404,11 @@ export function registerProjectSpaceProofs(input: {
       SELECT subject FROM doc_revision WHERE doc_id='${stackDoc}';
       SELECT subject FROM doc_revision WHERE doc_id='${otherProjectDoc}';`)
       expect(leftover.trim().split('\n')).toEqual([
-        '0',
+        '1',
         '1',
         'renamed-proof',
         'renamed-proof',
-        'renamed-proof',
+        'rename-proof',
         'rename-proof',
         'rename-proof',
         'rename-proof',
