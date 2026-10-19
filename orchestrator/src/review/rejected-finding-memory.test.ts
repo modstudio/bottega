@@ -15,7 +15,7 @@ function completedFinding(input: {
   disposition: 'accepted' | 'rejected'
   commit: string
   location: string
-}): number {
+}): string {
   db()
     .query("INSERT OR IGNORE INTO project (record_id,name,path,settings) VALUES (?,?,?,'{}')")
     .run(newRecordId(), input.project, `/fixture/${input.project}`)
@@ -66,7 +66,7 @@ test('reads and renders only the current same-project and same-branch rejection'
     db(),
   )
   db()
-    .query('UPDATE review_lens SET reviewed_tree=? WHERE review_id=?')
+    .query('UPDATE review_lens SET reviewed_tree=? WHERE review_record_id=?')
     .run('tree-hash-that-is-not-the-commit', matchingReview)
 
   completedFinding({

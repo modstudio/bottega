@@ -471,24 +471,24 @@ describe('schema coexistence', () => {
     const mixed = (
       d
         .query(
-          `INSERT INTO review (record_id,recorded_at) VALUES ('${newRecordId()}','t') RETURNING id`,
+          `INSERT INTO review (record_id,number,recorded_at) VALUES ('${newRecordId()}',8001,'t') RETURNING record_id`,
         )
-        .get() as { id: number }
-    ).id
+        .get() as { record_id: string }
+    ).record_id
     const aliased = (
       d
         .query(
-          `INSERT INTO review (record_id,recorded_at) VALUES ('${newRecordId()}','t') RETURNING id`,
+          `INSERT INTO review (record_id,number,recorded_at) VALUES ('${newRecordId()}',8002,'t') RETURNING record_id`,
         )
-        .get() as { id: number }
-    ).id
+        .get() as { record_id: string }
+    ).record_id
     const mixedA = insertRun('starship', starship)
     const mixedB = insertRun('alephbeis', alephbeis)
     const aliasA = insertRun(PLATFORM_SLUG, platformId)
     const aliasB = insertRun('devbox', platformId)
-    const lens = (reviewId: number, runId: string, name: string) => {
+    const lens = (reviewId: string, runId: string, name: string) => {
       d.query(
-        `INSERT INTO review_lens (record_id, review_id, run_record_id, lens, agent, standards_read, files_covered, commands_run, could_not_verify)
+        `INSERT INTO review_lens (record_id, review_record_id, run_record_id, lens, agent, standards_read, files_covered, commands_run, could_not_verify)
          VALUES ('${newRecordId()}', ?, ?, ?, 'codex', '[]', '[]', '[]', '[]')`,
       ).run(reviewId, runId, name)
     }
@@ -497,10 +497,10 @@ describe('schema coexistence', () => {
     lens(aliased, aliasA, 'a')
     lens(aliased, aliasB, 'b')
     expect(applyMigrations(d)).toEqual([])
-    expect(d.query('SELECT project_record_id FROM review WHERE id=?').get(mixed)).toEqual({
+    expect(d.query('SELECT project_record_id FROM review WHERE record_id=?').get(mixed)).toEqual({
       project_record_id: null,
     })
-    expect(d.query('SELECT project_record_id FROM review WHERE id=?').get(aliased)).toEqual({
+    expect(d.query('SELECT project_record_id FROM review WHERE record_id=?').get(aliased)).toEqual({
       project_record_id: platformId,
     })
     d.close()

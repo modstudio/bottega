@@ -38,6 +38,7 @@ function addReview(
     triagedSeverity?: string | null
   }>,
 ): void {
+  const reviewRecordId = newRecordId()
   const run = database
     .query<{ id: string }, []>(
       `INSERT INTO run
@@ -49,30 +50,30 @@ function addReview(
     .get()!
   database
     .query(
-      `INSERT INTO review (id,record_id,recorded_at,completed_at,patch_id,path_set,tier)
-       VALUES (?,'${newRecordId()}','2026-10-12','2026-10-12','current-patch','["one.ts"]',2)`,
+      `INSERT INTO review (number,record_id,recorded_at,completed_at,patch_id,path_set,tier)
+       VALUES (?,?,'2026-10-12','2026-10-12','current-patch','["one.ts"]',2)`,
     )
-    .run(reviewId)
+    .run(reviewId, reviewRecordId)
   const reviewLens = database
-    .query<{ id: number }, [number, string, string]>(
+    .query<{ record_id: string }, [string, string, string]>(
       `INSERT INTO review_lens
-         (record_id,review_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,
+         (record_id,review_record_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,
           could_not_verify,reproduced,coverage,limits,overlap)
        VALUES ('${newRecordId()}', ?, ?, ?, 'codex','model','[]','["one.ts"]','[]','[]','all','adequate','absent','none')
-       RETURNING id`,
+       RETURNING record_id`,
     )
-    .get(reviewId, run.id, lens)!
+    .get(reviewRecordId, run.id, lens)!
   for (const finding of findings) {
     database
       .query(
         `INSERT INTO review_finding
-           (record_id,review_id,review_lens_id,ordinal,severity,location,evidence,proposed_correction,
+           (record_id,review_record_id,review_lens_record_id,ordinal,severity,location,evidence,proposed_correction,
             disposition,triaged_severity)
          VALUES ('${newRecordId()}',?,?,?,?,?,?,?, ?,?)`,
       )
       .run(
-        reviewId,
-        reviewLens.id,
+        reviewRecordId,
+        reviewLens.record_id,
         finding.ordinal,
         finding.severity ?? 'medium',
         `${lens}.ts:${finding.ordinal}`,
@@ -97,13 +98,13 @@ test('three lenses render only accepted and modified findings in stable attribut
 
   const rendered = continuationFindings(database, group, 'Use the safer correction.')
 
-  expect(rendered).toContain('1. Review 10, finding 1')
+  expect(rendered).toContain('1. Finding 10/1')
   expect(rendered).toContain('Lens: correctness')
   expect(rendered).toContain('Severity: critical (triaged)')
   expect(rendered).toContain('Location: correctness.ts:1')
   expect(rendered).toContain('Evidence: correctness evidence 1')
   expect(rendered).toContain('Proposed correction: correctness correction 1')
-  expect(rendered).toContain('2. Review 20, finding 2')
+  expect(rendered).toContain('2. Finding 20/2')
   expect(rendered).toContain('Severity: medium (reviewer)')
   expect(rendered).toContain(
     "Modified: the architect message overrides the reviewer's proposed correction.",
@@ -131,7 +132,7 @@ test('refuses a round with no accepted or modified findings', () => {
 
 test('refuses a modified finding without an architect message', () => {
   const finding: ContinuationFinding = {
-    reviewId: 1,
+    reviewNumber: 1,
     ordinal: 1,
     lens: 'correctness',
     reviewerSeverity: 'high',
@@ -148,7 +149,7 @@ test('refuses a modified finding without an architect message', () => {
 
 test('omits the architect message section when no message was supplied', () => {
   const finding: ContinuationFinding = {
-    reviewId: 1,
+    reviewNumber: 1,
     ordinal: 1,
     lens: 'correctness',
     reviewerSeverity: 'high',

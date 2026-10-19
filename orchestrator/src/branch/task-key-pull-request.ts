@@ -40,7 +40,7 @@ export function branchForTaskKey(
         WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
           AND (branch=? OR branch LIKE ?)
           AND pr_number IS NOT NULL
-        ORDER BY at DESC, id DESC
+        ORDER BY at DESC, record_id DESC
         LIMIT 1`,
     )
     .get(project, key, like)
@@ -68,7 +68,7 @@ export function pullRequestNumberForBranch(
       `SELECT pr_number
          FROM landing_triage_snapshot
         WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND branch=? AND pr_number IS NOT NULL
-        ORDER BY at DESC, id DESC
+        ORDER BY at DESC, record_id DESC
         LIMIT 1`,
     )
     .get(project, branch)

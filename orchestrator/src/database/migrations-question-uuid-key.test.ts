@@ -59,7 +59,7 @@ test('question UUID-key migration preserves every local relationship and seeds t
         'operator_notification',
       ].map((table) => [table, count(database, table)]),
     )
-    expect(applyMigrations(database)).toEqual(['0125_question_uuid_key'])
+    expect(applyMigrations(database)).toContain('0125_question_uuid_key')
     for (const [table, rows] of before) expect(count(database, table), table).toBe(rows)
     expect(database.query('SELECT record_id,number FROM question').get()).toEqual({
       record_id: questionRecordId,

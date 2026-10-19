@@ -41,7 +41,7 @@ export type ConfinementEvent = {
   attribution: AttributionKind
   lockHolder: ConfinementLockHolder | null
   landingSession: string | null
-  landingId: number | null
+  landingId: string | null
   divergentPaths: string[]
   overlappingPaths: string[]
   chainRoot: string | null
@@ -219,16 +219,16 @@ function landingThatMovedHead(
   database: Database,
   project: string,
   startedAt: string,
-): { sessionId: string | null; landingId: number } | null {
+): { sessionId: string | null; landingId: string } | null {
   const row = database
     .query(
-      `SELECT id, session_id FROM landing
+      `SELECT record_id, session_id FROM landing
       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND status='landed'
         AND datetime(COALESCE(finished_at, started_at)) >= datetime(?)
-      ORDER BY id DESC LIMIT 1`,
+      ORDER BY started_at DESC,record_id DESC LIMIT 1`,
     )
-    .get(project, startedAt) as { id: number; session_id: string | null } | null
-  return row ? { sessionId: row.session_id, landingId: row.id } : null
+    .get(project, startedAt) as { record_id: string; session_id: string | null } | null
+  return row ? { sessionId: row.session_id, landingId: row.record_id } : null
 }
 
 function attributeDivergence(

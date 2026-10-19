@@ -36,6 +36,7 @@ import {
 } from '../porting/porting.ts'
 import { type Project, projectAt, projectByName, projects } from '../project/projects.ts'
 import { getReview, listReviews } from '../review/review.ts'
+import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from '../workflow/autonomy.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import {
@@ -91,7 +92,7 @@ const nextWorkflowStepInputSchema = z.object({
   self_ruling: z.string().trim().min(1).optional(),
   self_ruling_basis: z.string().optional(),
   question: z.string().trim().min(1).optional(),
-  review: z.number().int().positive().optional(),
+  review: z.union([z.number().int().positive(), z.uuid()]).optional(),
   gate: z.number().int().positive().optional(),
   run: z.union([z.number().int().positive(), z.string().trim().min(1)]).optional(),
   artifact: z.string().trim().min(1).optional(),
@@ -196,7 +197,6 @@ export function fileIssueTaskKey(stdout: string, project: Project): string {
 }
 
 type WorkerReporter = {
-  id: number
   record_id: string
   job: string
   agent: string
@@ -206,15 +206,82 @@ type WorkerReporter = {
 
 const workerReporter = (runId: string) =>
   db()
-    .query(
-      'SELECT record_id, record_id, job, agent, launch_cwd, launch_key FROM run WHERE record_id=?',
-    )
+    .query('SELECT record_id, job, agent, launch_cwd, launch_key FROM run WHERE record_id=?')
     .get(runId) as WorkerReporter | null
 
 function registeredProject(name: string) {
   const project = projectByName(name)
   if (!project) throw new Error(`unknown project "${name}"`)
   return project
+}
+
+async function advanceWorkflow({
+  slug,
+  project,
+  mode,
+  args,
+  note,
+  ruling,
+  self_ruling,
+  self_ruling_basis,
+  question,
+  review,
+  gate,
+  run,
+  artifact,
+  task,
+  defer,
+  satisfies,
+  cursor,
+}: z.infer<typeof nextWorkflowStepInputSchema>) {
+  if (self_ruling_basis !== undefined && self_ruling === undefined)
+    throw new Error(
+      'self_ruling_basis requires self_ruling; pass both inputs, or omit self_ruling_basis',
+    )
+  const workflowArgs = args ?? {}
+  const context = mcpWorkflowCursorContext()
+  const resolvedReview = review === undefined ? undefined : resolveReviewIdentifier(db(), review)
+  return text(
+    nextWorkflowStep(
+      slug,
+      project,
+      resolveWorkflowCursorMode(
+        slug,
+        project,
+        mode,
+        workflowArgs,
+        context,
+        'next_workflow_step',
+        'pass the mode argument',
+        undefined,
+        cursor,
+      ),
+      workflowArgs,
+      note,
+      context,
+      undefined,
+      {
+        ruling,
+        review: resolvedReview,
+        gate,
+        run: workflowRunEvidence(run),
+        artifact,
+        task,
+        defer,
+        satisfies,
+      },
+      undefined,
+      cursor,
+      self_ruling === undefined
+        ? undefined
+        : {
+            ruling: self_ruling,
+            basis: self_ruling_basis ?? '',
+            question,
+            channel: 'mcp',
+          },
+    ),
+  )
 }
 
 function registeredPair(source: string, target: string) {
@@ -259,7 +326,7 @@ export async function fileIssue(
     if (!worker?.launch_cwd) {
       throw new Error('cannot file issue: the reporting worker has no project origin')
     }
-    reporterId = `run:${worker.id}`
+    reporterId = `run:${worker.record_id}`
   } else if (reporter.kind === 'monitor') {
     const invocation = db()
       .query('SELECT id FROM monitor_invocation WHERE id=?')
@@ -295,7 +362,7 @@ export async function fileIssue(
   const filedFields = [
     ...(worker
       ? [
-          `Filed by orch run ${worker.id} (${worker.job}, ${worker.agent}) while working ${
+          `Filed by orch run ${worker.record_id} (${worker.job}, ${worker.agent}) while working ${
             worker.launch_key ?? 'with no task key'
           }`,
         ]
@@ -540,64 +607,7 @@ export function createDocsMcpServer(): McpServer {
         'Close the current step with a one-line note and a validated evidence reference for its floor, then fetch the next; the cursor is the record.',
       inputSchema: nextWorkflowStepInputSchema,
     },
-    async ({
-      slug,
-      project,
-      mode,
-      args,
-      note,
-      ruling,
-      self_ruling,
-      self_ruling_basis,
-      question,
-      review,
-      gate,
-      run,
-      artifact,
-      task,
-      defer,
-      satisfies,
-      cursor,
-    }) => {
-      if (self_ruling_basis !== undefined && self_ruling === undefined)
-        throw new Error(
-          'self_ruling_basis requires self_ruling; pass both inputs, or omit self_ruling_basis',
-        )
-      const workflowArgs = args ?? {}
-      const context = mcpWorkflowCursorContext()
-      return text(
-        nextWorkflowStep(
-          slug,
-          project,
-          resolveWorkflowCursorMode(
-            slug,
-            project,
-            mode,
-            workflowArgs,
-            context,
-            'next_workflow_step',
-            'pass the mode argument',
-            undefined,
-            cursor,
-          ),
-          workflowArgs,
-          note,
-          context,
-          undefined,
-          { ruling, review, gate, run: workflowRunEvidence(run), artifact, task, defer, satisfies },
-          undefined,
-          cursor,
-          self_ruling === undefined
-            ? undefined
-            : {
-                ruling: self_ruling,
-                basis: self_ruling_basis ?? '',
-                question,
-                channel: 'mcp',
-              },
-        ),
-      )
-    },
+    advanceWorkflow,
   )
 
   server.registerTool(
@@ -746,9 +756,9 @@ export function createDocsMcpServer(): McpServer {
     {
       description:
         'Get one review with all lenses, grading flags, findings, evidence, and pin state.',
-      inputSchema: z.object({ id: z.number().int().positive() }),
+      inputSchema: z.object({ id: z.union([z.number().int().positive(), z.uuid()]) }),
     },
-    async ({ id }) => text(getReview(id)),
+    async ({ id }) => text(getReview(resolveReviewIdentifier(db(), id))),
   )
 
   server.registerTool(

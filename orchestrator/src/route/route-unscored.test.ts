@@ -49,7 +49,9 @@ describe('the Stop hook and orch agree on what is unscored', () => {
     stripSqlComments(sql).replace(/\s+/g, ' ').trim().toLowerCase()
 
   const HOOK_ONLY_AND = [normalizeSql('r.session_id = ?')]
-  const HOOK_ONLY_OR = [normalizeSql('review.id IS NOT NULL AND review.completed_at IS NULL')]
+  const HOOK_ONLY_OR = [
+    normalizeSql('review.record_id IS NOT NULL AND review.completed_at IS NULL'),
+  ]
 
   const isWordChar = (c: string | undefined) => c != null && /[A-Za-z0-9_]/.test(c)
 
@@ -324,7 +326,7 @@ describe('the Stop hook and orch agree on what is unscored', () => {
   test('a new AND conjunct that merely mentions r.session_id or review. is still caught', () => {
     const hook = liveHookWhere()
     const mentionsSession = "COALESCE(r.session_id, '') <> ''"
-    const mentionsReview = 'review.id IS NULL'
+    const mentionsReview = 'review.record_id IS NULL'
     expect(predicateDrift(UNSCORED_WHERE, `${hook} AND ${mentionsSession}`)).toEqual({
       missingFromHook: [],
       missingFromTs: predicateDrift('', mentionsSession).missingFromTs,

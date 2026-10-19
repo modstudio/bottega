@@ -307,9 +307,9 @@ describe('review discipline', () => {
       .run(cliRun)
     const recorded = recordReview(cliRun, reviewReply(0), db())
     expect(
-      db().query('SELECT review_id FROM review_lens WHERE run_record_id=?').get(cliRun),
+      db().query('SELECT review_record_id FROM review_lens WHERE run_record_id=?').get(cliRun),
     ).toEqual({
-      review_id: recorded,
+      review_record_id: recorded,
     })
   })
   test('per-tier calibration counts lens rounds per branch', () => {
@@ -325,7 +325,7 @@ describe('review discipline', () => {
         const reviewId = recordReview(runId, reviewReply(0), db())
         db()
           .query(
-            "UPDATE review SET tier=2, tier_risk=2, tier_size=0, tier_reason='risk 2: fixture' WHERE id=?",
+            "UPDATE review SET tier=2, tier_risk=2, tier_size=0, tier_reason='risk 2: fixture' WHERE record_id=?",
           )
           .run(reviewId)
         completeReview(reviewId)
@@ -395,7 +395,7 @@ describe('review discipline', () => {
     const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'severity-cell' })
     const reviewId = recordReview(runId, reviewReply(3, 'high'), db())
     db()
-      .query("UPDATE review_finding SET severity='major' WHERE review_id=? AND ordinal=3")
+      .query("UPDATE review_finding SET severity='major' WHERE review_record_id=? AND ordinal=3")
       .run(reviewId)
     triageFinding(reviewId, 1, 'accepted', undefined, 'high')
     triageFinding(reviewId, 2, 'accepted', undefined, 'critical')

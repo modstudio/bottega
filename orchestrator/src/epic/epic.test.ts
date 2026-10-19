@@ -74,16 +74,14 @@ describe('epic scoreboard', () => {
       .query(`UPDATE run SET launch_key='DEV-501',branch='DEV-501-orch-1',latency_ms=NULL,
       last_event_at='2026-09-08T08:30:00.000Z',agent_pid=4194304 WHERE record_id=?`)
       .run(ghost)
+    const reviewId = newRecordId()
     db()
-      .query(`INSERT INTO review (record_id,recorded_at,completed_at,outdated_at,outdated_reason)
-      VALUES (?,'2026-09-08T10:06:00.000Z','2026-09-08T10:07:00.000Z','2026-09-08T10:08:00.000Z','changed')`)
-      .run(newRecordId())
-    const reviewId = Number(
-      (db().query('SELECT last_insert_rowid() id').get() as { id: number }).id,
-    )
+      .query(`INSERT INTO review (record_id,number,recorded_at,completed_at,outdated_at,outdated_reason)
+      VALUES (?,1,'2026-09-08T10:06:00.000Z','2026-09-08T10:07:00.000Z','2026-09-08T10:08:00.000Z','changed')`)
+      .run(reviewId)
     db()
       .query(`INSERT INTO review_lens
-      (record_id,review_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+      (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
       VALUES (?,?,?,'correctness','grok','[]','[]','[]','[]')`)
       .run(newRecordId(), reviewId, lens)
     db()
@@ -130,8 +128,8 @@ describe('epic scoreboard', () => {
       architectCommits: null,
     })
     expect(report.children[0]!.strandings.reasons).toEqual([
-      { landingId: expect.any(Number), kind: 'strand-live', reason: 'operator accepted' },
-      { landingId: expect.any(Number), kind: 'unreviewed', reason: 'tier 0' },
+      { landingRecordId: expect.any(String), kind: 'strand-live', reason: 'operator accepted' },
+      { landingRecordId: expect.any(String), kind: 'unreviewed', reason: 'tier 0' },
     ])
     expect(report.children[1]).toMatchObject({
       runs: { total: 0, byJob: {} },

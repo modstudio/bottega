@@ -18,6 +18,7 @@ import {
   OrchStateSchema,
 } from '../../shared/orch-contract.ts'
 import { RecordProjectsSchema } from '../../shared/record-project-contract.ts'
+import type { RunDetailReviewLens } from '../../shared/review-presentation.ts'
 import { SubjectOutputSchema } from '../../shared/subjects.ts'
 import {
   BoardListResultSchema,
@@ -112,11 +113,56 @@ const runWindowSchema = z.object({
   live: z.array(runSchema),
 })
 
+const runDetailReviewFindingSchema = z.object({
+  id: z.string(),
+  reviewId: z.string(),
+  reviewLensId: z.string(),
+  ordinal: z.number(),
+  severity: z.string(),
+  location: z.string(),
+  evidence: z.string(),
+  proposedCorrection: z.string(),
+  disposition: z.string().nullable(),
+  rejectionCategory: z.string().nullable(),
+  triagedSeverity: z.string().nullable(),
+  triagedAt: z.string().nullable(),
+})
+
+const runDetailReviewLensSchema: z.ZodType<RunDetailReviewLens> = z.object({
+  id: z.string(),
+  reviewId: z.string(),
+  runId: z.string(),
+  reviewNumber: z.number().nullable(),
+  reviewProjectId: z.string().nullable(),
+  recordedAt: z.string(),
+  completedAt: z.string().nullable(),
+  tier: z.number().nullable(),
+  patchId: z.string().nullable(),
+  commitMessage: z.string().nullable(),
+  lens: z.string(),
+  agent: z.string(),
+  model: z.string().nullable(),
+  treeInspected: z.string().nullable(),
+  reviewedTree: z.string().nullable(),
+  standardsRead: z.array(z.unknown()),
+  filesCovered: z.array(z.unknown()),
+  commandsRun: z.array(z.unknown()),
+  couldNotVerify: z.array(z.unknown()),
+  mcpTools: z.array(z.unknown()),
+  docsRead: z.array(z.unknown()),
+  substitutes: z.array(z.unknown()),
+  reproduced: z.string().nullable(),
+  coverage: z.string().nullable(),
+  limits: z.string().nullable(),
+  overlap: z.string().nullable(),
+  findings: z.array(runDetailReviewFindingSchema),
+})
+
 const runDetailSchema = runSchema.passthrough().extend({
   machineId: z.string().uuid(),
   promptBytes: z.number(),
   error: z.string().nullable(),
-  reviews: z.array(z.unknown()),
+  reviews: z.array(runDetailReviewLensSchema),
 })
 
 const whoamiSchema = z.object({
@@ -146,7 +192,7 @@ const reviewListSchema = z.object({
 })
 
 const reviewDetailSchema = reviewListItemSchema.extend({
-  lenses: z.array(z.unknown()),
+  lenses: z.array(runDetailReviewLensSchema),
 })
 
 const releaseSchema = z.object({

@@ -36,7 +36,7 @@ export function storedChangePathSet(runId: string, database: Database): string[]
   const row = database
     .query(
       `SELECT review.path_set FROM review_lens
-       JOIN review ON review.id = review_lens.review_id
+       JOIN review ON review.record_id = review_lens.review_record_id
       WHERE review_lens.run_record_id=?`,
     )
     .get(runId) as { path_set: string | null } | null
@@ -132,7 +132,7 @@ export function pinReviewedCommits(runs: RunRow[], database: Database): void {
 export type ReviewPin = {
   project: string
   runId: string
-  reviewId: number
+  reviewNumber: number
   commit: string
   completed: boolean
   superseded: boolean
@@ -163,9 +163,10 @@ export function reviewPins(prune = false, database: Database = db()): ReviewPin[
   )
   const rows = database
     .query(
-      `SELECT run.repo, run.project_record_id, run.branch, run.record_id AS run_record_id, rl.review_id, r.completed_at
+      `SELECT run.repo, run.project_record_id, run.branch, run.record_id AS run_record_id,
+              rl.review_record_id, r.number AS review_number, r.completed_at
        FROM review_lens rl
-       JOIN review r ON r.id=rl.review_id
+       JOIN review r ON r.record_id=rl.review_record_id
        JOIN run ON run.record_id=rl.run_record_id
       WHERE run.head_commit IS NOT NULL
       ORDER BY run.repo, run.number`,
@@ -175,7 +176,8 @@ export function reviewPins(prune = false, database: Database = db()): ReviewPin[
     project_record_id: string | null
     branch: string | null
     run_record_id: string
-    review_id: number
+    review_record_id: string
+    review_number: number
     completed_at: string | null
   }[]
   const pins: ReviewPin[] = []
@@ -190,12 +192,12 @@ export function reviewPins(prune = false, database: Database = db()): ReviewPin[
         .query(
           `SELECT 1
          FROM review_lens newer_lens
-         JOIN review newer ON newer.id=newer_lens.review_id
+         JOIN review newer ON newer.record_id=newer_lens.review_record_id
          JOIN run newer_run ON newer_run.record_id=newer_lens.run_record_id
-        WHERE newer.id>? AND newer_run.project_record_id=? AND newer_run.branch IS ?
+        WHERE newer.number>? AND newer_run.project_record_id=? AND newer_run.branch IS ?
         LIMIT 1`,
         )
-        .get(row.review_id, row.project_record_id, row.branch),
+        .get(row.review_number, row.project_record_id, row.branch),
     )
     const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
     const landed = Boolean(
@@ -219,7 +221,7 @@ export function reviewPins(prune = false, database: Database = db()): ReviewPin[
     pins.push({
       project: project.name,
       runId: row.run_record_id,
-      reviewId: row.review_id,
+      reviewNumber: row.review_number,
       commit: ref.out,
       completed: row.completed_at !== null,
       superseded,

@@ -24,6 +24,7 @@ import {
   review as reviewRecord,
 } from '../../../shared/record/schema-review.ts'
 import { run as runRecord } from '../../../shared/record/schema-run.ts'
+import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { refuseHostedUnvoid, VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { OutboxRowError, outboxErrorDetail, outboxFailureDisposition } from './outbox-failure.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
@@ -513,6 +514,9 @@ function landingReviewCarryValues(row: Payload, projectId: string | null) {
 }
 
 function landingTriageSnapshotValues(row: Payload, projectId: string | null) {
+  if (!Array.isArray(row.reviewIds) || row.reviewIds.some((id) => !hasRecordIdShape(String(id)))) {
+    throw new Error('landing triage snapshot reviewIds must be an array of UUIDs')
+  }
   return {
     ...landingCommonValues(row),
     projectId,
@@ -520,7 +524,7 @@ function landingTriageSnapshotValues(row: Payload, projectId: string | null) {
     tip: String(row.tip),
     tree: String(row.tree),
     prNumber: Number(row.prNumber),
-    reviewIds: row.reviewIds,
+    reviewIds: row.reviewIds.map(String),
     patchId: String(row.patchId),
     tier: Number(row.tier),
     lensRounds: Number(row.lensRounds),

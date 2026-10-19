@@ -289,8 +289,14 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
   boundary(
     'record-reviews-boundary',
     'orchestrator/src/record/record-reviews.ts',
-    ['bun', '../../../shared/record/tenant.ts', './record-cursor.ts', './record-runs.ts'],
+    ['bun', '../../../shared/record/tenant.ts', './record-cursor.ts', './review-presentation.ts'],
     'Keep hosted review record access limited to the hosted run record contract.',
+  ),
+  boundary(
+    'record-review-presentation-boundary',
+    'orchestrator/src/record/review-presentation.ts',
+    ['../../../shared/review-presentation.ts'],
+    'Keep the hosted review graph presentation free of SQL, tenancy and HTTP.',
   ),
   boundary(
     'record-release-reading-boundary',
@@ -321,9 +327,11 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
     [
       'bun',
       '../../../shared/record/tenant.ts',
+      '../../../shared/review-presentation.ts',
       '../failure/failure.ts',
       '../hook-tree/hook-tree.ts',
       './record-cursor.ts',
+      './review-presentation.ts',
     ],
     'Enforce the record-runs concern boundary; the window counters share the local definitions of evidence and the hook-tree job.',
   ),

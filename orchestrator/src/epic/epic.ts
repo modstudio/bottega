@@ -32,7 +32,7 @@ type EpicTaskScore = {
   reviews: { recorded: number; completed: number; outdated: number }
   strandings: {
     count: number
-    reasons: { landingId: number; kind: 'strand-live' | 'unreviewed'; reason: string }[]
+    reasons: { landingRecordId: string; kind: 'strand-live' | 'unreviewed'; reason: string }[]
   }
   idleMinutes: number
   continuations: { count: number; branchDrift: number }
@@ -70,7 +70,7 @@ type RunRow = {
   head_commit: string | null
 }
 type LandingRow = {
-  id: number
+  record_id: string
   branch: string
   status: string
   error: string | null
@@ -111,7 +111,7 @@ function flagsOf(row: Pick<LandingRow, 'steps'>): {
   }
 }
 type ReviewRow = {
-  id: number
+  record_id: string
   completed_at: string | null
   outdated_at: string | null
   patch_id: string | null
@@ -155,15 +155,15 @@ function epicEvidence(database: Database) {
     .all() as RunRow[]
   const landings = database
     .query(
-      `SELECT id,branch,status,error,steps,project_record_id,tip FROM landing ORDER BY started_at,id`,
+      `SELECT record_id,branch,status,error,steps,project_record_id,tip FROM landing ORDER BY started_at,record_id`,
     )
     .all() as LandingRow[]
   const reviews = database
     .query(
-      `SELECT DISTINCT review.id,review.completed_at,review.outdated_at,review.patch_id,run.launch_key,run.branch,
+      `SELECT DISTINCT review.record_id,review.completed_at,review.outdated_at,review.patch_id,run.launch_key,run.branch,
             run.head_commit,run.project_record_id
-       FROM review JOIN review_lens ON review_lens.review_id=review.id
-       JOIN run ON run.record_id=review_lens.run_record_id ORDER BY review.id`,
+       FROM review JOIN review_lens ON review_lens.review_record_id=review.record_id
+       JOIN run ON run.record_id=review_lens.run_record_id ORDER BY review.recorded_at,review.number`,
     )
     .all() as ReviewRow[]
   return { runs, landings, reviews }
@@ -172,6 +172,28 @@ function epicEvidence(database: Database) {
 function isRootFixRun(run: RunRow): boolean {
   return run.job === 'fix' && run.parent_run_record_id === null
 }
+
+function addStrandingReasons(
+  reasons: EpicTaskScore['strandings']['reasons'],
+  landing: LandingRow,
+): void {
+  const flags = flagsOf(landing)
+  if (flags.strandLive)
+    reasons.push({
+      landingRecordId: landing.record_id,
+      kind: 'strand-live',
+      reason: flags.strandLive,
+    })
+  if (flags.unreviewed)
+    reasons.push({
+      landingRecordId: landing.record_id,
+      kind: 'unreviewed',
+      reason: flags.unreviewed,
+    })
+}
+
+const reviewRoundKey = (review: ReviewRow) =>
+  review.patch_id ?? review.head_commit ?? `review:${review.record_id}`
 
 /**
  * Evidence attribution is deliberately ordered. run.launch_key is authoritative
@@ -224,11 +246,7 @@ export function epicScoreboard(
     for (const landing of taskLandings.filter((row) =>
       ['landed', 'install_failed'].includes(row.status),
     )) {
-      const flags = flagsOf(landing)
-      if (flags.strandLive)
-        reasons.push({ landingId: landing.id, kind: 'strand-live', reason: flags.strandLive })
-      if (flags.unreviewed)
-        reasons.push({ landingId: landing.id, kind: 'unreviewed', reason: flags.unreviewed })
+      addStrandingReasons(reasons, landing)
     }
     const earlierBranches = new Set<string>()
     let branchDrift = 0
@@ -254,9 +272,7 @@ export function epicScoreboard(
         tokens: taskRuns.length - tokenRows.length,
         cost: taskRuns.length - costRows.length,
       },
-      lensRounds: new Set(
-        taskReviews.map((review) => review.patch_id ?? review.head_commit ?? `review:${review.id}`),
-      ).size,
+      lensRounds: new Set(taskReviews.map(reviewRoundKey)).size,
       fixRounds: rootFixRuns.length,
       landings: {
         attempted: taskLandings.length,
@@ -271,7 +287,7 @@ export function epicScoreboard(
         completed: taskReviews.filter((review) => review.completed_at !== null).length,
         outdated: taskReviews.filter((review) => review.outdated_at !== null).length,
       },
-      strandings: { count: new Set(reasons.map((reason) => reason.landingId)).size, reasons },
+      strandings: { count: new Set(reasons.map((reason) => reason.landingRecordId)).size, reasons },
       continuations: { count: taskRuns.filter((run) => run.turn > 1).length, branchDrift },
       architectCommits: null,
     }
@@ -511,7 +527,7 @@ export function renderEpicHuman(report: EpicScoreboard): string {
   if (!report.total.strandings.reasons.length) lines.push('  (none)')
   else
     for (const reason of report.total.strandings.reasons)
-      lines.push(`  landing ${reason.landingId} ${reason.kind}: ${reason.reason}`)
+      lines.push(`  landing ${reason.kind}: ${reason.reason}`)
   lines.push('\nNOT RECORDED')
   for (const missing of report.notRecorded) lines.push(`  ${missing.metric}: ${missing.needed}`)
   return lines.join('\n')

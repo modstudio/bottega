@@ -503,6 +503,17 @@ const INTEGER_QUESTION_REFERENCES = [
   ['run_carried_ruling', 'question_id'],
 ] as const
 
+const REVIEW_LANDING_REFERENCES = [
+  ['review_lens', 'review_id', 'review', 'review_record_id'],
+  ['review_finding', 'review_id', 'review', 'review_record_id'],
+  ['review_finding', 'review_lens_id', 'review_lens', 'review_lens_record_id'],
+  ['landing_review_carry', 'review_id', 'review', 'review_record_id'],
+  ['landing', 'causing_landing_id', 'landing', 'causing_landing_record_id'],
+  ['landing_triage_snapshot', 'override_id', 'landing_override', 'override_record_id'],
+  ['landing_triage_snapshot', 'read_id', 'review_read', 'read_record_id'],
+  ['contention', 'landing_id', 'landing', 'landing_record_id'],
+] as const
+
 function runReferenceOrphanCounts(d: Database): string[] {
   const findings: string[] = []
   for (const [table, column] of INTEGER_RUN_REFERENCES) {
@@ -546,6 +557,47 @@ function questionReferenceOrphanCounts(d: Database): string[] {
   return findings
 }
 
+function reviewLandingReferenceOrphanCounts(d: Database): string[] {
+  const findings: string[] = []
+  for (const [table, column, parent, migratedColumn] of REVIEW_LANDING_REFERENCES) {
+    const count = (
+      d
+        .query(
+          `SELECT COUNT(*) AS n FROM ${quoteIdentifier(table)} child
+           WHERE child.${quoteIdentifier(column)} IS NOT NULL
+             AND NOT EXISTS (SELECT 1 FROM ${quoteIdentifier(parent)} parent
+               WHERE parent.id=child.${quoteIdentifier(column)})`,
+        )
+        .get() as { n: number }
+    ).n
+    if (count > 0) findings.push(`${table}.${migratedColumn}=${count}`)
+  }
+  const amendmentFindingCount = (
+    d
+      .query(
+        `SELECT COUNT(*) AS n FROM review_finding_amendment child
+         WHERE NOT EXISTS (
+           SELECT 1 FROM review_finding finding
+           WHERE finding.review_id=child.review_id AND finding.ordinal=child.finding_ordinal
+         )`,
+      )
+      .get() as { n: number }
+  ).n
+  if (amendmentFindingCount > 0)
+    findings.push(`review_finding_amendment.review_finding_record_id=${amendmentFindingCount}`)
+  const jsonCount = (
+    d
+      .query(
+        `SELECT COUNT(*) AS n FROM landing_triage_snapshot snapshot, json_each(snapshot.review_ids) item
+         WHERE item.type <> 'integer'
+            OR NOT EXISTS (SELECT 1 FROM review WHERE review.id=item.value)`,
+      )
+      .get() as { n: number }
+  ).n
+  if (jsonCount > 0) findings.push(`landing_triage_snapshot.review_record_ids=${jsonCount}`)
+  return findings
+}
+
 function applyBackfills(d: Database, entries: JournalEntry[], folder: string): void {
   for (const entry of entries) {
     const backfill = splitMigrationSource(migrationSource(entry, folder)).backfill
@@ -573,10 +625,16 @@ function compatibleBackfillEntries(d: Database, entries: JournalEntry[]): Journa
       n: number
     }
   ).n
+  const reviewHasIntegerId = (
+    d.query("SELECT COUNT(*) AS n FROM pragma_table_info('review') WHERE name='id'").get() as {
+      n: number
+    }
+  ).n
   return entries.filter(
     (entry) =>
       !INTEGER_PROJECT_BACKFILLS.has(entry.tag) &&
-      (runHasIntegerId > 0 || entry.tag !== '0117_project_uuid_key'),
+      (runHasIntegerId > 0 || entry.tag !== '0117_project_uuid_key') &&
+      (reviewHasIntegerId > 0 || entry.tag !== '0124_run_uuid_key'),
   )
 }
 
@@ -711,22 +769,24 @@ function adoptBaseline(d: Database, folder: string): string[] {
   return [entry.tag]
 }
 
+function migrationOrphanCounts(d: Database, tag: string): string[] {
+  if (tag === RUN_UUID_KEY_MIGRATION) return runReferenceOrphanCounts(d)
+  if (tag === '0125_question_uuid_key') return questionReferenceOrphanCounts(d)
+  if (tag === '0126_review_landing_uuid_key') return reviewLandingReferenceOrphanCounts(d)
+  return []
+}
+
 function prepareMigrationEntry(
   d: Database,
   entry: JournalEntry,
   beforeApply?: BeforeMigrationApply,
 ): void {
   if (beforeApply?.migration === entry.tag) beforeApply.action(d)
-  const orphanCounts =
-    entry.tag === RUN_UUID_KEY_MIGRATION
-      ? runReferenceOrphanCounts(d)
-      : entry.tag === '0125_question_uuid_key'
-        ? questionReferenceOrphanCounts(d)
-        : []
+  const orphanCounts = migrationOrphanCounts(d, entry.tag)
   if (orphanCounts.length)
     throw new Error(
-      `refusing ${entry.tag === RUN_UUID_KEY_MIGRATION ? 'run' : 'question'} UUID-key migration: ` +
-        `integer references have no parent ${entry.tag === RUN_UUID_KEY_MIGRATION ? 'run' : 'question'} ` +
+      `refusing ${entry.tag === RUN_UUID_KEY_MIGRATION ? 'run' : entry.tag === '0125_question_uuid_key' ? 'question' : 'review/landing'} UUID-key migration: ` +
+        `integer references have no parent ${entry.tag === RUN_UUID_KEY_MIGRATION ? 'run' : entry.tag === '0125_question_uuid_key' ? 'question' : 'review/landing row'} ` +
         `(${orphanCounts.join(', ')})`,
     )
 }

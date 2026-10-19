@@ -77,7 +77,7 @@ function writeWaiter(
 function latestCreateTimeoutCause(): string {
   return db()
     .query<{ cause: string }, []>(
-      "SELECT cause FROM contention WHERE resource_kind='lock' AND resource_key='create' AND event_kind='timeout' ORDER BY id DESC LIMIT 1",
+      "SELECT cause FROM contention WHERE resource_kind='lock' AND resource_key='create' AND event_kind='timeout' ORDER BY at,record_id DESC LIMIT 1",
     )
     .get()!.cause
 }

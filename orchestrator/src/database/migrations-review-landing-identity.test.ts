@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   applyMigrations,
+  applyMigrationsBefore,
   canonicalSchemaHash,
   expectedSchemaHash,
   MIGRATIONS_FOLDER,
@@ -201,7 +202,9 @@ test('review landing release and doc identity migration fills nulls, keeps ident
       )
       .run(kept.revision)
 
-    expect(applyMigrations(database)).toContain('0106_review_landing_release_doc_record_identity')
+    expect(applyMigrationsBefore(database, '0126_review_landing_uuid_key')).toContain(
+      '0106_review_landing_release_doc_record_identity',
+    )
     const ids = (table: string) =>
       database
         .query<{ id: number; record_id: string }, []>(
@@ -249,6 +252,7 @@ test('review landing release and doc identity migration fills nulls, keeps ident
       override_id: 1,
     })
     expect(database.query('PRAGMA foreign_key_check').all()).toEqual([])
+    applyMigrations(database)
     const fresh = new Database(':memory:')
     fresh.exec('PRAGMA foreign_keys=ON')
     applyMigrations(fresh)

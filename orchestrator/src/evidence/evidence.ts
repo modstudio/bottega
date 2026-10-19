@@ -180,6 +180,6 @@ export function recordEvidence(
   database: Database,
   runId: string,
   reviewReply: ReviewReply,
-): number {
+): string {
   return recordReview(runId, reviewReply, database)
 }

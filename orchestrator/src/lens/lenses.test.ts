@@ -368,26 +368,26 @@ describe('lens catalogue', () => {
       .run(newRecordId())
     live
       .query(
-        `INSERT INTO review (id,record_id,recorded_at,project_record_id) VALUES (8002,?,'now',NULL)`,
+        `INSERT INTO review (record_id,number,recorded_at,project_record_id) VALUES (?,8002,'now',NULL)`,
       )
-      .run(newRecordId())
+      .run('01990000-0000-7000-8000-000000008002')
     live
-      .query(`INSERT INTO review_lens (record_id,review_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
-      VALUES (?,8002,?,'correctness','codex','[]','[]','[]','[]')`)
-      .run(newRecordId(), runId)
+      .query(`INSERT INTO review_lens (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+      VALUES (?,?,?,'correctness','codex','[]','[]','[]','[]')`)
+      .run(newRecordId(), '01990000-0000-7000-8000-000000008002', runId)
     live
       .query(
-        `INSERT INTO landing (id,record_id,project,branch,status,started_at,project_record_id) VALUES (8003,?,'one','branch','queued','now',NULL)`,
+        `INSERT INTO landing (record_id,project,branch,status,started_at,project_record_id) VALUES (?,'one','branch','queued','now',NULL)`,
       )
       .run(newRecordId())
     live
-      .query(`INSERT INTO landing_override (id,record_id,project,branch,tip,tree,reason,at,project_record_id)
-      VALUES (8004,?,'one','branch','tip','tree','test','now',NULL)`)
+      .query(`INSERT INTO landing_override (record_id,project,branch,tip,tree,reason,at,project_record_id)
+      VALUES (?,'one','branch','tip','tree','test','now',NULL)`)
       .run(newRecordId())
     live
       .query(`INSERT INTO landing_review_carry
-      (id,record_id,project,branch,tip,tree,review_id,reviewed_commit,reviewed_tree,patch_id,old_base,new_base,at,project_record_id)
-      VALUES (8005,?,'one','branch','tip','tree',8002,'commit','tree','patch','old','new','now',NULL)`)
+      (record_id,project,branch,tip,tree,review_record_id,reviewed_commit,reviewed_tree,patch_id,old_base,new_base,at,project_record_id)
+      VALUES (?,'one','branch','tip','tree','01990000-0000-7000-8000-000000008002','commit','tree','patch','old','new','now',NULL)`)
       .run(newRecordId())
     live
       .query(`INSERT INTO doc (id,scope,subject,slug,title,body,audiences,created_at,updated_at,project_record_id,record_id)
@@ -430,8 +430,8 @@ describe('lens catalogue', () => {
       (
         live
           .query(`SELECT COUNT(*) n FROM review rv WHERE rv.project_record_id IS NULL
-        AND 1=(SELECT COUNT(DISTINCT r.project_record_id) FROM review_lens rl JOIN run r ON r.record_id=rl.run_record_id WHERE rl.review_id=rv.id)
-        AND 0=(SELECT COUNT(*) FROM review_lens rl JOIN run r ON r.record_id=rl.run_record_id WHERE rl.review_id=rv.id AND r.project_record_id IS NULL)`)
+        AND 1=(SELECT COUNT(DISTINCT r.project_record_id) FROM review_lens rl JOIN run r ON r.record_id=rl.run_record_id WHERE rl.review_record_id=rv.record_id)
+        AND 0=(SELECT COUNT(*) FROM review_lens rl JOIN run r ON r.record_id=rl.run_record_id WHERE rl.review_record_id=rv.record_id AND r.project_record_id IS NULL)`)
           .get() as { n: number }
       ).n,
     ).toBe(0)

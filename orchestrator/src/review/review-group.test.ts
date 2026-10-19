@@ -16,26 +16,26 @@ test('change-group lookup carries the same patch after rebase and rejects a diff
     )
     .run(projectId)
   const run = database
-    .query<{ id: number }, [string]>(
+    .query<{ record_id: string }, [string]>(
       `INSERT INTO run
          (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_record_id,branch)
        VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-09-25','codex','review-lens','sha',1,'head','ok','fixture',?,'DEV-977')
-       RETURNING record_id AS id`,
+       RETURNING record_id`,
     )
     .get(projectId)!
   const review = database
-    .query<{ id: number }, []>(
-      `INSERT INTO review (record_id,recorded_at,completed_at,patch_id,path_set,tier)
-       VALUES ('${newRecordId()}','2026-09-25','2026-09-25','stable-patch','["a.ts"]',1) RETURNING id`,
+    .query<{ record_id: string }, []>(
+      `INSERT INTO review (record_id,number,recorded_at,completed_at,patch_id,path_set,tier)
+       VALUES ('${newRecordId()}',1,'2026-09-25','2026-09-25','stable-patch','["a.ts"]',1) RETURNING record_id`,
     )
     .get()!
   database
     .query(
       `INSERT INTO review_lens
-         (record_id,review_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify)
+         (record_id,review_record_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify)
        VALUES ('${newRecordId()}',?,?,'correctness','codex','model','[]','["a.ts"]','[]','[]')`,
     )
-    .run(review.id, run.id)
+    .run(review.record_id, run.record_id)
   database.query("UPDATE project SET name='renamed-fixture' WHERE record_id=?").run(projectId)
 
   expect(
@@ -66,27 +66,28 @@ test('a rebase credits the complete round from the same branch and never another
     )
     .run(projectId)
   const addReview = (branch: string, reviewId: number, lens: string) => {
+    const reviewRecordId = newRecordId()
     const run = database
-      .query<{ id: number }, [string, string]>(
+      .query<{ record_id: string }, [string, string]>(
         `INSERT INTO run
            (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_record_id,branch)
          VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-09-25','codex','review-lens','sha',1,'head','ok','fixture',?,?)
-         RETURNING record_id AS id`,
+         RETURNING record_id`,
       )
       .get(projectId, branch)!
     database
       .query(
-        `INSERT INTO review (id,record_id,recorded_at,completed_at,patch_id,path_set,tier)
-         VALUES (?,'${newRecordId()}','2026-09-25T00:00:00Z','2026-09-25T01:00:00Z','pre-rebase','["a.ts"]',2)`,
+        `INSERT INTO review (number,record_id,recorded_at,completed_at,patch_id,path_set,tier)
+         VALUES (?,?,'2026-09-25T00:00:00Z','2026-09-25T01:00:00Z','pre-rebase','["a.ts"]',2)`,
       )
-      .run(reviewId)
+      .run(reviewId, reviewRecordId)
     database
       .query(
         `INSERT INTO review_lens
-           (record_id,review_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify)
+           (record_id,review_record_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify)
          VALUES ('${newRecordId()}', ?, ?, ?, 'codex','model','[]','["a.ts"]','[]','[]')`,
       )
-      .run(reviewId, run.id, lens)
+      .run(reviewRecordId, run.record_id, lens)
   }
   addReview('DEV-977', 20, 'correctness')
   addReview('DEV-977', 21, 'craft')
@@ -99,7 +100,7 @@ test('a rebase credits the complete round from the same branch and never another
     pathSet: ['a.ts'],
   })
   expect(selected.reviews).toEqual([])
-  expect(selected.branchReviews.map((row) => row.reviewId)).toEqual([21, 20])
+  expect(selected.branchReviews.map((row) => row.reviewNumber)).toEqual([21, 20])
   expect(
     decideTriage({
       patchId: 'post-rebase',
@@ -117,7 +118,7 @@ test('a rebase credits the complete round from the same branch and never another
       ],
       reads: [
         {
-          id: 30,
+          recordId: 'read-30',
           tip: 'rebased-tip',
           patchId: 'post-rebase',
           pathSet: '["a.ts"]',
@@ -126,7 +127,12 @@ test('a rebase credits the complete round from the same branch and never another
         },
       ],
     }),
-  ).toMatchObject({ complete: true, snapshot: { reviewIds: [20, 21] } })
+  ).toMatchObject({
+    complete: true,
+    snapshot: {
+      reviewRecordIds: selected.branchReviews.map((row) => row.reviewRecordId).sort(),
+    },
+  })
 })
 
 test('a moved remote trunk is the shared base for review and admission despite stale local trunk', () => {

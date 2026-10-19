@@ -484,8 +484,10 @@ describe('judge ruling', () => {
     })
     expect((db().query('SELECT COUNT(*) n FROM review').get() as { n: number }).n).toBe(before)
     expect(
-      db().query('SELECT review_id,reproduced FROM review_lens WHERE run_record_id=?').get(id),
-    ).toEqual({ review_id: reviewId, reproduced: 'some' })
+      db()
+        .query('SELECT review_record_id,reproduced FROM review_lens WHERE run_record_id=?')
+        .get(id),
+    ).toEqual({ review_record_id: reviewId, reproduced: 'some' })
   })
 
   test('voiding a graded findings run omits grades from its score payload but preserves them locally', async () => {
@@ -555,7 +557,9 @@ describe('judge ruling', () => {
     const failed = insert('failed', 'safety')
     db().query("UPDATE run SET failure_kind='other' WHERE record_id=?").run(failed)
     await score(failed, ['none'])
-    expect(db().query('SELECT id FROM review_lens WHERE run_record_id=?').get(failed)).toBeNull()
+    expect(
+      db().query('SELECT record_id FROM review_lens WHERE run_record_id=?').get(failed),
+    ).toBeNull()
   })
 
   test('score refuses an unevidenced clean lens without creating score or review rows', async () => {
@@ -608,7 +612,7 @@ describe('judge ruling', () => {
     expect(
       db()
         .query(
-          'SELECT completed_at FROM review WHERE id=(SELECT review_id FROM review_lens WHERE run_record_id=?)',
+          'SELECT completed_at FROM review WHERE record_id=(SELECT review_record_id FROM review_lens WHERE run_record_id=?)',
         )
         .get(id),
     ).toEqual({ completed_at: expect.any(String) })
@@ -646,14 +650,14 @@ describe('judge ruling', () => {
     expect(
       db()
         .query(
-          'SELECT ordinal,disposition,triaged_severity FROM review_finding WHERE review_id=? ORDER BY ordinal',
+          'SELECT ordinal,disposition,triaged_severity FROM review_finding WHERE review_record_id=? ORDER BY ordinal',
         )
         .all(reviewId),
     ).toEqual([
       { ordinal: 1, disposition: 'accepted', triaged_severity: 'high' },
       { ordinal: 2, disposition: 'modified', triaged_severity: 'medium' },
     ])
-    expect(db().query('SELECT completed_at FROM review WHERE id=?').get(reviewId)).toEqual({
+    expect(db().query('SELECT completed_at FROM review WHERE record_id=?').get(reviewId)).toEqual({
       completed_at: expect.any(String),
     })
     expect(db().query("SELECT count(*) count FROM outbox WHERE kind='score'").get()).toEqual({
@@ -678,7 +682,7 @@ describe('judge ruling', () => {
       .query('UPDATE run SET lens=?,model=?,output_path=? WHERE record_id=?')
       .run('correctness', 'm', output, id)
     const reviewId = recordReview(id, reviewReply(2, 'high'), db())
-    db().query('DELETE FROM review_finding WHERE review_id=?').run(reviewId)
+    db().query('DELETE FROM review_finding WHERE review_record_id=?').run(reviewId)
 
     const integrity =
       `review finding integrity error for run ${id}: persisted reply has 2 findings ` +
@@ -701,7 +705,7 @@ describe('judge ruling', () => {
     ).rejects.toThrow(integrity)
     expect(() => completeReview(reviewId, db())).toThrow(integrity)
     expect(db().query('SELECT id FROM score WHERE run_record_id=?').get(id)).toBeNull()
-    expect(db().query('SELECT completed_at FROM review WHERE id=?').get(reviewId)).toEqual({
+    expect(db().query('SELECT completed_at FROM review WHERE record_id=?').get(reviewId)).toEqual({
       completed_at: null,
     })
   })
@@ -793,11 +797,11 @@ describe('judge ruling', () => {
     const reviewId = recordReview(id, reviewReply(1), db())
     db().query("UPDATE run SET status='failed' WHERE record_id=?").run(id)
     await judge(id, ['none'])
-    expect(db().query('SELECT completed_at FROM review WHERE id=?').get(reviewId)).toEqual({
+    expect(db().query('SELECT completed_at FROM review WHERE record_id=?').get(reviewId)).toEqual({
       completed_at: expect.any(String),
     })
     expect(
-      db().query('SELECT disposition FROM review_finding WHERE review_id=?').get(reviewId),
+      db().query('SELECT disposition FROM review_finding WHERE review_record_id=?').get(reviewId),
     ).toEqual({ disposition: null })
   })
 })

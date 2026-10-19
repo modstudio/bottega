@@ -54,20 +54,23 @@ test('records the exact triage snapshot and outboxes it', () => {
     {
       complete: true,
       snapshot: {
-        reviewIds: [10, 11],
+        reviewRecordIds: [
+          '01990000-0000-7000-8000-000000000010',
+          '01990000-0000-7000-8000-000000000011',
+        ],
         patchId: 'patch',
         tier: 2,
         lensRounds: 2,
         findingCount: 3,
         admissionPath: 'exact_review',
-        readId: null,
+        readRecordId: null,
       },
     },
     null,
     database,
   )
   expect(
-    database.query('SELECT pr_number FROM landing_triage_snapshot WHERE id=?').get(id),
+    database.query('SELECT pr_number FROM landing_triage_snapshot WHERE record_id=?').get(id),
   ).toEqual({ pr_number: null })
   expect(
     database.query("SELECT 1 FROM outbox WHERE kind='landing_triage_snapshot'").get(),
@@ -77,20 +80,21 @@ test('records the exact triage snapshot and outboxes it', () => {
   expect(
     database
       .query(
-        `SELECT pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,admission_path,read_id,override_id
-         FROM landing_triage_snapshot WHERE id=?`,
+        `SELECT pr_number,review_record_ids,patch_id,tier,lens_rounds,finding_count,admission_path,read_record_id,override_record_id
+         FROM landing_triage_snapshot WHERE record_id=?`,
       )
       .get(id),
   ).toEqual({
     pr_number: 42,
-    review_ids: '[10,11]',
+    review_record_ids:
+      '["01990000-0000-7000-8000-000000000010","01990000-0000-7000-8000-000000000011"]',
     patch_id: 'patch',
     tier: 2,
     lens_rounds: 2,
     finding_count: 3,
     admission_path: 'exact_review',
-    read_id: null,
-    override_id: null,
+    read_record_id: null,
+    override_record_id: null,
   })
   const outbox = database
     .query<{ kind: string; payload: string }, []>(
@@ -100,7 +104,7 @@ test('records the exact triage snapshot and outboxes it', () => {
   expect(outbox?.kind).toBe('landing_triage_snapshot')
   expect(JSON.parse(outbox!.payload)).toMatchObject({
     prNumber: 42,
-    reviewIds: [10, 11],
+    reviewIds: ['01990000-0000-7000-8000-000000000010', '01990000-0000-7000-8000-000000000011'],
     patchId: 'patch',
     tier: 2,
     lensRounds: 2,
@@ -143,13 +147,13 @@ test('merge admission leaves an existing snapshot unchanged', () => {
   const triage = {
     complete: true as const,
     snapshot: {
-      reviewIds: [10],
+      reviewRecordIds: ['01990000-0000-7000-8000-000000000010'],
       patchId: 'patch',
       tier: 1 as const,
       lensRounds: 1,
       findingCount: 0,
       admissionPath: 'exact_review' as const,
-      readId: null,
+      readRecordId: null,
     },
   }
   const id = recordTriageIntent(change, triage, null, database)
@@ -159,7 +163,7 @@ test('merge admission leaves an existing snapshot unchanged', () => {
     recordMergeAdmission(change, { complete: true, overrideId: null, triage }, 42, database),
   ).toBeNull()
   expect(
-    database.query('SELECT pr_number FROM landing_triage_snapshot WHERE id=?').get(id),
+    database.query('SELECT pr_number FROM landing_triage_snapshot WHERE record_id=?').get(id),
   ).toEqual({ pr_number: 40 })
 })
 
@@ -174,21 +178,21 @@ test('a missing applicable lens refusal names the lens and dispatch command', ()
   const message = triageRefusal(change, {
     complete: false,
     snapshot: {
-      reviewIds: [4],
+      reviewRecordIds: ['review-4'],
       patchId: 'patch',
       tier: 2,
       lensRounds: 1,
       findingCount: 0,
       admissionPath: 'exact_review',
-      readId: null,
+      readRecordId: null,
     },
     missingReview: false,
-    unfinishedReviewIds: [],
+    unfinishedReviewNumbers: [],
     undisposedFindings: [],
     missingLenses: ['craft'],
     missingSecondOpinion: null,
     architectReadRequired: false,
-    earlierReviewId: null,
+    earlierReviewNumber: null,
     earlierReviewTier: null,
     finalTierRaised: false,
   })
@@ -209,24 +213,107 @@ test('a missing second opinion refusal names the lens and distinct first run', (
   const message = triageRefusal(change, {
     complete: false,
     snapshot: {
-      reviewIds: [4],
+      reviewRecordIds: ['review-4'],
       patchId: 'patch',
       tier: 3,
       lensRounds: 1,
       findingCount: 0,
       admissionPath: 'exact_review',
-      readId: null,
+      readRecordId: null,
     },
     missingReview: false,
-    unfinishedReviewIds: [],
+    unfinishedReviewNumbers: [],
     undisposedFindings: [],
     missingLenses: [],
     missingSecondOpinion: { lens: 'correctness', firstRunId: '47' },
     architectReadRequired: false,
-    earlierReviewId: null,
+    earlierReviewNumber: null,
     earlierReviewTier: null,
     finalTierRaised: false,
   })
   expect(message).toContain('missing second opinion for correctness on a different model')
   expect(message).toContain('--lens correctness --distinct-from 47')
 })
+
+test('unfinished-review refusals print display numbers, never review UUIDs', () => {
+  const reviewRecordId = '01990000-0000-7000-8000-000000000104'
+  const change = {
+    project: { name: 'fixture' },
+    branch: 'DEV-1214-review-identity',
+    tip: 'tip',
+    group: { patchId: 'patch' },
+    tier: 2,
+  } as PullRequestChange
+  const message = triageRefusal(change, {
+    complete: false,
+    snapshot: {
+      reviewRecordIds: [reviewRecordId],
+      patchId: 'patch',
+      tier: 2,
+      lensRounds: 1,
+      findingCount: 0,
+      admissionPath: 'exact_review',
+      readRecordId: null,
+    },
+    missingReview: false,
+    unfinishedReviewNumbers: [104],
+    undisposedFindings: [],
+    missingLenses: [],
+    missingSecondOpinion: null,
+    architectReadRequired: false,
+    earlierReviewNumber: null,
+    earlierReviewTier: null,
+    finalTierRaised: false,
+  })
+  expect(message).toContain('unfinished review 104')
+  expect(message).toContain(`${PLATFORM_SLUG} review complete 104`)
+  expect(message).not.toContain(reviewRecordId)
+})
+
+test.each([
+  [
+    'a raised final tier',
+    { finalTierRaised: true, architectReadRequired: false },
+    'exceeds credited review 93 tier 1',
+  ],
+  [
+    'a missing architect read',
+    { finalTierRaised: false, architectReadRequired: true },
+    'review 93 can be credited only after an architect reads this exact tip',
+  ],
+] as const)(
+  'credited-earlier-review refusal for %s prints its display number',
+  (_label, state, expected) => {
+    const reviewRecordId = '01990000-0000-7000-8000-000000000093'
+    const change = {
+      project: { name: 'fixture' },
+      branch: 'DEV-1214-review-identity',
+      tip: 'tip',
+      group: { patchId: 'patch' },
+      tier: 2,
+    } as PullRequestChange
+    const message = triageRefusal(change, {
+      complete: false,
+      snapshot: {
+        reviewRecordIds: [reviewRecordId],
+        patchId: 'patch',
+        tier: 2,
+        lensRounds: 1,
+        findingCount: 0,
+        admissionPath: 'exact_review',
+        readRecordId: null,
+      },
+      missingReview: false,
+      unfinishedReviewNumbers: [],
+      undisposedFindings: [],
+      missingLenses: [],
+      missingSecondOpinion: null,
+      architectReadRequired: state.architectReadRequired,
+      earlierReviewNumber: 93,
+      earlierReviewTier: 1,
+      finalTierRaised: state.finalTierRaised,
+    })
+    expect(message).toContain(expected)
+    expect(message).not.toContain(reviewRecordId)
+  },
+)

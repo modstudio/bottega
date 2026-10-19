@@ -9,17 +9,18 @@ function addReview(
   patchId: string | null,
   completed = true,
   pathSet: string | null = null,
-): number {
+): string {
+  const recordId = newRecordId()
   db()
     .query(
-      'INSERT INTO review (record_id,recorded_at,completed_at,patch_id,path_set) VALUES (?,?,?,?,?)',
+      'INSERT INTO review (record_id,number,recorded_at,completed_at,patch_id,path_set) VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM review),?,?,?,?)',
     )
-    .run(newRecordId(), recordedAt, completed ? recordedAt : null, patchId, pathSet)
-  return Number((db().query('SELECT last_insert_rowid() AS id').get() as { id: number }).id)
+    .run(recordId, recordedAt, completed ? recordedAt : null, patchId, pathSet)
+  return recordId
 }
 
 function addLens(
-  reviewId: number,
+  reviewId: string,
   input: {
     lens: string
     agent: string
@@ -30,7 +31,8 @@ function addLens(
     branch?: string | null
     probe?: boolean
   },
-): number {
+): string {
+  const lensRecordId = newRecordId()
   const runId = addRun({
     agent: input.agent,
     model: input.model,
@@ -48,23 +50,15 @@ function addLens(
     )
   db()
     .query(`INSERT INTO review_lens
-    (record_id,review_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify,overlap)
+    (record_id,review_record_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify,overlap)
     VALUES (?,?,?,?,?,?,'[]','[]','[]','[]',?)`)
-    .run(
-      newRecordId(),
-      reviewId,
-      runId,
-      input.lens,
-      input.agent,
-      input.model,
-      input.overlap ?? null,
-    )
-  return Number((db().query('SELECT last_insert_rowid() AS id').get() as { id: number }).id)
+    .run(lensRecordId, reviewId, runId, input.lens, input.agent, input.model, input.overlap ?? null)
+  return lensRecordId
 }
 
 function addFinding(
-  reviewId: number,
-  lensId: number,
+  reviewId: string,
+  lensId: string,
   ordinal: number,
   severity: string,
   disposition: string | null,
@@ -72,7 +66,7 @@ function addFinding(
 ) {
   db()
     .query(`INSERT INTO review_finding
-    (record_id,review_id,review_lens_id,ordinal,severity,location,evidence,proposed_correction,disposition,triaged_severity)
+    (record_id,review_record_id,review_lens_record_id,ordinal,severity,location,evidence,proposed_correction,disposition,triaged_severity)
     VALUES (?,?,?,?,?,'file.ts:1','evidence','fix',?,?)`)
     .run(newRecordId(), reviewId, lensId, ordinal, severity, disposition, triagedSeverity)
 }
@@ -220,9 +214,9 @@ describe('review yield', () => {
     addLens(review, { lens: 'probe', agent: 'codex', model: 'gpt-a', minutes: 11, probe: true })
     const voided = addLens(review, { lens: 'voided', agent: 'codex', model: 'gpt-a', minutes: 12 })
     const none = addLens(review, { lens: 'none', agent: 'codex', model: 'gpt-a', minutes: 13 })
-    const runFor = (lensId: number) =>
+    const runFor = (lensId: string) =>
       (
-        db().query('SELECT run_record_id FROM review_lens WHERE id=?').get(lensId) as {
+        db().query('SELECT run_record_id FROM review_lens WHERE record_id=?').get(lensId) as {
           run_record_id: number
         }
       ).run_record_id
@@ -276,7 +270,9 @@ describe('review yield', () => {
       branch: 'technical/DEV-424-third',
     })
     db().run('PRAGMA ignore_check_constraints=ON')
-    db().query("UPDATE review_lens SET overlap='future-value' WHERE id=?").run(invalidOverlap)
+    db()
+      .query("UPDATE review_lens SET overlap='future-value' WHERE record_id=?")
+      .run(invalidOverlap)
     db().run('PRAGMA ignore_check_constraints=OFF')
 
     const report = reviewYield({ task: 'DEV-424' }, db())

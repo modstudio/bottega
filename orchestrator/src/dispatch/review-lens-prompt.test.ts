@@ -83,7 +83,8 @@ function finding(overrides: Partial<MemoryRow> = {}): MemoryRow {
   return {
     project: 'fixture',
     branch: 'DEV-1373',
-    reviewId: 10,
+    reviewRecordId: '01990000-0000-7000-8000-000000000010',
+    reviewNumber: 10,
     completedAt: '2026-10-15T12:00:00Z',
     ordinal: 1,
     disposition: 'rejected',
@@ -100,7 +101,8 @@ function finding(overrides: Partial<MemoryRow> = {}): MemoryRow {
 test('carries only current same-branch completed rejections and reports the cap', () => {
   const older = Array.from({ length: MAX_EARLIER_ROUND_REJECTIONS }, (_, index) =>
     finding({
-      reviewId: 100 - index,
+      reviewRecordId: `01990000-0000-7000-8000-${String(100 - index).padStart(12, '0')}`,
+      reviewNumber: 100 - index,
       completedAt: `2026-10-${String(14 - Math.floor(index / 2)).padStart(2, '0')}T12:00:00Z`,
       ordinal: index + 2,
       location: `src/older-${index}.ts:1`,
@@ -133,6 +135,27 @@ test('carries only current same-branch completed rejections and reports the cap'
   expect(rendered).not.toContain('src/foreign.ts')
   expect(rendered).not.toContain('src/incomplete.ts')
   expect(rendered).toContain('1 earlier rejected finding(s) omitted by the carry cap.')
+})
+
+test('carry cap breaks equal completion timestamps by review number, not UUID arithmetic', () => {
+  const rows = Array.from({ length: MAX_EARLIER_ROUND_REJECTIONS + 2 }, (_, index) =>
+    finding({
+      reviewRecordId: `01990000-0000-7000-8000-${String(index + 1).padStart(12, '0')}`,
+      reviewNumber: index + 1,
+      completedAt: '2026-10-15T12:00:00Z',
+      location: `src/review-${index + 1}.ts:1`,
+    }),
+  )
+  const rendered = renderEarlierRoundRejections({
+    project: 'fixture',
+    branch: 'DEV-1373',
+    rows,
+  })
+
+  expect(rendered).toContain('src/review-22.ts:1')
+  expect(rendered).toContain('src/review-3.ts:1')
+  expect(rendered).not.toContain('src/review-2.ts:1 —')
+  expect(rendered).not.toContain('src/review-1.ts:1 —')
 })
 
 test('places earlier rulings after exclusions and tool enforcement', () => {

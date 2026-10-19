@@ -240,7 +240,7 @@ test('resolves probe artifacts and task comments through injected ports', () => 
   ).run()
   d.query(
     `INSERT INTO landing_triage_snapshot
-      (record_id,project,project_record_id,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
+      (record_id,project,project_record_id,branch,tip,tree,pr_number,review_record_ids,patch_id,tier,lens_rounds,finding_count,at)
      VALUES ('snap-1','fixture',(SELECT record_id FROM project WHERE name='fixture'),'DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
   ).run()
   const gathered = gather(d, { artifact: 'probe:1', task: 'DEV-977' })
@@ -267,13 +267,13 @@ test('a foreign review is refused and a matching review is allowed', () => {
     branch: 'other-branch',
   })
   d.query(
-    `INSERT INTO review (record_id,recorded_at,project_record_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
+    `INSERT INTO review (record_id,number,recorded_at,project_record_id) VALUES ('${newRecordId()}',1,'2026-09-01',?)`,
   ).run(projectId(d, 'other'))
   d.query(
-    `INSERT INTO review_lens (record_id,review_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
-     VALUES ('${newRecordId()}',1,?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
+    `INSERT INTO review_lens (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
+     VALUES ('${newRecordId()}',(SELECT record_id FROM review WHERE number=1),?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
   ).run(foreignRun)
-  expect(() => gather(d, { review: 1 })).toThrow(
+  expect(() => gather(d, { review: '1' })).toThrow(
     "--review 1 project is other, not this cursor's fixture",
   )
 
@@ -283,14 +283,15 @@ test('a foreign review is refused and a matching review is allowed', () => {
     branch: 'DEV-977-work',
   })
   d.query(
-    `INSERT INTO review (record_id,recorded_at,project_record_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
+    `INSERT INTO review (record_id,number,recorded_at,project_record_id) VALUES ('${newRecordId()}',2,'2026-09-01',?)`,
   ).run(projectId(d, 'fixture'))
   d.query(
-    `INSERT INTO review_lens (record_id,review_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
-     VALUES ('${newRecordId()}',2,?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
+    `INSERT INTO review_lens (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
+     VALUES ('${newRecordId()}',(SELECT record_id FROM review WHERE number=2),?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
   ).run(matchingRun)
-  expect(gather(d, { review: 2 }).review).toEqual({
-    id: 2,
+  expect(gather(d, { review: '2' }).review).toEqual({
+    recordId: expect.any(String),
+    number: 2,
     allFindingsDisposed: true,
     allLensesGraded: true,
   })
@@ -305,23 +306,24 @@ test('review evidence covers every review of the same change on the branch', () 
   ]
   const project = projectId(d, 'fixture')
   d.query(
-    `INSERT INTO review (id,record_id,recorded_at,project_record_id,patch_id,path_set) VALUES
+    `INSERT INTO review (number,record_id,recorded_at,project_record_id,patch_id,path_set) VALUES
       (1,'${newRecordId()}','2026-09-01',?,'same-patch','["src/change.ts"]'),
       (2,'${newRecordId()}','2026-09-01',?,'same-patch','["src/change.ts"]'),
       (3,'${newRecordId()}','2026-09-01',?,'other-patch','["src/other.ts"]')`,
   ).run(project, project, project)
   const insertLens = d.query(
     `INSERT INTO review_lens
-      (record_id,review_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,
+      (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,
        reproduced,coverage,limits,overlap)
-     VALUES (?,?,?,'correctness','codex','[]','[]','[]','[]',?,?,?,?)`,
+     VALUES (?,(SELECT record_id FROM review WHERE number=?),?,'correctness','codex','[]','[]','[]','[]',?,?,?,?)`,
   )
   insertLens.run(newRecordId(), 1, runIds[0]!, 'all', 'adequate', 'named', 'unique')
   insertLens.run(newRecordId(), 2, runIds[1]!, null, null, null, null)
   insertLens.run(newRecordId(), 3, runIds[2]!, null, null, null, null)
 
-  expect(gather(d, { review: 1 }).review).toEqual({
-    id: 1,
+  expect(gather(d, { review: '1' }).review).toEqual({
+    recordId: expect.any(String),
+    number: 1,
     allFindingsDisposed: true,
     allLensesGraded: false,
     unfinishedReviewIds: [2],
@@ -329,10 +331,11 @@ test('review evidence covers every review of the same change on the branch', () 
 
   d.query(
     `UPDATE review_lens SET reproduced='all',coverage='adequate',limits='named',overlap='unique'
-      WHERE review_id=2`,
+      WHERE review_record_id=(SELECT record_id FROM review WHERE number=2)`,
   ).run()
-  expect(gather(d, { review: 1 }).review).toEqual({
-    id: 1,
+  expect(gather(d, { review: '1' }).review).toEqual({
+    recordId: expect.any(String),
+    number: 1,
     allFindingsDisposed: true,
     allLensesGraded: true,
   })
@@ -346,13 +349,13 @@ test('a same-project review whose lenses miss the branch and key is refused', ()
     branch: 'other-branch',
   })
   d.query(
-    `INSERT INTO review (record_id,recorded_at,project_record_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
+    `INSERT INTO review (record_id,number,recorded_at,project_record_id) VALUES ('${newRecordId()}',1,'2026-09-01',?)`,
   ).run(projectId(d, 'fixture'))
   d.query(
-    `INSERT INTO review_lens (record_id,review_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
-     VALUES ('${newRecordId()}',1,?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
+    `INSERT INTO review_lens (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
+     VALUES ('${newRecordId()}',(SELECT record_id FROM review WHERE number=1),?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
   ).run(runId)
-  expect(() => gather(d, { review: 1 })).toThrow(
+  expect(() => gather(d, { review: '1' })).toThrow(
     '--review 1 has no lens run on branch DEV-977-work or launch_key DEV-977',
   )
 })
@@ -365,13 +368,13 @@ test('a review matches when a lens run carries the workflow key on another branc
     branch: 'other-branch',
   })
   d.query(
-    `INSERT INTO review (record_id,recorded_at,project_record_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
+    `INSERT INTO review (record_id,number,recorded_at,project_record_id) VALUES ('${newRecordId()}',1,'2026-09-01',?)`,
   ).run(projectId(d, 'fixture'))
   d.query(
-    `INSERT INTO review_lens (record_id,review_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
-     VALUES ('${newRecordId()}',1,?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
+    `INSERT INTO review_lens (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
+     VALUES ('${newRecordId()}',(SELECT record_id FROM review WHERE number=1),?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
   ).run(runId)
-  expect(gather(d, { review: 1 }).review?.id).toBe(1)
+  expect(gather(d, { review: '1' }).review?.number).toBe(1)
 })
 
 test('a launch-key-bound review uses its cursor branch review round', () => {
@@ -388,21 +391,22 @@ test('a launch-key-bound review uses its cursor branch review round', () => {
   })
   const project = projectId(d, 'fixture')
   d.query(
-    `INSERT INTO review (id,record_id,recorded_at,project_record_id,patch_id,path_set) VALUES
+    `INSERT INTO review (number,record_id,recorded_at,project_record_id,patch_id,path_set) VALUES
       (1,'${newRecordId()}','2026-09-01',?,'same-patch','["src/change.ts"]'),
       (2,'${newRecordId()}','2026-09-01',?,'same-patch','["src/change.ts"]')`,
   ).run(project, project)
   const insertLens = d.query(
     `INSERT INTO review_lens
-      (record_id,review_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,
+      (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,
        reproduced,coverage,limits,overlap)
-     VALUES (?,?,?,'correctness','codex','[]','[]','[]','[]',?,?,?,?)`,
+     VALUES (?,(SELECT record_id FROM review WHERE number=?),?,'correctness','codex','[]','[]','[]','[]',?,?,?,?)`,
   )
   insertLens.run(newRecordId(), 1, namedRun, 'all', 'adequate', 'named', 'unique')
   insertLens.run(newRecordId(), 2, siblingRun, null, null, null, null)
 
-  expect(gather(d, { review: 1 }).review).toEqual({
-    id: 1,
+  expect(gather(d, { review: '1' }).review).toEqual({
+    recordId: expect.any(String),
+    number: 1,
     allFindingsDisposed: true,
     allLensesGraded: false,
     unfinishedReviewIds: [2],
@@ -750,7 +754,7 @@ test('a snapshot plus a merged PR satisfies tracker evidence', () => {
   const d = database()
   d.query(
     `INSERT INTO landing_triage_snapshot
-      (record_id,project,project_record_id,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
+      (record_id,project,project_record_id,branch,tip,tree,pr_number,review_record_ids,patch_id,tier,lens_rounds,finding_count,at)
      VALUES ('snap-1','fixture',(SELECT record_id FROM project WHERE name='fixture'),'DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
   ).run()
   expect(gather(d, { task: 'DEV-977' }).task).toEqual({
@@ -766,7 +770,7 @@ test('an open PR is gathered as an unmerged tracker fact', () => {
   const d = database()
   d.query(
     `INSERT INTO landing_triage_snapshot
-      (record_id,project,project_record_id,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
+      (record_id,project,project_record_id,branch,tip,tree,pr_number,review_record_ids,patch_id,tier,lens_rounds,finding_count,at)
      VALUES ('snap-1','fixture',(SELECT record_id FROM project WHERE name='fixture'),'DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
   ).run()
   expect(
@@ -795,7 +799,7 @@ test('an unavailable pull request read is gathered as unmerged', () => {
   const d = database()
   d.query(
     `INSERT INTO landing_triage_snapshot
-      (record_id,project,project_record_id,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
+      (record_id,project,project_record_id,branch,tip,tree,pr_number,review_record_ids,patch_id,tier,lens_rounds,finding_count,at)
      VALUES ('snap-1','fixture',(SELECT record_id FROM project WHERE name='fixture'),'DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
   ).run()
   expect(

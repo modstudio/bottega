@@ -1,18 +1,24 @@
 import { describe, expect, test } from 'bun:test'
 import { decideSecondOpinion, decideTriage, type TriageEvidence } from './triage-decision.ts'
 
-const review = (overrides: Partial<TriageEvidence['reviews'][number]> = {}) => ({
-  reviewId: 4,
-  recordedAt: '2026-09-25T00:00:00Z',
-  completedAt: '2026-09-25T01:00:00Z',
-  tier: 1 as const,
-  patchId: 'patch-old',
-  pathSet: '["a.ts"]',
-  lensIdentities: ['correctness'],
-  lenses: [{ id: 1, graded: true }],
-  findings: [{ id: 12, ordinal: 1, disposition: 'accepted' }],
-  ...overrides,
-})
+const review = (
+  overrides: Partial<TriageEvidence['reviews'][number]> & { reviewId?: number } = {},
+) => {
+  const { reviewId = 4, ...rest } = overrides
+  return {
+    reviewRecordId: `review-${reviewId}`,
+    reviewNumber: reviewId,
+    recordedAt: '2026-09-25T00:00:00Z',
+    completedAt: '2026-09-25T01:00:00Z',
+    tier: 1 as const,
+    patchId: 'patch-old',
+    pathSet: '["a.ts"]',
+    lensIdentities: ['correctness'],
+    lenses: [{ recordId: 'lens-1', graded: true }],
+    findings: [{ recordId: 'finding-12', ordinal: 1, disposition: 'accepted' }],
+    ...rest,
+  }
+}
 
 const branchGroup = (
   reviews: TriageEvidence['reviews'],
@@ -44,13 +50,13 @@ describe('pull-request triage decision', () => {
     expect(decideTriage(evidence())).toEqual({
       complete: true,
       snapshot: {
-        reviewIds: [4],
+        reviewRecordIds: ['review-4'],
         patchId: 'patch-a',
         tier: 1,
         lensRounds: 1,
         findingCount: 1,
         admissionPath: 'exact_review',
-        readId: null,
+        readRecordId: null,
       },
     })
   })
@@ -69,7 +75,7 @@ describe('pull-request triage decision', () => {
           branchReviewGroups: [branchGroup([earlier], ['correctness', 'craft'])],
           reads: [
             {
-              id: 9,
+              recordId: 'record-9',
               tip: 'tip-a',
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
@@ -81,7 +87,11 @@ describe('pull-request triage decision', () => {
       ),
     ).toMatchObject({
       complete: true,
-      snapshot: { admissionPath: 'architect_read', reviewIds: [3], readId: 9 },
+      snapshot: {
+        admissionPath: 'architect_read',
+        reviewRecordIds: ['review-3'],
+        readRecordId: 'record-9',
+      },
     })
   })
 
@@ -106,7 +116,7 @@ describe('pull-request triage decision', () => {
           branchReviewGroups: [branchGroup([secondLens, firstLens], ['correctness', 'craft'])],
           reads: [
             {
-              id: 9,
+              recordId: 'record-9',
               tip: 'tip-a',
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
@@ -120,9 +130,9 @@ describe('pull-request triage decision', () => {
       complete: true,
       snapshot: {
         admissionPath: 'architect_read',
-        reviewIds: [3, 4],
+        reviewRecordIds: ['review-3', 'review-4'],
         lensRounds: 2,
-        readId: 9,
+        readRecordId: 'record-9',
       },
     })
   })
@@ -161,6 +171,8 @@ describe('pull-request triage decision', () => {
     })
     const unfinished = review({
       reviewId: 4,
+      reviewRecordId: '01990000-0000-7000-8000-000000000004',
+      reviewNumber: 104,
       completedAt: null,
       tier: 1,
       lensIdentities: ['safety'],
@@ -169,7 +181,7 @@ describe('pull-request triage decision', () => {
 
     expect(decideTriage(evidence({ reviews: [complete, unfinished] }))).toMatchObject({
       complete: false,
-      unfinishedReviewIds: [4],
+      unfinishedReviewNumbers: [104],
     })
   })
 
@@ -179,7 +191,7 @@ describe('pull-request triage decision', () => {
       'with a read of a different patch',
       [
         {
-          id: 9,
+          recordId: 'record-9',
           tip: 'tip-a',
           patchId: 'other',
           pathSet: '["a.ts"]',
@@ -192,7 +204,7 @@ describe('pull-request triage decision', () => {
       'with a read recorded before the round completed',
       [
         {
-          id: 9,
+          recordId: 'record-9',
           tip: 'tip-a',
           patchId: 'patch-a',
           pathSet: '["a.ts"]',
@@ -224,7 +236,7 @@ describe('pull-request triage decision', () => {
           branchReviewGroups: [branchGroup([review({ completedAt: null })])],
           reads: [
             {
-              id: 9,
+              recordId: 'record-9',
               tip: 'tip-a',
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
@@ -234,7 +246,7 @@ describe('pull-request triage decision', () => {
           ],
         }),
       ),
-    ).toMatchObject({ complete: false, earlierReviewId: null })
+    ).toMatchObject({ complete: false, earlierReviewNumber: null })
   })
 
   test('path b refuses a read not recorded by the branch run owner', () => {
@@ -245,7 +257,7 @@ describe('pull-request triage decision', () => {
           branchReviewGroups: [branchGroup([review()])],
           reads: [
             {
-              id: 9,
+              recordId: 'record-9',
               tip: 'tip-a',
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
@@ -267,7 +279,7 @@ describe('pull-request triage decision', () => {
           branchReviewGroups: [branchGroup([review()])],
           reads: [
             {
-              id: 9,
+              recordId: 'record-9',
               tip: 'tip-a',
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
@@ -287,7 +299,7 @@ describe('pull-request triage decision', () => {
   test('reports unfinished exact review, undisposed findings, and missing applicable lenses', () => {
     const incomplete = review({
       completedAt: null,
-      findings: [{ id: 12, ordinal: 1, disposition: null }],
+      findings: [{ recordId: 'record-12', ordinal: 1, disposition: null }],
     })
     expect(
       decideTriage(
@@ -299,8 +311,8 @@ describe('pull-request triage decision', () => {
       ),
     ).toMatchObject({
       complete: false,
-      unfinishedReviewIds: [4],
-      undisposedFindings: [{ id: 12, reviewId: 4, ordinal: 1 }],
+      unfinishedReviewNumbers: [4],
+      undisposedFindings: [{ reviewNumber: 4, ordinal: 1 }],
       missingLenses: ['correctness', 'craft', 'safety'],
     })
   })
@@ -330,7 +342,7 @@ describe('pull-request triage decision', () => {
 
   test('a second opinion requires two completed runs on different models', () => {
     const opinion = (id: number, model: string) => ({
-      id,
+      recordId: `lens-${id}`,
       runId: String(id + 100),
       lens: 'correctness',
       model,
@@ -363,8 +375,8 @@ describe('pull-request triage decision', () => {
     const twoModels = review({
       patchId: 'patch-a',
       lenses: [
-        { id: 1, runId: '101', lens: 'correctness', model: 'model-a', graded: true },
-        { id: 2, runId: '102', lens: 'correctness', model: 'model-b', graded: true },
+        { recordId: 'record-1', runId: '101', lens: 'correctness', model: 'model-a', graded: true },
+        { recordId: 'record-2', runId: '102', lens: 'correctness', model: 'model-b', graded: true },
       ],
     })
     expect(
@@ -384,7 +396,7 @@ describe('pull-request triage decision', () => {
           branchReviewGroups: [branchGroup([twoModels], ['correctness'], 'correctness')],
           reads: [
             {
-              id: 9,
+              recordId: 'record-9',
               tip: 'tip-a',
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
@@ -402,8 +414,8 @@ describe('pull-request triage decision', () => {
     const sameModel = review({
       patchId: 'patch-a',
       lenses: [
-        { id: 1, runId: '101', lens: 'correctness', model: 'model-a', graded: true },
-        { id: 2, runId: '102', lens: 'correctness', model: 'model-a', graded: true },
+        { recordId: 'record-1', runId: '101', lens: 'correctness', model: 'model-a', graded: true },
+        { recordId: 'record-2', runId: '102', lens: 'correctness', model: 'model-a', graded: true },
       ],
     })
     expect(
@@ -426,7 +438,7 @@ describe('pull-request triage decision', () => {
           branchReviewGroups: [branchGroup([sameModel], ['correctness'], 'correctness')],
           reads: [
             {
-              id: 9,
+              recordId: 'record-9',
               tip: 'tip-a',
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
@@ -436,6 +448,6 @@ describe('pull-request triage decision', () => {
           ],
         }),
       ),
-    ).toMatchObject({ complete: false, earlierReviewId: null })
+    ).toMatchObject({ complete: false, earlierReviewNumber: null })
   })
 })

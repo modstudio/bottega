@@ -249,10 +249,10 @@ function sourceProjectRecordId(local: Database, row: OutboxRow): string | null |
     review: `SELECT project.record_id FROM review
       LEFT JOIN project ON project.record_id=review.project_record_id WHERE review.record_id=?`,
     review_lens: `SELECT project.record_id FROM review_lens
-      JOIN review ON review.id=review_lens.review_id
+      JOIN review ON review.record_id=review_lens.review_record_id
       LEFT JOIN project ON project.record_id=review.project_record_id WHERE review_lens.record_id=?`,
     review_finding: `SELECT project.record_id FROM review_finding
-      JOIN review ON review.id=review_finding.review_id
+      JOIN review ON review.record_id=review_finding.review_record_id
       LEFT JOIN project ON project.record_id=review.project_record_id WHERE review_finding.record_id=?`,
     review_read: `SELECT project.record_id FROM review_read
       LEFT JOIN project ON project.record_id=review_read.project_record_id WHERE review_read.record_id=?`,

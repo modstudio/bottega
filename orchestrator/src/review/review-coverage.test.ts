@@ -3,7 +3,7 @@ import { reviewCoverageVerdict } from './review-coverage.ts'
 import type { CoverageGitResult, CoverageGitRunner, ReviewCoverageInput } from './review-types.ts'
 
 const review: ReviewCoverageInput = {
-  id: 1,
+  recordId: 'review-1',
   lenses: [
     {
       lens: 'test',

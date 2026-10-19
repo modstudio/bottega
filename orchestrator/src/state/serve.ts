@@ -9,6 +9,10 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs'
+import type {
+  RunDetailReviewFinding,
+  RunDetailReviewLens,
+} from '../../../shared/review-presentation.ts'
 import { AGENTS, refreshAgents } from '../agent/agent-registry.ts'
 import { readAskServerFailure } from '../ask/ask-failure.ts'
 import { summarizeAskServer } from '../ask/ask-lifecycle.ts'
@@ -34,21 +38,49 @@ registerStandardRuntime()
 const jsonArray = (value: unknown) =>
   typeof value === 'string' ? (JSON.parse(value) as unknown[]) : []
 
-function reviewsForRun(runId: string) {
+function reviewsForRun(runId: string): RunDetailReviewLens[] {
   const lenses = db()
     .query(
       `SELECT l.*, run.record_id AS run_record_id,
-              r.project_record_id AS review_project_id, r.recorded_at, r.completed_at,
+              r.number AS review_number, r.project_record_id AS review_project_record_id,
+              r.recorded_at, r.completed_at,
               r.tier, r.patch_id, r.commit_message
-         FROM review_lens l JOIN review r ON r.id=l.review_id JOIN run ON run.record_id=l.run_record_id
-        WHERE l.run_record_id=? ORDER BY r.recorded_at DESC, l.id DESC`,
+         FROM review_lens l JOIN review r ON r.record_id=l.review_record_id JOIN run ON run.record_id=l.run_record_id
+        WHERE l.run_record_id=? ORDER BY r.recorded_at DESC, r.number DESC, run.number DESC`,
     )
-    .all(runId) as Record<string, unknown>[]
+    .all(runId) as {
+    record_id: string
+    review_record_id: string
+    run_record_id: string
+    review_number: number
+    review_project_record_id: string | null
+    lens: string
+    agent: string
+    model: string | null
+    tree_inspected: string | null
+    reviewed_tree: string | null
+    standards_read: string
+    files_covered: string
+    commands_run: string
+    could_not_verify: string
+    mcp_tools: string
+    docs_read: string
+    substitutes: string
+    reproduced: string | null
+    coverage: string | null
+    limits: string | null
+    overlap: string | null
+    recorded_at: string
+    completed_at: string | null
+    tier: number | null
+    patch_id: string | null
+    commit_message: string | null
+  }[]
   return lenses.map((lens) => ({
-    id: lens.id,
-    reviewId: lens.review_id,
+    id: lens.record_id,
+    reviewId: lens.review_record_id,
     runId: lens.run_record_id,
-    runRecordId: lens.run_record_id,
+    reviewNumber: lens.review_number,
     lens: lens.lens,
     agent: lens.agent,
     model: lens.model,
@@ -65,7 +97,7 @@ function reviewsForRun(runId: string) {
     coverage: lens.coverage,
     limits: lens.limits,
     overlap: lens.overlap,
-    reviewProjectId: lens.review_project_id,
+    reviewProjectId: lens.review_project_record_id,
     recordedAt: lens.recorded_at,
     completedAt: lens.completed_at,
     tier: lens.tier,
@@ -73,13 +105,14 @@ function reviewsForRun(runId: string) {
     commitMessage: lens.commit_message,
     findings: db()
       .query(
-        `SELECT id, review_id AS reviewId, review_lens_id AS reviewLensId, ordinal,
+        `SELECT record_id AS id, review_record_id AS reviewId,
+                review_lens_record_id AS reviewLensId, ordinal,
                 severity, location, evidence, proposed_correction AS proposedCorrection,
                 disposition, rejection_category AS rejectionCategory,
                 triaged_severity AS triagedSeverity, triaged_at AS triagedAt
-           FROM review_finding WHERE review_lens_id=? ORDER BY ordinal`,
+           FROM review_finding WHERE review_lens_record_id=? ORDER BY ordinal`,
       )
-      .all(Number(lens.id)),
+      .all(String(lens.record_id)) as RunDetailReviewFinding[],
   }))
 }
 

@@ -33,7 +33,7 @@ test('falls back to a triage snapshot when no landing record exists', () => {
   const d = database()
   d.query(
     `INSERT INTO landing_triage_snapshot
-      (record_id,project,project_record_id,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
+      (record_id,project,project_record_id,branch,tip,tree,pr_number,review_record_ids,patch_id,tier,lens_rounds,finding_count,at)
      VALUES ('snap-1','fixture',(SELECT record_id FROM project WHERE name='fixture'),'DEV-977-work','abc','tree',15,'[]','patch',1,1,0,'2026-09-01')`,
   ).run()
   expect(branchForTaskKey('fixture', 'DEV-977', null, d)).toBe('DEV-977-work')
@@ -44,7 +44,7 @@ test('a landing record wins over a snapshot for the same branch', () => {
   const d = database()
   d.query(
     `INSERT INTO landing_triage_snapshot
-      (record_id,project,project_record_id,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
+      (record_id,project,project_record_id,branch,tip,tree,pr_number,review_record_ids,patch_id,tier,lens_rounds,finding_count,at)
      VALUES ('snap-1','fixture',(SELECT record_id FROM project WHERE name='fixture'),'DEV-977-work','abc','tree',15,'[]','patch',1,1,0,'2026-09-01')`,
   ).run()
   d.query(

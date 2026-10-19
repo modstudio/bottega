@@ -153,13 +153,19 @@ describe('run detail', () => {
     recordReview(id, reviewReply(1), db())
     expect(runDetail(id)!.reviews).toMatchObject([
       {
+        id: expect.any(String),
+        reviewId: expect.any(String),
         runId: id,
+        reviewNumber: expect.any(Number),
         lens: expect.any(String),
         agent: 'codex',
         standardsRead: expect.any(Array),
         filesCovered: expect.any(Array),
         findings: [
           {
+            id: expect.any(String),
+            reviewId: expect.any(String),
+            reviewLensId: expect.any(String),
             ordinal: 1,
             severity: expect.any(String),
             proposedCorrection: expect.any(String),

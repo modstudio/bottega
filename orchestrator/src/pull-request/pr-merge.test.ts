@@ -58,7 +58,7 @@ function adapter(
       decision: AdmissionDecision,
       prNumber: number,
       database: ReturnType<typeof db>,
-    ) => number | null
+    ) => string | null
     shipCleanup?: () => string
   } = {},
 ): PullRequestMergeAdapter {
@@ -193,22 +193,22 @@ test('an incomplete admission refuses with its review remedy without merging', (
             triage: {
               complete: false,
               snapshot: {
-                reviewIds: [],
+                reviewRecordIds: [],
                 patchId: 'patch',
                 tier: 2,
                 lensRounds: 0,
                 findingCount: 0,
                 admissionPath: 'exact_review',
-                readId: null,
+                readRecordId: null,
               },
               missingReview: true,
-              unfinishedReviewIds: [],
+              unfinishedReviewNumbers: [],
               undisposedFindings: [],
               missingLenses: [],
               missingSecondOpinion: null,
               finalTierRaised: false,
               architectReadRequired: false,
-              earlierReviewId: null,
+              earlierReviewNumber: null,
               earlierReviewTier: null,
             },
           },
@@ -279,13 +279,13 @@ test('an admitted head records a snapshot with the pull request number before me
     triage: {
       complete: true,
       snapshot: {
-        reviewIds: [],
+        reviewRecordIds: [],
         patchId: 'patch',
         tier: 2,
         lensRounds: 0,
         findingCount: 0,
         admissionPath: 'exact_review',
-        readId: null,
+        readRecordId: null,
       },
     },
   }
@@ -337,11 +337,11 @@ test('an admitted head records a snapshot with the pull request number before me
   expect(
     database
       .query(
-        `SELECT pr_number,override_id FROM landing_triage_snapshot
+        `SELECT pr_number,override_record_id FROM landing_triage_snapshot
           WHERE project=? AND branch=? AND tip=?`,
       )
       .get('merge-fixture', pullRequest.headBranch, pullRequest.headCommit),
-  ).toEqual({ pr_number: 42, override_id: null })
+  ).toEqual({ pr_number: 42, override_record_id: null })
 })
 
 test('a failing forge call refuses because proof was not checked', () => {

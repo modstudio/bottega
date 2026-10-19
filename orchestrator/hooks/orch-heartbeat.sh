@@ -322,8 +322,8 @@ if not os.path.exists(path):
 try:
     connection = sqlite3.connect("file:" + path + "?mode=ro", uri=True, timeout=2)
     rows = connection.execute(
-        "SELECT id, branch, status, started_at, finished_at FROM landing "
-        "WHERE session_id = ? AND status IN (\"queued\",\"running\") ORDER BY id",
+        "SELECT record_id, branch, status, started_at, finished_at FROM landing "
+        "WHERE session_id = ? AND status IN (\"queued\",\"running\") ORDER BY record_id",
         (os.environ["SID"],),
     ).fetchall()
 finally:
@@ -334,7 +334,7 @@ finally:
 now = datetime.datetime.now(datetime.timezone.utc)
 live, ids = [], []
 for landing_id, branch, status, started_at, finished_at in rows:
-    if not isinstance(landing_id, int) or not all(isinstance(v, str) for v in (branch, status, started_at)):
+    if not isinstance(landing_id, str) or not all(isinstance(v, str) for v in (branch, status, started_at)):
         raise SystemExit(2)
     branch = branch.replace("\t", " ").replace("\r", " ").replace("\n", " ")
     try:

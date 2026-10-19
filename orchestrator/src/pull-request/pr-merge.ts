@@ -68,7 +68,7 @@ export type PullRequestMergeAdapter = {
     decision: AdmissionDecision,
     prNumber: number,
     database: Database,
-  ): number | null
+  ): string | null
   merge(
     cwd: string,
     number: number,
