@@ -23,14 +23,18 @@ const sourceCopies = mkdtempSync(join(tmpdir(), 'dev-429-sources-'))
 const sourceOrchDb = join(sourceCopies, FROZEN_STATE_NAMES.orchestratorDatabase)
 const sourceHubDb = join(sourceCopies, FROZEN_STATE_NAMES.hubDatabase)
 const LIVE_COPY_PHASE_TIMEOUT_MS = 900_000
+class EarlyExit {
+  readonly code: number
+  constructor(code: number) {
+    this.code = code
+  }
+}
 function copyDatabase(source: string, target: string): void {
   copyFileSync(source, target)
   for (const suffix of ['-wal', '-shm']) {
     if (existsSync(`${source}${suffix}`)) copyFileSync(`${source}${suffix}`, `${target}${suffix}`)
   }
 }
-copyDatabase(resolveOrchestratorDatabase(process.env), sourceOrchDb)
-copyDatabase(resolveHubDatabase(process.env), sourceHubDb)
 
 async function run(argv: string[], env?: Record<string, string>): Promise<number> {
   const child = Bun.spawn(argv, {
@@ -63,24 +67,91 @@ function postgres(source: string, database = 'postgres'): void {
   if (result.exitCode !== 0) throw new Error(`Postgres fixture command exited ${result.exitCode}`)
 }
 
+let launched = false
 let started = false
+let released = false
+function release(): void {
+  if (released) return
+  released = true
+  if (started) {
+    try {
+      postgres(`
+        DROP DATABASE IF EXISTS recipient_migration WITH (FORCE);
+        DROP DATABASE IF EXISTS hosted_task_id_migration WITH (FORCE);
+        DROP DATABASE IF EXISTS doc_revision_migration WITH (FORCE);
+        DROP DATABASE IF EXISTS doc_author_migration WITH (FORCE);
+        DROP DATABASE IF EXISTS public_role_migration WITH (FORCE);
+        DROP DATABASE IF EXISTS board_shared_space_migration WITH (FORCE);
+        DROP DATABASE IF EXISTS board_shared_space_invalid_migration WITH (FORCE);
+        DROP DATABASE IF EXISTS hub_project_identity_migration WITH (FORCE);
+        DROP DATABASE IF EXISTS workflow_generation_migration WITH (FORCE);
+        DROP DATABASE IF EXISTS workflow_catalogue WITH (FORCE);
+        DROP DATABASE IF EXISTS lens_catalogue WITH (FORCE);
+        DROP DATABASE IF EXISTS port_catalogue WITH (FORCE);
+        DROP DATABASE IF EXISTS hosted_project_cleanup_migration WITH (FORCE);
+        DROP DATABASE IF EXISTS hosted_project_cleanup_collision WITH (FORCE);
+        REASSIGN OWNED BY ${RECORD_OWNER_ROLE} TO postgres;
+        DROP OWNED BY ${RECORD_OWNER_ROLE};
+        DROP OWNED BY ${RECORD_ACTOR_ROLE};
+        DROP OWNED BY ${RECORD_AUTH_ROLE};
+        DROP OWNED BY ${RECORD_PUBLIC_ROLE};
+        DROP OWNED BY ${RECORD_READER_ROLE};
+        DROP OWNED BY public_probe;
+        DROP ROLE IF EXISTS public_probe;
+        DROP ROLE IF EXISTS ${RECORD_READER_ROLE};
+        DROP ROLE IF EXISTS ${RECORD_ACTOR_ROLE};
+        DROP ROLE IF EXISTS ${RECORD_AUTH_ROLE};
+        DROP ROLE IF EXISTS ${RECORD_PUBLIC_ROLE};
+        DROP ROLE IF EXISTS ${RECORD_OWNER_ROLE};
+      `)
+    } catch (error) {
+      console.error(error)
+      process.exitCode ||= 1
+    }
+  }
+  // An interrupted start can still have created the container, so removal does not wait on readiness.
+  if (launched)
+    Bun.spawnSync(['docker', 'rm', '-f', '-v', container], { stdout: 'ignore', stderr: 'ignore' })
+  rmSync(sourceCopies, { recursive: true, force: true })
+}
+
+const signalHandlers = {
+  SIGINT: () => {
+    release()
+    process.exit(130)
+  },
+  SIGTERM: () => {
+    release()
+    process.exit(143)
+  },
+}
+process.on('SIGINT', signalHandlers.SIGINT)
+process.on('SIGTERM', signalHandlers.SIGTERM)
+
 try {
-  const start = await run([
-    'docker',
-    'run',
-    '--rm',
-    '--name',
-    container,
-    '-e',
-    'POSTGRES_PASSWORD=postgres',
-    '-p',
-    '127.0.0.1::5432',
-    '-d',
-    'postgres:18-alpine',
-    '-c',
-    'max_connections=200',
-  ])
-  if (start !== 0) process.exit(start)
+  copyDatabase(resolveOrchestratorDatabase(process.env), sourceOrchDb)
+  copyDatabase(resolveHubDatabase(process.env), sourceHubDb)
+  launched = true
+  // Synchronous so no signal handler runs between the container starting and `started` being set.
+  const start = Bun.spawnSync(
+    [
+      'docker',
+      'run',
+      '--rm',
+      '--name',
+      container,
+      '-e',
+      'POSTGRES_PASSWORD=postgres',
+      '-p',
+      '127.0.0.1::5432',
+      '-d',
+      'postgres:18-alpine',
+      '-c',
+      'max_connections=200',
+    ],
+    { stdout: 'inherit', stderr: 'inherit' },
+  ).exitCode
+  if (start !== 0) throw new EarlyExit(start)
   started = true
 
   let ready = false
@@ -182,7 +253,7 @@ try {
       ORCH_TEST_HOSTED_PROJECT_CLEANUP_COLLISION_URL: hostedProjectCleanupCollisionUrl,
     },
   )
-  if (hostedProjectCleanupMigration !== 0) process.exit(hostedProjectCleanupMigration)
+  if (hostedProjectCleanupMigration !== 0) throw new EarlyExit(hostedProjectCleanupMigration)
 
   const boardSharedSpaceMigration = await run(
     [
@@ -197,7 +268,7 @@ try {
       ORCH_TEST_BOARD_SHARED_SPACE_INVALID_MIGRATION_URL: boardSharedSpaceInvalidMigrationUrl,
     },
   )
-  if (boardSharedSpaceMigration !== 0) process.exit(boardSharedSpaceMigration)
+  if (boardSharedSpaceMigration !== 0) throw new EarlyExit(boardSharedSpaceMigration)
 
   const publicRoleMigration = await run(
     ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-public-role.test.ts'],
@@ -206,19 +277,19 @@ try {
       ORCH_TEST_PUBLIC_ROLE_MIGRATION_SUPERUSER_URL: publicRoleMigrationSuperuserUrl,
     },
   )
-  if (publicRoleMigration !== 0) process.exit(publicRoleMigration)
+  if (publicRoleMigration !== 0) throw new EarlyExit(publicRoleMigration)
 
   const recipientMigration = await run(
     ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-recipients.test.ts'],
     { ORCH_TEST_RECIPIENT_MIGRATION_URL: recipientMigrationUrl },
   )
-  if (recipientMigration !== 0) process.exit(recipientMigration)
+  if (recipientMigration !== 0) throw new EarlyExit(recipientMigration)
 
   const hostedTaskIdMigration = await run(
     ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-hosted-task-ids.test.ts'],
     { ORCH_TEST_HOSTED_TASK_ID_MIGRATION_URL: hostedTaskIdMigrationUrl },
   )
-  if (hostedTaskIdMigration !== 0) process.exit(hostedTaskIdMigration)
+  if (hostedTaskIdMigration !== 0) throw new EarlyExit(hostedTaskIdMigration)
 
   const workflowGenerationMigration = await run(
     [
@@ -230,7 +301,7 @@ try {
     ],
     { ORCH_TEST_WORKFLOW_GENERATION_MIGRATION_URL: workflowGenerationMigrationUrl },
   )
-  if (workflowGenerationMigration !== 0) process.exit(workflowGenerationMigration)
+  if (workflowGenerationMigration !== 0) throw new EarlyExit(workflowGenerationMigration)
 
   const hubProjectIdentityMigration = await run(
     [
@@ -242,7 +313,7 @@ try {
     ],
     { ORCH_TEST_HUB_PROJECT_IDENTITY_MIGRATION_URL: hubProjectIdentityMigrationUrl },
   )
-  if (hubProjectIdentityMigration !== 0) process.exit(hubProjectIdentityMigration)
+  if (hubProjectIdentityMigration !== 0) throw new EarlyExit(hubProjectIdentityMigration)
 
   const docRevisionMigration = await run(
     [
@@ -257,7 +328,7 @@ try {
       ORCH_TEST_DOC_REVISION_MIGRATION_SUPERUSER_URL: docRevisionMigrationSuperuserUrl,
     },
   )
-  if (docRevisionMigration !== 0) process.exit(docRevisionMigration)
+  if (docRevisionMigration !== 0) throw new EarlyExit(docRevisionMigration)
 
   const docAuthorMigration = await run(
     [
@@ -272,7 +343,7 @@ try {
       ORCH_TEST_DOC_AUTHOR_MIGRATION_SUPERUSER_URL: docAuthorMigrationSuperuserUrl,
     },
   )
-  if (docAuthorMigration !== 0) process.exit(docAuthorMigration)
+  if (docAuthorMigration !== 0) throw new EarlyExit(docAuthorMigration)
 
   const workflowCatalogue = await run(
     ['bun', 'test', '--timeout', '30000', 'src/record/record-workflow-catalogue-postgres.test.ts'],
@@ -287,7 +358,7 @@ try {
     { ORCH_TEST_PORT_CATALOGUE_URL: portCatalogueUrl },
   )
   if (workflowCatalogue !== 0 || lensCatalogue !== 0 || portCatalogue !== 0)
-    process.exit(workflowCatalogue || lensCatalogue || portCatalogue)
+    throw new EarlyExit(workflowCatalogue || lensCatalogue || portCatalogue)
 
   const rls = await run(
     ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-rls.test.ts'],
@@ -329,7 +400,7 @@ try {
             ORCH_TEST_CATALOGUE_IMPORT_SETUP_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,
           },
         )
-        if (catalogueImport !== 0) process.exit(catalogueImport)
+        if (catalogueImport !== 0) throw new EarlyExit(catalogueImport)
         const jsonbBinding = await run(
           [
             'bun',
@@ -374,43 +445,11 @@ try {
       }
     }
   }
+} catch (error) {
+  if (error instanceof EarlyExit) process.exitCode = error.code
+  else throw error
 } finally {
-  if (started) {
-    try {
-      postgres(`
-        DROP DATABASE IF EXISTS recipient_migration WITH (FORCE);
-        DROP DATABASE IF EXISTS hosted_task_id_migration WITH (FORCE);
-        DROP DATABASE IF EXISTS doc_revision_migration WITH (FORCE);
-        DROP DATABASE IF EXISTS doc_author_migration WITH (FORCE);
-        DROP DATABASE IF EXISTS public_role_migration WITH (FORCE);
-        DROP DATABASE IF EXISTS board_shared_space_migration WITH (FORCE);
-        DROP DATABASE IF EXISTS board_shared_space_invalid_migration WITH (FORCE);
-        DROP DATABASE IF EXISTS hub_project_identity_migration WITH (FORCE);
-        DROP DATABASE IF EXISTS workflow_generation_migration WITH (FORCE);
-        DROP DATABASE IF EXISTS workflow_catalogue WITH (FORCE);
-        DROP DATABASE IF EXISTS lens_catalogue WITH (FORCE);
-        DROP DATABASE IF EXISTS port_catalogue WITH (FORCE);
-        DROP DATABASE IF EXISTS hosted_project_cleanup_migration WITH (FORCE);
-        DROP DATABASE IF EXISTS hosted_project_cleanup_collision WITH (FORCE);
-        REASSIGN OWNED BY ${RECORD_OWNER_ROLE} TO postgres;
-        DROP OWNED BY ${RECORD_OWNER_ROLE};
-        DROP OWNED BY ${RECORD_ACTOR_ROLE};
-        DROP OWNED BY ${RECORD_AUTH_ROLE};
-        DROP OWNED BY ${RECORD_PUBLIC_ROLE};
-        DROP OWNED BY ${RECORD_READER_ROLE};
-        DROP OWNED BY public_probe;
-        DROP ROLE IF EXISTS public_probe;
-        DROP ROLE IF EXISTS ${RECORD_READER_ROLE};
-        DROP ROLE IF EXISTS ${RECORD_ACTOR_ROLE};
-        DROP ROLE IF EXISTS ${RECORD_AUTH_ROLE};
-        DROP ROLE IF EXISTS ${RECORD_PUBLIC_ROLE};
-        DROP ROLE IF EXISTS ${RECORD_OWNER_ROLE};
-      `)
-    } catch (error) {
-      console.error(error)
-      process.exitCode ||= 1
-    }
-    Bun.spawnSync(['docker', 'stop', container], { stdout: 'ignore', stderr: 'inherit' })
-  }
-  rmSync(sourceCopies, { recursive: true, force: true })
+  release()
+  process.off('SIGINT', signalHandlers.SIGINT)
+  process.off('SIGTERM', signalHandlers.SIGTERM)
 }
