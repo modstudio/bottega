@@ -7,9 +7,11 @@ export const treeViewStyles = variant({
     documentTitle: 'line-clamp-2 text-pretty',
     disabledTitle: 'line-clamp-2 text-pretty',
     treeItem: 'm-0',
-    row: 'group flex items-start',
+    row: 'group relative flex items-start',
+    // The handle sits in the gutter left of the title, so it takes no room from the title; on a
+    // touch screen, where reordering by drag is not offered, it is not shown at all.
     dragHandle:
-      'grid size-7 shrink-0 touch-none cursor-grab place-items-center rounded-sm text-text-muted opacity-0 hover:bg-control-hover hover:text-text-primary focus:opacity-100 focus-visible:outline-2 focus-visible:outline-focus-ring group-focus-within:opacity-100 group-hover:opacity-100 active:cursor-grabbing',
+      'absolute top-0.5 -left-4 grid h-6 w-4 touch-none cursor-grab place-items-center rounded-sm text-text-muted opacity-0 hover:bg-control-hover hover:text-text-primary focus:opacity-100 focus-visible:outline-2 focus-visible:outline-focus-ring group-focus-within:opacity-100 group-hover:opacity-100 active:cursor-grabbing [@media(any-hover:none)]:hidden',
     gripVertical: 'size-3.5',
     toggle:
       'grid size-7 shrink-0 cursor-pointer place-items-center rounded-sm text-text-muted hover:bg-control-hover hover:text-text-primary',
