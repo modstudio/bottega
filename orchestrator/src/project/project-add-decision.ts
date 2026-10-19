@@ -12,11 +12,15 @@ import {
   PROJECT_SETTING_COLUMNS,
   PROJECT_SETTINGS_NOT_IMPORTED,
 } from '../record/record-project-columns.ts'
+import {
+  noActiveRecordSpaceRefusal,
+  projectRecordDestination,
+} from '../record/record-project-destination.ts'
 import type { ProjectSettings } from './project-settings.ts'
 
 export type AddHostedProject = RecordProject
 
-export type AddProjectDecision =
+type AddProjectDecision =
   | { kind: 'mint'; settings: ProjectSettings }
   | {
       kind: 'adopt'
@@ -26,6 +30,11 @@ export type AddProjectDecision =
       space: string
     }
   | { kind: 'refuse'; reason: string }
+
+export type ProjectAddDecisionResult = {
+  decision: AddProjectDecision
+  targetSpace?: { id: string; label: string }
+}
 
 function stable(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`
@@ -72,7 +81,7 @@ function decideHostedAdoption(input: {
   hosted: AddHostedProject
   declaredMembership?: RecordSpaceMembership
   memberships: readonly RecordSpaceMembership[]
-}): AddProjectDecision {
+}): Exclude<AddProjectDecision, { kind: 'mint' }> {
   const { hosted } = input
   if (!hosted.settings) {
     return {
@@ -107,6 +116,43 @@ function decideHostedAdoption(input: {
   }
 }
 
+function decideMint(
+  input: {
+    name: string
+    requestedSettings: ProjectSettings
+    memberships: readonly RecordSpaceMembership[]
+    activeSpaceId: string | null
+  },
+  selectedMembership: RecordSpaceMembership | undefined,
+  declaredMembership: RecordSpaceMembership | undefined,
+): ProjectAddDecisionResult {
+  const declaredSpace = selectedMembership?.spaceId ?? declaredMembership?.spaceId ?? null
+  if (!declaredSpace && !input.activeSpaceId) {
+    return { decision: { kind: 'refuse', reason: noActiveRecordSpaceRefusal() } }
+  }
+  const destination = projectRecordDestination(
+    input.name,
+    declaredSpace,
+    input.activeSpaceId ?? '',
+    input.memberships,
+  )
+  if ('refused' in destination) {
+    throw new Error(`resolved project destination unexpectedly refused ${destination.declaredSpace}`)
+  }
+  return {
+    decision: {
+      kind: 'mint',
+      settings: selectedMembership
+        ? { ...input.requestedSettings, space: selectedMembership.slug }
+        : input.requestedSettings,
+    },
+    targetSpace: {
+      id: destination.spaceId,
+      label: spaceLabel(destination.spaceId, input.memberships, destination.spaceId),
+    },
+  }
+}
+
 export function decideProjectAdd(input: {
   name: string
   requestedStack: string | null
@@ -115,14 +161,17 @@ export function decideProjectAdd(input: {
   selectedSpace?: string
   hostedProjects: readonly AddHostedProject[]
   memberships: readonly RecordSpaceMembership[]
-}): AddProjectDecision {
+  activeSpaceId: string | null
+}): ProjectAddDecisionResult {
   const selectedMembership = input.selectedSpace
     ? recordSpaceMembership(input.selectedSpace, input.memberships)
     : undefined
   if (input.selectedSpace && !selectedMembership) {
     return {
-      kind: 'refuse',
-      reason: `the signed-in user is not a member of record space ${input.selectedSpace}`,
+      decision: {
+        kind: 'refuse',
+        reason: `the signed-in user is not a member of record space ${input.selectedSpace}`,
+      },
     }
   }
   const declaredMembership = input.requestedSettings.space
@@ -134,8 +183,10 @@ export function decideProjectAdd(input: {
     declaredMembership?.spaceId !== selectedMembership.spaceId
   ) {
     return {
-      kind: 'refuse',
-      reason: '--space and settings.space must name the same record space',
+      decision: {
+        kind: 'refuse',
+        reason: '--space and settings.space must name the same record space',
+      },
     }
   }
 
@@ -149,18 +200,20 @@ export function decideProjectAdd(input: {
       .map((project) => spaceLabel(project.spaceId, input.memberships, project.spaceName))
       .sort()
     return {
-      kind: 'refuse',
-      reason: `hosted project ${JSON.stringify(input.name)} exists in multiple record spaces: ${spaces.join(', ')}; choose one with --space <id-or-slug>`,
+      decision: {
+        kind: 'refuse',
+        reason: `hosted project ${JSON.stringify(input.name)} exists in multiple record spaces: ${spaces.join(', ')}; choose one with --space <id-or-slug>`,
+      },
     }
   }
   if (named.length === 0) {
-    return {
-      kind: 'mint',
-      settings: selectedMembership
-        ? { ...input.requestedSettings, space: selectedMembership.slug }
-        : input.requestedSettings,
-    }
+    return decideMint(input, selectedMembership, declaredMembership)
   }
 
-  return decideHostedAdoption({ ...input, hosted: named[0]!, declaredMembership })
+  const decision = decideHostedAdoption({ ...input, hosted: named[0]!, declaredMembership })
+  if (decision.kind === 'refuse') return { decision }
+  return {
+    decision,
+    targetSpace: { id: named[0]!.spaceId, label: decision.space },
+  }
 }

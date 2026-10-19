@@ -17,12 +17,12 @@ export const projectModules: ProjectModule[] = [
     '../../../shared/record-project-contract.ts',
     '../../../shared/record-space-membership.ts',
     '../record/record-project-columns.ts',
+    '../record/record-project-destination.ts',
     './project-settings.ts',
   ]),
   module('orchestrator/src/project/project-add-record.ts', [
     '../../../shared/record-space-membership.ts',
     '../record/record-api-client.ts',
-    '../record/record-project-destination.ts',
     '../record/record-write-authority.ts',
     './project-add-decision.ts',
     './project-settings.ts',

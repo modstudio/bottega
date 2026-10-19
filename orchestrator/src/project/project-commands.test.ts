@@ -9,6 +9,7 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { db, writableDb } from '../database/db.ts'
+import { effectiveProjectSpace } from '../project-space.ts'
 import { readRecordInstallBinding } from '../record/install-binding.ts'
 import { applyLensCatalogueRow } from '../record/record-cache-lens.ts'
 import { fillAbsentProjectSettings, projectCommand } from './project-commands.ts'
@@ -246,9 +247,7 @@ test('project add pulls the hosted project space catalogues before lens validati
     runProject(['project', 'add', path], { name: 'catalogue-adoption' }),
   ).resolves.toContain('adopted catalogue-adoption from record space target')
   expect(projectByName('catalogue-adoption')?.recordId).toBe(hostedId)
-  expect(
-    local.query('SELECT id FROM lens WHERE space_id=? AND id=?').get(targetSpace, 'target-lens'),
-  ).toEqual({ id: 'target-lens' })
+  expect(effectiveProjectSpace(db(), 'catalogue-adoption')).toBe(targetSpace)
 })
 
 test('project add refuses a failed catalogue pull with the named stream', async () => {
