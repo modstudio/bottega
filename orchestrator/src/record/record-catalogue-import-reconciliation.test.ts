@@ -4,11 +4,7 @@ import {
   reconcileCatalogueHistory,
 } from './record-catalogue-import.ts'
 
-const version = (
-  id: string,
-  author: string,
-  status: string = 'production',
-): CatalogueVersionMetadata => ({ id, n: 1, author, status })
+const version = (id: string, author: string): CatalogueVersionMetadata => ({ id, author })
 
 test('unchanged when the imported history is already hosted', () => {
   expect(
@@ -29,34 +25,11 @@ test('replaces a history written entirely by the seeder', () => {
   ).toEqual({ action: 'replace-seed', outcome: 'replaced seeded built-in' })
 })
 
-test('replaces retired seed-only history without considering production status', () => {
-  expect(
-    reconcileCatalogueHistory(
-      [version('local', 'machine', 'draft')],
-      [version('seed', 'seed', 'retired')],
-      'seed',
-    ),
-  ).toEqual({ action: 'replace-seed', outcome: 'replaced seeded built-in' })
-})
-
 test('keeps the complete hosted history when any version is person-authored', () => {
   expect(
     reconcileCatalogueHistory(
       [version('local', 'machine')],
-      [version('seed', 'seed'), version('person', 'person', 'draft')],
-      'seed',
-    ),
-  ).toEqual({
-    action: 'keep-hosted',
-    outcome: 'kept hosted history; local history not imported',
-  })
-})
-
-test.each(['draft', 'retired'])('keeps person-authored %s-only hosted history', (status) => {
-  expect(
-    reconcileCatalogueHistory(
-      [version('local', 'machine', 'draft')],
-      [version('person', 'person', status)],
+      [version('seed', 'seed'), version('person', 'person')],
       'seed',
     ),
   ).toEqual({

@@ -16,11 +16,10 @@ const text = (value: unknown) => String(value)
 const empty = (): RecordCatalogueImportResult => ({ inserted: 0, alreadyPresent: 0, skipped: [] })
 const emptyWorkflow = (): RecordWorkflowImportResult => ({ ...empty(), outcomes: [] })
 
+/** Only identity and authorship decide reconciliation; production status deliberately does not. */
 export type CatalogueVersionMetadata = {
   id: string
-  n: number
   author: string
-  status: string
 }
 export type CatalogueReconciliation =
   | { action: 'unchanged'; outcome: null }
@@ -186,18 +185,13 @@ async function reconcileWorkflowVersions(
     const ownerId = owners.get(owner.id),
       imported = input[versionTable].filter((row) => row.ownerId === owner.id)
     if (!ownerId) return
-    const hosted: { id: unknown; n: unknown; author: unknown; status: unknown }[] =
+    const hosted: { id: unknown; author: unknown }[] =
       kind === 'workflow'
-        ? await tx`SELECT id,n,author,status FROM workflow_version WHERE space_id=${input.spaceId}::uuid AND workflow_id=${ownerId}::uuid`
-        : await tx`SELECT id,n,author,status FROM step_catalogue_version WHERE space_id=${input.spaceId}::uuid AND catalogue_id=${ownerId}::uuid`
+        ? await tx`SELECT id,author FROM workflow_version WHERE space_id=${input.spaceId}::uuid AND workflow_id=${ownerId}::uuid`
+        : await tx`SELECT id,author FROM step_catalogue_version WHERE space_id=${input.spaceId}::uuid AND catalogue_id=${ownerId}::uuid`
     const decision = reconcileCatalogueHistory(
-      imported.map(({ id, n, author, status }) => ({ id, n, author, status })),
-      hosted.map((row) => ({
-        id: text(row.id),
-        n: Number(row.n),
-        author: text(row.author),
-        status: text(row.status),
-      })),
+      imported.map(({ id, author }) => ({ id, author })),
+      hosted.map((row) => ({ id: text(row.id), author: text(row.author) })),
       BUILT_IN_WORKFLOW_AUTHOR,
     )
     if (decision.action === 'replace-seed') {

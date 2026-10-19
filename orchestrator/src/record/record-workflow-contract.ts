@@ -68,7 +68,10 @@ export const recordWorkflowPageSchema = (table: RecordWorkflowTable) =>
   z.object({
     items: z.array(
       table.endsWith('_event')
-        ? recordWorkflowRowSchemas[table].extend({ updatedAt: iso })
+        ? // A server that predates the insertion cursor sends no updatedAt; its backfill equals at.
+          event
+            .extend({ updatedAt: iso.optional() })
+            .transform((row) => ({ ...row, updatedAt: row.updatedAt ?? row.at }))
         : recordWorkflowRowSchemas[table],
     ),
     nextCursor: z.string().nullable(),
