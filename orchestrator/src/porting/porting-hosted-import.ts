@@ -32,13 +32,16 @@ function routedSpace(local: Database, project: Project | undefined): string | nu
   return project ? effectiveProjectSpace(local, project.name) : null
 }
 
-function pairRefusal(row: HostedImportPlan['pairs'][number], missing: boolean): ImportRefusalError {
+function pairRefusal(
+  row: HostedImportPlan['pairs'][number],
+  project: 'source' | 'target',
+): ImportRefusalError {
   return new ImportRefusalError([
     {
       kind: 'refusal',
       what: 'hosted port pair',
       where: `${row.source} -> ${row.target}`,
-      why: missing ? 'a project has no hosted space' : 'the projects route to different spaces',
+      why: `the ${project} project has no hosted space`,
     },
   ])
 }
@@ -81,19 +84,16 @@ function addHostedRef(
         why: 'the target project has no hosted space',
       },
     ])
-  const invalidSource = row.sources.find((source) => {
-    const sourceSpace = routedSpace(local, byId.get(source.source_project_record_id))
-    return !sourceSpace || sourceSpace !== spaceId
-  })
+  const invalidSource = row.sources.find(
+    (source) => !routedSpace(local, byId.get(source.source_project_record_id)),
+  )
   if (invalidSource) {
     const source = byId.get(invalidSource.source_project_record_id)
     plan.exclusions.push({
       kind: 'exclusion',
       what: `hosted port ref ${row.taskKey}`,
       where: source?.name ?? invalidSource.source_project_record_id,
-      why: routedSpace(local, source)
-        ? 'a source project routes to a different space from the target'
-        : 'a source project has no hosted space',
+      why: 'a source project has no hosted space',
     })
     return
   }
@@ -140,8 +140,8 @@ export function buildHostedPortImports(
   for (const row of plan.pairs) {
     const sourceSpace = routedSpace(local, byId.get(row.sourceId))
     const targetSpace = routedSpace(local, byId.get(row.targetId))
-    if (!sourceSpace || !targetSpace || sourceSpace !== targetSpace)
-      throw pairRefusal(row, !sourceSpace || !targetSpace)
+    if (!sourceSpace) throw pairRefusal(row, 'source')
+    if (!targetSpace) throw pairRefusal(row, 'target')
     const payload = imports.get(targetSpace) ?? emptyImport()
     imports.set(targetSpace, payload)
     const id = newRecordId()

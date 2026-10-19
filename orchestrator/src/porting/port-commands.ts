@@ -24,7 +24,10 @@ import { applyImport, planImport, sourceCoverage } from './porting-import.ts'
 import { ImportRefusalError } from './porting-import-contract.ts'
 import { projectsForDryRun } from './porting-import-projects.ts'
 
-type PortFlags = { has(name: string): boolean; flag(name: string): string | undefined }
+type PortFlags = {
+  has(name: string): boolean
+  flag(name: string): string | undefined
+}
 type PortPresentation = {
   log(...values: unknown[]): void
   writeStdout(value: string): Promise<void>
@@ -35,7 +38,7 @@ function refusePortUsage(usage: string): never {
   throw new Error(`${PLATFORM_SLUG} doc port ${usage}`)
 }
 
-export const portSourceProjectLabel = (recordId: string) =>
+const portProjectLabel = (recordId: string) =>
   projects().find((candidate) => candidate.recordId === recordId)?.name ?? `project:${recordId}`
 
 export async function portCommand(
@@ -80,12 +83,22 @@ export async function portCommand(
       projects: 'projects.md',
     } as const
     const files = {} as Record<keyof typeof names, string>
-    const ioRefusals: { kind: 'refusal'; what: string; where: string; why: string }[] = []
+    const ioRefusals: {
+      kind: 'refusal'
+      what: string
+      where: string
+      why: string
+    }[] = []
     try {
       if (!statSync(dir).isDirectory()) throw new Error('not a directory')
       readdirSync(dir)
     } catch (error) {
-      ioRefusals.push({ kind: 'refusal', what: 'source directory', where: dir, why: String(error) })
+      ioRefusals.push({
+        kind: 'refusal',
+        what: 'source directory',
+        where: dir,
+        why: String(error),
+      })
     }
     for (const [key, name] of Object.entries(names) as [keyof typeof names, string][]) {
       const path = join(dir, name)
@@ -143,7 +156,10 @@ export async function portCommand(
       const uncoveredSpans = sourceCoverage(plan, files)
       return {
         ...plan,
-        doctrine: plan.doctrine.map((row) => ({ ...row, bodyLength: row.body.length })),
+        doctrine: plan.doctrine.map((row) => ({
+          ...row,
+          bodyLength: row.body.length,
+        })),
         docs: plan.docs.map((row) => ({ ...row, bodyLength: row.body.length })),
         uncoveredSpans,
       }
@@ -298,9 +314,8 @@ export async function portCommand(
       return
     }
     for (const row of rows) {
-      const target = projects().find((project) => project.recordId === row.target_project_record_id)
       log(
-        `${target?.name ?? `project:${row.target_project_record_id}`} ${row.task_key}  ${row.sources.length} source(s)  ${row.resolved_at ?? 'unresolved'}  ${row.note}`,
+        `${portProjectLabel(row.target_project_record_id)} ${row.task_key}  ${row.sources.length} source(s)  ${row.resolved_at ?? 'unresolved'}  ${row.note}`,
       )
     }
     return
@@ -321,7 +336,7 @@ export async function portCommand(
     log(`${ref.task_key}  ${ref.resolved_at ?? 'unresolved'}\n${ref.note}`)
     for (const source of ref.sources) {
       log(
-        `  ${portSourceProjectLabel(source.source_project_record_id)}  commits=${source.commits.join(',')}  paths=${source.paths.join(',')}  ${source.note}`,
+        `  ${portProjectLabel(source.source_project_record_id)}  commits=${source.commits.join(',')}  paths=${source.paths.join(',')}  ${source.note}`,
       )
     }
     return

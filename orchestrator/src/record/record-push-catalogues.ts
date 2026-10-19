@@ -2,14 +2,21 @@
 /** Plans and performs the one-time null-space catalogue backfill. */
 import type { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
+import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { db } from '../database/db.ts'
-import { activeRecordSpace, effectiveProjectSpace } from '../project-space.ts'
+import { activeRecordSpace } from '../project-space.ts'
+import { projects } from '../project/projects.ts'
 import type { RecordApiClient, RecordRequestDestination } from './record-api-client.ts'
 import { recordApiClient } from './record-api-client.ts'
+import type { RecordIdentity } from './record-auth.ts'
 import { pullRecordCache } from './record-cache.ts'
 import type { RecordLensImportInput } from './record-lens-contract.ts'
 import type { RecordPortImportInput } from './record-port-contract.ts'
-import { noActiveRecordSpaceRefusal } from './record-project-destination.ts'
+import {
+  declaredRecordSpace,
+  noActiveRecordSpaceRefusal,
+  projectRecordDestination,
+} from './record-project-destination.ts'
 import { syncRecord } from './record-sync.ts'
 import type { RecordWorkflowImportInput } from './record-workflow-contract.ts'
 
@@ -39,13 +46,57 @@ function replicatedId(spaceId: string, kind: string, sourceId: string): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20)}`
 }
 
-function routedProjects(local: Database): Map<string, Set<string>> {
+type ProjectRoutes = ReadonlyMap<string, string | null>
+
+function registeredProjects(local: Database) {
+  return [...projects(undefined, local), ...projects({ retired: true }, local)]
+}
+
+function cachedProjectRoutes(local: Database): Map<string, string | null> {
+  const stored = local
+    .query<{ value: string }, []>("SELECT value FROM schema_meta WHERE key='record_project_spaces'")
+    .get()?.value
+  let cache: Record<string, unknown> = {}
+  try {
+    if (stored) cache = JSON.parse(stored) as Record<string, unknown>
+  } catch {
+    cache = {}
+  }
+  return new Map(
+    registeredProjects(local).flatMap((project) => {
+      const value = cache[project.name]
+      return typeof value === 'string' || value === null ? [[project.name, value]] : []
+    }),
+  )
+}
+
+function currentProjectRoutes(
+  local: Database,
+  identity: RecordIdentity,
+  activeSpaceId: string,
+): Map<string, string | null> {
+  const memberships = parseRecordSpaceMemberships(identity.memberships)
+  return new Map(
+    registeredProjects(local).map((project) => {
+      const destination = projectRecordDestination(
+        project.name,
+        declaredRecordSpace(project.settings),
+        activeSpaceId,
+        memberships,
+      )
+      return [project.name, 'refused' in destination ? null : destination.spaceId]
+    }),
+  )
+}
+
+function routedProjects(local: Database, routes: ProjectRoutes): Map<string, Set<string>> {
   const routed = new Map<string, Set<string>>()
-  const rows = local
-    .query('SELECT record_id,name FROM project WHERE retired_at IS NULL ORDER BY name')
-    .all() as { record_id: string; name: string }[]
+  const rows = local.query('SELECT record_id,name FROM project ORDER BY name').all() as {
+    record_id: string
+    name: string
+  }[]
   for (const row of rows) {
-    const space = effectiveProjectSpace(local, row.name)
+    const space = routes.get(row.name)
     if (!space) continue
     const projectIds = routed.get(space) ?? new Set<string>()
     projectIds.add(row.record_id)
@@ -98,7 +149,14 @@ function lensPlanRows(local: Database): LensPlanRows {
         )
         .all() as Record<string, unknown>[]
     ).filter((revision) => profileIds.has(String(revision.profile_record_id)))
-  return { lenses, revisions, selections, selectionRevisions, profiles, profileRevisions }
+  return {
+    lenses,
+    revisions,
+    selections,
+    selectionRevisions,
+    profiles,
+    profileRevisions,
+  }
 }
 
 function lensSpacePlan(
@@ -275,7 +333,7 @@ function emptyPort(): RecordPortImportInput {
 }
 
 type PortPlanContext = {
-  local: Database
+  routes: ProjectRoutes
   plans: Map<string, RecordPortImportInput>
   pairSpace: Map<string, string>
   refSpace: Map<string, string>
@@ -284,12 +342,27 @@ type PortPlanContext = {
 }
 
 function addPortPair(r: Record<string, unknown>, context: PortPlanContext): void {
-  const target = effectiveProjectSpace(context.local, String(r.target_name))
+  const source = context.routes.get(String(r.source_name))
+  const target = context.routes.get(String(r.target_name))
+  if (!source) {
+    context.skipped.push({
+      kind: 'port_pair',
+      id: String(r.record_id),
+      reason:
+        source === undefined
+          ? 'source project route unknown, run `bottega record sync`'
+          : 'source project has no hosted space',
+    })
+    return
+  }
   if (!target) {
     context.skipped.push({
       kind: 'port_pair',
       id: String(r.record_id),
-      reason: 'target project has no hosted space',
+      reason:
+        target === undefined
+          ? 'target project route unknown, run `bottega record sync`'
+          : 'target project has no hosted space',
     })
     return
   }
@@ -327,12 +400,15 @@ function addPortBaseline(r: Record<string, unknown>, context: PortPlanContext): 
 }
 
 function addPortRef(r: Record<string, unknown>, context: PortPlanContext): void {
-  const space = effectiveProjectSpace(context.local, String(r.project_name))
+  const space = context.routes.get(String(r.project_name))
   if (!space) {
     context.skipped.push({
       kind: 'port_ref',
       id: String(r.record_id),
-      reason: 'target project has no hosted space',
+      reason:
+        space === undefined
+          ? 'target project route unknown, run `bottega record sync`'
+          : 'target project has no hosted space',
     })
     return
   }
@@ -363,6 +439,18 @@ function addPortRefSource(r: Record<string, unknown>, context: PortPlanContext):
     })
     return
   }
+  const source = context.routes.get(String(r.source_name))
+  if (!source) {
+    context.skipped.push({
+      kind: 'port_ref_source',
+      id: String(r.record_id),
+      reason:
+        source === undefined
+          ? 'source project route unknown, run `bottega record sync`'
+          : 'source project has no hosted space',
+    })
+    return
+  }
   context.plans.get(space)!.port_ref_source.push({
     id: String(r.record_id),
     spaceId: space,
@@ -379,7 +467,11 @@ function addPortRefSource(r: Record<string, unknown>, context: PortPlanContext):
 function addPortSkip(r: Record<string, unknown>, context: PortPlanContext): void {
   const space = context.pairSpace.get(String(r.pair_record_id))
   if (!space) {
-    context.skipped.push({ kind: 'port_skip', id: String(r.record_id), reason: 'pair was skipped' })
+    context.skipped.push({
+      kind: 'port_skip',
+      id: String(r.record_id),
+      reason: 'pair was skipped',
+    })
     return
   }
   context.plans.get(space)!.port_skip.push({
@@ -392,7 +484,12 @@ function addPortSkip(r: Record<string, unknown>, context: PortPlanContext): void
   })
 }
 
-function portPlan(local: Database, activeSpaceId: string, skipped: Plan['skipped']) {
+function portPlan(
+  local: Database,
+  activeSpaceId: string,
+  routes: ProjectRoutes,
+  skipped: Plan['skipped'],
+) {
   const plans = new Map<string, RecordPortImportInput>(),
     active = emptyPort(),
     now = iso()
@@ -416,7 +513,7 @@ function portPlan(local: Database, activeSpaceId: string, skipped: Plan['skipped
   const pairSpace = new Map<string, string>(),
     refSpace = new Map<string, string>()
   const context: PortPlanContext = {
-    local,
+    routes,
     plans,
     pairSpace,
     refSpace,
@@ -426,7 +523,7 @@ function portPlan(local: Database, activeSpaceId: string, skipped: Plan['skipped
   forEachValue(
     local
       .query(
-        `SELECT pp.*,tp.name target_name FROM port_pair pp JOIN project tp ON tp.record_id=pp.target_project_record_id WHERE pp.space_id IS NULL`,
+        `SELECT pp.*,sp.name source_name,tp.name target_name FROM port_pair pp JOIN project sp ON sp.record_id=pp.source_project_record_id JOIN project tp ON tp.record_id=pp.target_project_record_id WHERE pp.space_id IS NULL`,
       )
       .all() as Record<string, unknown>[],
     (r) => addPortPair(r, context),
@@ -450,7 +547,7 @@ function portPlan(local: Database, activeSpaceId: string, skipped: Plan['skipped
   forEachValue(
     local
       .query(
-        `SELECT s.*,r.record_id ref_record_id FROM port_ref_source s JOIN port_ref r ON r.target_project_record_id=s.target_project_record_id AND r.task_key=s.task_key AND r.space_id IS NULL WHERE s.space_id IS NULL`,
+        `SELECT s.*,r.record_id ref_record_id,p.name source_name FROM port_ref_source s JOIN port_ref r ON r.target_project_record_id=s.target_project_record_id AND r.task_key=s.task_key AND r.space_id IS NULL JOIN project p ON p.record_id=s.source_project_record_id WHERE s.space_id IS NULL`,
       )
       .all() as Record<string, unknown>[],
     (r) => addPortRefSource(r, context),
@@ -466,12 +563,12 @@ function portPlan(local: Database, activeSpaceId: string, skipped: Plan['skipped
   return plans
 }
 
-function planCataloguePush(local: Database, activeSpaceId: string): Plan {
+function planCataloguePush(local: Database, activeSpaceId: string, routes: ProjectRoutes): Plan {
   const skipped: Plan['skipped'] = []
   return {
-    lens: lensPlan(local, routedProjects(local)),
+    lens: lensPlan(local, routedProjects(local, routes)),
     workflow: workflowPlan(local, activeSpaceId),
-    ports: portPlan(local, activeSpaceId, skipped),
+    ports: portPlan(local, activeSpaceId, routes, skipped),
     skipped,
   }
 }
@@ -493,13 +590,17 @@ function logPlan(plan: Plan, presentation: Presentation, prefix = ''): void {
 export async function pushCataloguesCommand(
   options: { dryRun: boolean },
   presentation: Presentation,
-  dependencies: { local?: Database; client?: RecordApiClient; sync?: typeof syncRecord } = {},
+  dependencies: {
+    local?: Database
+    client?: RecordApiClient
+    sync?: typeof syncRecord
+  } = {},
 ): Promise<void> {
   const local = dependencies.local ?? db()
   const localActive = activeRecordSpace(local)
   if (options.dryRun) {
     if (!localActive) throw new Error(noActiveRecordSpaceRefusal())
-    const plan = planCataloguePush(local, localActive)
+    const plan = planCataloguePush(local, localActive, cachedProjectRoutes(local))
     logPlan(plan, presentation, 'dry run ')
     for (const skip of plan.skipped)
       presentation.log(`skipped ${skip.kind} ${skip.id}: ${skip.reason}`)
@@ -509,7 +610,7 @@ export async function pushCataloguesCommand(
   const identity = await client.whoami(),
     active = identity.activeSpaceId ?? localActive
   if (!active) throw new Error(noActiveRecordSpaceRefusal())
-  const plan = planCataloguePush(local, active)
+  const plan = planCataloguePush(local, active, currentProjectRoutes(local, identity, active))
   logPlan(plan, presentation)
   for (const skip of plan.skipped)
     presentation.log(`skipped ${skip.kind} ${skip.id}: ${skip.reason}`)
@@ -548,7 +649,9 @@ export async function pushCataloguesCommand(
     throw new Error('record API does not support sync; deploy the matching record API, then retry')
   await (dependencies.sync ?? syncRecord)({
     local,
-    client: client as RecordApiClient & { sync: NonNullable<RecordApiClient['sync']> },
+    client: client as RecordApiClient & {
+      sync: NonNullable<RecordApiClient['sync']>
+    },
   })
   if (dependencies.client) await pullRecordCache(local)
 }

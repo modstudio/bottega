@@ -167,14 +167,24 @@ describe('port importer', () => {
       settings: {},
     })
     const refs = JSON.stringify({
-      'ALP-1': { source: 'alpha-invented + beta-invented', commits: [], paths: [], notes: '' },
+      'ALP-1': {
+        source: 'alpha-invented + beta-invented',
+        commits: [],
+        paths: [],
+        notes: '',
+      },
       'ALP-2': {
         source: 'alpha-invented (concept); new mechanism',
         commits: [],
         paths: [],
         notes: '',
       },
-      'ALP-3': { source: 'missing-invented (unknown)', commits: [], paths: [], notes: '' },
+      'ALP-3': {
+        source: 'missing-invented (unknown)',
+        commits: [],
+        paths: [],
+        notes: '',
+      },
       'NONE-2': { source: 'alpha-invented', commits: [], paths: [], notes: '' },
       'DUP-3': { source: 'alpha-invented', commits: [], paths: [], notes: '' },
     })
@@ -183,8 +193,14 @@ describe('port importer', () => {
         refs,
         state: JSON.stringify({
           pairs: {
-            'alpha-invented->target-invented': { lastPortedSha: 'a', skipped: [] },
-            'beta-invented->target-invented': { lastPortedSha: 'b', skipped: [] },
+            'alpha-invented->target-invented': {
+              lastPortedSha: 'a',
+              skipped: [],
+            },
+            'beta-invented->target-invented': {
+              lastPortedSha: 'b',
+              skipped: [],
+            },
           },
         }),
       }),
@@ -214,7 +230,12 @@ describe('port importer', () => {
     const nonStringSource = planImport(
       fixture({
         refs: JSON.stringify({
-          'ALP-4': { source: ['alpha-invented'], commits: [], paths: [], notes: '' },
+          'ALP-4': {
+            source: ['alpha-invented'],
+            commits: [],
+            paths: [],
+            notes: '',
+          },
         }),
       }),
       projects(),
@@ -223,26 +244,27 @@ describe('port importer', () => {
       'source must name registered projects',
     )
   })
-  test('hosted planning skips a ref when a source routes outside its target space', () => {
+  test('hosted planning emits cross-space port items into the target space', () => {
     const registeredProjects = registered()
     const alpha = registeredProjects.find((project) => project.name === 'alpha-invented')!
     const beta = registeredProjects.find((project) => project.name === 'beta-invented')!
     rememberProjectSpace(db(), alpha.name, 'space-alpha')
     rememberProjectSpace(db(), beta.name, 'space-beta')
     const plan = planImport(fixture(), registeredProjects)
-    plan.pairs = []
-    plan.baselines = []
-    plan.skips = []
     const imports = buildHostedPortImports(db(), registeredProjects, plan, 'space-beta')
-    expect([...imports.values()].flatMap((payload) => payload.port_ref)).toEqual([])
-    expect([...imports.values()].flatMap((payload) => payload.port_ref_source)).toEqual([])
-    expect(plan.exclusions).toContainEqual(
+    const target = imports.get('space-beta')!
+    expect(target.port_pair).toHaveLength(1)
+    expect(target.port_baseline).toHaveLength(1)
+    expect(target.port_skip).toHaveLength(1)
+    expect(target.port_ref).toHaveLength(1)
+    expect(target.port_ref_source).toEqual([
       expect.objectContaining({
-        what: 'hosted port ref BET-7',
-        where: 'alpha-invented',
-        why: 'a source project routes to a different space from the target',
+        sourceProjectId: alpha.recordId,
+        spaceId: 'space-beta',
       }),
-    )
+    ])
+    expect(imports.get('space-alpha')).toBeUndefined()
+    expect(plan.exclusions).toEqual([])
   })
   test('records the deliberately unimported register-derived sections as one exclusion', () => {
     const source = fixture({
@@ -345,10 +367,18 @@ describe('port importer', () => {
     plan.doctrine.push({ ...plan.doctrine[0]!, title: 'Duplicate' })
     await expect(applyImport(plan)).rejects.toThrow()
     expect(listPairs()).toEqual([])
-    expect(db().query('SELECT COUNT(*) n FROM port_baseline').get()).toEqual({ n: 0 })
-    expect(db().query('SELECT COUNT(*) n FROM port_skip').get()).toEqual({ n: 0 })
-    expect(db().query('SELECT COUNT(*) n FROM port_ref').get()).toEqual({ n: 0 })
-    expect(db().query('SELECT COUNT(*) n FROM port_ref_source').get()).toEqual({ n: 0 })
+    expect(db().query('SELECT COUNT(*) n FROM port_baseline').get()).toEqual({
+      n: 0,
+    })
+    expect(db().query('SELECT COUNT(*) n FROM port_skip').get()).toEqual({
+      n: 0,
+    })
+    expect(db().query('SELECT COUNT(*) n FROM port_ref').get()).toEqual({
+      n: 0,
+    })
+    expect(db().query('SELECT COUNT(*) n FROM port_ref_source').get()).toEqual({
+      n: 0,
+    })
     expect(listDoctrineRules()).toEqual([])
     expect(listDocs().filter((doc) => doc.slug.startsWith('port-'))).toEqual([])
   })
@@ -362,7 +392,10 @@ describe('port importer', () => {
     const priorRef = ledgerRef(targetProjectId, 'BET-7')
     const priorDoc = getDoc('global', null, 'port-category-map')
     const replacement = planImport(fixture(), projects())
-    replacement.doctrine.push({ ...replacement.doctrine[0]!, title: 'Duplicate' })
+    replacement.doctrine.push({
+      ...replacement.doctrine[0]!,
+      title: 'Duplicate',
+    })
     await expect(applyImport(replacement, { replace: true })).rejects.toThrow()
     expect(listPairs()).toEqual(priorPair)
     expect(baselineForPair(priorPair[0]!.id)).toEqual(priorBaseline)

@@ -6,7 +6,7 @@ import {
 } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { resolveLens, selectProjectProfile, setProfile } from '../lens/lenses.ts'
-import { addPairLocal, pairByProjects, setLedgerRefLocal } from '../porting/porting.ts'
+import { addPairLocal, ledgerRef, pairByProjects, setLedgerRefLocal } from '../porting/porting.ts'
 import { upsertProject } from '../project/projects.ts'
 import { rememberActiveRecordSpace, rememberProjectSpace } from '../project-space.ts'
 import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
@@ -20,7 +20,13 @@ const spaceId = newRecordId()
 
 function fakeCatalogueClient(
   memberships = [
-    { space_id: spaceId, slug: 'active', name: 'Active', role: 'owner', permission: 'write' },
+    {
+      space_id: spaceId,
+      slug: 'active',
+      name: 'Active',
+      role: 'owner',
+      permission: 'write',
+    },
   ],
   observeLens: (input: RecordLensImportInput, spaceId: string) => void = () => undefined,
 ): RecordApiClient {
@@ -59,7 +65,10 @@ function fakeCatalogueClient(
       memberships,
     }),
     sync: async (request) => ({
-      results: request.rows.map((row) => ({ id: row.id, status: 'synced' as const })),
+      results: request.rows.map((row) => ({
+        id: row.id,
+        status: 'synced' as const,
+      })),
     }),
     ensureSpaceBuiltIns: async () => ({ inserted: 0, alreadyPresent: 0 }),
     importLensCatalogue: async (input: RecordLensImportInput, target) => {
@@ -148,31 +157,87 @@ test('dry run logs its local plan without calling hosted methods', async () => {
   )
 })
 
-test('push routes cross-space pairs, refs, and sources to the target space', async () => {
+test('dry run names an uncached project route as unknown', async () => {
+  const local = db(),
+    sourceId = newRecordId(),
+    targetId = newRecordId()
+  upsertProject({ recordId: sourceId, name: 'uncached-source', path: '/tmp/source', settings: {} })
+  upsertProject({ recordId: targetId, name: 'uncached-target', path: '/tmp/target', settings: {} })
+  addPairLocal(sourceId, targetId)
+  rememberActiveRecordSpace(local, spaceId)
+  const logs: string[] = []
+  await pushCataloguesCommand({ dryRun: true }, { log: (line) => logs.push(line) }, { local })
+  expect(logs).toContainEqual(
+    expect.stringContaining('source project route unknown, run `bottega record sync`'),
+  )
+  expect(logs.some((line) => line.includes('source project has no hosted space'))).toBeFalse()
+})
+
+test('push and sync expose cross-space pairs, refs, and sources from the target space', async () => {
   const local = db(),
     sourceId = newRecordId(),
     targetId = newRecordId(),
     sourceSpace = newRecordId(),
     sourceName = `catalogue-ref-source-${sourceId}`,
     targetName = `catalogue-ref-target-${targetId}`
-  upsertProject({ recordId: sourceId, name: sourceName, path: `/tmp/${sourceName}`, settings: {} })
-  upsertProject({ recordId: targetId, name: targetName, path: `/tmp/${targetName}`, settings: {} })
-  rememberProjectSpace(local, sourceName, sourceSpace)
-  rememberProjectSpace(local, targetName, spaceId)
-  rememberActiveRecordSpace(local, spaceId)
+  upsertProject({
+    recordId: sourceId,
+    name: sourceName,
+    path: `/tmp/${sourceName}`,
+    settings: { space: 'source' },
+  })
+  upsertProject({
+    recordId: targetId,
+    name: targetName,
+    path: `/tmp/${targetName}`,
+    settings: { space: 'active' },
+  })
   addPairLocal(sourceId, targetId)
+  const taskKey = `REF-${sourceId.slice(0, 6)}`
   setLedgerRefLocal({
-    taskKey: `REF-${sourceId.slice(0, 6)}`,
+    taskKey,
     targetProjectId: targetId,
     note: 'cross-space',
     sources: [{ source_project_record_id: sourceId, commits: [], paths: [], note: '' }],
   })
-  const logs: string[] = []
-  await pushCataloguesCommand({ dryRun: true }, { log: (line) => logs.push(line) }, { local })
-  expect(logs.some((line) => line.includes('routes to a different space'))).toBeFalse()
-  expect(logs).toContainEqual(
-    expect.stringMatching(new RegExp(`^dry run space ${spaceId} — lens: \\d+; port: [1-9]\\d*$`)),
-  )
+  const client = fakeCatalogueClient([
+    {
+      space_id: spaceId,
+      slug: 'active',
+      name: 'Active',
+      role: 'owner',
+      permission: 'write',
+    },
+    {
+      space_id: sourceSpace,
+      slug: 'source',
+      name: 'Source',
+      role: 'owner',
+      permission: 'write',
+    },
+  ])
+  installRecordApiClient(client)
+  await pushCataloguesCommand({ dryRun: false }, { log: () => undefined }, { local, client })
+
+  expect(pairByProjects(sourceId, targetId)).not.toBeNull()
+  expect(ledgerRef(targetId, taskKey)?.sources).toEqual([
+    expect.objectContaining({ source_project_record_id: sourceId }),
+  ])
+  expect(
+    local
+      .query('SELECT 1 FROM port_pair WHERE space_id=? AND source_project_record_id=?')
+      .get(spaceId, sourceId),
+  ).not.toBeNull()
+  expect(
+    local
+      .query('SELECT 1 FROM port_ref WHERE space_id=? AND target_project_record_id=?')
+      .get(spaceId, targetId),
+  ).not.toBeNull()
+  expect(
+    local
+      .query('SELECT 1 FROM port_ref_source WHERE space_id=? AND source_project_record_id=?')
+      .get(spaceId, sourceId),
+  ).not.toBeNull()
 })
 
 test('push and sync resolves a non-active project lens from its routed space', async () => {
@@ -206,8 +271,20 @@ test('push and sync resolves a non-active project lens from its routed space', a
   const remoteImports: RecordLensImportInput[] = []
   const client = fakeCatalogueClient(
     [
-      { space_id: spaceId, slug: 'active', name: 'Active', role: 'owner', permission: 'write' },
-      { space_id: remoteSpace, slug: 'remote', name: 'Remote', role: 'owner', permission: 'write' },
+      {
+        space_id: spaceId,
+        slug: 'active',
+        name: 'Active',
+        role: 'owner',
+        permission: 'write',
+      },
+      {
+        space_id: remoteSpace,
+        slug: 'remote',
+        name: 'Remote',
+        role: 'owner',
+        permission: 'write',
+      },
     ],
     (input, destination) => {
       if (destination === remoteSpace) remoteImports.push(input)
@@ -228,4 +305,42 @@ test('push and sync resolves a non-active project lens from its routed space', a
       )
       .get(projectId, remoteSpace),
   ).not.toBeNull()
+})
+
+test('push includes a retired project lens selection in its declared space', async () => {
+  const local = db(),
+    remoteSpace = newRecordId(),
+    projectId = newRecordId(),
+    projectName = `catalogue-retired-${projectId}`
+  upsertProject({
+    recordId: projectId,
+    name: projectName,
+    path: `/tmp/${projectName}`,
+    settings: { space: 'remote' },
+  })
+  await selectProjectProfile({
+    project: projectName,
+    lensId: 'correctness',
+    axis: 'framework',
+    name: 'default',
+    reason: 'retired selection fixture',
+  })
+  local
+    .query('UPDATE project SET retired_at=? WHERE record_id=?')
+    .run(new Date().toISOString(), projectId)
+  const remoteImports: RecordLensImportInput[] = []
+  const client = fakeCatalogueClient(
+    [
+      { space_id: spaceId, slug: 'active', name: 'Active', role: 'owner', permission: 'write' },
+      { space_id: remoteSpace, slug: 'remote', name: 'Remote', role: 'owner', permission: 'write' },
+    ],
+    (input, destination) => {
+      if (destination === remoteSpace) remoteImports.push(input)
+    },
+  )
+  installRecordApiClient(client)
+  await pushCataloguesCommand({ dryRun: false }, { log: () => undefined }, { local, client })
+  expect(remoteImports[0]!.project_lens_profile).toEqual([
+    expect.objectContaining({ projectId, profileName: 'default' }),
+  ])
 })
