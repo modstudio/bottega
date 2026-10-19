@@ -3,7 +3,6 @@
 import { SQL } from 'bun'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import type { RecordCatalogueImportResult } from './record-catalogue-contract.ts'
-import { reconcileCatalogueHistory } from './record-catalogue-reconciliation.ts'
 import type { RecordLensImportInput } from './record-lens-contract.ts'
 import type { RecordPortImportInput } from './record-port-contract.ts'
 import type {
@@ -16,6 +15,39 @@ const BUILT_IN_WORKFLOW_AUTHOR = 'seed'
 const text = (value: unknown) => String(value)
 const empty = (): RecordCatalogueImportResult => ({ inserted: 0, alreadyPresent: 0, skipped: [] })
 const emptyWorkflow = (): RecordWorkflowImportResult => ({ ...empty(), outcomes: [] })
+
+export type CatalogueVersionMetadata = {
+  id: string
+  n: number
+  author: string
+  status: string
+}
+export type CatalogueReconciliation =
+  | { action: 'unchanged'; outcome: null }
+  | { action: 'replace-seed'; outcome: 'replaced seeded built-in' }
+  | {
+      action: 'keep-hosted'
+      outcome: 'kept hosted history; local history not imported'
+    }
+
+export function reconcileCatalogueHistory(
+  imported: readonly CatalogueVersionMetadata[],
+  hosted: readonly CatalogueVersionMetadata[],
+  seedAuthor: string,
+): CatalogueReconciliation {
+  const production = imported.some((version) => version.status === 'production')
+  if (!production || !hosted.some((version) => version.status === 'production'))
+    return { action: 'unchanged', outcome: null }
+  const hostedIds = new Set(hosted.map((version) => version.id))
+  if (imported.every((version) => hostedIds.has(version.id)))
+    return { action: 'unchanged', outcome: null }
+  if (hosted.some((version) => version.author !== seedAuthor))
+    return {
+      action: 'keep-hosted',
+      outcome: 'kept hosted history; local history not imported',
+    }
+  return { action: 'replace-seed', outcome: 'replaced seeded built-in' }
+}
 async function forEachAsync<T>(
   values: readonly T[],
   use: (value: T) => Promise<void>,

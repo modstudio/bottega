@@ -474,7 +474,7 @@ postgres('hosted catalogue bulk imports', () => {
     }
   })
 
-  test('newer natural-key matches stay unchanged and imported children use hosted parents', async () => {
+  test('newer natural-key matches stay unchanged and reject imported workflow children', async () => {
     const spaceId = newRecordId(),
       userId = newRecordId(),
       sourceProjectId = newRecordId(),
