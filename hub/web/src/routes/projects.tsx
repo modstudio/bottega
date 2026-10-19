@@ -5,6 +5,7 @@ import { Badge } from '@bottega/hub-ui/badge'
 import { Button } from '@bottega/hub-ui/button'
 import { Checkbox } from '@bottega/hub-ui/checkbox'
 import { Dialog } from '@bottega/hub-ui/dialog'
+import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
 import { Input } from '@bottega/hub-ui/field/input'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { toast } from '@bottega/hub-ui/toast'
@@ -47,6 +48,59 @@ function worktreeMode(settings: ProjectRow['settings']) {
   return 'neither'
 }
 
+const projectColumns: CollectionColumn<ProjectRow>[] = [
+  {
+    id: 'name',
+    label: 'Name',
+    phone: 'title',
+    render: (project) => (
+      <span className="flex items-center gap-2 font-semibold">
+        <FolderGit2 size={14} />
+        {project.name}
+      </span>
+    ),
+  },
+  { id: 'stack', label: 'Stack', phone: 'line', render: (project) => project.stack ?? '-' },
+  {
+    id: 'path',
+    label: 'Path',
+    phone: 'line',
+    render: (project) => (
+      <span className="block max-w-sm truncate text-text-muted">{project.path}</span>
+    ),
+  },
+  {
+    id: 'context',
+    label: 'Context',
+    phone: 'aside',
+    render: (project) =>
+      project.settings.managedContext === true ? <Badge tone="success">managed</Badge> : '-',
+  },
+  {
+    id: 'canon',
+    label: 'Canon ratio',
+    phone: 'more',
+    render: (project) => (project.canon ? <Badge>counts</Badge> : '-'),
+  },
+  {
+    id: 'tracker',
+    label: 'Tracker',
+    phone: 'more',
+    render: (project) => <TrackerState project={project} />,
+  },
+  {
+    id: 'worktree',
+    label: 'Worktree',
+    phone: 'more',
+    render: (project) => worktreeMode(project.settings),
+  },
+  {
+    id: 'open',
+    label: '',
+    render: () => <ChevronRight size={14} className="text-text-muted" />,
+  },
+]
+
 function useProjects() {
   return useQuery(trpc.project.list.queryOptions())
 }
@@ -68,6 +122,7 @@ function HostedProjectsRoute() {
 }
 
 function ProjectsPage() {
+  const phone = useMediaQuery(PHONE_QUERY)
   const navigate = useNavigate()
   const projects = useProjects()
   const [adding, setAdding] = useState(false)
@@ -97,56 +152,18 @@ function ProjectsPage() {
     setError(null)
     add.mutate({ path, ...(name ? { name } : {}), ...(stack ? { stack } : {}), canon })
   }
-  const columns: CollectionColumn<ProjectRow>[] = [
-    {
-      id: 'name',
-      label: 'Name',
-      render: (project) => (
-        <span className="flex items-center gap-2 font-semibold">
-          <FolderGit2 size={14} />
-          {project.name}
-        </span>
-      ),
-    },
-    { id: 'stack', label: 'Stack', render: (project) => project.stack ?? '-' },
-    {
-      id: 'path',
-      label: 'Path',
-      render: (project) => (
-        <span className="block max-w-sm truncate text-text-muted">{project.path}</span>
-      ),
-    },
-    {
-      id: 'context',
-      label: 'Context',
-      render: (project) =>
-        project.settings.managedContext === true ? <Badge tone="success">managed</Badge> : '-',
-    },
-    {
-      id: 'canon',
-      label: 'Canon ratio',
-      render: (project) => (project.canon ? <Badge>counts</Badge> : '-'),
-    },
-    { id: 'tracker', label: 'Tracker', render: (project) => <TrackerState project={project} /> },
-    { id: 'worktree', label: 'Worktree', render: (project) => worktreeMode(project.settings) },
-    {
-      id: 'open',
-      label: '',
-      render: () => <ChevronRight size={14} className="text-text-muted" />,
-    },
-  ]
-
+  const addProjectAction = (
+    <Button variant="primary" size="sm" onClick={() => setAdding(true)}>
+      <Plus size={14} />
+      Add project
+    </Button>
+  )
   return (
     <section>
       <PageHeader
         title="Projects"
         subtitle={`${projects.data?.length ?? 0} registered`}
-        actions={
-          <Button variant="primary" size="sm" onClick={() => setAdding(true)}>
-            <Plus size={14} />
-            Add project
-          </Button>
-        }
+        actions={phone ? undefined : addProjectAction}
       />
       {projects.isPending ? <p className="text-text-muted">Loading register...</p> : null}
       {projects.error ? (
@@ -158,7 +175,8 @@ function ProjectsPage() {
         <Collection
           title="Register"
           count={projects.data.length}
-          columns={columns}
+          actions={phone ? addProjectAction : undefined}
+          columns={projectColumns}
           rows={projects.data}
           getKey={(project) => project.record_id}
           onOpen={(project) =>

@@ -18,18 +18,24 @@ export const Route = createFileRoute('/agents')({
 
 const finite = (value: number | null) => (value == null ? 'unbounded' : value.toLocaleString())
 const columns: CollectionColumn<AgentRow>[] = [
-  { id: 'name', label: 'Agent', render: (row) => <strong>{row.name}</strong> },
-  { id: 'model', label: 'Model', render: (row) => row.model },
+  { id: 'name', label: 'Agent', phone: 'title', render: (row) => <strong>{row.name}</strong> },
+  { id: 'model', label: 'Model', phone: 'aside', render: (row) => row.model },
   {
     id: 'caps',
     label: 'Capabilities',
+    phone: 'line',
     render: (row) =>
       Object.entries(row.caps)
         .filter(([, has]) => has)
         .map(([name]) => name)
         .join(', '),
   },
-  { id: 'timeout', label: 'Timeout', render: (row) => `${row.timeoutMs / 60_000} min` },
+  {
+    id: 'timeout',
+    label: 'Timeout',
+    phone: 'more',
+    render: (row) => `${row.timeoutMs / 60_000} min`,
+  },
 ]
 
 function AgentsPage() {
