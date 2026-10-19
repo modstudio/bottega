@@ -2,6 +2,7 @@
 /** Atomically imports complete catalogue snapshots without changing matched hosted rows. */
 import { SQL } from 'bun'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { BUILT_IN_WORKFLOW_AUTHOR } from '../workflow/workflow-built-ins.ts'
 import type { RecordCatalogueImportResult } from './record-catalogue-contract.ts'
 import type { RecordLensImportInput } from './record-lens-contract.ts'
 import type { RecordPortImportInput } from './record-port-contract.ts'
@@ -10,7 +11,7 @@ import type { RecordWorkflowImportInput } from './record-workflow-contract.ts'
 type Tenant = { url: string } & TenantPrincipal
 type Result = RecordCatalogueImportResult
 const text = (value: unknown) => String(value)
-const empty = (): Result => ({ inserted: 0, alreadyPresent: 0, skipped: [] })
+const empty = (): Result => ({ inserted: 0, alreadyPresent: 0, skipped: [], outcomes: [] })
 async function forEachAsync<T>(
   values: readonly T[],
   use: (value: T) => Promise<void>,
@@ -138,6 +139,48 @@ export async function importRecordLensCatalogue(input: Tenant & RecordLensImport
   })
 }
 
+async function reconcileWorkflowVersions(
+  tx: SQL,
+  input: Tenant & RecordWorkflowImportInput,
+  kind: 'workflow' | 'step_catalogue',
+  owners: ReadonlyMap<string, string>,
+  result: Result,
+): Promise<Set<string>> {
+  const versionTable = `${kind}_version` as 'workflow_version' | 'step_catalogue_version',
+    draftProductions = new Set<string>()
+  await forEachAsync(input[kind], async (owner) => {
+    const ownerId = owners.get(owner.id),
+      imported = input[versionTable].filter((row) => row.ownerId === owner.id),
+      production = imported.find((row) => row.status === 'production')
+    if (!ownerId || !production) return
+    const hosted: { id: unknown; author: unknown }[] =
+      kind === 'workflow'
+        ? await tx`SELECT id,author FROM workflow_version WHERE space_id=${input.spaceId}::uuid AND workflow_id=${ownerId}::uuid`
+        : await tx`SELECT id,author FROM step_catalogue_version WHERE space_id=${input.spaceId}::uuid AND catalogue_id=${ownerId}::uuid`
+    if (!hosted.length) return
+    const hostedIds = new Set(hosted.map((row) => text(row.id)))
+    if (imported.every((row) => hostedIds.has(row.id))) return
+    if (hosted.every((row) => text(row.author) === BUILT_IN_WORKFLOW_AUTHOR)) {
+      if (kind === 'workflow') {
+        await tx`DELETE FROM workflow_event WHERE space_id=${input.spaceId}::uuid AND workflow_version_id IN (SELECT id FROM workflow_version WHERE space_id=${input.spaceId}::uuid AND workflow_id=${ownerId}::uuid)`
+        await tx`DELETE FROM workflow_version WHERE space_id=${input.spaceId}::uuid AND workflow_id=${ownerId}::uuid`
+      } else {
+        await tx`DELETE FROM step_catalogue_event WHERE space_id=${input.spaceId}::uuid AND catalogue_version_id IN (SELECT id FROM step_catalogue_version WHERE space_id=${input.spaceId}::uuid AND catalogue_id=${ownerId}::uuid)`
+        await tx`DELETE FROM step_catalogue_version WHERE space_id=${input.spaceId}::uuid AND catalogue_id=${ownerId}::uuid`
+      }
+      result.outcomes.push({ kind, slug: owner.slug, outcome: 'replaced seeded built-in' })
+    } else if (hosted.some((row) => text(row.author) !== BUILT_IN_WORKFLOW_AUTHOR)) {
+      draftProductions.add(production.id)
+      result.outcomes.push({
+        kind,
+        slug: owner.slug,
+        outcome: 'local production imported as draft',
+      })
+    }
+  })
+  return draftProductions
+}
+
 export async function importRecordWorkflowCatalogue(input: Tenant & RecordWorkflowImportInput) {
   return tenant(input, async (tx) => {
     const result = empty()
@@ -161,6 +204,7 @@ export async function importRecordWorkflowCatalogue(input: Tenant & RecordWorkfl
       })
       const versions = new Map<string, string>(),
         versionTable = `${kind}_version` as 'workflow_version' | 'step_catalogue_version'
+      const draftProductions = await reconcileWorkflowVersions(tx, input, kind, owners, result)
       await forEachAsync(input[versionTable], async (row) => {
         const ownerId = owners.get(row.ownerId)
         if (!ownerId) {
@@ -174,10 +218,12 @@ export async function importRecordWorkflowCatalogue(input: Tenant & RecordWorkfl
         const id = foundId(existing)
         if (id) result.alreadyPresent++
         else if (kind === 'workflow') {
-          await tx`INSERT INTO workflow_version (id,space_id,workflow_id,n,status,definition,author,reason,created_at,promoted_at,retired_at,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${ownerId}::uuid,${row.n},${row.status},${row.definition},${row.author},${row.reason},${row.createdAt}::timestamptz,${row.promotedAt}::timestamptz,${row.retiredAt}::timestamptz,${row.updatedAt}::timestamptz)`
+          const asDraft = draftProductions.has(row.id)
+          await tx`INSERT INTO workflow_version (id,space_id,workflow_id,n,status,definition,author,reason,created_at,promoted_at,retired_at,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${ownerId}::uuid,${row.n},${asDraft ? 'draft' : row.status},${row.definition},${row.author},${row.reason},${row.createdAt}::timestamptz,${asDraft ? null : row.promotedAt}::timestamptz,${asDraft ? null : row.retiredAt}::timestamptz,${row.updatedAt}::timestamptz)`
           result.inserted++
         } else {
-          await tx`INSERT INTO step_catalogue_version (id,space_id,catalogue_id,n,status,definition,author,reason,created_at,promoted_at,retired_at,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${ownerId}::uuid,${row.n},${row.status},${row.definition},${row.author},${row.reason},${row.createdAt}::timestamptz,${row.promotedAt}::timestamptz,${row.retiredAt}::timestamptz,${row.updatedAt}::timestamptz)`
+          const asDraft = draftProductions.has(row.id)
+          await tx`INSERT INTO step_catalogue_version (id,space_id,catalogue_id,n,status,definition,author,reason,created_at,promoted_at,retired_at,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${ownerId}::uuid,${row.n},${asDraft ? 'draft' : row.status},${row.definition},${row.author},${row.reason},${row.createdAt}::timestamptz,${asDraft ? null : row.promotedAt}::timestamptz,${asDraft ? null : row.retiredAt}::timestamptz,${row.updatedAt}::timestamptz)`
           result.inserted++
         }
         versions.set(row.id, id ?? row.id)

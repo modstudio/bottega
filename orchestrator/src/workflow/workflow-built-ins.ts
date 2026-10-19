@@ -75,6 +75,8 @@ export const workflowSeeds = [
   },
 ]
 
+export const BUILT_IN_WORKFLOW_AUTHOR = 'seed'
+
 const floors: Record<string, Record<string, FloorKind[]>> = {
   'fix-defect': {
     diagnose: ['recorded-artifact'],
@@ -177,13 +179,13 @@ export function builtInWorkflowCatalogue() {
     stepCatalogue: {
       slug: 'shared',
       definition: JSON.stringify(catalogueDefinition()),
-      author: 'seed',
+      author: BUILT_IN_WORKFLOW_AUTHOR,
       reason: 'seed r6',
     },
     workflows: workflowSeeds.map((seed) => ({
       slug: seed.slug,
       definition: JSON.stringify(workflowDefinition(seed)),
-      author: 'seed',
+      author: BUILT_IN_WORKFLOW_AUTHOR,
       reason: `seed r${seed.revision}`,
     })),
   }

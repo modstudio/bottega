@@ -191,3 +191,29 @@ test('the same workflow slug resolves through each project space without consumi
   expect(productionWorkflowTree(local, 'space-2').workflows[0]!.definition.title).toBe('Space 2')
   expect(productionWorkflows(local)[0]!.definition.title).not.toMatch(/^Space /)
 })
+
+test('a hosted replacement converges over a cached seeded version by natural key', () => {
+  const local = db(),
+    space = newRecordId(),
+    hostedIdentity = identity(space, 'fix-defect'),
+    seeded = version(space, hostedIdentity.id, { title: 'Seed' }),
+    replacement = {
+      ...version(space, hostedIdentity.id, { title: 'Machine history' }),
+      id: newRecordId(),
+    }
+  applyWorkflowCatalogueRow(local, 'workflow', hostedIdentity)
+  applyWorkflowCatalogueRow(local, 'workflow_version', seeded)
+  applyWorkflowCatalogueRow(local, 'workflow_version', replacement)
+  expect(
+    local
+      .query('SELECT record_id,status,definition FROM workflow_version WHERE space_id=? AND n=1')
+      .get(space),
+  ).toEqual({
+    record_id: replacement.id,
+    status: 'production',
+    definition: replacement.definition,
+  })
+  expect(
+    local.query('SELECT COUNT(*) n FROM workflow_version WHERE space_id=?').get(space),
+  ).toEqual({ n: 1 })
+})
