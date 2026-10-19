@@ -24,6 +24,11 @@ export const recordModules: RecordModule[] = [
     '../record/record-write-authority.ts',
     '../worker-store-write.ts',
   ]),
+  module('orchestrator/src/porting/porting-import-projects.ts', [
+    'bun:sqlite',
+    'node:fs',
+    '../project/projects.ts',
+  ]),
   module('orchestrator/src/porting/porting-hosted-import.ts', [
     'bun:sqlite',
     '../../../shared/record-id.ts',

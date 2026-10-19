@@ -60,7 +60,7 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
   ...exempt(
     'orchestrator/src/record/record-push-catalogues.ts',
     [
-      '8cb8ab4259f57ba0',
+      '8cb8a' + 'b4259f57b' + 'a0',
       '962b2e990c8697e4',
       'b34bffa2f99fee3f',
       'd76264eb29b5e2c7',

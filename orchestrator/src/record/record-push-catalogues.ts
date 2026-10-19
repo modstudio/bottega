@@ -253,17 +253,15 @@ function addPortBaseline(r: Record<string, unknown>, context: PortPlanContext): 
     })
     return
   }
-  context.plans
-    .get(space)!
-    .port_baseline.push({
-      id: String(r.record_id),
-      spaceId: space,
-      pairId: String(r.pair_record_id),
-      sourceCommit: r.source_commit == null ? null : String(r.source_commit),
-      scannedAt: r.scanned_at == null ? null : String(r.scanned_at),
-      version: Number(r.version),
-      updatedAt: context.now,
-    })
+  context.plans.get(space)!.port_baseline.push({
+    id: String(r.record_id),
+    spaceId: space,
+    pairId: String(r.pair_record_id),
+    sourceCommit: r.source_commit == null ? null : String(r.source_commit),
+    scannedAt: r.scanned_at == null ? null : String(r.scanned_at),
+    version: Number(r.version),
+    updatedAt: context.now,
+  })
 }
 
 function addPortRef(r: Record<string, unknown>, context: PortPlanContext): void {
@@ -303,19 +301,17 @@ function addPortRefSource(r: Record<string, unknown>, context: PortPlanContext):
     })
     return
   }
-  context.plans
-    .get(space)!
-    .port_ref_source.push({
-      id: String(r.record_id),
-      spaceId: space,
-      refId: String(r.ref_record_id),
-      sourceProjectId: String(r.source_project_record_id),
-      commits: String(r.commits),
-      paths: String(r.paths),
-      note: String(r.note),
-      deletedAt: null,
-      updatedAt: context.now,
-    })
+  context.plans.get(space)!.port_ref_source.push({
+    id: String(r.record_id),
+    spaceId: space,
+    refId: String(r.ref_record_id),
+    sourceProjectId: String(r.source_project_record_id),
+    commits: String(r.commits),
+    paths: String(r.paths),
+    note: String(r.note),
+    deletedAt: null,
+    updatedAt: context.now,
+  })
 }
 
 function addPortSkip(r: Record<string, unknown>, context: PortPlanContext): void {
@@ -324,16 +320,14 @@ function addPortSkip(r: Record<string, unknown>, context: PortPlanContext): void
     context.skipped.push({ kind: 'port_skip', id: String(r.record_id), reason: 'pair was skipped' })
     return
   }
-  context.plans
-    .get(space)!
-    .port_skip.push({
-      id: String(r.record_id),
-      spaceId: space,
-      pairId: String(r.pair_record_id),
-      candidate: String(r.candidate),
-      reason: String(r.reason),
-      skippedAt: String(r.skipped_at),
-    })
+  context.plans.get(space)!.port_skip.push({
+    id: String(r.record_id),
+    spaceId: space,
+    pairId: String(r.pair_record_id),
+    candidate: String(r.candidate),
+    reason: String(r.reason),
+    skippedAt: String(r.skipped_at),
+  })
 }
 
 function portPlan(local: Database, activeSpaceId: string, skipped: Plan['skipped']) {
