@@ -197,6 +197,15 @@ describe('run listing', () => {
     })
   })
 
+  test('human runs --id reports an unknown UUID and an unknown number instead of printing nothing', async () => {
+    const missingRecordId = '01a10000-0000-7000-8000-000000000000'
+    const known = insert('ok')
+    const missingNumber = runNumber(known) + 1000
+    const lines = (await command({ id: [missingRecordId, String(missingNumber)] })).join('\n')
+    expect(lines).toContain(`${missingRecordId}  unknown run id`)
+    expect(lines).toContain(`${missingNumber}  unknown run id`)
+  })
+
   test('runs --id identifies a requested turn while returning its chain root', async () => {
     const root = insert('asking')
     const turn = insert('ok')

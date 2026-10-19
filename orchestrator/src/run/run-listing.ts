@@ -513,6 +513,7 @@ export async function runListingCommand(
     )
     if (warning) log(`      ${warning}`)
   }
-  for (const id of unknownIds) log(`${String(id).padStart(4)}  unknown run id`)
+  for (const id of [...unknownIds, ...unknownRecordIds])
+    log(`${String(id).padStart(4)}  unknown run id`)
   return
 }

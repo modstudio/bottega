@@ -518,6 +518,22 @@ test('a foreign run is refused and a matching run is allowed', () => {
   })
 })
 
+test('a bare run number artifact resolves through the run record', () => {
+  const d = database()
+  const matching = insertRun(d, {
+    project: 'fixture',
+    branch: 'DEV-977-work',
+    launchKey: 'DEV-1',
+  })
+  const number = (
+    d.query('SELECT number FROM run WHERE record_id=?').get(matching) as { number: number }
+  ).number
+  expect(gather(d, { artifact: String(number) }).artifact).toEqual({
+    ref: String(number),
+    exists: true,
+  })
+})
+
 test('a foreign probe is refused and a matching probe is allowed', () => {
   const d = database()
   d.query(

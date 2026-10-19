@@ -576,9 +576,9 @@ function resolveNumericArtifact(
 ): { ref: string; exists: boolean } {
   const doc = d.query('SELECT record_id FROM doc WHERE id=?').get(id)
   const run = d.query('SELECT record_id FROM run WHERE number=?').get(id) as {
-    id: string
+    record_id: string
   } | null
-  const runOk = run !== null && runHasArtifacts(run.id)
+  const runOk = run !== null && runHasArtifacts(run.record_id)
   if (doc && runOk)
     throw new Error(`--artifact ${id} matches both a doc and a run; pass doc:${id} or run:${id}`)
   if (doc) {
@@ -586,7 +586,7 @@ function resolveNumericArtifact(
     return { ref: String(id), exists: true }
   }
   if (run) {
-    const binding = loadRunBinding(run.id, d)
+    const binding = loadRunBinding(run.record_id, d)
     if (!binding)
       throw new Error(`--artifact ${id} is not a recorded doc or a run with artifacts or a reply`)
     requireRunBinding(`--artifact ${id}`, binding, identity, cursorId, d)
