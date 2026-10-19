@@ -55,8 +55,10 @@ import {
 } from '../src/report-delivery-hosted.ts'
 
 const adminUrl = process.env.ORCH_TEST_POSTGRES_URL
-const actorUrl = process.env.ORCH_RECORD_URL
-if (!adminUrl || !actorUrl) throw new Error('Postgres evidence proof requires test and actor URLs')
+const actorDatabaseUrl = process.env.ORCH_RECORD_URL
+if (!adminUrl || !actorDatabaseUrl)
+  throw new Error('Postgres evidence proof requires test and actor URLs')
+const actorUrl = new SQL(actorDatabaseUrl)
 
 const USER = '01990000-0000-7000-8000-000000000650'
 const SECOND_USER = '01990000-0000-7000-8000-000000000651'
@@ -111,7 +113,7 @@ const day = {
 const FIXED_CLOCK = Date.parse('2026-09-19T20:00:00.000Z')
 
 async function pushEvidence(
-  url: string,
+  url: SQL,
   identity: { userId: string; spaceId: string },
   changes: HostedPushChange[],
 ) {
@@ -122,7 +124,7 @@ async function pushEvidence(
 }
 
 const pushIntervals = (
-  url: string,
+  url: SQL,
   identity: { userId: string; spaceId: string },
   rows: IntervalEvidence[],
 ) =>
@@ -132,7 +134,7 @@ const pushIntervals = (
     rows.map((row) => ({ table: 'hub_interval', id: row.id, op: 'upsert', row })),
   )
 
-const pushDays = (url: string, identity: { userId: string; spaceId: string }, rows: PushedDay[]) =>
+const pushDays = (url: SQL, identity: { userId: string; spaceId: string }, rows: PushedDay[]) =>
   pushEvidence(
     url,
     identity,
@@ -140,7 +142,7 @@ const pushDays = (url: string, identity: { userId: string; spaceId: string }, ro
   )
 
 const pushIntervalDeletes = (
-  url: string,
+  url: SQL,
   identity: { userId: string; spaceId: string },
   ids: string[],
 ) =>
@@ -215,7 +217,7 @@ try {
       `day duplicate advanced the space change-log head from ${dayHead} to ${dayDuplicateHead}`,
     )
 
-  const client = new SQL(actorUrl)
+  const client = actorUrl
   try {
     const count = async (spaceId: string, table: string) =>
       client.begin(async (tx) => {

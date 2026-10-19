@@ -1,6 +1,7 @@
 // concern: hosted-report-gather
 /** Builds the existing report projection from hosted record rows. */
 
+import type { SQL } from 'bun'
 import { engagedMs, human } from '../../shared/interval.ts'
 import { hostedTaskJoin } from './hosted-task-reference.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
@@ -133,7 +134,7 @@ export function gatherHostedReport(
 }
 
 export async function hostedGatherReport(
-  databaseUrl: string,
+  databaseUrl: SQL,
   identity: TaskIdentity,
   period: DeliveryPeriod,
   scope: MeasureScope,

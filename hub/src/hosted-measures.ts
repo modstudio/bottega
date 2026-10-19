@@ -1,3 +1,4 @@
+import type { SQL } from 'bun'
 import { hostedTaskJoin } from './hosted-task-reference.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
 import {
@@ -65,7 +66,7 @@ function asEvent(row: RawEvent): MeasureStatusEvent {
 }
 
 export async function loadHostedMeasureRows(
-  databaseUrl: string,
+  databaseUrl: SQL,
   identity: TaskIdentity,
   window: MeasureWindow,
 ) {
@@ -106,7 +107,7 @@ export async function loadHostedMeasureRows(
 }
 
 export async function hostedMeasures(
-  databaseUrl: string,
+  databaseUrl: SQL,
   identity: TaskIdentity,
   window: MeasureWindow,
   scope: MeasureScope,
@@ -122,7 +123,7 @@ export type HostedMeasurePerson = { userId: string; name: string; email: string 
 
 /** Members with attributed evidence in this window; this is not a user directory. */
 export async function hostedMeasurePeople(
-  databaseUrl: string,
+  databaseUrl: SQL,
   identity: TaskIdentity,
   window: MeasureWindow,
   project?: string,

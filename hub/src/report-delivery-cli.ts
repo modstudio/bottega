@@ -2,6 +2,7 @@
 
 // concern: hosted-report-delivery-cli
 
+import { SQL } from 'bun'
 import { pruneHostedChanges } from './change-pruning.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { runReportDeliveryPass } from './report-delivery.ts'
@@ -53,21 +54,26 @@ export async function runReportDeliveryCommand(
 ) {
   const databaseUrl = environment.HUB_RECORD_DATABASE_URL
   if (!databaseUrl) throw new Error('HUB_RECORD_DATABASE_URL is required')
-  return runScheduledReportDelivery({
-    deliveryEnabled: environment.HUB_REPORT_DELIVERY_ENABLED === 'true',
-    dryRun: input.dryRun,
-    prune: () => pruneHostedChanges(databaseUrl),
-    deliver: () =>
-      runReportDeliveryPass({
-        repository: hostedDeliveryRepository(databaseUrl),
-        mail: sesReportMailClient(environment),
-        dryRun: input.dryRun,
-        hostedOrigin: resolveHostedUrl(environment),
-        print: console.log,
-      }),
-    print: console.log,
-    printError: console.error,
-  })
+  const database = new SQL(databaseUrl)
+  try {
+    return await runScheduledReportDelivery({
+      deliveryEnabled: environment.HUB_REPORT_DELIVERY_ENABLED === 'true',
+      dryRun: input.dryRun,
+      prune: () => pruneHostedChanges(databaseUrl),
+      deliver: () =>
+        runReportDeliveryPass({
+          repository: hostedDeliveryRepository(database),
+          mail: sesReportMailClient(environment),
+          dryRun: input.dryRun,
+          hostedOrigin: resolveHostedUrl(environment),
+          print: console.log,
+        }),
+      print: console.log,
+      printError: console.error,
+    })
+  } finally {
+    await database.close()
+  }
 }
 
 if (import.meta.main)

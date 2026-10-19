@@ -1,3 +1,4 @@
+import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { parseRecordSpaceMemberships } from '../../shared/record-space-membership.ts'
 import {
@@ -18,9 +19,10 @@ import {
 } from './hosted-reports.ts'
 
 const TEST_REFUSAL = `${PLATFORM_SLUG} report API refuses real identity and database clients unless stubs are injected in tests`
-type Config = { recordApiUrl: string; recordDatabaseUrl: string }
+type Config = { recordApiUrl: string; recordDatabaseUrl: SQL | string }
 type Dependencies = { fetch?: typeof fetch; [key: string]: unknown }
 const json = (value: unknown, status = 200) => Response.json(value, { status })
+const database = (config: Config) => config.recordDatabaseUrl as SQL
 const call = <T>(stub: unknown, real: T): T => {
   if (process.env.NODE_ENV === 'test' && !stub) throw new Error(TEST_REFUSAL)
   return (stub ?? real) as T
@@ -41,11 +43,11 @@ async function sendRoute(
   body: Record<string, unknown> | null,
 ) {
   if (request.method === 'GET' && url.pathname === '/v1/sends/counts')
-    return json(await call(dependencies.counts, hostedReportCounts)(config.recordDatabaseUrl, who))
+    return json(await call(dependencies.counts, hostedReportCounts)(database(config), who))
   if (request.method === 'GET' && url.pathname === '/v1/sends')
     return json(
       await call(dependencies.listSends, listHostedSends)(
-        config.recordDatabaseUrl,
+        database(config),
         who,
         sendFilters(url),
       ),
@@ -53,7 +55,7 @@ async function sendRoute(
   if (request.method === 'POST' && url.pathname === '/v1/sends')
     return json(
       await call(dependencies.appendSend, appendHostedSend)(
-        config.recordDatabaseUrl,
+        database(config),
         who,
         body as never,
       ),
@@ -62,7 +64,7 @@ async function sendRoute(
   if (request.method === 'PUT' && url.pathname === '/v1/sends/mirror')
     return json(
       await call(dependencies.mirror, mirrorHostedReports)(
-        config.recordDatabaseUrl,
+        database(config),
         who,
         body as never,
       ),
@@ -81,14 +83,14 @@ async function subscriptionRoute(
   if (request.method === 'GET' && url.pathname === '/v1/report-subscriptions')
     return json(
       await call(dependencies.listSubscriptions, listHostedReportSubscriptions)(
-        config.recordDatabaseUrl,
+        database(config),
         who,
       ),
     )
   if (request.method === 'POST' && url.pathname === '/v1/report-subscriptions')
     return json(
       await call(dependencies.createSubscription, createHostedReportSubscription)(
-        config.recordDatabaseUrl,
+        database(config),
         who,
         body as never,
       ),
@@ -98,7 +100,7 @@ async function subscriptionRoute(
   if (request.method === 'PUT' && unsubscribe)
     return json(
       await call(dependencies.updateSubscription, updateHostedReportSubscription)(
-        config.recordDatabaseUrl,
+        database(config),
         who,
         unsubscribe[1]!,
         body as never,
@@ -107,7 +109,7 @@ async function subscriptionRoute(
   if (request.method === 'DELETE' && unsubscribe)
     return json(
       await call(dependencies.unsubscribe, unsubscribeHostedReportSubscription)(
-        config.recordDatabaseUrl,
+        database(config),
         who,
         unsubscribe[1]!,
       ),
@@ -141,7 +143,7 @@ export async function reportApi(
   if (emailUnsubscribe && request.method === 'GET')
     return json(
       await call(dependencies.emailRecipientByToken, hostedEmailRecipientByToken)(
-        config.recordDatabaseUrl,
+        database(config),
         emailUnsubscribe[1]!,
         emailUnsubscribe[2]!,
       ),
@@ -152,7 +154,7 @@ export async function reportApi(
       unsubscribed: await call(
         dependencies.unsubscribeEmailRecipient,
         unsubscribeHostedEmailRecipient,
-      )(config.recordDatabaseUrl, postedUnsubscribe[1]!, postedUnsubscribe[2]!),
+      )(database(config), postedUnsubscribe[1]!, postedUnsubscribe[2]!),
     })
   if (!url.pathname.startsWith('/v1/report-subscriptions') && !url.pathname.startsWith('/v1/sends'))
     return null

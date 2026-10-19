@@ -188,7 +188,7 @@ async function recordOperatorWaitingEmailOutcome(
 }
 
 export async function sendOperatorWaitingEmail(
-  databaseUrl: string,
+  databaseUrl: SQL,
   caller: { spaceId: string; userId: string },
   input: OperatorWaitingEmailInput,
   options: { mail?: ReportMailClient; now?: Date } = {},

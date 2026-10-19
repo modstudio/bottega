@@ -1,4 +1,4 @@
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
@@ -53,20 +53,15 @@ export const hostedNotePullSerializers = {
 } as const
 
 const rows = <T>(value: unknown) => value as T[]
-async function tenant<T>(url: string, identity: TaskIdentity, work: (tx: SQL) => Promise<T>) {
-  const client = new SQL(url)
-  try {
-    return await client.begin(async (tx) => {
-      await bindTenant(tx, identity)
-      return work(tx)
-    })
-  } finally {
-    await client.close()
-  }
+async function tenant<T>(client: SQL, identity: TaskIdentity, work: (tx: SQL) => Promise<T>) {
+  return client.begin(async (tx) => {
+    await bindTenant(tx, identity)
+    return work(tx)
+  })
 }
 
 export async function listHostedNotes(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   filters: {
     project?: string
@@ -109,7 +104,7 @@ export async function listHostedNotes(
   })
 }
 
-export async function getHostedNote(url: string, identity: TaskIdentity, recordId: string) {
+export async function getHostedNote(url: SQL, identity: TaskIdentity, recordId: string) {
   return tenant(
     url,
     identity,
@@ -165,7 +160,7 @@ export function noteMirrorCollision(
 }
 
 export async function createHostedNote(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   input: {
     project: string
@@ -225,7 +220,7 @@ export async function createHostedNote(
 }
 
 export async function promoteHostedNote(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   recordId: string,
   input: { task?: string } = {},
@@ -308,7 +303,7 @@ export async function selectPromotionTask(
 }
 
 export async function reapHostedNotes(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   input: {
     stale: Array<{ recordId: string; reason: string; at: string }>
@@ -414,7 +409,7 @@ async function mirrorOneHostedNote(tx: SQL, identity: TaskIdentity, row: HostedN
 }
 
 export async function mirrorHostedNotes(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   body: {
     notes: HostedNote[]
@@ -467,7 +462,7 @@ export async function mirrorHostedNotes(
   })
 }
 
-export async function hostedNoteCounts(url: string, identity: TaskIdentity) {
+export async function hostedNoteCounts(url: SQL, identity: TaskIdentity) {
   return tenant(url, identity, async (tx) => ({
     note: Number(
       rows<{ count: number }>(

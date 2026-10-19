@@ -1,4 +1,4 @@
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { bindTenant } from '../../shared/record/tenant.ts'
 import {
   type HostedAcknowledgement,
@@ -111,22 +111,22 @@ const sequenceNumber = (value: string | number) => {
   return sequence
 }
 
-async function laterRowKeys(
+export async function laterRowKeys(
   tx: SQL,
   spaceId: string,
   after: number,
   tables: readonly string[],
   ids: readonly string[],
 ) {
-  if (!ids.length) return new Set<string>()
+  if (!ids.length) return []
   const later = rows<Pick<Entry, 'table_name' | 'row_id'>>(
-    await tx`SELECT table_name,row_id::text FROM hub_change
+    await tx`SELECT DISTINCT table_name,row_id::text FROM hub_change
       WHERE hub_change.space_id=${spaceId}::uuid
       AND hub_change.sequence>${after}
       AND table_name=ANY(string_to_array(${tables.join(',')},',')::text[])
       AND row_id=ANY(string_to_array(${idList(ids)},',')::uuid[])`,
   )
-  return new Set(later.map((entry) => `${entry.table_name}:${entry.row_id}`))
+  return later.map((entry) => `${entry.table_name}:${entry.row_id}`)
 }
 
 export async function readHostedChangesInTransaction(
@@ -168,12 +168,14 @@ export async function readHostedChangesInTransaction(
   const finalEntries = [...collapsed.values()].sort(
     (a, b) => sequenceNumber(a.sequence) - sequenceNumber(b.sequence),
   )
-  const superseded = await laterRowKeys(
-    tx,
-    identity.spaceId,
-    next,
-    [...wanted],
-    finalEntries.map((entry) => entry.row_id),
+  const superseded = new Set(
+    await laterRowKeys(
+      tx,
+      identity.spaceId,
+      next,
+      [...wanted],
+      finalEntries.map((entry) => entry.row_id),
+    ),
   )
   const currentRows = new Map<string, ChangeRow>()
   for (const table of input.tables) {
@@ -211,19 +213,14 @@ export async function readHostedChangesInTransaction(
 }
 
 export async function listHostedChanges(
-  url: string,
+  client: SQL,
   identity: TaskIdentity,
   input: Parameters<typeof readHostedChangesInTransaction>[2],
 ) {
-  const client = new SQL(url)
-  try {
-    return await client.begin(async (tx) => {
-      // Head, entries, and rows share one snapshot, so a returned row is never newer than next.
-      await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`
-      await bindTenant(tx, identity)
-      return readHostedChangesInTransaction(tx, identity, input)
-    })
-  } finally {
-    await client.close()
-  }
+  return client.begin(async (tx) => {
+    // Head, entries, and rows share one snapshot, so a returned row is never newer than next.
+    await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`
+    await bindTenant(tx, identity)
+    return readHostedChangesInTransaction(tx, identity, input)
+  })
 }

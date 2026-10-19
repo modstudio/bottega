@@ -1,3 +1,4 @@
+import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { recordSpaceAccessDecision } from '../../shared/record-space-request.ts'
 import {
@@ -19,7 +20,7 @@ import {
 const TEST_REFUSAL =
   'hub change API refuses real identity and database clients unless stubs are injected in tests'
 
-type Config = { recordApiUrl: string; recordDatabaseUrl: string }
+type Config = { recordApiUrl: string; recordDatabaseUrl: SQL | string }
 type Dependencies = {
   fetch?: (input: string, init?: RequestInit) => Promise<Response>
   list?: typeof listHostedChanges
@@ -30,6 +31,7 @@ type ChangeIdentity = Exclude<
   Awaited<ReturnType<typeof taskSpaceIdentity>>,
   null | { refusedSpace: string }
 >
+const database = (config: Config) => config.recordDatabaseUrl as SQL
 
 const allowed = Object.keys(READABLE_HUB_CHANGES) as ReadableHubChangeTable[]
 const allowedMessage = allowed.join(', ')
@@ -99,7 +101,7 @@ async function pushResponse(
   if ('error' in decision) return json({ error: decision.error }, 400)
   try {
     const applied = await (dependencies.push ?? applyHostedPushChanges)(
-      config.recordDatabaseUrl,
+      database(config),
       who,
       decision.inputs,
     )
@@ -156,7 +158,7 @@ async function identitySetResponse(
   }
   try {
     return json(
-      await (dependencies.ids ?? listHostedIdentitySet)(config.recordDatabaseUrl, who, input),
+      await (dependencies.ids ?? listHostedIdentitySet)(database(config), who, input),
     )
   } catch (error) {
     return json({ error: (error as Error).message }, 409)
@@ -183,7 +185,7 @@ async function changeLogResponse(
   }
   try {
     return json(
-      await (dependencies.list ?? listHostedChanges)(config.recordDatabaseUrl, who, input),
+      await (dependencies.list ?? listHostedChanges)(database(config), who, input),
     )
   } catch (error) {
     return json({ error: (error as Error).message }, 409)

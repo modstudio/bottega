@@ -3,7 +3,7 @@
 
 import { hostname } from 'node:os'
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2'
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { emptyHostedMeasures, hostedMeasures } from './hosted-measures.ts'
 import { gatherHostedReport, hostedGatherReport } from './hosted-report-gather.ts'
@@ -127,7 +127,7 @@ function loadedScopeName(
   return loaded.space_name
 }
 
-export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepository {
+export function hostedDeliveryRepository(databaseUrl: SQL): DeliveryRepository {
   async function insertFinal(
     value: DeliveryCandidate,
     period: DeliveryPeriod,
@@ -147,14 +147,9 @@ export function hostedDeliveryRepository(databaseUrl: string): DeliveryRepositor
 
   return {
     async discover() {
-      const client = new SQL(databaseUrl)
-      try {
-        return rows<RawCandidate>(await client`SELECT * FROM hub_report_delivery_candidates()`).map(
-          candidate,
-        )
-      } finally {
-        await client.close()
-      }
+      return rows<RawCandidate>(
+        await databaseUrl`SELECT * FROM hub_report_delivery_candidates()`,
+      ).map(candidate)
     },
     async load(value, period, options) {
       const loaded = await withHostedTenant(databaseUrl, identity(value), async (tx) => {
@@ -367,7 +362,7 @@ export function sesReportMailClient(
 }
 
 export async function sendHostedReportSubscriptionTest(
-  databaseUrl: string,
+  databaseUrl: SQL,
   caller: { spaceId: string; userId: string },
   subscriptionId: string,
   options: { now?: Date; mail?: ReportMailClient } = {},

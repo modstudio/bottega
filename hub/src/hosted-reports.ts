@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
@@ -341,20 +341,15 @@ type SubscriptionFacts = {
 
 const unsubscribeToken = () => randomBytes(32).toString('base64url')
 
-async function tenant<T>(url: string, identity: TaskIdentity, work: (tx: SQL) => Promise<T>) {
-  const client = new SQL(url)
-  try {
-    return await client.begin(async (tx) => {
-      await bindTenant(tx, identity)
-      return work(tx)
-    })
-  } finally {
-    await client.close()
-  }
+async function tenant<T>(client: SQL, identity: TaskIdentity, work: (tx: SQL) => Promise<T>) {
+  return client.begin(async (tx) => {
+    await bindTenant(tx, identity)
+    return work(tx)
+  })
 }
 
 export async function listHostedSends(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   filters: { limit?: number; updatedSince?: string; cursor?: string },
 ) {
@@ -415,7 +410,7 @@ export async function readHostedSendsInTransaction(
 }
 
 export async function appendHostedSend(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   input: Omit<HostedSend, 'id' | 'created_at'>,
 ) {
@@ -433,7 +428,7 @@ export async function appendHostedSend(
 }
 
 export async function mirrorHostedReports(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   input: { sends?: HostedSend[] },
 ) {
@@ -458,7 +453,7 @@ export function countMirrorWrites(results: readonly (readonly unknown[])[]) {
   return results.reduce((total, result) => total + result.length, 0)
 }
 
-export async function hostedReportCounts(url: string, identity: TaskIdentity) {
+export async function hostedReportCounts(url: SQL, identity: TaskIdentity) {
   return tenant(url, identity, async (tx) => {
     const result = rows<{ sends: number }>(
       await tx`SELECT
@@ -536,14 +531,14 @@ async function selectHostedReportSubscription(tx: SQL, spaceId: string, id: stri
   )
 }
 
-export async function listHostedReportSubscriptions(url: string, identity: TaskIdentity) {
+export async function listHostedReportSubscriptions(url: SQL, identity: TaskIdentity) {
   return tenant(url, identity, async (tx) => ({
     subscriptions: await selectHostedReportSubscriptions(tx, identity.spaceId),
   }))
 }
 
 export async function createHostedReportSubscription(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   input: ReportSubscriptionWriteInput,
 ) {
@@ -608,7 +603,7 @@ export async function createHostedReportSubscription(
 }
 
 export async function updateHostedReportSubscription(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   id: string,
   input: ReportSubscriptionUpdateInput,
@@ -699,7 +694,7 @@ export async function updateHostedReportSubscription(
 
 const PUBLIC_REPORT_USER_ID = '00000000-0000-0000-0000-000000000000'
 
-export async function hostedEmailRecipientByToken(url: string, spaceId: string, token: string) {
+export async function hostedEmailRecipientByToken(url: SQL, spaceId: string, token: string) {
   return withHostedTenant(url, { spaceId, userId: PUBLIC_REPORT_USER_ID }, async (tx) => {
     return (
       rows<{ email: string; subscription: string; space: string }>(
@@ -721,27 +716,22 @@ export async function hostedEmailRecipientByToken(url: string, spaceId: string, 
   })
 }
 
-export async function unsubscribeHostedEmailRecipient(url: string, spaceId: string, token: string) {
-  const client = new SQL(url)
-  try {
-    return await client.begin(async (tx) => {
-      await tx`SELECT set_config('app.space_id', ${spaceId}, true)`
-      await tx`SELECT set_config('app.unsubscribe_token', ${token}, true)`
-      return Boolean(
-        rows<{ id: string }>(
-          await tx`DELETE FROM hub_report_subscription_recipient
+export async function unsubscribeHostedEmailRecipient(client: SQL, spaceId: string, token: string) {
+  return client.begin(async (tx) => {
+    await tx`SELECT set_config('app.space_id', ${spaceId}, true)`
+    await tx`SELECT set_config('app.unsubscribe_token', ${token}, true)`
+    return Boolean(
+      rows<{ id: string }>(
+        await tx`DELETE FROM hub_report_subscription_recipient
           WHERE space_id=${spaceId}::uuid AND unsubscribe_token=${token}
           RETURNING id`,
-        )[0],
-      )
-    })
-  } finally {
-    await client.close()
-  }
+      )[0],
+    )
+  })
 }
 
 export async function unsubscribeHostedReportSubscription(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   id: string,
 ) {

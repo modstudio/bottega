@@ -8,7 +8,7 @@ export type HostedTaskPresencePair = { space_id: string; key: string }
 const rows = <T>(value: unknown) => value as T[]
 
 export async function hostedTaskPresence(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   pairs: HostedTaskPresencePair[],
 ) {
@@ -70,7 +70,7 @@ async function clearIncomingTaskLinks(tx: SQL, identity: TenantPrincipal, taskId
 }
 
 export async function softDeleteHostedTasks(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   taskIds: string[],
   confirmation?: number,

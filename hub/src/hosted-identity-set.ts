@@ -1,4 +1,4 @@
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { bindTenant } from '../../shared/record/tenant.ts'
 import type { TaskIdentity } from './hosted-tasks.ts'
 import {
@@ -60,21 +60,16 @@ export async function readHostedIdentitySetInTransaction(
 }
 
 export async function listHostedIdentitySet(
-  url: string,
+  client: SQL,
   identity: TaskIdentity,
   input: IdentitySetRequest,
 ) {
-  const client = new SQL(url)
-  try {
-    return await client.begin(async (tx) => {
-      await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`
-      await bindTenant(tx, identity)
-      return readHostedIdentitySetInTransaction(tx, identity, {
-        ...input,
-        limit: HUB_IDENTITY_SET_PAGE_SIZE,
-      })
+  return client.begin(async (tx) => {
+    await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`
+    await bindTenant(tx, identity)
+    return readHostedIdentitySetInTransaction(tx, identity, {
+      ...input,
+      limit: HUB_IDENTITY_SET_PAGE_SIZE,
     })
-  } finally {
-    await client.close()
-  }
+  })
 }
