@@ -137,7 +137,7 @@ describe('routing exploration', () => {
     const evalRun = addRun({ agent: 'codex', job: 'implement', probe: 1 })
     db()
       .query(
-        `INSERT INTO canon_eval (record_id, slug, run_id, canon_sha, agent, model, pass, why, at)
+        `INSERT INTO canon_eval (record_id, slug, run_record_id, canon_sha, agent, model, pass, why, at)
        VALUES ('${newRecordId()}', 'asks-instead-of-deciding', ?, 'sha', 'codex', 'm', 0, 'built', ?)`,
       )
       .run(evalRun, nowIso())
@@ -163,7 +163,7 @@ describe('routing exploration', () => {
     const evalRun = addRun({ agent: 'codex', job: 'implement', probe: 1 })
     db()
       .query(
-        `INSERT INTO canon_eval (record_id, slug, run_id, canon_sha, agent, model, pass, why, at)
+        `INSERT INTO canon_eval (record_id, slug, run_record_id, canon_sha, agent, model, pass, why, at)
        VALUES ('${newRecordId()}', 'asks-instead-of-deciding', ?, 'sha', 'codex', 'm', 0, 'built', ?)`,
       )
       .run(evalRun, nowIso())
@@ -181,7 +181,7 @@ describe('routing exploration', () => {
     const evalRun = addRun({ agent: 'codex', job: 'implement', probe: 1 })
     db()
       .query(
-        `INSERT INTO canon_eval (record_id, slug, run_id, canon_sha, agent, model, pass, why, at)
+        `INSERT INTO canon_eval (record_id, slug, run_record_id, canon_sha, agent, model, pass, why, at)
        VALUES ('${newRecordId()}', 'asks-instead-of-deciding', ?, 'sha', 'codex', 'm', 0, 'built', ?)`,
       )
       .run(evalRun, nowIso())
@@ -260,7 +260,7 @@ describe('routing exploration', () => {
     Math.random = () => 0
     try {
       expect(pick('review-lens').agent).toBe('grok')
-      db().query("UPDATE score SET delivery='none', quality=NULL WHERE run_id=?").run(wrong)
+      db().query("UPDATE score SET delivery='none', quality=NULL WHERE run_record_id=?").run(wrong)
       expect(pick('review-lens').agent).toBe('codex')
     } finally {
       Math.random = random

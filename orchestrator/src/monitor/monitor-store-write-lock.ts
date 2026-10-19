@@ -13,7 +13,7 @@ export type StoreWriteLockReport =
       sampleCount: number
       pid: number | null
       command: string | null
-      runId: number | null
+      runId: string | null
       isRunSupervisor: boolean
     }
   | {
@@ -33,15 +33,15 @@ function holderCommand(pid: number): string | null {
   return new TextDecoder().decode(result.stdout).trim() || null
 }
 
-function supervisedRun(storePath: string, pid: number): number | null {
+function supervisedRun(storePath: string, pid: number): string | null {
   const database = openReadOnlyDatabase(storePath)
   try {
     const row = database
-      .query<{ id: number }, [number]>(
-        "SELECT id FROM run WHERE pid=? AND status IN ('running','asking') ORDER BY id DESC LIMIT 1",
+      .query<{ record_id: string }, [number]>(
+        "SELECT record_id FROM run WHERE pid=? AND status IN ('running','asking') ORDER BY number DESC LIMIT 1",
       )
       .get(pid)
-    return row?.id ?? null
+    return row?.record_id ?? null
   } finally {
     database.close()
   }

@@ -23,17 +23,17 @@ function scoredRun(recordId: string | null = RECORD_ID): Database {
   database
     .query(
       `INSERT INTO run
-       (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
        VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','implement','sha',3,'ask','ok')`,
     )
     .run(recordId)
   database
     .query(
       `INSERT INTO score
-       (record_id, run_id,delivery,quality,fidelity,note,scored_at,scored_by)
-       VALUES ('${newRecordId()}', 42,'full','right','faithful','first',?,'architect')`,
+       (record_id, run_record_id,delivery,quality,fidelity,note,scored_at,scored_by)
+       VALUES ('${newRecordId()}', ?,'full','right','faithful','first',?,'architect')`,
     )
-    .run(STAMP)
+    .run(recordId, STAMP)
   return database
 }
 
@@ -107,7 +107,7 @@ test('score enqueue participates in its caller transaction', () => {
   expect(() =>
     database
       .transaction(() => {
-        enqueueScoreRecord(database, 42, MACHINE_ID)
+        enqueueScoreRecord(database, RECORD_ID, MACHINE_ID)
         throw new Error('rollback')
       })
       .immediate(),
@@ -139,7 +139,7 @@ test('score backfill enqueues each hosted score once', () => {
 
 test.each(['quarantined', 'retired'])('a new score does not overwrite a %s row', (state) => {
   const database = scoredRun()
-  enqueueScoreRecord(database, 42, MACHINE_ID)
+  enqueueScoreRecord(database, RECORD_ID, MACHINE_ID)
   const original = database
     .query<{ id: number; payload: string }, []>('SELECT id,payload FROM outbox')
     .get()!
@@ -148,9 +148,9 @@ test.each(['quarantined', 'retired'])('a new score does not overwrite a %s row',
       `UPDATE outbox SET ${state === 'quarantined' ? 'quarantined_at' : 'retired_at'}=? WHERE id=?`,
     )
     .run(STAMP, original.id)
-  database.query("UPDATE score SET note='corrected' WHERE run_id=42").run()
+  database.query("UPDATE score SET note='corrected' WHERE run_record_id=?").run(RECORD_ID)
 
-  enqueueScoreRecord(database, 42, MACHINE_ID)
+  enqueueScoreRecord(database, RECORD_ID, MACHINE_ID)
 
   const rows = database
     .query<{ id: number; payload: string }, []>('SELECT id,payload FROM outbox ORDER BY id')

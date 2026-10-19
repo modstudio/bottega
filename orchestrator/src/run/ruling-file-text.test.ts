@@ -16,7 +16,7 @@ const filed = renderRulingFileText({
   question: 'Which shape should DEV-963 take?',
   ruling: 'Keep the existing 2 variants.',
   answererKind: 'operator',
-  runId: 42,
+  runId: '42',
   runRecordId: '42000000-0000-4000-8000-000000000000',
   taskKey: 'DEV-963',
   date: '2026-09-25T12:00:00.000Z',

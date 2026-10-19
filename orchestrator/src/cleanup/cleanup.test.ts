@@ -42,7 +42,7 @@ const presentation = (): CleanupPresentation => ({
   keptBranchLine: (branch) => `kept branch ${branch}`,
 })
 
-function heldCleanup(id: number): { project: string; repo: string; tree: string; row: CleanupRow } {
+function heldCleanup(id: string): { project: string; repo: string; tree: string; row: CleanupRow } {
   const project = `cleanup-held-${id}`
   const repo = join(dir, project)
   const tree = join(repo, '.claude', 'worktrees', `orch-${id}`)
@@ -53,7 +53,7 @@ function heldCleanup(id: number): { project: string; repo: string; tree: string;
       `UPDATE run
        SET repo=?, cwd=?, worktree=?, worktree_source='git',
            close_out_outcome='held', close_out_detail=?, close_out_attempted_at=?
-       WHERE id=?`,
+       WHERE record_id=?`,
     )
     .run(project, tree, tree, 'close-out held the tree', '2026-09-18T00:00:00.000Z', id)
   spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
@@ -66,7 +66,7 @@ function heldCleanup(id: number): { project: string; repo: string; tree: string;
     repo,
     tree,
     row: {
-      id,
+      record_id: id,
       repo: project,
       cwd: tree,
       worktree: tree,
@@ -85,8 +85,8 @@ function discard(row: CleanupRow): void {
   })
 }
 
-function closeOutIds(): number[] {
-  return terminalCloseOutRuns().map((run) => run.id)
+function closeOutIds(): string[] {
+  return terminalCloseOutRuns().map((run) => run.record_id)
 }
 
 test('a run held at close-out, then discarded, is no longer returned by terminalCloseOutRuns', () => {
@@ -101,7 +101,7 @@ test('a run held at close-out, then discarded, is no longer returned by terminal
     expect(
       db()
         .query(
-          'SELECT worktree, close_out_outcome, close_out_detail, close_out_attempted_at FROM run WHERE id=?',
+          'SELECT worktree, close_out_outcome, close_out_detail, close_out_attempted_at FROM run WHERE record_id=?',
         )
         .get(id),
     ).toEqual({
@@ -125,7 +125,7 @@ test('releasing a shared worktree pointer drops this run from terminalCloseOutRu
         `UPDATE run
          SET repo=?, cwd=?, worktree=?, worktree_source='git',
              close_out_outcome='held', close_out_detail=?, close_out_attempted_at=?
-         WHERE id=?`,
+         WHERE record_id=?`,
       )
       .run(
         fixture.project,
@@ -143,7 +143,7 @@ test('releasing a shared worktree pointer drops this run from terminalCloseOutRu
     expect(
       db()
         .query(
-          'SELECT worktree, close_out_outcome, close_out_detail, close_out_attempted_at FROM run WHERE id=?',
+          'SELECT worktree, close_out_outcome, close_out_detail, close_out_attempted_at FROM run WHERE record_id=?',
         )
         .get(id),
     ).toEqual({
@@ -155,7 +155,7 @@ test('releasing a shared worktree pointer drops this run from terminalCloseOutRu
     expect(
       db()
         .query(
-          'SELECT worktree, close_out_outcome, close_out_detail, close_out_attempted_at FROM run WHERE id=?',
+          'SELECT worktree, close_out_outcome, close_out_detail, close_out_attempted_at FROM run WHERE record_id=?',
         )
         .get(other),
     ).toEqual({
@@ -185,7 +185,7 @@ test('a two-tree chain held at close-out stays in terminalCloseOutRuns until the
       .query(
         `UPDATE run
          SET repo=?, cwd=?, worktree=?, worktree_source='git'
-         WHERE id=?`,
+         WHERE record_id=?`,
       )
       .run(fixture.project, secondTree, secondTree, child)
     expect(closeOutIds()).toContain(id)
@@ -196,7 +196,7 @@ test('a two-tree chain held at close-out stays in terminalCloseOutRuns until the
     expect(
       db()
         .query(
-          'SELECT worktree, close_out_outcome, close_out_detail, close_out_attempted_at FROM run WHERE id=?',
+          'SELECT worktree, close_out_outcome, close_out_detail, close_out_attempted_at FROM run WHERE record_id=?',
         )
         .get(id),
     ).toEqual({
@@ -205,7 +205,7 @@ test('a two-tree chain held at close-out stays in terminalCloseOutRuns until the
       close_out_detail: 'close-out held the tree',
       close_out_attempted_at: '2026-09-18T00:00:00.000Z',
     })
-    expect(db().query('SELECT worktree FROM run WHERE id=?').get(child)).toEqual({
+    expect(db().query('SELECT worktree FROM run WHERE record_id=?').get(child)).toEqual({
       worktree: secondTree,
     })
 
@@ -219,7 +219,7 @@ test('a two-tree chain held at close-out stays in terminalCloseOutRuns until the
     expect(
       db()
         .query(
-          'SELECT worktree, close_out_outcome, close_out_detail, close_out_attempted_at FROM run WHERE id=?',
+          'SELECT worktree, close_out_outcome, close_out_detail, close_out_attempted_at FROM run WHERE record_id=?',
         )
         .get(id),
     ).toEqual({
@@ -228,7 +228,7 @@ test('a two-tree chain held at close-out stays in terminalCloseOutRuns until the
       close_out_detail: null,
       close_out_attempted_at: null,
     })
-    expect(db().query('SELECT worktree FROM run WHERE id=?').get(child)).toEqual({
+    expect(db().query('SELECT worktree FROM run WHERE record_id=?').get(child)).toEqual({
       worktree: null,
     })
   } finally {
@@ -251,15 +251,15 @@ test('a root held at close-out with the tree only on a child is no longer return
       .query(
         `UPDATE run
          SET repo=?, cwd=?, worktree=?, worktree_source='git'
-         WHERE id=?`,
+         WHERE record_id=?`,
       )
       .run(fixture.project, fixture.tree, fixture.tree, child)
-    db().query('UPDATE run SET worktree=NULL WHERE id=?').run(id)
+    db().query('UPDATE run SET worktree=NULL WHERE record_id=?').run(id)
     expect(closeOutIds()).toContain(id)
-    expect(db().query('SELECT worktree FROM run WHERE id=?').get(id)).toEqual({
+    expect(db().query('SELECT worktree FROM run WHERE record_id=?').get(id)).toEqual({
       worktree: null,
     })
-    expect(db().query('SELECT worktree FROM run WHERE id=?').get(child)).toEqual({
+    expect(db().query('SELECT worktree FROM run WHERE record_id=?').get(child)).toEqual({
       worktree: fixture.tree,
     })
 
@@ -269,7 +269,7 @@ test('a root held at close-out with the tree only on a child is no longer return
     expect(
       db()
         .query(
-          'SELECT worktree, close_out_outcome, close_out_detail, close_out_attempted_at FROM run WHERE id=?',
+          'SELECT worktree, close_out_outcome, close_out_detail, close_out_attempted_at FROM run WHERE record_id=?',
         )
         .get(id),
     ).toEqual({
@@ -278,7 +278,7 @@ test('a root held at close-out with the tree only on a child is no longer return
       close_out_detail: null,
       close_out_attempted_at: null,
     })
-    expect(db().query('SELECT worktree FROM run WHERE id=?').get(child)).toEqual({
+    expect(db().query('SELECT worktree FROM run WHERE record_id=?').get(child)).toEqual({
       worktree: null,
     })
   } finally {
@@ -306,10 +306,10 @@ test('force discard refuses a kept review subject and releases only the reader p
   mkdirSync(join(repo, '.git'), { recursive: true })
   upsertProject({ recordId: newRecordId(), name: project, path: repo, settings: { trunk: 'main' } })
   db()
-    .query('UPDATE run SET repo=?, branch=?, minted_branch=? WHERE id=?')
+    .query('UPDATE run SET repo=?, branch=?, minted_branch=? WHERE record_id=?')
     .run(project, branch, branch, owner)
   db()
-    .query('UPDATE run SET repo=?, cwd=?, branch=?, branch_kept=? WHERE id=?')
+    .query('UPDATE run SET repo=?, cwd=?, branch=?, branch_kept=? WHERE record_id=?')
     .run(project, repo, branch, branch, reader)
   spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
     commands.push(command)
@@ -331,10 +331,10 @@ test('force discard refuses a kept review subject and releases only the reader p
     expect(lines.join('\n')).toContain(
       `branch ${branch} cannot be deleted: it was minted by run ${owner}, not run ${reader}'s conversation; it was left in place`,
     )
-    expect(db().query('SELECT branch_kept FROM run WHERE id=?').get(reader)).toEqual({
+    expect(db().query('SELECT branch_kept FROM run WHERE record_id=?').get(reader)).toEqual({
       branch_kept: null,
     })
-    expect(db().query('SELECT minted_branch FROM run WHERE id=?').get(owner)).toEqual({
+    expect(db().query('SELECT minted_branch FROM run WHERE record_id=?').get(owner)).toEqual({
       minted_branch: branch,
     })
     expect(commands.some((command) => command.includes('-D'))).toBe(false)

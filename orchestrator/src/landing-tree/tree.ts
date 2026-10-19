@@ -17,6 +17,7 @@ import {
 } from '../resources/resource-claims.ts'
 import { assertBranchHasNoAliveOwner } from '../run/branch-owner-guard.ts'
 import { continuationBranchPlan, resumeTreePlan } from '../run/resume-tree.ts'
+import { nextRunNumber } from '../run/run-number.ts'
 import { prepareResumeBranchIfNeeded } from '../run/run-resume-claim.ts'
 import { createWorkerWorktree } from '../worktree/worktree.ts'
 import { inspectTreeOwnership } from '../worktree/worktree-attribution.ts'
@@ -34,9 +35,8 @@ import {
 } from './landing-tree.ts'
 
 type RunRow = {
-  id: number
   record_id: string
-  parent_run_id: number | null
+  parent_run_record_id: string | null
   repo: string | null
   project_record_id: string | null
   cwd: string | null
@@ -66,13 +66,19 @@ export function landingTreeSeedRequest(input: {
   }
 }
 
-function sourceRun(runId: number): { root: RunRow; latest: RunRow } {
-  const selected = db().query('SELECT * FROM run WHERE id=?').get(runId) as RunRow | null
+export function landingTreeSourceRun(runId: string): { root: RunRow; latest: RunRow } {
+  const columns = `record_id,parent_run_record_id,repo,project_record_id,cwd,worktree,branch,
+    branch_kept,branch_kept_tip,launch_cwd,launch_key,launch_seed`
+  const selected = db()
+    .query(`SELECT ${columns} FROM run WHERE record_id=?`)
+    .get(runId) as RunRow | null
   if (!selected) throw new Error(`no run ${runId}; pass an existing writer run id`)
-  const rootId = selected.parent_run_id ?? selected.id
-  const root = db().query('SELECT * FROM run WHERE id=?').get(rootId) as RunRow
+  const rootId = selected.parent_run_record_id ?? selected.record_id
+  const root = db().query(`SELECT ${columns} FROM run WHERE record_id=?`).get(rootId) as RunRow
   const latest = db()
-    .query('SELECT * FROM run WHERE id=? OR parent_run_id=? ORDER BY turn DESC,id DESC LIMIT 1')
+    .query(
+      `SELECT ${columns} FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY turn DESC,number DESC LIMIT 1`,
+    )
     .get(rootId, rootId) as RunRow
   return { root, latest }
 }
@@ -80,8 +86,8 @@ function sourceRun(runId: number): { root: RunRow; latest: RunRow } {
 export type OpenedLandingTree = { path: string; branch: string; tip: string }
 
 /** Settle a failed landing-tree row even when its project remover already removed the directory. */
-export function releaseFailedLandingTree(runId: number): void {
-  const recorded = db().query('SELECT worktree FROM run WHERE id=?').get(runId) as {
+export function releaseFailedLandingTree(runId: string): void {
+  const recorded = db().query('SELECT worktree FROM run WHERE record_id=?').get(runId) as {
     worktree: string | null
   }
   if (!recorded.worktree) return
@@ -91,7 +97,17 @@ export function releaseFailedLandingTree(runId: number): void {
   }
 }
 
-function resolveLandingTarget(runId: number, root: RunRow, latest: RunRow) {
+function recordLandingTreeFailure(recordId: string, startedAt: string, error: unknown): void {
+  db()
+    .query("UPDATE run SET status='failed',latency_ms=?,exit_code=1,error=? WHERE record_id=?")
+    .run(
+      Math.max(0, Date.now() - Date.parse(startedAt)),
+      String((error as Error)?.message ?? error),
+      recordId,
+    )
+}
+
+function resolveLandingTarget(runId: string, root: RunRow, latest: RunRow) {
   const project = projectAt(latest.cwd ?? root.launch_cwd ?? '')
   if (!project) {
     throw new Error(
@@ -112,7 +128,7 @@ function resolveLandingTarget(runId: number, root: RunRow, latest: RunRow) {
   if (!branch) throw new Error(`run ${runId}: conversation branch resolution failed`)
   const liveTip = gitContext(project.path, 'rev-parse', '--verify', `refs/heads/${branch}^{commit}`)
   const plan = resumeTreePlan({
-    rootId: root.id,
+    rootId: root.record_id,
     branch,
     recordedTreeMatches: false,
     hasCreate: false,
@@ -133,8 +149,8 @@ function resolveLandingTarget(runId: number, root: RunRow, latest: RunRow) {
   return { project, branch, plan }
 }
 
-export function openLandingTree(runId: number, seed?: string): OpenedLandingTree {
-  const { root, latest } = sourceRun(runId),
+export function openLandingTree(runId: string, seed?: string): OpenedLandingTree {
+  const { root, latest } = landingTreeSourceRun(runId),
     { project, branch, plan } = resolveLandingTarget(runId, root, latest)
   const tool = resolvedWorktreeTool(project)
   const lifecycle = resolveWorktreeLifecycle(tool)
@@ -173,12 +189,13 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
   const prompt = `landing tree for run ${runId}`
   const inserted = db()
     .query(
-      `INSERT INTO run (record_id,started_at,agent,job,repo,project_record_id,cwd,prompt_sha,prompt_bytes,prompt_head,status,
+      `INSERT INTO run (record_id,number,started_at,agent,job,repo,project_record_id,cwd,prompt_sha,prompt_bytes,prompt_head,status,
         session_id,launch_cwd,launch_key,launch_base,launch_seed,stack,evidence_excluded,pid)
-       VALUES (?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?) RETURNING id`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?) RETURNING record_id`,
     )
     .get(
       newRecordId(),
+      nextRunNumber(db()),
       startedAt,
       LANDING_TREE_AGENT,
       LANDING_TREE_JOB,
@@ -196,7 +213,7 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
       stackAt(project.path),
       LANDING_TREE_EVIDENCE_EXCLUSION,
       process.pid,
-    ) as { id: number }
+    ) as { record_id: string }
 
   const record = (created: Worktree) =>
     writeTransaction(() => {
@@ -204,7 +221,7 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
         .query(
           `UPDATE run SET cwd=?,worktree=?,branch=?,minted_branch=NULL,base_commit=?,worktree_source=?,
                   resource_teardown=CASE WHEN ?='recipe' THEN 'pending' ELSE resource_teardown END
-           WHERE id=?`,
+           WHERE record_id=?`,
         )
         .run(
           created.path,
@@ -213,25 +230,25 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
           plan.tip,
           created.source ?? null,
           created.source ?? null,
-          inserted.id,
+          inserted.record_id,
         )
       recordCreatedWorktreeClaims(db(), {
-        rootRunId: inserted.id,
-        runId: inserted.id,
+        rootRunId: inserted.record_id,
+        runId: inserted.record_id,
         projectId: project.recordId,
         owned: true,
         path: created.path,
         head: plan.tip,
         mintedBranch: null,
-        label: String(inserted.id),
+        label: String(inserted.record_id),
         claimedAt: nowIso(),
       })
     })
   const recordRecipeResource: RecordRecipeResource = (resource) =>
     writeTransaction(() =>
       recordDatabaseClaim(db(), {
-        rootRunId: inserted.id,
-        runId: inserted.id,
+        rootRunId: inserted.record_id,
+        runId: inserted.record_id,
         projectId: project.recordId,
         claimedAt: nowIso(),
         provider: resource.provider,
@@ -241,8 +258,8 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
   const claimRecipeServePort = () =>
     writeTransaction(() =>
       claimRecipePort(db(), {
-        rootRunId: inserted.id,
-        runId: inserted.id,
+        rootRunId: inserted.record_id,
+        runId: inserted.record_id,
         projectId: project.recordId,
         claimedAt: nowIso(),
         band: RECIPE_PORT_BAND,
@@ -261,7 +278,7 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
         tool,
         cwd: project.path,
         mainProjectPath: project.path,
-        runId: inserted.id,
+        runId: inserted.record_id,
         writes: true,
         readOnlyBase: plan.tip,
         seed: effectiveSeed,
@@ -282,8 +299,8 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
     const actualBranch = branchOf(created.path)
     const actualTip = gitContext(created.path, 'rev-parse', '--verify', 'HEAD^{commit}')
     const recorded = db()
-      .query('SELECT worktree,branch,base_commit,minted_branch FROM run WHERE id=?')
-      .get(inserted.id) as {
+      .query('SELECT worktree,branch,base_commit,minted_branch FROM run WHERE record_id=?')
+      .get(inserted.record_id) as {
       worktree: string | null
       branch: string | null
       base_commit: string | null
@@ -296,26 +313,20 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
       recorded.branch !== branch ||
       recorded.base_commit !== plan.tip ||
       recorded.minted_branch !== null ||
-      inspectTreeOwnership(created.path, project.path, [inserted.id]) !== 'owned'
+      inspectTreeOwnership(created.path, project.path, [inserted.record_id]) !== 'owned'
     ) {
       throw new Error(
-        `landing tree postcondition failed: expected ${branch} at ${plan.tip} with run ${inserted.id} ownership`,
+        `landing tree postcondition failed: expected ${branch} at ${plan.tip} with run ${inserted.record_id} ownership`,
       )
     }
     db()
-      .query("UPDATE run SET status='ok',latency_ms=?,exit_code=0 WHERE id=?")
-      .run(Math.max(0, Date.now() - Date.parse(startedAt)), inserted.id)
+      .query("UPDATE run SET status='ok',latency_ms=?,exit_code=0 WHERE record_id=?")
+      .run(Math.max(0, Date.now() - Date.parse(startedAt)), inserted.record_id)
     return { path: created.path, branch, tip: plan.tip }
   } catch (error) {
-    db()
-      .query("UPDATE run SET status='failed',latency_ms=?,exit_code=1,error=? WHERE id=?")
-      .run(
-        Math.max(0, Date.now() - Date.parse(startedAt)),
-        String((error as Error)?.message ?? error),
-        inserted.id,
-      )
+    recordLandingTreeFailure(inserted.record_id, startedAt, error)
     try {
-      releaseFailedLandingTree(inserted.id)
+      releaseFailedLandingTree(inserted.record_id)
     } catch (cleanupError) {
       throw new Error(
         `${String((error as Error)?.message ?? error)}; ${String((cleanupError as Error)?.message ?? cleanupError)}`,

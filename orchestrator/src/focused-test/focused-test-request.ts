@@ -86,7 +86,7 @@ function clearExecution(scratchDir: string, execution: FocusedTestRequest): void
 }
 
 function formatResult(
-  runId: number,
+  runId: string,
   scratchDir: string,
   result: ReturnType<typeof parseFocusedTestResult>,
 ) {
@@ -150,7 +150,7 @@ function admitFocusedTestExecution(
 }
 
 async function waitForFocusedTestExecution(input: {
-  runId: number
+  runId: string
   scratchDir: string
   signal: AbortSignal
   execution: FocusedTestRequest
@@ -191,7 +191,7 @@ async function waitForFocusedTestExecution(input: {
 
 export async function requestFocusedTests(
   input: {
-    runId: number
+    runId: string
     scratchDir: string
     paths: string[]
     signal: AbortSignal

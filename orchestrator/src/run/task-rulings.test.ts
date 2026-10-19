@@ -9,7 +9,7 @@ import {
 
 const row = (overrides: Partial<TaskRulingRow> = {}): TaskRulingRow => ({
   question_id: 1,
-  run_id: 10,
+  run_record_id: '10',
   question: 'Which way?',
   answer: 'Use the settled way.',
   answered_at: '2026-09-20T12:00:00.000Z',

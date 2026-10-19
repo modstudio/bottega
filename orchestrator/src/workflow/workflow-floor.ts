@@ -54,7 +54,7 @@ export type ArtifactRef =
   | { kind: 'probe'; id: number }
   | { kind: 'exec'; id: number }
   | { kind: 'doc'; id: number }
-  | { kind: 'run'; id: number }
+  | { kind: 'run'; id: string }
   | { kind: 'attached-text'; id: number }
   | { kind: 'id'; id: number }
 
@@ -70,8 +70,8 @@ type ValidatedSatisfy =
     }
 
 export type ValidatedEvidence = {
-  runOffered?: number
-  artifactRunOffered?: number
+  runOffered?: string | number
+  artifactRunOffered?: string
   ruling?: {
     id: number
     answered: boolean
@@ -92,7 +92,7 @@ export type ValidatedEvidence = {
     project: string | null
     commit: string | null
   }
-  run?: { id: number; terminal: boolean; exitCode: number | null }
+  run?: { id: string; terminal: boolean; exitCode: number | null }
   probe?: { id: number; exitCode: number }
   exec?: {
     id: number
@@ -163,8 +163,8 @@ export function parseArtifactRef(value: string): ArtifactRef | { error: string }
   if (exec) return { kind: 'exec', id: Number(exec[1]) }
   const doc = /^doc:(\d+)$/i.exec(trimmed)
   if (doc) return { kind: 'doc', id: Number(doc[1]) }
-  const run = /^run:(\d+)$/i.exec(trimmed)
-  if (run) return { kind: 'run', id: Number(run[1]) }
+  const run = /^run:(\S+)$/i.exec(trimmed)
+  if (run) return { kind: 'run', id: run[1]! }
   const attachedText = /^attached-text:(\d+)$/i.exec(trimmed)
   if (attachedText) return { kind: 'attached-text', id: Number(attachedText[1]) }
   if (/^\d+$/.test(trimmed)) return { kind: 'id', id: Number(trimmed) }

@@ -210,7 +210,7 @@ function lockHolderPids(checkout: string): ConfinementLockHolder[] {
 
 function sessionForPid(database: Database, pid: number): string | null {
   const row = database
-    .query(`SELECT session_id FROM run WHERE pid=? OR agent_pid=? ORDER BY id DESC LIMIT 1`)
+    .query(`SELECT session_id FROM run WHERE pid=? OR agent_pid=? ORDER BY number DESC LIMIT 1`)
     .get(pid, pid) as { session_id: string | null } | null
   return row?.session_id ?? null
 }

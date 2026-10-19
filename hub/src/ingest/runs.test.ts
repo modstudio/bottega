@@ -19,8 +19,8 @@ beforeAll(resetFixtureStore)
 const ref = (id: number) => `orch:${fixtureRecordId(id)}`
 const turnRef = (root: number, turn: number) => `${ref(root)}:turn:${fixtureRecordId(turn)}`
 const identityMap = (run: ReturnType<typeof runFixture>) => [
-  { id: run.id, record_id: run.record_id },
-  ...(run.turns ?? []).map((turn) => ({ id: turn.id, record_id: turn.record_id })),
+  { number: run.number, record_id: run.record_id },
+  ...(run.turns ?? []).map((turn) => ({ number: turn.number, record_id: turn.record_id })),
 ]
 
 describe('run ingest', () => {
@@ -145,7 +145,7 @@ describe('run ingest', () => {
         {
           id: 8001,
           record_id: '00000000-0000-4000-8000-000000008001',
-          run_id: null,
+          run_number: null,
           run_record_id: null,
           workflow_cursor_id: 7001,
           workflow_key: 'DEV-964',
@@ -295,7 +295,7 @@ describe('run ingest', () => {
     await ingestRunFixtures(
       runFixture({
         id: 9105,
-        retry_of: 9104,
+        retry_record_id: fixtureRecordId(9104),
         started_at: '2026-09-03T00:01:00.000Z',
       }),
     )
@@ -329,7 +329,7 @@ describe('run ingest', () => {
     await ingestRunFixtures(
       runFixture({
         id: 9108,
-        retry_of: 9107,
+        retry_record_id: fixtureRecordId(9107),
         started_at: '2026-09-03T00:01:00.000Z',
       }),
     )
@@ -608,7 +608,7 @@ describe('run ingest', () => {
           id: 3,
           question_id: 50,
           question_record_id: base.questions[0]!.record_id,
-          run_id: null,
+          run_number: null,
           run_record_id: null,
           mode: 'record-only' as const,
           outcome: 'delivered' as const,
@@ -709,7 +709,7 @@ describe('run ingest', () => {
     )
     const beforeQuestions = (db().query(`SELECT COUNT(*) n FROM question`).get() as { n: number }).n
 
-    await expect(ingestStdout('{"probe":1}\n')).rejects.toThrow('line 1 missing id')
+    await expect(ingestStdout('{"probe":1}\n')).rejects.toThrow('line 1 missing number')
     expect(collectRunsAt()).toBe(prior)
     expect((db().query(`SELECT COUNT(*) n FROM question`).get() as { n: number }).n).toBe(
       beforeQuestions,
@@ -787,7 +787,7 @@ describe('run ingest', () => {
     expect(db().query(`SELECT 1 FROM question WHERE question_id = 72`).get()).toBeNull()
   })
 
-  test('a run_id outside the published root and turns refuses the batch', async () => {
+  test('a run_number outside the published root and turns refuses the batch', async () => {
     const prior = collectRunsAt()
     await expect(
       ingestRunFixtures(
@@ -798,7 +798,7 @@ describe('run ingest', () => {
           ],
         }),
       ),
-    ).rejects.toThrow('line 1 missing questions[0].run_id')
+    ).rejects.toThrow('line 1 missing questions[0].run_record_id')
     expect(collectRunsAt()).toBe(prior)
     expect(db().query(`SELECT 1 FROM question WHERE question_id = 73`).get()).toBeNull()
   })

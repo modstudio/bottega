@@ -25,7 +25,7 @@ export type ContentionWrite = {
   eventKind: EventKind
   durationMs?: number | null
   cause?: string | null
-  runId?: number | null
+  runId?: string | null
   landingId?: number | null
 }
 
@@ -79,7 +79,7 @@ export function insertContention(d: Database, row: ContentionWrite): void {
   const inserted = d
     .query(
       `INSERT INTO contention
-         (record_id, at, session_id, resource_kind, resource_key, event_kind, duration_ms, cause, run_id, landing_id)
+         (record_id, at, session_id, resource_kind, resource_key, event_kind, duration_ms, cause, run_record_id, landing_id)
        VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING id`,
     )
     .get(

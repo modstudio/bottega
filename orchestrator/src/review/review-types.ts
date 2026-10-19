@@ -79,7 +79,7 @@ export type ReviewListRow = {
 
 export type ReviewReadLens = ReviewCoverageInput['lenses'][number] & {
   id: number
-  runId: number
+  runId: string
   agent: string
   model: string | null
   treeInspected: string | null
@@ -91,7 +91,7 @@ export type ReviewReadLens = ReviewCoverageInput['lenses'][number] & {
 }
 
 export type RunRow = {
-  id: number
+  record_id: string
   agent: string
   model: string | null
   lens: string | null

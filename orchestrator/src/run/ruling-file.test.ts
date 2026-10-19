@@ -25,7 +25,7 @@ afterEach(() => {
 })
 
 function addAnsweredQuestion(
-  runId: number,
+  runId: string,
   question = 'Which shape?',
   extras: {
     answer?: string
@@ -39,7 +39,7 @@ function addAnsweredQuestion(
     db()
       .query(
         `INSERT INTO question
-          (record_id,run_id,asked_at,question,answer,answered_at,answered_by,answerer_kind,answer_channel)
+          (record_id,run_record_id,asked_at,question,answer,answered_at,answered_by,answerer_kind,answer_channel)
          VALUES ('${newRecordId()}',?,'2026-09-20',?,?, '2026-09-21',?,?, 'cli')
          RETURNING id`,
       )
@@ -62,7 +62,7 @@ function addAnsweredQuestion(
       .run(extras.overturned.reason, extras.overturned.replacement, id)
   }
   if (extras.launchKey)
-    db().query('UPDATE run SET launch_key=? WHERE id=?').run(extras.launchKey, runId)
+    db().query('UPDATE run SET launch_key=? WHERE record_id=?').run(extras.launchKey, runId)
   return id
 }
 
@@ -176,7 +176,7 @@ describe('file ruling', () => {
       session: 'owner-session',
       repo: PLATFORM_SLUG,
     })
-    db().query('UPDATE run SET launch_key=? WHERE id=?').run('DEV-963', run)
+    db().query('UPDATE run SET launch_key=? WHERE record_id=?').run('DEV-963', run)
     const questionId = addAnsweredQuestion(run, 'Which shape should this take?')
     const writes: unknown[] = []
     const result = await file(
@@ -310,7 +310,7 @@ describe('file ruling', () => {
     const questionId = (
       db()
         .query(
-          `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',?,'2026-09-20','Which?')
+          `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,'2026-09-20','Which?')
            RETURNING id`,
         )
         .get(run) as { id: number }

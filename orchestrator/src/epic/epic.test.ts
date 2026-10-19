@@ -7,7 +7,7 @@ import { reapStale } from '../run/run-liveness.ts'
 import { epicChildren, epicScoreboard } from './epic.ts'
 
 const intervalOrigin = Date.parse('2026-09-08T10:00:00.000Z')
-function timedRun(key: string, startOffsetMs: number, latency: number): number {
+function timedRun(key: string, startOffsetMs: number, latency: number): string {
   const run = addRun({
     agent: 'codex',
     job: 'implement',
@@ -15,7 +15,7 @@ function timedRun(key: string, startOffsetMs: number, latency: number): number {
     latency,
     startedAt: new Date(intervalOrigin + startOffsetMs).toISOString(),
   })
-  db().query('UPDATE run SET launch_key=? WHERE id=?').run(key, run)
+  db().query('UPDATE run SET launch_key=? WHERE record_id=?').run(key, run)
   return run
 }
 const intervalScore = (...keys: string[]) =>
@@ -38,7 +38,7 @@ describe('epic scoreboard', () => {
     })
     db()
       .query(`UPDATE run SET launch_key='DEV-501',branch='DEV-501-orch-1',vendor_tokens=NULL,
-      vendor_cost_usd=NULL,last_event_at='2026-09-08T10:01:00.000Z' WHERE id=?`)
+      vendor_cost_usd=NULL,last_event_at='2026-09-08T10:01:00.000Z' WHERE record_id=?`)
       .run(first)
     const continued = addRun({
       agent: 'codex',
@@ -51,7 +51,7 @@ describe('epic scoreboard', () => {
     })
     db()
       .query(`UPDATE run SET launch_key=NULL,branch='repair/DEV-501-drift',vendor_tokens=1200,
-      vendor_cost_usd=0,last_event_at='2026-09-08T10:01:30.000Z' WHERE id=?`)
+      vendor_cost_usd=0,last_event_at='2026-09-08T10:01:30.000Z' WHERE record_id=?`)
       .run(continued)
     const lens = addRun({
       agent: 'grok',
@@ -62,7 +62,7 @@ describe('epic scoreboard', () => {
     })
     db()
       .query(`UPDATE run SET launch_key='DEV-501',branch='DEV-501-orch-1',vendor_tokens=500,
-      vendor_cost_usd=0.25,last_event_at='2026-09-08T10:05:20.000Z' WHERE id=?`)
+      vendor_cost_usd=0.25,last_event_at='2026-09-08T10:05:20.000Z' WHERE record_id=?`)
       .run(lens)
     const ghost = addRun({
       agent: 'codex',
@@ -72,7 +72,7 @@ describe('epic scoreboard', () => {
     })
     db()
       .query(`UPDATE run SET launch_key='DEV-501',branch='DEV-501-orch-1',latency_ms=NULL,
-      last_event_at='2026-09-08T08:30:00.000Z',agent_pid=4194304 WHERE id=?`)
+      last_event_at='2026-09-08T08:30:00.000Z',agent_pid=4194304 WHERE record_id=?`)
       .run(ghost)
     db()
       .query(`INSERT INTO review (record_id,recorded_at,completed_at,outdated_at,outdated_reason)
@@ -83,7 +83,7 @@ describe('epic scoreboard', () => {
     )
     db()
       .query(`INSERT INTO review_lens
-      (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+      (record_id,review_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
       VALUES (?,?,?,'correctness','grok','[]','[]','[]','[]')`)
       .run(newRecordId(), reviewId, lens)
     db()
@@ -160,7 +160,7 @@ describe('epic scoreboard', () => {
     })
     expect(reapStale(db())).toBe(1)
     expect(
-      db().query('SELECT status,failure_kind,latency_ms FROM run WHERE id=?').get(ghost),
+      db().query('SELECT status,failure_kind,latency_ms FROM run WHERE record_id=?').get(ghost),
     ).toEqual({
       status: 'stale',
       failure_kind: 'interrupted',
@@ -251,7 +251,7 @@ describe('epic scoreboard', () => {
   test('negative latency uses one clamped run end for occupancy and idle', () => {
     const run = timedRun('DEV-NEGATIVE', 0, -60_000)
     db()
-      .query('UPDATE run SET last_event_at=? WHERE id=?')
+      .query('UPDATE run SET last_event_at=? WHERE record_id=?')
       .run(new Date(intervalOrigin - 60_000).toISOString(), run)
     expect(intervalScore('DEV-NEGATIVE').children[0]).toMatchObject({
       agentTimeMs: 0,
@@ -273,7 +273,7 @@ describe('epic scoreboard', () => {
     })
     db()
       .query(
-        `UPDATE run SET launch_key='DEV-TZ',last_event_at='2026-09-08T10:01:00.000Z' WHERE id=?`,
+        `UPDATE run SET launch_key='DEV-TZ',last_event_at='2026-09-08T10:01:00.000Z' WHERE record_id=?`,
       )
       .run(run)
     const previous = process.env.TZ

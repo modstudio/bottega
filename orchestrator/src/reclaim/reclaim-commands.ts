@@ -3,6 +3,8 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
+import { db } from '../database/db.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { reclaimBranch, reclaimWorktree } from './reclaim.ts'
 import { type ResidueKind, reclaimResidue } from './reclaim-residue.ts'
 
@@ -47,7 +49,11 @@ function reclaimFixtureQuestionsCommand(
 function reclaimNamed(kind: string, subject: string, dryRun: boolean) {
   if (kind === 'worktree') return reclaimWorktree(subject, { dryRun })
   if (kind === 'branch') return reclaimBranch(subject, { dryRun })
-  return reclaimResidue(kind as ResidueKind, subject, { dryRun })
+  const match = /^([^:]+):(.+)$/.exec(subject)
+  const resolved = match
+    ? `${match[1]}:${resolveRunIdentifier(db(), match[2]!)}`
+    : resolveRunIdentifier(db(), subject)
+  return reclaimResidue(kind as ResidueKind, resolved, { dryRun })
 }
 
 export function reclaimCommand(

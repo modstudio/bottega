@@ -20,7 +20,7 @@ test('hook-tree seed request carries the command-line seed', () => {
 test('tree remove directs an ordinary run through close-out', () => {
   const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const path = `/no-such-ordinary-tree-${id}`
-  db().query('UPDATE run SET worktree=?, cwd=? WHERE id=?').run(path, path, id)
+  db().query('UPDATE run SET worktree=?, cwd=? WHERE record_id=?').run(path, path, id)
 
   expect(() => removeHookTree(path)).toThrow(`${PLATFORM_SLUG} run close-out ${id}`)
 })

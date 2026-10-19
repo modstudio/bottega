@@ -58,8 +58,8 @@ export function claimKindForCreation(creation: ResourceCreation): ResourceClaimK
 }
 
 export function claimCreationDecision(
-  existingRootRunId: number | null,
-  requestedRootRunId: number,
+  existingRootRunId: string | null,
+  requestedRootRunId: string,
 ): 'record' | 'duplicate' | 'collision' {
   if (existingRootRunId === null) return 'record'
   return existingRootRunId === requestedRootRunId ? 'duplicate' : 'collision'
@@ -96,8 +96,8 @@ export function indexAllocation(
 
 export function stringClaimDecision(
   existingValue: string | null,
-  heldByRootRunId: number | null,
-  requestedRootRunId: number,
+  heldByRootRunId: string | null,
+  requestedRootRunId: string,
 ): 'reuse' | 'claim' | 'collision' {
   if (existingValue !== null) return 'reuse'
   if (heldByRootRunId === null) return 'claim'
@@ -168,8 +168,8 @@ export function sandboxDirectoryRelease(
 }
 
 type ClaimIdentity = {
-  rootRunId: number
-  runId: number
+  rootRunId: string
+  runId: string
   projectId: string | null
 }
 
@@ -185,16 +185,16 @@ function insertClaim(
 ): 'recorded' | 'duplicate' | 'collision' {
   const existing = database
     .query(
-      `SELECT root_run_id FROM resource_claim
+      `SELECT root_run_record_id FROM resource_claim
        WHERE kind=? AND allocation_key=? AND state='claimed'`,
     )
-    .get(claim.kind, claim.allocationKey) as { root_run_id: number } | null
-  const decision = claimCreationDecision(existing?.root_run_id ?? null, claim.rootRunId)
+    .get(claim.kind, claim.allocationKey) as { root_run_record_id: string } | null
+  const decision = claimCreationDecision(existing?.root_run_record_id ?? null, claim.rootRunId)
   if (decision !== 'record') return decision
   database
     .query(
       `INSERT INTO resource_claim
-       (record_id,root_run_id,run_id,project_record_id,kind,allocation_key,identity,label,state,claimed_at)
+       (record_id,root_run_record_id,run_record_id,project_record_id,kind,allocation_key,identity,label,state,claimed_at)
        VALUES (?,?,?,?,?,?,?,?,'claimed',?)`,
     )
     .run(
@@ -250,7 +250,7 @@ export function claimRecipePort(
   const existing = database
     .query(
       `SELECT allocation_key FROM resource_claim
-       WHERE root_run_id=? AND kind='port' AND state='claimed'
+       WHERE root_run_record_id=? AND kind='port' AND state='claimed'
          AND ${nameFilter}
        ORDER BY id DESC LIMIT 1`,
     )
@@ -274,7 +274,7 @@ export function claimRecipePort(
       database
         .query(
           `INSERT INTO resource_claim
-           (record_id,root_run_id,run_id,project_record_id,kind,allocation_key,identity,label,state,claimed_at)
+           (record_id,root_run_record_id,run_record_id,project_record_id,kind,allocation_key,identity,label,state,claimed_at)
            VALUES (?,?,?,?,'port',?,?,?,'claimed',?)`,
         )
         .run(
@@ -322,7 +322,7 @@ export function claimIndex(
   const existing = database
     .query(
       `SELECT allocation_key FROM resource_claim
-       WHERE root_run_id=? AND project_record_id=? AND kind='index' AND state='claimed'
+       WHERE root_run_record_id=? AND project_record_id=? AND kind='index' AND state='claimed'
        ORDER BY id DESC LIMIT 1`,
     )
     .get(input.rootRunId, input.projectId) as { allocation_key: string } | null
@@ -344,7 +344,7 @@ export function claimIndex(
       database
         .query(
           `INSERT INTO resource_claim
-           (record_id,root_run_id,run_id,project_record_id,kind,allocation_key,identity,label,state,claimed_at)
+           (record_id,root_run_record_id,run_record_id,project_record_id,kind,allocation_key,identity,label,state,claimed_at)
            VALUES (?,?,?,?,'index',?,?,?,'claimed',?)`,
         )
         .run(
@@ -374,7 +374,7 @@ export function claimString(
   const existing = database
     .query(
       `SELECT allocation_key FROM resource_claim
-       WHERE root_run_id=? AND project_record_id=? AND kind='string' AND state='claimed'
+       WHERE root_run_record_id=? AND project_record_id=? AND kind='string' AND state='claimed'
          AND json_extract(identity,'$.name')=?
        ORDER BY id DESC LIMIT 1`,
     )
@@ -385,22 +385,26 @@ export function claimString(
   const allocationKey = `string:${input.projectId}:${input.value}`
   const holder = database
     .query(
-      `SELECT root_run_id FROM resource_claim
+      `SELECT root_run_record_id FROM resource_claim
        WHERE kind='string' AND allocation_key=? AND state='claimed'`,
     )
-    .get(allocationKey) as { root_run_id: number } | null
-  const decision = stringClaimDecision(existingValue, holder?.root_run_id ?? null, input.rootRunId)
+    .get(allocationKey) as { root_run_record_id: string } | null
+  const decision = stringClaimDecision(
+    existingValue,
+    holder?.root_run_record_id ?? null,
+    input.rootRunId,
+  )
   if (decision === 'reuse') return existingValue ?? input.value
   if (decision === 'collision') {
     throw new Error(
-      `string allocation "${input.name}" value "${input.value}" is held by run ${holder!.root_run_id}; include {index} in its template`,
+      `string allocation "${input.name}" value "${input.value}" is held by run ${holder!.root_run_record_id}; include {index} in its template`,
     )
   }
   try {
     database
       .query(
         `INSERT INTO resource_claim
-         (record_id,root_run_id,run_id,project_record_id,kind,allocation_key,identity,label,state,claimed_at)
+         (record_id,root_run_record_id,run_record_id,project_record_id,kind,allocation_key,identity,label,state,claimed_at)
          VALUES (?,?,?,?,'string',?,?,?,'claimed',?)`,
       )
       .run(
@@ -419,12 +423,12 @@ export function claimString(
       throw error
     const collided = database
       .query(
-        `SELECT root_run_id FROM resource_claim
+        `SELECT root_run_record_id FROM resource_claim
          WHERE kind='string' AND allocation_key=? AND state='claimed'`,
       )
-      .get(allocationKey) as { root_run_id: number }
+      .get(allocationKey) as { root_run_record_id: string }
     throw new Error(
-      `string allocation "${input.name}" value "${input.value}" is held by run ${collided.root_run_id}; include {index} in its template`,
+      `string allocation "${input.name}" value "${input.value}" is held by run ${collided.root_run_record_id}; include {index} in its template`,
     )
   }
 }
@@ -442,7 +446,7 @@ export function claimDatabaseName(
   const existing = database
     .query(
       `SELECT allocation_key FROM resource_claim
-       WHERE root_run_id=? AND project_record_id=? AND kind='database' AND state='claimed'
+       WHERE root_run_record_id=? AND project_record_id=? AND kind='database' AND state='claimed'
          AND json_extract(CASE WHEN json_valid(identity) THEN identity END,'$.name')=?
        ORDER BY id DESC LIMIT 1`,
     )
@@ -452,22 +456,26 @@ export function claimDatabaseName(
   const allocationKey = `${input.engine}:${input.value}`
   const holder = database
     .query(
-      `SELECT root_run_id FROM resource_claim
+      `SELECT root_run_record_id FROM resource_claim
        WHERE kind='database' AND allocation_key=? AND state='claimed'`,
     )
-    .get(allocationKey) as { root_run_id: number } | null
-  const decision = stringClaimDecision(existingValue, holder?.root_run_id ?? null, input.rootRunId)
+    .get(allocationKey) as { root_run_record_id: string } | null
+  const decision = stringClaimDecision(
+    existingValue,
+    holder?.root_run_record_id ?? null,
+    input.rootRunId,
+  )
   if (decision === 'reuse') return existingValue ?? input.value
   if (decision === 'collision') {
     throw new Error(
-      `database allocation "${input.name}" value "${input.value}" is held by run ${holder!.root_run_id}; include {index} in its template`,
+      `database allocation "${input.name}" value "${input.value}" is held by run ${holder!.root_run_record_id}; include {index} in its template`,
     )
   }
   try {
     database
       .query(
         `INSERT INTO resource_claim
-         (record_id,root_run_id,run_id,project_record_id,kind,allocation_key,identity,label,state,claimed_at)
+         (record_id,root_run_record_id,run_record_id,project_record_id,kind,allocation_key,identity,label,state,claimed_at)
          VALUES (?,?,?,?,'database',?,?,?,'claimed',?)`,
       )
       .run(
@@ -487,12 +495,12 @@ export function claimDatabaseName(
     }
     const collided = database
       .query(
-        `SELECT root_run_id FROM resource_claim
+        `SELECT root_run_record_id FROM resource_claim
          WHERE kind='database' AND allocation_key=? AND state='claimed'`,
       )
-      .get(allocationKey) as { root_run_id: number }
+      .get(allocationKey) as { root_run_record_id: string }
     throw new Error(
-      `database allocation "${input.name}" value "${input.value}" is held by run ${collided.root_run_id}; include {index} in its template`,
+      `database allocation "${input.name}" value "${input.value}" is held by run ${collided.root_run_record_id}; include {index} in its template`,
     )
   }
 }
@@ -510,11 +518,11 @@ export function releaseRecipeAllocationClaims(
   }
 }
 
-export function recipePortClaimForRun(database: Database, runId: number): number | null {
+export function recipePortClaimForRun(database: Database, runId: string): number | null {
   const claim = database
     .query(
       `SELECT allocation_key FROM resource_claim
-       WHERE root_run_id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)
+       WHERE root_run_record_id=(SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?)
          AND kind='port'
        ORDER BY id DESC LIMIT 1`,
     )
@@ -587,7 +595,7 @@ export function recordRetainedRefClaim(
 export function settleClaims(
   database: Database,
   input: {
-    rootRunId: number
+    rootRunId: string
     kind: ResourceClaimKind
     state: Exclude<ResourceClaimState, 'claimed'>
     settledAt: string
@@ -598,7 +606,7 @@ export function settleClaims(
   const settled = database
     .query(
       `UPDATE resource_claim SET state=?, settled_at=?, settled_detail=?
-       WHERE root_run_id=? AND kind=?
+       WHERE root_run_record_id=? AND kind=?
          AND (state='claimed' OR (?='released' AND state='retained'))
          AND (? IS NULL OR allocation_key=?)`,
     )
@@ -618,7 +626,7 @@ export function settleClaims(
       database
         .query(
           `UPDATE resource_claim SET state=?, settled_at=?, settled_detail=?
-           WHERE root_run_id=? AND kind IN ('port','index','string') AND state='claimed'`,
+           WHERE root_run_record_id=? AND kind IN ('port','index','string') AND state='claimed'`,
         )
         .run(
           allocationState,
@@ -654,7 +662,7 @@ function claimedClaimsOnTerminalConversations(
   return database
     .query(
       `SELECT resource_claim.kind, COUNT(*) count
-       FROM resource_claim JOIN run ON run.id=resource_claim.root_run_id
+       FROM resource_claim JOIN run ON run.record_id=resource_claim.root_run_record_id
        WHERE resource_claim.state='claimed' AND run.status IN ('ok','failed','stale','stopped')
          AND run.job NOT IN (?,?,?)
        GROUP BY resource_claim.kind ORDER BY resource_claim.kind`,

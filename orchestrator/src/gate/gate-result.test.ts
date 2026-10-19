@@ -15,24 +15,24 @@ const readerPath = fileURLToPath(new URL('../../..', import.meta.url)).replace(/
 const otherPath = `${readerPath}/orchestrator`
 const unregisteredCwd = '/unregistered/gate-cwd'
 
-function insertProject(name: string, path: string): number {
+function insertProject(name: string, path: string): string {
   return (
     db()
       .query(
         'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?) RETURNING record_id AS id',
       )
-      .get(name, path, 'bun', '{}') as { id: number }
+      .get(name, path, 'bun', '{}') as { id: string }
   ).id
 }
 
-function insertRun(projectId: number, job: string, headCommit: string): number {
+function insertRun(projectId: string, job: string, headCommit: string): string {
   const id = addRun({ agent: 'codex', job, status: 'running', headCommit })
-  db().query('UPDATE run SET project_record_id=? WHERE id=?').run(projectId, id)
+  db().query('UPDATE run SET project_record_id=? WHERE record_id=?').run(projectId, id)
   return id
 }
 
 function insertGate(input: {
-  runId: number | null
+  runId: string | null
   finishedAt: string
   exitCode: number
   headCommit: string
@@ -43,7 +43,7 @@ function insertGate(input: {
     db()
       .query(
         `INSERT INTO gate_execution
-          (record_id, run_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit,cwd)
+          (record_id, run_record_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit,cwd)
          VALUES ('${newRecordId()}', ?,?,?,?,0,1000,?,?,?) RETURNING id`,
       )
       .get(
@@ -68,7 +68,7 @@ test('recorded gate result is the most recent finished execution for the exact p
     id,
     projectId,
     headCommit,
-    runId: id + 100,
+    runId: `run-${id + 100}`,
     exitCode: 0,
     timedOut: false,
     elapsedMs: 20,

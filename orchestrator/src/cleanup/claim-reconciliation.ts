@@ -27,8 +27,8 @@ type ReconciledKind = (typeof RECONCILED_KINDS)[number]
 
 type ClaimedRow = {
   id: number
-  root_run_id: number
-  run_id: number
+  root_run_record_id: string
+  run_record_id: string
   project_record_id: string | null
   kind: ReconciledKind
   allocation_key: string
@@ -83,16 +83,16 @@ const defaultObservers = (trust: GrokTrustObservation): ClaimReconciliationObser
 function claimedRows(database: Database, projectName: string | undefined): ClaimedRow[] {
   return database
     .query(
-      `SELECT claim.id,claim.root_run_id,claim.run_id,claim.project_record_id,claim.kind,claim.allocation_key,
+      `SELECT claim.id,claim.root_run_record_id,claim.run_record_id,claim.project_record_id,claim.kind,claim.allocation_key,
               project.name project_name,project.path project_path,root.repo run_repo,
               root.cwd run_cwd,root.launch_cwd,root.worktree recorded_worktree,
               CASE WHEN claim.kind='worktree' THEN claim.allocation_key ELSE
                 (SELECT tree.allocation_key FROM resource_claim tree
-                 WHERE tree.root_run_id=claim.root_run_id AND tree.kind='worktree'
-                 ORDER BY CASE WHEN tree.run_id=claim.run_id THEN 0 ELSE 1 END,tree.id DESC LIMIT 1)
+                 WHERE tree.root_run_record_id=claim.root_run_record_id AND tree.kind='worktree'
+                 ORDER BY CASE WHEN tree.run_record_id=claim.run_record_id THEN 0 ELSE 1 END,tree.id DESC LIMIT 1)
               END worktree_path
        FROM resource_claim claim
-       JOIN run root ON root.id=claim.root_run_id
+       JOIN run root ON root.record_id=claim.root_run_record_id
        LEFT JOIN project ON project.record_id=claim.project_record_id
        WHERE claim.state='claimed'
          AND claim.kind IN ('branch','retained_ref','worktree','sandbox_dir','trust_entry')
@@ -188,11 +188,11 @@ function conversationFacts(
 ) {
   const turns = database
     .query(
-      `SELECT id,status,pid,agent_pid,branch_kept,branch_kept_tip FROM run
-       WHERE id=? OR parent_run_id=? ORDER BY id`,
+      `SELECT record_id,status,pid,agent_pid,branch_kept,branch_kept_tip FROM run
+       WHERE record_id=? OR parent_run_record_id=? ORDER BY number`,
     )
-    .all(row.root_run_id, row.root_run_id) as {
-    id: number
+    .all(row.root_run_record_id, row.root_run_record_id) as {
+    record_id: string
     status: string
     pid: number | null
     agent_pid: number | null
@@ -206,13 +206,15 @@ function conversationFacts(
           (turn) => turn.branch_kept && `refs/heads/${turn.branch_kept}` === row.allocation_key,
         )
       : []
-  const claimTurn = keptTurns.find((turn) => turn.id === row.run_id && turn.branch_kept_tip)
+  const claimTurn = keptTurns.find(
+    (turn) => turn.record_id === row.run_record_id && turn.branch_kept_tip,
+  )
   const tipTurn = claimTurn ?? keptTurns.findLast((turn) => turn.branch_kept_tip)
   return {
     allTurnsTerminal: turns.every((turn) => terminal.has(turn.status)),
     liveLeaseOrPid: turns.some(
       (turn) =>
-        observers.leaseState(turn.id) === 'held' ||
+        observers.leaseState(turn.record_id) === 'held' ||
         Boolean(turn.pid && observers.pidAlive(turn.pid)) ||
         Boolean(turn.agent_pid && observers.pidAlive(turn.agent_pid)),
     ),

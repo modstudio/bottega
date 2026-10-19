@@ -42,7 +42,7 @@ function answerRequest(scratchDir: string, request: { id: string }): void {
   )
 }
 
-function expectedResult(runId: number, scratchDir: string, request: { id: string }): string {
+function expectedResult(runId: string, scratchDir: string, request: { id: string }): string {
   return [
     'Focused tests exited 1 in 42ms.',
     `Full log: ${join(scratchDir, `focused-test-${request.id}.log`)}`,

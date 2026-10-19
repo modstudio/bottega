@@ -9,7 +9,7 @@ export type ComposeCommandPlan = {
   down: string[]
 }
 
-export function composeProjectName(projectName: string, rootRunId: number): string {
+export function composeProjectName(projectName: string, rootRunId: string): string {
   const prefix = projectName
     .toLowerCase()
     .replace(/[^a-z0-9_-]/g, '-')
@@ -20,7 +20,7 @@ export function composeProjectName(projectName: string, rootRunId: number): stri
 export function composeCommandPlan(input: {
   recipe: TrackedRecipe
   projectName: string
-  rootRunId: number
+  rootRunId: string
   mainComposeProjects: readonly string[]
 }): ComposeCommandPlan | null {
   const compose = input.recipe.compose

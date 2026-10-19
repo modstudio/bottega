@@ -33,10 +33,10 @@ test('persisting a board-bound prompt leaves the original prompt unchanged', () 
   const promptPath = join(directory, 'prompt.txt')
   writeFileSync(promptPath, 'original')
   const run = db()
-    .query<{ id: number }, []>(`INSERT INTO run
-    (record_id,started_at,agent,job,prompt_sha,spec_sha,prompt_bytes,prompt_head,status,turn)
-    VALUES (lower(hex(randomblob(4))) || '-0000-7000-8000-' || lower(hex(randomblob(6))),datetime('now'),'codex','implement','sha','spec',8,'head','running',1)
-    RETURNING id`)
+    .query<{ id: string }, []>(`INSERT INTO run
+    (record_id,number,started_at,agent,job,prompt_sha,spec_sha,prompt_bytes,prompt_head,status,turn)
+    VALUES (lower(hex(randomblob(4))) || '-0000-7000-8000-' || lower(hex(randomblob(6))),(SELECT COALESCE(MAX(number),0)+1 FROM run),datetime('now'),'codex','implement','sha','spec',8,'head','running',1)
+    RETURNING record_id AS id`)
     .get()!
   persistBoundPrompt(promptPath, 'original\n\nnotice', run.id)
   expect(readFileSync(promptPath, 'utf8')).toBe('original')
@@ -64,11 +64,11 @@ test('a dispatch-delivered notice is not returned by the worker pull path', asyn
   const run = db()
     .query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key)
-       VALUES ('${newRecordId()}',?,'codex','implement','dispatch-board-project','sha',1,'prompt','running','DEV-DISPATCH')
-       RETURNING id`,
+       (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','dispatch-board-project','sha',1,'prompt','running','DEV-DISPATCH')
+       RETURNING record_id AS id`,
     )
-    .get(new Date(clock).toISOString()) as { id: number }
+    .get(new Date(clock).toISOString()) as { id: string }
   const posted = postNotice(
     { audience: `run:${run.id}`, title: 'At dispatch', body: 'Delivered once.' },
     {},
@@ -83,10 +83,10 @@ test('a dispatch-delivered notice is not returned by the worker pull path', asyn
 test('dispatch and later-turn injection each combine hosted and local once with a refresh warning', async () => {
   const root = db()
     .query(
-      `INSERT INTO run(record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,turn)
-       VALUES ('${newRecordId()}',?,'codex','implement','prompt-project','sha',1,'prompt','running','DEV-968',1) RETURNING id`,
+      `INSERT INTO run(record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,turn)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','prompt-project','sha',1,'prompt','running','DEV-968',1) RETURNING record_id AS id`,
     )
-    .get('2026-10-05T11:00:00.000Z') as { id: number }
+    .get('2026-10-05T11:00:00.000Z') as { id: string }
   const hosted = (id = newRecordId()): HostedBoardMessage => ({
     id,
     kind: 'notice',

@@ -41,13 +41,15 @@ export const RUN_FOLLOW_TIMEOUT_MS = STALE_AFTER_MS + 60_000
  * an explicit terminal timestamp, a member without latency has no supportable
  * terminal time and returns null.
  */
-export function chainTerminationAt(database: Database, memberId: number): string | null {
-  const member = database.query('SELECT id, parent_run_id FROM run WHERE id=?').get(memberId) as {
-    id: number
-    parent_run_id: number | null
+export function chainTerminationAt(database: Database, memberId: string): string | null {
+  const member = database
+    .query('SELECT record_id, parent_run_record_id FROM run WHERE record_id=?')
+    .get(memberId) as {
+    record_id: string
+    parent_run_record_id: string | null
   } | null
   if (!member) return null
-  const rootId = member.parent_run_id ?? member.id
+  const rootId = member.parent_run_record_id ?? member.record_id
   return chainTerminationAtForRoot(database, rootId)
 }
 
@@ -81,59 +83,59 @@ export function chainTerminationAt(database: Database, memberId: number): string
  */
 function resolveRootFromLastTurnPreserving(
   database: Database,
-  rootId: number,
-  preserveFailureKindForTurnId: number | null,
+  rootId: string,
+  preserveFailureKindForTurnId: string | null,
 ): number {
   return database
     .query(
       `UPDATE run AS root
         SET status = (
           SELECT last.status FROM run last
-           WHERE last.id = root.id OR last.parent_run_id = root.id
-           ORDER BY last.turn DESC, last.id DESC
+           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
+           ORDER BY last.turn DESC, last.number DESC
            LIMIT 1
         ),
             error = (
           SELECT last.error FROM run last
-           WHERE last.id = root.id OR last.parent_run_id = root.id
-           ORDER BY last.turn DESC, last.id DESC
+           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
+           ORDER BY last.turn DESC, last.number DESC
            LIMIT 1
         ),
             failure_kind = (
           SELECT CASE
-                   WHEN last.id = ? OR last.status = 'stale' OR last.failure_kind = 'abandoned'
+                   WHEN last.record_id = ? OR last.status = 'stale' OR last.failure_kind = 'abandoned'
                      THEN root.failure_kind
                    ELSE last.failure_kind
                  END
             FROM run last
-           WHERE last.id = root.id OR last.parent_run_id = root.id
-           ORDER BY last.turn DESC, last.id DESC
+           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
+           ORDER BY last.turn DESC, last.number DESC
            LIMIT 1
         ),
             pre_confinement = (
           SELECT last.pre_confinement FROM run last
-           WHERE last.id = root.id OR last.parent_run_id = root.id
-           ORDER BY last.turn DESC, last.id DESC
+           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
+           ORDER BY last.turn DESC, last.number DESC
            LIMIT 1
         ),
             confinement = (
           SELECT last.confinement FROM run last
-           WHERE last.id = root.id OR last.parent_run_id = root.id
-           ORDER BY last.turn DESC, last.id DESC
+           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
+           ORDER BY last.turn DESC, last.number DESC
            LIMIT 1
         )
-      WHERE root.id = ?
-        AND root.parent_run_id IS NULL
+      WHERE root.record_id = ?
+        AND root.parent_run_record_id IS NULL
         AND root.status IN ('asking', 'ok', 'failed')
         AND NOT EXISTS (
-          SELECT 1 FROM question q JOIN run owner ON owner.id = q.run_id
-           WHERE (owner.id = root.id OR owner.parent_run_id = root.id)
+          SELECT 1 FROM question q JOIN run owner ON owner.record_id = q.run_record_id
+           WHERE (owner.record_id = root.record_id OR owner.parent_run_record_id = root.record_id)
              AND ${questionOpenSql('q')}
         )
         AND (
           SELECT last.status FROM run last
-           WHERE last.id = root.id OR last.parent_run_id = root.id
-           ORDER BY last.turn DESC, last.id DESC
+           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
+           ORDER BY last.turn DESC, last.number DESC
            LIMIT 1
         ) IN ('ok', 'failed', 'stale')`,
     )
@@ -142,8 +144,8 @@ function resolveRootFromLastTurnPreserving(
 
 export function rollUpRootAndEnqueue(
   database: Database,
-  rootId: number,
-  preserveFailureKindForTurnId: number | null,
+  rootId: string,
+  preserveFailureKindForTurnId: string | null,
   machine: string,
   finishedAt: string,
 ): number {
@@ -154,31 +156,31 @@ export function rollUpRootAndEnqueue(
 
 function rollUpReapedRoots(
   database: Database,
-  ended: number[],
-  setupDeathIds: Set<number>,
+  ended: string[],
+  setupDeathIds: Set<string>,
   machine: string,
   finishedAt: string,
 ): void {
   const roots = database
     .query(
-      `SELECT DISTINCT COALESCE(ended.parent_run_id, ended.id) AS id,
-        (SELECT last.id FROM run last
-          WHERE last.id = COALESCE(ended.parent_run_id, ended.id)
-             OR last.parent_run_id = COALESCE(ended.parent_run_id, ended.id)
-          ORDER BY last.turn DESC, last.id DESC LIMIT 1) AS last_id
-      FROM run ended WHERE ended.id IN (${ended.map(() => '?').join(',')})`,
+      `SELECT DISTINCT COALESCE(ended.parent_run_record_id, ended.record_id) AS root_record_id,
+        (SELECT last.record_id FROM run last
+          WHERE last.record_id = COALESCE(ended.parent_run_record_id, ended.record_id)
+             OR last.parent_run_record_id = COALESCE(ended.parent_run_record_id, ended.record_id)
+          ORDER BY last.turn DESC, last.number DESC LIMIT 1) AS last_record_id
+      FROM run ended WHERE ended.record_id IN (${ended.map(() => '?').join(',')})`,
     )
-    .all(...ended) as { id: number; last_id: number }[]
-  for (const { id, last_id } of roots) {
+    .all(...ended) as { root_record_id: string; last_record_id: string }[]
+  for (const { root_record_id, last_record_id } of roots) {
     writeTransaction(() => {
       rollUpRootAndEnqueue(
         database,
-        id,
-        preservedFailureKindTurnId(setupDeathIds, last_id),
+        root_record_id,
+        preservedFailureKindTurnId(setupDeathIds, last_record_id),
         machine,
         finishedAt,
       )
-      retireRunChainQuestionDeliveries(database, id, QUESTION_CLOSE_CHAIN_STALE)
+      retireRunChainQuestionDeliveries(database, root_record_id, QUESTION_CLOSE_CHAIN_STALE)
     }, database)
   }
 }
@@ -196,10 +198,10 @@ function rollUpReapedRoots(
  * Returns how many were swept. Called opportunistically on open: cheap, and it
  * means no separate cron has to remember.
  */
-export type ObservedDeadRun = { id: number; reason: string }
+export type ObservedDeadRun = { record_id: string; reason: string }
 
 type RunningRow = {
-  id: number
+  number: number
   record_id: string
   pid: number | null
   agent_pid: number | null
@@ -208,19 +210,19 @@ type RunningRow = {
 }
 
 function deadRunReason(row: RunningRow): string {
-  if (runLeaseState(row.id) === 'free') return `run lease ${row.id} is free`
+  if (runLeaseState(row.record_id) === 'free') return `run lease ${row.number} is free`
   if (row.pid) return `pid ${row.pid} is not alive`
   return 'legacy run has no live pid'
 }
 
 type RunningDisposition = 'alive' | 'dead' | 'abandoned-bootstrap' | 'setup-death'
 
-function preservedFailureKindTurnId(setupDeathIds: Set<number>, lastTurnId: number): number | null {
+function preservedFailureKindTurnId(setupDeathIds: Set<string>, lastTurnId: string): string | null {
   return setupDeathIds.has(lastTurnId) ? lastTurnId : null
 }
 
 function runningDisposition(row: RunningRow, now: number): RunningDisposition {
-  const leaseState = runLeaseState(row.id)
+  const leaseState = runLeaseState(row.record_id)
   const coordinatorPidAlive = Boolean(row.pid && pidAlive(row.pid))
   if (row.agent === '(pending)') {
     return abandonedBootstrap({
@@ -249,14 +251,18 @@ function runningDisposition(row: RunningRow, now: number): RunningDisposition {
     : 'dead'
 }
 
-function coordinatorSetupDeathError(rows: RunningRow[], id: number): string {
-  return coordinatorSetupError(rows.find((candidate) => candidate.id === id)!.record_id)
+function coordinatorSetupDeathError(rows: RunningRow[], id: string): string {
+  return coordinatorSetupError(rows.find((candidate) => candidate.record_id === id)!.record_id)
+}
+
+function setupDeathObservation(rows: RunningRow[], recordId: string): ObservedDeadRun {
+  return { record_id: recordId, reason: coordinatorSetupDeathError(rows, recordId) }
 }
 
 function finalizeReapedRuns(
   database: Database,
-  ended: number[],
-  setupDeaths: number[],
+  ended: string[],
+  setupDeaths: string[],
   localMachineId: string,
   finishedAt: string,
 ): void {
@@ -269,23 +275,23 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
   const now = Date.now()
   const rows = d
     .query(
-      `SELECT id, record_id, pid, agent_pid, agent, started_at FROM run WHERE status='running'`,
+      `SELECT number, record_id, pid, agent_pid, agent, started_at FROM run WHERE status='running'`,
     )
     .all() as RunningRow[]
 
-  const dead: number[] = []
-  const abandonedBootstraps: number[] = []
-  const setupDeaths: number[] = []
+  const dead: string[] = []
+  const abandonedBootstraps: string[] = []
+  const setupDeaths: string[] = []
   for (const r of rows) {
     switch (runningDisposition(r, now)) {
       case 'dead':
-        dead.push(r.id)
+        dead.push(r.record_id)
         break
       case 'abandoned-bootstrap':
-        abandonedBootstraps.push(r.id)
+        abandonedBootstraps.push(r.record_id)
         break
       case 'setup-death':
-        setupDeaths.push(r.id)
+        setupDeaths.push(r.record_id)
         break
       case 'alive':
         break
@@ -294,17 +300,17 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
   if (linkedWorktreeReadOnly) {
     return [
       ...dead.map((id) => {
-        const row = rows.find((candidate) => candidate.id === id)!
+        const row = rows.find((candidate) => candidate.record_id === id)!
         return {
-          id,
+          record_id: id,
           reason: deadRunReason(row),
         }
       }),
       ...abandonedBootstraps.map((id) => ({
-        id,
+        record_id: id,
         reason: `pending coordinator was abandoned after ${PENDING_BOOTSTRAP_MS}ms`,
       })),
-      ...setupDeaths.map((id) => ({ id, reason: coordinatorSetupDeathError(rows, id) })),
+      ...setupDeaths.map((id) => setupDeathObservation(rows, id)),
     ]
   }
   const ended = [...dead, ...abandonedBootstraps, ...setupDeaths]
@@ -313,7 +319,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
   if (abandonedBootstraps.length) {
     const update = d.query(
       `UPDATE run SET status='failed', failure_kind='harness',
-              error=? WHERE id=? AND status='running'`,
+              error=? WHERE record_id=? AND status='running'`,
     )
     for (const id of abandonedBootstraps) {
       const error = coordinatorSetupDeathError(rows, id)
@@ -329,7 +335,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
   if (setupDeaths.length) {
     const update = d.query(
       `UPDATE run SET status='failed', failure_kind='harness', error=?
-        WHERE id=? AND status='running'`,
+        WHERE record_id=? AND status='running'`,
     )
     for (const id of setupDeaths) {
       const error = coordinatorSetupDeathError(rows, id)
@@ -355,10 +361,10 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
     // caller, charged until now to qwen36-goose.
     const update = d.query(
       `UPDATE run SET status='stale', failure_kind='interrupted', error=?
-        WHERE id=? AND status='running'`,
+        WHERE record_id=? AND status='running'`,
     )
     for (const id of dead) {
-      const row = rows.find((candidate) => candidate.id === id)!
+      const row = rows.find((candidate) => candidate.record_id === id)!
       const vendorAlive = row.agent_pid && pidAlive(row.agent_pid)
       const surviving = vendorAlive ? `; vendor pid ${row.agent_pid} still alive` : ''
       const error = `abandoned: process gone, no terminal state recorded${surviving}`

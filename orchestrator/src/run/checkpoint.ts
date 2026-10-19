@@ -79,7 +79,7 @@ export type CheckpointResult = {
 /** Commit staged, tracked, and untracked files to the run branch; gitignored files stay out. */
 export function checkpointRun(input: {
   database: Database
-  runId: number
+  runId: string
   worktree: string
   branch: string
   taskKey: string
@@ -88,7 +88,7 @@ export function checkpointRun(input: {
   final?: boolean
 }): CheckpointResult {
   const previous = input.database
-    .query('SELECT COALESCE(MAX(checkpoint_no),0) n FROM run_checkpoint WHERE run_id=?')
+    .query('SELECT COALESCE(MAX(checkpoint_no),0) n FROM run_checkpoint WHERE run_record_id=?')
     .get(input.runId) as { n: number }
   const checkpointNo = previous.n + 1
   const taskPointer = readTaskPointer(input.scratchDir)
@@ -119,7 +119,7 @@ export function checkpointRun(input: {
   if (!commit.ok) return refusal(commit.error)
   input.database
     .query(
-      `INSERT INTO run_checkpoint (record_id,run_id,checkpoint_no,commit_sha,task_pointer,final,created_at)
+      `INSERT INTO run_checkpoint (record_id,run_record_id,checkpoint_no,commit_sha,task_pointer,final,created_at)
      VALUES (?,?,?,?,?,?,?)`,
     )
     .run(
@@ -140,7 +140,7 @@ export function checkpointRun(input: {
  * that preservation failed.
  */
 export function recordFailedIdlePreservation(input: {
-  runId: number
+  runId: string
   scratchDir: string
   worktree: string | null
   error: string
@@ -182,7 +182,7 @@ export function recordFailedIdlePreservation(input: {
 
 export function latestCheckpoint(
   database: Database,
-  rootId: number,
+  rootId: string,
 ): {
   commit_sha: string
   checkpoint_no: number
@@ -191,8 +191,8 @@ export function latestCheckpoint(
   return database
     .query(
       `SELECT c.commit_sha,c.checkpoint_no,c.task_pointer
-       FROM run_checkpoint c JOIN run r ON r.id=c.run_id
-      WHERE r.id=? OR r.parent_run_id=? ORDER BY c.id DESC LIMIT 1`,
+       FROM run_checkpoint c JOIN run r ON r.record_id=c.run_record_id
+      WHERE r.record_id=? OR r.parent_run_record_id=? ORDER BY c.id DESC LIMIT 1`,
     )
     .get(rootId, rootId) as {
     commit_sha: string
@@ -203,7 +203,7 @@ export function latestCheckpoint(
 
 export function checkpointResumeContext(
   database: Database,
-  rootId: number,
+  rootId: string,
   worktree: string | null,
   startCommit: string | null,
   branch: string | null,
@@ -211,7 +211,9 @@ export function checkpointResumeContext(
   const checkpoint = latestCheckpoint(database, rootId)
   if (!checkpoint) return null
   if (!startCommit || !branch) {
-    const launch = database.query('SELECT job,launch_key FROM run WHERE id=?').get(rootId) as {
+    const launch = database
+      .query('SELECT job,launch_key FROM run WHERE record_id=?')
+      .get(rootId) as {
       job: string
       launch_key: string | null
     } | null

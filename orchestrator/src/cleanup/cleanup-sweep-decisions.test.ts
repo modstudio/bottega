@@ -26,8 +26,8 @@ import {
 } from './cleanup-sweep-decisions.ts'
 
 describe('conversation project ownership', () => {
-  const root = { id: 10, projectRecordId: 'project-a' }
-  const matchingChild = { id: 11, projectRecordId: 'project-a' }
+  const root = { record_id: '10', projectRecordId: 'project-a' }
+  const matchingChild = { record_id: '11', projectRecordId: 'project-a' }
 
   test.each([
     {
@@ -39,8 +39,8 @@ describe('conversation project ownership', () => {
     },
     {
       name: 'a missing root UUID is unknown',
-      root: { id: 10, projectRecordId: null },
-      members: [{ id: 10, projectRecordId: null }, matchingChild],
+      root: { record_id: '10', projectRecordId: null },
+      members: [{ record_id: '10', projectRecordId: null }, matchingChild],
       expectedProjectRecordId: 'project-a',
       expected: {
         outcome: 'unknown',
@@ -60,7 +60,7 @@ describe('conversation project ownership', () => {
     {
       name: 'a member conflicting with its root is unknown',
       root,
-      members: [root, { id: 11, projectRecordId: 'project-b' }],
+      members: [root, { record_id: '11', projectRecordId: 'project-b' }],
       expectedProjectRecordId: 'project-a',
       expected: {
         outcome: 'unknown',

@@ -8,6 +8,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
+import { nextRunNumber } from '../run/run-number.ts'
 import {
   agentRows,
   HARNESSES,
@@ -54,14 +55,15 @@ function insertProbeRun(input: {
   prompt: string
   model?: string
   transport: string
-}): { id: number } {
+}): { record_id: string } {
   return writableDb()
     .query(
-      `INSERT INTO run (record_id,started_at,agent,job,cwd,prompt_sha,prompt_bytes,prompt_head,probe,status,model,transport)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+      `INSERT INTO run (record_id,number,started_at,agent,job,cwd,prompt_sha,prompt_bytes,prompt_head,probe,status,model,transport)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
     )
     .get(
       newRecordId(),
+      nextRunNumber(writableDb()),
       new Date(input.started).toISOString(),
       input.name,
       `agent-probe-${input.id}`,
@@ -73,7 +75,7 @@ function insertProbeRun(input: {
       'running',
       input.model ?? null,
       input.transport,
-    ) as { id: number }
+    ) as { record_id: string }
 }
 
 async function drainTransportEvents(events: AsyncIterable<unknown>): Promise<void> {
@@ -227,7 +229,7 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
         await draining
         writableDb()
           .query(
-            `UPDATE run SET status=?,latency_ms=?,exit_code=?,output_bytes=?,error=? WHERE id=?`,
+            `UPDATE run SET status=?,latency_ms=?,exit_code=?,output_bytes=?,error=? WHERE record_id=?`,
           )
           .run(
             outcome.status === 'ok' ? 'ok' : 'failed',
@@ -235,7 +237,7 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
             outcome.status === 'ok' ? 0 : 1,
             Buffer.byteLength(outcome.output),
             outcome.status === 'ok' ? null : outcome.output,
-            inserted.id,
+            inserted.record_id,
           )
         return outcome
       } finally {
@@ -249,8 +251,8 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
     } catch (error) {
       const detail = String((error as Error).message ?? error)
       writableDb()
-        .query(`UPDATE run SET status='failed',latency_ms=?,exit_code=1,error=? WHERE id=?`)
-        .run(Date.now() - started, detail, inserted.id)
+        .query(`UPDATE run SET status='failed',latency_ms=?,exit_code=1,error=? WHERE record_id=?`)
+        .run(Date.now() - started, detail, inserted.record_id)
       return {
         status: 'failed' as const,
         output: detail,

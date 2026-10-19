@@ -16,7 +16,7 @@ export function blockersPayload(days = 14) {
             MAX(b.at) AS last_at,
             MIN(b.why) AS example,
             GROUP_CONCAT(DISTINCT r.agent) AS agents
-       FROM blocker b JOIN run r ON r.id = b.run_id
+       FROM blocker b JOIN run r ON r.record_id = b.run_record_id
       WHERE b.at >= ?
       GROUP BY 1, 2
       ORDER BY n DESC`,
@@ -135,7 +135,7 @@ export function healthCommand(flags: CommandFlags, presentation: CommandPresenta
         (row.kind === 'idle' && row.reclaimedMs ? `  reclaimed ${duration(row.reclaimedMs)}` : ''),
     )
     for (const cluster of row.clusters) {
-      log(`  ${cluster.count}x [run ${cluster.exampleRunId}] ${cluster.text}`)
+      log(`  ${cluster.count}x [run ${cluster.exampleRunNumber}] ${cluster.text}`)
     }
     if (row.kind === 'escaped' && row.attribution) {
       log(

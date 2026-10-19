@@ -62,7 +62,7 @@ test('an evidence-excluded landing-tree owner refuses dispatch planning', () => 
   db()
     .query(
       `UPDATE run SET launch_key='DEV-1398',branch='DEV-1398-orch-14461',project_record_id=?
-      WHERE id=?`,
+      WHERE record_id=?`,
     )
     .run(projectId, writer)
   const landing = addRun({ agent: 'codex', job: 'landing-tree', status: 'running' })
@@ -70,7 +70,7 @@ test('an evidence-excluded landing-tree owner refuses dispatch planning', () => 
     .query(
       `UPDATE run SET worktree=?,project_record_id=?,
        evidence_excluded='landing tree lifecycle row; not agent execution'
-      WHERE id=?`,
+      WHERE record_id=?`,
     )
     .run(landingTree, projectId, landing)
   const newerTerminalOwner = addRun({ agent: 'codex', job: 'implement', status: 'stale' })
@@ -78,7 +78,7 @@ test('an evidence-excluded landing-tree owner refuses dispatch planning', () => 
     .query(
       `UPDATE run SET worktree=?,project_record_id=?,
        evidence_excluded='superseded fixture owner'
-      WHERE id=?`,
+      WHERE record_id=?`,
     )
     .run(landingTree, projectId, newerTerminalOwner)
 
@@ -138,13 +138,14 @@ test('an evidence-excluded landing-tree owner refuses dispatch planning', () => 
 })
 
 const row = (
-  id: number,
+  id: string,
   branch: string,
   launchBase: string | null,
-  parentRunId: number | null = null,
+  parentRunId: string | null = null,
 ): TaskBranchRunRow => ({
-  id,
-  parent_run_id: parentRunId,
+  record_id: String(id),
+  number: Number(id),
+  parent_run_record_id: parentRunId,
   branch,
   launch_base: launchBase,
 })
@@ -152,20 +153,22 @@ const row = (
 test('an abandoned run is not a task-branch candidate', () => {
   const kept = addRun({ agent: 'codex', job: 'implement', status: 'stale' })
   const abandoned = addRun({ agent: 'codex', job: 'implement', status: 'stale' })
-  db().query("UPDATE run SET failure_kind='abandoned' WHERE id=?").run(abandoned)
+  db().query("UPDATE run SET failure_kind='abandoned' WHERE record_id=?").run(abandoned)
   const rows = db()
-    .query(`SELECT candidate.id FROM run candidate WHERE ${taskBranchCandidacySql('candidate')}`)
-    .all() as { id: number }[]
-  expect(rows.map((candidate) => candidate.id)).toContain(kept)
-  expect(rows.map((candidate) => candidate.id)).not.toContain(abandoned)
+    .query(
+      `SELECT candidate.record_id FROM run candidate WHERE ${taskBranchCandidacySql('candidate')}`,
+    )
+    .all() as { record_id: string }[]
+  expect(rows.map((candidate) => candidate.record_id)).toContain(kept)
+  expect(rows.map((candidate) => candidate.record_id)).not.toContain(abandoned)
 })
 
 describe('task branch supersession', () => {
   test('a later explicit-base root run supersedes an earlier branch', () => {
     expect(
       isTaskBranchSuperseded('DEV-609-old', [
-        row(10, 'DEV-609-old', null),
-        row(11, 'DEV-609-new', 'main'),
+        row('10', 'DEV-609-old', null),
+        row('11', 'DEV-609-new', 'main'),
       ]),
     ).toBe(true)
   })
@@ -173,8 +176,8 @@ describe('task branch supersession', () => {
   test('a later root run without a launch base does not supersede', () => {
     expect(
       isTaskBranchSuperseded('DEV-609-old', [
-        row(10, 'DEV-609-old', null),
-        row(11, 'DEV-609-new', null),
+        row('10', 'DEV-609-old', null),
+        row('11', 'DEV-609-new', null),
       ]),
     ).toBe(false)
   })
@@ -182,8 +185,8 @@ describe('task branch supersession', () => {
   test('a later resume with an inherited launch base does not supersede', () => {
     expect(
       isTaskBranchSuperseded('DEV-609-old', [
-        row(10, 'DEV-609-old', null),
-        row(11, 'DEV-609-new', 'main', 9),
+        row('10', 'DEV-609-old', null),
+        row('11', 'DEV-609-new', 'main', '9'),
       ]),
     ).toBe(false)
   })
@@ -191,8 +194,8 @@ describe('task branch supersession', () => {
   test('a later explicit-base run on the same branch does not supersede', () => {
     expect(
       isTaskBranchSuperseded('DEV-609-old', [
-        row(10, 'DEV-609-old', null),
-        row(11, 'DEV-609-old', 'main'),
+        row('10', 'DEV-609-old', null),
+        row('11', 'DEV-609-old', 'main'),
       ]),
     ).toBe(false)
   })
@@ -376,7 +379,7 @@ const branchCandidate = (
   mergeBase: 'merge-base',
   projectId: 'project-1',
   projectName: 'starship',
-  nominatingRuns: [{ id: commitCount, sessionId: 'session-a' }],
+  nominatingRuns: [{ record_id: String(commitCount), sessionId: 'session-a' }],
   trunk: 'develop',
   worktree: null,
   worktreeOwnerJob: null,
@@ -388,12 +391,12 @@ describe('contained task branch tips', () => {
     'STAR-5307-orch-9648',
     '4e0cf76e5070417ee0ccfef1c33a7794898e2677',
     8,
-    { nominatingRuns: [{ id: 9648, sessionId: 'session-a' }] },
+    { nominatingRuns: [{ record_id: '9648', sessionId: 'session-a' }] },
   )
   const task = branchCandidate('STAR-5307', '684ec5d8cdc914e501d353a5c22a76b493ae33a9', 10, {
     nominatingRuns: [
-      { id: 9690, sessionId: 'session-a' },
-      { id: 9691, sessionId: 'session-a' },
+      { record_id: '9690', sessionId: 'session-a' },
+      { record_id: '9691', sessionId: 'session-a' },
     ],
     worktree: {
       path: '/tmp/STAR-5307',
@@ -438,12 +441,12 @@ describe('maximal task branch candidates', () => {
     'STAR-5307-orch-9648',
     '4e0cf76e5070417ee0ccfef1c33a7794898e2677',
     8,
-    { nominatingRuns: [{ id: 9648, sessionId: 'session-a' }] },
+    { nominatingRuns: [{ record_id: '9648', sessionId: 'session-a' }] },
   )
   const task = branchCandidate('STAR-5307', '684ec5d8cdc914e501d353a5c22a76b493ae33a9', 10, {
     nominatingRuns: [
-      { id: 9690, sessionId: 'session-a' },
-      { id: 9691, sessionId: 'session-a' },
+      { record_id: '9690', sessionId: 'session-a' },
+      { record_id: '9691', sessionId: 'session-a' },
     ],
     worktree: {
       path: '/tmp/STAR-5307',
@@ -481,10 +484,10 @@ describe('task branch ambiguity refusal', () => {
     'STAR-5307-orch-9648',
     '4e0cf76e5070417ee0ccfef1c33a7794898e2677',
     8,
-    { nominatingRuns: [{ id: 9648, sessionId: 'session-a' }] },
+    { nominatingRuns: [{ record_id: '9648', sessionId: 'session-a' }] },
   )
   const task = branchCandidate('STAR-5307', '684ec5d8cdc914e501d353a5c22a76b493ae33a9', 10, {
-    nominatingRuns: [{ id: 9690, sessionId: 'session-a' }],
+    nominatingRuns: [{ record_id: '9690', sessionId: 'session-a' }],
   })
 
   test('leads with git reconciliation before score voiding', () => {
@@ -510,8 +513,8 @@ test('task branch reuse notice names branch, tip, contributing runs, and start-o
       projectId: 'project-1',
       projectName: 'project',
       nominatingRuns: [
-        { id: 5186, sessionId: 'session-a' },
-        { id: 5190, sessionId: 'session-a' },
+        { record_id: '5186', sessionId: 'session-a' },
+        { record_id: '5190', sessionId: 'session-a' },
       ],
       trunk: 'main',
       worktree: null,

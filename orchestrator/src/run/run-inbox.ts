@@ -15,14 +15,14 @@ type RunInboxFlags = { has(name: string): boolean }
 type RunInboxPresentation = {
   log(...values: unknown[]): void
   dur(ms: number | null | undefined): string
-  chainHasPendingDelivery(rootId: number): boolean
-  strandedRecovery(rootId: number): string
+  chainHasPendingDelivery(rootId: string): boolean
+  strandedRecovery(rootId: string): string
 }
 type InboxQuestion = {
   question_id: number
   question_record_id: string
-  run_id: number
   run_record_id: string
+  run_number: number
   answer_id: number
   answer_record_id: string
   job: string
@@ -68,8 +68,8 @@ type WorkflowInboxQuestion = {
 type QueriedInboxQuestion = {
   id: number
   record_id: string
-  run_id: number
   run_record_id: string
+  run_number: number
   asked_at: string
   question: string
   answered_at: string | null
@@ -93,13 +93,15 @@ type QueriedInboxQuestion = {
   session_id: string | null
   root_status: string
   root_voided: number
-  root_id: number
+  root_id: string
+  root_number: number
   root_record_id: string
   session_recent: number
 }
 
 type RecoverableInboxRow = {
-  id: number
+  record_id: string
+  number: number
   agent: string
   job: string
   repo: string | null
@@ -199,32 +201,26 @@ export async function queryInbox(
   const defaultProject =
     input.scope === 'cli-default' && !scoped && mine ? projectAt(process.cwd()) : null
   const cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString()
-  const hasSessionSeen = Boolean(
-    db().query(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_seen'`).get(),
-  )
-  const seenJoin = hasSessionSeen
-    ? 'LEFT JOIN session_seen seen ON seen.session_id = r.session_id'
-    : ''
-  const sessionRecent = hasSessionSeen
-    ? 'CASE WHEN r.session_id IS NOT NULL AND seen.last_seen >= ? THEN 1 ELSE 0 END'
-    : '0'
+  const seenJoin = 'LEFT JOIN session_seen seen ON seen.session_id = r.session_id'
+  const sessionRecent =
+    'CASE WHEN r.session_id IS NOT NULL AND seen.last_seen >= ? THEN 1 ELSE 0 END'
   const queriedRows = db()
     .query(
-      `SELECT q.id, q.record_id, q.run_id, r.record_id AS run_record_id,
+      `SELECT q.id, q.record_id, q.run_record_id, r.number AS run_number,
             q.asked_at, q.question, q.options, q.recommendation, q.why,
             q.answered_at, q.overturned_at, q.overturned_by, q.overturn_reason, q.replacement,
             q.filed_as, q.filed_ref, q.filed_record_id, q.filed_label, q.filed_at,
             r.agent, r.job, r.repo, root.project_record_id, r.status, r.session_id,
-            root.status root_status, root.record_id root_record_id,
+            root.status root_status, root.record_id root_record_id, root.number root_number,
             ${voidedSql('root')} root_voided,
-            COALESCE(r.parent_run_id, r.id) root_id, ${sessionRecent} session_recent
-       FROM question q JOIN run r ON r.id = q.run_id
-       JOIN run root ON root.id = COALESCE(r.parent_run_id, r.id)
+            COALESCE(r.parent_run_record_id, r.record_id) root_id, ${sessionRecent} session_recent
+       FROM question q JOIN run r ON r.record_id = q.run_record_id
+       JOIN run root ON root.record_id = COALESCE(r.parent_run_record_id, r.record_id)
        ${seenJoin}
       WHERE q.closed_at IS NULL
-      ORDER BY q.run_id, q.id`,
+      ORDER BY q.run_record_id, q.id`,
     )
-    .all(...(hasSessionSeen ? [cutoff] : [])) as QueriedInboxQuestion[]
+    .all(cutoff) as QueriedInboxQuestion[]
   const isLive = (question: (typeof queriedRows)[number]) =>
     answerRunLivenessRefusal(
       { status: question.root_status, voided: Boolean(question.root_voided) },
@@ -249,9 +245,9 @@ export async function queryInbox(
         (q): InboxQuestion => ({
           question_id: q.id,
           question_record_id: q.record_id,
-          run_id: q.run_id,
           run_record_id: q.run_record_id,
-          answer_id: q.root_id,
+          run_number: q.run_number,
+          answer_id: q.root_number,
           answer_record_id: q.root_record_id,
           job: q.job,
           agent: q.agent,
@@ -417,35 +413,30 @@ export async function runInboxCommand(
   const project = scoped ? scopedProject : mine ? projectAt(process.cwd()) : null
   const header = await rulingsHeader(project)
   const cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString()
-  const hasSessionSeen = Boolean(
-    db().query(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_seen'`).get(),
-  )
-  const seenJoin = hasSessionSeen
-    ? 'LEFT JOIN session_seen seen ON seen.session_id = r.session_id'
-    : ''
-  const sessionRecent = hasSessionSeen
-    ? 'CASE WHEN r.session_id IS NOT NULL AND seen.last_seen >= ? THEN 1 ELSE 0 END'
-    : '0'
+  const seenJoin = 'LEFT JOIN session_seen seen ON seen.session_id = r.session_id'
+  const sessionRecent =
+    'CASE WHEN r.session_id IS NOT NULL AND seen.last_seen >= ? THEN 1 ELSE 0 END'
   const queriedRows = db()
     .query(
-      `SELECT q.id, q.run_id, q.asked_at, q.question, q.options, q.recommendation, q.why,
+      `SELECT q.id, q.run_record_id, r.number AS run_number, q.asked_at, q.question, q.options, q.recommendation, q.why,
             q.answered_at,
             q.answer, q.overturned_at, q.overturned_by, q.overturn_reason, q.replacement,
             q.filed_as, q.filed_ref, q.filed_record_id, q.filed_label, q.filed_at,
             r.agent, r.job, r.repo, root.project_record_id, r.status, r.session_id,
-            root.status root_status,
+            root.status root_status, root.number root_number,
             ${voidedSql('root')} root_voided,
-            COALESCE(r.parent_run_id, r.id) root_id,
+            COALESCE(r.parent_run_record_id, r.record_id) root_id,
             ${sessionRecent} session_recent
-       FROM question q JOIN run r ON r.id = q.run_id
-       JOIN run root ON root.id = COALESCE(r.parent_run_id, r.id)
+       FROM question q JOIN run r ON r.record_id = q.run_record_id
+       JOIN run root ON root.record_id = COALESCE(r.parent_run_record_id, r.record_id)
        ${seenJoin}
       WHERE q.closed_at IS NULL
-      ORDER BY q.run_id, q.id`,
+      ORDER BY q.run_record_id, q.id`,
     )
-    .all(...(hasSessionSeen ? [cutoff] : [])) as {
+    .all(cutoff) as {
     id: number
-    run_id: number
+    run_record_id: string
+    run_number: number
     asked_at: string
     question: string
     answered_at: string | null
@@ -470,7 +461,8 @@ export async function runInboxCommand(
     session_id: string | null
     root_status: string
     root_voided: number
-    root_id: number
+    root_id: string
+    root_number: number
     session_recent: number
   }[]
   const isLive = (question: (typeof queriedRows)[number]) =>
@@ -508,26 +500,26 @@ export async function runInboxCommand(
 
   const queriedRecoverable = db()
     .query(
-      `SELECT root.id, root.agent, root.job, root.repo, root.project_record_id, root.session_id
+      `SELECT root.record_id, root.number, root.agent, root.job, root.repo, root.project_record_id, root.session_id
        FROM run root
-      WHERE root.parent_run_id IS NULL
+      WHERE root.parent_run_record_id IS NULL
         AND (root.status = 'asking' OR EXISTS (
-          SELECT 1 FROM question pending JOIN run owner ON owner.id=pending.run_id
-           WHERE (owner.id=root.id OR owner.parent_run_id=root.id)
+          SELECT 1 FROM question pending JOIN run owner ON owner.record_id=pending.run_record_id
+           WHERE (owner.record_id=root.record_id OR owner.parent_run_record_id=root.record_id)
              AND pending.answered_at IS NOT NULL
              AND pending.delivery_pending_at IS NOT NULL
         ))
         ${!scoped && mine ? (project ? 'AND (root.project_record_id = ? OR root.session_id = ?)' : 'AND root.session_id = ?') : ''}
         AND NOT EXISTS (
-          SELECT 1 FROM question q JOIN run owner ON owner.id = q.run_id
-           WHERE (owner.id = root.id OR owner.parent_run_id = root.id)
+          SELECT 1 FROM question q JOIN run owner ON owner.record_id = q.run_record_id
+           WHERE (owner.record_id = root.record_id OR owner.parent_run_record_id = root.record_id)
              AND ${questionOpenSql('q')}
         )
         AND NOT EXISTS (
           SELECT 1 FROM run active
-           WHERE active.parent_run_id = root.id AND active.status = 'running'
+           WHERE active.parent_run_record_id = root.record_id AND active.status = 'running'
         )
-      ORDER BY root.id`,
+      ORDER BY root.number`,
     )
     .all(
       ...(!scoped && mine ? (project ? [project.recordId, sid] : [sid]) : []),
@@ -539,12 +531,14 @@ export async function runInboxCommand(
     return
   }
   presentWorkflowQuestions(workflowRows, log)
-  let lastRun = -1
-  let lastRoot = -1
+  let lastRun = ''
+  let lastRoot = ''
   for (const q of answerable) {
-    if (q.run_id !== lastRun) {
-      log(`\nrun ${q.run_id} · ${q.agent}/${q.job}${q.repo ? ` · ${q.repo}` : ''} · ${q.status}`)
-      lastRun = q.run_id
+    if (q.run_record_id !== lastRun) {
+      log(
+        `\nrun ${q.run_number} · ${q.agent}/${q.job}${q.repo ? ` · ${q.repo}` : ''} · ${q.status}`,
+      )
+      lastRun = q.run_record_id
     }
     lastRoot = q.root_id
     log(`  [q${q.id}] ${q.question}`)
@@ -563,23 +557,23 @@ export async function runInboxCommand(
     )
   }
   for (const r of recoverable) {
-    const stranded = chainHasPendingDelivery(r.id)
+    const stranded = chainHasPendingDelivery(r.record_id)
     if (canAnswer(r.session_id)) {
       log(
-        `\nrun ${r.id} · ${r.agent}/${r.job}${r.repo ? ` · ${r.repo}` : ''} · ` +
+        `\nrun ${r.number} · ${r.agent}/${r.job}${r.repo ? ` · ${r.repo}` : ''} · ` +
           (stranded
-            ? `asking, but no ruling is open — ${strandedRecovery(r.id)}`
-            : `asking, but no ruling is open — recoverable: ${PLATFORM_SLUG} run continue ${r.id}`),
+            ? `asking, but no ruling is open — ${strandedRecovery(r.record_id)}`
+            : `asking, but no ruling is open — recoverable: ${PLATFORM_SLUG} run continue ${r.record_id}`),
       )
       if (r.session_id === null) {
         log('        unowned — any session may continue it')
       }
     } else {
       log(
-        `\nrun ${r.id} · ${r.agent}/${r.job}${r.repo ? ` · ${r.repo}` : ''} · ` +
+        `\nrun ${r.number} · ${r.agent}/${r.job}${r.repo ? ` · ${r.repo}` : ''} · ` +
           `asking, but no ruling is open · owner ${r.session_id} · visible only; ` +
           (stranded
-            ? `stranded — only the owning session may use ${PLATFORM_SLUG} run retry ${r.id} --agent … or ${PLATFORM_SLUG} run abandon ${r.id}`
+            ? `stranded — only the owning session may use ${PLATFORM_SLUG} run retry ${r.record_id} --agent … or ${PLATFORM_SLUG} run abandon ${r.record_id}`
             : 'only the owning session may continue it'),
       )
     }
@@ -589,7 +583,7 @@ export async function runInboxCommand(
     for (const q of visible) {
       const liveness = q.session_recent ? 'live' : 'unknown'
       log(
-        `\n  [q${q.id}] run ${q.run_id} · ${q.job} · ${q.agent}` +
+        `\n  [q${q.id}] run ${q.run_number} · ${q.job} · ${q.agent}` +
           `${q.repo ? ` · ${q.repo}` : ''} · owner ${q.session_id ?? 'unknown'} · ` +
           `liveness ${liveness} · waiting ${dur(Date.now() - Date.parse(q.asked_at))}`,
       )

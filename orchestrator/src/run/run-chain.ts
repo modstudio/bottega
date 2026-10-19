@@ -2,12 +2,12 @@
 /** Knows chain membership order and when a chain's terminal outcome became observable. */
 import type { Database } from 'bun:sqlite'
 
-export function chainTerminationAtForRoot(database: Database, rootId: number): string | null {
+export function chainTerminationAtForRoot(database: Database, rootId: string): string | null {
   const terminal = database
     .query(
       `SELECT started_at, latency_ms, status FROM run
-      WHERE id=? OR parent_run_id=?
-      ORDER BY turn DESC, id DESC LIMIT 1`,
+      WHERE record_id=? OR parent_run_record_id=?
+      ORDER BY turn DESC, number DESC LIMIT 1`,
     )
     .get(rootId, rootId) as { started_at: string; latency_ms: number | null; status: string } | null
   if (

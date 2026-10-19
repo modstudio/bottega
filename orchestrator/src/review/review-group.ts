@@ -23,7 +23,7 @@ export type TriageReviewRow = {
   lensIdentities: readonly string[]
   lenses: readonly {
     id: number
-    runId?: number
+    runId?: string
     lens?: string
     model?: string | null
     graded: boolean
@@ -88,10 +88,10 @@ export function branchRunOwnerSession(
   const row = database
     .query<{ session_id: string | null }, [string, string, string]>(
       `SELECT session_id FROM run
-        WHERE parent_run_id IS NULL
+        WHERE parent_run_record_id IS NULL
           AND project_record_id=(SELECT record_id FROM project WHERE name=?)
           AND (branch=? OR minted_branch=?)
-        ORDER BY id DESC LIMIT 1`,
+        ORDER BY number DESC LIMIT 1`,
     )
     .get(project, branch, branch)
   return row?.session_id ?? null
@@ -181,7 +181,7 @@ function reviewsForBranch(
         patch_id: string | null
         path_set: string | null
         lens_id: number
-        run_id: number
+        run_record_id: string
         lens: string
         model: string | null
         reproduced: string | null
@@ -195,10 +195,10 @@ function reviewsForBranch(
       [string, string, number | null]
     >(
       `SELECT r.id review_id,r.recorded_at,r.completed_at,r.tier,r.patch_id,r.path_set,
-              rl.id lens_id,rl.run_id,rl.lens,rl.model,rl.reproduced,rl.coverage,rl.limits,rl.overlap,
+              rl.id lens_id,rl.run_record_id,rl.lens,rl.model,rl.reproduced,rl.coverage,rl.limits,rl.overlap,
               rf.id finding_id,rf.ordinal,rf.disposition
          FROM review r JOIN review_lens rl ON rl.review_id=r.id
-         JOIN run ON run.id=rl.run_id
+         JOIN run ON run.record_id=rl.run_record_id
          LEFT JOIN review_finding rf ON rf.review_id=r.id
         WHERE run.project_record_id=(SELECT record_id FROM project WHERE name=?)
           AND (run.branch=? OR r.id=?) ORDER BY r.id DESC,rl.id,rf.id`,
@@ -224,14 +224,14 @@ function reviewsForBranch(
       ;(
         review.lenses as {
           id: number
-          runId: number
+          runId: string
           lens: string
           model: string | null
           graded: boolean
         }[]
       ).push({
         id: row.lens_id,
-        runId: row.run_id,
+        runId: row.run_record_id,
         lens: row.lens,
         model: row.model,
         graded:

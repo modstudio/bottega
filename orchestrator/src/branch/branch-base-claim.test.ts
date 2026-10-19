@@ -29,11 +29,11 @@ test('a fully qualified base name is claimed while its chain is asking and relea
     status: 'asking',
   })
   db()
-    .query('UPDATE run SET project_record_id=?,launch_base=? WHERE id=?')
+    .query('UPDATE run SET project_record_id=?,launch_base=? WHERE record_id=?')
     .run(projectRecordId, `refs/heads/${branch}`, holder)
 
-  expect(liveBaseClaim(project, branch)).toEqual({ run_id: holder, status: 'asking' })
+  expect(liveBaseClaim(project, branch)).toEqual({ run_record_id: holder, status: 'asking' })
 
-  db().query("UPDATE run SET status='ok' WHERE id=?").run(holder)
+  db().query("UPDATE run SET status='ok' WHERE record_id=?").run(holder)
   expect(liveBaseClaim(project, branch)).toBeNull()
 })

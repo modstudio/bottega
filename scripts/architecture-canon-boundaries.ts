@@ -155,6 +155,7 @@ const canonMirrorBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/pull-request/pr-admission.ts',
       'orchestrator/src/resources/resource-claims.ts',
       'orchestrator/src/run/run-lease.ts',
+      'orchestrator/src/run/run-number.ts',
       'orchestrator/src/run/synthetic-lifecycle-job.ts',
       'orchestrator/src/workflow/autonomy-scopes.ts',
       'orchestrator/src/workflow/workflow-tree-store.ts',

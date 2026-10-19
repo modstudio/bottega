@@ -104,7 +104,7 @@ function currentAddressedSubjects(kinds: Set<string>): Map<string, Set<string>> 
   if (kinds.has('asking-run')) {
     record(
       'asking-run',
-      askingRuns().map((run) => `run:${run.id}`),
+      askingRuns().map((run) => `run:${run.record_id}`),
     )
   }
   if (kinds.has('dead-running-process')) {
@@ -135,7 +135,7 @@ function currentAddressedSubjects(kinds: Set<string>): Map<string, Set<string>> 
           kind,
           closeOuts
             .filter((run) => run.close_out_outcome === outcome)
-            .map((run) => `run:${run.id}`),
+            .map((run) => `run:${run.record_id}`),
         )
       }
     }
@@ -143,7 +143,7 @@ function currentAddressedSubjects(kinds: Set<string>): Map<string, Set<string>> 
   if (kinds.has('unscored-run')) {
     record(
       'unscored-run',
-      unscoredRuns().map((run) => `run:${run.id}`),
+      unscoredRuns().map((run) => `run:${run.record_id}`),
     )
   }
   return current
@@ -158,7 +158,7 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
               c.issue_key, c.severity, c.owner_session_id,
               r.status run_status, r.repo run_project
          FROM monitor_condition c
-         LEFT JOIN run r ON c.subject=('run:' || r.id)
+         LEFT JOIN run r ON c.subject=('run:' || r.record_id)
         WHERE c.owner_session_id=? AND c.delivered_at IS NULL
           AND c.id = (
             SELECT MAX(newest.id) FROM monitor_condition newest

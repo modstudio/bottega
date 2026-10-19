@@ -5,7 +5,7 @@
  */
 
 export type ResumeTreeFacts = {
-  rootId: number
+  rootId: string
   branch: string
   recordedTreeMatches: boolean
   hasCreate: boolean
@@ -20,7 +20,7 @@ export type ResumeTreePlan =
       branch: string
       tip: string | null
       tipSource: ResumeTipSource
-      rootId: number
+      rootId: string
     }
   | {
       action: 'recreate-on-branch' | 'recreate-then-restore'
@@ -28,9 +28,9 @@ export type ResumeTreePlan =
       existingBranch: string
       tip: string
       tipSource: Exclude<ResumeTipSource, null>
-      rootId: number
+      rootId: string
     }
-  | { action: 'refuse'; branch: string; tip: null; tipSource: null; rootId: number }
+  | { action: 'refuse'; branch: string; tip: null; tipSource: null; rootId: string }
 
 type ResumeTipSource = 'branch ref' | 'retained ref' | 'recorded close-out tip' | null
 

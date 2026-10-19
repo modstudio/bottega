@@ -25,11 +25,11 @@ export const questionAwaitingOperator = (cause: WaitingCause): boolean =>
   !cause.answered && (cause.rulings === 'user' || cause.relayed)
 
 export async function initialQuestionWaitingAt(
-  runId: number,
+  runId: string,
   at: string,
   d: Database = db(),
 ): Promise<string | null> {
-  const row = d.query('SELECT repo, launch_key FROM run WHERE id=?').get(runId) as {
+  const row = d.query('SELECT repo, launch_key FROM run WHERE record_id=?').get(runId) as {
     repo: string | null
     launch_key: string | null
   } | null
@@ -88,12 +88,12 @@ export function notifyWaitingItem(
   }
 }
 
-function openQuestions(runId: number, d: Database) {
+function openQuestions(runId: string, d: Database) {
   const authority = authorizeRunMutation(runId, 'relay')
   const rows = d
     .query(
-      `SELECT q.id, q.answered_at, q.closed_at FROM question q JOIN run owner ON owner.id=q.run_id
-       WHERE (owner.id=? OR owner.parent_run_id=?) ORDER BY q.id`,
+      `SELECT q.id, q.answered_at, q.closed_at FROM question q JOIN run owner ON owner.record_id=q.run_record_id
+       WHERE (owner.record_id=? OR owner.parent_run_record_id=?) ORDER BY q.id`,
     )
     .all(authority.rootId, authority.rootId) as {
     id: number
@@ -104,7 +104,7 @@ function openQuestions(runId: number, d: Database) {
 }
 
 export function relayQuestion(
-  runId: number,
+  runId: string,
   questionId: number | undefined,
   note: string,
   d: Database = db(),
@@ -156,10 +156,10 @@ function operatorWaitingWithEpisodes(
   const questions = d
     .query(
       `SELECT q.id,q.record_id question_record_id,q.question,q.options,q.recommendation,q.why,q.awaiting_operator_at,
-              r.repo project,r.launch_key task_key,COALESCE(r.parent_run_id,r.id) root_id,
+              r.repo project,r.launch_key task_key,root.number root_number,
               root.record_id root_record_id
-       FROM question q JOIN run r ON r.id=q.run_id
-       JOIN run root ON root.id=COALESCE(r.parent_run_id,r.id)
+       FROM question q JOIN run r ON r.record_id=q.run_record_id
+       JOIN run root ON root.record_id=COALESCE(r.parent_run_record_id,r.record_id)
        WHERE q.awaiting_operator_at IS NOT NULL AND ${questionOpenSql('q')}`,
     )
     .all() as Array<{
@@ -172,7 +172,7 @@ function operatorWaitingWithEpisodes(
     awaiting_operator_at: string
     project: string | null
     task_key: string | null
-    root_id: number
+    root_number: number
     root_record_id: string
   }>
   const workflows = d
@@ -201,7 +201,7 @@ function operatorWaitingWithEpisodes(
         kind: 'question' as const,
         id: row.id,
         question_record_id: row.question_record_id,
-        run_id: row.root_id,
+        run_number: row.root_number,
         run_record_id: row.root_record_id,
         project: row.project,
         task_key: row.task_key,
@@ -212,7 +212,7 @@ function operatorWaitingWithEpisodes(
         why: row.why,
         waiting_since: row.awaiting_operator_at,
         episode: row.awaiting_operator_at,
-        answer_command: `${PLATFORM_SLUG} question answer ${row.root_id} --q${row.id} --from-operator "<ruling>"`,
+        answer_command: `${PLATFORM_SLUG} question answer ${row.root_number} --q${row.id} --from-operator "<ruling>"`,
       },
     })),
     ...workflows.map((row) => {
@@ -226,7 +226,7 @@ function operatorWaitingWithEpisodes(
           kind: 'workflow' as const,
           id: row.id,
           question_record_id: row.question_record_id,
-          run_id: null,
+          run_number: null,
           run_record_id: null,
           project: row.project,
           task_key: row.task_key,

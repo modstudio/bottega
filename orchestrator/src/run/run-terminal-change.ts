@@ -5,9 +5,9 @@ import { contentTree, gitContext } from '../git/git-environment.ts'
 
 type MeasurementScope = { measure<T>(operation: () => T): T }
 
-function compareTurnState(database: Database, runId: number, worktreePath: string): boolean | null {
+function compareTurnState(database: Database, runId: string, worktreePath: string): boolean | null {
   const started = database
-    .query('SELECT head_commit, input_tree FROM run WHERE id=?')
+    .query('SELECT head_commit, input_tree FROM run WHERE record_id=?')
     .get(runId) as { head_commit: string | null; input_tree: string | null } | null
   if (!started?.head_commit || !started.input_tree) return null
   const terminalHead = gitContext(worktreePath, 'rev-parse', '--verify', 'HEAD^{commit}')
@@ -17,7 +17,7 @@ function compareTurnState(database: Database, runId: number, worktreePath: strin
 
 export function terminalTurnChanged(input: {
   database: Database
-  runId: number
+  runId: string
   writingJob: boolean
   worktreePath: string | null
   measurementScope: MeasurementScope | null

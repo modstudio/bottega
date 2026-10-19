@@ -14,6 +14,57 @@ import {
 } from './docs.ts'
 import { commitDocRestore, commitDocSet } from './local-doc-write.ts'
 
+test('latest revision follows its sequence when record ids sort in the opposite order', async () => {
+  const created = await setDoc({
+    scope: 'global',
+    subject: null,
+    slug: 'revision-sequence-not-uuid-order',
+    title: 'Revision sequence',
+    body: 'Older body.',
+    delivery: 'demand',
+    audiences: ['technical'],
+    reason: 'create ordering fixture',
+  })
+  const newer = await setDoc({
+    scope: created.scope,
+    subject: created.subject,
+    slug: created.slug,
+    title: created.title,
+    body: 'Newer body.',
+    delivery: created.delivery,
+    audiences: created.audiences,
+    reason: 'create newer ordering fixture',
+    expectedRevision: created.revision!,
+  })
+  const revisions = db()
+    .query<{ id: number; record_id: string }, [number]>(
+      'SELECT id,record_id FROM doc_revision WHERE doc_id=? ORDER BY id',
+    )
+    .all(created.id)
+  const olderRecordId = 'ffffffff-ffff-4fff-8fff-ffffffffffff'
+  const newerRecordId = '00000000-0000-4000-8000-000000000001'
+  db().query('UPDATE doc_revision SET record_id=? WHERE id=?').run(olderRecordId, revisions[0]!.id)
+  db().query('UPDATE doc_revision SET record_id=? WHERE id=?').run(newerRecordId, revisions[1]!.id)
+
+  expect((await import('./docs.ts')).getDoc('global', null, created.slug)?.revision).toBe(
+    newerRecordId,
+  )
+  await expect(
+    setDoc({
+      scope: created.scope,
+      subject: created.subject,
+      slug: created.slug,
+      title: created.title,
+      body: 'Newest body.',
+      delivery: created.delivery,
+      audiences: created.audiences,
+      reason: 'compare against sequence-selected revision',
+      expectedRevision: newerRecordId,
+    }),
+  ).resolves.toMatchObject({ body: 'Newest body.' })
+  expect(newer.revision).not.toBe(newerRecordId)
+})
+
 test('kind selects lint and an omitted kind keeps the current value', async () => {
   const article = await setDoc({
     scope: 'global',

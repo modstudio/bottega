@@ -19,18 +19,18 @@ function localScoreOutbox(): Database {
   local
     .query(
       `INSERT INTO run
-       (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
        VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','ok')`,
     )
     .run(RECORD_ID)
   local
     .query(
       `INSERT INTO score
-       (record_id, run_id,delivery,quality,fidelity,note,scored_at,scored_by)
-       VALUES ('${newRecordId()}', 42,'full','right',NULL,'old',?,'architect')`,
+       (record_id, run_record_id,delivery,quality,fidelity,note,scored_at,scored_by)
+       VALUES ('${newRecordId()}', ?,'full','right',NULL,'old',?,'architect')`,
     )
-    .run(STAMP)
-  enqueueScoreRecord(local, 42, MACHINE_ID)
+    .run(RECORD_ID, STAMP)
+  enqueueScoreRecord(local, RECORD_ID, MACHINE_ID)
   return local
 }
 

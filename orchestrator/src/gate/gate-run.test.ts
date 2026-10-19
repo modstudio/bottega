@@ -95,12 +95,12 @@ test('inserts a finished dirty-tree gate without attributing it to HEAD', async 
   expect(
     d
       .query(
-        `SELECT run_id,started_at,finished_at,exit_code,tooling_paths,head_commit,cwd,output_artifact
+        `SELECT run_record_id,started_at,finished_at,exit_code,tooling_paths,head_commit,cwd,output_artifact
            FROM gate_execution`,
       )
       .get(),
   ).toEqual({
-    run_id: null,
+    run_record_id: null,
     started_at: '2026-09-01T00:00:00.000Z',
     finished_at: '2026-09-01T00:00:01.000Z',
     exit_code: 0,

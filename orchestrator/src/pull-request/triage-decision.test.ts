@@ -331,7 +331,7 @@ describe('pull-request triage decision', () => {
   test('a second opinion requires two completed runs on different models', () => {
     const opinion = (id: number, model: string) => ({
       id,
-      runId: id + 100,
+      runId: String(id + 100),
       lens: 'correctness',
       model,
       graded: true,
@@ -343,14 +343,14 @@ describe('pull-request triage decision', () => {
     expect(decideSecondOpinion(withOpinions(opinion(1, 'model-a')), 'correctness')).toEqual({
       complete: false,
       lens: 'correctness',
-      firstRunId: 101,
+      firstRunId: '101',
     })
     expect(
       decideSecondOpinion(
         withOpinions(opinion(1, 'model-a'), opinion(2, 'model-a')),
         'correctness',
       ),
-    ).toEqual({ complete: false, lens: 'correctness', firstRunId: 101 })
+    ).toEqual({ complete: false, lens: 'correctness', firstRunId: '101' })
     expect(
       decideSecondOpinion(
         withOpinions(opinion(1, 'model-a'), opinion(2, 'model-b')),
@@ -363,8 +363,8 @@ describe('pull-request triage decision', () => {
     const twoModels = review({
       patchId: 'patch-a',
       lenses: [
-        { id: 1, runId: 101, lens: 'correctness', model: 'model-a', graded: true },
-        { id: 2, runId: 102, lens: 'correctness', model: 'model-b', graded: true },
+        { id: 1, runId: '101', lens: 'correctness', model: 'model-a', graded: true },
+        { id: 2, runId: '102', lens: 'correctness', model: 'model-b', graded: true },
       ],
     })
     expect(
@@ -402,8 +402,8 @@ describe('pull-request triage decision', () => {
     const sameModel = review({
       patchId: 'patch-a',
       lenses: [
-        { id: 1, runId: 101, lens: 'correctness', model: 'model-a', graded: true },
-        { id: 2, runId: 102, lens: 'correctness', model: 'model-a', graded: true },
+        { id: 1, runId: '101', lens: 'correctness', model: 'model-a', graded: true },
+        { id: 2, runId: '102', lens: 'correctness', model: 'model-a', graded: true },
       ],
     })
     expect(
@@ -415,7 +415,7 @@ describe('pull-request triage decision', () => {
       ),
     ).toMatchObject({
       complete: false,
-      missingSecondOpinion: { lens: 'correctness', firstRunId: 101 },
+      missingSecondOpinion: { lens: 'correctness', firstRunId: '101' },
     })
 
     expect(

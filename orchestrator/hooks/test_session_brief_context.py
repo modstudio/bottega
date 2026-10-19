@@ -26,6 +26,24 @@ class AssembleAdditionalContext(unittest.TestCase):
     def test_budget_constant_stays_under_the_harness_cap(self):
         self.assertEqual(session_brief.HOOK_CONTEXT_MAX_CHARS, 9000)
 
+    def test_filed_issue_sections_accept_current_uuid_run_ids(self):
+        run_id = "00000000-0000-4000-8000-000000000042"
+        self.assertTrue(
+            session_brief._valid_filed_issue_loop_run(
+                {"runId": run_id, "job": "issue-worker", "issueKey": "DEV-42"}
+            )
+        )
+        self.assertTrue(
+            session_brief._valid_blocked_issue_tree(
+                {"runId": run_id, "path": "/tmp/tree", "why": "held"}
+            )
+        )
+        self.assertFalse(
+            session_brief._valid_filed_issue_loop_run(
+                {"runId": 42, "job": "issue-worker", "issueKey": "DEV-42"}
+            )
+        )
+
     def board_completed(self, body="body", withheld=0):
         return SimpleNamespace(
             returncode=0,

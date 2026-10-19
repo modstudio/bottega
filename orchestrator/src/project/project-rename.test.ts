@@ -39,16 +39,16 @@ function seedNameMirrors(projectId: string, otherId: string): void {
   const id = newRecordId
   const d = db()
   d.query(
-    `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_record_id)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO run (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_record_id)
+     VALUES (?,1,?,?,?,?,?,?,?,?,?)`,
   ).run(id(), 't', 'codex', 'implement', 'sha', 1, 'p', 'ok', OLD, projectId)
   d.query(
-    `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_record_id)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO run (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_record_id)
+     VALUES (?,2,?,?,?,?,?,?,?,?,?)`,
   ).run(id(), 't', 'codex', 'implement', 'sha', 1, 'p', 'ok', OTHER, otherId)
   d.query(
-    `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo)
-     VALUES (?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO run (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo)
+     VALUES (?,3,?,?,?,?,?,?,?,?)`,
   ).run(id(), 't', 'codex', 'implement', 'sha', 1, 'p', 'ok', OLD)
   d.query(
     `INSERT INTO canon_pack (record_id,job,sha256,bytes,doc_count,doc_revisions,compiled_at,findings,project,project_record_id)
@@ -193,12 +193,14 @@ function seedNameMirrors(projectId: string, otherId: string): void {
      (record_id,project,project_record_id,rung,candidate_commit,rollback,actor,started_at)
      VALUES (?,?,?,?,?,?,?,?)`,
   ).run(id(), OLD, projectId, 'live', 'abc', 0, 'op', 't')
-  const run = d.query(`SELECT id FROM run WHERE project_record_id=?`).get(projectId) as {
-    id: number
+  const run = d
+    .query(`SELECT record_id AS id FROM run WHERE project_record_id=?`)
+    .get(projectId) as {
+    id: string
   }
   d.query(
     `INSERT INTO worker_note_request
-     (record_id,run_id,text,requested_at,status,project,project_record_id)
+     (record_id,run_record_id,text,requested_at,status,project,project_record_id)
      VALUES (?,?,?,?,?,?,?)`,
   ).run(id(), run.id, 'note', 't', 'requested', OLD, projectId)
   d.query(

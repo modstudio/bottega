@@ -45,18 +45,18 @@ function addRun(
     status?: string
     branch?: string | null
     key?: string | null
-    parent?: number | null
+    parent?: string | null
     worktree?: string | null
     judged?: boolean
     startedAt?: string
   } = {},
-): number {
+): string {
   const row = db()
     .query(
       `INSERT INTO run
-        (record_id,started_at,agent,job,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,
-         branch,launch_key,parent_run_id,worktree)
-       VALUES (?,?,?,?,?,?,1,'prompt',?,?,?,?,?) RETURNING id`,
+        (record_id,number,started_at,agent,job,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,
+         branch,launch_key,parent_run_record_id,worktree)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,?,?,?,?,1,'prompt',?,?,?,?,?) RETURNING record_id AS id`,
     )
     .get(
       newRecordId(),
@@ -70,11 +70,11 @@ function addRun(
       input.key === undefined ? 'DEV-1392' : input.key,
       input.parent ?? null,
       input.worktree ?? null,
-    ) as { id: number }
+    ) as { id: string }
   if (input.judged) {
     db()
       .query(
-        `INSERT INTO score (record_id,run_id,delivery,quality,fidelity,scored_at)
+        `INSERT INTO score (record_id,run_record_id,delivery,quality,fidelity,scored_at)
          VALUES (?,?,'full','right','faithful','2026-10-18T01:00:00Z')`,
       )
       .run(newRecordId(), row.id)
@@ -117,7 +117,7 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
   writeFileSync(join(runScratchDir(lens), 'scratch.txt'), 'scratch')
   const removed = new Set<string>()
   const removedLandingTrees: string[] = []
-  const closed: number[] = []
+  const closed: string[] = []
   const pruned: string[][] = []
   const dependencies: ShipCleanupDependencies = {
     landingState: () => 'landed',
@@ -162,6 +162,9 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
     database: db(),
     dependencies,
   })
+  const numberOf = (recordId: string): number =>
+    (db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as { number: number })
+      .number
 
   expect(report.removed.artifacts).toEqual([root, turn, lens, landing])
   expect(report.removed.scratch).toEqual([root, turn, lens, landing])
@@ -172,12 +175,12 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
   expect(closed).not.toContain(keyless)
   expect(closed).not.toContain(later)
   expect(report.kept).toContainEqual({
-    item: `run ${unscored} artifacts and scratch`,
+    item: `run ${numberOf(unscored)} artifacts and scratch`,
     reason: 'run has no recorded verdict',
-    remedy: `${PLATFORM_SLUG} score ${unscored}`,
+    remedy: `${PLATFORM_SLUG} score ${numberOf(unscored)}`,
   })
   expect(report.kept).toContainEqual({
-    item: `run ${live} artifacts and scratch and worktree`,
+    item: `run ${numberOf(live)} artifacts and scratch and worktree`,
     reason: 'run is live (running)',
   })
   expect(pruned).toEqual([['ship-fixture', 'DEV-1392-c3']])
@@ -222,7 +225,7 @@ function landingTreeCleanup(input: {
   report: ReturnType<typeof shipCleanup>
   landingTree: string
   removedTrees: string[]
-  closed: number[]
+  closed: string[]
 } {
   const project = addProject()
   addLanding(project)
@@ -233,7 +236,7 @@ function landingTreeCleanup(input: {
     worktree: landingTree,
   })
   const removedTrees: string[] = []
-  const closed: number[] = []
+  const closed: string[] = []
   const dependencies: ShipCleanupDependencies = {
     landingState: () => 'landed',
     closeOut: (id) => {

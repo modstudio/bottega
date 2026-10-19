@@ -44,7 +44,7 @@ test('the bounded adapter classifies files, deduplicates hard links, and labels 
     root,
     [
       {
-        id: 1,
+        record_id: 'run-record-id-1',
         status: 'running',
         started_at: '2026-10-18T11:00:00.000Z',
         prompt_path: prompt,
@@ -77,7 +77,7 @@ test('the bounded adapter classifies files, deduplicates hard links, and labels 
   })
   expect(measured.largestRuns.artifacts).toMatchObject({
     state: 'partial',
-    runs: [{ runId: 1, state: 'partial' }],
+    runs: [{ runId: '1', state: 'partial' }],
   })
 
   const text = formatStorageReport({

@@ -7,7 +7,8 @@ import { type LiveRunMember, liveMemberStall, liveRunMembers } from './live-run-
 describe('live run member', () => {
   const clock = Date.parse('2026-09-22T12:30:00.000Z')
   const member: LiveRunMember = {
-    id: 88,
+    record_id: 'run-record-id-88',
+    number: 88,
     started_at: '2026-09-22T12:00:00.000Z',
     last_event_at: '2026-09-22T12:00:00.000Z',
     agent: 'codex',
@@ -60,11 +61,12 @@ describe('live run member', () => {
       turn: 2,
     })
     db()
-      .query('UPDATE run SET agent_pid=?,agent_start_time=?,last_event_at=? WHERE id=?')
+      .query('UPDATE run SET agent_pid=?,agent_start_time=?,last_event_at=? WHERE record_id=?')
       .run(880, 'recorded birth', '2026-09-22T12:00:00.000Z', turn)
 
     expect(liveRunMembers()).toContainEqual({
-      id: turn,
+      record_id: turn,
+      number: expect.any(Number),
       started_at: expect.any(String),
       last_event_at: '2026-09-22T12:00:00.000Z',
       agent: 'grok',

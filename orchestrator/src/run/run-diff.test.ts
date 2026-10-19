@@ -19,7 +19,7 @@ test('since-read and since-base refuse because they choose different lower bound
 
 test('since-read refuses a missing read with both remedies', () => {
   const decision = chooseSinceReadBound({
-    runId: 1257,
+    runId: '1257',
     branch: 'DEV-1257-work',
     read: null,
     comparisonTip: 'current-tip',
@@ -36,7 +36,7 @@ test('since-read refuses a missing read with both remedies', () => {
 
 test('since-read refuses a rewritten branch and names both commits', () => {
   const decision = chooseSinceReadBound({
-    runId: 1257,
+    runId: '1257',
     branch: 'DEV-1257-work',
     read: {
       tip: 'read-tip',
@@ -63,7 +63,7 @@ test('since-read selects the recorded tip as the lower bound', () => {
   }
   expect(
     chooseSinceReadBound({
-      runId: 1257,
+      runId: '1257',
       branch: 'DEV-1257-work',
       read,
       comparisonTip: 'later-tip',
@@ -95,15 +95,15 @@ test('live since-read sends the recorded tip through the service to the observed
     )
     .run('diff-service-fixture', '/repo', '{}')
   const run = database
-    .query<{ id: number }, []>(
+    .query<{ id: string }, []>(
       `INSERT INTO run
-        (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,cwd,worktree,
+        (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,cwd,worktree,
          branch,base_commit,project_record_id)
        VALUES
-        ('${newRecordId()}','2026-10-12','codex','implementation','sha',1,'head','running',
+        ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-10-12','codex','implementation','sha',1,'head','running',
          'diff-service-fixture','/repo/tree','/repo/tree','DEV-1257-work','base-tip',
          (SELECT record_id FROM project WHERE name='diff-service-fixture'))
-       RETURNING id`,
+       RETURNING record_id AS id`,
     )
     .get()!
   database

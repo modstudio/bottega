@@ -8,7 +8,7 @@ test('review backfill enqueues the graph once and is idempotent', () => {
   applyMigrations(database)
   database
     .query(`INSERT INTO run
-    (id, record_id, started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status)
+    (number, record_id, started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status)
     VALUES (1, '01990000-0000-7000-8000-000000000010', '2026-09-15T00:00:00Z',
       'codex', 'review-lens', 'sha', 1, 'head', 'ok')`)
     .run()
@@ -19,8 +19,8 @@ test('review backfill enqueues the graph once and is idempotent', () => {
     .run()
   database
     .query(`INSERT INTO review_lens
-    (id, record_id, review_id, run_id, lens, agent, standards_read, files_covered, commands_run, could_not_verify)
-    VALUES (1, '01990000-0000-7000-8000-000000000012', 1, 1, 'craft', 'codex', '[]', '[]', '[]', '[]')`)
+    (id, record_id, review_id, run_record_id, lens, agent, standards_read, files_covered, commands_run, could_not_verify)
+    VALUES (1, '01990000-0000-7000-8000-000000000012', 1, '01990000-0000-7000-8000-000000000010', 'craft', 'codex', '[]', '[]', '[]', '[]')`)
     .run()
   database
     .query(`INSERT INTO review_finding

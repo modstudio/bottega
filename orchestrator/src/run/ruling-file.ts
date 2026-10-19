@@ -72,9 +72,8 @@ export type FileRulingInput = {
 type QuestionRow = {
   id: number
   record_id: string
-  run_id: number | null
   run_record_id: string | null
-  root_id: number | null
+  root_id: string | null
   workflow_cursor_id: number | null
   workflow_slug: string | null
   mode_slug: string | null
@@ -138,7 +137,9 @@ function decideFiling(
     runProject: row.repo,
     subject: input.subject,
     workflowAuthority:
-      row.run_id === null ? { operator: input.fromOperator || input.channel === 'ui' } : undefined,
+      row.run_record_id === null
+        ? { operator: input.fromOperator || input.channel === 'ui' }
+        : undefined,
   })
 }
 
@@ -178,7 +179,7 @@ function refusal(
   }
   if (decision.code === 'foreign-project') {
     return (
-      `${row.run_id === null ? `workflow cursor ${row.workflow_cursor_id}` : `run ${row.root_id}`} belongs to project ${row.repo ?? 'none'}; ` +
+      `${row.run_record_id === null ? `workflow cursor ${row.workflow_cursor_id}` : `run ${row.root_id}`} belongs to project ${row.repo ?? 'none'}; ` +
       `the owner path files within the run's own project. ` +
       `Pass --from-operator to file under another scope or subject`
     )
@@ -193,11 +194,11 @@ function ownerRefusal(
 ): string {
   if (!decision.actor && !authority.actor)
     return (
-      `${row.run_id === null ? `workflow cursor ${row.workflow_cursor_id}` : `run ${row.root_id}`} is owned by session ${decision.owner ?? authority.owner}; ` +
+      `${row.run_record_id === null ? `workflow cursor ${row.workflow_cursor_id}` : `run ${row.root_id}`} is owned by session ${decision.owner ?? authority.owner}; ` +
       callerIdentityRefusal(callerIdentity(), 'file its ruling')
     )
   return (
-    `${row.run_id === null ? `workflow cursor ${row.workflow_cursor_id}` : `run ${row.root_id}`} is owned by session ${decision.owner ?? authority.owner}; ` +
+    `${row.run_record_id === null ? `workflow cursor ${row.workflow_cursor_id}` : `run ${row.root_id}`} is owned by session ${decision.owner ?? authority.owner}; ` +
     `current session ${decision.actor ?? authority.actor} cannot file its ruling ` +
     '(owner active within the window)'
   )
@@ -206,7 +207,7 @@ function ownerRefusal(
 function loadQuestion(questionId: number): QuestionRow {
   const row = db()
     .query(
-      `SELECT q.id, q.record_id, q.run_id, r.record_id run_record_id, COALESCE(r.parent_run_id, r.id) root_id,
+      `SELECT q.id, q.record_id, q.run_record_id, r.record_id run_record_id, COALESCE(r.parent_run_record_id, r.record_id) root_id,
               q.workflow_cursor_id,c.workflow_slug,c.mode_slug,c.session_id workflow_owner,
               c.updated_at workflow_updated_at,
               q.question, q.answer, q.answer_basis,
@@ -214,7 +215,7 @@ function loadQuestion(questionId: number): QuestionRow {
               q.replacement, q.filed_as, q.filed_ref, q.filed_record_id, q.filed_label, q.filed_at,
               COALESCE(r.repo,c.project) repo, COALESCE(r.cwd,p.path) cwd,c.args,
               COALESCE(r.launch_key,q.workflow_key) launch_key,p.path project_path
-         FROM question q LEFT JOIN run r ON r.id = q.run_id
+         FROM question q LEFT JOIN run r ON r.record_id = q.run_record_id
          LEFT JOIN workflow_cursor c ON c.id=q.workflow_cursor_id
          LEFT JOIN project p ON p.record_id=c.project_record_id AND p.retired_at IS NULL
          WHERE q.id=?`,
@@ -271,7 +272,7 @@ async function writeCanonProposal(
   body: string,
   stores: RulingFileStores,
 ): Promise<{ filed_ref: null; filed_record_id: string; filed_label: string }> {
-  if (row.run_id === null && !row.project_path) {
+  if (row.run_record_id === null && !row.project_path) {
     throw new Error(
       `workflow project ${row.repo ?? 'unknown'} is not registered; register it with ${PLATFORM_SLUG} project add before filing a canon proposal`,
     )
@@ -351,11 +352,12 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
   const requested = requestedKind(input.as)
   if (requested === 'doc' && (input.scope ?? 'project') !== 'canon') filingScope(input.scope)
   const actor = sessionId()
-  let authority: RootAuthority | null = row.run_id === null ? null : runMutationActor(row.run_id)
+  let authority: RootAuthority | null =
+    row.run_record_id === null ? null : runMutationActor(row.run_record_id)
   const workflowActivity = Date.parse(row.workflow_updated_at ?? new Date().toISOString())
   const questionAuthority = authority ?? {
-    runId: 0,
-    rootId: 0,
+    runId: '',
+    rootId: '',
     owner: row.workflow_owner,
     actor,
     ownerLastSeenAt: null,
@@ -364,7 +366,7 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
     windowMs: RUN_MUTATION_WINDOW_MS,
   }
   let adoptionReason: string | null = null
-  if (row.run_id === null)
+  if (row.run_record_id === null)
     adoptionReason = authorizeWorkflowQuestionMutation({
       owner: row.workflow_owner,
       actor,
@@ -395,7 +397,7 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
     ruling,
     basis: row.replacement === null ? row.answer_basis : null,
     answererKind: answererKind(row),
-    runId: row.run_id,
+    runId: row.run_record_id,
     runRecordId: row.run_record_id,
     workflow:
       row.workflow_cursor_id === null
@@ -415,9 +417,9 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
       ? await writeCanonProposal(row, body, stores)
       : await writeDocFiling(input, row, body, stores)
   writeTransaction(() => {
-    if (row.run_id !== null) authority = adoptRunMutation(authority!, 'file')
+    if (row.run_record_id !== null) authority = adoptRunMutation(authority!, 'file')
     recordFiling(row, requested, reference, at)
-    if (row.run_id !== null) auditRunMutation(authority!, 'file', `as ${requested}`)
+    if (row.run_record_id !== null) auditRunMutation(authority!, 'file', `as ${requested}`)
     else
       auditQuestionMutation({
         questionId: row.id,

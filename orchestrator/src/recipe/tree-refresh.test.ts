@@ -99,7 +99,7 @@ describe('tree refresh recipe context', () => {
   test('uses key, seed, label, base, and allocations from the recorded snapshot', () => {
     const rootRunId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const rootRunRecordId = db()
-      .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
       .get(rootRunId)!.record_id
     const snapshot: RecipeSnapshot = {
       source: { path: 'project.jsonc', commit: 'source-base' },
@@ -174,12 +174,12 @@ describe('tree reseed seed selection', () => {
   test('refuses while a participant in the owning chain is live', () => {
     expect(
       reseedLivenessRefusal([
-        { id: 41, status: 'ok' },
-        { id: 42, status: 'asking' },
+        { record_id: '41', status: 'ok' },
+        { record_id: '42', status: 'asking' },
       ]),
     ).toBe(
       "run 42 is asking in this tree's owning chain; wait for it to finish or stop it before reseeding",
     )
-    expect(reseedLivenessRefusal([{ id: 41, status: 'ok' }])).toBeNull()
+    expect(reseedLivenessRefusal([{ record_id: '41', status: 'ok' }])).toBeNull()
   })
 })

@@ -255,8 +255,8 @@ test('reader routing covers local audiences, context, hosted run ids, nobody her
     .run('2026-10-05T11:00:00.000Z', '2026-10-05T12:01:00.000Z')
   database
     .query(
-      `INSERT INTO run(record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,launch_key,changed_paths)
-       VALUES ('${newRecordId()}',?,'codex','implement','cache-project','sha',1,'prompt','ok','cache-reader','DEV-968',?)`,
+      `INSERT INTO run(record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,launch_key,changed_paths)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','cache-project','sha',1,'prompt','ok','cache-reader','DEV-968',?)`,
     )
     .run(
       '2026-10-05T11:30:00.000Z',
@@ -265,14 +265,14 @@ test('reader routing covers local audiences, context, hosted run ids, nobody her
   const recordId = newRecordId()
   const root = database
     .query(
-      `INSERT INTO run(started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,changed_paths,record_id,turn)
-       VALUES (?,'codex','implement','cache-project','sha',1,'prompt','running','DEV-968',?,?,1) RETURNING id`,
+      `INSERT INTO run(number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,changed_paths,record_id,turn)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','cache-project','sha',1,'prompt','running','DEV-968',?,?,1) RETURNING record_id AS id`,
     )
     .get(
       '2026-10-05T11:30:00.000Z',
       JSON.stringify(['orchestrator/src/board/board-hosted-cache.ts']),
       recordId,
-    ) as { id: number }
+    ) as { id: string }
   const clock = Date.parse('2026-10-05T12:02:00.000Z')
   const addressed = (audience: string, reader: string, tags: HostedBoardChange['tags'] = []) =>
     cachedMessageAddressed({ message: message({ audience }), tags }, reader, clock, database)
@@ -287,7 +287,7 @@ test('reader routing covers local audiences, context, hosted run ids, nobody her
   database
     .query(
       `INSERT INTO board_claim
-       (project,subject_kind,subject_value,holder_kind,holder_session,note,run_id,duration_ms,
+       (project,subject_kind,subject_value,holder_kind,holder_session,note,run_record_id,duration_ms,
         taken_at,renewed_at,lapses_at,closed_at,close_reason,record_id)
        VALUES ('cache-project','task','DEV-CLAIM','architect','claim-holder',NULL,NULL,3600000,
                ?,?,?,NULL,NULL,?)`,
@@ -357,7 +357,7 @@ test('cache refresh distinguishes legacy architects rows from a hidden stored pr
         author_user_id: userId,
         author_session: 'author',
         author_harness: 'claude',
-        author_run_id: null,
+        author_run_record_id: null,
         author_project_id: authorProjectId,
         author_project_name: null,
         created_at: createdAt,
@@ -946,16 +946,16 @@ test('audienceAtPosting uses session first_seen and chain-root start time in bot
     )
   const earlyRun = database
     .query(
-      `INSERT INTO run(record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
-       VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'prompt','running',1) RETURNING id`,
+      `INSERT INTO run(record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','running',1) RETURNING record_id AS id`,
     )
-    .get('2026-10-05T11:00:00.000Z') as { id: number }
+    .get('2026-10-05T11:00:00.000Z') as { id: string }
   const lateRun = database
     .query(
-      `INSERT INTO run(record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
-       VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'prompt','running',1) RETURNING id`,
+      `INSERT INTO run(record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','running',1) RETURNING record_id AS id`,
     )
-    .get('2026-10-05T13:00:00.000Z') as { id: number }
+    .get('2026-10-05T13:00:00.000Z') as { id: string }
   const cached = message()
   database
     .query(

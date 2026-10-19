@@ -18,7 +18,7 @@ import { flagValue, flagValues, readMessageText } from '../cli/args.ts'
 import { doPositionals } from '../commands/do-options.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { contractConflicts } from '../contract/contract.ts'
-import { nowIso, sessionId } from '../database/db.ts'
+import { db, nowIso, sessionId } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import { branchOf } from '../git/git-environment.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
@@ -38,6 +38,7 @@ import { pickCommand } from '../route/routing-commands.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { follow as followRun } from '../run/run-control.ts'
 import { detach as dispatchDetached } from '../run/run-dispatch.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import {
   assertAcpAllowed,
   assertAcpReady,
@@ -73,8 +74,15 @@ function earlierReviewRejections(
   }
 }
 
-function recordRunWarning(runId: number, warning: string): void {
+function recordRunWarning(runId: string, warning: string): void {
   appendRunEvent(runId, { ts: nowIso(), type: 'text', text: warning })
+}
+
+async function lookupTaskKey(project: string, key: string) {
+  const registered = projectByName(project)
+  if (!registered)
+    return { state: 'unreachable' as const, condition: `project ${project} is not registered` }
+  return lookupProjectTaskKey(registered, key)
 }
 
 type CallerCheckoutDecision = {
@@ -193,11 +201,11 @@ function resolveCallerCheckout(
   )
 }
 
-async function modelForDistinct(id: number): Promise<string> {
+async function modelForDistinct(id: string): Promise<string> {
   const { db } = await import('../database/db.ts')
   const until = Date.now() + 5_000
   while (true) {
-    const row = db().query('SELECT model, status FROM run WHERE id=?').get(id) as {
+    const row = db().query('SELECT model, status FROM run WHERE record_id=?').get(id) as {
       model: string | null
       status: string
     } | null
@@ -217,9 +225,9 @@ async function routeConstraints(
   for (const name of avoid) if (!AGENTS[name]) throw new Error(`unknown agent "${name}" in --avoid`)
   const ids = agent
     ? []
-    : (flagValue(argv, 'distinct-from')?.split(',').filter(Boolean) ?? []).map(Number)
-  if (ids.some((id) => !Number.isInteger(id) || id <= 0))
-    throw new Error('--distinct-from expects comma-separated run ids')
+    : (flagValue(argv, 'distinct-from')?.split(',').filter(Boolean) ?? []).map((id) =>
+        resolveRunIdentifier(db(), id),
+      )
   if (agent && avoid.includes(agent))
     throw new Error(`--agent ${agent} contradicts --avoid ${agent}`)
   return { avoid, distinctModels: await Promise.all(ids.map(modelForDistinct)) }
@@ -315,8 +323,12 @@ const scoreSuffix = (jobName: string) =>
   (JOBS[jobName]?.findings
     ? ` [--reproduced ${REVIEW_REPRODUCED.join('|')}] [--coverage ${REVIEW_COVERAGE.join('|')}] [--limits ${REVIEW_LIMITS.join('|')}] [--overlap ${REVIEW_OVERLAP.join('|')}]`
     : '')
-const scoreHint = (id: number, jobName: string, parent: number | null) =>
-  `${PLATFORM_SLUG} score ${parent ?? id} <none|partial|full> [wrong|mixed|right]${scoreSuffix(jobName)} --note "..."${parent ? `   # the whole conversation, not turn ${id}` : ''}`
+const runNumber = (id: string) =>
+  (db().query('SELECT number FROM run WHERE record_id=?').get(id) as { number: number }).number
+const scoreHint = (id: string, jobName: string, parent: string | null) => {
+  const number = runNumber(parent ?? id)
+  return `${PLATFORM_SLUG} score ${number} <none|partial|full> [wrong|mixed|right]${scoreSuffix(jobName)} --note "..."`
+}
 const duration = (ms: number | null | undefined) => {
   if (ms == null) return '—'
   const seconds = ms / 1000
@@ -417,22 +429,17 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       implicitReviewWarning,
       resolveCallerCheckout: (cwd, repo) => resolveCallerCheckout(presentation.cwd(), cwd, repo),
       resolveDispatchOptions: resolveOptions,
-      lookupTaskKey: async (project, key) => {
-        const registered = projectByName(project)
-        if (!registered) {
-          return { state: 'unreachable', condition: `project ${project} is not registered` }
-        }
-        return lookupProjectTaskKey(registered, key)
-      },
+      lookupTaskKey,
       recordRunWarning,
       earlierReviewRejections,
       detach,
+      runNumber,
       follow: (id, quiet) =>
         followRun(id, quiet, true, {
           dur: duration,
           scoreHint,
           argvResumeLimit,
-          printRunId: presentation.printRunId,
+          printRunId: (runRecordId) => presentation.printRunId(runNumber(runRecordId)),
         }),
     },
   )

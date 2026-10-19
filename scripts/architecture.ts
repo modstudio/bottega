@@ -1,5 +1,6 @@
 import { dirname, join, normalize } from 'node:path'
 import { CONCERNS } from '../shared/brand.ts'
+import { agentProbeModules } from './architecture-agent-probe-modules.ts'
 import { boardModules } from './architecture-board-modules.ts'
 import { importBoundaries } from './architecture-boundaries.ts'
 import { branchModuleSpecs } from './architecture-branch-modules.ts'
@@ -234,6 +235,7 @@ export const modules: ArchitectureModule[] = [
     './evidence-query.ts',
   ]),
   ...branchModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
+  ...agentProbeModules,
   ...pullRequestModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   module('orchestrator/src/branch/branch-settlement.ts', [
     '../database/db.ts',
@@ -246,6 +248,7 @@ export const modules: ArchitectureModule[] = [
     './branch-landing-match.ts',
     './branch-landing-record.ts',
     './branch-landing-service.ts',
+    './branch-run-row.ts',
     './branch-state.ts',
     './branch-settlement.ts',
     '../database/db.ts',
@@ -256,26 +259,6 @@ export const modules: ArchitectureModule[] = [
     '../project/projects.ts',
     '../pull-request/pr-admission.ts',
     './task-branch.ts',
-  ]),
-  module('orchestrator/src/agent/agent-probe.ts', [
-    '../../../shared/brand.ts',
-    '../../../shared/record-id.ts',
-    './agent-registry.ts',
-    './agents.ts',
-    './capabilities.ts',
-    '../database/db.ts',
-    '../jobs/jobs.ts',
-    './model-host.ts',
-    '../mcp/mcp-probe.ts',
-    '../transport/transport.ts',
-  ]),
-  module('orchestrator/src/agent/vendor-probe.ts', [
-    '../../../shared/brand.ts',
-    '../../../shared/record-id.ts',
-    './agent-registry.ts',
-    '../database/db.ts',
-    '../failure/failure.ts',
-    '../transport/transport.ts',
   ]),
   module('orchestrator/src/agent/agent-registry.ts', [
     '../../../shared/brand.ts',
@@ -373,6 +356,7 @@ export const modules: ArchitectureModule[] = [
     '../run/run-bootstrap.ts',
     '../run/live-run-member.ts',
     '../run/run-lease.ts',
+    '../run/run-number.ts',
     '../run/question-open.ts',
     '../run/synthetic-lifecycle-job.ts',
   ]),
@@ -683,6 +667,7 @@ export const modules: ArchitectureModule[] = [
     '../project/projects.ts',
     '../resources/resource-claims.ts',
     '../run/run-lease.ts',
+    '../run/run-number.ts',
     '../run/synthetic-lifecycle-job.ts',
     '../recipe/tracked-recipe.ts',
     '../worktree/worktree-create.ts',
@@ -702,6 +687,7 @@ export const modules: ArchitectureModule[] = [
     '../resources/resource-claims.ts',
     '../run/branch-owner-guard.ts',
     '../run/run-resume-claim.ts',
+    '../run/run-number.ts',
     '../run/resume-tree.ts',
     '../worktree/worktree.ts',
     '../worktree/worktree-attribution.ts',

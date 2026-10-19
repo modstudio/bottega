@@ -190,7 +190,7 @@ describe('record doctor decisions', () => {
       .run()
     const addRun = database.query(
       `INSERT INTO run
-       (id,record_id,project_record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       (number,record_id,project_record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
        VALUES (?,?,?,'2026-09-25','codex','implement','sha',3,'ask','asking')`,
     )
     addRun.run(1, '01990000-0000-7000-8000-000000000001', '01990000-0000-7000-8000-000000000101')
@@ -199,11 +199,11 @@ describe('record doctor decisions', () => {
     addRun.run(4, '01990000-0000-7000-8000-000000000004', '01990000-0000-7000-8000-000000000103')
     database
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question) VALUES
-         ('${newRecordId()}',1,'2026-09-25','default'),
-         ('${newRecordId()}',2,'2026-09-25','unsynced'),
-         ('${newRecordId()}',3,'2026-09-25','other'),
-         ('${newRecordId()}',4,'2026-09-25','unknown')`,
+        `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES
+         ('${newRecordId()}','01990000-0000-7000-8000-000000000001','2026-09-25','default'),
+         ('${newRecordId()}','01990000-0000-7000-8000-000000000002','2026-09-25','unsynced'),
+         ('${newRecordId()}','01990000-0000-7000-8000-000000000003','2026-09-25','other'),
+         ('${newRecordId()}','01990000-0000-7000-8000-000000000004','2026-09-25','unknown')`,
       )
       .run()
     database
@@ -248,14 +248,14 @@ describe('record doctor decisions', () => {
     database
       .query(
         `INSERT INTO run
-         (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+         (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
          VALUES (1,'01990000-0000-7000-8000-000000000001','2026-09-25','codex','implement',
                  'sha',3,'ask','asking')`,
       )
       .run()
     database
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',1,'2026-09-25','no project')`,
+        `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}','01990000-0000-7000-8000-000000000001','2026-09-25','no project')`,
       )
       .run()
     database

@@ -423,9 +423,9 @@ export const hostedMessageIsLive = (message: HostedBoardMessage, clock: number):
 const readerMatchesAuthor = (message: HostedBoardMessage, reader: string, database: Database) => {
   if (message.authorUserId !== meta(database, BOARD_REFRESH_USER_KEY)) return false
   if (reader === OPERATOR_READER) return message.authorSession === null
-  const run = /^run:(\d+)$/.exec(reader)
+  const run = /^run:([0-9a-f-]{36})$/.exec(reader)
   if (!run) return message.authorSession === reader
-  const root = database.query('SELECT record_id FROM run WHERE id=?').get(Number(run[1])) as {
+  const root = database.query('SELECT record_id FROM run WHERE record_id=?').get(run[1]!) as {
     record_id: string | null
   } | null
   return Boolean(root?.record_id && root.record_id === message.origin.runId)

@@ -62,7 +62,7 @@ export type PostNoticeInput = SenderBoardTags & {
   deadlineMs?: number
   expiresMs?: number
   purpose?: BoardPurpose | string
-  suggestingRunId?: number
+  suggestingRunId?: string
 }
 export type MessageRow = {
   id: number
@@ -80,7 +80,7 @@ export type MessageRow = {
   withdrawn_at: string | null
   author_harness: string | null
   author_project: string | null
-  author_run_id: number | null
+  author_run_record_id: string | null
   thread_root_id: number | null
   accepted_reply_id: number | null
   accepted_by: string | null
@@ -124,11 +124,11 @@ function rootPurpose(
 }
 
 export function boardReaderBeganAt(reader: string, database = db()): string | null {
-  const run = /^run:(\d+)$/.exec(reader)
+  const run = /^run:([0-9a-f-]{36})$/.exec(reader)
   if (run)
     return (
       (
-        database.query('SELECT started_at FROM run WHERE id=?').get(Number(run[1])) as {
+        database.query('SELECT started_at FROM run WHERE record_id=?').get(run[1]!) as {
           started_at: string
         } | null
       )?.started_at ?? null
@@ -194,31 +194,31 @@ function workerPresenceFacts(database: ReturnType<typeof db>) {
   const liveTurns = database
     .query(
       `WITH ranked AS (
-         SELECT id,COALESCE(parent_run_id,id) root_id,status,
+         SELECT record_id,COALESCE(parent_run_record_id,record_id) root_id,status,
                 ROW_NUMBER() OVER (
-                  PARTITION BY COALESCE(parent_run_id,id) ORDER BY turn DESC,id DESC
+                  PARTITION BY COALESCE(parent_run_record_id,record_id) ORDER BY turn DESC,number DESC
                 ) rank
          FROM run
        ), live_roots AS (
          SELECT root_id FROM ranked WHERE rank=1 AND status IN ('running','asking')
        )
-       SELECT run.id,run.record_id,COALESCE(run.parent_run_id,run.id) root_id,run.repo,run.status,run.turn,
+       SELECT run.record_id,run.record_id,COALESCE(run.parent_run_record_id,run.record_id) root_id,run.repo,run.status,run.turn,
               root.launch_key,root.record_id root_record_id
-       FROM run JOIN live_roots ON live_roots.root_id=COALESCE(run.parent_run_id,run.id)
-       JOIN run root ON root.id=COALESCE(run.parent_run_id,run.id)
+       FROM run JOIN live_roots ON live_roots.root_id=COALESCE(run.parent_run_record_id,run.record_id)
+       JOIN run root ON root.record_id=COALESCE(run.parent_run_record_id,run.record_id)
        ORDER BY root_id,run.turn DESC`,
     )
     .all() as {
-    id: number
+    id: string
     record_id: string | null
-    root_id: number
+    root_id: string
     repo: string | null
     status: string
     turn: number
     launch_key: string | null
     root_record_id: string | null
   }[]
-  const workers = new Map<number, (typeof liveTurns)[number] & { runIds: Set<number | string> }>()
+  const workers = new Map<string, (typeof liveTurns)[number] & { runIds: Set<string> }>()
   for (const row of liveTurns) {
     const current = workers.get(row.root_id)
     if (!current)
@@ -250,7 +250,7 @@ function workerPresenceFacts(database: ReturnType<typeof db>) {
 function claimPresenceFacts(database: ReturnType<typeof db>, at: number) {
   const claims = database
     .query(
-      `SELECT holder_kind,holder_session,subject_value,lapses_at,run_id
+      `SELECT holder_kind,holder_session,subject_value,lapses_at,run_record_id
        FROM board_claim WHERE closed_at IS NULL AND subject_kind='task'`,
     )
     .all() as {
@@ -258,7 +258,7 @@ function claimPresenceFacts(database: ReturnType<typeof db>, at: number) {
     holder_session: string | null
     subject_value: string
     lapses_at: string
-    run_id: number | null
+    run_record_id: string | null
   }[]
   const claimReaders = new Map<string, { role: 'operator' | 'architect'; taskKeys: Set<string> }>()
   for (const claim of claims) {
@@ -266,7 +266,7 @@ function claimPresenceFacts(database: ReturnType<typeof db>, at: number) {
       !claimIsLive({
         closed: false,
         lapsesAt: Date.parse(claim.lapses_at),
-        runStatus: latestRunStatus(claim.run_id, database),
+        runStatus: latestRunStatus(claim.run_record_id, database),
         now: at,
       })
     )
@@ -299,19 +299,19 @@ export function presenceFacts(database = db(), at = Date.now()) {
 }
 
 export function latestRunStatus(
-  runId: number | null,
+  runId: string | null,
   database: ReturnType<typeof db> = db(),
 ): string | null {
   if (runId === null) return null
   const row = database
     .query(
       `SELECT latest.status FROM run member
-       JOIN run latest ON latest.id=(
-         SELECT id FROM run
-         WHERE id=COALESCE(member.parent_run_id,member.id)
-            OR parent_run_id=COALESCE(member.parent_run_id,member.id)
-         ORDER BY turn DESC,id DESC LIMIT 1)
-       WHERE member.id=?`,
+       JOIN run latest ON latest.record_id=(
+         SELECT record_id FROM run
+         WHERE record_id=COALESCE(member.parent_run_record_id,member.record_id)
+            OR parent_run_record_id=COALESCE(member.parent_run_record_id,member.record_id)
+         ORDER BY turn DESC,number DESC LIMIT 1)
+       WHERE member.record_id=?`,
     )
     .get(runId) as { status: string } | null
   return row?.status ?? 'missing'
@@ -329,10 +329,10 @@ export function recipients(
   const coarse = resolveAudience(audience, facts, at, SESSION_LIVE_MS, postingProject)
   if (audience.kind !== 'project' && audience.kind !== 'workers') return coarse
   return coarse.filter((reader) => {
-    const run = /^run:(\d+)$/.exec(reader)
+    const run = /^run:([0-9a-f-]{36})$/i.exec(reader)
     return boardNoticeMatches(
       tags,
-      run ? boardRunContext(Number(run[1]), database) : boardContext(reader, at, database),
+      run ? boardRunContext(run[1]!, database) : boardContext(reader, at, database),
     )
   })
 }
@@ -378,19 +378,19 @@ function validateRunAudience(
   database: ReturnType<typeof writableDb>,
 ): void {
   const owner =
-    audience.kind === 'run' && typeof audience.value === 'number'
+    audience.kind === 'run' && typeof audience.value === 'string'
       ? runOwnerSession(audience.value, database)
       : null
   const refusal = runAudienceRefusal(audience, actor.kind, actor.session, owner)
   if (refusal) throw new Error(refusal)
 }
 
-function runOwnerSession(runId: number, database: ReturnType<typeof writableDb>): string | null {
+function runOwnerSession(runId: string, database: ReturnType<typeof writableDb>): string | null {
   const row = database
     .query(
       `SELECT root.session_id
-       FROM run turn JOIN run root ON root.id=COALESCE(turn.parent_run_id,turn.id)
-       WHERE turn.id=?`,
+       FROM run turn JOIN run root ON root.record_id=COALESCE(turn.parent_run_record_id,turn.record_id)
+       WHERE turn.record_id=?`,
     )
     .get(runId) as { session_id: string | null } | null
   return row?.session_id ?? null
@@ -413,7 +413,7 @@ function refreshPostingPresence(
     .query(
       `SELECT launch_key FROM run
        WHERE session_id=? AND status IN ('running','asking') AND launch_key IS NOT NULL
-       ORDER BY id DESC LIMIT 1`,
+       ORDER BY number DESC LIMIT 1`,
     )
     .get(actor.session) as { launch_key: string } | null
   database
@@ -512,7 +512,7 @@ export function insertRootMessage(
   const duplicateCandidates = database
     .query(
       `SELECT id FROM board_message
-       WHERE kind=? AND purpose=? AND author_kind=? AND author_session IS ? AND author_run_id IS ?
+       WHERE kind=? AND purpose=? AND author_kind=? AND author_session IS ? AND author_run_record_id IS ?
          AND author_project_record_id IS
              (SELECT record_id FROM project WHERE name IS ?)
          AND audience=? AND title=? AND body=?
@@ -606,7 +606,7 @@ function insertRootRow(
     database
       .query(
         `INSERT INTO board_message
-         (kind,purpose,author_kind,author_session,author_run_id,author_harness,author_project,
+         (kind,purpose,author_kind,author_session,author_run_record_id,author_harness,author_project,
           author_project_record_id,audience,title,body,
           ack_required,ack_deadline,expires_at,created_at,withdrawn_at,record_id)
          VALUES (?,?,?,?,?,?,?,(SELECT record_id FROM project WHERE name IS ?),?,?,?,?,?,?,?,NULL,?)`,
@@ -695,7 +695,7 @@ export function boardOrigin(message: MessageRow): BoardOrigin {
     session: message.author_session,
     harness: message.author_harness,
     project: message.author_project,
-    runId: message.author_run_id === null ? null : String(message.author_run_id),
+    runId: message.author_run_record_id === null ? null : String(message.author_run_record_id),
   }
 }
 

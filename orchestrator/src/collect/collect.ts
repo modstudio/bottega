@@ -13,6 +13,7 @@ import { FAILS_OVER } from '../failure/failure.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
 import { failureReason, outcomeOf } from '../outcome.ts'
 import { questionOpenSql } from '../run/question-open.ts'
+import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import type { ObservedDeadRun } from '../run/run-liveness.ts'
 import { TRUNCATED_TRANSCRIPT_BYTES, visibleTranscriptText } from './result-output.ts'
 export const COLLECTION_COMMANDS = new Set(['result', 'wait'])
@@ -57,97 +58,129 @@ export function thinOutputWarning(row: {
 }
 
 export type FailoverAttempt = {
-  rootId: number
-  id: number
+  rootId: string
+  record_id: string
   agent: string
   status: string
   error: string | null
   failure_kind: string | null
   exit_code: number | null
 }
+type CollectedRunRow = {
+  number: number
+  record_id: string
+  agent: string
+  job: string
+  status: string
+  latency_ms: number | null
+  vendor_tokens: number | null
+  output_path: string | null
+  error: string | null
+  failure_kind: string | null
+  exit_code: number | null
+  parent_run_record_id: string | null
+  evidence_excluded: string | null
+  base_commit: string | null
+  cwd: string | null
+  mcp: number | null
+  mcp_server: string | null
+  mcp_connected: number | null
+  mcp_error: string | null
+  mcp_probe: string | null
+  review_provenance: string | null
+  provenance_status: string | null
+  worktree: string | null
+}
 
 type AskingResolution =
-  | { state: 'open'; rootId: number }
-  | { state: 'running'; rootId: number; runningId: number }
-  | { state: 'recoverable'; rootId: number }
+  | { state: 'open'; rootId: string }
+  | { state: 'running'; rootId: string; runningId: string }
+  | { state: 'recoverable'; rootId: string }
 
 /** Resolve what an `asking` status means across the whole conversation. */
-function resolveAsking(database: Database, runId: number): AskingResolution {
-  const member = database.query('SELECT id, parent_run_id FROM run WHERE id=?').get(runId) as {
-    id: number
-    parent_run_id: number | null
+function resolveAsking(database: Database, runId: string): AskingResolution {
+  const member = database
+    .query('SELECT record_id, parent_run_record_id FROM run WHERE record_id=?')
+    .get(runId) as {
+    record_id: string
+    parent_run_record_id: string | null
   } | null
   if (!member) throw new Error(`no run ${runId}`)
-  const rootId = member.parent_run_id ?? member.id
+  const rootId = member.parent_run_record_id ?? member.record_id
   const open = database
     .query(
-      `SELECT COUNT(*) n FROM question q JOIN run r ON r.id = q.run_id
-      WHERE (r.id = ? OR r.parent_run_id = ?) AND ${questionOpenSql('q')}`,
+      `SELECT COUNT(*) n FROM question q JOIN run r ON r.record_id = q.run_record_id
+      WHERE (r.record_id = ? OR r.parent_run_record_id = ?) AND ${questionOpenSql('q')}`,
     )
     .get(rootId, rootId) as { n: number }
   if (open.n) return { state: 'open', rootId }
 
   const running = database
     .query(
-      `SELECT id FROM run
-      WHERE (id = ? OR parent_run_id = ?) AND status = 'running'
-      ORDER BY turn DESC, id DESC LIMIT 1`,
+      `SELECT record_id FROM run
+      WHERE (record_id = ? OR parent_run_record_id = ?) AND status = 'running'
+      ORDER BY turn DESC, number DESC LIMIT 1`,
     )
-    .get(rootId, rootId) as { id: number } | null
+    .get(rootId, rootId) as { record_id: string } | null
   return running
-    ? { state: 'running', rootId, runningId: running.id }
+    ? { state: 'running', rootId, runningId: running.record_id }
     : { state: 'recoverable', rootId }
 }
 
 /** Resolve conversation turns backward, then failover successors forward. */
 export function resolveFailover(
   database: Database,
-  requestedId: number,
+  requestedId: string,
 ): {
-  requestedId: number
+  requestedId: string
   attempts: FailoverAttempt[]
-  finalId: number
+  finalId: string
   settling: boolean
 } {
   const member = database
-    .query('SELECT id, parent_run_id FROM run WHERE id=?')
-    .get(requestedId) as { id: number; parent_run_id: number | null } | null
+    .query('SELECT record_id, parent_run_record_id FROM run WHERE record_id=?')
+    .get(requestedId) as { record_id: string; parent_run_record_id: string | null } | null
   if (!member) throw new Error(`no run ${requestedId}`)
-  let rootId = member.parent_run_id ?? member.id
+  let rootId = member.parent_run_record_id ?? member.record_id
   for (;;) {
     const root = database
-      .query('SELECT retry_of, automatic_failover FROM run WHERE id=?')
-      .get(rootId) as { retry_of: number | null; automatic_failover: number }
-    if (!root.retry_of || !root.automatic_failover) break
+      .query('SELECT retry_of_record_id, automatic_failover FROM run WHERE record_id=?')
+      .get(rootId) as { retry_of_record_id: string | null; automatic_failover: number }
+    if (!root.retry_of_record_id || !root.automatic_failover) break
     const prior = database
-      .query('SELECT id, parent_run_id FROM run WHERE id=?')
-      .get(root.retry_of) as { id: number; parent_run_id: number | null } | null
+      .query('SELECT record_id, parent_run_record_id FROM run WHERE record_id=?')
+      .get(root.retry_of_record_id) as {
+      record_id: string
+      parent_run_record_id: string | null
+    } | null
     if (!prior) break
-    rootId = prior.parent_run_id ?? prior.id
+    rootId = prior.parent_run_record_id ?? prior.record_id
   }
 
   const attempts: FailoverAttempt[] = []
   for (;;) {
     const latest = database
       .query(
-        `SELECT id, agent, status, error, failure_kind, exit_code
-         FROM run WHERE id=? OR parent_run_id=?
-        ORDER BY turn DESC, id DESC LIMIT 1`,
+        `SELECT record_id, agent, status, error, failure_kind, exit_code
+         FROM run WHERE record_id=? OR parent_run_record_id=?
+        ORDER BY turn DESC, number DESC LIMIT 1`,
       )
       .get(rootId, rootId) as Omit<FailoverAttempt, 'rootId'>
     attempts.push({ rootId, ...latest })
     const successor = database
       .query(
-        `SELECT id FROM run WHERE automatic_failover=1 AND retry_of IN
-         (SELECT id FROM run WHERE id=? OR parent_run_id=?)
-        ORDER BY id LIMIT 1`,
+        `SELECT record_id FROM run WHERE automatic_failover=1 AND retry_of_record_id IN
+         (SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=?)
+        ORDER BY number LIMIT 1`,
       )
-      .get(rootId, rootId) as { id: number } | null
+      .get(rootId, rootId) as { record_id: string } | null
     if (!successor) break
-    rootId = successor.id
+    rootId = successor.record_id
   }
   const last = attempts.at(-1)!
-  const pending = database.query('SELECT pid, no_failover FROM run WHERE id=?').get(last.id) as {
+  const pending = database
+    .query('SELECT pid, no_failover FROM run WHERE record_id=?')
+    .get(last.record_id) as {
     pid: number | null
     no_failover: number
   }
@@ -167,7 +200,7 @@ export function resolveFailover(
     !pending.no_failover &&
     !last.error?.includes('Failover refused:') &&
     workerAlive
-  return { requestedId, attempts, finalId: last.id, settling }
+  return { requestedId, attempts, finalId: last.record_id, settling }
 }
 
 export function failoverSummary(attempts: FailoverAttempt[]): string {
@@ -197,17 +230,17 @@ function dur(ms: number | null | undefined): string {
 }
 
 function scoreHint(
-  id: number,
+  recordId: string,
   jobName: string,
-  parent: number | null,
+  parent: string | null,
   scoreSuffix: (job: string) => string,
 ): string {
-  const target = parent ?? id
+  const target = parent ?? recordId
   return (
     `${PLATFORM_SLUG} score ${target} <none|partial|full> [wrong|mixed|right]` +
     scoreSuffix(jobName) +
     ' --note "..."' +
-    (parent ? `   # the whole conversation, not turn ${id}` : '')
+    (parent ? `   # the whole conversation, not turn ${recordId}` : '')
   )
 }
 
@@ -258,8 +291,10 @@ function filedNotesNote(runRecordId: string): string {
 }
 
 /** The branch this turn actually ran on. */
-export function mintedBranchForRun(database: Database, runId: number): string | null {
-  const run = database.query('SELECT branch, minted_branch FROM run WHERE id=?').get(runId) as {
+export function mintedBranchForRun(database: Database, runId: string): string | null {
+  const run = database
+    .query('SELECT branch, minted_branch FROM run WHERE record_id=?')
+    .get(runId) as {
     branch: string | null
     minted_branch: string | null
   } | null
@@ -302,13 +337,13 @@ export function noCommitNote(
 }
 
 /** Branch footer shared by result, wait and follow. */
-export function branchNote(database: Database, runId: number): string {
+export function branchNote(database: Database, runId: string): string {
   const branch = mintedBranchForRun(database, runId)
   if (!branch) return ''
   const turn = database
     .query(
       `SELECT record_id, base_commit, branch_kept, branch_kept_tip, changed_paths, prompt_path, repo, launch_key
-       FROM run WHERE id=?`,
+       FROM run WHERE record_id=?`,
     )
     .get(runId) as
     | (Parameters<typeof noCommitNote>[0] & {
@@ -334,7 +369,7 @@ export function branchNote(database: Database, runId: number): string {
 /** Tell the caller how to recover a released writer tree without inspecting lifecycle state. */
 export function releasedWritingTreeNote(
   facts: { writingRun: boolean; worktree: string | null },
-  runId: number,
+  runId: string,
 ): string {
   return facts.writingRun && facts.worktree === null
     ? `\n  open tree:  ${PLATFORM_SLUG} tree open ${runId}`
@@ -382,7 +417,7 @@ function mcpNote(row: {
 
 function partialOutputDocument(
   row: {
-    id: number
+    number: number
     record_id: string
     status: string
     failure_kind: string | null
@@ -399,7 +434,7 @@ function partialOutputDocument(
   return JSON.stringify(
     {
       run: {
-        id: row.id,
+        id: row.number,
         record_id: row.record_id,
         status: row.status,
         complete: false,
@@ -415,11 +450,11 @@ function partialOutputDocument(
 
 function listResultArtifacts(
   database: Database,
-  finalId: number,
+  finalId: string,
   presentation: CollectResultPresentation,
 ): void {
   const run = database
-    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
     .get(finalId)
   const dir = run ? join(resolveRunsDirectory(process.env), run.record_id, 'artifacts') : ''
   const files: string[] = []
@@ -469,7 +504,7 @@ const consoleCollectResultPresentation: CollectResultPresentation = {
 
 function presentCollectedOutput(
   row: {
-    id: number
+    number: number
     record_id: string
     agent: string
     status: string
@@ -491,7 +526,9 @@ function presentCollectedOutput(
       )
       return
     }
-    presentation.error(`\n— INCOMPLETE partial output from run ${row.id} (${row.status}) follows`)
+    presentation.error(
+      `\n— INCOMPLETE partial output from run ${row.record_id} (${row.status}) follows`,
+    )
     presentation.log(
       rewriteScratchDirPaths(partialOutputDocument(row, output), row.record_id, runsRoot),
     )
@@ -521,46 +558,22 @@ export function collectResult(
       `unrecognized argument: ${unknown}\nworking form: ${PLATFORM_SLUG} run result <run-id> [--quiet] [--artifacts]`,
     )
   }
-  const id = Number(argv[1])
-  if (!id) throw new Error(`${PLATFORM_SLUG} run result <run-id>`)
+  const identifier = argv[1]
+  if (!identifier) throw new Error(`${PLATFORM_SLUG} run result <run-id>`)
+  const id = resolveRunIdentifier(database, identifier)
   const chain = resolveFailover(database, id)
   const row = database
     .query(
-      `SELECT id, record_id, agent, job, status, latency_ms, vendor_tokens, output_path, error,
-            failure_kind, exit_code, parent_run_id, evidence_excluded, base_commit,
+      `SELECT record_id, number, agent, job, status, latency_ms, vendor_tokens, output_path, error,
+            failure_kind, exit_code, parent_run_record_id, evidence_excluded, base_commit,
             cwd, mcp, mcp_server, mcp_connected, mcp_error, mcp_probe,
             review_provenance, provenance_status, worktree
-       FROM run WHERE id = ?`,
+       FROM run WHERE record_id = ?`,
     )
-    .get(chain.finalId) as {
-    id: number
-    record_id: string
-    agent: string
-    job: string
-    status: string
-    latency_ms: number | null
-    vendor_tokens: number | null
-    output_path: string | null
-    error: string | null
-    failure_kind: string | null
-    exit_code: number | null
-    parent_run_id: number | null
-    evidence_excluded: string | null
-    base_commit: string | null
-    cwd: string | null
-    mcp: number | null
-    mcp_server: string | null
-    mcp_connected: number | null
-    mcp_error: string | null
-    mcp_probe: string | null
-    review_provenance: string | null
-    provenance_status: string | null
-    worktree: string | null
-  } | null
+    .get(chain.finalId) as CollectedRunRow | null
   if (!row) throw new Error(`no run ${id}`)
   if (argv.includes('--artifacts')) listResultArtifacts(database, chain.finalId, presentation)
-
-  const asking = row.status === 'asking' ? resolveAsking(database, row.id) : null
+  const asking = row.status === 'asking' ? resolveAsking(database, row.record_id) : null
   const outcome = outcomeOf(row)
   const baseNote = `${row.base_commit ? `\n  base:      ${row.base_commit}` : ''}\n  record_id: ${row.record_id}`
   if (!outcome.terminal || chain.settling) {
@@ -611,16 +624,16 @@ export function collectResult(
   }
   if (!argv.includes('--quiet')) {
     presentation.error(
-      `\n— run ${row.id} · ${row.agent} · ${dur(row.latency_ms)}` +
+      `\n— run ${row.number} · ${row.agent} · ${dur(row.latency_ms)}` +
         (row.vendor_tokens !== null
           ? ` · ${row.vendor_tokens.toLocaleString()} vendor tokens`
           : ' · vendor tokens not reported') +
         okOutcomeNote(row) +
-        `\n  score it:  ${scoreHint(row.id, row.job, row.parent_run_id, scoreSuffix)}` +
-        branchNote(database, row.id) +
+        `\n  score it:  ${scoreHint(row.record_id, row.job, row.parent_run_record_id, scoreSuffix)}` +
+        branchNote(database, row.record_id) +
         releasedWritingTreeNote(
           { writingRun: writingJob(row.job), worktree: row.worktree },
-          row.id,
+          row.record_id,
         ) +
         baseNote +
         mcpNote(row) +
@@ -633,8 +646,8 @@ export function collectResult(
 const VALUE_FLAGS = new Set(['--timeout'])
 
 export type CollectedWaitRun = {
-  requestedId: number
-  finalId: number
+  requestedId: string
+  finalId: string
   status: string
   output: string
   error: string | null
@@ -648,7 +661,7 @@ export type CollectedWaitRun = {
 
 export type CollectWaitServiceResult =
   | { kind: 'finished'; runs: CollectedWaitRun[] }
-  | { kind: 'timed-out'; runs: CollectedWaitRun[]; runningIds: number[] }
+  | { kind: 'timed-out'; runs: CollectedWaitRun[]; runningIds: string[] }
 
 type CollectWaitServiceOptions = {
   timeoutMs?: number
@@ -664,7 +677,7 @@ const COLLECT_WAIT_DEFAULT_MS = 1800_000
 /** Wait for failover chains and return their terminal records without presenting or exiting. */
 export async function collectWaitForRuns(
   database: Database,
-  ids: readonly number[],
+  ids: readonly string[],
   options: CollectWaitServiceOptions = {},
 ): Promise<CollectWaitServiceResult> {
   const timeoutMs = options.timeoutMs ?? COLLECT_WAIT_DEFAULT_MS
@@ -677,22 +690,24 @@ export async function collectWaitForRuns(
     ((milliseconds: number) =>
       new Promise<void>((resolve) => globalThis.setTimeout(resolve, milliseconds)))
   const deadline = now() + timeoutMs
-  const observedTerminal = new Set<number>()
+  const observedTerminal = new Set<string>()
   for (;;) {
     const observation = beforePoll()
     const outcomes = ids.map((requestedId) => {
       const chain = resolveFailover(database, requestedId)
       const row = database
-        .query('SELECT id, status, output_path, error, failure_kind, exit_code FROM run WHERE id=?')
+        .query(
+          'SELECT record_id, status, output_path, error, failure_kind, exit_code FROM run WHERE record_id=?',
+        )
         .get(chain.finalId) as {
-        id: number
+        record_id: string
         status: string
         output_path: string | null
         error: string | null
         failure_kind: string | null
         exit_code: number | null
       }
-      const asking = row.status === 'asking' ? resolveAsking(database, row.id) : null
+      const asking = row.status === 'asking' ? resolveAsking(database, row.record_id) : null
       const outcome =
         asking?.state === 'running'
           ? { terminal: false, ok: false, line: 'running' }
@@ -712,23 +727,23 @@ export async function collectWaitForRuns(
       return { requestedId, row, chain, outcome }
     })
     if (Array.isArray(observation)) {
-      const requestedRows = new Set(outcomes.map(({ row }) => row.id))
+      const requestedRows = new Set(outcomes.map(({ row }) => row.record_id))
       for (const dead of observation) {
-        if (!requestedRows.has(dead.id) || observedTerminal.has(dead.id)) continue
-        observedTerminal.add(dead.id)
+        if (!requestedRows.has(dead.record_id) || observedTerminal.has(dead.record_id)) continue
+        observedTerminal.add(dead.record_id)
         onObservedDead(dead)
       }
     }
     const running = outcomes.filter(
       ({ row, outcome, chain }) =>
-        !observedTerminal.has(row.id) && (!outcome.terminal || chain.settling),
+        !observedTerminal.has(row.record_id) && (!outcome.terminal || chain.settling),
     )
     const timedOut = now() >= deadline
     if (!running.length || timedOut) {
       const runs = outcomes.map(
         ({ requestedId, row, chain, outcome }): CollectedWaitRun => ({
           requestedId,
-          finalId: row.id,
+          finalId: row.record_id,
           status: row.status,
           output: row.output_path && existsSync(row.output_path) ? readOutput(row.output_path) : '',
           error: row.error,
@@ -737,11 +752,11 @@ export async function collectWaitForRuns(
           ok: outcome.ok,
           line: outcome.line,
           attempts: chain.attempts,
-          observedDead: observedTerminal.has(row.id),
+          observedDead: observedTerminal.has(row.record_id),
         }),
       )
       if (!running.length) return { kind: 'finished', runs }
-      return { kind: 'timed-out', runs, runningIds: running.map(({ row }) => row.id) }
+      return { kind: 'timed-out', runs, runningIds: running.map(({ row }) => row.record_id) }
     }
     await sleep(2000)
   }
@@ -755,7 +770,7 @@ export async function collectWait(
   const rest = argv.slice(1)
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i]!
-    if (/^\d+$/.test(arg)) continue
+    if (classifyRunIdentifier(arg)) continue
     if (arg === '--timeout') {
       const value = rest[i + 1]
       if (value === undefined || value.startsWith('--')) {
@@ -773,8 +788,8 @@ export async function collectWait(
     )
   }
   const ids = rest
-    .filter((x, i) => /^\d+$/.test(x) && !VALUE_FLAGS.has(rest[i - 1] ?? ''))
-    .map(Number)
+    .filter((x, i) => classifyRunIdentifier(x) && !VALUE_FLAGS.has(rest[i - 1] ?? ''))
+    .map((identifier) => resolveRunIdentifier(database, identifier))
   if (!ids.length) throw new Error(`${PLATFORM_SLUG} run wait <run-id>...`)
   const timeoutAt = argv.indexOf('--timeout')
   const timeoutMs = timeoutAt >= 0 ? Number(argv[timeoutAt + 1]) * 1000 : COLLECT_WAIT_DEFAULT_MS
@@ -782,7 +797,9 @@ export async function collectWait(
     timeoutMs,
     beforePoll,
     onObservedDead: (run) => {
-      console.error(`run ${run.id}: process gone, not terminalised (read-only linked worktree)`)
+      console.error(
+        `run ${run.record_id}: process gone, not terminalised (read-only linked worktree)`,
+      )
     },
   })
   if (result.kind === 'timed-out') {

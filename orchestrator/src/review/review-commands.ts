@@ -34,6 +34,8 @@ import { reviewRoundIdentity } from './review-yield.ts'
 
 type ReviewFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type ReviewPresentation = { log(...values: unknown[]): void }
+const TIER_RUN_SQL =
+  'SELECT repo, job, branch, base_commit, input_tree, head_commit FROM run WHERE record_id=?'
 
 function printReviewFinding(
   finding: ReturnType<typeof getReview>['findings'][number],
@@ -109,9 +111,7 @@ function resolveTierTarget(
   if (classifyRunIdentifier(value)) {
     return (() => {
       const runId = resolveRunIdentifier(db(), value)
-      const row = db()
-        .query('SELECT repo, job, branch, base_commit, input_tree, head_commit FROM run WHERE id=?')
-        .get(runId) as {
+      const row = db().query(TIER_RUN_SQL).get(runId) as {
         repo: string | null
         job: string
         branch: string | null
@@ -168,7 +168,6 @@ function resolveTierTarget(
       return { repo: project.path, from, to: reviewed, branch: row.branch!, project }
     })()
   }
-
   const project = projectAt(cwd)
   if (!project) throw new Error('review tier target is not inside a registered project')
   const repo = gitToplevel(cwd)
@@ -340,7 +339,7 @@ export function showReviewCommand(
     if (review.outdated_reason) log(`outdated ${review.outdated_at}: ${review.outdated_reason}`)
     for (const lens of review.lenses) {
       log(
-        `lens run ${lens.run_id}: ${lens.lens} ${lens.agent}/${lens.model ?? '—'} tree=${lens.reviewed_tree ?? '—'} head=${lens.head_commit ?? '—'}`,
+        `lens run ${lens.run_record_id}: ${lens.lens} ${lens.agent}/${lens.model ?? '—'} tree=${lens.reviewed_tree ?? '—'} head=${lens.head_commit ?? '—'}`,
       )
       log(`  ref ${lens.review_ref}: ${lens.pin.resolves ? lens.pin.commit : 'unresolved'}`)
       log(
@@ -422,7 +421,7 @@ export function recordReviewCommand(
   const runIds = argv.slice(2).map((value) => resolveRunIdentifier(db(), value))
   if (!runIds.length) throw new Error(`${PLATFORM_SLUG} review record <run-id>...`)
   const entries = runIds.map((runId) => {
-    const row = db().query('SELECT output_path FROM run WHERE id=?').get(runId) as {
+    const row = db().query('SELECT output_path FROM run WHERE record_id=?').get(runId) as {
       output_path: string | null
     } | null
     if (!row?.output_path || !existsSync(row.output_path)) {
@@ -435,7 +434,9 @@ export function recordReviewCommand(
   const reviewId = recordReviews(entries)
   const mirrorRuns = entries
     .filter(({ runId }) => {
-      const row = db().query(`SELECT mcp_connected, mcp_error FROM run WHERE id=?`).get(runId) as {
+      const row = db()
+        .query(`SELECT mcp_connected, mcp_error FROM run WHERE record_id=?`)
+        .get(runId) as {
         mcp_connected: number | null
         mcp_error: string | null
       }

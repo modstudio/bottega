@@ -153,18 +153,18 @@ test('a broad path takeover closes and links every stale conflict', () => {
 test('a tied claim follows the chain latest turn and renewal restarts its lease', () => {
   const { cwd } = fixtureProject()
   const clock = Date.now()
-  const root = db()
+  const runId = newRecordId()
+  db()
     .query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn)
-       VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'prompt','running','holder',1)`,
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','running','holder',1)`,
     )
-    .run(new Date(clock).toISOString())
-  const runId = Number(root.lastInsertRowid)
+    .run(runId, new Date(clock).toISOString())
   const claim = takeClaim({ subject: 'task:DEV-1', runId }, env('holder'), clock, cwd)
   const renewed = renewClaim(claim.id, env('holder'), clock + 100)
   expect(Date.parse(renewed.lapsesAt)).toBe(Date.parse(claim.lapsesAt) + 100)
-  db().query("UPDATE run SET status='ok' WHERE id=?").run(runId)
+  db().query("UPDATE run SET status='ok' WHERE record_id=?").run(runId)
   expect(listClaims(undefined, false, env('holder'), clock + 101, cwd).claims).toEqual([])
   const next = takeClaim({ subject: 'task:DEV-1' }, env('other'), clock + 101, cwd)
   expect(next.action).toBe('taken-over')
@@ -238,10 +238,11 @@ test('task audience reaches its claim holder, current architect, and live launch
   const run = db()
     .query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn,repo,launch_key)
-       VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'prompt','running','owner',1,'claims','DEV-9')`,
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn,repo,launch_key)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','running','owner',1,'claims','DEV-9')
+       RETURNING record_id`,
     )
-    .run(new Date(clock).toISOString())
+    .get(new Date(clock).toISOString()) as { record_id: string }
   const posted = postNotice(
     { audience: 'task:DEV-9', title: 'Task notice', body: 'Coordination fact.' },
     {},
@@ -256,7 +257,7 @@ test('task audience reaches its claim holder, current architect, and live launch
   ).toEqual([
     { reader_session: 'claim-holder' },
     { reader_session: 'current-task' },
-    { reader_session: `run:${Number(run.lastInsertRowid)}` },
+    { reader_session: `run:${run.record_id}` },
   ])
 })
 
@@ -285,16 +286,16 @@ test('a stale architect presence with a live task claim reaches only that task a
 test('a task claim tied to an ended chain does not put its holder in the task audience', () => {
   const { cwd } = fixtureProject()
   const clock = Date.now()
-  const root = db()
+  const runId = newRecordId()
+  db()
     .query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn)
-       VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'prompt','running','holder',1)`,
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','running','holder',1)`,
     )
-    .run(new Date(clock).toISOString())
-  const runId = Number(root.lastInsertRowid)
+    .run(runId, new Date(clock).toISOString())
   takeClaim({ subject: 'task:DEV-9', runId }, env('holder'), clock, cwd)
-  db().query("UPDATE run SET status='ok' WHERE id=?").run(runId)
+  db().query("UPDATE run SET status='ok' WHERE record_id=?").run(runId)
   const posted = postNotice(
     {
       audience: 'task:DEV-9',

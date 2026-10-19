@@ -54,7 +54,7 @@ type SuccessorOptions = {
   lens: string | undefined
   cwd: string
   repo: string | undefined
-  retryOf: number
+  retryOf: string
   noFailover: false
   ownerSession: string | null
   automaticFailover: true
@@ -74,7 +74,7 @@ export type CloseInput = {
   failureKind: ReturnType<typeof classify> | null
   name: string
   opts: CloseOptions
-  claim: { id: number }
+  claim: { id: string; number: number }
   idleUnkillable: boolean
   status: string
   worktree: Worktree | null
@@ -101,10 +101,34 @@ export type CloseInput = {
   run: (opts: SuccessorOptions) => Promise<RunResult>
 }
 
-function appendFailoverRefusal(id: number, reason: string): void {
+function appendFailoverRefusal(id: string, reason: string): void {
   db()
-    .query(`UPDATE run SET error=COALESCE(error || '\n', '') || ? WHERE id=?`)
+    .query(`UPDATE run SET error=COALESCE(error || '\n', '') || ? WHERE record_id=?`)
     .run(`Failover refused: ${reason}`, id)
+}
+
+function hasFailoverSuccessor(id: string): boolean {
+  return Boolean(db().query('SELECT record_id FROM run WHERE retry_of_record_id=?').get(id))
+}
+
+function notifyFailureRequiringHuman(input: {
+  failureKind: ReturnType<typeof classify> | null
+  name: string
+  job: string
+  idleUnkillable: boolean
+  runId: string
+}): void {
+  if (input.failureKind && NEEDS_HUMAN.includes(input.failureKind)) {
+    notify(
+      NEEDS_HUMAN_TITLE[input.failureKind]?.(input.name) ?? `${input.name} needs attention`,
+      `${input.job} failed. Routing will avoid it until it succeeds again.`,
+    )
+  }
+  if (input.idleUnkillable)
+    notify(
+      `${input.name} idle kill did not terminate`,
+      `run ${input.runId} still alive after SIGKILL; needs a human`,
+    )
 }
 
 export async function closeRun(input: CloseInput): Promise<RunResult> {
@@ -138,27 +162,11 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
     error,
     run,
   } = input
-
-  // Quota and auth stop this agent working until a person acts. Notify at the
-  // moment it happens even though the failover path below can route around it.
-  if (failureKind && NEEDS_HUMAN.includes(failureKind)) {
-    notify(
-      NEEDS_HUMAN_TITLE[failureKind]?.(name) ?? `${name} needs attention`,
-      `${opts.job} failed. Routing will avoid it until it succeeds again.`,
-    )
-  }
-  if (idleUnkillable) {
-    notify(
-      `${name} idle kill did not terminate`,
-      `run ${claim.id} still alive after SIGKILL; needs a human`,
-    )
-  }
-
+  notifyFailureRequiringHuman({ failureKind, name, job: opts.job, idleUnkillable, runId: claim.id })
   if (status === 'failed' && failureKind && FAILS_OVER.includes(failureKind)) {
     // Terminate the recorded vendor, excluding this coordinator so it can
     // still route and run the successor. This does not write a stopped row.
     terminateRunProcesses(claim.id, [process.pid])
-
     const attempts = failoverAttempts(claim.id)
     const tried = attempts.map((attempt) => attempt.agent)
     const first = db()
@@ -166,9 +174,9 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
         `SELECT prompt_path, launch_cwd, launch_seed, launch_key, launch_base,
               no_failover, session_id, mcp, mcp_error, schema_path, probe, label, lens, repo,
               base_commit, head_commit, review_ref, transport
-         FROM run WHERE id=?`,
+         FROM run WHERE record_id=?`,
       )
-      .get(attempts[0]!.id) as {
+      .get(attempts[0]!.record_id) as {
       prompt_path: string | null
       launch_cwd: string | null
       launch_seed: string | null
@@ -278,7 +286,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
               : undefined,
         })
       } catch (e) {
-        const successor = db().query('SELECT id FROM run WHERE retry_of=?').get(claim.id)
+        const successor = hasFailoverSuccessor(claim.id)
         // Once a successor exists its own terminal row is the explanation.
         if (successor) throw e
         appendFailoverRefusal(
@@ -316,7 +324,8 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
     throw Object.assign(new Error(`run ${claim.id} failed: ${error}`), { runId: claim.id })
   }
   return {
-    id: claim.id,
+    record_id: claim.id,
+    number: claim.number,
     agent: name,
     reason,
     output,

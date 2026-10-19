@@ -21,7 +21,7 @@ const RESOURCE_INVENTORY_TIMEOUT_MS = 1_000
 type WorktreeDatabase = {
   engine: 'postgres' | 'mysql'
   name: string
-  runId: number
+  runId: string
   project: string
 }
 
@@ -32,13 +32,13 @@ export type DatabaseInventory =
 export type RetainedRef = {
   ref: string
   sha: string
-  runId: number
+  runId: string
   project: string
 }
 
 export type RefGuard = {
   path: string
-  runId: number
+  runId: string
   project: string
 }
 
@@ -49,8 +49,8 @@ export type GitResourceInventory<T> =
 export type SandboxDirectoryInventory =
   | {
       ascertainable: true
-      directories: { rootId: number; path: string; sizeBytes: number }[]
-      conversations: { rootId: number; terminal: boolean }[]
+      directories: { rootId: string; path: string; sizeBytes: number }[]
+      conversations: { rootId: string; terminal: boolean }[]
     }
   | { ascertainable: false; reason: string }
 
@@ -65,29 +65,31 @@ export function sandboxDirectoryInventory(
   database: ReturnType<typeof db>,
 ): SandboxDirectoryInventory {
   try {
-    const rows = database.query('SELECT id, parent_run_id, status FROM run').all() as {
-      id: number
-      parent_run_id: number | null
+    const rows = database
+      .query('SELECT record_id, parent_run_record_id, status FROM run')
+      .all() as {
+      record_id: string
+      parent_run_record_id: string | null
       status: string
     }[]
-    const rootByRecordId = new Map(
+    const rootRecordIds = new Set(
       database
-        .query<{ id: number; record_id: string }, []>('SELECT id,record_id FROM run')
+        .query<{ record_id: string }, []>('SELECT record_id FROM run')
         .all()
-        .map((row) => [row.record_id, row.id]),
+        .map((row) => row.record_id),
     )
     const directories = existsSync(RUNS_DIR)
       ? readdirSync(RUNS_DIR, { withFileTypes: true }).flatMap((entry) => {
           const match = entry.isDirectory() ? /^sandbox-([0-9a-f-]{36})$/i.exec(entry.name) : null
-          const rootId = match ? rootByRecordId.get(match[1]!.toLowerCase()) : undefined
-          if (!match || rootId === undefined) return []
+          const rootId = match?.[1]?.toLowerCase()
+          if (!rootId || !rootRecordIds.has(rootId)) return []
           const path = join(RUNS_DIR, entry.name)
           return [{ rootId, path, sizeBytes: directorySize(path) }]
         })
       : []
-    const statuses = new Map<number, string[]>()
+    const statuses = new Map<string, string[]>()
     for (const row of rows) {
-      const rootId = row.parent_run_id ?? row.id
+      const rootId = row.parent_run_record_id ?? row.record_id
       statuses.set(rootId, [...(statuses.get(rootId) ?? []), row.status])
     }
     const terminal = new Set(['ok', 'failed', 'stale', 'stopped'])
@@ -198,31 +200,21 @@ export function discoverRetainedRefMigration(
     if (!refs.ok) {
       throw new Error(`${project.name}: retained refs could not be read: ${refs.reason}`)
     }
-    for (const line of refs.out ? refs.out.split('\n') : []) {
-      const [ref, tip] = line.split(' ')
+    const observedRefs = new Map(
+      (refs.out ? refs.out.split('\n') : []).flatMap((line) => {
+        const [ref, tip] = line.split(' ')
+        return ref && tip ? [[ref, tip] as const] : []
+      }),
+    )
+    for (const [ref, tip] of observedRefs) {
       if (!ref || !tip) continue
       const number = legacyRetainedRefNumber(ref)
       const run = number ? runs.get(number) : undefined
-      let destinationTip: string | null = null
-      if (run) {
-        const destination = git(project.path, [
-          'rev-parse',
-          '--verify',
-          '--quiet',
-          retainedRefName(run.recordId),
-        ])
-        if (destination.ok) destinationTip = destination.out
-        else if (destination.exitCode !== 1) {
-          throw new Error(
-            `${project.name}: retained ref destination could not be read: ${destination.reason}`,
-          )
-        }
-      }
       candidates.push({
         projectPath: project.path,
         ref,
         tip,
-        destinationTip,
+        destinationTip: run ? (observedRefs.get(retainedRefName(run.recordId)) ?? null) : null,
       })
     }
   }
@@ -258,7 +250,7 @@ function databasesFromNames(
   project: string,
   engine: 'postgres' | 'mysql',
   names: string[],
-  owners: ReadonlyMap<string, number>,
+  owners: ReadonlyMap<string, string>,
 ): WorktreeDatabase[] {
   return names.flatMap((name) => {
     const runId = owners.get(`${project}\0${engine}\0${name}`)
@@ -310,16 +302,16 @@ export function worktreeDatabaseInventory(): DatabaseInventory {
     (
       db()
         .query(
-          `SELECT p.name project,rc.root_run_id,rc.allocation_key
+          `SELECT p.name project,rc.root_run_record_id,rc.allocation_key
            FROM resource_claim rc JOIN project p ON p.record_id=rc.project_record_id
            WHERE rc.kind='database' AND rc.state IN ('claimed','retained')`,
         )
-        .all() as { project: string; root_run_id: number; allocation_key: string }[]
+        .all() as { project: string; root_run_record_id: string; allocation_key: string }[]
     ).map((row) => {
       const separator = row.allocation_key.indexOf(':')
       const engine = row.allocation_key.slice(0, separator)
       const name = row.allocation_key.slice(separator + 1)
-      return [`${row.project}\0${engine}\0${name}`, row.root_run_id] as const
+      return [`${row.project}\0${engine}\0${name}`, row.root_run_record_id] as const
     }),
   )
   for (const project of projects().filter(isProjectRepository)) {
@@ -400,8 +392,8 @@ function retainedRefsForProject(project: Project): GitResourceInventory<Retained
     const runRecordId = ref ? parseRetainedRef(ref) : null
     if (!ref || !sha || runRecordId === null) return []
     const runId = db()
-      .query<{ id: number }, [string]>('SELECT id FROM run WHERE record_id=?')
-      .get(runRecordId)?.id
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
+      .get(runRecordId)?.record_id
     return runId === undefined ? [] : [{ ref, sha, runId, project: project.name }]
   })
   return { ascertainable: true, items }
@@ -441,8 +433,8 @@ function refGuardsForProject(project: Project): GitResourceInventory<RefGuard> {
     const runRecordId = parseRefGuardRunId(name)
     if (runRecordId === null) return []
     const runId = db()
-      .query<{ id: number }, [string]>('SELECT id FROM run WHERE record_id=?')
-      .get(runRecordId)?.id
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
+      .get(runRecordId)?.record_id
     const path = join(root, name)
     try {
       return runId !== undefined && statSync(path).isDirectory()

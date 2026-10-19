@@ -175,7 +175,7 @@ export type BranchPruneKeptReason =
   | 'protected'
   | 'unlanded'
   | 'unknown'
-  | `base of live run ${number} (${string})`
+  | `base of live run ${string} (${string})`
   | 'tip could not be rechecked'
   | `registered ${ProtectedBranchKind}`
   | 'deletion failed'

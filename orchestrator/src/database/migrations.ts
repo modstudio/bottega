@@ -11,6 +11,7 @@ const SCHEMA_INVARIANT = "Only the main checkout's binary migrates the store."
 export const CONNECTION_SCHEMA_INVARIANT = 'A process writes only the schema version it opened.'
 export const JOURNAL_WHEN_ORDER = 'migration journal when values must be strictly increasing'
 const BACKFILL_UNCLOSED = 'migration backfill blocks must be closed by -- /BACKFILL'
+const RUN_UUID_KEY_MIGRATION = '0124_run_uuid_key'
 
 type JournalEntry = { idx: number; when: number; tag: string }
 export type BeforeMigrationApply = {
@@ -466,6 +467,53 @@ function executeMigrationSource(d: Database, source: string): void {
   executeStatements(d, splitMigrationSource(source).ddl)
 }
 
+const INTEGER_RUN_REFERENCES = [
+  ['run', 'retry_of'],
+  ['run', 'parent_run_id'],
+  ['blocker', 'run_id'],
+  ['board_claim', 'run_id'],
+  ['board_message', 'author_run_id'],
+  ['calibration', 'run_id'],
+  ['canon_eval', 'run_id'],
+  ['compared_pair', 'run_a_id'],
+  ['compared_pair', 'run_b_id'],
+  ['contention', 'run_id'],
+  ['duel', 'winner_run_id'],
+  ['duel', 'loser_run_id'],
+  ['gate_execution', 'run_id'],
+  ['question', 'run_id'],
+  ['question_delivery', 'run_id'],
+  ['resource_claim', 'root_run_id'],
+  ['resource_claim', 'run_id'],
+  ['review_lens', 'run_id'],
+  ['run_carried_ruling', 'run_id'],
+  ['run_checkpoint', 'run_id'],
+  ['run_message', 'root_run_id'],
+  ['run_message', 'run_id'],
+  ['run_mutation_audit', 'run_id'],
+  ['run_mutation_audit', 'root_id'],
+  ['run_mutation_audit', 'turn_id'],
+  ['score', 'run_id'],
+  ['worker_note_request', 'run_id'],
+] as const
+
+function runReferenceOrphanCounts(d: Database): string[] {
+  const findings: string[] = []
+  for (const [table, column] of INTEGER_RUN_REFERENCES) {
+    const count = (
+      d
+        .query(
+          `SELECT COUNT(*) AS n FROM ${quoteIdentifier(table)} child
+           WHERE child.${quoteIdentifier(column)} IS NOT NULL
+             AND NOT EXISTS (SELECT 1 FROM run parent WHERE parent.id=child.${quoteIdentifier(column)})`,
+        )
+        .get() as { n: number }
+    ).n
+    if (count > 0) findings.push(`${table}.${column}=${count}`)
+  }
+  return findings
+}
+
 function applyBackfills(d: Database, entries: JournalEntry[], folder: string): void {
   for (const entry of entries) {
     const backfill = splitMigrationSource(migrationSource(entry, folder)).backfill
@@ -488,7 +536,16 @@ function compatibleBackfillEntries(d: Database, entries: JournalEntry[]): Journa
   ).n
   if (projectHasIntegerId > 0)
     return entries.filter((entry) => !BACKFILL_SCHEMA_BOUNDARIES.has(entry.tag))
-  return entries.filter((entry) => !INTEGER_PROJECT_BACKFILLS.has(entry.tag))
+  const runHasIntegerId = (
+    d.query("SELECT COUNT(*) AS n FROM pragma_table_info('run') WHERE name='id'").get() as {
+      n: number
+    }
+  ).n
+  return entries.filter(
+    (entry) =>
+      !INTEGER_PROJECT_BACKFILLS.has(entry.tag) &&
+      (runHasIntegerId > 0 || entry.tag !== '0117_project_uuid_key'),
+  )
 }
 
 const expectedSchemaHashes = new Map<string, string>()
@@ -622,6 +679,20 @@ function adoptBaseline(d: Database, folder: string): string[] {
   return [entry.tag]
 }
 
+function prepareMigrationEntry(
+  d: Database,
+  entry: JournalEntry,
+  beforeApply?: BeforeMigrationApply,
+): void {
+  if (beforeApply?.migration === entry.tag) beforeApply.action(d)
+  if (entry.tag !== RUN_UUID_KEY_MIGRATION) return
+  const orphanCounts = runReferenceOrphanCounts(d)
+  if (orphanCounts.length)
+    throw new Error(
+      `refusing run UUID-key migration: integer references have no parent run (${orphanCounts.join(', ')})`,
+    )
+}
+
 function applyMigrationRange(
   d: Database,
   folder: string,
@@ -652,7 +723,7 @@ function applyMigrationRange(
     }
     const allowed = new Set(allowedEntries.map((entry) => entry.tag))
     for (const entry of state.pending.filter((entry) => allowed.has(entry.tag))) {
-      if (beforeApply?.migration === entry.tag) beforeApply.action(d)
+      prepareMigrationEntry(d, entry, beforeApply)
       createMigrationsTable(d)
       if (BACKFILL_SCHEMA_BOUNDARIES.has(entry.tag)) {
         const boundary = allowedEntries.findIndex((candidate) => candidate.tag === entry.tag)

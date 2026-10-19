@@ -54,10 +54,21 @@ export function taskBranchLandingTreeRefusal(refusal: {
 }
 
 export type TaskBranchRunRow = {
-  id: number
-  parent_run_id: number | null
+  record_id: string
+  number: number
+  parent_run_record_id: string | null
   branch: string
   launch_base: string | null
+}
+
+export function taskBranchRunRow(run: {
+  record_id: string
+  number: number
+  parent_run_record_id: string | null
+  branch: string | null
+  launch_base: string | null
+}): TaskBranchRunRow {
+  return { ...run, branch: run.branch! }
 }
 
 type ResolvedTaskBranchRunRow = TaskBranchRunRow & {
@@ -67,8 +78,12 @@ type ResolvedTaskBranchRunRow = TaskBranchRunRow & {
   job: string
 }
 
+function nominatingRuns(rows: ResolvedTaskBranchRunRow[]): TaskBranchNominatingRun[] {
+  return rows.map((row) => ({ record_id: row.record_id, sessionId: row.session_id }))
+}
+
 type TaskBranchWorktreeOwnerRow = {
-  id: number
+  record_id: string
   worktree: string
   worktree_source: string | null
   job: string
@@ -276,13 +291,13 @@ export function taskBranchAlreadyLanded(input: {
 
 /** Whether a later explicit-base root moved the task's ownership to another branch. */
 export function isTaskBranchSuperseded(branch: string, rows: readonly TaskBranchRunRow[]): boolean {
-  const branchRunIds = rows.filter((row) => row.branch === branch).map((row) => row.id)
-  if (branchRunIds.length === 0) return false
-  const latestBranchRunId = Math.max(...branchRunIds)
+  const branchRunNumbers = rows.filter((row) => row.branch === branch).map((row) => row.number)
+  if (branchRunNumbers.length === 0) return false
+  const latestBranchRunNumber = Math.max(...branchRunNumbers)
   return rows.some(
     (row) =>
-      row.id > latestBranchRunId &&
-      row.parent_run_id === null &&
+      row.number > latestBranchRunNumber &&
+      row.parent_run_record_id === null &&
       row.launch_base !== null &&
       row.branch !== branch,
   )
@@ -343,7 +358,7 @@ function taskBranchScoreVoidRemedies(
     .map((kept) => {
       const voidCommands = candidates
         .filter((candidate) => candidate !== kept)
-        .flatMap((candidate) => candidate.nominatingRuns.map((run) => run.id))
+        .flatMap((candidate) => candidate.nominatingRuns.map((run) => run.record_id))
         .map(
           (id) =>
             `    ${PLATFORM_SLUG} score ${id} --void --note "not the live ${launchKey} branch"`,
@@ -426,10 +441,10 @@ function resolvedTaskBranchWorktree(input: {
   if (!input.path) return { worktree: null, ownerJob: null }
   const owners = db()
     .query(
-      `SELECT id,worktree,worktree_source,job,status
+      `SELECT record_id,worktree,worktree_source,job,status
          FROM run
         WHERE project_record_id=? AND worktree IS NOT NULL
-        ORDER BY CASE WHEN status IN ('ok','failed','stale','stopped') THEN 1 ELSE 0 END, id DESC`,
+        ORDER BY CASE WHEN status IN ('ok','failed','stale','stopped') THEN 1 ELSE 0 END, number DESC`,
     )
     .all(input.projectId) as TaskBranchWorktreeOwnerRow[]
   const owner = owners.find(
@@ -508,8 +523,8 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
   if (!project || !repoRoot) return null
   const rows = db()
     .query(
-      `WITH candidate AS (SELECT run.*, run.id AS run_id FROM run)
-     SELECT candidate.id, candidate.parent_run_id, candidate.branch,
+      `WITH candidate AS (SELECT run.*, run.record_id AS run_record_id FROM run)
+     SELECT candidate.number, candidate.record_id, candidate.parent_run_record_id, candidate.branch,
             candidate.launch_base, candidate.session_id, candidate.worktree,
             candidate.worktree_source, candidate.job
        FROM candidate
@@ -518,7 +533,7 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
         AND candidate.branch IS NOT NULL
         AND ${taskBranchCandidacySql('candidate')}
         AND ${reviewRunEvidenceSql('candidate', 'candidate')}
-      ORDER BY candidate.id`,
+      ORDER BY candidate.number`,
     )
     .all(launchKey, project.recordId) as ResolvedTaskBranchRunRow[]
   if (rows.length === 0) return null
@@ -589,7 +604,7 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
       mergeBase,
       projectId: project.recordId,
       projectName: project.name,
-      nominatingRuns: branchRows.map((row) => ({ id: row.id, sessionId: row.session_id })),
+      nominatingRuns: nominatingRuns(branchRows),
       trunk,
       worktree: resolvedWorktree.worktree,
       worktreeOwnerJob: resolvedWorktree.ownerJob,
@@ -613,7 +628,7 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
 export function taskBranchReuseNotice(candidate: TaskBranchCandidate): string {
   return (
     `! continuing task branch ${candidate.branch} at tip ${candidate.tip} ` +
-    `(runs ${candidate.nominatingRuns.map((run) => run.id).join(', ')}); ` +
+    `(runs ${candidate.nominatingRuns.map((run) => run.record_id).join(', ')}); ` +
     `use --base ${candidate.trunk} to start over`
   )
 }

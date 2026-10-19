@@ -23,15 +23,15 @@ const trackResidue = trackedTestResidue()
 
 const limit = () => ARGV_PROMPT_BYTES
 
-function insert(status: string, job = 'file-question'): number {
+function insert(status: string, job = 'file-question'): string {
   return (
     db()
       .query(
-        `INSERT INTO run (record_id,started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status,
+        `INSERT INTO run (record_id,number,started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status,
                          repo, cwd, worktree)
-     VALUES ('${newRecordId()}',?, 'codex', ?, 'x', 1, 'x', ?, 'continuation-fixture', ?, ?) RETURNING id`,
+     VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?, 'codex', ?, 'x', 1, 'x', ?, 'continuation-fixture', ?, ?) RETURNING record_id AS id`,
       )
-      .get(new Date().toISOString(), job, status, dir, dir) as { id: number }
+      .get(new Date().toISOString(), job, status, dir, dir) as { id: string }
   ).id
 }
 
@@ -117,8 +117,8 @@ describe('inherited resume launch', () => {
 
 describe('run continuation', () => {
   test('a continuation resumes from the newest turn that started, numbered past every turn', () => {
-    const turn = (id: number, agent: string, n: number): ChainTurn => ({
-      id,
+    const turn = (id: string, agent: string, n: number): ChainTurn => ({
+      record_id: id,
       agent,
       vendor_session: agent === '(pending)' ? null : 'session',
       turn: n,
@@ -129,15 +129,15 @@ describe('run continuation', () => {
       worktree_source: agent === '(pending)' ? null : 'git',
     })
     const chain = [
-      turn(10, 'codex', 1),
-      turn(11, 'codex', 2),
-      turn(12, '(pending)', 3),
-      turn(13, '(pending)', 4),
+      turn('run-10', 'codex', 1),
+      turn('run-11', 'codex', 2),
+      turn('run-12', '(pending)', 3),
+      turn('run-13', '(pending)', 4),
     ]
 
-    const { latest, nextTurn } = continuationTurn(10, chain)
+    const { latest, nextTurn } = continuationTurn('run-10', chain)
 
-    expect(latest).toMatchObject({ id: 11, agent: 'codex', worktree: '/tree' })
+    expect(latest).toMatchObject({ record_id: 'run-11', agent: 'codex', worktree: '/tree' })
     expect(nextTurn).toBe(5)
   })
 
@@ -166,8 +166,8 @@ describe('run continuation', () => {
     const reviewId = recordReview(root, reviewReply(1, 'high'), db())
     const before = db()
       .query(
-        `SELECT r.id,r.completed_at,rl.id lens_id,rl.run_id
-       FROM review r JOIN review_lens rl ON rl.review_id=r.id WHERE r.id=?`,
+        `SELECT r.record_id,r.completed_at,rl.id lens_id,rl.run_record_id
+       FROM review r JOIN review_lens rl ON rl.review_id=r.record_id WHERE r.record_id=?`,
       )
       .get(reviewId)
     await expect(continueRun(root, 'review another turn', limit)).rejects.toThrow(
@@ -176,8 +176,8 @@ describe('run continuation', () => {
     expect(
       db()
         .query(
-          `SELECT r.id,r.completed_at,rl.id lens_id,rl.run_id
-       FROM review r JOIN review_lens rl ON rl.review_id=r.id WHERE r.id=?`,
+          `SELECT r.record_id,r.completed_at,rl.id lens_id,rl.run_record_id
+       FROM review r JOIN review_lens rl ON rl.review_id=r.record_id WHERE r.record_id=?`,
         )
         .get(reviewId),
     ).toEqual(before)
@@ -187,7 +187,7 @@ describe('run continuation', () => {
     const root = insert('asking')
     db()
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+        `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
       )
       .run(root, new Date().toISOString(), 'Which correction should be applied?')
     let calls = 0
@@ -211,15 +211,17 @@ describe('run continuation', () => {
     const spec = trackResidue(join(dir, `continue-long-${root}.prompt.txt`))
     writeFileSync(spec, longSpec)
     db()
-      .query('UPDATE run SET vendor_session=?,agent=?,prompt_path=?,session_id=? WHERE id=?')
+      .query('UPDATE run SET vendor_session=?,agent=?,prompt_path=?,session_id=? WHERE record_id=?')
       .run('parent-session', 'codex', spec, 'orch-test-session', root)
     const assembled = Buffer.byteLength(packedResumePrompt('file-question', body, root))
     await expect(continueRun(root, body, limit)).rejects.toThrow(
       `assembled resume prompt is ${assembled} bytes`,
     )
-    expect(db().query('SELECT COUNT(*) n FROM run WHERE parent_run_id=?').get(root)).toEqual({
-      n: 0,
-    })
+    expect(db().query('SELECT COUNT(*) n FROM run WHERE parent_run_record_id=?').get(root)).toEqual(
+      {
+        n: 0,
+      },
+    )
   })
 
   test('vendor-session continuation does not recover prior instructions', async () => {
@@ -239,11 +241,13 @@ describe('run continuation', () => {
       session: 'orch-test-session',
     })
     db()
-      .query('UPDATE run SET vendor_session=?,cwd=?,worktree=? WHERE id IN (?,?)')
+      .query('UPDATE run SET vendor_session=?,cwd=?,worktree=? WHERE record_id IN (?,?)')
       .run('vendor-session', dir, dir, root, prior)
 
     const resumed = await continueRun(root, 'vendor-session message', limit)
-    const artifact = db().query('SELECT prompt_path FROM run WHERE id=?').get(resumed.childId) as {
+    const artifact = db()
+      .query('SELECT prompt_path FROM run WHERE record_id=?')
+      .get(resumed.childId) as {
       prompt_path: string
     }
 
@@ -254,15 +258,17 @@ describe('run continuation', () => {
   test('a released reader with an unavailable base refuses before creating a turn', async () => {
     const root = insert('ok')
     db()
-      .query('UPDATE run SET vendor_session=?,worktree=NULL,base_commit=? WHERE id=?')
+      .query('UPDATE run SET vendor_session=?,worktree=NULL,base_commit=? WHERE record_id=?')
       .run('vendor-session', 'missing-reader-base', root)
 
     await expect(continueRun(root, 'deliver queued messages', limit)).rejects.toThrow(
       'read-only base commit missing-reader-base is unavailable',
     )
-    expect(db().query('SELECT COUNT(*) n FROM run WHERE parent_run_id=?').get(root)).toEqual({
-      n: 0,
-    })
+    expect(db().query('SELECT COUNT(*) n FROM run WHERE parent_run_record_id=?').get(root)).toEqual(
+      {
+        n: 0,
+      },
+    )
   })
 
   test('a repository-free continuation needs neither a project nor a reader base', async () => {
@@ -273,11 +279,13 @@ describe('run continuation', () => {
       session: 'orch-test-session',
     })
     db()
-      .query('UPDATE run SET vendor_session=?,cwd=?,worktree=NULL,base_commit=NULL WHERE id=?')
+      .query(
+        'UPDATE run SET vendor_session=?,cwd=?,worktree=NULL,base_commit=NULL WHERE record_id=?',
+      )
       .run('vendor-session', dir, root)
 
     const resumed = await continueRun(root, 'summarize one more thing', limit)
 
-    expect(resumed).toEqual({ childId: expect.any(Number), job: 'summarize' })
+    expect(resumed).toEqual({ childId: expect.stringMatching(/^[0-9a-f-]{36}$/), job: 'summarize' })
   })
 })

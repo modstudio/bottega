@@ -99,7 +99,7 @@ function renderSearchResults(
   for (const result of found.results) {
     const task = result.task_key ? ` · ${result.task_key}` : ''
     presentation.log(
-      `${result.source} ${result.id} · run ${result.run_id}${task} · ${result.match}\n${result.content === undefined ? `  ${result.snippet}` : result.content}`,
+      `${result.source} ${result.id} · run ${result.run_record_id}${task} · ${result.match}\n${result.content === undefined ? `  ${result.snippet}` : result.content}`,
     )
   }
   if (found.truncated) presentation.log('\nmore matches omitted; increase --limit to see them')

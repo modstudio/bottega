@@ -69,7 +69,7 @@ function auditReason(flags: ReturnType<typeof optionFlags>): string | null {
   return flags.flag('unreviewed') ?? flags.flag('note') ?? null
 }
 
-function pairHint(partner: { id: number; agent: string }): string {
+function pairHint(partner: { id: string; agent: string }): string {
   const reason = 'reason' in partner ? String(partner.reason) : 'same task'
   return `pair: run ${partner.id} (${partner.agent}) is comparable (${reason}) — record with --better-than ${partner.id} | --worse-than ${partner.id} | --same-as ${partner.id}`
 }
@@ -134,12 +134,12 @@ export function scorePathForJob(
   return 'score'
 }
 
-function rootJob(runId: number): string {
+function rootJob(runId: string): string {
   const row = db()
-    .query<{ job: string }, [number]>(
+    .query<{ job: string }, [string]>(
       `SELECT root.job FROM run requested
-       JOIN run root ON root.id=COALESCE(requested.parent_run_id,requested.id)
-       WHERE requested.id=?`,
+       JOIN run root ON root.record_id=COALESCE(requested.parent_run_record_id,requested.record_id)
+       WHERE requested.record_id=?`,
     )
     .get(runId)
   if (!row) throw new Error(`no run ${runId}`)

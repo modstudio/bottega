@@ -15,7 +15,7 @@ export function startWorkerExecutionBrokers(input: {
   repoJob: boolean
   writesRepo: boolean
   worktree: Worktree | null
-  runId: number
+  runId: string
   scratchDir: string
   environment: Record<string, string>
   onGateStart: (at: string) => void

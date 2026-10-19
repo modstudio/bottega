@@ -123,7 +123,7 @@ export type RefreshOwner = {
   snapshot: RecipeSnapshot | null
   key: string | null
   seed: string | null
-  rootRunId: number
+  rootRunId: string
 }
 
 const SNAPSHOT_STATIC_PLACEHOLDERS = new Set(['key', 'seed', 'index', 'label', 'compose.project'])

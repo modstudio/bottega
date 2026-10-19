@@ -2,8 +2,9 @@ import { describe, expect, test } from 'bun:test'
 import { decideShipCleanup, type ShipCleanupRunFact } from './ship-cleanup-decision.ts'
 
 const run = (overrides: Partial<ShipCleanupRunFact> = {}): ShipCleanupRunFact => ({
-  id: 1,
-  rootId: 1,
+  record_id: '1',
+  number: 1,
+  root_record_id: '1',
   startedAt: '2026-10-18T00:00:00Z',
   job: 'implement',
   status: 'ok',
@@ -28,14 +29,14 @@ describe('ship cleanup decision', () => {
 
   test('covers the root and turns of the chain that reached the merged branch', () => {
     const decisions = decide([
-      run({ id: 1, rootId: 1, branch: 'DEV-1392-c2' }),
-      run({ id: 2, rootId: 1, branch: 'DEV-1392-c3' }),
-      run({ id: 3, rootId: 3, branch: 'DEV-1392-c2' }),
+      run({ record_id: '1', root_record_id: '1', branch: 'DEV-1392-c2' }),
+      run({ record_id: '2', root_record_id: '1', branch: 'DEV-1392-c3' }),
+      run({ record_id: '3', root_record_id: '3', branch: 'DEV-1392-c2' }),
     ])
-    expect(decisions.map(({ id, scope }) => ({ id, scope }))).toEqual([
-      { id: 1, scope: 'chain' },
-      { id: 2, scope: 'chain' },
-      { id: 3, scope: 'outside' },
+    expect(decisions.map(({ record_id, scope }) => ({ record_id, scope }))).toEqual([
+      { record_id: '1', scope: 'chain' },
+      { record_id: '2', scope: 'chain' },
+      { record_id: '3', scope: 'outside' },
     ])
   })
 

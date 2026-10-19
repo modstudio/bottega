@@ -13,9 +13,7 @@ afterEach(() => {
   mock.restore()
 })
 
-const runRecordId = (runId: number) =>
-  db().query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?').get(runId)!
-    .record_id
+const runRecordId = (runId: string) => runId
 
 test('a project-scoped sweep previews reclamation only for that project', () => {
   const alphaRun = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
@@ -37,10 +35,10 @@ test('a project-scoped sweep previews reclamation only for that project', () => 
     settings: {},
   })
   db()
-    .query('UPDATE run SET repo=?,project_record_id=? WHERE id=?')
+    .query('UPDATE run SET repo=?,project_record_id=? WHERE record_id=?')
     .run(alphaName, alphaRecordId, alphaRun)
   db()
-    .query('UPDATE run SET repo=?,project_record_id=? WHERE id=?')
+    .query('UPDATE run SET repo=?,project_record_id=? WHERE record_id=?')
     .run(bravoName, bravoRecordId, bravoRun)
   const commands: string[] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
@@ -75,7 +73,9 @@ test('a project-scoped sweep still finds Docker resources after the project is r
   const newName = `docker-after-rename-${run}`
   const recordId = newRecordId()
   upsertProject({ recordId, name: oldName, path: join(dir, oldName), settings: {} })
-  db().query('UPDATE run SET repo=?,project_record_id=? WHERE id=?').run(oldName, recordId, run)
+  db()
+    .query('UPDATE run SET repo=?,project_record_id=? WHERE record_id=?')
+    .run(oldName, recordId, run)
   db().query('UPDATE project SET name=? WHERE record_id=?').run(newName, recordId)
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     const command = args.join(' ')
@@ -114,8 +114,12 @@ test('a cross-project root and child chain retains Docker resources and fails vi
   const bravoId = newRecordId()
   upsertProject({ recordId: alphaId, name: alphaName, path: join(dir, alphaName), settings: {} })
   upsertProject({ recordId: bravoId, name: bravoName, path: join(dir, bravoName), settings: {} })
-  db().query('UPDATE run SET repo=?,project_record_id=? WHERE id=?').run(alphaName, alphaId, root)
-  db().query('UPDATE run SET repo=?,project_record_id=? WHERE id=?').run(bravoName, bravoId, child)
+  db()
+    .query('UPDATE run SET repo=?,project_record_id=? WHERE record_id=?')
+    .run(alphaName, alphaId, root)
+  db()
+    .query('UPDATE run SET repo=?,project_record_id=? WHERE record_id=?')
+    .run(bravoName, bravoId, child)
   const commands: string[] = []
   mockDockerForRun(root, commands)
   const lines: string[] = []
@@ -147,7 +151,7 @@ test('a fully NULL chain is reported instead of disappearing from project-scoped
   const name = `docker-null-chain-${root}`
   upsertProject({ recordId: newRecordId(), name, path: join(dir, name), settings: {} })
   db()
-    .query('UPDATE run SET repo=?,project_record_id=NULL WHERE id IN (?,?)')
+    .query('UPDATE run SET repo=?,project_record_id=NULL WHERE record_id IN (?,?)')
     .run(name, root, child)
   const commands: string[] = []
   mockDockerForRun(root, commands)
@@ -181,7 +185,7 @@ test('a matching root and child chain reclaims Docker resources', () => {
   mkdirSync(join(projectPath, '.git'))
   upsertProject({ recordId, name, path: projectPath, settings: {} })
   db()
-    .query('UPDATE run SET repo=?,project_record_id=? WHERE id IN (?,?)')
+    .query('UPDATE run SET repo=?,project_record_id=? WHERE record_id IN (?,?)')
     .run(name, recordId, root, child)
   const commands: string[] = []
   mockDockerForRun(root, commands)
@@ -312,7 +316,7 @@ test('a recorded run worktree pointer keeps an otherwise orphan Compose project'
   const name = `docker-recorded-group-${Date.now()}`
   upsertProject({ recordId: newRecordId(), name, path: projectPath, settings: {} })
   const run = addRun({ agent: 'codex', job: 'implement', status: 'stopped' })
-  db().query('UPDATE run SET worktree=? WHERE id=?').run(gone, run)
+  db().query('UPDATE run SET worktree=? WHERE record_id=?').run(gone, run)
   const actualSpawnSync = Bun.spawnSync.bind(Bun)
   spyOn(Bun, 'spawnSync').mockImplementation(((
     args: string[],
@@ -416,7 +420,7 @@ function presentation(lines: string[]): CleanupPresentation {
   }
 }
 
-function mockDockerForRun(runId: number, commands: string[]): void {
+function mockDockerForRun(runId: string, commands: string[]): void {
   let removed = false
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     const command = args.join(' ')

@@ -154,9 +154,9 @@ const setTrackerStates = (d: Database, name: string, states: Record<string, stri
 const projectId = (d: Database, name: string) =>
   (
     d
-      .query<{ id: number }, [string]>('SELECT record_id AS id FROM project WHERE name=?')
+      .query<{ id: string }, [string]>('SELECT record_id AS id FROM project WHERE name=?')
       .get(name) as {
-      id: number
+      id: string
     }
   ).id
 
@@ -173,9 +173,9 @@ const insertRun = (
 ) =>
   (
     d
-      .query<{ id: number }, (string | number | null)[]>(
-        `INSERT INTO run (record_id,started_at,agent,job,repo,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,exit_code,launch_key,branch,session_id)
-         VALUES ('${newRecordId()}',?,'codex','implement',?,?, 'sha',1,'p',?,0,?,?,?) RETURNING id`,
+      .query<{ id: string }, (string | number | null)[]>(
+        `INSERT INTO run (record_id,number,started_at,agent,job,repo,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,exit_code,launch_key,branch,session_id)
+         VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement',?,?, 'sha',1,'p',?,0,?,?,?) RETURNING record_id AS id`,
       )
       .get(
         input.startedAt ?? '2026-09-01',
@@ -185,7 +185,7 @@ const insertRun = (
         input.launchKey ?? null,
         input.branch ?? null,
         input.sessionId ?? null,
-      ) as { id: number }
+      ) as { id: string }
   ).id
 
 const gather = (
@@ -212,7 +212,7 @@ test('gathers a bound answered ruling and a finished matching gate', () => {
      VALUES ('${newRecordId()}',1,'2026-09-01','Q?','workflow','2026-09-01','yes','operator',1,'rebase')`,
   ).run()
   d.query(
-    `INSERT INTO gate_execution (record_id, run_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
+    `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
      VALUES ('${newRecordId()}', NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/fixture/work','abc')`,
   ).run()
   const gathered = gather(d, { ruling: 1, gate: 1 })
@@ -270,7 +270,7 @@ test('a foreign review is refused and a matching review is allowed', () => {
     `INSERT INTO review (record_id,recorded_at,project_record_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
   ).run(projectId(d, 'other'))
   d.query(
-    `INSERT INTO review_lens (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
+    `INSERT INTO review_lens (record_id,review_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
      VALUES ('${newRecordId()}',1,?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
   ).run(foreignRun)
   expect(() => gather(d, { review: 1 })).toThrow(
@@ -286,7 +286,7 @@ test('a foreign review is refused and a matching review is allowed', () => {
     `INSERT INTO review (record_id,recorded_at,project_record_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
   ).run(projectId(d, 'fixture'))
   d.query(
-    `INSERT INTO review_lens (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
+    `INSERT INTO review_lens (record_id,review_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
      VALUES ('${newRecordId()}',2,?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
   ).run(matchingRun)
   expect(gather(d, { review: 2 }).review).toEqual({
@@ -312,7 +312,7 @@ test('review evidence covers every review of the same change on the branch', () 
   ).run(project, project, project)
   const insertLens = d.query(
     `INSERT INTO review_lens
-      (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,
+      (record_id,review_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,
        reproduced,coverage,limits,overlap)
      VALUES (?,?,?,'correctness','codex','[]','[]','[]','[]',?,?,?,?)`,
   )
@@ -349,7 +349,7 @@ test('a same-project review whose lenses miss the branch and key is refused', ()
     `INSERT INTO review (record_id,recorded_at,project_record_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
   ).run(projectId(d, 'fixture'))
   d.query(
-    `INSERT INTO review_lens (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
+    `INSERT INTO review_lens (record_id,review_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
      VALUES ('${newRecordId()}',1,?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
   ).run(runId)
   expect(() => gather(d, { review: 1 })).toThrow(
@@ -368,7 +368,7 @@ test('a review matches when a lens run carries the workflow key on another branc
     `INSERT INTO review (record_id,recorded_at,project_record_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
   ).run(projectId(d, 'fixture'))
   d.query(
-    `INSERT INTO review_lens (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
+    `INSERT INTO review_lens (record_id,review_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
      VALUES ('${newRecordId()}',1,?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
   ).run(runId)
   expect(gather(d, { review: 1 }).review?.id).toBe(1)
@@ -394,7 +394,7 @@ test('a launch-key-bound review uses its cursor branch review round', () => {
   ).run(project, project)
   const insertLens = d.query(
     `INSERT INTO review_lens
-      (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,
+      (record_id,review_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,
        reproduced,coverage,limits,overlap)
      VALUES (?,?,?,'correctness','codex','[]','[]','[]','[]',?,?,?,?)`,
   )
@@ -417,7 +417,7 @@ test('a foreign gate run is refused and a matching gate run is allowed', () => {
     branch: 'other-branch',
   })
   d.query(
-    `INSERT INTO gate_execution (record_id, run_id,requested_at,started_at,finished_at,exit_code)
+    `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code)
      VALUES ('${newRecordId()}', ?, '2026-09-01','2026-09-01','2026-09-01',0)`,
   ).run(foreign)
   expect(() => gather(d, { gate: 1 })).toThrow(
@@ -430,7 +430,7 @@ test('a foreign gate run is refused and a matching gate run is allowed', () => {
     branch: 'other-branch',
   })
   d.query(
-    `INSERT INTO gate_execution (record_id, run_id,requested_at,started_at,finished_at,exit_code)
+    `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code)
      VALUES ('${newRecordId()}', ?, '2026-09-01','2026-09-01','2026-09-01',0)`,
   ).run(matching)
   expect(gather(d, { gate: 2 }).gate).toEqual({
@@ -445,7 +445,7 @@ test('a foreign gate run is refused and a matching gate run is allowed', () => {
 test('a foreign architect gate is refused and a matching architect gate is allowed', () => {
   const d = database()
   d.query(
-    `INSERT INTO gate_execution (record_id, run_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
+    `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
      VALUES ('${newRecordId()}', NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/other','abc')`,
   ).run()
   expect(() =>
@@ -463,7 +463,7 @@ test('a foreign architect gate is refused and a matching architect gate is allow
   ).toThrow("--gate 1 cwd project is other, not this cursor's fixture")
 
   d.query(
-    `INSERT INTO gate_execution (record_id, run_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
+    `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
      VALUES ('${newRecordId()}', NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/fixture/work','abc')`,
   ).run()
   expect(gather(d, { gate: 2 }).gate).toEqual({
@@ -478,7 +478,7 @@ test('a foreign architect gate is refused and a matching architect gate is allow
 test('an architect gate whose commit is not an ancestor is refused', () => {
   const d = database()
   d.query(
-    `INSERT INTO gate_execution (record_id, run_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
+    `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
      VALUES ('${newRecordId()}', NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/fixture/work','abc')`,
   ).run()
   expect(() =>
@@ -512,9 +512,25 @@ test('a foreign run is refused and a matching run is allowed', () => {
     launchKey: 'DEV-1',
   })
   expect(gather(d, { run: matching }).run).toEqual({
-    id: matching,
+    id: String(matching),
     terminal: true,
     exitCode: 0,
+  })
+})
+
+test('a bare run number artifact resolves through the run record', () => {
+  const d = database()
+  const matching = insertRun(d, {
+    project: 'fixture',
+    branch: 'DEV-977-work',
+    launchKey: 'DEV-1',
+  })
+  const number = (
+    d.query('SELECT number FROM run WHERE record_id=?').get(matching) as { number: number }
+  ).number
+  expect(gather(d, { artifact: String(number) }).artifact).toEqual({
+    ref: String(number),
+    exists: true,
   })
 })
 
@@ -830,7 +846,7 @@ test('a keyless branchless cursor accepts a same-session run created after it', 
     startedAt: '2026-09-02',
   })
   expect(gather(d, { run: matching }, {}, planningIdentity).run).toEqual({
-    id: matching,
+    id: String(matching),
     terminal: true,
     exitCode: 0,
   })

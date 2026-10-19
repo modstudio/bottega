@@ -9,7 +9,7 @@ import type { QuestionDeliveryMode, QuestionDeliveryOutcome } from './question-v
 export function appendQuestionDeliveries(
   questionIds: number[],
   delivery: {
-    runId: number | null
+    runId: string | null
     mode: QuestionDeliveryMode
     outcome: QuestionDeliveryOutcome
     at: string
@@ -18,7 +18,7 @@ export function appendQuestionDeliveries(
   database: Database = db(),
 ): void {
   const insert = database.query(
-    `INSERT INTO question_delivery (record_id, question_id, run_id, mode, outcome, at, error)
+    `INSERT INTO question_delivery (record_id, question_id, run_record_id, mode, outcome, at, error)
      VALUES (?,?,?,?,?,?,?)`,
   )
   for (const questionId of questionIds) {

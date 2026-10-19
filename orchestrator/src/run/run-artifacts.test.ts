@@ -77,13 +77,17 @@ describe('run file pruning', () => {
       utimesSync(prompt, old, old)
       utimesSync(output, old, old)
       const id = addRun({ agent: 'codex', job: 'file-question' })
-      db().query('UPDATE run SET prompt_path=?, output_path=? WHERE id=?').run(prompt, output, id)
+      db()
+        .query('UPDATE run SET prompt_path=?, output_path=? WHERE record_id=?')
+        .run(prompt, output, id)
 
       pruneRuns(files)
 
       expect(existsSync(prompt)).toBe(false)
       expect(existsSync(output)).toBe(false)
-      expect(db().query('SELECT prompt_path, output_path FROM run WHERE id=?').get(id)).toEqual({
+      expect(
+        db().query('SELECT prompt_path, output_path FROM run WHERE record_id=?').get(id),
+      ).toEqual({
         prompt_path: null,
         output_path: null,
       })
@@ -286,7 +290,9 @@ test('an artifact persistence failure cannot overwrite a concurrent operator sto
   const tree = mkdtempSync(join(tmpdir(), 'orch-stopped-artifact-tree-'))
   try {
     expect(() => persistRunArtifacts(id, ['missing'], { path: tree }, null)).toThrow()
-    expect(db().query('SELECT status FROM run WHERE id=?').get(id)).toEqual({ status: 'stopped' })
+    expect(db().query('SELECT status FROM run WHERE record_id=?').get(id)).toEqual({
+      status: 'stopped',
+    })
   } finally {
     rmSync(tree, { recursive: true, force: true })
   }

@@ -12,18 +12,18 @@ test("a later findings turn inherits its root's implicit review branch", async (
   const root = addRun({ agent: 'codex', job: 'review-lens', status: 'asking' })
   const reserved = addRun({ agent: '(pending)', job: 'review-lens', status: 'running' })
   const reservedRecordId = db()
-    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
     .get(reserved)!.record_id
   expect(reservedRecordId[14]).toBe('7')
   const carriedQuestionId = (
     db()
-      .query<{ id: number }, [string, number]>(
-        `INSERT INTO question (record_id,run_id,asked_at,question)
+      .query<{ id: number }, [string, string]>(
+        `INSERT INTO question (record_id,run_record_id,asked_at,question)
          VALUES (?,?,'2026-10-14','Which?') RETURNING id`,
       )
       .get(newRecordId(), root) as { id: number }
   ).id
-  db().query('UPDATE run SET branch=? WHERE id=?').run('DEV-1147-reviewed', root)
+  db().query('UPDATE run SET branch=? WHERE record_id=?').run('DEV-1147-reviewed', root)
   const runsDir = mkdtempSync(join(tmpdir(), 'later-findings-claim-'))
   const repository = join(runsDir, 'repository')
   Bun.spawnSync(['git', 'init', '-b', 'main', repository])
@@ -96,16 +96,16 @@ test("a later findings turn inherits its root's implicit review branch", async (
     })
 
     expect(claimed.claim.id).toBe(reserved)
-    expect(db().query('SELECT branch,record_id FROM run WHERE id=?').get(claimed.claim.id)).toEqual(
-      {
-        branch: 'DEV-1147-reviewed',
-        record_id: reservedRecordId,
-      },
-    )
+    expect(
+      db().query('SELECT branch,record_id FROM run WHERE record_id=?').get(claimed.claim.id),
+    ).toEqual({
+      branch: 'DEV-1147-reviewed',
+      record_id: reservedRecordId,
+    })
     expect(
       db()
-        .query<{ record_id: string }, [number]>(
-          'SELECT record_id FROM run_carried_ruling WHERE run_id=?',
+        .query<{ record_id: string }, [string]>(
+          'SELECT record_id FROM run_carried_ruling WHERE run_record_id=?',
         )
         .get(claimed.claim.id)?.record_id,
     ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)

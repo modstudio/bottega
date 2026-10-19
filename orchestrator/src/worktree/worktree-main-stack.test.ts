@@ -28,7 +28,7 @@ test('worktree creation from a non-main cwd starts compose in the registered mai
       tool: { seeds: ['required'] },
       cwd: import.meta.dir,
       mainProjectPath: registeredMain,
-      runId: 999_991,
+      runId: '999_991',
       writes: true,
       readOnlyBase: 'HEAD',
       record: () => undefined,

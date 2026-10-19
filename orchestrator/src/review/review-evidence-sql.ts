@@ -8,7 +8,7 @@ export function reviewRunEvidenceSql(runAlias = 'run', lensAlias = 'rl'): string
   return `NOT (${voidedSql(runAlias)})
     AND COALESCE(${runAlias}.probe, 0) = 0
     AND NOT EXISTS (SELECT 1 FROM score review_score
-      WHERE review_score.run_id=${lensAlias}.run_id AND review_score.delivery='none')`
+      WHERE review_score.run_record_id=${lensAlias}.run_record_id AND review_score.delivery='none')`
 }
 
 /** The complete-review boundary consumed by calibration and review reports. */

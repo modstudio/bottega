@@ -3,7 +3,7 @@
 
 import { db } from '../database/db.ts'
 
-export function inheritedRunFacts(parent: number): {
+export function inheritedRunFacts(parent: string): {
   launch_cwd: string | null
   launch_seed: string | null
   launch_key: string | null
@@ -15,7 +15,7 @@ export function inheritedRunFacts(parent: number): {
   return db()
     .query(
       `SELECT launch_cwd, launch_seed, launch_key, launch_base, no_failover, task_record_id, branch
-         FROM run WHERE id=?`,
+         FROM run WHERE record_id=?`,
     )
     .get(parent) as ReturnType<typeof inheritedRunFacts>
 }

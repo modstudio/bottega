@@ -225,12 +225,13 @@ function refGuardOwner(cwd: string): string {
   return `${UNMARKED_GUARD_PREFIX}${createHash('sha256').update(real).digest('hex').slice(0, 16)}`
 }
 
-export function markedWorktreeRunId(cwd: string): number | null {
+export function markedWorktreeRunId(cwd: string): string | null {
   const value = readWorktreeMarker(cwd).runRecordId
   if (!value) return null
   return (
-    db().query<{ id: number }, [string]>('SELECT id FROM run WHERE record_id=?').get(value)?.id ??
-    null
+    db()
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
+      .get(value)?.record_id ?? null
   )
 }
 
@@ -448,11 +449,11 @@ export function prepareSharedRefGuard(
 }
 
 /** Remove the guard owned by one run. A missing repository or directory is already clean. */
-export function removeSharedRefGuard(cwd: string, runId: number): void {
+export function removeSharedRefGuard(cwd: string, runId: string): void {
   const commonDir = commonGitDir(cwd)
   if (!commonDir) return
   const owner = db()
-    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
     .get(runId)
   if (!owner) return
   rmSync(join(commonDir, 'orch-guards', owner.record_id), {

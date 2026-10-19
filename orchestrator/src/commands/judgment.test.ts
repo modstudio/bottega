@@ -35,7 +35,7 @@ test('comparison flags resolve mixed run numbers and UUIDs and deduplicate by ro
   const first = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const second = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const secondRecordId = (
-    db().query('SELECT record_id FROM run WHERE id=?').get(second) as { record_id: string }
+    db().query('SELECT record_id FROM run WHERE record_id=?').get(second) as { record_id: string }
   ).record_id
   const mixed = resolveComparisonRunIds({
     has: () => false,
@@ -59,7 +59,7 @@ test('comparison flags refuse an unknown run UUID', () => {
       values: () => [],
       flag: (name) => (name === 'worse-than' ? '01990000-0000-7000-8000-000000000099' : undefined),
     }).flag('worse-than'),
-  ).toThrow('no run has UUID')
+  ).toThrow('no run matches')
 })
 
 test('findings jobs take the judge path and another job takes the score path', () => {

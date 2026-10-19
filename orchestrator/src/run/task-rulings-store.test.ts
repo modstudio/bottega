@@ -7,18 +7,18 @@ import { upsertProject } from '../project/projects.ts'
 import { TASK_RULINGS_MAX_COUNT } from './task-rulings.ts'
 import { taskRulingsForDispatch } from './task-rulings-store.ts'
 
-function root(repo: string, launchKey: string): number {
+function root(repo: string, launchKey: string): string {
   const id = addRun({ agent: 'codex', job: 'implement', repo })
   db()
     .query(
-      'UPDATE run SET launch_key=?,project_record_id=(SELECT record_id FROM project WHERE name=?) WHERE id=?',
+      'UPDATE run SET launch_key=?,project_record_id=(SELECT record_id FROM project WHERE name=?) WHERE record_id=?',
     )
     .run(launchKey, repo, id)
   return id
 }
 
 function answeredQuestion(
-  runId: number,
+  runId: string,
   question: string,
   answeredAt: string,
   overturn?: { at: string; replacement: string | null },
@@ -26,7 +26,7 @@ function answeredQuestion(
   db()
     .query(
       `INSERT INTO question
-         (record_id,run_id,asked_at,question,answer,answered_at,answerer_kind,overturned_at,replacement)
+         (record_id,run_record_id,asked_at,question,answer,answered_at,answerer_kind,overturned_at,replacement)
        VALUES ('${newRecordId()}',?,'2026-09-01',?,'answer',?,'agent',?,?)`,
     )
     .run(runId, question, answeredAt, overturn?.at ?? null, overturn?.replacement ?? null)

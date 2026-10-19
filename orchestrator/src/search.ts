@@ -6,9 +6,9 @@ type RecordSource = 'score' | 'ruling' | 'review' | 'output'
 type RecordSearchResult = {
   source: RecordSource
   id: number
-  run_id: number
+  run_number: number
   run_record_id: string
-  root_run_id: number
+  root_run_number: number
   root_run_record_id: string
   task_key: string | null
   started_at: string
@@ -33,9 +33,9 @@ function matchedResult(row: Candidate, query: string, includeFull: boolean): Rec
   return {
     source: row.source,
     id: row.id,
-    run_id: row.run_id,
+    run_number: row.run_number,
     run_record_id: row.run_record_id,
-    root_run_id: row.root_run_id,
+    root_run_number: row.root_run_number,
     root_run_record_id: row.root_run_record_id,
     task_key: row.task_key,
     started_at: row.started_at,
@@ -83,9 +83,9 @@ export function searchRecords(
       rows.push({
         source,
         id: Number(row.id),
-        run_id: Number(row.run_id),
+        run_number: Number(row.run_number),
         run_record_id: String(row.run_record_id),
-        root_run_id: Number(row.root_run_id),
+        root_run_number: Number(row.root_run_number),
         root_run_record_id: String(row.root_run_record_id),
         task_key: row.task_key as string | null,
         started_at: String(row.started_at),
@@ -98,11 +98,11 @@ export function searchRecords(
     'score',
     d
       .query(
-        `SELECT s.id, s.run_id, r.record_id AS run_record_id,
-            root.id AS root_run_id, root.record_id AS root_run_record_id,
+        `SELECT s.id, r.number AS run_number, r.record_id AS run_record_id,
+            root.number AS root_run_number, root.record_id AS root_run_record_id,
             root.launch_key AS task_key, r.started_at, s.note
-       FROM score s JOIN run r ON r.id=s.run_id
-       JOIN run root ON root.id=COALESCE(r.parent_run_id,r.id)
+       FROM score s JOIN run r ON r.record_id=s.run_record_id
+       JOIN run root ON root.record_id=COALESCE(r.parent_run_record_id,r.record_id)
       WHERE s.note IS NOT NULL AND trim(s.note) <> ''`,
       )
       .all() as Record<string, unknown>[],
@@ -113,14 +113,14 @@ export function searchRecords(
     'ruling',
     d
       .query(
-        `SELECT q.id, q.run_id, turn.record_id AS run_record_id,
-            COALESCE(turn.parent_run_id, turn.id) AS root_run_id,
+        `SELECT q.id, turn.number AS run_number, turn.record_id AS run_record_id,
+            root.number AS root_run_number,
             root.record_id AS root_run_record_id,
             root.launch_key AS task_key, turn.started_at, q.question, q.options,
             q.recommendation, q.why, q.answer
        FROM question q
-       JOIN run turn ON turn.id=q.run_id
-       JOIN run root ON root.id=COALESCE(turn.parent_run_id, turn.id)
+       JOIN run turn ON turn.record_id=q.run_record_id
+       JOIN run root ON root.record_id=COALESCE(turn.parent_run_record_id, turn.record_id)
       WHERE q.answer IS NOT NULL`,
       )
       .all() as Record<string, unknown>[],
@@ -134,16 +134,16 @@ export function searchRecords(
     'review',
     d
       .query(
-        `SELECT rf.id, rl.run_id, r.record_id AS run_record_id,
-            COALESCE(r.parent_run_id, r.id) AS root_run_id,
+        `SELECT rf.id, r.number AS run_number, r.record_id AS run_record_id,
+            root.number AS root_run_number,
             root.record_id AS root_run_record_id,
             root.launch_key AS task_key, r.started_at,
             rf.severity, rf.location, rf.evidence, rf.proposed_correction,
             rf.disposition, rf.rejection_category
        FROM review_finding rf
        JOIN review_lens rl ON rl.id=rf.review_lens_id
-       JOIN run r ON r.id=rl.run_id
-       JOIN run root ON root.id=COALESCE(r.parent_run_id, r.id)`,
+       JOIN run r ON r.record_id=rl.run_record_id
+       JOIN run root ON root.record_id=COALESCE(r.parent_run_record_id, r.record_id)`,
       )
       .all() as Record<string, unknown>[],
     (row) =>
@@ -162,11 +162,11 @@ export function searchRecords(
   let unavailableOutputs = 0
   const outputRows = d
     .query(
-      `SELECT r.id AS run_id, r.record_id AS run_record_id,
-            COALESCE(r.parent_run_id, r.id) AS root_run_id,
+      `SELECT r.number AS run_number, r.record_id AS run_record_id,
+            root.number AS root_run_number,
             root.record_id AS root_run_record_id,
             root.launch_key AS task_key, r.started_at, r.output_path
-       FROM run r JOIN run root ON root.id=COALESCE(r.parent_run_id, r.id)
+       FROM run r JOIN run root ON root.record_id=COALESCE(r.parent_run_record_id, r.record_id)
       WHERE r.output_path IS NOT NULL`,
     )
     .all() as Record<string, unknown>[]
@@ -177,7 +177,7 @@ export function searchRecords(
       continue
     }
     try {
-      add('output', [{ ...row, id: row.run_id }], () => readFileSync(path, 'utf8'))
+      add('output', [{ ...row, id: row.run_number }], () => readFileSync(path, 'utf8'))
     } catch {
       unavailableOutputs++
     }
@@ -192,7 +192,7 @@ export function searchRecords(
     })
     .sort((a, b) => {
       if (a.match !== b.match) return a.match === 'direct task link' ? -1 : 1
-      return b.started_at.localeCompare(a.started_at) || b.run_id - a.run_id
+      return b.started_at.localeCompare(a.started_at) || b.run_number - a.run_number
     })
 
   return {

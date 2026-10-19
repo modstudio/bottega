@@ -305,8 +305,8 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
     writableDb()
     db()
       .query(
-        `INSERT INTO run (record_id,started_at, agent, job, project_record_id, prompt_sha, prompt_bytes, prompt_head, status)
-         VALUES ('${newRecordId()}','t', 'a', 'understand', ?, 'sha', 1, 'h', 'ok')`,
+        `INSERT INTO run (record_id,number,started_at, agent, job, project_record_id, prompt_sha, prompt_bytes, prompt_head, status)
+         VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'t', 'a', 'understand', ?, 'sha', 1, 'h', 'ok')`,
       )
       .run(project.recordId)
     expect(() => removeProject('kept-run')).toThrow(

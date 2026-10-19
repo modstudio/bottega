@@ -63,8 +63,8 @@ type AcpTurnInput = {
   } | null
 }
 
-async function resolveWorkerRunId(value: string | undefined): Promise<number> {
-  if (!value) return 0
+async function resolveWorkerRunId(value: string | undefined): Promise<string | null> {
+  if (!value) return null
   const [{ resolveRunIdentifier }, { db }] = await Promise.all([
     import('../run/run-identifier.ts'),
     import('../database/db.ts'),
@@ -95,6 +95,7 @@ type GrokSessionResponse = {
 }
 
 const ACP_HANDSHAKE_TIMEOUT_MS = 60_000
+const MARK_RUN_ASKING_SQL = "UPDATE run SET status='asking' WHERE record_id=? AND status='running'"
 type AcpHandshakeStage = 'initialize' | 'session/load' | 'session/new'
 
 /** Bound a startup request before callers have a transport handle or wall timer. */
@@ -522,12 +523,10 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     profile !== null,
   )
   installAcpChildTrace(trace, child)
-
   const stderrChunks: Buffer[] = []
   child.stderr?.on('data', (chunk: Buffer) => {
     stderrChunks.push(chunk)
   })
-
   const updates: unknown[] = []
   const liveEvents: NormalizedEvent[] = []
   const permissionEvents: Extract<NormalizedEvent, { kind: 'permission' }>[] = []
@@ -596,7 +595,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
           if (runId) {
             const { ask } = await import('../ask/ask.ts')
             const { db } = await import('../database/db.ts')
-            db().query("UPDATE run SET status='asking' WHERE id=? AND status='running'").run(runId)
+            db().query(MARK_RUN_ASKING_SQL).run(runId)
             const answer = await ask({
               runId,
               question: req.params.message,
@@ -604,7 +603,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
             })
             if (answer.answered) {
               db()
-                .query("UPDATE run SET status='running' WHERE id=? AND status='asking'")
+                .query("UPDATE run SET status='running' WHERE record_id=? AND status='asking'")
                 .run(runId)
               elicitation = null
               return {

@@ -7,7 +7,7 @@ const item = (patch: Partial<OperatorWaitingItem> = {}): OperatorWaitingItem => 
   kind: 'question',
   id: 7,
   question_record_id: '00000000-0000-4000-8000-000000000007',
-  run_id: 42,
+  run_number: 42,
   run_record_id: '00000000-0000-4000-8000-000000000042',
   project: PLATFORM_NAME.toLowerCase(),
   task_key: 'DEV-943',

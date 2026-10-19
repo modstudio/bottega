@@ -41,7 +41,7 @@ export function createOperatorRouter(
     answer: t.procedure
       .input(
         z.object({
-          runId: z.number().int().positive(),
+          runId: z.string().uuid(),
           rulings: z
             .array(
               z.object({

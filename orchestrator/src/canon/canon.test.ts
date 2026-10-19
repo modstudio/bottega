@@ -450,23 +450,23 @@ describe('schema coexistence', () => {
     ).run(newRecordId())
     const platformId = (
       d.query('SELECT record_id AS id FROM project WHERE name=?').get(PLATFORM_SLUG) as {
-        id: number
+        id: string
       }
     ).id
     const starship = (
-      d.query("SELECT record_id AS id FROM project WHERE name='starship'").get() as { id: number }
+      d.query("SELECT record_id AS id FROM project WHERE name='starship'").get() as { id: string }
     ).id
     const alephbeis = (
-      d.query("SELECT record_id AS id FROM project WHERE name='alephbeis'").get() as { id: number }
+      d.query("SELECT record_id AS id FROM project WHERE name='alephbeis'").get() as { id: string }
     ).id
-    const insertRun = (repo: string, projectId: number) =>
+    const insertRun = (repo: string, projectId: string) =>
       (
         d
           .query(
-            `INSERT INTO run (record_id,started_at, agent, job, repo, project_record_id, prompt_sha, prompt_bytes, prompt_head, status)
-         VALUES ('${newRecordId()}','t', 'a', 'review-lens', ?, ?, 'sha', 1, 'h', 'ok') RETURNING id`,
+            `INSERT INTO run (record_id,number,started_at, agent, job, repo, project_record_id, prompt_sha, prompt_bytes, prompt_head, status)
+         VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'t', 'a', 'review-lens', ?, ?, 'sha', 1, 'h', 'ok') RETURNING record_id AS id`,
           )
-          .get(repo, projectId) as { id: number }
+          .get(repo, projectId) as { id: string }
       ).id
     const mixed = (
       d
@@ -486,9 +486,9 @@ describe('schema coexistence', () => {
     const mixedB = insertRun('alephbeis', alephbeis)
     const aliasA = insertRun(PLATFORM_SLUG, platformId)
     const aliasB = insertRun('devbox', platformId)
-    const lens = (reviewId: number, runId: number, name: string) => {
+    const lens = (reviewId: number, runId: string, name: string) => {
       d.query(
-        `INSERT INTO review_lens (record_id, review_id, run_id, lens, agent, standards_read, files_covered, commands_run, could_not_verify)
+        `INSERT INTO review_lens (record_id, review_id, run_record_id, lens, agent, standards_read, files_covered, commands_run, could_not_verify)
          VALUES ('${newRecordId()}', ?, ?, ?, 'codex', '[]', '[]', '[]', '[]')`,
       ).run(reviewId, runId, name)
     }

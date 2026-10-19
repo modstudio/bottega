@@ -350,14 +350,14 @@ test('operator file-ruling argv runs the verb through the orch seam with json', 
 
 test('operator answer argv preserves the ruling and records the UI operator channel', () => {
   expect(
-    answerWaitingArgv(42, [
+    answerWaitingArgv('00000000-0000-4000-8000-000000000042', [
       { questionId: 7, ruling: 'Use the existing shape' },
       { questionId: 8, ruling: 'Keep both' },
     ]),
   ).toEqual([
     'question',
     'answer',
-    '42',
+    '00000000-0000-4000-8000-000000000042',
     '--q7',
     'Use the existing shape',
     '--q8',
@@ -375,7 +375,7 @@ test(`the ${PLATFORM_SLUG} run waiting client contract accepts a no-project item
       kind: 'question',
       id: 7,
       question_record_id: '00000000-0000-4000-8000-000000000007',
-      run_id: 42,
+      run_number: 42,
       run_record_id: '00000000-0000-4000-8000-000000000042',
       project: null,
       task_key: null,
@@ -392,7 +392,7 @@ test(`the ${PLATFORM_SLUG} run waiting client contract accepts a no-project item
 })
 
 const runFixture = {
-  id: 42,
+  number: 42,
   record_id: '00000000-0000-4000-8000-000000000042',
   started_at: '2026-09-06T12:00:00.000Z',
   agent: 'codex',
@@ -410,10 +410,10 @@ const runFixture = {
   status: 'ok',
   delivery: 'full',
   quality: 'right',
-  retry_of: null,
+  retry_record_id: null,
   turns: [
     {
-      id: 42,
+      number: 42,
       record_id: '00000000-0000-4000-8000-000000000042',
       started_at: '2026-09-06T12:00:00.000Z',
       latency_ms: 100,
@@ -435,6 +435,21 @@ test('v1 and v2 run lines decode to the same run', () => {
   const v2 = runLine(runFixture, 2)
   expect(decodeRunsJson(v1)).toEqual(decodeRunsJson(v2))
   expect(decodeRunsJson(v2)).toEqual([runFixture])
+})
+
+test('run contract accepts only the UUID retry link', () => {
+  expect(() =>
+    decodeRunsJson(runLine({ ...runFixture, retry_of: 41, retry_record_id: undefined })),
+  ).toThrow()
+  expect(() => decodeRunsJson(runLine({ ...runFixture, retry_record_id: 'not-a-uuid' }))).toThrow()
+  expect(
+    decodeRunsJson(
+      runLine({
+        ...runFixture,
+        retry_record_id: '00000000-0000-4000-8000-000000000041',
+      }),
+    )[0],
+  ).toMatchObject({ retry_record_id: '00000000-0000-4000-8000-000000000041' })
 })
 
 test('orch-owned run and blocker fields remain optional to hub', () => {

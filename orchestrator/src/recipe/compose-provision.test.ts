@@ -11,7 +11,7 @@ const recipe = recipeSchema.parse({ compose: { files: ['compose.yaml'] }, create
 const context = {
   treeRoot: '/trees/orch-42',
   projectName: 'app',
-  rootRunId: 42,
+  rootRunId: '42',
   mainComposeProjects: [],
 }
 const output = (stdout = '', exitCode = 0): ComposeProcessOutput => ({

@@ -56,7 +56,7 @@ import {
 } from '../mcp/mcp-probe.ts'
 import type { OutcomeStatus } from '../outcome.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
-import { signedInRecordUserId } from '../record/record-attribution.ts'
+import { startedByUserIdForRun } from '../record/record-attribution.ts'
 import { recordSandboxDirectoryClaim } from '../resources/resource-claims.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import {
@@ -115,6 +115,8 @@ import * as mcpAttachment from './run-mcp-attachment.ts'
 import { finalWorkerMcpRuling } from './run-mcp-attachment-record.ts'
 import { enforceRunMcpGrammar } from './run-mcp-grammar.ts'
 import { prepareRunMcpPreflight } from './run-mcp-main-stack.ts'
+import { codexMcpMode } from './run-mcp-mode.ts'
+import { nextRunNumber } from './run-number.ts'
 import {
   bindReviewInstructions,
   checksReviewedCommit,
@@ -168,16 +170,6 @@ function workerMcpLaunchScope(input: {
   }
 }
 
-async function startedByForRun(reserveId: number | undefined): Promise<string | null> {
-  if (reserveId !== undefined) return null
-  return signedInRecordUserId()
-}
-
-function codexMcpMode(usingMcp: boolean, writesJob: boolean): false | 'reader' | 'writer' {
-  if (!usingMcp) return false
-  return writesJob ? 'writer' : 'reader'
-}
-
 const CANON_SOURCE_PROMPT_RESERVE_BYTES =
   Math.max(
     ...(['live database', 'mirror', 'unknown'] as CanonSource[]).map((source) =>
@@ -194,6 +186,14 @@ function runEvidence(jobName: string, findingsJob: boolean, declaredDeliverables
     readerJob: isReaderJob(jobName),
     declaredDeliverables,
   })
+}
+
+function rootRunRecordId(runId: string): string {
+  return (
+    db()
+      .query('SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run WHERE record_id=?')
+      .get(runId) as { root_id: string }
+  ).root_id
 }
 
 export async function run(opts: {
@@ -219,7 +219,7 @@ export async function run(opts: {
   /** Explicit routing attribution when the caller is outside the registered project. */
   repo?: string
   /** The run this one re-attempts, for `bottega run retry`. */
-  retryOf?: number
+  retryOf?: string
   noFailover?: boolean
   noWaitCapacity?: boolean
   ownerSession?: string | null
@@ -260,7 +260,7 @@ export async function run(opts: {
    * claims a placeholder row, hands the id over, and this fills it in once the
    * agent is picked.
    */
-  reserveId?: number
+  reserveId?: string
   /**
    * Continue a worker that stopped to ask, instead of starting a new one.
    *
@@ -287,12 +287,12 @@ export async function run(opts: {
 }): Promise<RunResult> {
   writableDb()
   enableSchemaReload(() => {})
-  const startedByUserId = await startedByForRun(opts.reserveId)
+  const startedByUserId = await startedByUserIdForRun(opts.reserveId !== undefined)
   const requestedJob = job(opts.job),
     mcpRequest = effectiveMcpRequest(opts.mcp, requestedJob)
   const resume = resumeFacts(
     opts.resume?.kind ?? null,
-    opts.reserveId ?? 0,
+    opts.reserveId ?? '',
     opts.resume?.parent ?? null,
   )
   const inheritedDispatch =
@@ -434,16 +434,18 @@ export async function run(opts: {
       let failedId = opts.reserveId
       if (failedId)
         db()
-          .query(`UPDATE run SET status='failed', failure_kind='harness', error=? WHERE id=?`)
+          .query(
+            `UPDATE run SET status='failed', failure_kind='harness', error=? WHERE record_id=?`,
+          )
           .run(message, failedId)
       else
         failedId = (
           db()
             .query(
-              `INSERT INTO run (record_id,started_at,agent,job,repo,project_record_id,cwd,prompt_sha,spec_sha,prompt_bytes,prompt_head,status,session_id,failure_kind,error,docs_injected,mcp,started_by_user_id) VALUES (?,?,'(pending)',?,?,?,?,?,?,?,?,'failed',?,'harness',?,0,?,?) RETURNING id`,
+              `INSERT INTO run (record_id,number,started_at,agent,job,repo,project_record_id,cwd,prompt_sha,spec_sha,prompt_bytes,prompt_head,status,session_id,failure_kind,error,docs_injected,mcp,started_by_user_id) VALUES (?,?,?,'(pending)',?,?,?,?,?,?,?,?,'failed',?,'harness',?,0,?,?) RETURNING record_id`,
             )
             .get(
-              ...[newRecordId(), nowIso()],
+              ...[newRecordId(), nextRunNumber(db()), nowIso()],
               opts.job,
               runProjectName,
               runProjectId,
@@ -456,8 +458,8 @@ export async function run(opts: {
               message,
               storedMcpRequest(mcpRequest),
               startedByUserId,
-            ) as { id: number }
-        ).id
+            ) as { record_id: string }
+        ).record_id
       throw Object.assign(new Error(`run ${failedId} could not start: ${message}`), {
         runId: failedId,
       })
@@ -546,7 +548,7 @@ export async function run(opts: {
       timeoutMinutes,
     )
   } catch (e) {
-    if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
+    if (opts.reserveId) db().query('DELETE FROM run WHERE record_id=?').run(opts.reserveId)
     throw e
   }
   if (resume.isFirstTurn) {
@@ -560,14 +562,14 @@ export async function run(opts: {
       assertAcpAllowed(opts.job, name, a)
       assertAcpReady(name, a)
     } catch (e) {
-      if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
+      if (opts.reserveId) db().query('DELETE FROM run WHERE record_id=?').run(opts.reserveId)
       throw e
     }
   }
   if (name === 'codex') {
     const versionRefusal = minimumCliVersionRefusal(a)
     if (versionRefusal) {
-      if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
+      if (opts.reserveId) db().query('DELETE FROM run WHERE record_id=?').run(opts.reserveId)
       throw new Error(versionRefusal)
     }
   }
@@ -598,21 +600,18 @@ export async function run(opts: {
   })
   if (attachmentRuling.refusalReason) {
     // A routing mismatch must not convert the reserved placeholder into a failed row.
-    if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
+    if (opts.reserveId) db().query('DELETE FROM run WHERE record_id=?').run(opts.reserveId)
     throw new Error(attachmentRuling.refusalReason)
   }
-
   const mcpMode = attachmentRuling.mcpMode
   let usingMcp = attachmentRuling.usingMcp
   // Every repository job gets writable scratch; only `writesJob` requests a diff.
   const writes = repoJob
-
   // Minted before the spawn when the agent lets us choose, so the resume handle
   // exists even for a worker that dies mid-turn. codex and qwen name their own
   // and are read back afterwards instead.
   const vendorSession: string | null =
     opts.resume?.kind === 'continue' ? (opts.resume.session ?? null) : (a.mintSession?.() ?? null)
-
   mkdirSync(RUNS_DIR, { recursive: true })
   pruneRuns(RUNS_DIR)
   /**
@@ -704,7 +703,6 @@ export async function run(opts: {
   prompt = initialBoard.prompt
   mcpConnection = claimedMcpConnection
   usingMcp = claimedUsingMcp
-
   // A reader clone keeps all writable Git metadata inside its own tree. Its
   // hooks live outside that root so the worker cannot disable the push guard.
   // Writers remain linked worktrees and retain their existing shared roots.
@@ -757,7 +755,7 @@ export async function run(opts: {
       agent: a,
       sandbox: sandboxSelection.sandbox,
       runDir: sandboxRunDir,
-      runId: claim.id,
+      runNumber: claim.number,
       runRecordId: claim.recordId,
       runToken,
       environment: gitConfigEnvironment ?? {},
@@ -777,7 +775,7 @@ export async function run(opts: {
     const why = String((e as Error)?.message ?? e)
     db()
       .query(
-        `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
+        `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE record_id=?`,
       )
       .run(why, Date.now() - started, claim.id)
     teardownTerminalRunResources(db(), claim.id)
@@ -789,16 +787,10 @@ export async function run(opts: {
     : reason
   writeTransaction(() => {
     db()
-      .query('UPDATE run SET sandbox=?, route_reason=? WHERE id=?')
+      .query('UPDATE run SET sandbox=?, route_reason=? WHERE record_id=?')
       .run(sandboxSelection.sandbox, sandboxRouteReason, claim.id)
     if (hasRunScopedHome) {
-      const rootRunId = (
-        db()
-          .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
-          .get(claim.id) as {
-          root_id: number
-        }
-      ).root_id
+      const rootRunId = rootRunRecordId(claim.id)
       recordSandboxDirectoryClaim(db(), {
         rootRunId,
         runId: claim.id,
@@ -813,7 +805,6 @@ export async function run(opts: {
     mcpSetupHeader = mcpSetupHeader ? `${mcpSetupHeader}\n${header}` : header
     console.error(`orch: run ${claim.id} ${header}`)
   }
-
   if (mcpMode && mcpServerName) {
     const probeConfig = mcpLaunch.config[mcpServerName]
     if (probeConfig?.url || probeConfig?.command) {
@@ -843,7 +834,7 @@ export async function run(opts: {
           projectAt(callerCwd)?.name ?? null,
         )
         db()
-          .query('UPDATE run SET mcp_probe=?, mcp_connected=?, mcp_error=? WHERE id=?')
+          .query('UPDATE run SET mcp_probe=?, mcp_connected=?, mcp_error=? WHERE record_id=?')
           .run(
             storedMcpProbe(probe),
             probeRuling.callEvidence.connected,
@@ -871,16 +862,16 @@ export async function run(opts: {
         if (probeRuling.failedConnection) {
           mcpConnection = probeRuling.failedConnection
           db()
-            .query(`UPDATE run SET mcp_connected=0, mcp_error=? WHERE id=?`)
+            .query(`UPDATE run SET mcp_connected=0, mcp_error=? WHERE record_id=?`)
             .run(mcpConnection.error, claim.id)
           usingMcp = false
         }
       } catch (error) {
-        if ((error as { runId?: number }).runId === claim.id) throw error
+        if ((error as { runId?: string }).runId === claim.id) throw error
         const why = String((error as Error)?.message ?? error)
         db()
           .query(
-            `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
+            `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE record_id=?`,
           )
           .run(why, Date.now() - started, claim.id)
         await resetSandbox()
@@ -895,13 +886,13 @@ export async function run(opts: {
       if (mismatch) {
         mcpConnection = mismatch.connection
         db()
-          .query('UPDATE run SET mcp_connected=0, mcp_error=?, mcp_probe=? WHERE id=?')
+          .query('UPDATE run SET mcp_connected=0, mcp_error=?, mcp_probe=? WHERE record_id=?')
           .run(mismatch.connection.error, storedMcpProbe(mismatch.recorded), claim.id)
         if (mismatch.refusalReason) {
           const why = mismatch.refusalReason
           db()
             .query(
-              `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
+              `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE record_id=?`,
             )
             .run(why, Date.now() - started, claim.id)
           teardownTerminalRunResources(db(), claim.id)
@@ -911,7 +902,9 @@ export async function run(opts: {
         }
         mcpConnection = mismatch.continuedConnection
         usingMcp = false
-        db().query('UPDATE run SET mcp_error=? WHERE id=?').run(mcpConnection.error, claim.id)
+        db()
+          .query('UPDATE run SET mcp_error=? WHERE record_id=?')
+          .run(mcpConnection.error, claim.id)
       }
     }
   }

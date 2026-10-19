@@ -37,7 +37,7 @@ export function shouldSweepHookTree(run: HookTreeIdentity): boolean {
 }
 
 export type HookTreeNoticeInput = HookTreeIdentity & {
-  id: number
+  id: string
   status: string
   path: string
   startedAt: string

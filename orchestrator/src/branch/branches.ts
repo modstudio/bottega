@@ -45,13 +45,14 @@ import {
 } from './other-branch-state.ts'
 import {
   isTaskBranchSuperseded,
-  type TaskBranchRunRow,
   taskBranchPatchEquivalent,
+  taskBranchRunRow,
 } from './task-branch.ts'
 
 type RunRow = {
-  id: number
-  parent_run_id: number | null
+  record_id: string
+  number: number
+  parent_run_record_id: string | null
   launch_key: string | null
   branch: string | null
   minted_branch: string | null
@@ -168,10 +169,10 @@ function recordedBranchLandings(): BranchLandingRecord[] {
 function projectRuns(project: Project): RunRow[] {
   return db()
     .query(
-      `SELECT id,parent_run_id,launch_key,branch,minted_branch,launch_base,status
+      `SELECT record_id,number,parent_run_record_id,launch_key,branch,minted_branch,launch_base,status
          FROM run
         WHERE project_record_id=?
-        ORDER BY id`,
+        ORDER BY number`,
     )
     .all(project.recordId) as RunRow[]
 }
@@ -181,7 +182,7 @@ function keepLiveBaseClaim(project: Project, branch: string, report: BranchPrune
   if (!claim) return false
   report.kept.push({
     branch,
-    reason: `base of live run ${claim.run_id} (${claim.status})`,
+    reason: `base of live run ${claim.run_record_id} (${claim.status})`,
   })
   return true
 }
@@ -353,7 +354,6 @@ function branchReportFor(
     byBranch.set(run.minted_branch, [...(byBranch.get(run.minted_branch) ?? []), run])
     minted.set(key, byBranch)
   }
-
   if (options.repairLandings) {
     const repair = repairBranchLandings({
       project,
@@ -369,20 +369,12 @@ function branchReportFor(
     wouldRecordLandings = repair.wouldRecordLandings
     observations = repair.observations
   }
-
   const keys = [...minted]
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([key, byBranch]) => {
       const keyRows = runs
         .filter((run) => (run.launch_key ?? 'unkeyed') === key && run.branch !== null)
-        .map(
-          (run): TaskBranchRunRow => ({
-            id: run.id,
-            parent_run_id: run.parent_run_id,
-            branch: run.branch!,
-            launch_base: run.launch_base,
-          }),
-        )
+        .map(taskBranchRunRow)
       const observed = [...byBranch].map(([branch, branchRuns]) => {
         const tip = branches.get(branch)!
         const commitCount = Number(git(project.path, 'rev-list', '--count', tip, '--not', trunkTip))
@@ -407,7 +399,7 @@ function branchReportFor(
           commitsNotOnTrunk: commitCount,
           checkedOut: checkedOut.has(branch),
           liveRun: branchRuns.some((run) => run.status === 'running' || run.status === 'asking'),
-          runIds: branchRuns.map((run) => run.id),
+          runIds: branchRuns.map((run) => run.number),
           matchingPr,
           patchEquivalent: patchEquivalent as PatchEquivalentForm | null,
           pullRequestCommitCheck:
@@ -421,7 +413,11 @@ function branchReportFor(
               : null,
           recordedLanding: findRecordedBranchLanding(recordedLandings, project.name, branch),
           superseded: isTaskBranchSuperseded(branch, keyRows),
-          turns: new Map(branchRuns.map((run) => [run.parent_run_id ?? run.id, run.id] as const)),
+          turns: new Map(
+            branchRuns.map(
+              (run) => [run.parent_run_record_id ?? run.record_id, run.number] as const,
+            ),
+          ),
         }
       })
       const decided = new Map<string, BranchStateDecision>()
@@ -477,7 +473,7 @@ function branchReportFor(
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([branch, branchRuns]) => ({
       branch,
-      runIds: branchRuns.map((run) => run.id),
+      runIds: branchRuns.map((run) => run.number),
     }))
   const report: BranchReportProject = {
     project: project.name,

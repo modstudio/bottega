@@ -40,15 +40,15 @@ test('review record runs through Commander and records the lens output', async (
   try {
     const runId = addRun({ agent: 'codex', job: 'review-lens', lens: 'correctness' })
     writeFileSync(outputPath, JSON.stringify(reviewReply(1, 'high')))
-    db().query('UPDATE run SET output_path=? WHERE id=?').run(outputPath, runId)
+    db().query('UPDATE run SET output_path=? WHERE record_id=?').run(outputPath, runId)
 
     await runReview(['review', 'record', String(runId)], output)
 
     expect(output).toEqual([expect.stringMatching(/^recorded review \d+$/)])
     expect(
       db()
-        .query<{ count: number }, [number]>(
-          'SELECT COUNT(*) AS count FROM review_lens WHERE run_id=?',
+        .query<{ count: number }, [string]>(
+          'SELECT COUNT(*) AS count FROM review_lens WHERE run_record_id=?',
         )
         .get(runId),
     ).toEqual({ count: 1 })
@@ -240,14 +240,14 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
       paths: ['notes.md'],
     }
     const run = db()
-      .query<{ id: number }, [string, string, string]>(
+      .query<{ id: string }, [string, string, string]>(
         `INSERT INTO run
-           (record_id,started_at,agent,job,repo,project_record_id,branch,base_commit,input_tree,head_commit,
+           (record_id,number,started_at,agent,job,repo,project_record_id,branch,base_commit,input_tree,head_commit,
             prompt_sha,prompt_bytes,prompt_head,status)
-         VALUES ('${newRecordId()}','2026-09-27','codex','implement','tier-fixture',
+         VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-09-27','codex','implement','tier-fixture',
                  (SELECT record_id FROM project WHERE name='tier-fixture'),'DEV-992-fixture',?,?,?,
                  'sha',1,'head','ok')
-         RETURNING id`,
+         RETURNING record_id AS id`,
       )
       .get(FIXTURE_BASE, FIXTURE_BASE, FIXTURE_WRITER_HEAD)!
     const output: string[] = []
@@ -261,7 +261,7 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
     db()
       .query(
         `INSERT INTO review_lens
-         (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+         (record_id,review_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
          VALUES ('${newRecordId()}',?,?,'correctness','codex','[]','[]','[]','[]')`,
       )
       .run(review.id, run.id)
@@ -314,13 +314,13 @@ test('review tier reports stack and generic profile sources resolved for its pro
       reason: 'review tier stack source fixture',
     })
     const run = db()
-      .query<{ id: number }, [string, string, string]>(
+      .query<{ id: string }, [string, string, string]>(
         `INSERT INTO run
-           (record_id,started_at,agent,job,repo,base_commit,input_tree,head_commit,
+           (record_id,number,started_at,agent,job,repo,base_commit,input_tree,head_commit,
             prompt_sha,prompt_bytes,prompt_head,status)
-         VALUES ('${newRecordId()}','2026-09-27','codex','review-lens','tier-profile-fixture',?,?,?,
+         VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-09-27','codex','review-lens','tier-profile-fixture',?,?,?,
                  'sha',1,'head','ok')
-         RETURNING id`,
+         RETURNING record_id AS id`,
       )
       .get(FIXTURE_BASE, FIXTURE_WRITER_HEAD, FIXTURE_WRITER_HEAD)!
     const output: string[] = []

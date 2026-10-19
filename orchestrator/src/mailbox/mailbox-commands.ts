@@ -13,7 +13,7 @@ import { tellRun } from './mailbox.ts'
 import { deferredWorkerMessageNotice } from './mailbox-notice.ts'
 
 export async function tellCommand(
-  id: number,
+  id: string,
   argv: string[],
   ping: boolean,
   presentation: { log(value: string): void },
@@ -30,12 +30,12 @@ export async function tellCommand(
   assertWorkerText(body, 'message', TELL_WORKING_FORMS)
   const message = tellRun(id, body)
   presentation.log(
-    `queued message ${message.id} for run ${message.root_run_id} (turn ${message.run_id}); it has not been read`,
+    `queued message ${message.id} for run ${message.root_run_record_id} (turn ${message.run_record_id}); it has not been read`,
   )
   const notice = deferredWorkerMessageNotice(
-    message.root_run_id,
+    message.root_run_record_id,
     message.transport !== null && transportFor(message.transport).canInjectMidTurn,
   )
   if (notice) presentation.log(notice)
-  if (ping) presentation.log(formatPeek(peekRun(message.run_id)))
+  if (ping) presentation.log(formatPeek(peekRun(message.run_record_id)))
 }

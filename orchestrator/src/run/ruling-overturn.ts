@@ -12,8 +12,8 @@ import { adoptRunMutation, auditRunMutation, runMutationActor } from './run-auth
 type OverturnRow = {
   id: number
   record_id: string
-  run_id: number | null
-  root_id: number | null
+  run_record_id: string | null
+  root_id: string | null
   workflow_cursor_id: number | null
   workflow_owner: string | null
   workflow_updated_at: string | null
@@ -52,10 +52,10 @@ export function overturnRuling(input: {
   writableDb()
   const row = db()
     .query(
-      `SELECT q.id,q.record_id,q.run_id,COALESCE(owner.parent_run_id,owner.id) root_id,
+      `SELECT q.id,q.record_id,q.run_record_id,COALESCE(owner.parent_run_record_id,owner.record_id) root_id,
               q.workflow_cursor_id,c.session_id workflow_owner,c.updated_at workflow_updated_at,
               q.answered_at,q.overturned_at,q.overturned_by,q.overturn_reason,q.replacement
-         FROM question q LEFT JOIN run owner ON owner.id=q.run_id
+         FROM question q LEFT JOIN run owner ON owner.record_id=q.run_record_id
          LEFT JOIN workflow_cursor c ON c.id=q.workflow_cursor_id WHERE q.id=?`,
     )
     .get(input.questionId) as OverturnRow | null
@@ -63,12 +63,12 @@ export function overturnRuling(input: {
     throw new Error(
       `no question ${input.questionId}; inspect question ids with ${PLATFORM_SLUG} question inbox --all`,
     )
-  let authority = row.run_id === null ? null : runMutationActor(row.run_id)
+  let authority = row.run_record_id === null ? null : runMutationActor(row.run_record_id)
   const actor = sessionId()
   const denied = refusal(row)
   if (denied) throw new Error(denied)
   let adoptionReason: string | null = null
-  if (row.run_id === null)
+  if (row.run_record_id === null)
     adoptionReason = authorizeWorkflowQuestionMutation({
       owner: row.workflow_owner,
       actor,
@@ -80,7 +80,7 @@ export function overturnRuling(input: {
   const at = nowIso()
   let overturnedBy = ''
   writeTransaction(() => {
-    if (row.run_id !== null) authority = adoptRunMutation(authority!, 'overturn')
+    if (row.run_record_id !== null) authority = adoptRunMutation(authority!, 'overturn')
     overturnedBy = rulingActor(input.fromOperator, actor)
     const changed = db()
       .query(
@@ -91,7 +91,7 @@ export function overturnRuling(input: {
       .run(at, overturnedBy, input.reason, input.replacement, row.id)
     if (changed.changes !== 1)
       throw new Error(`question ${row.id} changed before it was overturned`)
-    if (row.run_id !== null) auditRunMutation(authority!, 'overturn', input.reason)
+    if (row.run_record_id !== null) auditRunMutation(authority!, 'overturn', input.reason)
     else
       auditQuestionMutation({
         questionId: row.id,

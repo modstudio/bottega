@@ -35,11 +35,11 @@ import type { CleanupPresentation } from './cleanup.ts'
 import { decideConversationProjectOwnership } from './cleanup-sweep-decisions.ts'
 
 type DockerOwner = {
-  id: number
+  record_id: string
   repo: string | null
   project_record_id: string | null
   member_project_record_id: string | null
-  root_id: number
+  root_record_id: string
   worktree: string | null
   status: string
   worktree_source: Worktree['source'] | null
@@ -49,18 +49,18 @@ type DockerOwner = {
   retentionReason: string | null
 }
 
-function dockerOwners(ownerIds: Set<number>): DockerOwner[] {
+function dockerOwners(ownerIds: Set<string>): DockerOwner[] {
   const rows = db()
     .query(
-      `SELECT r.id,COALESCE(root.repo,r.repo) repo,
+      `SELECT r.record_id,COALESCE(root.repo,r.repo) repo,
               root.project_record_id project_record_id,
               r.project_record_id member_project_record_id,
-              root.id root_id,
+              root.record_id root_record_id,
               r.worktree,r.status,
               COALESCE(root.worktree_source,r.worktree_source) worktree_source,
               COALESCE(root.recipe_snapshot,r.recipe_snapshot) recipe_snapshot,
               COALESCE(root.resource_teardown,r.resource_teardown) resource_teardown
-       FROM run r JOIN run root ON root.id=COALESCE(r.parent_run_id,r.id)`,
+       FROM run r JOIN run root ON root.record_id=COALESCE(r.parent_run_record_id,r.record_id)`,
     )
     .all() as Omit<DockerOwner, 'absentTreeTeardown' | 'retentionReason'>[]
   return rows.map((owner) => ({
@@ -75,39 +75,39 @@ function dockerOwners(ownerIds: Set<number>): DockerOwner[] {
           resolvedWorktreeTool(owner.repo ? projectByName(owner.repo) : null)?.remove,
         ),
       }),
-    retentionReason: ownerIds.has(owner.id)
-      ? terminalDockerRetentionReasonForRun(db(), owner.id)
+    retentionReason: ownerIds.has(owner.record_id)
+      ? terminalDockerRetentionReasonForRun(db(), owner.record_id)
       : null,
   }))
 }
 
 function reclaimTerminalOwners(input: {
   dryRun: boolean
-  ownerIds: Set<number>
+  ownerIds: Set<string>
   owners: DockerOwner[]
   presentation: CleanupPresentation
   inventoryErrors: Set<string>
   inventory: DockerInventory
   selectedProject: Project | null
-}): { failed: boolean; reclaimed: Set<number> } {
+}): { failed: boolean; reclaimed: Set<string> } {
   const { dryRun, ownerIds, owners, presentation, inventoryErrors, inventory, selectedProject } =
     input
-  const reclaimed = new Set<number>()
+  const reclaimed = new Set<string>()
   let failed = false
   for (const owner of owners) {
     const ownershipIssue = dockerOwnershipIssue(owner, owners, selectedProject)
     if (ownershipIssue && dockerOwnerCouldBeInScope(owner, owners, ownerIds, selectedProject)) {
       failed = true
-      presentation.error(`retained Docker resources for run ${owner.id}: ${ownershipIssue}`)
+      presentation.error(`retained Docker resources for run ${owner.record_id}: ${ownershipIssue}`)
       continue
     }
     if (!terminalOwnerInScope(owner, owners, ownerIds, selectedProject)) continue
-    const teardown = teardownTerminalRunResources(db(), owner.id, inventory, { dryRun })
-    if (teardown.complete && !teardown.skipped) reclaimed.add(owner.id)
+    const teardown = teardownTerminalRunResources(db(), owner.record_id, inventory, { dryRun })
+    if (teardown.complete && !teardown.skipped) reclaimed.add(owner.record_id)
     else failed = true
     for (const error of teardown.errors) inventoryErrors.add(error)
     if (dryRun && teardown.complete && !teardown.skipped && teardown.removed > 0)
-      presentation.log(`would tear down disposable Docker resources for run ${owner.id}`)
+      presentation.log(`would tear down disposable Docker resources for run ${owner.record_id}`)
   }
   return { failed, reclaimed }
 }
@@ -117,11 +117,11 @@ function dockerOwnershipIssue(
   owners: DockerOwner[],
   selectedProject: Project | null,
 ): string | null {
-  const members = owners.filter((member) => member.root_id === owner.root_id)
+  const members = owners.filter((member) => member.root_record_id === owner.root_record_id)
   const ruling = decideConversationProjectOwnership({
-    root: { id: owner.root_id, projectRecordId: owner.project_record_id },
+    root: { record_id: owner.root_record_id, projectRecordId: owner.project_record_id },
     members: members.map((member) => ({
-      id: member.id,
+      record_id: member.record_id,
       projectRecordId: member.member_project_record_id,
     })),
     expectedProjectRecordId: selectedProject?.recordId ?? owner.project_record_id ?? '',
@@ -132,14 +132,14 @@ function dockerOwnershipIssue(
 function dockerOwnerCouldBeInScope(
   owner: DockerOwner,
   owners: DockerOwner[],
-  ownerIds: Set<number>,
+  ownerIds: Set<string>,
   selectedProject: Project | null,
 ): boolean {
   const chainProjectRecordIds = owners
-    .filter((member) => member.root_id === owner.root_id)
+    .filter((member) => member.root_record_id === owner.root_record_id)
     .map((member) => member.member_project_record_id)
   return (
-    ownerIds.has(owner.id) &&
+    ownerIds.has(owner.record_id) &&
     (!selectedProject ||
       owner.project_record_id === selectedProject.recordId ||
       chainProjectRecordIds.includes(selectedProject.recordId) ||
@@ -150,7 +150,7 @@ function dockerOwnerCouldBeInScope(
 function terminalOwnerInScope(
   owner: DockerOwner,
   owners: DockerOwner[],
-  ownerIds: Set<number>,
+  ownerIds: Set<string>,
   selectedProject: Project | null,
 ): boolean {
   return (
@@ -179,7 +179,7 @@ function reportRetainedDockerResources(
 
 function reportLeakedDockerResources(
   dryRun: boolean,
-  leaked: Map<string, { resource: DockerResource; project: string; runId: number }>,
+  leaked: Map<string, { resource: DockerResource; project: string; runId: string }>,
   presentation: CleanupPresentation,
 ): void {
   if (leaked.size) {
@@ -480,7 +480,7 @@ export function reclaimSweptDockerResources(input: {
   selectedProject: Project | null
   presentation: CleanupPresentation
   inventoryErrors: Set<string>
-  leaked: Map<string, { resource: DockerResource; project: string; runId: number }>
+  leaked: Map<string, { resource: DockerResource; project: string; runId: string }>
 }): boolean {
   const { dryRun, selectedProject, presentation, inventoryErrors, leaked } = input
   const inventory = dockerRunResources(
@@ -525,7 +525,7 @@ export function reclaimSweptDockerResources(input: {
     selectedProject,
   })
   failed ||= reclaimedResult.failed
-  const ownerByRun = new Map(owners.map((owner) => [owner.id, owner]))
+  const ownerByRun = new Map(owners.map((owner) => [owner.record_id, owner]))
   const classified = classifiedDockerResources(resources, owners).filter((item) => {
     if (reclaimedResult.reclaimed.has(item.resource.runId)) return false
     const owner = ownerByRun.get(item.resource.runId)

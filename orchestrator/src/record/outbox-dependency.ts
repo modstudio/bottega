@@ -28,7 +28,7 @@ function reviewRunIds(database: Database, reviewRecordId: string): string[] {
     .query<{ record_id: string }, [string]>(
       `SELECT DISTINCT run.record_id FROM review
        JOIN review_lens ON review_lens.review_id=review.id
-       JOIN run ON run.id=review_lens.run_id
+       JOIN run ON run.record_id=review_lens.run_record_id
        WHERE review.record_id=? AND run.record_id IS NOT NULL`,
     )
     .all(reviewRecordId)
@@ -45,7 +45,7 @@ function lensRun(
   const normalized = database
     .query<{ record_id: string }, [string]>(
       `SELECT run.record_id FROM review_lens
-       JOIN run ON run.id=review_lens.run_id
+       JOIN run ON run.record_id=review_lens.run_record_id
        WHERE review_lens.record_id=? AND run.record_id IS NOT NULL`,
     )
     .get(lensRecordId)

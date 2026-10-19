@@ -72,7 +72,7 @@ export function recordPresence(
     .query(
       `SELECT launch_key FROM run
        WHERE session_id=? AND status IN ('running','asking') AND launch_key IS NOT NULL
-       ORDER BY id DESC LIMIT 1`,
+       ORDER BY number DESC LIMIT 1`,
     )
     .get(identity.session) as { launch_key: string } | null
   writableDb()
@@ -119,10 +119,10 @@ export function postNoticeInTransaction(
   return insertRootMessage('notice', input, env, clock, cwd, database)
 }
 
-export function runReader(runId: number, database = db()): string {
+export function runReader(runId: string, database = db()): string {
   const row = database
-    .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
-    .get(runId) as { root_id: number } | null
+    .query('SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run WHERE record_id=?')
+    .get(runId) as { root_id: string } | null
   if (!row) throw new Error(`no run ${runId}; use a live orchestrator run id`)
   return `run:${row.root_id}`
 }
@@ -155,7 +155,7 @@ function render(message: MessageRow, worker = false, database = db()) {
       text: renderBoardReply({
         id: message.id,
         origin: originText(boardOrigin(message)),
-        rootId: root.id,
+        rootId: root.record_id,
         rootTitle: root.title,
         body: message.body,
       }),
@@ -200,7 +200,7 @@ function render(message: MessageRow, worker = false, database = db()) {
       authorSession: message.author_session,
       authorHarness: message.author_harness,
       authorProject: message.author_project,
-      authorRunId: message.author_run_id,
+      authorRunId: message.author_run_record_id,
       title: message.title ?? '',
       body: message.body,
       expiresAt: message.expires_at ?? '',
@@ -219,7 +219,7 @@ function render(message: MessageRow, worker = false, database = db()) {
 }
 
 export function claimRunNotices(
-  runId: number,
+  runId: string,
   all = false,
   clock = Date.now(),
   database = db(),
@@ -252,7 +252,7 @@ export function claimRunNotices(
 }
 
 export function claimRunPushNotices(
-  runId: number,
+  runId: string,
   all = false,
   clock = Date.now(),
   database = db(),
@@ -262,7 +262,7 @@ export function claimRunPushNotices(
   warning: string | null
 } {
   const run = database
-    .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
+    .query('SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run WHERE record_id=?')
     .get(runId) as { root_id: number } | null
   if (!run)
     return {
@@ -277,7 +277,7 @@ export function claimRunPushNotices(
   }
 }
 
-export function markRunNoticesDelivered(runId: number, ids: number[], clock = Date.now()): void {
+export function markRunNoticesDelivered(runId: string, ids: number[], clock = Date.now()): void {
   const reader = runReader(runId)
   const idSet = new Set(ids)
   const rows = messageRows().filter(

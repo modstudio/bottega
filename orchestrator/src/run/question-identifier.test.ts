@@ -9,8 +9,8 @@ describe('question identifier', () => {
     const runId = addRun({ agent: 'codex', job: 'file-question', status: 'asking' })
     const recordId = newRecordId()
     const { id } = db()
-      .query<{ id: number }, [string, number]>(
-        "INSERT INTO question (record_id,run_id,asked_at,question) VALUES (?,?,'2026-10-14','Which?') RETURNING id",
+      .query<{ id: number }, [string, string]>(
+        "INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES (?,?,'2026-10-14','Which?') RETURNING id",
       )
       .get(recordId, runId)!
     expect(parseQuestionIdentifier(String(id))).toEqual({ kind: 'number', id })

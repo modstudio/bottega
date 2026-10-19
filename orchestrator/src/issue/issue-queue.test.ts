@@ -55,36 +55,38 @@ describe('filed issue queue decisions', () => {
   })
 
   test('identifies workIssue-started runs from the label and job they record', () => {
-    expect(filedIssueLoopRun({ id: 11, job: 'diagnose', label: 'issue DEV-1 diagnosis' })).toEqual({
-      runId: 11,
+    expect(
+      filedIssueLoopRun({ id: '11', job: 'diagnose', label: 'issue DEV-1 diagnosis' }),
+    ).toEqual({
+      runId: '11',
       job: 'diagnose',
       issueKey: 'DEV-1',
     })
-    expect(filedIssueLoopRun({ id: 12, job: 'issue-worker', label: 'issue DEV-1 fix' })).toEqual({
-      runId: 12,
+    expect(filedIssueLoopRun({ id: '12', job: 'issue-worker', label: 'issue DEV-1 fix' })).toEqual({
+      runId: '12',
       job: 'issue-worker',
       issueKey: 'DEV-1',
     })
     expect(
-      filedIssueLoopRun({ id: 13, job: 'review-lens', label: 'issue DEV-1 review correctness' }),
-    ).toEqual({ runId: 13, job: 'review-lens', issueKey: 'DEV-1' })
+      filedIssueLoopRun({ id: '13', job: 'review-lens', label: 'issue DEV-1 review correctness' }),
+    ).toEqual({ runId: '13', job: 'review-lens', issueKey: 'DEV-1' })
     expect(
       filedIssueLoopRun({
-        id: 14,
+        id: '14',
         job: 'review-lens',
         label: 'issue DEV-1 review issue-blast-radius',
       }),
-    ).toEqual({ runId: 14, job: 'review-lens', issueKey: 'DEV-1' })
+    ).toEqual({ runId: '14', job: 'review-lens', issueKey: 'DEV-1' })
     expect(
-      filedIssueLoopRun({ id: 15, job: 'review-lens', label: 'issue DEV-1 blast radius' }),
-    ).toEqual({ runId: 15, job: 'review-lens', issueKey: 'DEV-1' })
-    expect(filedIssueLoopRun({ id: 16, job: 'diagnose', label: null })).toBeNull()
+      filedIssueLoopRun({ id: '15', job: 'review-lens', label: 'issue DEV-1 blast radius' }),
+    ).toEqual({ runId: '15', job: 'review-lens', issueKey: 'DEV-1' })
+    expect(filedIssueLoopRun({ id: '16', job: 'diagnose', label: null })).toBeNull()
     expect(
-      filedIssueLoopRun({ id: 15, job: 'diagnose', label: 'hand-dispatched diagnosis' }),
+      filedIssueLoopRun({ id: '15', job: 'diagnose', label: 'hand-dispatched diagnosis' }),
     ).toBeNull()
-    expect(filedIssueLoopRun({ id: 16, job: 'diagnose', label: 'issue DEV-1 fix' })).toBeNull()
+    expect(filedIssueLoopRun({ id: '16', job: 'diagnose', label: 'issue DEV-1 fix' })).toBeNull()
     expect(
-      filedIssueLoopRun({ id: 17, job: 'implement', label: 'issue DEV-1 diagnosis' }),
+      filedIssueLoopRun({ id: '17', job: 'implement', label: 'issue DEV-1 diagnosis' }),
     ).toBeNull()
   })
 

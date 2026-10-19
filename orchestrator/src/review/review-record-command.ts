@@ -69,7 +69,7 @@ export function readProjectReview(
         review: number
         finding: number | null
         lens: string
-        run: number
+        run: string
         disposition: ReviewRecordRow['disposition']
         category: string | null
         severity: string | null
@@ -77,10 +77,10 @@ export function readProjectReview(
       },
       [string, string]
     >(
-      `SELECT r.id AS review,rf.id AS finding,rl.lens,rl.run_id AS run,rf.disposition,
+      `SELECT r.id AS review,rf.id AS finding,rl.lens,rl.run_record_id AS run,rf.disposition,
               rf.rejection_category AS category,
               rf.triaged_severity AS severity,rf.location
-         FROM review_lens rl JOIN run ON run.id=rl.run_id
+         FROM review_lens rl JOIN run ON run.record_id=rl.run_record_id
          JOIN review r ON r.id=rl.review_id
          LEFT JOIN review_finding rf ON rf.review_lens_id=rl.id
         WHERE run.project_record_id=(SELECT record_id FROM project WHERE name=?) AND run.branch=?

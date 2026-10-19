@@ -56,7 +56,7 @@ export function teardownVars(input: {
   main: string
   label: string
   treeExists: boolean
-  compose?: { projectName: string; rootRunId: number }
+  compose?: { projectName: string; rootRunId: string }
   allocations?: {
     index: number
     ports: Record<string, number>

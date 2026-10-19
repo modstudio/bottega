@@ -8,7 +8,7 @@ describe('guarded residue reclaim', () => {
   test('unattended reclaim keeps an alive identity-unverified process record', () => {
     const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: 'project' })
     db()
-      .query('UPDATE run SET agent_pid=?,agent_start_time=NULL WHERE id=?')
+      .query('UPDATE run SET agent_pid=?,agent_start_time=NULL WHERE record_id=?')
       .run(process.pid, runId)
 
     const result = reclaimResidue('process', String(runId), {
@@ -17,7 +17,7 @@ describe('guarded residue reclaim', () => {
     })
 
     expect(result.ok).toBe(false)
-    expect(db().query('SELECT agent_pid FROM run WHERE id=?').get(runId)).toEqual({
+    expect(db().query('SELECT agent_pid FROM run WHERE record_id=?').get(runId)).toEqual({
       agent_pid: process.pid,
     })
   })
@@ -40,14 +40,14 @@ describe('guarded residue reclaim', () => {
 
     expect(reclaimResidue('stale-run', String(runId))).toMatchObject({ ok: true })
 
-    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(runId)).toEqual({
+    expect(db().query('SELECT evidence_excluded FROM run WHERE record_id=?').get(runId)).toEqual({
       evidence_excluded: expect.stringContaining(
         `settled by ${PLATFORM_SLUG} machine reclaim stale-run`,
       ),
     })
     expect(
       db()
-        .query('SELECT kind FROM outbox WHERE row_id=(SELECT record_id FROM run WHERE id=?)')
+        .query('SELECT kind FROM outbox WHERE row_id=(SELECT record_id FROM run WHERE record_id=?)')
         .get(runId),
     ).toEqual({
       kind: 'run',

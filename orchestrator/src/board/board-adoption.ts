@@ -10,7 +10,6 @@ import {
   RecordApiRequestError,
   recordApiClient,
 } from '../record/record-api-client.ts'
-import { runRecordIdOrNull } from '../run/run-identifier.ts'
 import {
   type AdoptionCandidate as Candidate,
   type AdoptionCandidateFact as CandidateFact,
@@ -92,7 +91,7 @@ type ClaimRow = {
   subject_value: string
   holder_session: string | null
   note: string | null
-  run_id: number | null
+  run_record_id: string | null
   lapses_at: string
   closed_at: string | null
 }
@@ -112,7 +111,7 @@ function candidateRows(
     if (row.kind !== 'notice' && row.kind !== 'question' && row.kind !== 'reply') return []
     const root = row.kind === 'reply' ? byId.get(row.thread_root_id!) : row
     const prior = recorded.get(`${row.kind}:${row.id}`)
-    const movedRoot = root && recorded.get(`${root.kind}:${root.id}`)?.state === 'uploaded'
+    const movedRoot = root && recorded.get(`${root.kind}:${root.record_id}`)?.state === 'uploaded'
     const live =
       row.kind === 'reply' && movedRoot
         ? rowIsLive({ ...root, withdrawn_at: null }, clock, database)
@@ -136,7 +135,7 @@ function candidateRows(
       live: claimIsLive({
         closed: row.closed_at !== null,
         lapsesAt: Date.parse(row.lapses_at),
-        runStatus: latestRunStatus(row.run_id, database),
+        runStatus: latestRunStatus(row.run_record_id, database),
         now: clock,
       }),
       accepted: false,
@@ -146,11 +145,6 @@ function candidateRows(
   for (const row of messages) rows.set(`${row.kind}:${row.id}`, row)
   for (const row of claims) rows.set(`claim:${row.id}`, row)
   return { candidates: selectBoardAdoptionCandidates([...messageFacts, ...claimFacts]), rows }
-}
-
-function runRecordId(localId: number | null, database: Database): string | null {
-  if (localId === null) return null
-  return runRecordIdOrNull(database, localId)
 }
 
 function lastingLocalRefusal(
@@ -277,7 +271,7 @@ async function uploadMessage(
   client: RecordApiClient,
   database: Database,
 ): Promise<string> {
-  const authorRunId = runRecordId(row.author_run_id, database)
+  const authorRunId = row.author_run_record_id
   if (candidate.kind === 'reply') {
     const rootId = row.thread_root_id!
     const hostedRoot = hostedRoots.get(rootId)
@@ -442,7 +436,7 @@ async function uploadClaim(
     projectId: projectRowByName(row.project, database)!.recordId,
     subject: `${row.subject_kind}:${row.subject_value}`,
     durationMs: remaining,
-    runId: runRecordId(row.run_id, database),
+    runId: row.run_record_id,
     note: row.note ?? undefined,
     holderSession: row.holder_session,
   })

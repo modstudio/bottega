@@ -24,7 +24,7 @@ function candidate(kind: UnattendedReclaimKind): UnattendedResidueCandidate {
   return {
     kind,
     subject: kind === 'ref-guard' || kind === 'retained-ref' ? 'project:42' : '42',
-    runId: 42,
+    runId: '42',
     project: 'project',
     liveness: 'dead',
   }
@@ -38,7 +38,7 @@ describe('unattended residue sweep adapter', () => {
       status: 'ok',
       repo: 'project',
     })
-    db().query('UPDATE run SET pid=? WHERE id=?').run(2_147_483_647, runId)
+    db().query('UPDATE run SET pid=? WHERE record_id=?').run(2_147_483_647, runId)
 
     expect(unattendedProcessCandidates(null)).toEqual([])
   })
@@ -51,7 +51,7 @@ describe('unattended residue sweep adapter', () => {
       repo: 'project',
     })
     db()
-      .query('UPDATE run SET agent_pid=?,agent_start_time=NULL WHERE id=?')
+      .query('UPDATE run SET agent_pid=?,agent_start_time=NULL WHERE record_id=?')
       .run(process.pid, runId)
 
     expect(unattendedProcessCandidates(null)).toEqual([

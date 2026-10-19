@@ -103,14 +103,16 @@ function pendingFenceFixture(status: 'ok' | 'asking', numericFolder: boolean, de
     "UPDATE run SET status='ok' WHERE status IN ('reserved','attached','running','asking')",
   )
   const recordId = randomUUID()
-  const inserted = database
+  database
     .query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-       VALUES (?,datetime('now'),'codex','migration-fixture','sha',0,'',?)`,
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),datetime('now'),'codex','migration-fixture','sha',0,'',?)`,
     )
     .run(recordId, status)
-  const id = Number(inserted.lastInsertRowid)
+  const id = database
+    .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
+    .get(recordId)!.number
   const numericPath = join(PRELOAD_RUNS, String(id))
   const uuidPath = join(PRELOAD_RUNS, recordId)
   fixturePaths.push(numericPath, uuidPath)

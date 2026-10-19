@@ -4,7 +4,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 export const UNJUDGED_OWNER_WINDOW_MS = 3 * 24 * 60 * 60 * 1000
 
 export type ConversationProjectMember = {
-  id: number
+  record_id: string
   projectRecordId: string | null
 }
 export type ConversationProjectOwnershipRuling =
@@ -21,20 +21,21 @@ export function decideConversationProjectOwnership(input: {
   if (root.projectRecordId === null)
     return {
       outcome: 'unknown',
-      reason: `conversation root ${root.id} project UUID is missing; members ${members.map((member) => `${member.id}=${member.projectRecordId ?? 'missing'}`).join(', ')}`,
+      reason: `conversation root ${root.record_id} project UUID is missing; members ${members.map((member) => `${member.record_id}=${member.projectRecordId ?? 'missing'}`).join(', ')}`,
     }
   if (root.projectRecordId !== expectedProjectRecordId)
     return {
       outcome: 'unknown',
-      reason: `conversation root ${root.id} project UUID ${root.projectRecordId} does not match project ${expectedProjectRecordId}`,
+      reason: `conversation root ${root.record_id} project UUID ${root.projectRecordId} does not match project ${expectedProjectRecordId}`,
     }
   const conflicts = members.filter(
-    (member) => member.id !== root.id && member.projectRecordId !== root.projectRecordId,
+    (member) =>
+      member.record_id !== root.record_id && member.projectRecordId !== root.projectRecordId,
   )
   if (conflicts.length)
     return {
       outcome: 'unknown',
-      reason: `${conflicts.map((member) => `run ${member.id} project UUID ${member.projectRecordId ?? 'missing'}`).join(', ')} conflicts with root ${root.id} project UUID ${root.projectRecordId}`,
+      reason: `${conflicts.map((member) => `run ${member.record_id} project UUID ${member.projectRecordId ?? 'missing'}`).join(', ')} conflicts with root ${root.record_id} project UUID ${root.projectRecordId}`,
     }
   return { outcome: 'owned' }
 }

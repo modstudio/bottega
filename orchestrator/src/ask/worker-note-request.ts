@@ -62,12 +62,12 @@ export async function requestWorkerNote(
   const request = db()
     .query(
       `INSERT INTO worker_note_request
-       (record_id,run_id,text,project,project_record_id,file,same_as,requested_at,status)
+       (record_id,run_record_id,text,project,project_record_id,file,same_as,requested_at,status)
        VALUES (?,?,?,?,(SELECT record_id FROM project WHERE name=?),?,?,?,'requested') RETURNING id`,
     )
     .get(
       newRecordId(),
-      run.id,
+      run.recordId,
       input.text,
       input.project ?? null,
       input.project ?? null,

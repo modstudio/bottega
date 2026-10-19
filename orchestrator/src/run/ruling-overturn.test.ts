@@ -22,7 +22,7 @@ describe('overturn ruling', () => {
     const question = db()
       .query(
         `INSERT INTO question
-          (record_id,run_id,asked_at,question,answer,answered_at,answered_by,answerer_kind,answer_channel)
+          (record_id,run_record_id,asked_at,question,answer,answered_at,answered_by,answerer_kind,answer_channel)
          VALUES ('${newRecordId()}',?,'2026-09-20','Which way?','Old ruling','2026-09-21','owner-session','agent','cli')
          RETURNING id`,
       )
@@ -44,7 +44,9 @@ describe('overturn ruling', () => {
       overturn_reason: 'New evidence contradicted it.',
       replacement: 'Use the replacement.',
     })
-    expect(db().query('SELECT status FROM run WHERE id=?').get(run)).toEqual({ status: 'ok' })
+    expect(db().query('SELECT status FROM run WHERE record_id=?').get(run)).toEqual({
+      status: 'ok',
+    })
     expect(
       db().query("SELECT action,reason FROM run_mutation_audit WHERE action='overturn'").get(),
     ).toEqual({ action: 'overturn', reason: 'New evidence contradicted it.' })

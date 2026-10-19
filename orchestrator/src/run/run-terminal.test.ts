@@ -40,12 +40,12 @@ test('an ok child refreshes the failed root run record with the chain outcome', 
   })
 
   const latest = db()
-    .query<{ payload: string }, []>(
+    .query<{ payload: string }, [string]>(
       `SELECT payload FROM outbox
-       WHERE kind='run' AND row_id=(SELECT record_id FROM run WHERE id=${root})
+       WHERE kind='run' AND row_id=(SELECT record_id FROM run WHERE record_id=?)
        ORDER BY id DESC LIMIT 1`,
     )
-    .get()!
+    .get(root)!
   expect(JSON.parse(latest.payload)).toMatchObject({ status: 'ok', failureKind: null })
 })
 
@@ -61,7 +61,7 @@ test('a failed non-failover child closes its question before the root inherits f
   })
   db()
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+      `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
     )
     .run(child, '2026-09-29', 'What should happen?')
 
@@ -74,11 +74,11 @@ test('a failed non-failover child closes its question before the root inherits f
     record: ['01990000-0000-7000-8000-000000000099', '2026-10-16T12:01:00.000Z'],
   })
 
-  expect(db().query('SELECT status,failure_kind FROM run WHERE id=?').get(root)).toEqual({
+  expect(db().query('SELECT status,failure_kind FROM run WHERE record_id=?').get(root)).toEqual({
     status: 'failed',
     failure_kind: 'interrupted',
   })
-  expect(db().query('SELECT close_reason FROM question WHERE run_id=?').get(child)).toEqual({
+  expect(db().query('SELECT close_reason FROM question WHERE run_record_id=?').get(child)).toEqual({
     close_reason: 'chain-terminal',
   })
 })
@@ -122,11 +122,11 @@ test('artifact persistence failure refreshes a completed child and its root', ()
     finishedAt: '2026-10-16T12:01:00.000Z',
   })
 
-  const latestPayload = (id: number) => {
+  const latestPayload = (id: string) => {
     const row = db()
-      .query<{ payload: string }, [number]>(
+      .query<{ payload: string }, [string]>(
         `SELECT payload FROM outbox
-         WHERE kind='run' AND row_id=(SELECT record_id FROM run WHERE id=?)
+         WHERE kind='run' AND row_id=(SELECT record_id FROM run WHERE record_id=?)
          ORDER BY id DESC LIMIT 1`,
       )
       .get(id)!
@@ -219,7 +219,7 @@ describe('terminal review evidence', () => {
         failureKind: null,
       }),
     ).toBeNull()
-    expect(db().query('SELECT id FROM review_lens WHERE run_id=?').get(probeRun)).toBeNull()
+    expect(db().query('SELECT id FROM review_lens WHERE run_record_id=?').get(probeRun)).toBeNull()
     const reviewId = recordTerminalReviewEvidence(db(), {
       runId: productRun,
       parsedReview,
@@ -227,7 +227,9 @@ describe('terminal review evidence', () => {
       failureKind: null,
     })
     expect(reviewId).toBeGreaterThan(0)
-    expect(db().query('SELECT review_id FROM review_lens WHERE run_id=?').get(productRun)).toEqual({
+    expect(
+      db().query('SELECT review_id FROM review_lens WHERE run_record_id=?').get(productRun),
+    ).toEqual({
       review_id: reviewId,
     })
   })

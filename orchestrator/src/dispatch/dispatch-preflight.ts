@@ -257,18 +257,20 @@ export function preflight(
  * worktree (eleven rows for one tree in the live store), and the exemption
  * asks whether ONE chain owns the tree.
  */
-export function recordedChainRootsForWorktree(path: string): number[] {
+export function recordedChainRootsForWorktree(path: string): string[] {
   const real = realpathOrSpelled(path)
   const rows =
     real === path
       ? (db()
-          .query('SELECT COALESCE(parent_run_id, id) AS root FROM run WHERE worktree = ?')
-          .all(path) as { root: number }[])
+          .query(
+            'SELECT COALESCE(parent_run_record_id,record_id) AS root FROM run WHERE worktree = ?',
+          )
+          .all(path) as { root: string }[])
       : (db()
           .query(
-            'SELECT COALESCE(parent_run_id, id) AS root FROM run WHERE worktree = ? OR worktree = ?',
+            'SELECT COALESCE(parent_run_record_id,record_id) AS root FROM run WHERE worktree = ? OR worktree = ?',
           )
-          .all(path, real) as { root: number }[])
+          .all(path, real) as { root: string }[])
   return [...new Set(rows.map((row) => row.root))]
 }
 
@@ -282,10 +284,12 @@ export function namesRecordedRunTree(opts: {
   cwd: string
   explicitCwd?: boolean
   base?: string
-  resume?: { parent: number; worktree: { path: string } | null }
+  resume?: { parent: string; worktree: { path: string } | null }
 }): boolean {
   if (opts.resume) {
-    const row = db().query('SELECT worktree FROM run WHERE id = ?').get(opts.resume.parent) as {
+    const row = db()
+      .query('SELECT worktree FROM run WHERE record_id = ?')
+      .get(opts.resume.parent) as {
       worktree: string | null
     } | null
     const recorded = row?.worktree ?? opts.resume.worktree?.path
@@ -297,14 +301,16 @@ export function namesRecordedRunTree(opts: {
   const roots = new Set(
     (
       db()
-        .query('SELECT COALESCE(parent_run_id, id) AS root FROM run WHERE branch = ?')
+        .query('SELECT COALESCE(parent_run_record_id,record_id) AS root FROM run WHERE branch = ?')
         .all(opts.base) as { root: number }[]
     ).map((row) => row.root),
   )
   try {
     const oid = resolveBase(opts.cwd, opts.base)
     const byCommit = db()
-      .query('SELECT COALESCE(parent_run_id, id) AS root FROM run WHERE head_commit = ?')
+      .query(
+        'SELECT COALESCE(parent_run_record_id,record_id) AS root FROM run WHERE head_commit = ?',
+      )
       .all(oid) as { root: number }[]
     for (const row of byCommit) roots.add(row.root)
   } catch {

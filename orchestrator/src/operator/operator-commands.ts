@@ -14,7 +14,7 @@ const hasNotification = (
 ): row is ClaimedOperatorNotification => 'notification' in row
 
 export function relayCommand(
-  runId: number,
+  runId: string,
   args: string[],
   note: string | undefined,
   presentation: Presentation,

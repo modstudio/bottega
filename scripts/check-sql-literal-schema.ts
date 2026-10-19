@@ -39,6 +39,7 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
       '124dce990db65f45',
       '3347c6a9e054fd21',
       '93f5fb6d946fcad0',
+      '2847caa2831bb631',
     ],
     'schema introspection interpolates a quoted runtime identifier',
   ),
@@ -49,7 +50,7 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
   ),
   ...exempt(
     'orchestrator/src/branch/branch-settlement.ts',
-    ['4eee69d448819496'],
+    ['d960c156a7b69340'],
     'query composes the shared chain-score join fragment',
   ),
   ...exempt(
@@ -76,11 +77,6 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
     'board push query interpolates a runtime-sized VALUES list',
   ),
   ...exempt(
-    'orchestrator/src/resources/resource-ownership.ts',
-    ['6a7c1d1cb35415dc', '92b1bc10c5bf1ab1'],
-    'resource query composes a runtime-sized placeholder list and shared join fragment',
-  ),
-  ...exempt(
     'orchestrator/src/project/project-record-identity.ts',
     ['5f5a4fd2952d66ca'],
     'pre-0117 identity backfill runs only while the legacy project.id column exists',
@@ -92,22 +88,22 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
   ),
   ...exempt(
     'orchestrator/src/score/duel.ts',
-    ['4c48bea7ec460588', 'da156df87e213725'],
+    ['991f82c38cf5da83', '321c3dcef01b1308'],
     'duel query composes shared task and change identity SQL fragments',
   ),
   ...exempt(
     'orchestrator/src/cleanup/cleanup.ts',
-    ['773318a7924d7bb9'],
+    ['68fa42668d0605e9'],
     'cleanup query composes the shared chain-score join fragment',
   ),
   ...exempt(
     'orchestrator/src/cleanup/run-leftover-sweep.ts',
-    ['bbd0d631ee06b26f'],
+    ['c65c784b31da452a'],
     'run leftover query composes the shared evidence closure and chain-score join fragments',
   ),
   ...exempt(
     'orchestrator/src/review/review-triage.ts',
-    ['60be11d3441ca974'],
+    ['77fca200dc9f22a5'],
     'triage query interpolates a runtime-sized lens predicate',
   ),
   ...exempt(
@@ -160,32 +156,13 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
     'document reader composes scope-dependent select and join clauses',
   ),
   ...exempt(
-    'orchestrator/src/run/run-inbox.ts',
-    ['a7945212a995b2dd', '30115a6ff5abdb62'],
-    'inbox query conditionally composes the session_seen join and expression',
-  ),
-  ...exempt(
     'orchestrator/src/run/live-run-member.ts',
-    ['feb09617a75cd4f6'],
+    ['\u0062a75daa7e0655021'],
     'live-member query composes the shared run-voiding expression',
   ),
   ...exempt(
-    'orchestrator/src/run/run-listing.ts',
-    [
-      '27e9a9f8981bc17a',
-      '0ec007d469147c0e',
-      '46f640e3dae5fda0',
-      '2f966755e6ca7ac5',
-      '41653b519dc2a2f4',
-      '8e1775fb13cc5769',
-      'fb7fed618902d104',
-      '2815e38a697616fc',
-    ],
-    'run listing composes optional CTE and filter clauses',
-  ),
-  ...exempt(
     'orchestrator/src/reclaim/reclaim.ts',
-    ['1bf11d3b4b5876ec'],
+    ['23389\u0062a364b4c75f'],
     'reclaim query composes the shared run-voiding expression',
   ),
   ...exempt(

@@ -41,7 +41,7 @@ function seeded(): { database: Database; urlUserinfo: string; base64: string } {
   database
     .query(
       `INSERT INTO run
-       (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,error,label)
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,error,label)
        VALUES (42,'record-42',?,'codex','implement','sha',4,'ordinary prompt','ok',?,?)`,
     )
     .run(STAMP, planted.urlUserinfo, planted.base64)
@@ -80,7 +80,7 @@ test('redaction re-enqueues only chosen-rule leaves, audits paths, and leaves lo
   expect(replacement.label).toBe(base64)
   expect(replacement.withheldFields).toEqual(['error'])
   expect(rows[1]!.payload).not.toContain(urlUserinfo)
-  expect(database.query('SELECT error,label FROM run WHERE id=42').get()).toEqual({
+  expect(database.query("SELECT error,label FROM run WHERE record_id='record-42'").get()).toEqual({
     error: urlUserinfo,
     label: base64,
   })

@@ -20,8 +20,8 @@ test('a tip recorded before a failed PR step is reclaimed on the next run', asyn
       .get()!
     db()
       .query(`INSERT INTO run
-      (record_id,started_at,agent,job,repo,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,branch,base_commit,head_commit)
-      VALUES ('${newRecordId()}','2026-09-28','(architect)','canon-mirror','cm-reclaim-push',?,'fixture',7,'fixture','failed','DEV-1002-canon-mirror','base',?)`)
+      (record_id,number,started_at,agent,job,repo,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,branch,base_commit,head_commit)
+      VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-09-28','(architect)','canon-mirror','cm-reclaim-push',?,'fixture',7,'fixture','failed','DEV-1002-canon-mirror','base',?)`)
       .run(project.id, owned)
     const result = await mirrorRepositoryCanon({
       project: 'cm-reclaim-push',

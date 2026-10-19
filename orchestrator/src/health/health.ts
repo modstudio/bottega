@@ -34,7 +34,8 @@ export function landingsWithPostStepError(database: Database = db()): {
 }
 
 type RunRow = {
-  id: number
+  record_id: string
+  number: number
   started_at: string
   latency_ms: number | null
   failure_kind: FailureKind | null
@@ -50,6 +51,46 @@ const classOf = (row: RunRow): HealthClass | null =>
       ? row.failure_kind
       : null
 
+function falseVerdictRows(database: Database, runs: RunRow[]): HealthVerdictRow[] {
+  const cleared = database
+    .query(
+      `SELECT DISTINCT run_record_id FROM run_mutation_audit
+      WHERE action='reclassify' AND json_extract(reason,'$.cleared')=1`,
+    )
+    .all() as { run_record_id: string }[]
+  const voided = database
+    .query(
+      `SELECT DISTINCT a.run_record_id, r.failure_kind kind FROM run_mutation_audit a
+      JOIN run r ON r.record_id=a.run_record_id
+      WHERE a.action='void' AND r.failure_kind IS NOT NULL`,
+    )
+    .all() as { run_record_id: string; kind: string }[]
+  const cohortIds = new Set(runs.map((row) => row.record_id))
+  const falseByKind = new Map<string, Set<string>>()
+  const addFalse = (kind: string, id: string) => {
+    const ids = falseByKind.get(kind) ?? new Set<string>()
+    ids.add(id)
+    falseByKind.set(kind, ids)
+  }
+  for (const row of cleared)
+    if (cohortIds.has(row.run_record_id)) addFalse('escaped', row.run_record_id)
+  for (const row of voided)
+    if (cohortIds.has(row.run_record_id)) addFalse(row.kind, row.run_record_id)
+  return [...FAILURE_KINDS].map((kind): HealthVerdictRow => {
+    const falseIds = falseByKind.get(kind) ?? new Set<string>()
+    const currentIds = new Set(
+      runs.filter((row) => classOf(row) === kind).map((row) => row.record_id),
+    )
+    for (const id of falseIds) currentIds.add(id)
+    return {
+      kind,
+      verdicts: currentIds.size,
+      falseVerdicts: falseIds.size,
+      rate: currentIds.size ? falseIds.size / currentIds.size : 0,
+    }
+  })
+}
+
 export function harnessHealth(
   days = HEALTH_DEFAULT_DAYS,
   database: Database = db(),
@@ -62,8 +103,8 @@ export function harnessHealth(
   const from = firstDay.toISOString()
   const runs = database
     .query(
-      `SELECT id,started_at,latency_ms,failure_kind,status,error,work_preserved FROM run
-      WHERE datetime(started_at) >= datetime(?) ORDER BY started_at,id`,
+      `SELECT record_id,number,started_at,latency_ms,failure_kind,status,error,work_preserved FROM run
+      WHERE datetime(started_at) >= datetime(?) ORDER BY started_at,number`,
     )
     .all(from) as RunRow[]
   const dayKeys = Array.from({ length: days }, (_, offset) =>
@@ -73,13 +114,21 @@ export function harnessHealth(
   const classes = HEALTH_CLASSES.map((kind): HealthClassRow => {
     const matching = runs.filter((row) => classOf(row) === kind)
     const totalTimeMs = matching.reduce((sum, row) => sum + Math.max(0, row.latency_ms ?? 0), 0)
-    const grouped = new Map<string, { count: number; exampleRunId: number }>()
+    const grouped = new Map<
+      string,
+      { count: number; exampleRunRecordId: string; exampleRunNumber: number }
+    >()
     for (const row of matching) {
       const text = clusterErrorText(row.error)
       if (!text) continue
       const found = grouped.get(text)
       if (found) found.count++
-      else grouped.set(text, { count: 1, exampleRunId: row.id })
+      else
+        grouped.set(text, {
+          count: 1,
+          exampleRunRecordId: row.record_id,
+          exampleRunNumber: row.number,
+        })
     }
     const clusters = [...grouped]
       .map(([text, value]) => ({ text, ...value }))
@@ -106,39 +155,7 @@ export function harnessHealth(
     }
   })
 
-  const cleared = database
-    .query(
-      `SELECT DISTINCT run_id FROM run_mutation_audit
-      WHERE action='reclassify' AND json_extract(reason,'$.cleared')=1`,
-    )
-    .all() as { run_id: number }[]
-  const voided = database
-    .query(
-      `SELECT DISTINCT a.run_id, r.failure_kind kind FROM run_mutation_audit a
-      JOIN run r ON r.id=a.run_id
-      WHERE a.action='void' AND r.failure_kind IS NOT NULL`,
-    )
-    .all() as { run_id: number; kind: string }[]
-  const cohortIds = new Set(runs.map((row) => row.id))
-  const falseByKind = new Map<string, Set<number>>()
-  const addFalse = (kind: string, id: number) => {
-    const ids = falseByKind.get(kind) ?? new Set<number>()
-    ids.add(id)
-    falseByKind.set(kind, ids)
-  }
-  for (const row of cleared) if (cohortIds.has(row.run_id)) addFalse('escaped', row.run_id)
-  for (const row of voided) if (cohortIds.has(row.run_id)) addFalse(row.kind, row.run_id)
-  const falseVerdicts = [...FAILURE_KINDS].map((kind): HealthVerdictRow => {
-    const falseIds = falseByKind.get(kind) ?? new Set<number>()
-    const currentIds = new Set(runs.filter((row) => classOf(row) === kind).map((row) => row.id))
-    for (const id of falseIds) currentIds.add(id)
-    return {
-      kind,
-      verdicts: currentIds.size,
-      falseVerdicts: falseIds.size,
-      rate: currentIds.size ? falseIds.size / currentIds.size : 0,
-    }
-  })
+  const falseVerdicts = falseVerdictRows(database, runs)
   const landingRefusals = (
     database
       .query(

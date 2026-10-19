@@ -22,7 +22,7 @@ test('an alive owner refusal names the landing-tree retry command', () => {
   const projectId = projectByName('fixture')!.recordId
   const owner = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
   db()
-    .query('UPDATE run SET branch=?, project_record_id=?, repo=? WHERE id=?')
+    .query('UPDATE run SET branch=?, project_record_id=?, repo=? WHERE record_id=?')
     .run(branch, projectId, 'fixture', owner)
 
   expect(() =>

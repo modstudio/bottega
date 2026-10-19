@@ -14,20 +14,24 @@ import { runInboxCommand } from '../run/run-inbox.ts'
 import { observedChangesIn } from '../worktree/worktree-remove.ts'
 import { duration, log, optionFlags, write } from './support.ts'
 
-function chainHasPendingDelivery(rootId: number): boolean {
+function chainHasPendingDelivery(rootId: string): boolean {
   return Boolean(
     db()
       .query(
-        `SELECT 1 FROM question q JOIN run owner ON owner.id=q.run_id
-      WHERE (owner.id=? OR owner.parent_run_id=?)
+        `SELECT 1 FROM question q JOIN run owner ON owner.record_id=q.run_record_id
+      WHERE (owner.record_id=? OR owner.parent_run_record_id=?)
         AND q.answered_at IS NOT NULL AND q.delivery_pending_at IS NOT NULL LIMIT 1`,
       )
       .get(rootId, rootId),
   )
 }
 
-const strandedRecovery = (id: number) =>
-  `stranded — ${PLATFORM_SLUG} run retry ${id} --agent … with the recorded ruling, or ${PLATFORM_SLUG} run abandon ${id}`
+const strandedRecovery = (id: string) => {
+  const number = (
+    db().query('SELECT number FROM run WHERE record_id=?').get(id) as { number: number }
+  ).number
+  return `stranded — ${PLATFORM_SLUG} run retry ${number} --agent … with the recorded ruling, or ${PLATFORM_SLUG} run abandon ${number}`
+}
 
 export function register(program: Command): void {
   program

@@ -235,7 +235,7 @@ describe('operational monitor conditions', () => {
     db()
       .query(
         `UPDATE run SET repo=?,cwd=?,worktree=?,worktree_source='recipe',recipe_snapshot=?,
-                        resource_teardown='pending' WHERE id=?`,
+                        resource_teardown='pending' WHERE record_id=?`,
       )
       .run(
         project,
@@ -247,7 +247,7 @@ describe('operational monitor conditions', () => {
     const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
       const command = args.join(' ')
       const runRecordId = db()
-        .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+        .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
         .get(runId)!.record_id
       const stdout = command.startsWith('docker ps -a --format')
         ? `app-orch-${runId}-web\t${runRecordId}`
@@ -276,7 +276,7 @@ describe('operational monitor conditions', () => {
   test('a legacy absent recipe run does not offer close-out for Docker resources', async () => {
     const runId = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
     const runRecordId = db()
-      .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
       .get(runId)!.record_id
     const project = `monitor-legacy-${runId}`
     upsertProject({
@@ -288,7 +288,7 @@ describe('operational monitor conditions', () => {
     db()
       .query(
         `UPDATE run SET repo=?,cwd=?,worktree=?,worktree_source='recipe',recipe_snapshot=?,
-                        resource_teardown=NULL WHERE id=?`,
+                        resource_teardown=NULL WHERE record_id=?`,
       )
       .run(
         project,
@@ -325,10 +325,10 @@ describe('operational monitor conditions', () => {
   test('an absent attached tree is no longer retained for manual Docker review', async () => {
     const runId = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
     const runRecordId = db()
-      .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
       .get(runId)!.record_id
     db()
-      .query('UPDATE run SET worktree=?,worktree_source=? WHERE id=?')
+      .query('UPDATE run SET worktree=?,worktree_source=? WHERE record_id=?')
       .run(`/gone/orch-${runId}`, 'git', runId)
     const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
       const stdout = args.join(' ').startsWith('docker ps -a --format')
@@ -505,7 +505,7 @@ describe('operational monitor conditions', () => {
     })
     db()
       .query(
-        `INSERT INTO question (record_id,id, run_id, asked_at, question) VALUES ('${newRecordId()}',?,?,?,?)`,
+        `INSERT INTO question (record_id,id, run_record_id, asked_at, question) VALUES ('${newRecordId()}',?,?,?,?)`,
       )
       .run(2000, runId, '2026-09-04T19:30:00.000Z', 'which way?')
     const clock = Date.parse('2026-09-04T20:00:00.000Z')
@@ -607,7 +607,7 @@ describe('operational monitor conditions', () => {
     })
     db()
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question,why,answer,answered_at)
+        `INSERT INTO question (record_id,run_record_id,asked_at,question,why,answer,answered_at)
          VALUES ('${newRecordId()}',?,?,?,?,?,?)`,
       )
       .run(id, nowIso(), 'fixture question', 'catches stale asking status', 'answered', nowIso())

@@ -21,19 +21,31 @@ describe('review discipline', () => {
     ])
     const rows = db()
       .query(
-        `SELECT rl.run_id, rl.lens, rl.agent, rl.model, r.completed_at
-         FROM review_lens rl JOIN review r ON r.id=rl.review_id ORDER BY rl.run_id`,
+        `SELECT rl.run_record_id, rl.lens, rl.agent, rl.model, r.completed_at
+         FROM review_lens rl JOIN review r ON r.id=rl.review_id ORDER BY rl.run_record_id`,
       )
       .all() as {
-      run_id: number
+      run_record_id: string
       lens: string
       agent: string
       model: string
       completed_at: string | null
     }[]
     expect(rows).toEqual([
-      { run_id: first, lens: 'safety', agent: 'codex', model: 'effective-a', completed_at: null },
-      { run_id: second, lens: 'craft', agent: 'grok', model: 'effective-b', completed_at: null },
+      {
+        run_record_id: first,
+        lens: 'safety',
+        agent: 'codex',
+        model: 'effective-a',
+        completed_at: null,
+      },
+      {
+        run_record_id: second,
+        lens: 'craft',
+        agent: 'grok',
+        model: 'effective-b',
+        completed_at: null,
+      },
     ])
     const identities = db()
       .query<{ record_id: string }, [number, number, number]>(
@@ -81,7 +93,7 @@ describe('review discipline', () => {
       BEGIN SELECT RAISE(ABORT, 'forced lens insert failure'); END`)
     try {
       expect(() => recordReview(runId, reviewReply(1), db())).toThrow('forced lens insert failure')
-      expect(db().query('SELECT id FROM review_lens WHERE run_id=?').get(runId)).toBeNull()
+      expect(db().query('SELECT id FROM review_lens WHERE run_record_id=?').get(runId)).toBeNull()
       expect(
         db().query<{ count: number }, []>('SELECT count(*) AS count FROM outbox').get(),
       ).toEqual(before)
@@ -203,10 +215,10 @@ describe('review discipline', () => {
     })
     db()
       .query(
-        "UPDATE run SET project_record_id=(SELECT record_id FROM project WHERE name='measurement-fixture') WHERE id IN (?,?)",
+        "UPDATE run SET project_record_id=(SELECT record_id FROM project WHERE name='measurement-fixture') WHERE record_id IN (?,?)",
       )
       .run(withoutBranch, withBranch)
-    db().query("UPDATE run SET branch='DEV-977' WHERE id=?").run(withBranch)
+    db().query("UPDATE run SET branch='DEV-977' WHERE record_id=?").run(withBranch)
     const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
       const args = command[1] === '-C' ? command.slice(3) : command.slice(1)
       let exitCode = 0

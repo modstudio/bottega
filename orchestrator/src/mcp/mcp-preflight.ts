@@ -244,7 +244,7 @@ export function mcpAttachRefusal(connection: McpConnection): string | null {
 export function assertGrokTrustEligible(
   cwd: string,
   recorded: {
-    id?: number
+    id?: string
     cwd?: string | null
     worktree: string | null
     worktree_source: string | null

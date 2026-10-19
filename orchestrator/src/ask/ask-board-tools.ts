@@ -6,7 +6,7 @@ import { suggestBoardPost } from '../board/board-suggestions.ts'
 
 export function registerAskBoardTools(input: {
   server: McpServer
-  runId: number
+  runId: string
   authorized: () => boolean
   unauthorized: () => string
   text: (

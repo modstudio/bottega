@@ -135,7 +135,7 @@ describe('failure classification', () => {
   test('an in-flight entitlement failover is settling, matching auth', () => {
     const settle = (kind: string) => {
       const id = addRun({ agent: 'codex', job: 'file-question', status: 'failed', kind })
-      db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, id)
+      db().query('UPDATE run SET pid=? WHERE record_id=?').run(process.pid, id)
       return resolveFailover(db(), id).settling
     }
     expect(settle('auth')).toBe(true)
@@ -371,9 +371,9 @@ describe('routing counts failures as evidence', () => {
     // last run had failed `unreachable`.
     db()
       .query(
-        `INSERT INTO run (record_id,started_at, agent, job, prompt_sha, prompt_bytes, prompt_head,
+        `INSERT INTO run (record_id,number,started_at, agent, job, prompt_sha, prompt_bytes, prompt_head,
                         status, failure_kind)
-       VALUES ('${newRecordId()}',datetime('now','-5 minutes'),'qwen-local','file-question','s',10,'h',
+       VALUES ('${newRecordId()}',1,datetime('now','-5 minutes'),'qwen-local','file-question','s',10,'h',
                'failed','unreachable')`,
       )
       .run()

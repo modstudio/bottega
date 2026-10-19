@@ -9,7 +9,7 @@ export type IssueReviewLensResult = {
   failedToRun: string | null
   findingCount: number | null
   findings: unknown[] | null
-  runId: number | null
+  runId: string | null
 }
 
 export type IssueReviewDecision = {

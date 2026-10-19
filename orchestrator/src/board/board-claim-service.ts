@@ -35,7 +35,7 @@ type ClaimRow = {
   holder_kind: ClaimActor['kind']
   holder_session: string | null
   note: string | null
-  run_id: number | null
+  run_record_id: string | null
   duration_ms: number
   taken_at: string
   renewed_at: string
@@ -51,7 +51,7 @@ export type ClaimView = {
   subject: { kind: ClaimSubject['kind']; value: string }
   holder: string
   note: string | null
-  runId: number | null
+  runId: string | null
   takenAt: string
   renewedAt: string
   lapsesAt: string
@@ -65,7 +65,7 @@ export type TakeClaimResult = ClaimView & { action: 'taken' | 'renewed' | 'taken
 export type TakeClaimInput = {
   subject: string
   durationMs?: number
-  runId?: number
+  runId?: string
   note?: string
   project?: string
   force?: boolean
@@ -106,7 +106,7 @@ function rowLive(row: ClaimRow, clock: number, database = db()): boolean {
   return claimIsLive({
     closed: row.closed_at !== null,
     lapsesAt: Date.parse(row.lapses_at),
-    runStatus: latestRunStatus(row.run_id, database),
+    runStatus: latestRunStatus(row.run_record_id, database),
     now: clock,
   })
 }
@@ -118,7 +118,7 @@ function view(row: ClaimRow, clock: number, database = db()): ClaimView {
     subject: { kind: row.subject_kind, value: row.subject_value },
     holder: row.holder_kind === 'operator' ? 'operator' : row.holder_session!,
     note: row.note,
-    runId: row.run_id,
+    runId: row.run_record_id,
     takenAt: row.taken_at,
     renewedAt: row.renewed_at,
     lapsesAt: row.lapses_at,
@@ -140,13 +140,12 @@ function claimById(id: number, database = db()): ClaimRow {
   return row
 }
 
-function validateRunTie(runId: number | undefined, actor: ClaimActor, database = db()): void {
+function validateRunTie(runId: string | undefined, actor: ClaimActor, database = db()): void {
   if (runId === undefined) return
-  if (!Number.isSafeInteger(runId) || runId <= 0) throw new Error('claim run must be a positive id')
   const row = database
     .query(
       `SELECT root.session_id FROM run member
-       JOIN run root ON root.id=COALESCE(member.parent_run_id,member.id) WHERE member.id=?`,
+       JOIN run root ON root.record_id=COALESCE(member.parent_run_record_id,member.record_id) WHERE member.record_id=?`,
     )
     .get(runId) as { session_id: string | null } | null
   if (!row) throw new Error(`no run ${runId}; use a run owned by this session`)
@@ -226,7 +225,7 @@ function conflictingClaims(context: TakeTransaction): {
 function renewTakenClaim(row: ClaimRow, context: TakeTransaction): TakeTransactionResult {
   if (
     (context.input.durationMs !== undefined && context.input.durationMs !== row.duration_ms) ||
-    (context.input.runId !== undefined && context.input.runId !== row.run_id) ||
+    (context.input.runId !== undefined && context.input.runId !== row.run_record_id) ||
     (context.note !== undefined && context.note !== row.note)
   )
     throw new Error(
@@ -292,7 +291,7 @@ function insertTakenClaim(conflicts: ClaimRow[], context: TakeTransaction): Take
   const inserted = context.database
     .query(
       `INSERT INTO board_claim
-       (project,project_record_id,subject_kind,subject_value,holder_kind,holder_session,note,run_id,duration_ms,
+       (project,project_record_id,subject_kind,subject_value,holder_kind,holder_session,note,run_record_id,duration_ms,
         taken_at,renewed_at,lapses_at,closed_at,close_reason,superseded_by_claim_id,record_id)
        VALUES (?,(SELECT record_id FROM project WHERE name=?),?,?,?,?,?,?,?,?,?,?,NULL,NULL,NULL,?)`,
     )
@@ -319,7 +318,7 @@ function insertTakenClaim(conflicts: ClaimRow[], context: TakeTransaction): Take
     const endedReason = claimCloseReason({
       closed: false,
       lapsesAt: Date.parse(conflict.lapses_at),
-      runStatus: latestRunStatus(conflict.run_id, context.database),
+      runStatus: latestRunStatus(conflict.run_record_id, context.database),
       now: context.clock,
     })
     close.run(now, endedReason ?? 'taken-over', row.id, conflict.id)
@@ -472,7 +471,7 @@ export function stampEndedClaims(clock = Date.now()): number {
       const reason = claimCloseReason({
         closed: false,
         lapsesAt: Date.parse(row.lapses_at),
-        runStatus: latestRunStatus(row.run_id, database),
+        runStatus: latestRunStatus(row.run_record_id, database),
         now: clock,
       })
       if (!reason) continue

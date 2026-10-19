@@ -4,8 +4,8 @@ import { packResumePrompt } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
 
 /** Assemble the exact prompt a resumed turn puts on argv. */
-export function packedResumePrompt(job: string, turnPrompt: string, parentId: number): string {
-  const root = db().query('SELECT prompt_path FROM run WHERE id=?').get(parentId) as {
+export function packedResumePrompt(job: string, turnPrompt: string, parentId: string): string {
+  const root = db().query('SELECT prompt_path FROM run WHERE record_id=?').get(parentId) as {
     prompt_path: string | null
   } | null
   // Missing aged-out root prompts do not strand otherwise resumable chains.

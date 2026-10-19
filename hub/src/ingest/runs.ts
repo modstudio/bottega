@@ -96,7 +96,7 @@ export function convertLegacyRunRefs(
   conn: Database,
   identities: readonly RunIdentity[],
 ): RunRefConversionReport {
-  const identityByNumber = new Map(identities.map((run) => [String(run.id), run.record_id]))
+  const identityByNumber = new Map(identities.map((run) => [String(run.number), run.record_id]))
   const convert = (value: string): string | null => {
     const parsed = legacyRunRef(value)
     if (!parsed) return value
@@ -333,7 +333,7 @@ type OrchIntervalRow = {
 }
 
 type OrchTurnLike = {
-  id: number
+  number: number
   record_id: string
   started_at: string
   latency_ms: number | null
@@ -530,7 +530,7 @@ function ingestRunRows(
     // while its successor is present. Close the predecessor from the handoff
     // itself; waiting to see that old row again leaves its last open sample
     // growing forever. retry_of may name either a root or a resumed child.
-    const retryRecordId = (run as OrchRun & { retry_record_id?: string | null }).retry_record_id
+    const retryRecordId = run.retry_record_id
     if (retryRecordId) writer.closeReplaced(retryRecordId)
     const result = ingestOneRun(run, attribution, writer, now)
     rows += result.rows

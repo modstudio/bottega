@@ -122,18 +122,18 @@ function localScoreOutbox(): Database {
   local
     .query(
       `INSERT INTO run
-       (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
        VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','ok')`,
     )
     .run(RECORD_ID)
   local
     .query(
       `INSERT INTO score
-       (record_id, run_id,delivery,quality,fidelity,note,scored_at,scored_by)
-       VALUES ('${newRecordId()}', 42,'full','right',NULL,'old',?,'architect')`,
+       (record_id, run_record_id,delivery,quality,fidelity,note,scored_at,scored_by)
+       VALUES ('${newRecordId()}', ?,'full','right',NULL,'old',?,'architect')`,
     )
-    .run(STAMP)
-  enqueueScoreRecord(local, 42, MACHINE_ID)
+    .run(RECORD_ID, STAMP)
+  enqueueScoreRecord(local, RECORD_ID, MACHINE_ID)
   return local
 }
 
@@ -181,20 +181,20 @@ test('ordinary sync pushes an asking run before its live question', async () => 
   local
     .query(
       `INSERT INTO run
-       (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
        VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','asking')`,
     )
     .run(RECORD_ID)
   local
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question,asked_via)
-       VALUES ('${newRecordId()}',42,?,'Which?','live')`,
+      `INSERT INTO question (record_id,run_record_id,asked_at,question,asked_via)
+       VALUES ('${newRecordId()}',?,?,'Which?','live')`,
     )
-    .run(STAMP)
+    .run(RECORD_ID, STAMP)
   local
     .query("INSERT OR REPLACE INTO schema_meta (key,value) VALUES ('machine_id',?)")
     .run(MACHINE_ID)
-  enqueueRunRecord(local, 42, MACHINE_ID, STAMP)
+  enqueueRunRecord(local, RECORD_ID, MACHINE_ID, STAMP)
   enqueueQuestionRecord(local, 1)
 
   const remote = fakePostgres()
@@ -297,8 +297,10 @@ test('a re-score while the old payload is in flight remains pending and is deliv
     writesRepo: false,
     findings: false,
     onWrite: () => {
-      local.query("UPDATE score SET note='new', scored_at=? WHERE run_id=42").run(newerStamp)
-      enqueueScoreRecord(local, 42, MACHINE_ID)
+      local
+        .query("UPDATE score SET note='new', scored_at=? WHERE run_record_id=?")
+        .run(newerStamp, RECORD_ID)
+      enqueueScoreRecord(local, RECORD_ID, MACHINE_ID)
     },
   })
 
@@ -538,28 +540,28 @@ test('a quarantined parent defers its graph until retry delivers the parent', as
   local
     .query(
       `INSERT INTO run
-       (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
        VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','asking')`,
     )
     .run(RECORD_ID)
   local
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',42,?,'Which?')`,
+      `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,'Which?')`,
     )
-    .run(STAMP)
+    .run(RECORD_ID, STAMP)
   local
     .query("INSERT OR REPLACE INTO schema_meta (key,value) VALUES ('machine_id',?)")
     .run(MACHINE_ID)
-  enqueueRunRecord(local, 42, MACHINE_ID, STAMP)
+  enqueueRunRecord(local, RECORD_ID, MACHINE_ID, STAMP)
   enqueueQuestionRecord(local, 1)
   local
     .query(
       `INSERT INTO score
-       (record_id, run_id,delivery,quality,fidelity,note,scored_at,scored_by)
-       VALUES ('${newRecordId()}', 42,'full','right',NULL,'complete',?,'architect')`,
+       (record_id, run_record_id,delivery,quality,fidelity,note,scored_at,scored_by)
+       VALUES ('${newRecordId()}', ?,'full','right',NULL,'complete',?,'architect')`,
     )
-    .run(STAMP)
-  enqueueScoreRecord(local, 42, MACHINE_ID)
+    .run(RECORD_ID, STAMP)
+  enqueueScoreRecord(local, RECORD_ID, MACHINE_ID)
   local
     .query(
       "INSERT INTO review (id,record_id,recorded_at) VALUES (1,'01990000-0000-7000-8000-000000000041',?)",
@@ -568,10 +570,10 @@ test('a quarantined parent defers its graph until retry delivers the parent', as
   local
     .query(
       `INSERT INTO review_lens
-       (id,record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
-       VALUES (1,'01990000-0000-7000-8000-000000000042',1,42,'craft','codex','[]','[]','[]','[]')`,
+       (id,record_id,review_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+       VALUES (1,'01990000-0000-7000-8000-000000000042',1,?,'craft','codex','[]','[]','[]','[]')`,
     )
-    .run()
+    .run(RECORD_ID)
   local
     .query(
       `INSERT INTO review_finding
@@ -583,10 +585,10 @@ test('a quarantined parent defers its graph until retry delivers the parent', as
   local
     .query(
       `INSERT INTO contention
-       (id,record_id,at,resource_kind,resource_key,event_kind,run_id)
-       VALUES (1,'01990000-0000-7000-8000-000000000077',?,'lock','resource','wait',42)`,
+       (id,record_id,at,resource_kind,resource_key,event_kind,run_record_id)
+       VALUES (1,'01990000-0000-7000-8000-000000000077',?,'lock','resource','wait',?)`,
     )
-    .run(STAMP)
+    .run(STAMP, RECORD_ID)
   enqueueContention(local, 1, STAMP)
   const remote = fakePostgres(
     serverError('new row violates row-level security policy for table "run"', 42501),
@@ -686,19 +688,19 @@ test('a dependent reports a retired parent without attempting delivery', async (
   local
     .query(
       `INSERT INTO run
-       (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
        VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','asking')`,
     )
     .run(RECORD_ID)
   local
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',42,?,'Which?')`,
+      `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,'Which?')`,
     )
-    .run(STAMP)
+    .run(RECORD_ID, STAMP)
   local
     .query("INSERT OR REPLACE INTO schema_meta (key,value) VALUES ('machine_id',?)")
     .run(MACHINE_ID)
-  enqueueRunRecord(local, 42, MACHINE_ID, STAMP)
+  enqueueRunRecord(local, RECORD_ID, MACHINE_ID, STAMP)
   enqueueQuestionRecord(local, 1)
   local
     .query(

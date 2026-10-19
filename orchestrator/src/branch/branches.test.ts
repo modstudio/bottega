@@ -40,7 +40,9 @@ test('dry-run previews automatic landing repair without writing, then non-dry pr
     const projectId = addProject(project, repository)
     const runId = addRun({ agent: 'codex', job: 'automatic landing repair', repo: project })
     db()
-      .query('UPDATE run SET project_record_id=?,launch_key=?,branch=?,minted_branch=? WHERE id=?')
+      .query(
+        'UPDATE run SET project_record_id=?,launch_key=?,branch=?,minted_branch=? WHERE record_id=?',
+      )
       .run(projectId, key, branch, branch, runId)
 
     writeFileSync(
@@ -66,7 +68,9 @@ test('dry-run previews automatic landing repair without writing, then non-dry pr
     git(repository, 'checkout', 'main')
     const siblingRun = addRun({ agent: 'codex', job: 'sibling branch', repo: project })
     db()
-      .query('UPDATE run SET project_record_id=?,launch_key=?,branch=?,minted_branch=? WHERE id=?')
+      .query(
+        'UPDATE run SET project_record_id=?,launch_key=?,branch=?,minted_branch=? WHERE record_id=?',
+      )
       .run(projectId, key, sibling, sibling, siblingRun)
 
     const persisted = pruneBranch({ project, branch })

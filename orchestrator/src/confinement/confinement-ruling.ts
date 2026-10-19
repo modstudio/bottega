@@ -16,19 +16,26 @@ import { parseConfinement } from './confinement.ts'
 
 type ConfinementPresentation = { log(...values: unknown[]): void }
 
+function sameRunRecords(left: { record_id: string }[], right: { record_id: string }[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((row, index) => row.record_id === right[index]!.record_id)
+  )
+}
+
 function enqueueClearedConfinementRecords(
   database: ReturnType<typeof db>,
-  rows: { id: number }[],
-  rootId: number,
+  rows: { record_id: string }[],
+  rootId: string,
 ): void {
   const at = nowIso()
   const localMachineId = machineId()
-  for (const row of rows) enqueueRunRecord(database, row.id, localMachineId, at)
+  for (const row of rows) enqueueRunRecord(database, row.record_id, localMachineId, at)
   rollUpRootAndEnqueue(database, rootId, null, localMachineId, at)
 }
 
 export function clearConfinement(
-  id: number,
+  id: string,
   options: { writer: string; note: string; tip: string | null },
   presentation: ConfinementPresentation,
 ): void {
@@ -36,12 +43,12 @@ export function clearConfinement(
   let authority = authorizeRunMutation(id, 'reclassify')
   const rows = db()
     .query(
-      `SELECT id, failure_kind, error, pre_confinement, confinement FROM run
-        WHERE (id=? OR parent_run_id=?)
-          AND failure_kind IN ('escaped','confinement_unverified') ORDER BY turn,id`,
+      `SELECT record_id, failure_kind, error, pre_confinement, confinement FROM run
+        WHERE (record_id=? OR parent_run_record_id=?)
+          AND failure_kind IN ('escaped','confinement_unverified') ORDER BY turn,number`,
     )
     .all(authority.rootId, authority.rootId) as {
-    id: number
+    record_id: string
     failure_kind: string
     error: string | null
     pre_confinement: string | null
@@ -51,7 +58,7 @@ export function clearConfinement(
   const chain = db()
     .query(
       `SELECT repo, worktree, branch, head_commit, input_tree FROM run
-        WHERE id=? OR parent_run_id=? ORDER BY turn DESC,id DESC`,
+        WHERE record_id=? OR parent_run_record_id=? ORDER BY turn DESC,number DESC`,
     )
     .all(authority.rootId, authority.rootId) as {
     repo: string | null
@@ -148,7 +155,7 @@ export function clearConfinement(
       clearMode?: 'restored' | 'forward'
     }
     if (!['ok', 'failed', 'asking', 'stopped', 'stale'].includes(value.status ?? '')) {
-      throw new Error(`run ${row.id} has invalid pre-confinement status`)
+      throw new Error(`run ${row.record_id} has invalid pre-confinement status`)
     }
     if (worktreeMissing) {
       value.landingBlock = {
@@ -165,15 +172,15 @@ export function clearConfinement(
     authority = adoptRunMutation(authority, 'receipt')
     const current = db()
       .query(
-        `SELECT id FROM run WHERE (id=? OR parent_run_id=?)
-          AND failure_kind IN ('escaped','confinement_unverified') ORDER BY turn,id`,
+        `SELECT record_id FROM run WHERE (record_id=? OR parent_run_record_id=?)
+          AND failure_kind IN ('escaped','confinement_unverified') ORDER BY turn,number`,
       )
-      .all(authority.rootId, authority.rootId) as { id: number }[]
-    if (current.length !== rows.length || current.some(({ id }, index) => id !== rows[index]!.id)) {
+      .all(authority.rootId, authority.rootId) as { record_id: string }[]
+    if (!sameRunRecords(current, rows)) {
       throw new Error(`run ${id}'s confinement classification changed before it could be cleared`)
     }
     const update = db().query(
-      `UPDATE run SET status=?, failure_kind=?, error=?, pre_confinement=? WHERE id=?
+      `UPDATE run SET status=?, failure_kind=?, error=?, pre_confinement=? WHERE record_id=?
           AND failure_kind IN ('escaped','confinement_unverified')`,
     )
     for (const { row, value } of transitions) {
@@ -182,11 +189,11 @@ export function clearConfinement(
         value.failureKind ?? null,
         value.error ?? null,
         JSON.stringify(value),
-        row.id,
+        row.record_id,
       )
       if (changed.changes !== 1) {
         throw new Error(
-          `run ${row.id}'s confinement classification changed before it could be cleared`,
+          `run ${row.record_id}'s confinement classification changed before it could be cleared`,
         )
       }
     }
@@ -197,9 +204,9 @@ export function clearConfinement(
       JSON.stringify({
         ...audit,
         cleared: true,
-        transitions: transitions.map(({ row, mode }) => ({ runId: row.id, mode })),
+        transitions: transitions.map(({ row, mode }) => ({ runId: row.record_id, mode })),
         priorOutcomes: rows.map((row) => ({
-          runId: row.id,
+          runId: row.record_id,
           failureKind: row.failure_kind,
           error: row.error,
         })),

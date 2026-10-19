@@ -52,11 +52,11 @@ const LOOP_STAGE_JOB = {
   'blast radius': 'review-lens',
 } as const
 
-export type FiledIssueLoopRun = { runId: number; job: string; issueKey: string }
+export type FiledIssueLoopRun = { runId: string; job: string; issueKey: string }
 
 /** Identify a workIssue-started run from the label and job it records. */
 export function filedIssueLoopRun(row: {
-  id: number
+  id: string
   job: string
   label: string | null
 }): FiledIssueLoopRun | null {

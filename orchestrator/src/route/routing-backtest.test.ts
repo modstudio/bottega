@@ -18,7 +18,7 @@ describe('routing backtest statistics', () => {
 
   test('is deterministic under a fixed seed', () => {
     const insert = db().query(
-      `INSERT INTO score (record_id, run_id, delivery, quality, scored_at, scored_by)
+      `INSERT INTO score (record_id, run_record_id, delivery, quality, scored_at, scored_by)
        VALUES (?, ?,?,?,'2026-01-01T00:00:00.000Z','test')`,
     )
     for (let i = 0; i < 8; i++) {
@@ -44,7 +44,7 @@ describe('routing backtest statistics', () => {
       startedAt: '2026-01-02T00:00:00.000Z',
     })
     const insert = db().query(
-      `INSERT INTO score (record_id, run_id, delivery, quality, scored_at, scored_by)
+      `INSERT INTO score (record_id, run_record_id, delivery, quality, scored_at, scored_by)
        VALUES (?, ?,?,?,?, 'test')`,
     )
     insert.run(newRecordId(), first, 'full', 'right', '2026-01-03T00:00:00.000Z')
@@ -61,7 +61,7 @@ describe('routing backtest statistics', () => {
     addRun({ agent: 'grok', job: 'fix', startedAt: '2026-01-02T00:00:00.000Z' })
     db()
       .query(
-        `INSERT INTO score (record_id, run_id, delivery, quality, scored_at, scored_by)
+        `INSERT INTO score (record_id, run_record_id, delivery, quality, scored_at, scored_by)
        VALUES (?, ?,'full','right','2026-01-01T01:00:00.000Z','test')`,
       )
       .run(newRecordId(), scored)
@@ -84,15 +84,15 @@ describe('routing backtest statistics', () => {
     while ((matched.codex < MIN_SAMPLE || matched.grok < MIN_SAMPLE) && tick < 100) {
       const startedAt = new Date(base + tick++ * 86_400_000).toISOString()
       const id = addRun({ agent: 'codex', job: 'fix', startedAt })
-      db().query('UPDATE run SET latency_ms=NULL WHERE id=?').run(id)
+      db().query('UPDATE run SET latency_ms=NULL WHERE record_id=?').run(id)
       const next = routingBacktest('fix', seed).jobs[0]!.currentSelections
       const chosen = choiceAdded(next) as keyof typeof matched
       db()
-        .query('UPDATE run SET agent=?, model=? WHERE id=?')
+        .query('UPDATE run SET agent=?, model=? WHERE record_id=?')
         .run(chosen, AGENTS[chosen]!.model, id)
       db()
         .query(
-          `INSERT INTO score (record_id, run_id, delivery, quality, scored_at, scored_by)
+          `INSERT INTO score (record_id, run_record_id, delivery, quality, scored_at, scored_by)
          VALUES (?, ?,'full','right',?,'test')`,
         )
         .run(newRecordId(), id, new Date(Date.parse(startedAt) + 1000).toISOString())
@@ -125,11 +125,11 @@ describe('routing backtest statistics', () => {
       const next = routingBacktest('fix', seed).jobs[0]!.currentSelections
       const chosen = choiceAdded(next)
       db()
-        .query('UPDATE run SET agent=?, model=? WHERE id=?')
+        .query('UPDATE run SET agent=?, model=? WHERE record_id=?')
         .run(chosen, AGENTS[chosen]!.model, id)
       if (chosen === 'grok') {
         db()
-          .query("UPDATE run SET status='ok', failure_kind=NULL, latency_ms=1000 WHERE id=?")
+          .query("UPDATE run SET status='ok', failure_kind=NULL, latency_ms=1000 WHERE record_id=?")
           .run(id)
         grokLatency = true
       }
@@ -165,10 +165,10 @@ describe('routing backtest statistics', () => {
     addRun({ agent: 'grok', job: 'fix', startedAt: '2026-01-01T12:00:00.000Z' })
 
     const shortRootLatency = routingBacktest('fix', 1)
-    db().query('UPDATE run SET latency_ms=NULL WHERE id=?').run(root)
+    db().query('UPDATE run SET latency_ms=NULL WHERE record_id=?').run(root)
     const nullRootLatency = routingBacktest('fix', 1)
     db()
-      .query('UPDATE run SET latency_ms=? WHERE id=?')
+      .query('UPDATE run SET latency_ms=? WHERE record_id=?')
       .run(24 * 60 * 60_000, root)
     const longRootLatency = routingBacktest('fix', 1)
 
@@ -179,7 +179,7 @@ describe('routing backtest statistics', () => {
 
   test('dispatch chronology is invariant when run ids and started_at disagree', () => {
     const insertScore = db().query(
-      `INSERT INTO score (record_id, run_id, delivery, quality, scored_at, scored_by)
+      `INSERT INTO score (record_id, run_record_id, delivery, quality, scored_at, scored_by)
        VALUES (?, ?,?,?,?, 'test')`,
     )
     const addChronology = (reverse: boolean) => {
@@ -223,7 +223,7 @@ describe('routing backtest statistics', () => {
     })
     db()
       .query(
-        `INSERT INTO score (record_id, run_id, delivery, quality, scored_at, scored_by)
+        `INSERT INTO score (record_id, run_record_id, delivery, quality, scored_at, scored_by)
        VALUES (?, ?,'full','right','2026-01-01T00:11:00.000Z','test')`,
       )
       .run(newRecordId(), decision)
@@ -250,12 +250,12 @@ describe('routing backtest statistics', () => {
     })
     db()
       .query(
-        `INSERT INTO score (record_id, run_id, delivery, quality, scored_at, scored_by)
+        `INSERT INTO score (record_id, run_record_id, delivery, quality, scored_at, scored_by)
        VALUES (?, ?,'full','right','2026-01-01T00:01:00.000Z','test')`,
       )
       .run(newRecordId(), id)
     db()
-      .query(`UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?`)
+      .query(`UPDATE run SET evidence_excluded='voided with orch score --void' WHERE record_id=?`)
       .run(id)
     expect(routingBacktest('fix', 2).jobs).toEqual([])
     expect(routingBacktest('fix', 2, { includeVoided: true }).jobs[0]!.runs).toBe(1)
@@ -263,7 +263,7 @@ describe('routing backtest statistics', () => {
 
   test('each simulated policy learns only from historical runs it selected', () => {
     const insert = db().query(
-      `INSERT INTO score (record_id, run_id, delivery, quality, scored_at, scored_by)
+      `INSERT INTO score (record_id, run_record_id, delivery, quality, scored_at, scored_by)
        VALUES (?, ?,?,?,?, 'test')`,
     )
     for (let i = 0; i < 9; i++) {
@@ -289,7 +289,7 @@ describe('routing backtest statistics', () => {
   })
 
   test('scoring NOT_EVIDENCE failures changes no replay trajectory', () => {
-    const ids: number[] = []
+    const ids: string[] = []
     for (let i = 0; i < 6; i++) {
       ids.push(
         addRun({
@@ -303,7 +303,7 @@ describe('routing backtest statistics', () => {
     }
     const before = routingBacktestEnsemble('fix').trajectories.map((trajectory) => trajectory.jobs)
     const insert = db().query(
-      `INSERT INTO score (record_id, run_id, delivery, quality, scored_at, scored_by)
+      `INSERT INTO score (record_id, run_record_id, delivery, quality, scored_at, scored_by)
        VALUES (?, ?,'none',NULL,?,'test')`,
     )
     for (const [i, id] of ids.entries()) {
@@ -315,7 +315,7 @@ describe('routing backtest statistics', () => {
 
   test('late-scored older-model rows never enter the current-model posterior', () => {
     const insert = db().query(
-      `INSERT INTO score (record_id, run_id, delivery, quality, scored_at, scored_by)
+      `INSERT INTO score (record_id, run_record_id, delivery, quality, scored_at, scored_by)
        VALUES (?, ?,?,?,?, 'test')`,
     )
     const base = Date.parse('2026-01-01T00:00:00.000Z')
@@ -346,7 +346,7 @@ describe('routing backtest statistics', () => {
 
   test('the replay excludes a disabled legacy agent while retaining its historical rows', () => {
     const insert = db().query(
-      `INSERT INTO score (record_id, run_id, delivery, quality, scored_at, scored_by)
+      `INSERT INTO score (record_id, run_record_id, delivery, quality, scored_at, scored_by)
        VALUES (?, ?,'full','right',?,'test')`,
     )
     for (let i = 0; i < MIN_SAMPLE; i++) {
@@ -384,7 +384,7 @@ describe('routing backtest statistics', () => {
 
   test('reports only replay choices for the filtered job', () => {
     const insert = db().query(
-      `INSERT INTO score (record_id, run_id, delivery, quality, scored_at, scored_by)
+      `INSERT INTO score (record_id, run_record_id, delivery, quality, scored_at, scored_by)
        VALUES (?, ?,?,?,'2026-01-01T00:00:00.000Z','test')`,
     )
     for (let i = 0; i < 12; i++) {
@@ -416,7 +416,7 @@ describe('routing backtest statistics', () => {
     })
     db()
       .query(
-        `INSERT INTO score (record_id, run_id, delivery, quality, scored_at, scored_by)
+        `INSERT INTO score (record_id, run_record_id, delivery, quality, scored_at, scored_by)
        VALUES (?, ?,'full','right','2026-01-02T01:00:00.000Z','test')`,
       )
       .run(newRecordId(), id)

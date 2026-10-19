@@ -98,7 +98,6 @@ export function deriveWorkerNoteAnchor(
     cwd: run.projectPath,
     project: run.project,
     files: file ? [{ ...file, path: resolve(run.projectPath, file.path) }] : [],
-    run_id: run.id,
     run_record_id: run.recordId,
     branch: null,
     commit: run.headCommit,
@@ -223,7 +222,7 @@ export async function fileWorkerNote(
   )
   if (!filed.noteRecordId || !filed.noteLabel)
     throw new Error('The note service completed without returning a filed note identity.')
-  appendRunEvent(run.id, {
+  appendRunEvent(run.recordId, {
     ts: nowIso(),
     type: 'note',
     noteRecordId: filed.noteRecordId,
@@ -231,7 +230,7 @@ export async function fileWorkerNote(
     candidates: filed.candidateNotes,
   })
   if (decision.dropped) {
-    appendRunEvent(run.id, {
+    appendRunEvent(run.recordId, {
       ts: nowIso(),
       type: 'text',
       text: decision.dropped,

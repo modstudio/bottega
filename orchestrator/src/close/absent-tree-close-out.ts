@@ -8,7 +8,7 @@ import { worktreeExists } from '../worktree/worktree.ts'
 import { branchTip, hasAbsentTreeTeardownPlan } from '../worktree/worktree-remove.ts'
 
 type AbsentResult = {
-  runId: number
+  runId: string
   worktree: string
   outcome: 'absent'
   detail: string
@@ -32,7 +32,7 @@ export type ResourceTeardownResult = {
 }
 
 export function failedResourceRemovalResult(input: {
-  runId: number
+  runId: string
   treePath: string
   treeAbsent: boolean
   detail: string
@@ -53,7 +53,7 @@ export function failedResourceRemovalResult(input: {
 }
 
 export function absentTreeCloseOut(input: {
-  runId: number
+  runId: string
   treePath: string
   repo: string | null
   cwd: string | null
@@ -93,7 +93,7 @@ export function absentTreeCloseOut(input: {
 }
 
 export function dryRunReleaseResult(
-  runId: number,
+  runId: string,
   treePath: string,
   treeAbsent: boolean,
 ): AbsentResult | ReleasedResult {
@@ -114,7 +114,7 @@ export function dryRunReleaseResult(
 }
 
 export function reconstructibilityHold(
-  runId: number,
+  runId: string,
   treePath: string,
   treeAbsent: boolean,
 ): HeldResult | null {
@@ -124,7 +124,7 @@ export function reconstructibilityHold(
 }
 
 export function successfulReleaseResult(
-  runId: number,
+  runId: string,
   treePath: string,
   treeAbsent: boolean,
   result: { detail: string; output?: string; resourceTeardownCompleted?: true },

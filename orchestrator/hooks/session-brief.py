@@ -24,6 +24,33 @@ def _start(bottega, *args, env=None, cwd=None):
     )
 
 
+def _uuid_string(value):
+    if not isinstance(value, str):
+        return False
+    try:
+        return str(uuid.UUID(value)) == value.lower()
+    except ValueError:
+        return False
+
+
+def _valid_filed_issue_loop_run(item):
+    return (
+        isinstance(item, dict)
+        and _uuid_string(item.get("runId"))
+        and isinstance(item.get("job"), str)
+        and isinstance(item.get("issueKey"), str)
+    )
+
+
+def _valid_blocked_issue_tree(item):
+    return (
+        isinstance(item, dict)
+        and _uuid_string(item.get("runId"))
+        and isinstance(item.get("path"), str)
+        and isinstance(item.get("why"), str)
+    )
+
+
 def _state_root(env=None):
     environment = env if env is not None else os.environ
     override = environment.get("BOTTEGA_STATE_HOME")
@@ -640,10 +667,7 @@ def main() -> int:
                     ):
                         raise ValueError("invalid filed issue waiting JSON")
                 if not isinstance(unscored_loop_runs, list) or not all(
-                    isinstance(item, dict)
-                    and isinstance(item.get("runId"), int)
-                    and isinstance(item.get("job"), str)
-                    and isinstance(item.get("issueKey"), str)
+                    _valid_filed_issue_loop_run(item)
                     for item in unscored_loop_runs
                 ):
                     raise ValueError("invalid filed issue unscored JSON")
@@ -652,10 +676,7 @@ def main() -> int:
                     or not isinstance(blocked_issue_loop.get("limit"), int)
                     or not isinstance(blocked_issue_loop.get("held"), list)
                     or not all(
-                        isinstance(item, dict)
-                        and isinstance(item.get("runId"), int)
-                        and isinstance(item.get("path"), str)
-                        and isinstance(item.get("why"), str)
+                        _valid_blocked_issue_tree(item)
                         for item in blocked_issue_loop["held"]
                     )
                 ):

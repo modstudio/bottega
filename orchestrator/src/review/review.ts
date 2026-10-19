@@ -40,7 +40,7 @@ export function normalizeCoveredPath(path: string): string {
 
 /** Classify whether a review reply has evidence, including changed-path coverage for clean replies. */
 export function cleanReviewEvidence(
-  runId: number,
+  runId: string,
   output: ReviewReply,
   database: Database = db(),
 ): CleanReviewEvidence {
@@ -62,7 +62,7 @@ export function cleanReviewEvidence(
     else {
       const run = database
         .query(
-          'SELECT repo, base_commit, input_tree, head_commit, review_ref, changed_paths FROM run WHERE id=?',
+          'SELECT repo, base_commit, input_tree, head_commit, review_ref, changed_paths FROM run WHERE record_id=?',
         )
         .get(runId) as
         | (Pick<
@@ -103,16 +103,16 @@ function reviewReadLenses(reviewId: number, database: Database): ReviewReadLens[
   return (
     database
       .query(
-        `SELECT rl.id, rl.lens, rl.run_id, rl.agent, rl.model, rl.tree_inspected, rl.reviewed_tree,
+        `SELECT rl.id, rl.lens, rl.run_record_id, rl.agent, rl.model, rl.tree_inspected, rl.reviewed_tree,
             rl.reproduced, rl.coverage, rl.limits, rl.overlap,
             run.input_tree, run.branch, run.base_commit, run.launch_cwd, run.head_commit
-       FROM review_lens rl JOIN run ON run.id=rl.run_id
+       FROM review_lens rl JOIN run ON run.record_id=rl.run_record_id
       WHERE rl.review_id=? ORDER BY rl.id`,
       )
       .all(reviewId) as {
       id: number
       lens: string
-      run_id: number
+      run_record_id: string
       agent: string
       model: string | null
       tree_inspected: string | null
@@ -130,7 +130,7 @@ function reviewReadLenses(reviewId: number, database: Database): ReviewReadLens[
   ).map((row) => ({
     id: row.id,
     lens: row.lens,
-    runId: row.run_id,
+    runId: row.run_record_id,
     agent: row.agent,
     model: row.model,
     treeInspected: row.tree_inspected,
@@ -140,7 +140,7 @@ function reviewReadLenses(reviewId: number, database: Database): ReviewReadLens[
     baseCommit: row.base_commit,
     launchCwd: row.launch_cwd,
     headCommit: row.head_commit,
-    reviewRef: pinRef(row.run_id),
+    reviewRef: pinRef(row.run_record_id),
     reproduced: row.reproduced,
     coverageGrade: row.coverage,
     limits: row.limits,
@@ -156,12 +156,12 @@ export function listReviews(
   const params: SQLQueryBindings[] = []
   if (filter.state === 'open')
     where.push(
-      '(r.completed_at IS NULL OR EXISTS (SELECT 1 FROM review_finding open_f WHERE open_f.review_id=r.id AND open_f.disposition IS NULL))',
+      '(r.completed_at IS NULL OR EXISTS (SELECT 1 FROM review_finding open_f WHERE open_f.review_id=r.record_id AND open_f.disposition IS NULL))',
     )
   if (filter.state === 'complete') where.push('r.completed_at IS NOT NULL')
   if (filter.project) {
     where.push(
-      'EXISTS (SELECT 1 FROM review_lens project_l JOIN run project_run ON project_run.id=project_l.run_id WHERE project_l.review_id=r.id AND project_run.project_record_id=(SELECT record_id FROM project WHERE name=?))',
+      'EXISTS (SELECT 1 FROM review_lens project_l JOIN run project_run ON project_run.record_id=project_l.run_record_id WHERE project_l.review_id=r.record_id AND project_run.project_record_id=(SELECT record_id FROM project WHERE name=?))',
     )
     params.push(filter.project)
   }
@@ -171,7 +171,7 @@ export function listReviews(
   }
   const rows = database
     .query(
-      `SELECT r.id, r.recorded_at, r.completed_at, r.tier, r.tier_risk, r.tier_size,
+      `SELECT r.record_id, r.recorded_at, r.completed_at, r.tier, r.tier_risk, r.tier_size,
             COUNT(DISTINCT rl.id) AS lens_count,
             COUNT(DISTINCT rf.id) AS findings_total,
             COUNT(DISTINCT CASE WHEN rf.disposition IS NOT NULL THEN rf.id END) AS findings_triaged,
@@ -180,12 +180,12 @@ export function listReviews(
             COUNT(DISTINCT CASE WHEN rf.disposition='rejected' THEN rf.id END) AS findings_rejected,
             COUNT(DISTINCT CASE WHEN rf.disposition='skipped' THEN rf.id END) AS findings_skipped,
             run.repo AS project, r.patch_id, r.path_set, r.commit_message, r.outdated_reason
-       FROM review r JOIN review_lens rl ON rl.review_id=r.id JOIN run ON run.id=rl.run_id
-       LEFT JOIN review_finding rf ON rf.review_id=r.id
+       FROM review r JOIN review_lens rl ON rl.review_id=r.record_id JOIN run ON run.record_id=rl.run_record_id
+       LEFT JOIN review_finding rf ON rf.review_id=r.record_id
        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-      GROUP BY r.id
-      ORDER BY CASE WHEN r.completed_at IS NULL OR EXISTS (SELECT 1 FROM review_finding order_f WHERE order_f.review_id=r.id AND order_f.disposition IS NULL) THEN 0 ELSE 1 END,
-               r.recorded_at DESC, r.id DESC`,
+      GROUP BY r.record_id
+      ORDER BY CASE WHEN r.completed_at IS NULL OR EXISTS (SELECT 1 FROM review_finding order_f WHERE order_f.review_id=r.record_id AND order_f.disposition IS NULL) THEN 0 ELSE 1 END,
+               r.recorded_at DESC, r.record_id DESC`,
     )
     .all(...params) as {
     id: number
@@ -271,7 +271,7 @@ export function getReview(reviewId: number, database: Database = db()) {
       (
         database
           .query(
-            `SELECT run.repo FROM review_lens rl JOIN run ON run.id=rl.run_id WHERE rl.review_id=? AND run.repo IS NOT NULL`,
+            `SELECT run.repo FROM review_lens rl JOIN run ON run.record_id=rl.run_record_id WHERE rl.review_id=? AND run.repo IS NOT NULL`,
           )
           .all(reviewId) as { repo: string }[]
       ).map((row) => row.repo),
@@ -336,7 +336,7 @@ export function getReview(reviewId: number, database: Database = db()) {
         ? git(project.path, ['rev-parse', '--verify', lens.reviewRef], true)
         : { ok: false, out: '' }
       return {
-        run_id: lens.runId,
+        run_record_id: lens.runId,
         lens: lens.lens,
         agent: lens.agent,
         model: lens.model,
@@ -383,16 +383,16 @@ function sharedProjectRecordId(runs: readonly RunRow[]): string | null {
 }
 
 export function recordReviews(
-  entries: { runId: number; output: ReviewReply }[],
+  entries: { runId: string; output: ReviewReply }[],
   database: Database = writableDb(),
 ): number {
   if (!entries.length) throw new Error('a review requires at least one lens run')
   const runs = entries.map(({ runId }) => {
     const run = database
       .query(
-        `SELECT id, agent, model, lens, job, status, output_path, input_tree, head_commit, repo, project_record_id,
+        `SELECT record_id, agent, model, lens, job, status, output_path, input_tree, head_commit, repo, project_record_id,
               base_commit, review_ref, changed_paths, branch
-         FROM run WHERE id=?`,
+         FROM run WHERE record_id=?`,
       )
       .get(runId) as RunRow | null
     if (!run) throw new Error(`no run ${runId}`)
@@ -403,7 +403,7 @@ export function recordReviews(
     if (run.status !== 'ok')
       throw new Error(`run ${runId} is ${run.status}, not a completed review run`)
     const existing = database
-      .query('SELECT review_id FROM review_lens WHERE run_id=?')
+      .query('SELECT review_id FROM review_lens WHERE run_record_id=?')
       .get(runId) as { review_id: number } | null
     if (existing)
       throw new Error(`run ${runId} is already recorded in review ${existing.review_id}`)
@@ -420,7 +420,7 @@ export function recordReviews(
   if (distinctTrees.size > 1) {
     throw new Error(
       `review lens runs measured different trees:\n${runs
-        .map((run) => `run ${run.id}: ${run.input_tree ?? 'NULL'}`)
+        .map((run) => `run ${run.record_id}: ${run.input_tree ?? 'NULL'}`)
         .join('\n')}`,
     )
   }
@@ -462,7 +462,7 @@ export function recordReviews(
       ) as { id: number }
     const insertLens = database.query(
       `INSERT INTO review_lens
-         (record_id, review_id, run_id, lens, agent, model, tree_inspected, reviewed_tree, standards_read,
+         (record_id, review_id, run_record_id, lens, agent, model, tree_inspected, reviewed_tree, standards_read,
           files_covered, commands_run, could_not_verify, mcp_tools, docs_read, substitutes)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
     )
@@ -478,7 +478,7 @@ export function recordReviews(
       const lens = insertLens.get(
         newRecordId(),
         review.id,
-        run.id,
+        run.record_id,
         run.lens,
         run.agent,
         run.model,

@@ -13,7 +13,8 @@ import { jobIdleKillMs } from '../jobs/jobs.ts'
 import { idleStallMs, stalledRunDetail, stalledRunState } from '../stalled-run.ts'
 
 export type LiveRunMember = {
-  id: number
+  record_id: string
+  number: number
   started_at: string
   last_event_at: string | null
   agent: string
@@ -26,10 +27,10 @@ export type LiveRunMember = {
 /** One definition of the member whose status and process represent a conversation now. */
 export function currentRunMemberJoin(rootAlias: string): string {
   if (!/^[a-z][a-z0-9_]*$/i.test(rootAlias)) throw new Error('invalid run query alias')
-  return `JOIN run current_run ON current_run.id = (
-    SELECT member.id FROM run member
-     WHERE member.id = ${rootAlias}.id OR member.parent_run_id = ${rootAlias}.id
-     ORDER BY member.turn DESC, member.id DESC LIMIT 1
+  return `JOIN run current_run ON current_run.record_id = (
+    SELECT member.record_id FROM run member
+     WHERE member.record_id = ${rootAlias}.record_id OR member.parent_run_record_id = ${rootAlias}.record_id
+     ORDER BY member.turn DESC, member.number DESC LIMIT 1
   )`
 }
 
@@ -37,12 +38,12 @@ export function currentRunMemberJoin(rootAlias: string): string {
 export function liveRunMembers(database: Database = db()): LiveRunMember[] {
   return database
     .query(
-      `SELECT current_run.id, current_run.started_at, current_run.last_event_at,
+      `SELECT current_run.record_id, current_run.number, current_run.started_at, current_run.last_event_at,
               current_run.agent, current_run.job, root.session_id,
               current_run.agent_pid, current_run.agent_start_time
          FROM run root
          ${currentRunMemberJoin('root')}
-        WHERE root.parent_run_id IS NULL AND current_run.status='running'`,
+        WHERE root.parent_run_record_id IS NULL AND current_run.status='running'`,
     )
     .all() as LiveRunMember[]
 }
@@ -72,7 +73,7 @@ export function liveMemberStall(
     state,
     detail:
       state === 'stalled' && idleMs !== null
-        ? stalledRunDetail({ ...member, idleMs, idleBoundMs })
+        ? stalledRunDetail({ id: member.number, ...member, idleMs, idleBoundMs })
         : null,
     idleMs,
     idleBoundMs,

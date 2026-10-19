@@ -6,11 +6,11 @@ import { closeRunChainQuestions, QUESTION_CLOSE_CHAIN_TERMINAL } from '../run/qu
 
 const TERMINAL = new Set(['ok', 'failed', 'stale', 'stopped'])
 
-export function closeTerminalChainQuestions(rootId: number, dryRun: boolean): void {
+export function closeTerminalChainQuestions(rootId: string, dryRun: boolean): void {
   if (dryRun) return
   const turns = db()
-    .query<{ status: string }, [number, number]>(
-      'SELECT status FROM run WHERE id=? OR parent_run_id=?',
+    .query<{ status: string }, [string, string]>(
+      'SELECT status FROM run WHERE record_id=? OR parent_run_record_id=?',
     )
     .all(rootId, rootId)
   if (turns.length === 0 || turns.some((turn) => !TERMINAL.has(turn.status))) return

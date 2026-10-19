@@ -47,7 +47,7 @@ export type TriageDecision =
       unfinishedReviewIds: number[]
       undisposedFindings: { id: number; reviewId: number; ordinal: number }[]
       missingLenses: string[]
-      missingSecondOpinion: { lens: string; firstRunId: number | null } | null
+      missingSecondOpinion: { lens: string; firstRunId: string | null } | null
       architectReadRequired: boolean
       earlierReviewId: number | null
       earlierReviewTier: 0 | 1 | 2 | 3 | null
@@ -66,7 +66,7 @@ function recordedLensRounds(reviews: readonly TriageReviewRow[]): number {
 
 export type SecondOpinionDecision =
   | { complete: true }
-  | { complete: false; lens: string; firstRunId: number | null }
+  | { complete: false; lens: string; firstRunId: string | null }
 
 /** Require two completed, graded runs of the lens with distinct recorded effective models. */
 export function decideSecondOpinion(

@@ -26,7 +26,7 @@ test('a lease acquisition failure terminalises the synthetic run', async () => {
     expect(
       db()
         .query(
-          `SELECT status,error FROM run WHERE repo=? AND job='canon-mirror' ORDER BY id DESC LIMIT 1`,
+          `SELECT status,error FROM run WHERE repo=? AND job='canon-mirror' ORDER BY number DESC LIMIT 1`,
         )
         .get('cm-lease-fail'),
     ).toEqual({ status: 'failed', error: 'fixture lease denied' })

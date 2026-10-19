@@ -8,7 +8,7 @@ const shellWord = (value: string) =>
 
 export function questionRulingRemedy(row: {
   id: number
-  root_id: number | null
+  root_id: string | null
   workflow_slug: string | null
   mode_slug: string | null
   repo: string | null

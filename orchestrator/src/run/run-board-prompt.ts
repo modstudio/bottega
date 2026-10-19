@@ -47,7 +47,7 @@ export function renderRunBoardSection(notices: RunNotice[]): {
 
 export async function appendInitialRunBoardPrompt(
   prompt: string,
-  runId: number,
+  runId: string,
 ): Promise<{ prompt: string; noticeIds: string[] }> {
   const delivery = await claimRunBoardNotices(runId, false, undefined, true)
   const section = renderRunBoardSection(delivery.notices)
@@ -61,7 +61,7 @@ export async function appendInitialRunBoardPrompt(
 export async function prepareRunBoard(
   prompt: string,
   promptPath: string,
-  runId: number,
+  runId: string,
   firstTurn: boolean,
 ): Promise<{ prompt: string; noticeIds: string[] }> {
   const result = firstTurn
@@ -72,7 +72,7 @@ export async function prepareRunBoard(
 }
 
 export async function prepareLaterRunBoardPrompt(
-  runId: number,
+  runId: string,
   laterTurn: boolean,
   mailbox: { id: number; body: string }[],
   prompt: string,
@@ -90,9 +90,9 @@ export async function prepareLaterRunBoardPrompt(
   return { prompt: `${items.join('\n\n')}\n\n${banner}\n\n${prompt}`, notices }
 }
 
-export function persistBoundPrompt(promptPath: string, prompt: string, runId: number): void {
+export function persistBoundPrompt(promptPath: string, prompt: string, runId: string): void {
   writeFileSync(join(dirname(promptPath), 'bound-prompt.txt'), prompt)
   db()
-    .query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE id=?')
+    .query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE record_id=?')
     .run(sha(prompt), Buffer.byteLength(prompt), runId)
 }

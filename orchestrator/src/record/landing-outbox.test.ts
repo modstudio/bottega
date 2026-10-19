@@ -17,7 +17,7 @@ test('landing evidence backfill enqueues references in order, maps every column,
   database.query("INSERT INTO schema_meta (key,value) VALUES ('machine_id','machine-record')").run()
   database
     .query(`INSERT INTO run
-      (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+      (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
       VALUES (1,'run-record','2026-09-15T00:00:00Z','codex','test','sha',1,'head','ok')`)
     .run()
   database
@@ -54,9 +54,9 @@ test('landing evidence backfill enqueues references in order, maps every column,
     .run()
   database
     .query(`INSERT INTO contention
-      (id,record_id,at,session_id,resource_kind,resource_key,event_kind,duration_ms,cause,run_id,landing_id)
+      (id,record_id,at,session_id,resource_kind,resource_key,event_kind,duration_ms,cause,run_record_id,landing_id)
       VALUES (1,'01990000-0000-7000-8000-000000000025','2026-09-15T00:08:00Z','session','lock',
-       'resource','wait',12,'cause',1,1)`)
+       'resource','wait',12,'cause','run-record',1)`)
     .run()
   database
     .query(`INSERT INTO test_flake

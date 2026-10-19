@@ -7,6 +7,6 @@ export type ConversationKeepTreeHold =
   | { held: false; kept: true; reason: string }
 
 /** Separates the clean landing tree's report word from its persisted outcome. */
-export function cleanLandingTreeCloseOutResult(runId: number, worktree: string, detail: string) {
+export function cleanLandingTreeCloseOutResult(runId: string, worktree: string, detail: string) {
   return { runId, worktree, outcome: 'held' as const, reportOutcome: 'kept' as const, detail }
 }

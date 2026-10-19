@@ -12,7 +12,7 @@ import {
 const WORKER_NOTE_POLL_MS = 100
 type PendingNote = {
   id: number
-  run_id: number
+  run_record_id: string
   text: string
   project: string | null
   file: string | null
@@ -28,12 +28,12 @@ function storeContention(error: unknown): boolean {
   )
 }
 
-function claim(runId: number): PendingNote | null {
+function claim(runId: string): PendingNote | null {
   return writeTransaction(() => {
     const row = db()
       .query(
-        `SELECT id,run_id,text,project,file,same_as FROM worker_note_request
-         WHERE run_id=? AND status='requested' AND claimed_at IS NULL ORDER BY id LIMIT 1`,
+        `SELECT id,run_record_id,text,project,file,same_as FROM worker_note_request
+         WHERE run_record_id=? AND status='requested' AND claimed_at IS NULL ORDER BY id LIMIT 1`,
       )
       .get(runId) as PendingNote | null
     if (!row) return null
@@ -44,12 +44,12 @@ function claim(runId: number): PendingNote | null {
   })
 }
 
-function runFacts(runId: number): WorkerNoteRun {
+function runFacts(runId: string): WorkerNoteRun {
   const row = db()
     .query(
-      `SELECT r.id,r.record_id,p.name AS project,p.path AS project_path,COALESCE(r.worktree,r.cwd) AS tree,
+      `SELECT r.number AS id,r.record_id,p.name AS project,p.path AS project_path,COALESCE(r.worktree,r.cwd) AS tree,
               r.branch,r.session_id,r.head_commit
-       FROM run r JOIN project p ON p.record_id=r.project_record_id WHERE r.id=?`,
+       FROM run r JOIN project p ON p.record_id=r.project_record_id WHERE r.record_id=?`,
     )
     .get(runId) as {
     id: number
@@ -108,7 +108,7 @@ type WorkerNoteFiler = typeof fileWorkerNote
 async function file(request: PendingNote, filer: WorkerNoteFiler): Promise<void> {
   let outcome: WorkerNoteOutcome
   try {
-    const filed = await filer(runFacts(request.run_id), {
+    const filed = await filer(runFacts(request.run_record_id), {
       text: request.text,
       ...(request.project ? { project: request.project } : {}),
       ...(request.file ? { file: request.file } : {}),
@@ -118,7 +118,7 @@ async function file(request: PendingNote, filer: WorkerNoteFiler): Promise<void>
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     outcome = { status: 'refused', refusalClass: refusalClass(error), detail }
-    appendRunEvent(request.run_id, {
+    appendRunEvent(request.run_record_id, {
       ts: nowIso(),
       type: 'text',
       text: `worker note request ${request.id} was refused: ${detail}`,
@@ -127,7 +127,7 @@ async function file(request: PendingNote, filer: WorkerNoteFiler): Promise<void>
   try {
     finish(request, outcome)
   } catch (error) {
-    appendRunEvent(request.run_id, {
+    appendRunEvent(request.run_record_id, {
       ts: nowIso(),
       type: 'text',
       text: `worker note request ${request.id} could not record its result: ${String(error)}`,
@@ -138,7 +138,7 @@ async function file(request: PendingNote, filer: WorkerNoteFiler): Promise<void>
 export type WorkerNoteBroker = { close(): Promise<void> }
 
 export function startWorkerNoteBroker(
-  runId: number,
+  runId: string,
   filer: WorkerNoteFiler = fileWorkerNote,
 ): WorkerNoteBroker {
   let closed = false
@@ -179,7 +179,7 @@ export function startWorkerNoteBroker(
         .query(
           `UPDATE worker_note_request SET status='refused',finished_at=?,
            refusal_class='supervisor-closed',detail='run supervisor closed before filing'
-           WHERE run_id=? AND status='requested'`,
+           WHERE run_record_id=? AND status='requested'`,
         )
         .run(nowIso(), runId)
     },

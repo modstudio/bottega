@@ -20,7 +20,7 @@ export function reclassifyFailuresCommand(
   const { has } = flags
   const { log } = presentation
   type FailureRow = {
-    id: number
+    record_id: string
     agent: string
     job: string
     status: string
@@ -31,10 +31,10 @@ export function reclassifyFailuresCommand(
 
   const all = db()
     .query(
-      `SELECT id, agent, job, status, failure_kind, error
+      `SELECT record_id, agent, job, status, failure_kind, error
        FROM run
       WHERE status IN ('failed', 'stale')
-      ORDER BY id`,
+      ORDER BY number`,
     )
     .all() as FailureRow[]
   const matched = all.flatMap((row) => {
@@ -66,11 +66,11 @@ export function reclassifyFailuresCommand(
   }
 
   const before = counts(all)
-  const replacement = new Map(matched.map(({ row, kind }) => [row.id, kind]))
+  const replacement = new Map(matched.map(({ row, kind }) => [row.record_id, kind]))
   const projected = counts(
     all.map((row) => ({
       agent: row.agent,
-      failure_kind: replacement.get(row.id) ?? row.failure_kind,
+      failure_kind: replacement.get(row.record_id) ?? row.failure_kind,
     })),
   )
 
@@ -78,7 +78,7 @@ export function reclassifyFailuresCommand(
   log(`\nPLAN (${matched.length} matched row${matched.length === 1 ? '' : 's'})`)
   for (const { row, kind } of matched) {
     log(
-      `run ${row.id}  ${row.agent}/${row.job}  [${row.status}]  ${row.failure_kind ?? 'null'} -> ${kind}`,
+      `run ${row.record_id}  ${row.agent}/${row.job}  [${row.status}]  ${row.failure_kind ?? 'null'} -> ${kind}`,
     )
     log(row.error)
   }
@@ -96,17 +96,17 @@ export function reclassifyFailuresCommand(
 
   const update = db().query(
     `UPDATE run SET failure_kind = ?
-      WHERE id = ? AND status IN ('failed', 'stale')
+      WHERE record_id = ? AND status IN ('failed', 'stale')
         AND (failure_kind = 'other' OR failure_kind IS NULL) AND error = ?`,
   )
   const apply = writeTransaction(() => {
     let changed = 0
     for (const { row, kind } of matched) {
-      const result = update.run(kind, row.id, row.error)
+      const result = update.run(kind, row.record_id, row.error)
       changed += result.changes
       if (result.changes) {
         auditRunMutation(
-          runMutationActor(row.id),
+          runMutationActor(row.record_id),
           'reclassify',
           `${row.failure_kind ?? 'null'} -> ${kind}`,
         )

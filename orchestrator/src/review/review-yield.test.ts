@@ -39,7 +39,7 @@ function addLens(
     latency: input.minutes * 60_000,
   })
   db()
-    .query("UPDATE run SET launch_key=?,branch=?,repo='fixture',probe=? WHERE id=?")
+    .query("UPDATE run SET launch_key=?,branch=?,repo='fixture',probe=? WHERE record_id=?")
     .run(
       input.launchKey === undefined ? 'DEV-YIELD' : input.launchKey,
       input.branch ?? null,
@@ -48,7 +48,7 @@ function addLens(
     )
   db()
     .query(`INSERT INTO review_lens
-    (record_id,review_id,run_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify,overlap)
+    (record_id,review_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify,overlap)
     VALUES (?,?,?,?,?,?,'[]','[]','[]','[]',?)`)
     .run(
       newRecordId(),
@@ -221,12 +221,15 @@ describe('review yield', () => {
     const voided = addLens(review, { lens: 'voided', agent: 'codex', model: 'gpt-a', minutes: 12 })
     const none = addLens(review, { lens: 'none', agent: 'codex', model: 'gpt-a', minutes: 13 })
     const runFor = (lensId: number) =>
-      (db().query('SELECT run_id FROM review_lens WHERE id=?').get(lensId) as { run_id: number })
-        .run_id
-    db().query("UPDATE run SET evidence_excluded='test void' WHERE id=?").run(runFor(voided))
+      (
+        db().query('SELECT run_record_id FROM review_lens WHERE id=?').get(lensId) as {
+          run_record_id: number
+        }
+      ).run_record_id
+    db().query("UPDATE run SET evidence_excluded='test void' WHERE record_id=?").run(runFor(voided))
     db()
       .query(
-        `INSERT INTO score (record_id, run_id,delivery,quality,scored_at) VALUES ('${newRecordId()}', ?,'none',NULL,'2026-09-08T13:01:00Z')`,
+        `INSERT INTO score (record_id, run_record_id,delivery,quality,scored_at) VALUES ('${newRecordId()}', ?,'none',NULL,'2026-09-08T13:01:00Z')`,
       )
       .run(runFor(none))
 

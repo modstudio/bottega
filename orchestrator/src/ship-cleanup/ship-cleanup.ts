@@ -21,8 +21,9 @@ import {
 } from './ship-cleanup-decision.ts'
 
 type RunRow = {
-  id: number
-  parent_run_id: number | null
+  record_id: string
+  number: number
+  parent_run_record_id: string | null
   started_at: string
   job: string
   status: string
@@ -36,14 +37,14 @@ export type ShipCleanupReport = {
   project: string
   branch: string
   freed: { artifacts: number; scratch: number; worktrees: number }
-  removed: { artifacts: number[]; scratch: number[]; worktrees: string[]; branches: string[] }
+  removed: { artifacts: string[]; scratch: string[]; worktrees: string[]; branches: string[] }
   kept: { item: string; reason: string; remedy?: string }[]
   errors: { item: string; detail: string; retry: string }[]
 }
 
 export type ShipCleanupDependencies = {
   landingState(project: string, branch: string): string
-  closeOut(runId: number): { outcome: string; detail: string }
+  closeOut(runId: string): { outcome: string; detail: string }
   prune(
     project: string,
     branch: string,
@@ -53,7 +54,7 @@ export type ShipCleanupDependencies = {
     errors: string[]
   }
   measure(paths: readonly string[]): { bytes: number; errors: string[]; stoppedAtLimit: boolean }
-  readerCloneArchive(runId: number): string | null
+  readerCloneArchive(runId: string): string | null
   removeLandingTree(path: string): HookTreeRemovalResult
   runsFromTree(path: string): boolean
   remove(path: string): void
@@ -90,28 +91,31 @@ const dependencies: ShipCleanupDependencies = {
 function runFacts(projectRecordId: string, database: Database): ShipCleanupRunFact[] {
   const rows = database
     .query(
-      `SELECT id,parent_run_id,started_at,job,status,branch,launch_key,evidence_excluded,worktree
-         FROM run WHERE project_record_id=? ORDER BY id`,
+      `SELECT record_id,number,parent_run_record_id,started_at,job,status,branch,launch_key,evidence_excluded,worktree
+         FROM run WHERE project_record_id=? ORDER BY number`,
     )
     .all(projectRecordId) as RunRow[]
   const scored = new Set(
     (
       database
         .query(
-          `SELECT score.run_id FROM score JOIN run ON run.id=score.run_id
+          `SELECT score.run_record_id FROM score JOIN run ON run.record_id=score.run_record_id
             WHERE run.project_record_id=?`,
         )
-        .all(projectRecordId) as { run_id: number }[]
-    ).map((row) => row.run_id),
+        .all(projectRecordId) as { run_record_id: string }[]
+    ).map((row) => row.run_record_id),
   )
   const excludedRoots = new Set(
-    rows.filter((row) => row.evidence_excluded !== null).map((row) => row.parent_run_id ?? row.id),
+    rows
+      .filter((row) => row.evidence_excluded !== null)
+      .map((row) => row.parent_run_record_id ?? row.record_id),
   )
   return rows.map((row) => {
-    const rootId = row.parent_run_id ?? row.id
+    const rootId = row.parent_run_record_id ?? row.record_id
     return {
-      id: row.id,
-      rootId,
+      record_id: row.record_id,
+      number: row.number,
+      root_record_id: rootId,
       startedAt: row.started_at,
       job: row.job,
       status: row.status,
@@ -181,11 +185,11 @@ function reportKeptRuns(
     if (decision.scope === 'outside' || decision.artifacts !== 'keep') continue
     report.kept.push({
       item:
-        `run ${decision.id} artifacts and scratch` +
+        `run ${decision.number} artifacts and scratch` +
         (decision.worktreeAction === 'keep' && decision.worktree ? ' and worktree' : ''),
       reason: decision.reason,
       ...(!decision.judged && decision.worktreeAction === 'close'
-        ? { remedy: `${PLATFORM_SLUG} score ${decision.rootId}` }
+        ? { remedy: `${PLATFORM_SLUG} score ${decision.number}` }
         : {}),
     })
   }
@@ -200,11 +204,11 @@ function closeBranchWorktrees(
   const closeRows = decisions.filter(
     (decision) => decision.worktreeAction === 'close' && decision.worktree,
   )
-  const closedRoots = new Set<number>()
+  const closedRoots = new Set<string>()
   const keptLandingTrees = new Map<string, string>()
   for (const row of closeRows) {
-    if (closedRoots.has(row.rootId)) continue
-    closedRoots.add(row.rootId)
+    if (closedRoots.has(row.root_record_id)) continue
+    closedRoots.add(row.root_record_id)
     const remedy = closeBranchWorktree(branch, row, report, adapter)
     if (remedy && row.worktree) keptLandingTrees.set(row.worktree, remedy)
   }
@@ -221,20 +225,20 @@ function closeBranchWorktree(
     if (row.scope === 'landing-tree' && row.worktree) {
       return releaseLandingTree(branch, { ...row, worktree: row.worktree }, report, adapter)
     }
-    const result = adapter.closeOut(row.id)
+    const result = adapter.closeOut(row.record_id)
     if (result.outcome === 'released' || result.outcome === 'absent') {
       if (row.worktree) report.removed.worktrees.push(row.worktree)
       return null
     }
-    report.kept.push({ item: `run ${row.id} worktree`, reason: result.detail })
+    report.kept.push({ item: `run ${row.number} worktree`, reason: result.detail })
     report.errors.push({
-      item: `run ${row.id} worktree`,
+      item: `run ${row.number} worktree`,
       detail: `close-out ${result.outcome}: ${result.detail}`,
       retry: cleanupRetry(branch),
     })
   } catch (cause) {
     report.errors.push({
-      item: `run ${row.id} worktree`,
+      item: `run ${row.number} worktree`,
       detail: cause instanceof Error ? cause.message : String(cause),
       retry: cleanupRetry(branch),
     })
@@ -251,7 +255,7 @@ function releaseLandingTree(
   const remedy = `${PLATFORM_SLUG} tree remove ${row.worktree}, then ${cleanupRetry(branch)}`
   if (adapter.runsFromTree(row.worktree)) {
     report.kept.push({
-      item: `run ${row.id} worktree`,
+      item: `run ${row.number} worktree`,
       reason: 'the command runs from this tree',
       remedy,
     })
@@ -263,11 +267,11 @@ function releaseLandingTree(
     return null
   }
   if (result.outcome === 'kept') {
-    report.kept.push({ item: `run ${row.id} worktree`, reason: result.reason, remedy })
+    report.kept.push({ item: `run ${row.number} worktree`, reason: result.reason, remedy })
     return remedy
   }
   report.errors.push({
-    item: `run ${row.id} worktree`,
+    item: `run ${row.number} worktree`,
     detail: result.detail,
     retry: cleanupRetry(branch),
   })
@@ -283,12 +287,12 @@ function removeRunStorage(
   adapter: ShipCleanupDependencies,
 ): void {
   const removable = decisions.filter((decision) => decision.artifacts === 'remove')
-  const artifactPaths = removable.map((run) => runArtifactsDir(run.id))
-  const scratchPaths = removable.map((run) => runScratchDir(run.id))
+  const artifactPaths = removable.map((run) => runArtifactsDir(run.record_id))
+  const scratchPaths = removable.map((run) => runScratchDir(run.record_id))
   let archivePaths: string[] = []
   try {
     archivePaths = [
-      ...new Set(removable.flatMap((run) => adapter.readerCloneArchive(run.id) ?? [])),
+      ...new Set(removable.flatMap((run) => adapter.readerCloneArchive(run.record_id) ?? [])),
     ]
   } catch (cause) {
     report.errors.push({
@@ -317,8 +321,8 @@ function removeRunStorage(
   report.freed.artifacts = Math.max(0, beforeArtifacts.bytes - afterArtifacts.bytes)
   report.freed.scratch = Math.max(0, beforeScratch.bytes - afterScratch.bytes)
   report.freed.worktrees = Math.max(0, beforeWorktrees.bytes - afterWorktrees.bytes)
-  report.removed.artifacts.push(...removable.map((run) => run.id))
-  report.removed.scratch.push(...removable.map((run) => run.id))
+  report.removed.artifacts.push(...removable.map((run) => run.record_id))
+  report.removed.scratch.push(...removable.map((run) => run.record_id))
   reportMeasurementErrors(branch, 'artifacts', beforeArtifacts, report)
   reportMeasurementErrors(branch, 'artifacts', afterArtifacts, report)
   reportMeasurementErrors(branch, 'scratch', beforeScratch, report)

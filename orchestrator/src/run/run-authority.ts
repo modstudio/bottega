@@ -36,8 +36,8 @@ const RUN_MUTATION_ACTIONS = [
 ] as const
 export type RunMutationAction = (typeof RUN_MUTATION_ACTIONS)[number]
 export type RootAuthority = {
-  runId: number
-  rootId: number
+  runId: string
+  rootId: string
   owner: string | null
   actor: string | null
   ownerLastSeenAt: number | null
@@ -46,29 +46,29 @@ export type RootAuthority = {
   windowMs: number
 }
 
-export function runMutationAuthority(database: Database, runId: number): RootAuthority {
+export function runMutationAuthority(database: Database, runId: string): RootAuthority {
   const row = database
     .query(
-      `SELECT requested.id run_id, root.id root_id, root.session_id owner, seen.last_seen,
+      `SELECT requested.record_id run_record_id, root.record_id root_id, root.session_id owner, seen.last_seen,
               (SELECT COALESCE(turn.last_event_at,turn.started_at)
                  FROM run turn
-                WHERE turn.id=root.id OR turn.parent_run_id=root.id
-                ORDER BY turn.turn DESC,turn.id DESC LIMIT 1) chain_last_activity
+                WHERE turn.record_id=root.record_id OR turn.parent_run_record_id=root.record_id
+                ORDER BY turn.turn DESC,turn.number DESC LIMIT 1) chain_last_activity
        FROM run requested
-       JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
+       JOIN run root ON root.record_id = COALESCE(requested.parent_run_record_id, requested.record_id)
        LEFT JOIN session_seen seen ON seen.session_id=root.session_id
-      WHERE requested.id = ?`,
+      WHERE requested.record_id = ?`,
     )
     .get(runId) as {
-    run_id: number
-    root_id: number
+    run_record_id: string
+    root_id: string
     owner: string | null
     last_seen: string | null
     chain_last_activity: string
   } | null
   if (!row) throw new Error(`no run ${runId}`)
   return {
-    runId: row.run_id,
+    runId: row.run_record_id,
     rootId: row.root_id,
     owner: row.owner,
     actor: sessionId(),
@@ -84,7 +84,7 @@ function adoptedMutationReason(authority: RootAuthority): string | null {
   return `adopted from gone owner ${authority.owner} by ${authority.actor}`
 }
 
-export function runMutationActor(runId: number): RootAuthority {
+export function runMutationActor(runId: string): RootAuthority {
   return runMutationAuthority(db(), runId)
 }
 
@@ -101,7 +101,7 @@ function refuseRunMutation(authority: RootAuthority, action: RunMutationAction |
 }
 
 export function authorizeRunMutation(
-  runId: number,
+  runId: string,
   action: RunMutationAction | 'receipt',
 ): RootAuthority {
   writableDb()
@@ -127,11 +127,11 @@ export function auditRunMutation(
   action: RunMutationAction,
   reason: string | null = null,
   database: Database = db(),
-  turnId: number | null = null,
+  turnId: string | null = null,
 ): void {
   database
     .query(
-      `INSERT INTO run_mutation_audit (record_id, run_id, root_id, action, actor_session, at, reason, turn_id)
+      `INSERT INTO run_mutation_audit (record_id, run_record_id, root_run_record_id, action, actor_session, at, reason, turn_run_record_id)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
@@ -177,10 +177,12 @@ export function adoptRunMutation(
     )
   }
   const claimed = database
-    .query('UPDATE run SET session_id=? WHERE id=? AND session_id IS NULL')
+    .query('UPDATE run SET session_id=? WHERE record_id=? AND session_id IS NULL')
     .run(authority.actor, authority.rootId)
   if (claimed.changes !== 1) {
-    const owner = database.query('SELECT session_id FROM run WHERE id=?').get(authority.rootId) as {
+    const owner = database
+      .query('SELECT session_id FROM run WHERE record_id=?')
+      .get(authority.rootId) as {
       session_id: string | null
     } | null
     if (!owner?.session_id || owner.session_id !== authority.actor) {

@@ -27,9 +27,9 @@ import {
 } from './run-leftover-decision.ts'
 
 type RunRow = {
-  id: number
   record_id: string
-  parent_run_id: number | null
+  number: number
+  parent_run_record_id: string | null
   status: string
   project_record_id: string | null
   judged: number
@@ -86,7 +86,8 @@ function directoryPresent(path: string): { present: boolean; reason: string | nu
 type Candidate = {
   path: string
   kind: RunLeftoverKind
-  runId: number | null
+  runRecordId: string | null
+  runNumber: number | null
   decision: RunLeftoverDecision
   measurement?: Measurement
 }
@@ -96,7 +97,7 @@ export const RUN_LEFTOVER_REPORT_EXAMPLES = 5
 export type KeptRunLeftover = {
   path: string
   kind: RunLeftoverKind
-  runId: number | null
+  runNumber: number | null
   reason: RunLeftoverKeepReason
   status?: string
   detail?: string
@@ -142,13 +143,13 @@ function keptGroupLines(
     ]
   const bytes = items.reduce((total, item) => total + item.bytes, 0)
   const qualifier = items.every((item) => item.complete) ? '' : 'at least '
-  const usesRunIds = items.every((item) => item.remedy === 'score' && item.runId !== null)
+  const usesRunNumbers = items.every((item) => item.remedy === 'score' && item.runNumber !== null)
   const examples = items
     .slice(0, RUN_LEFTOVER_REPORT_EXAMPLES)
-    .map((item) => (usesRunIds ? String(item.runId) : item.path))
+    .map((item) => (usesRunNumbers ? String(item.runNumber) : item.path))
   const more = items.length - examples.length
   return [
-    `kept ${items.length} ${keptNoun(items)} ${keptReasonClause(reason, items[0]!, false)} (${qualifier}${bytes} bytes); example ${usesRunIds ? 'runs' : 'paths'}: ${examples.join(', ')}${more > 0 ? `; and ${more} more` : ''}`,
+    `kept ${items.length} ${keptNoun(items)} ${keptReasonClause(reason, items[0]!, false)} (${qualifier}${bytes} bytes); example ${usesRunNumbers ? 'runs' : 'paths'}: ${examples.join(', ')}${more > 0 ? `; and ${more} more` : ''}`,
     ...remedy,
   ]
 }
@@ -200,7 +201,7 @@ function removeCandidate(
     return { action: 'removed' }
   }
   if (candidate.kind === 'sandbox') {
-    const result = releaseSandboxDirectoryForConversation(candidate.runId!, { dryRun })
+    const result = releaseSandboxDirectoryForConversation(candidate.runRecordId!, { dryRun })
     if (result.outcome !== 'kept') return { action: 'removed' }
     if (result.detail.startsWith('sandbox directory removal failed:'))
       return { action: 'failed', detail: result.detail }
@@ -232,7 +233,7 @@ function applyCandidate(
     kept.push({
       path: candidate.path,
       kind: candidate.kind,
-      runId: candidate.runId,
+      runNumber: candidate.runNumber,
       reason: candidate.decision.reason,
       status: candidate.decision.status,
       detail: candidate.decision.detail,
@@ -250,7 +251,7 @@ function applyCandidate(
       kept.push({
         path: candidate.path,
         kind: candidate.kind,
-        runId: candidate.runId,
+        runNumber: candidate.runNumber,
         reason: removal.reason,
         detail: removal.detail,
         bytes: measurement.bytes,
@@ -279,11 +280,11 @@ function applyCandidate(
 function rowsForSweep(database: Database, projectRecordId: string | null): RunRow[] {
   return database
     .query(
-      `SELECT r.id,r.record_id,r.parent_run_id,r.status,r.project_record_id,
+      `SELECT r.record_id,r.number,r.parent_run_record_id,r.status,r.project_record_id,
               ${EVIDENCE_CLOSED_SQL} AS judged
          FROM run r ${chainScoreJoin('r', 's')}
         WHERE ? IS NULL OR r.project_record_id=?
-        ORDER BY r.id`,
+        ORDER BY r.number`,
     )
     .all(projectRecordId, projectRecordId) as RunRow[]
 }
@@ -296,9 +297,14 @@ type SweepInput = {
   clock?: number
   database?: Database
   runsDir?: string
-  evidenceClosedRootIds?: ReadonlySet<number>
+  evidenceClosedRootIds?: ReadonlySet<string>
   remove?: (
-    candidate: { path: string; kind: RunLeftoverKind; runId: number | null },
+    candidate: {
+      path: string
+      kind: RunLeftoverKind
+      runRecordId: string | null
+      runNumber: number | null
+    },
     dryRun: boolean,
   ) => void
 }
@@ -316,10 +322,10 @@ function sweepRecordedLeftovers(
   state: SweepState,
 ): boolean {
   const runsDir = input.runsDir ?? RUNS_DIR
-  const terminationByRoot = new Map<number, number | null>()
+  const terminationByRoot = new Map<string, number | null>()
   let failed = false
   for (const row of rows) {
-    const rootId = row.parent_run_id ?? row.id
+    const rootId = row.parent_run_record_id ?? row.record_id
     if (!terminationByRoot.has(rootId)) {
       const termination = chainTerminationAtForRoot(input.database ?? db(), rootId)
       const timestamp = termination === null ? Number.NaN : Date.parse(termination)
@@ -333,12 +339,18 @@ function sweepRecordedLeftovers(
       clock,
     }
     for (const [kind, path] of [
-      ['scratch', runScratchDir(row.id, runsDir)],
-      ['isolate', noRepoIsolatePath(row.id, runsDir)],
-      ['artifacts', runArtifactsDir(row.id, runsDir)],
+      ['scratch', runScratchDir(row.record_id, runsDir)],
+      ['isolate', noRepoIsolatePath(row.record_id, runsDir)],
+      ['artifacts', runArtifactsDir(row.record_id, runsDir)],
     ] as const) {
       const candidateFailed = applyCandidate(
-        { path, kind, runId: row.id, decision: decideRunLeftover({ kind, ...facts }) },
+        {
+          path,
+          kind,
+          runRecordId: row.record_id,
+          runNumber: row.number,
+          decision: decideRunLeftover({ kind, ...facts }),
+        },
         input.dryRun,
         input.presentation,
         state.freed,
@@ -348,12 +360,13 @@ function sweepRecordedLeftovers(
       )
       failed ||= candidateFailed
     }
-    if (rootId !== row.id) continue
+    if (rootId !== row.record_id) continue
     const sandboxFailed = applyCandidate(
       {
         path: runSandboxDir(rootId, runsDir),
         kind: 'sandbox',
-        runId: rootId,
+        runRecordId: rootId,
+        runNumber: row.number,
         decision: decideRunLeftover({
           kind: 'sandbox',
           runStatus: row.status,
@@ -409,7 +422,14 @@ function sweepOrphans(
           detail: measurement.detail ?? 'storage walk was incomplete',
         }
     const orphanFailed = applyCandidate(
-      { path, kind: 'orphan', runId: null, decision: ruling, measurement },
+      {
+        path,
+        kind: 'orphan',
+        runRecordId: null,
+        runNumber: null,
+        decision: ruling,
+        measurement,
+      },
       input.dryRun,
       input.presentation,
       state.freed,

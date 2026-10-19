@@ -24,7 +24,7 @@ afterEach(() => {
 const owner = () => {
   const id = addRun({ agent: 'codex', job: 'implement' })
   const recordId = db()
-    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
     .get(id)!.record_id
   return { id, recordId }
 }
@@ -59,7 +59,9 @@ test('a compose working directory can be the only run identity', () => {
   db()
     .query('INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?)')
     .run(projectRecordId, 'docker-fixture', '/repo', '{}')
-  db().query('UPDATE run SET project_record_id=? WHERE id=?').run(projectRecordId, run.id)
+  db()
+    .query('UPDATE run SET project_record_id=? WHERE record_id=?')
+    .run(projectRecordId, run.recordId)
   writeFileSync(join(worktree, '.orch-run'), `${run.recordId}\n/repo\nsource: git\n`)
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     const command = args.join(' ')
@@ -85,7 +87,7 @@ test('a compose working directory can be the only run identity', () => {
       {
         kind: 'container',
         name: 'database',
-        runId: run.id,
+        runId: run.recordId,
         composeProject: 'adanim',
         workingDir: worktree,
         mainCheckout: false,
@@ -104,7 +106,9 @@ test('a compose marker for another repository is never attributed', () => {
   db()
     .query('INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?)')
     .run(projectRecordId, 'docker-mismatch', '/right-repo', '{}')
-  db().query('UPDATE run SET project_record_id=? WHERE id=?').run(projectRecordId, run.id)
+  db()
+    .query('UPDATE run SET project_record_id=? WHERE record_id=?')
+    .run(projectRecordId, run.recordId)
   writeFileSync(join(worktree, '.orch-run'), `${run.recordId}\n/wrong-repo\nsource: git\n`)
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     const command = args.join(' ')
@@ -353,22 +357,22 @@ test('run teardown removes containers, networks, and volumes idempotently for on
     return result('')
   }) as typeof Bun.spawnSync)
 
-  teardownRunResources(run.id)
-  teardownRunResources(run.id)
+  teardownRunResources(run.recordId)
+  teardownRunResources(run.recordId)
   expect(removals).toEqual(['docker rm -f app-orch-51-web', 'docker volume rm app_orch-51_data'])
 })
 
 test('reporting distinguishes leaked resources from terminal resources in a retained tree', () => {
   const dir = mkdtempSync(join(tmpdir(), 'orch-retained-report-'))
   const resources: DockerResource[] = [
-    { kind: 'container', name: 'app-orch-91-web', runId: 91 },
-    { kind: 'volume', name: 'app_orch-92_data', runId: 92 },
+    { kind: 'container', name: 'app-orch-91-web', runId: '91' },
+    { kind: 'volume', name: 'app_orch-92_data', runId: '92' },
   ]
   try {
     expect(
       classifiedDockerResources(resources, [
-        { id: 91, repo: 'app', worktree: dir, status: 'ok' },
-        { id: 92, repo: 'app', worktree: join(dir, 'gone'), status: 'failed' },
+        { record_id: '91', repo: 'app', worktree: dir, status: 'ok' },
+        { record_id: '92', repo: 'app', worktree: join(dir, 'gone'), status: 'failed' },
       ]).map(({ condition }) => condition),
     ).toEqual(['retained-worktree-resources', 'leaked'])
   } finally {
@@ -377,20 +381,22 @@ test('reporting distinguishes leaked resources from terminal resources in a reta
 })
 
 test('an absent tree with pending recorded teardown is retained for close-out', () => {
+  const retainedRun = '93939393-9393-4939-8939-939393939393'
+  const leakedRun = '94949494-9494-4949-8949-949494949494'
   const resources: DockerResource[] = [
-    { kind: 'container', name: 'app-orch-93-web', runId: 93 },
-    { kind: 'container', name: 'app-orch-94-web', runId: 94 },
+    { kind: 'container', name: 'app-orch-93-web', runId: retainedRun },
+    { kind: 'container', name: 'app-orch-94-web', runId: leakedRun },
   ]
   expect(
     classifiedDockerResources(resources, [
       {
-        id: 93,
+        record_id: retainedRun,
         repo: 'app',
         worktree: '/gone/orch-93',
         status: 'ok',
         absentTreeTeardown: true,
       },
-      { id: 94, repo: 'app', worktree: '/gone/orch-94', status: 'ok' },
+      { record_id: leakedRun, repo: 'app', worktree: '/gone/orch-94', status: 'ok' },
     ]).map(({ condition }) => condition),
   ).toEqual(['retained-worktree-resources', 'leaked'])
 })
@@ -409,7 +415,7 @@ test('an unavailable inventory prevents teardown of partially inventoried resour
     return result('', 1, 'Cannot connect to the Docker daemon')
   }) as typeof Bun.spawnSync)
 
-  expect(teardownRunResources(61)).toEqual(
+  expect(teardownRunResources('61')).toEqual(
     expect.objectContaining({
       complete: false,
       removed: 0,
@@ -427,13 +433,13 @@ test('the removal adapter refuses a main-checkout-labeled resource', () => {
     commands.push(args.join(' '))
     return result('')
   }) as typeof Bun.spawnSync)
-  const teardown = teardownRunResources(70, {
+  const teardown = teardownRunResources('70', {
     ascertainable: true,
     resources: [
       {
         kind: 'volume',
         name: 'main_data',
-        runId: 70,
+        runId: '70',
         workingDir: '/projects/app',
         composeProject: 'app',
         mainCheckout: true,
@@ -458,7 +464,7 @@ test('an already-removed resource is an idempotent success without an error log'
     return result('', 1, 'Error response from daemon: No such container: app-orch-71-web')
   }) as typeof Bun.spawnSync)
 
-  teardownRunResources(71)
+  teardownRunResources('71')
   expect(errors).toEqual([])
 })
 

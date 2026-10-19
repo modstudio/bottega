@@ -6,7 +6,7 @@ import { reclaimResidue } from '../reclaim/reclaim-residue.ts'
 type AbsentResidueKind = 'ref-guard' | 'retained-ref'
 
 type AbsentCloseOutInput = {
-  runId: number
+  runId: string
   outcome: 'released' | 'forgotten' | 'held' | 'live' | 'absent' | 'failed'
   detail: string
   dryRun: boolean
@@ -41,7 +41,7 @@ export function releaseAbsentCloseOutResidueKinds(input: {
 }
 
 export function releaseAbsentCloseOutResidue(input: AbsentCloseOutInput): string {
-  const projectRow = db().query('SELECT repo FROM run WHERE id=?').get(input.runId) as {
+  const projectRow = db().query('SELECT repo FROM run WHERE record_id=?').get(input.runId) as {
     repo: string | null
   } | null
   const kinds = decideAbsentCloseOutResidue({

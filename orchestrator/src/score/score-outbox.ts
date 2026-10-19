@@ -61,18 +61,18 @@ export function buildScoreRecordPayload(
   }
 }
 
-export function enqueueScoreRecord(database: Database, runId: number, machineId: string): boolean {
+export function enqueueScoreRecord(database: Database, runId: string, machineId: string): boolean {
   const row = database
-    .query<LocalScore, [number]>(
-      `SELECT r.record_id, r.id AS local_id, project.name AS project_name,
+    .query<LocalScore, [string]>(
+      `SELECT r.record_id, r.number AS local_id, project.name AS project_name,
               project.record_id AS project_record_id,
               s.delivery, s.quality, s.fidelity,
               s.note, s.scored_at, s.scored_by,
               lens.reproduced, lens.coverage, lens.limits, lens.overlap
-         FROM score s JOIN run r ON r.id=s.run_id
+         FROM score s JOIN run r ON r.record_id=s.run_record_id
          LEFT JOIN project ON project.record_id=r.project_record_id
-         LEFT JOIN review_lens lens ON lens.run_id=r.id
-        WHERE s.run_id=?`,
+         LEFT JOIN review_lens lens ON lens.run_record_id=r.record_id
+        WHERE s.run_record_id=?`,
     )
     .get(runId)
   if (!row) throw new Error(`run ${runId} has no score and cannot be enqueued`)
@@ -106,15 +106,15 @@ export function enqueueScoreRecord(database: Database, runId: number, machineId:
 
 export function backfillScoreRecords(database: Database, machineId: string): number {
   const rows = database
-    .query<{ run_id: number }, []>(
-      `SELECT s.run_id
-         FROM score s JOIN run r ON r.id=s.run_id
+    .query<{ run_record_id: string }, []>(
+      `SELECT s.run_record_id
+         FROM score s JOIN run r ON r.record_id=s.run_record_id
         WHERE NOT EXISTS (
             SELECT 1 FROM outbox o WHERE o.kind='score' AND o.row_id=r.record_id
           )
-        ORDER BY s.run_id`,
+        ORDER BY s.run_record_id`,
     )
     .all()
-  for (const row of rows) enqueueScoreRecord(database, row.run_id, machineId)
+  for (const row of rows) enqueueScoreRecord(database, row.run_record_id, machineId)
   return rows.length
 }

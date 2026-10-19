@@ -66,7 +66,6 @@ test('worker note anchors contain only run and injected file facts', () => {
     cwd: '/projects/workshop',
     project: 'workshop',
     files: [{ path: '/projects/workshop/src/file.ts', line: 7, content: 'const defect = true' }],
-    run_id: 42,
     run_record_id: '42000000-0000-4000-8000-000000000000',
     branch: null,
     commit: 'abc123',

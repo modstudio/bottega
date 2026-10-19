@@ -53,7 +53,7 @@ export type EpicScoreboard = {
 }
 
 type RunRow = {
-  id: number
+  record_id: string
   started_at: string
   job: string
   status: string
@@ -63,7 +63,7 @@ type RunRow = {
   vendor_cost_usd: number | null
   launch_key: string | null
   branch: string | null
-  parent_run_id: number | null
+  parent_run_record_id: string | null
   turn: number
   last_event_at: string | null
   project_record_id: string | null
@@ -149,8 +149,8 @@ const utcMillis = (value: string): number =>
 function epicEvidence(database: Database) {
   const runs = database
     .query(
-      `SELECT id,started_at,job,status,failure_kind,latency_ms,vendor_tokens,vendor_cost_usd,launch_key,branch,
-            parent_run_id,turn,last_event_at,project_record_id,head_commit FROM run ORDER BY started_at,id`,
+      `SELECT record_id,started_at,job,status,failure_kind,latency_ms,vendor_tokens,vendor_cost_usd,launch_key,branch,
+            parent_run_record_id,turn,last_event_at,project_record_id,head_commit FROM run ORDER BY started_at,number`,
     )
     .all() as RunRow[]
   const landings = database
@@ -163,10 +163,14 @@ function epicEvidence(database: Database) {
       `SELECT DISTINCT review.id,review.completed_at,review.outdated_at,review.patch_id,run.launch_key,run.branch,
             run.head_commit,run.project_record_id
        FROM review JOIN review_lens ON review_lens.review_id=review.id
-       JOIN run ON run.id=review_lens.run_id ORDER BY review.id`,
+       JOIN run ON run.record_id=review_lens.run_record_id ORDER BY review.id`,
     )
     .all() as ReviewRow[]
   return { runs, landings, reviews }
+}
+
+function isRootFixRun(run: RunRow): boolean {
+  return run.job === 'fix' && run.parent_run_record_id === null
 }
 
 /**
@@ -187,10 +191,8 @@ export function epicScoreboard(
   const childByKey = new Map(children.map((child) => [child.key.toUpperCase(), child]))
   const { runs, landings, reviews } = epicEvidence(database)
   const subjects = commitSubjects(database)
-
   const subjectKey = (projectId: string | null, commit: string | null) =>
     keyInBranch(projectId && commit ? (subjects.get(projectId)?.get(commit) ?? null) : null, keys)
-
   const runKey = (
     row: Pick<RunRow, 'launch_key' | 'branch' | 'project_record_id' | 'head_commit'>,
   ): string | null => {
@@ -235,7 +237,7 @@ export function epicScoreboard(
         branchDrift++
       if (run.branch) earlierBranches.add(run.branch)
     }
-    const rootFixRuns = taskRuns.filter((run) => run.job === 'fix' && run.parent_run_id === null)
+    const rootFixRuns = taskRuns.filter(isRootFixRun)
     return {
       key,
       title: child.title ?? '',

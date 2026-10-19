@@ -1,6 +1,8 @@
 import { expect, test } from 'bun:test'
 import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { addRun } from '../../test/fixtures/store.ts'
+import { db } from '../database/db.ts'
 import { register } from './review.ts'
 
 const CLEAR_USAGE = `${PLATFORM_SLUG} review confinement clear <run-id> --writer <text> --note <text> [--tip <current-tip>]`
@@ -33,9 +35,23 @@ test('confinement clear rejects --agent, --job, --mcp, and --json', async () => 
 })
 
 test('confinement clear without --writer or --note still prints the clear usage', async () => {
+  const recordId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const number = (
+    db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as {
+      number: number
+    }
+  ).number
   const program = confinementProgram()
   await expect(
-    program.parseAsync(['node', 'orch', 'confinement', 'clear', '1', '--writer', 'architect']),
+    program.parseAsync([
+      'node',
+      'orch',
+      'confinement',
+      'clear',
+      String(number),
+      '--writer',
+      'architect',
+    ]),
   ).rejects.toThrow(CLEAR_USAGE)
 })
 

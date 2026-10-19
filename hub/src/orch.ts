@@ -348,7 +348,7 @@ export const claimWaitingNotifications = () =>
 
 export type WaitingRuling = { questionId: number; ruling: string }
 
-export const answerWaitingArgv = (runId: number, rulings: readonly WaitingRuling[]): string[] => [
+export const answerWaitingArgv = (runId: string, rulings: readonly WaitingRuling[]): string[] => [
   'question',
   'answer',
   String(runId),
@@ -360,7 +360,7 @@ export const answerWaitingArgv = (runId: number, rulings: readonly WaitingRuling
 ]
 
 export async function answerWaiting(
-  runId: number,
+  runId: string,
   rulings: readonly WaitingRuling[],
 ): Promise<AnswerWaitingResult> {
   return json(answerWaitingArgv(runId, rulings), AnswerWaitingResultSchema, {

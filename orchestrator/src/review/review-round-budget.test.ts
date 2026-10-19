@@ -64,15 +64,16 @@ function addEvidence(input: {
   })
   db()
     .query(
-      'UPDATE run SET branch=?,launch_key=?,project_record_id=(SELECT record_id FROM project WHERE name=?) WHERE id=?',
+      'UPDATE run SET branch=?,launch_key=?,project_record_id=(SELECT record_id FROM project WHERE name=?) WHERE record_id=?',
     )
     .run(input.branch, input.launchKey === undefined ? 'DEV-1256' : input.launchKey, project, run)
-  if (input.excluded) db().query("UPDATE run SET evidence_excluded='void' WHERE id=?").run(run)
+  if (input.excluded)
+    db().query("UPDATE run SET evidence_excluded='void' WHERE record_id=?").run(run)
   if (input.deliveryNone) score(run, 'none')
   db()
     .query(
       `INSERT INTO review_lens
-       (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+       (record_id,review_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
        VALUES (?,?,?,'correctness','codex','[]','[]','[]','[]')`,
     )
     .run(newRecordId(), review.id, run)

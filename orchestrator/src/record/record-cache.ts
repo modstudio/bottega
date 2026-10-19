@@ -552,25 +552,25 @@ function applyDoc(
 function applyScore(local: Database, item: Record<string, unknown>): void {
   const runId = String(item.runId)
   const localRun = local
-    .query<{ id: number }, [string]>('SELECT id FROM run WHERE record_id=?')
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
     .get(runId)
   if (!localRun) return
   if (Object.hasOwn(item, 'evidenceExcluded')) {
     local
-      .query('UPDATE run SET evidence_excluded=? WHERE id=?')
-      .run(item.evidenceExcluded == null ? null : String(item.evidenceExcluded), localRun.id)
+      .query('UPDATE run SET evidence_excluded=? WHERE record_id=?')
+      .run(item.evidenceExcluded == null ? null : String(item.evidenceExcluded), localRun.record_id)
   }
   if (item.delivery == null) return
   local
     .query(
-      `INSERT INTO score (record_id, run_id, delivery, quality, fidelity, note, scored_at, scored_by)
+      `INSERT INTO score (record_id, run_record_id, delivery, quality, fidelity, note, scored_at, scored_by)
        VALUES (?,?,?,?,?,?,?,?)
-       ON CONFLICT(run_id) DO UPDATE SET delivery=excluded.delivery, quality=excluded.quality,
+       ON CONFLICT(run_record_id) DO UPDATE SET delivery=excluded.delivery, quality=excluded.quality,
          fidelity=excluded.fidelity, note=excluded.note, scored_at=excluded.scored_at`,
     )
     .run(
       newRecordId(),
-      localRun.id,
+      localRun.record_id,
       String(item.delivery),
       item.quality == null ? null : String(item.quality),
       item.fidelity == null ? null : String(item.fidelity),

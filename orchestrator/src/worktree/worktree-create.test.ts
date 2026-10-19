@@ -4,7 +4,7 @@ import { leftoverRemedy, worktreeCreateVariables } from './worktree-create.ts'
 describe('worktreeCreateVariables', () => {
   test('uses the default branch template and derives the worktree name', () => {
     expect(
-      worktreeCreateVariables(undefined, undefined, 42, undefined, undefined, 'base-sha'),
+      worktreeCreateVariables(undefined, undefined, '42', undefined, undefined, 'base-sha'),
     ).toEqual({
       branch: 'orch/42',
       name: 'orch-42',
@@ -20,7 +20,7 @@ describe('worktreeCreateVariables', () => {
       worktreeCreateVariables(
         '{key}-orch-{id}-{key}-{id}',
         undefined,
-        42,
+        '42',
         'DEV-736',
         'small',
         'base-sha',
@@ -34,7 +34,7 @@ describe('worktreeCreateVariables', () => {
 
   test('substitutes an absent key with the empty string', () => {
     expect(
-      worktreeCreateVariables('{key}-orch-{id}', undefined, 42, undefined, undefined, 'base-sha')
+      worktreeCreateVariables('{key}-orch-{id}', undefined, '42', undefined, undefined, 'base-sha')
         .branch,
     ).toBe('-orch-42')
   })
@@ -44,7 +44,7 @@ describe('worktreeCreateVariables', () => {
       worktreeCreateVariables(
         '{key}-orch-{id}',
         'kept/{key}/{id}',
-        42,
+        '42',
         'DEV-736',
         undefined,
         'base-sha',
@@ -57,7 +57,7 @@ describe('leftoverRemedy', () => {
   const vars = worktreeCreateVariables(
     '{key}-orch-{id}',
     undefined,
-    42,
+    '42',
     'DEV-736',
     undefined,
     'base-sha',

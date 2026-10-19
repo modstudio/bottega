@@ -42,25 +42,25 @@ import type {
   VerifiedRunProcessTermination,
 } from './run-process.ts'
 
-export function stoppedRunLine(id: number): string {
+export function stoppedRunLine(id: string): string {
   return `stopped run ${id}`
 }
 
 export function stopTerminationRefusal(
-  row: { id: number },
+  row: { record_id: string },
   termination: TerminateRunProcessesResult,
 ): string | null {
   if (termination.outcome === 'identity-mismatch') {
     const pid = termination.pid
     return (
-      `run ${row.id} pid ${pid} identity could not be confirmed; the run remains running; ` +
+      `run ${row.record_id} pid ${pid} identity could not be confirmed; the run remains running; ` +
       `after checking ps -p ${pid} -o lstart=,command=, run kill -TERM ${pid} only if the start time matches the recorded agent_start_time`
     )
   }
   if (termination.outcome === 'still-alive') {
     const pid = termination.pid
     return (
-      `run ${row.id} is recorded stopped; process ${pid} is still alive; ` +
+      `run ${row.record_id} is recorded stopped; process ${pid} is still alive; ` +
       `after checking ps -p ${pid} -o lstart=,command=, run kill -KILL ${pid}`
     )
   }
@@ -99,13 +99,13 @@ function logStoppedRun(
   cleanupRow: ReturnType<typeof stopCleanupRow>,
   dockerTeardown: TerminalDockerTeardown,
 ): void {
-  options.presentation.log(stoppedRunLine(row.id))
+  options.presentation.log(stoppedRunLine(row.record_id))
   if (cleanupRow.worktree) {
     options.presentation.log(
       stoppedWorktreeLine(
         cleanupRow.worktree,
         cleanupRow.branch,
-        branchDeletionProvenanceRefusal(cleanupRow.id, cleanupRow.branch) === null,
+        branchDeletionProvenanceRefusal(cleanupRow.record_id, cleanupRow.branch) === null,
         dockerStopMessage(dockerTeardown),
       ),
     )
@@ -123,22 +123,22 @@ type RunControlHelpers = {
   lifecycleCheckpoint: (name: string) => void
 }
 export type RunStopHelpers = RunControlHelpers & {
-  planRunProcessTermination: (runId: number, exceptPids?: number[]) => RunProcessTerminationPlan
+  planRunProcessTermination: (runId: string, exceptPids?: number[]) => RunProcessTerminationPlan
   terminateRunProcesses: (plan: VerifiedRunProcessTermination) => TerminateRunProcessesResult
 }
 
-function enqueueAbandonedChain(rowId: number, rootId: number, at: string): void {
+function enqueueAbandonedChain(rowId: string, rootId: string, at: string): void {
   const localMachineId = machineId()
   enqueueRunRecord(db(), rowId, localMachineId, at)
   rollUpRootAndEnqueue(db(), rootId, null, localMachineId, at)
 }
 
 type StopRow = {
-  id: number
+  record_id: string
   status: string
   pid: number | null
   agent_pid: number | null
-  parent_run_id: number | null
+  parent_run_record_id: string | null
   turn: number
   repo: string | null
   cwd: string | null
@@ -148,12 +148,12 @@ type StopRow = {
   worktree_source: Worktree['source'] | null
 }
 
-function readStopChain(rootId: number): StopRow[] {
+function readStopChain(rootId: string): StopRow[] {
   return db()
     .query(
-      `SELECT id, status, pid, agent_pid, parent_run_id, turn, repo, cwd, worktree, branch,
+      `SELECT record_id, number, status, pid, agent_pid, parent_run_record_id, turn, repo, cwd, worktree, branch,
             base_commit, worktree_source
-       FROM run WHERE id = ? OR parent_run_id = ? ORDER BY turn DESC, id DESC`,
+       FROM run WHERE record_id = ? OR parent_run_record_id = ? ORDER BY turn DESC, number DESC`,
     )
     .all(rootId, rootId) as StopRow[]
 }
@@ -161,7 +161,7 @@ function readStopChain(rootId: number): StopRow[] {
 function describeStopChain(chain: StopRow[]): string {
   return [...chain]
     .reverse()
-    .map((turn) => `${turn.id} turn ${turn.turn} ${turn.status}`)
+    .map((turn) => `${turn.record_id} turn ${turn.turn} ${turn.status}`)
     .join('; ')
 }
 
@@ -177,7 +177,14 @@ function stopCleanupRow(chain: StopRow[], root: StopRow, row: StopRow) {
   }
 }
 
-function runningStopTurn(rootId: number, id: number): StopRow {
+function keptBranchProvenanceRefusal(row: {
+  record_id: string
+  branch: string | null
+}): string | null {
+  return branchDeletionProvenanceRefusal(row.record_id, row.branch)
+}
+
+function runningStopTurn(rootId: string, id: string): StopRow {
   const chain = readStopChain(rootId)
   const row = chain.find((turn) => turn.status === 'running')
   if (!row) {
@@ -190,7 +197,7 @@ function runningStopTurn(rootId: number, id: number): StopRow {
 
 function commitStoppedRun(
   authority: RootAuthority,
-  id: number,
+  id: string,
   auditReason: string | null,
 ): { row: StopRow; cleanupRow: ReturnType<typeof stopCleanupRow> } {
   const chain = readStopChain(authority.rootId)
@@ -200,14 +207,14 @@ function commitStoppedRun(
       `run ${id}'s chain has no running turn — nothing to stop: ${describeStopChain(chain)}`,
     )
   }
-  const root = chain.find((turn) => turn.id === authority.rootId)!
+  const root = chain.find((turn) => turn.record_id === authority.rootId)!
   const cleanupRow = stopCleanupRow(chain, root, row)
   const next = adoptRunMutation(reauthorizeRunMutation(authority, 'stop'), 'stop')
   const changed = db()
     .query(
-      "UPDATE run SET status='stopped', error='stopped by architect', failure_kind='stopped' WHERE id=? AND status='running'",
+      "UPDATE run SET status='stopped', error='stopped by architect', failure_kind='stopped' WHERE record_id=? AND status='running'",
     )
-    .run(row.id)
+    .run(row.record_id)
   if (changed.changes !== 1) {
     throw new Error(
       `run ${id}'s chain changed before it could be stopped: ${describeStopChain(
@@ -215,10 +222,10 @@ function commitStoppedRun(
       )}`,
     )
   }
-  if (row.id !== next.rootId) {
+  if (row.record_id !== next.rootId) {
     db()
       .query(
-        "UPDATE run SET status='stopped', error='stopped by architect', failure_kind='stopped' WHERE id=?",
+        "UPDATE run SET status='stopped', error='stopped by architect', failure_kind='stopped' WHERE record_id=?",
       )
       .run(next.rootId)
   }
@@ -228,7 +235,7 @@ function commitStoppedRun(
 }
 
 export async function stopRun(
-  id: number,
+  id: string,
   options: RunStopOptions,
   helpers: RunStopHelpers,
 ): Promise<void> {
@@ -240,7 +247,10 @@ export async function stopRun(
   // attributed or reclaimed. Stop the vendor, but let the coordinator see
   // the stopped row and finish recording. The tree remains the continuation
   // substrate; only its recreatable containers are reclaimed at stop.
-  const plan = helpers.planRunProcessTermination(candidate.id, candidate.pid ? [candidate.pid] : [])
+  const plan = helpers.planRunProcessTermination(
+    candidate.record_id,
+    candidate.pid ? [candidate.pid] : [],
+  )
   if (plan.outcome === 'identity-mismatch') {
     throw new Error(stopTerminationRefusal(candidate, plan)!)
   }
@@ -252,24 +262,24 @@ export async function stopRun(
     const refusal = stopTerminationRefusal(row, termination)
     if (refusal) throw new Error(refusal)
   }
-  logStoppedRun(options, row, cleanupRow, teardownTerminalRunResources(db(), row.id))
+  logStoppedRun(options, row, cleanupRow, teardownTerminalRunResources(db(), row.record_id))
 }
 
 export async function abandonRun(
-  id: number,
+  id: string,
   options: RunStopOptions,
   helpers: RunControlHelpers,
 ): Promise<void> {
   let authority = authorizeRunMutation(id, 'abandon')
   helpers.lifecycleCheckpoint('abandon-before-immediate')
   type AbandonRow = {
-    id: number
+    record_id: string
     status: string
     repo: string | null
     cwd: string | null
     worktree: string | null
     branch: string | null
-    parent_run_id: number | null
+    parent_run_record_id: string | null
     turn: number
     base_commit: string | null
     worktree_source: Worktree['source'] | null
@@ -281,15 +291,15 @@ export async function abandonRun(
   const readChain = () =>
     db()
       .query(
-        `SELECT id, status, repo, cwd, worktree, branch, parent_run_id, turn, base_commit,
+        `SELECT record_id, number, status, repo, cwd, worktree, branch, parent_run_record_id, turn, base_commit,
               worktree_source
-         FROM run WHERE id = ? OR parent_run_id = ? ORDER BY turn DESC, id DESC`,
+         FROM run WHERE record_id = ? OR parent_run_record_id = ? ORDER BY turn DESC, number DESC`,
       )
       .all(authority.rootId, authority.rootId) as AbandonRow[]
   const describe = (chain: AbandonRow[]) =>
     [...chain]
       .reverse()
-      .map((turn) => `${turn.id} turn ${turn.turn} ${turn.status}`)
+      .map((turn) => `${turn.record_id} turn ${turn.turn} ${turn.status}`)
       .join('; ')
 
   const abandoned = writeTransaction(() => {
@@ -306,7 +316,7 @@ export async function abandonRun(
         `run ${id}'s chain has no asking turn — nothing to abandon${remedy}: ${describe(chain)}`,
       )
     }
-    const root = chain.find((turn) => turn.id === authority.rootId)!
+    const root = chain.find((turn) => turn.record_id === authority.rootId)!
     const artifact = chain.find((turn) => turn.worktree)
     const cleanupRow = {
       ...root,
@@ -319,16 +329,16 @@ export async function abandonRun(
     authority = reauthorizeRunMutation(authority, 'abandon')
     authority = adoptRunMutation(authority, 'abandon')
     const openQuestions = db()
-      .query<{ id: number }, [number, number]>(
-        `SELECT id FROM question WHERE ${questionOpenSql('question')} AND run_id IN
-          (SELECT id FROM run WHERE id=? OR parent_run_id=?)`,
+      .query<{ id: number }, [string, string]>(
+        `SELECT id FROM question WHERE ${questionOpenSql('question')} AND run_record_id IN
+          (SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=?)`,
       )
       .all(authority.rootId, authority.rootId)
     const changed = db()
       .query(
-        "UPDATE run SET status='stale', error=?, failure_kind='abandoned' WHERE id=? AND status='asking'",
+        "UPDATE run SET status='stale', error=?, failure_kind='abandoned' WHERE record_id=? AND status='asking'",
       )
-      .run(error, row.id)
+      .run(error, row.record_id)
     if (changed.changes !== 1) {
       const current = readChain()
       throw new Error(
@@ -340,8 +350,8 @@ export async function abandonRun(
         `UPDATE question SET answered_by=?, answered_at=?, answer='(abandoned)', revision=revision+1,
             answerer_kind=?, answer_channel=?, delivery_pending_at=NULL,
             awaiting_operator_at=NULL
-          WHERE ${questionOpenSql('question')} AND run_id IN
-            (SELECT id FROM run WHERE id=? OR parent_run_id=?)`,
+          WHERE ${questionOpenSql('question')} AND run_record_id IN
+            (SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=?)`,
       )
       .run(
         callerSession ?? 'anonymous (no session id)',
@@ -351,15 +361,15 @@ export async function abandonRun(
         authority.rootId,
         authority.rootId,
       )
-    enqueueAbandonedChain(row.id, authority.rootId, at)
+    enqueueAbandonedChain(row.record_id, authority.rootId, at)
     for (const question of openQuestions) enqueueQuestionRecord(db(), question.id)
     retireRunChainQuestionDeliveries(db(), authority.rootId, 'abandoned', at)
     auditRunMutation(authority, 'abandon', note ?? null)
     return { row, cleanupRow }
   })
   const { row, cleanupRow } = abandoned
-  teardownTerminalRunResources(db(), row.id)
-  options.presentation.log(`abandoned run ${row.id}`)
+  teardownTerminalRunResources(db(), row.record_id)
+  options.presentation.log(`abandoned run ${row.record_id}`)
 
   if (cleanupRow.worktree) {
     await discardWorktree(cleanupRow as CleanupRow, 'abandoned', options.force, undefined, options)
@@ -380,7 +390,7 @@ export async function abandonRun(
     return
   }
   withCleanupLock(repoRoot, `abandon run ${id}`, cleanupRow.worktree, () => {
-    const provenanceRefusal = branchDeletionProvenanceRefusal(cleanupRow.id, cleanupRow.branch)
+    const provenanceRefusal = keptBranchProvenanceRefusal(cleanupRow)
     if (provenanceRefusal) {
       options.presentation.log(provenanceRefusal)
       return
@@ -388,7 +398,7 @@ export async function abandonRun(
     const ownersBefore = evidenceOwningBranchOwners(cleanupRow, repoRoot)
     if (ownersBefore.length) {
       options.presentation.log(
-        `branch ${cleanupRow.branch} left because run ${ownersBefore[0]!.id} records it`,
+        `branch ${cleanupRow.branch} left because run ${ownersBefore[0]!.record_id} records it`,
       )
       return
     }
@@ -402,7 +412,7 @@ export async function abandonRun(
     }
     if (protectedBranch) {
       db()
-        .query('UPDATE run SET branch_kept=?, branch_kept_tip=NULL WHERE id=?')
+        .query('UPDATE run SET branch_kept=?, branch_kept_tip=NULL WHERE record_id=?')
         .run(cleanupRow.branch, authority.rootId)
       options.presentation.log(
         options.presentation.keptBranchLine(
@@ -418,7 +428,7 @@ export async function abandonRun(
     const removed = removeBranch(repoRoot, cleanupRow.branch!)
     const ownersAfter = evidenceOwningBranchOwners(cleanupRow, repoRoot, snapshot)
     const outcome = verifyBranchOwnershipAfterCleanup(
-      cleanupRow.id,
+      cleanupRow.record_id,
       repoRoot,
       cleanupRow.branch!,
       snapshot,

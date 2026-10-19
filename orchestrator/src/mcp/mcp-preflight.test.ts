@@ -116,7 +116,7 @@ test('grants only an orch-cut tree and names the invariant for a caller checkout
 })
 test('grants trust to an orch-created no-repo isolate but not its caller checkout', () => {
   const isolate = '/tmp/orch-runs/isolates/42'
-  const recorded = { id: 42, cwd: isolate, worktree: null, worktree_source: null }
+  const recorded = { id: 'run-record-id-42', cwd: isolate, worktree: null, worktree_source: null }
   expect(() => assertGrokTrustEligible(isolate, recorded, isolate)).not.toThrow()
   expect(() => assertGrokTrustEligible('/tmp/caller-checkout', recorded, isolate)).toThrow(
     'refusing Grok trust',

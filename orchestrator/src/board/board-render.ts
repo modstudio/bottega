@@ -122,7 +122,7 @@ export function renderBoardNotice(message: {
   authorSession: string | null
   authorHarness: string | null
   authorProject: string | null
-  authorRunId?: number | string | null
+  authorRunId?: string | string | null
   title: string
   audience?: string
   body: string

@@ -26,7 +26,7 @@ function operations(overrides: Partial<Operations> = {}): Operations {
       rows: [
         {
           lens: 'correctness',
-          run: 71,
+          run: 'run-record-id-71',
           disposition: 'accepted',
           category: null,
           severity: 'high',
@@ -34,7 +34,7 @@ function operations(overrides: Partial<Operations> = {}): Operations {
         },
         {
           lens: 'craft',
-          run: 72,
+          run: 'run-record-id-72',
           disposition: 'skipped',
           category: null,
           severity: null,
@@ -78,7 +78,7 @@ test('writes finished review findings and runs the declared argv in the requeste
         verdict: 'accept',
         severity: 'high',
         location: 'src/a.ts:4',
-        run: 71,
+        run: 'run-record-id-71',
       },
     ],
     skipped: 1,
@@ -145,7 +145,7 @@ test('selects every review round on the branch and requires every selected lens 
     const run = addRun({ agent: 'codex', job: 'review-lens', lens, repo: project })
     database
       .query(
-        'UPDATE run SET branch=?,project_record_id=(SELECT record_id FROM project WHERE name=?) WHERE id=?',
+        'UPDATE run SET branch=?,project_record_id=(SELECT record_id FROM project WHERE name=?) WHERE record_id=?',
       )
       .run(branch, project, run)
     const review = database
@@ -156,9 +156,9 @@ test('selects every review round on the branch and requires every selected lens 
       )
       .get(newRecordId(), patchId)!
     const reviewLens = database
-      .query<{ id: number }, [string, number, number, string]>(
+      .query<{ id: number }, [string, number, string, string]>(
         `INSERT INTO review_lens
-           (record_id,review_id,run_id,lens,agent,model,standards_read,files_covered,commands_run,
+           (record_id,review_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,
             could_not_verify,reproduced,coverage,limits,overlap)
          VALUES (?,?,?,?,'codex','model','[]','[]','[]','[]','all','adequate','absent','unique')
          RETURNING id`,

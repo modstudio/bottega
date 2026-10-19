@@ -9,7 +9,7 @@ import type { Worktree } from '../worktree/worktree-types.ts'
 
 export function settleCreateTimeBranchCleanup(
   worktree: Worktree,
-  runId: number,
+  runId: string,
   options: {
     database?: Database
     observeRef?: (repository: string, ref: string) => GitRefObservation
@@ -20,8 +20,8 @@ export function settleCreateTimeBranchCleanup(
   const ref = `refs/heads/${worktree.mintedBranch}`
   if ((options.observeRef ?? observeGitRef)(worktree.repoRoot, ref).outcome !== 'absent') return
   const run = database
-    .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
-    .get(runId) as { root_id: number } | null
+    .query('SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run WHERE record_id=?')
+    .get(runId) as { root_id: string } | null
   if (!run) return
   const settle = () =>
     settleClaims(database, {

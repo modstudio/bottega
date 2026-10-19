@@ -59,12 +59,12 @@ export function excludeSharedOutputRuns(d: Database = db()): number {
  * A void closes the ledger whether or not a verdict was stored: excluded
  * evidence is not an owed judgment.
  */
-export const UNSCORED_WHERE = `r.status = 'ok' AND r.evidence_excluded IS NULL AND COALESCE(r.probe, 0) = 0 AND r.parent_run_id IS NULL
-   AND COALESCE((SELECT c.status FROM run c WHERE c.parent_run_id = r.id
+export const UNSCORED_WHERE = `r.status = 'ok' AND r.evidence_excluded IS NULL AND COALESCE(r.probe, 0) = 0 AND r.parent_run_record_id IS NULL
+   AND COALESCE((SELECT c.status FROM run c WHERE c.parent_run_record_id = r.record_id
                   ORDER BY c.turn DESC LIMIT 1), r.status) <> 'running'
    AND (s.delivery IS NULL
         OR s.scored_at < (SELECT MAX(COALESCE(c.started_at, ''))
-                            FROM run c WHERE c.parent_run_id = r.id))`
+                            FROM run c WHERE c.parent_run_record_id = r.record_id))`
 
 /**
  * The evidence boundary: a run leaves the owed-judgment ledger in two ways,
@@ -76,7 +76,7 @@ export const UNSCORED_WHERE = `r.status = 'ok' AND r.evidence_excluded IS NULL A
  * void would still pin a tree held by a later turn.
  */
 const EVIDENCE_EXCLUDED_SQL = `(SELECT evidence_root.evidence_excluded FROM run evidence_root
-     WHERE evidence_root.id = COALESCE(r.parent_run_id, r.id))`
+     WHERE evidence_root.record_id = COALESCE(r.parent_run_record_id, r.record_id))`
 
 export const EVIDENCE_CLOSED_SQL = `(s.delivery IS NOT NULL OR ${EVIDENCE_EXCLUDED_SQL} IS NOT NULL)`
 
@@ -127,7 +127,7 @@ export function changeIdentityJoin(
   const run = sqlAlias(runAlias)
   const lens = sqlAlias(lensAlias)
   const review = sqlAlias(reviewAlias)
-  return `LEFT JOIN review_lens ${lens} ON ${lens}.run_id = ${run}.id
+  return `LEFT JOIN review_lens ${lens} ON ${lens}.run_record_id = ${run}.record_id
           LEFT JOIN review ${review} ON ${review}.id = ${lens}.review_id`
 }
 
@@ -194,7 +194,7 @@ export function runTotals(sinceIso?: string): RunTotals {
             COALESCE(SUM(COALESCE(r.vendor_tokens,0)), 0) toks,
             COALESCE(SUM(CASE WHEN ${SCORED_EVIDENCE_SQL} THEN 1 ELSE 0 END), 0) scored,
             COALESCE(SUM(CASE WHEN ${VOIDED_SQL} THEN 1 ELSE 0 END), 0) voided
-       FROM run r LEFT JOIN score s ON s.run_id = r.id
+       FROM run r LEFT JOIN score s ON s.run_record_id = r.record_id
       WHERE ${agentExecutionStatsSql('r')}${sinceIso ? ' AND r.started_at >= ?' : ''}`,
     )
     .get(...(sinceIso ? [sinceIso] : [])) as Omit<RunTotals, 'unscored'>
@@ -207,8 +207,8 @@ export function chainScoreJoin(runAlias: string, scoreAlias: string): string {
     throw new Error('chain score aliases must be SQL identifiers')
   }
   return (
-    `LEFT JOIN score ${scoreAlias} ON ${scoreAlias}.run_id = ` +
-    `COALESCE(${runAlias}.parent_run_id, ${runAlias}.id)`
+    `LEFT JOIN score ${scoreAlias} ON ${scoreAlias}.run_record_id = ` +
+    `COALESCE(${runAlias}.parent_run_record_id, ${runAlias}.record_id)`
   )
 }
 
@@ -216,14 +216,14 @@ export function pendingForSession(sid: string | null) {
   if (!sid) return []
   return db()
     .query(
-      `SELECT r.id, r.agent, r.job, r.repo, COALESCE(r.label, r.prompt_head) AS prompt_head,
+      `SELECT r.record_id, r.agent, r.job, r.repo, COALESCE(r.label, r.prompt_head) AS prompt_head,
             CASE WHEN s.delivery IS NOT NULL THEN 1 ELSE 0 END AS rescore
-       FROM run r LEFT JOIN score s ON s.run_id = r.id
+       FROM run r LEFT JOIN score s ON s.run_record_id = r.record_id
       WHERE r.session_id = ? AND ${UNSCORED_WHERE}
-      ORDER BY r.id`,
+      ORDER BY r.number`,
     )
     .all(sid) as {
-    id: number
+    record_id: string
     agent: string
     job: string
     repo: string | null
@@ -237,7 +237,7 @@ export function unscoredCount(sinceIso?: string): number {
   return (
     db()
       .query(
-        `SELECT COUNT(*) n FROM run r LEFT JOIN score s ON s.run_id = r.id
+        `SELECT COUNT(*) n FROM run r LEFT JOIN score s ON s.run_record_id = r.record_id
       WHERE ${UNSCORED_WHERE}${sinceIso ? ' AND r.started_at >= ?' : ''}`,
       )
       .get(...(sinceIso ? [sinceIso] : [])) as { n: number }

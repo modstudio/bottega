@@ -10,8 +10,8 @@ const nowIso = (): string => new Date(Date.now()).toISOString()
 export type RunMessage = {
   id: number
   direction: 'to_worker' | 'from_worker'
-  root_run_id: number
-  run_id: number
+  root_run_record_id: string
+  run_record_id: string
   sender_session: string | null
   body: string
   created_at: string
@@ -21,18 +21,18 @@ export type RunMessage = {
 }
 
 type RunIdentity = {
-  id: number
-  root_id: number
+  record_id: string
+  root_record_id: string
   status: string
   vendor_session: string | null
   transport: TransportName | null
 }
 
-function identity(id: number): RunIdentity | null {
+function identity(id: string): RunIdentity | null {
   return db()
     .query(
-      `SELECT id, COALESCE(parent_run_id, id) AS root_id, status, vendor_session, transport
-       FROM run WHERE id = ?`,
+      `SELECT record_id, COALESCE(parent_run_record_id,record_id) AS root_record_id, status, vendor_session, transport
+       FROM run WHERE record_id = ?`,
     )
     .get(id) as RunIdentity | null
 }
@@ -44,7 +44,7 @@ function bodyOf(body: string): string {
 
 /** Queue architect context against the conversation's currently running turn. */
 export function tellRun(
-  id: number,
+  id: string,
   body: string,
 ): RunMessage & { transport: TransportName | null } {
   writableDb()
@@ -53,14 +53,14 @@ export function tellRun(
   if (!requested) throw new Error(`no run ${id}`)
   const active = db()
     .query(
-      `SELECT id, COALESCE(parent_run_id, id) AS root_id, status, vendor_session, transport
+      `SELECT record_id, COALESCE(parent_run_record_id,record_id) AS root_record_id, status, vendor_session, transport
        FROM run
-      WHERE (id = ? OR parent_run_id = ?) AND status = 'running'
-      ORDER BY turn DESC, id DESC LIMIT 1`,
+      WHERE (record_id = ? OR parent_run_record_id = ?) AND status = 'running'
+      ORDER BY turn DESC, number DESC LIMIT 1`,
     )
-    .get(requested.root_id, requested.root_id) as RunIdentity | null
+    .get(requested.root_record_id, requested.root_record_id) as RunIdentity | null
   if (!active) {
-    throw new Error(`run ${requested.root_id} has no running turn — no message was queued`)
+    throw new Error(`run ${requested.root_record_id} has no running turn — no message was queued`)
   }
   const messageBody = bodyOf(body)
   return writeTransaction(() => {
@@ -68,13 +68,13 @@ export function tellRun(
     const message = db()
       .query(
         `INSERT INTO run_message
-         (record_id, direction, root_run_id, run_id, sender_session, body, created_at, delivery)
+         (record_id, direction, root_run_record_id, run_record_id, sender_session, body, created_at, delivery)
        VALUES (?, 'to_worker', ?, ?, ?, ?, ?, 'architect_cli') RETURNING *`,
       )
       .get(
         newRecordId(),
-        active.root_id,
-        active.id,
+        active.root_record_id,
+        active.record_id,
         authority.actor,
         messageBody,
         nowIso(),
@@ -85,7 +85,7 @@ export function tellRun(
 }
 
 /** Record an outbound worker message without changing the run's status. */
-export function messageArchitect(runId: number, body: string): RunMessage {
+export function messageArchitect(runId: string, body: string): RunMessage {
   writableDb()
   const run = identity(runId)
   if (!run) throw new Error(`no run ${runId}`)
@@ -95,13 +95,13 @@ export function messageArchitect(runId: number, body: string): RunMessage {
   return db()
     .query(
       `INSERT INTO run_message
-       (record_id, direction, root_run_id, run_id, sender_session, body, created_at, read_at, delivery)
+       (record_id, direction, root_run_record_id, run_record_id, sender_session, body, created_at, read_at, delivery)
      VALUES (?, 'from_worker', ?, ?, ?, ?, ?, NULL, 'worker_tool') RETURNING *`,
     )
     .get(
       newRecordId(),
-      run.root_id,
-      run.id,
+      run.root_record_id,
+      run.record_id,
       run.vendor_session,
       bodyOf(body),
       nowIso(),
@@ -109,7 +109,7 @@ export function messageArchitect(runId: number, body: string): RunMessage {
 }
 
 /** Read and receipt all context queued for this worker's conversation. */
-export function checkMessages(runId: number): RunMessage[] {
+export function checkMessages(runId: string): RunMessage[] {
   const run = identity(runId)
   if (!run) throw new Error(`no run ${runId}`)
   if (run.status !== 'running') {
@@ -119,10 +119,10 @@ export function checkMessages(runId: number): RunMessage[] {
     const rows = db()
       .query(
         `SELECT * FROM run_message
-        WHERE root_run_id = ? AND direction = 'to_worker' AND read_at IS NULL
+        WHERE root_run_record_id = ? AND direction = 'to_worker' AND read_at IS NULL
         ORDER BY id`,
       )
-      .all(run.root_id) as RunMessage[]
+      .all(run.root_record_id) as RunMessage[]
     if (!rows.length) return []
     if (linkedWorktreeReadOnly) return rows
     const readAt = nowIso()
@@ -135,20 +135,20 @@ export function checkMessages(runId: number): RunMessage[] {
 }
 
 /** Inspect queued worker context without claiming that a turn consumed it. */
-export function unreadWorkerMessages(runId: number): RunMessage[] {
+export function unreadWorkerMessages(runId: string): RunMessage[] {
   const run = identity(runId)
   if (!run) throw new Error(`no run ${runId}`)
   return db()
     .query(
       `SELECT * FROM run_message
-      WHERE root_run_id = ? AND direction = 'to_worker' AND read_at IS NULL
+      WHERE root_run_record_id = ? AND direction = 'to_worker' AND read_at IS NULL
       ORDER BY id`,
     )
-    .all(run.root_id) as RunMessage[]
+    .all(run.root_record_id) as RunMessage[]
 }
 
 /** Receipt only messages already placed into a prompt submitted to the worker. */
-export function receiptWorkerMessages(runId: number, ids: number[]): void {
+export function receiptWorkerMessages(runId: string, ids: number[]): void {
   if (!ids.length || linkedWorktreeReadOnly) return
   const run = identity(runId)
   if (!run || run.status !== 'running') return
@@ -156,21 +156,21 @@ export function receiptWorkerMessages(runId: number, ids: number[]): void {
   db()
     .query(
       `UPDATE run_message SET read_at=?, read_by=?
-      WHERE root_run_id=? AND direction='to_worker' AND read_at IS NULL AND id IN (${slots})`,
+      WHERE root_run_record_id=? AND direction='to_worker' AND read_at IS NULL AND id IN (${slots})`,
     )
-    .run(nowIso(), run.vendor_session, run.root_id, ...ids)
+    .run(nowIso(), run.vendor_session, run.root_record_id, ...ids)
 }
 
-export function messagesForRun(id: number): RunMessage[] {
+export function messagesForRun(id: string): RunMessage[] {
   const run = identity(id)
   if (!run) return []
   return db()
-    .query('SELECT * FROM run_message WHERE root_run_id = ? ORDER BY id')
-    .all(run.root_id) as RunMessage[]
+    .query('SELECT * FROM run_message WHERE root_run_record_id = ? ORDER BY id')
+    .all(run.root_record_id) as RunMessage[]
 }
 
 /** Receipt unread outbound worker messages: authorize the caller, adopt an unowned root, then set read_at/read_by. */
-export function receiptMessagesForArchitect(id: number): RunMessage[] {
+export function receiptMessagesForArchitect(id: string): RunMessage[] {
   writableDb()
   let authority = authorizeRunMutation(id, 'receipt')
   const run = identity(id)
@@ -181,9 +181,9 @@ export function receiptMessagesForArchitect(id: number): RunMessage[] {
     db()
       .query(
         `UPDATE run_message SET read_at = ?, read_by = ?
-        WHERE root_run_id = ? AND direction = 'from_worker' AND read_at IS NULL`,
+        WHERE root_run_record_id = ? AND direction = 'from_worker' AND read_at IS NULL`,
       )
-      .run(readAt, authority.actor, run.root_id)
+      .run(readAt, authority.actor, run.root_record_id)
     return messagesForRun(id)
   })
 }
