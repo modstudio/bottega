@@ -3,15 +3,21 @@
 import type { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { db } from '../database/db.ts'
+import { projects } from '../project/projects.ts'
 import { activeRecordSpace } from '../project-space.ts'
 import type { RecordApiClient, RecordRequestDestination } from './record-api-client.ts'
 import { recordApiClient } from './record-api-client.ts'
+import type { RecordIdentity } from './record-auth.ts'
 import { pullRecordCache } from './record-cache.ts'
 import type { RecordLensImportInput } from './record-lens-contract.ts'
 import type { RecordPortImportInput } from './record-port-contract.ts'
-import { noActiveRecordSpaceRefusal } from './record-project-destination.ts'
-import { projectRoutesFromIdentity } from './record-project-destination-client.ts'
+import {
+  declaredRecordSpace,
+  noActiveRecordSpaceRefusal,
+  projectRecordDestination,
+} from './record-project-destination.ts'
 import { syncRecord } from './record-sync.ts'
 import type { RecordWorkflowImportInput } from './record-workflow-contract.ts'
 
@@ -58,6 +64,25 @@ function cachedProjectRoutes(local: Database): Map<string, string | null> {
     registered.flatMap((project) => {
       const value = cache[project.name]
       return typeof value === 'string' || value === null ? [[project.name, value]] : []
+    }),
+  )
+}
+
+function currentProjectRoutes(
+  local: Database,
+  identity: RecordIdentity,
+  activeSpaceId: string,
+): Map<string, string | null> {
+  const memberships = parseRecordSpaceMemberships(identity.memberships)
+  return new Map(
+    [...projects(undefined, local), ...projects({ retired: true }, local)].map((project) => {
+      const destination = projectRecordDestination(
+        project.name,
+        declaredRecordSpace(project.settings),
+        activeSpaceId,
+        memberships,
+      )
+      return [project.name, 'refused' in destination ? null : destination.spaceId]
     }),
   )
 }
@@ -583,7 +608,7 @@ export async function pushCataloguesCommand(
   const identity = await client.whoami(),
     active = identity.activeSpaceId ?? localActive
   if (!active) throw new Error(noActiveRecordSpaceRefusal())
-  const plan = planCataloguePush(local, active, projectRoutesFromIdentity(local, identity, active))
+  const plan = planCataloguePush(local, active, currentProjectRoutes(local, identity, active))
   logPlan(plan, presentation)
   for (const skip of plan.skipped)
     presentation.log(`skipped ${skip.kind} ${skip.id}: ${skip.reason}`)
