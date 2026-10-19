@@ -1,8 +1,7 @@
 import { randomBytes } from 'node:crypto'
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { newRecordId } from '../../shared/record/schema.ts'
-import { bindTenant } from '../../shared/record/tenant.ts'
-import { type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
+import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 
 export type HostedSend = {
   id: string
@@ -341,24 +340,14 @@ type SubscriptionFacts = {
 
 const unsubscribeToken = () => randomBytes(32).toString('base64url')
 
-async function tenant<T>(url: string, identity: TaskIdentity, work: (tx: SQL) => Promise<T>) {
-  const client = new SQL(url)
-  try {
-    return await client.begin(async (tx) => {
-      await bindTenant(tx, identity)
-      return work(tx)
-    })
-  } finally {
-    await client.close()
-  }
-}
-
 export async function listHostedSends(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   filters: { limit?: number; updatedSince?: string; cursor?: string },
 ) {
-  return tenant(url, identity, (tx) => readHostedSendsInTransaction(tx, identity, filters))
+  return withHostedTenant(url, identity, (tx) =>
+    readHostedSendsInTransaction(tx, identity, filters),
+  )
 }
 
 type SendCursor = { createdAt: string; id: string }
@@ -415,11 +404,11 @@ export async function readHostedSendsInTransaction(
 }
 
 export async function appendHostedSend(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   input: Omit<HostedSend, 'id' | 'created_at'>,
 ) {
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
     return rows<HostedSend>(
       await tx`INSERT INTO hub_send
       (id,space_id,at,"window",recipients,projects,items,status,error,test,created_at,machine)
@@ -433,11 +422,11 @@ export async function appendHostedSend(
 }
 
 export async function mirrorHostedReports(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   input: { sends?: HostedSend[] },
 ) {
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
     const writes: unknown[][] = []
     for (const row of input.sends ?? [])
       writes.push(
@@ -458,8 +447,8 @@ export function countMirrorWrites(results: readonly (readonly unknown[])[]) {
   return results.reduce((total, result) => total + result.length, 0)
 }
 
-export async function hostedReportCounts(url: string, identity: TaskIdentity) {
-  return tenant(url, identity, async (tx) => {
+export async function hostedReportCounts(url: SQL, identity: TaskIdentity) {
+  return withHostedTenant(url, identity, async (tx) => {
     const result = rows<{ sends: number }>(
       await tx`SELECT
       (SELECT count(*)::int FROM hub_send WHERE space_id=${identity.spaceId}::uuid) sends`,
@@ -536,18 +525,18 @@ async function selectHostedReportSubscription(tx: SQL, spaceId: string, id: stri
   )
 }
 
-export async function listHostedReportSubscriptions(url: string, identity: TaskIdentity) {
-  return tenant(url, identity, async (tx) => ({
+export async function listHostedReportSubscriptions(url: SQL, identity: TaskIdentity) {
+  return withHostedTenant(url, identity, async (tx) => ({
     subscriptions: await selectHostedReportSubscriptions(tx, identity.spaceId),
   }))
 }
 
 export async function createHostedReportSubscription(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   input: ReportSubscriptionWriteInput,
 ) {
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
     const ownSpaceProjects = rows<{ id: string; space_id: string; name: string }>(
       await tx`SELECT id,space_id,name FROM project
       WHERE space_id=${identity.spaceId}::uuid AND retired_at IS NULL`,
@@ -608,12 +597,12 @@ export async function createHostedReportSubscription(
 }
 
 export async function updateHostedReportSubscription(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   id: string,
   input: ReportSubscriptionUpdateInput,
 ) {
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
     const existing = await selectHostedReportSubscription(tx, identity.spaceId, id)
     const ownSpaceProjects = rows<{ id: string; space_id: string; name: string }>(
       await tx`SELECT id,space_id,name FROM project
@@ -699,7 +688,7 @@ export async function updateHostedReportSubscription(
 
 const PUBLIC_REPORT_USER_ID = '00000000-0000-0000-0000-000000000000'
 
-export async function hostedEmailRecipientByToken(url: string, spaceId: string, token: string) {
+export async function hostedEmailRecipientByToken(url: SQL, spaceId: string, token: string) {
   return withHostedTenant(url, { spaceId, userId: PUBLIC_REPORT_USER_ID }, async (tx) => {
     return (
       rows<{ email: string; subscription: string; space: string }>(
@@ -721,31 +710,26 @@ export async function hostedEmailRecipientByToken(url: string, spaceId: string, 
   })
 }
 
-export async function unsubscribeHostedEmailRecipient(url: string, spaceId: string, token: string) {
-  const client = new SQL(url)
-  try {
-    return await client.begin(async (tx) => {
-      await tx`SELECT set_config('app.space_id', ${spaceId}, true)`
-      await tx`SELECT set_config('app.unsubscribe_token', ${token}, true)`
-      return Boolean(
-        rows<{ id: string }>(
-          await tx`DELETE FROM hub_report_subscription_recipient
+export async function unsubscribeHostedEmailRecipient(client: SQL, spaceId: string, token: string) {
+  return client.begin(async (tx) => {
+    await tx`SELECT set_config('app.space_id', ${spaceId}, true)`
+    await tx`SELECT set_config('app.unsubscribe_token', ${token}, true)`
+    return Boolean(
+      rows<{ id: string }>(
+        await tx`DELETE FROM hub_report_subscription_recipient
           WHERE space_id=${spaceId}::uuid AND unsubscribe_token=${token}
           RETURNING id`,
-        )[0],
-      )
-    })
-  } finally {
-    await client.close()
-  }
+      )[0],
+    )
+  })
 }
 
 export async function unsubscribeHostedReportSubscription(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   id: string,
 ) {
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
     const updated = assertReportSubscriptionFound(
       rows<{ id: string }>(
         await tx`UPDATE hub_report_subscription SET deleted_at=now(),updated_at=now()

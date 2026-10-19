@@ -1,8 +1,9 @@
+import type { SQL } from 'bun'
 import { z } from 'zod'
 import { engagedMs, human } from '../../shared/interval.ts'
 import { selectHostedReportSubscriptions } from './hosted-reports.ts'
 import { hostedTaskJoin } from './hosted-task-reference.ts'
-import { type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
+import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 import { computeMeasures, type MeasureInterval, type MeasureStatusEvent } from './measures.ts'
 import { formatNoteLabel } from './note-label.ts'
 import {
@@ -168,7 +169,7 @@ const bounds = (hours: 24 | 48 | 168 | 720, now: number) => ({
   to: new Date(now).toISOString(),
 })
 
-async function windowFacts(databaseUrl: string, identity: TaskIdentity, from: string, to: string) {
+async function windowFacts(databaseUrl: SQL, identity: TaskIdentity, from: string, to: string) {
   return withHostedTenant(databaseUrl, identity, async (tx) => {
     const windowRows = rows<RawWindow>(
       await tx`
@@ -259,7 +260,7 @@ function strip(
 }
 
 export async function hostedFlightDone(
-  databaseUrl: string,
+  databaseUrl: SQL,
   identity: TaskIdentity,
   input: {
     name: 'flight' | 'done'
@@ -289,7 +290,7 @@ export async function hostedFlightDone(
 }
 
 export async function hostedBoard(
-  databaseUrl: string,
+  databaseUrl: SQL,
   identity: TaskIdentity,
   input: {
     hours: 24 | 48 | 168 | 720
@@ -365,7 +366,7 @@ export async function hostedBoard(
 }
 
 export async function hostedTaskDetail(
-  databaseUrl: string,
+  databaseUrl: SQL,
   identity: TaskIdentity,
   key: string,
   spaceId = identity.spaceId,
@@ -514,7 +515,7 @@ function hostedDetailRows(
 }
 
 export async function hostedNotes(
-  databaseUrl: string,
+  databaseUrl: SQL,
   identity: TaskIdentity,
   input: { project?: string; stale: boolean },
 ) {
@@ -589,7 +590,7 @@ export async function hostedNotes(
 }
 
 async function hostedCostFacts(
-  databaseUrl: string,
+  databaseUrl: SQL,
   identity: TaskIdentity,
   windowDays: number,
   now = Date.now(),
@@ -617,7 +618,7 @@ async function hostedCostFacts(
 }
 
 export async function hostedRatio(
-  databaseUrl: string,
+  databaseUrl: SQL,
   identity: TaskIdentity,
   windowDays = 14,
   now = Date.now(),
@@ -627,7 +628,7 @@ export async function hostedRatio(
 }
 
 export async function hostedSpend(
-  databaseUrl: string,
+  databaseUrl: SQL,
   identity: TaskIdentity,
   windowDays = 14,
   now = Date.now(),
@@ -647,11 +648,7 @@ export async function hostedSpend(
   return projectSpendGrid(summary, vendors, facts.intervals, facts.now)
 }
 
-export async function hostedSettings(
-  databaseUrl: string,
-  identity: TaskIdentity,
-  projects: string[],
-) {
+export async function hostedSettings(databaseUrl: SQL, identity: TaskIdentity, projects: string[]) {
   return withHostedTenant(databaseUrl, identity, async (tx) => {
     const sends = rows<{
       at: SqlTime

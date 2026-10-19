@@ -478,11 +478,13 @@ export const importBoundaries: ImportBoundary[] = [
     [
       'node:fs',
       'node:url',
+      'bun',
       '@trpc/server/adapters/fetch',
       '../../shared/built-commit.ts',
       './app-static.ts',
       './change-api.ts',
       './hosted-health.ts',
+      './hosted-route-config.ts',
       './hosted-version.ts',
       './note-api.ts',
       './operator-waiting-email-api.ts',

@@ -1,5 +1,4 @@
-import { SQL } from 'bun'
-import { bindTenant } from '../../shared/record/tenant.ts'
+import type { SQL } from 'bun'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { applyDayChangeInTransaction, applyIntervalChangeInTransaction } from './hosted-evidence.ts'
 import { storedHubProjectId } from './hosted-project-identity.ts'
@@ -15,8 +14,8 @@ import {
   mirrorDocumentRow,
   mirrorStatusEventRow,
   mirrorTaskRow,
-  type TaskIdentity,
 } from './hosted-tasks.ts'
+import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 import {
   HOSTED_COMMENT_TABLE,
   HOSTED_DAY_TABLE,
@@ -388,17 +387,11 @@ export async function applyHostedPushChangesInTransaction(
 }
 
 export async function applyHostedPushChanges(
-  url: string,
+  client: SQL,
   identity: TaskIdentity,
   inputs: HostedPushChange[],
 ) {
-  const client = new SQL(url)
-  try {
-    return await client.begin(async (tx) => {
-      await bindTenant(tx, identity)
-      return applyHostedPushChangesInTransaction(tx, identity, inputs)
-    })
-  } finally {
-    await client.close()
-  }
+  return withHostedTenant(client, identity, (tx) =>
+    applyHostedPushChangesInTransaction(tx, identity, inputs),
+  )
 }

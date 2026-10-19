@@ -1,7 +1,6 @@
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
-import { bindTenant, type TenantPrincipal } from '../../shared/record/tenant.ts'
 import { MISSING_PROJECT_ID_REMEDY } from '../../shared/record-project-identity.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { storedHubProjectId } from './hosted-project-identity.ts'
@@ -11,6 +10,7 @@ import {
   repairHostedTaskReferences,
   taskIdFor,
 } from './hosted-task-reference.ts'
+import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 import type {
   PushedComment,
   PushedDocument,
@@ -20,7 +20,6 @@ import type {
 import { isSameStatusEvent, statusEventIdentity } from './status-event-identity.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
 
-export type TaskIdentity = TenantPrincipal
 export type HostedTask = PushedTask & { newly_assigned?: boolean }
 export type HostedComment = PushedComment
 export type HostedDocument = PushedDocument
@@ -33,26 +32,10 @@ export const hostedTaskPullSerializers = {
   hub_task_status_event: (row: HostedStatusEvent) => row,
 } as const
 
-export async function withHostedTenant<T>(
-  url: string,
-  identity: TaskIdentity,
-  work: (tx: SQL) => Promise<T>,
-) {
-  const client = new SQL(url)
-  try {
-    return await client.begin(async (tx) => {
-      await bindTenant(tx, identity)
-      return work(tx)
-    })
-  } finally {
-    await client.close()
-  }
-}
-
 const rows = <T>(value: unknown) => value as T[]
 
 export async function listHostedTasks(
-  url: string,
+  client: SQL,
   identity: TaskIdentity,
   filters: {
     project?: string
@@ -63,7 +46,7 @@ export async function listHostedTasks(
     cursor?: string
   },
 ) {
-  return withHostedTenant(url, identity, async (tx) => {
+  return withHostedTenant(client, identity, async (tx) => {
     const since = filters.updatedSince ?? filters.cursor ?? '1970-01-01T00:00:00.000Z'
     const parentId = filters.parent ? await taskIdFor(tx, identity.spaceId, filters.parent) : null
     const parent = hostedTaskRelationship('hub_task')
@@ -110,8 +93,8 @@ export async function listHostedTasks(
   })
 }
 
-export async function getHostedTask(url: string, identity: TaskIdentity, key: string) {
-  return withHostedTenant(url, identity, async (tx) => {
+export async function getHostedTask(client: SQL, identity: TaskIdentity, key: string) {
+  return withHostedTenant(client, identity, async (tx) => {
     const task = rows<HostedTask>(
       await tx`
       SELECT * FROM hub_task WHERE space_id=${identity.spaceId}::uuid AND key=${key}
@@ -135,7 +118,7 @@ export async function getHostedTask(url: string, identity: TaskIdentity, key: st
 }
 
 export async function createHostedTask(
-  url: string,
+  client: SQL,
   identity: TaskIdentity,
   input: {
     project: string
@@ -149,7 +132,9 @@ export async function createHostedTask(
     updated_at?: string
   },
 ) {
-  return withHostedTenant(url, identity, (tx) => createHostedTaskInTransaction(tx, identity, input))
+  return withHostedTenant(client, identity, (tx) =>
+    createHostedTaskInTransaction(tx, identity, input),
+  )
 }
 
 export async function createHostedTaskInTransaction(
@@ -210,12 +195,12 @@ export async function createHostedTaskInTransaction(
 }
 
 export async function createHostedDocument(
-  url: string,
+  client: SQL,
   identity: TaskIdentity,
   key: string,
   input: { title: string; body?: string; role?: string | null; version: string },
 ) {
-  return withHostedTenant(url, identity, async (tx) => {
+  return withHostedTenant(client, identity, async (tx) => {
     const project = rows<{
       id: string
       project_id: string

@@ -1,7 +1,6 @@
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
-import { bindTenant } from '../../shared/record/tenant.ts'
 import { MISSING_PROJECT_ID_REMEDY } from '../../shared/record-project-identity.ts'
 import { storedHubProjectId } from './hosted-project-identity.ts'
 import { hostedTaskReference, taskIdFor } from './hosted-task-reference.ts'
@@ -10,8 +9,8 @@ import {
   createHostedTaskInTransaction,
   type HostedTask,
   mirrorCollisionDecision,
-  type TaskIdentity,
 } from './hosted-tasks.ts'
+import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 import { projectHasRemoteTracker } from './hosted-write-mode.ts'
 import { nextNoteNumber } from './note-number.ts'
 
@@ -53,20 +52,9 @@ export const hostedNotePullSerializers = {
 } as const
 
 const rows = <T>(value: unknown) => value as T[]
-async function tenant<T>(url: string, identity: TaskIdentity, work: (tx: SQL) => Promise<T>) {
-  const client = new SQL(url)
-  try {
-    return await client.begin(async (tx) => {
-      await bindTenant(tx, identity)
-      return work(tx)
-    })
-  } finally {
-    await client.close()
-  }
-}
 
 export async function listHostedNotes(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   filters: {
     project?: string
@@ -77,7 +65,7 @@ export async function listHostedNotes(
     cursor?: string
   },
 ) {
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
     const since = filters.updatedSince ?? filters.cursor ?? '1970-01-01T00:00:00.000Z'
     const notes = rows<HostedNote>(
       await tx`SELECT hub_note.*,number::int number FROM hub_note
@@ -109,8 +97,8 @@ export async function listHostedNotes(
   })
 }
 
-export async function getHostedNote(url: string, identity: TaskIdentity, recordId: string) {
-  return tenant(
+export async function getHostedNote(url: SQL, identity: TaskIdentity, recordId: string) {
+  return withHostedTenant(
     url,
     identity,
     async (tx) =>
@@ -165,7 +153,7 @@ export function noteMirrorCollision(
 }
 
 export async function createHostedNote(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   input: {
     project: string
@@ -176,7 +164,7 @@ export async function createHostedNote(
     sameAs?: string
   },
 ) {
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
     if (!input.projectId)
       throw new Error(
         `project-scoped hosted note write is missing projectId; ${MISSING_PROJECT_ID_REMEDY}`,
@@ -225,13 +213,13 @@ export async function createHostedNote(
 }
 
 export async function promoteHostedNote(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   recordId: string,
   input: { task?: string } = {},
   createTask = createHostedTaskInTransaction,
 ): Promise<{ note: HostedNote; task: HostedTask | null } | null> {
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
     const note = rows<HostedNote>(
       await tx`SELECT hub_note.*,project_id::text AS "projectId",number::int number FROM hub_note WHERE space_id=${identity.spaceId}::uuid
       AND id=${recordId}::uuid AND deleted_at IS NULL FOR UPDATE`,
@@ -308,7 +296,7 @@ export async function selectPromotionTask(
 }
 
 export async function reapHostedNotes(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   input: {
     stale: Array<{ recordId: string; reason: string; at: string }>
@@ -317,7 +305,7 @@ export async function reapHostedNotes(
     cutoff: string
   },
 ) {
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
     for (const row of input.stale)
       await tx`UPDATE hub_note SET stale_at=${row.at}::timestamptz,
       stale_reason=${row.reason},updated_at=now() WHERE space_id=${identity.spaceId}::uuid AND id=${row.recordId}::uuid
@@ -414,7 +402,7 @@ async function mirrorOneHostedNote(tx: SQL, identity: TaskIdentity, row: HostedN
 }
 
 export async function mirrorHostedNotes(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   body: {
     notes: HostedNote[]
@@ -424,7 +412,7 @@ export async function mirrorHostedNotes(
 ) {
   if (body.notes.length + (body.acknowledgements?.length ?? 0) > 500)
     throw new Error('mirror accepts at most 500 rows')
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
     const noteIds: Array<{ number: number; id: string }> = []
     for (const row of body.notes) noteIds.push(await mirrorOneHostedNote(tx, identity, row))
     for (const row of body.acknowledgements ?? []) {
@@ -467,8 +455,8 @@ export async function mirrorHostedNotes(
   })
 }
 
-export async function hostedNoteCounts(url: string, identity: TaskIdentity) {
-  return tenant(url, identity, async (tx) => ({
+export async function hostedNoteCounts(url: SQL, identity: TaskIdentity) {
+  return withHostedTenant(url, identity, async (tx) => ({
     note: Number(
       rows<{ count: number }>(
         await tx`SELECT count(*)::int count FROM hub_note

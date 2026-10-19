@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
+import { hostedRouteTestConfig } from '../test/hosted-route-fixture.ts'
 import { operatorWaitingEmailApi } from './operator-waiting-email-api.ts'
 import {
   decideOperatorWaitingEmailReclaim,
@@ -101,11 +102,9 @@ test('hosted endpoint binds space and user from the credential', async () => {
     headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
     body: JSON.stringify(input),
   })
-  const config = {
-    recordApiUrl: 'https://record.example.test',
-    recordDatabaseUrl: 'postgres://record',
-  }
-  expect(await (await operatorWaitingEmailApi(request, config, dependencies))!.json()).toEqual({
+  expect(
+    await (await operatorWaitingEmailApi(request, hostedRouteTestConfig, dependencies))!.json(),
+  ).toEqual({
     id: 'intent-1',
     status: 'sent',
     reason: null,

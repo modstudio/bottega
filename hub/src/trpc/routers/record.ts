@@ -68,14 +68,13 @@ export function recordClient(ctx: Context) {
   })
 }
 
-function recordDatabaseUrl() {
-  const value = process.env.HUB_RECORD_DATABASE_URL
-  if (!value)
+function recordDatabase(ctx: Context) {
+  if (!ctx.recordDatabase)
     throw new TRPCError({
       code: 'INTERNAL_SERVER_ERROR',
       message: 'HUB_RECORD_DATABASE_URL is required',
     })
-  return value
+  return ctx.recordDatabase
 }
 
 async function hostedIdentity(ctx: Context) {
@@ -416,7 +415,7 @@ export const recordRouter = t.router({
     }),
   flight: t.procedure.input(workInput).query(async ({ ctx, input }) => {
     const { client, identity } = await hostedIdentity(ctx)
-    return hostedFlightDone(recordDatabaseUrl(), identity, {
+    return hostedFlightDone(recordDatabase(ctx), identity, {
       ...input,
       name: 'flight',
       projects: await client.projects(),
@@ -424,7 +423,7 @@ export const recordRouter = t.router({
   }),
   done: t.procedure.input(workInput).query(async ({ ctx, input }) => {
     const { client, identity } = await hostedIdentity(ctx)
-    return hostedFlightDone(recordDatabaseUrl(), identity, {
+    return hostedFlightDone(recordDatabase(ctx), identity, {
       ...input,
       name: 'done',
       projects: await client.projects(),
@@ -432,7 +431,7 @@ export const recordRouter = t.router({
   }),
   board: t.procedure.input(workInput).query(async ({ ctx, input }) => {
     const { client, identity } = await hostedIdentity(ctx)
-    return hostedBoard(recordDatabaseUrl(), identity, {
+    return hostedBoard(recordDatabase(ctx), identity, {
       ...input,
       projects: await client.projects(),
     })
@@ -446,17 +445,17 @@ export const recordRouter = t.router({
     )
     .query(async ({ ctx, input }) => {
       const { identity } = await hostedIdentity(ctx)
-      return hostedNotes(recordDatabaseUrl(), identity, input)
+      return hostedNotes(recordDatabase(ctx), identity, input)
     }),
   ratio: t.procedure.input(workInput).query(async ({ ctx, input }) => {
     const { client, identity } = await hostedIdentity(ctx)
     const projects = await client.projects()
-    const chrome = await hostedFlightDone(recordDatabaseUrl(), identity, {
+    const chrome = await hostedFlightDone(recordDatabase(ctx), identity, {
       ...input,
       name: 'flight',
       projects,
     })
-    const summary = await hostedRatio(recordDatabaseUrl(), identity)
+    const summary = await hostedRatio(recordDatabase(ctx), identity)
     return {
       ...chrome,
       view: 'ratio' as const,
@@ -491,7 +490,7 @@ export const recordRouter = t.router({
     .query(async ({ ctx, input }) => {
       const { identity } = await hostedIdentity(ctx)
       return hostedMeasures(
-        recordDatabaseUrl(),
+        recordDatabase(ctx),
         identity,
         { from: input.from, to: input.to },
         input.scope,
@@ -508,7 +507,7 @@ export const recordRouter = t.router({
     .query(async ({ ctx, input }) => {
       const { identity } = await hostedIdentity(ctx)
       return hostedMeasurePeople(
-        recordDatabaseUrl(),
+        recordDatabase(ctx),
         identity,
         { from: input.from, to: input.to },
         input.project,
@@ -517,7 +516,7 @@ export const recordRouter = t.router({
   spend: t.procedure.input(workInput).query(async ({ ctx, input }) => {
     const { client, identity } = await hostedIdentity(ctx)
     const projects = await client.projects()
-    const chrome = await hostedFlightDone(recordDatabaseUrl(), identity, {
+    const chrome = await hostedFlightDone(recordDatabase(ctx), identity, {
       ...input,
       name: 'flight',
       projects,
@@ -525,7 +524,7 @@ export const recordRouter = t.router({
     return {
       ...chrome,
       view: 'spend' as const,
-      data: await hostedSpend(recordDatabaseUrl(), identity),
+      data: await hostedSpend(recordDatabase(ctx), identity),
     }
   }),
   settings: t.procedure
@@ -536,7 +535,7 @@ export const recordRouter = t.router({
       const { client, identity } = await hostedIdentity(ctx)
       const projects = await client.projects()
       return hostedSettings(
-        recordDatabaseUrl(),
+        recordDatabase(ctx),
         identity,
         projects.map((project) => project.name),
       )
@@ -551,7 +550,7 @@ export const recordRouter = t.router({
     )
     .mutation(async ({ ctx, input }) => {
       const { identity } = await hostedWriteIdentity(ctx)
-      return createHostedReportSubscription(recordDatabaseUrl(), identity, input)
+      return createHostedReportSubscription(recordDatabase(ctx), identity, input)
     }),
   updateReportSubscription: t.procedure
     .input(
@@ -565,26 +564,26 @@ export const recordRouter = t.router({
     .mutation(async ({ ctx, input }) => {
       const { identity } = await hostedWriteIdentity(ctx)
       const { id, ...update } = input
-      return updateHostedReportSubscription(recordDatabaseUrl(), identity, id, update)
+      return updateHostedReportSubscription(recordDatabase(ctx), identity, id, update)
     }),
   removeReportSubscription: t.procedure
     .input(z.object({ id: uuid }).strict())
     .mutation(async ({ ctx, input }) => {
       const { identity } = await hostedWriteIdentity(ctx)
-      return unsubscribeHostedReportSubscription(recordDatabaseUrl(), identity, input.id)
+      return unsubscribeHostedReportSubscription(recordDatabase(ctx), identity, input.id)
     }),
   sendReportSubscriptionTest: t.procedure
     .input(z.object({ id: uuid }).strict())
     .mutation(async ({ ctx, input }) => {
       const { identity } = await hostedWriteIdentity(ctx)
-      return sendHostedReportSubscriptionTest(recordDatabaseUrl(), identity, input.id)
+      return sendHostedReportSubscriptionTest(recordDatabase(ctx), identity, input.id)
     }),
   task: t.procedure
     .input(z.object({ key: z.string().min(1).max(64), spaceId: uuid.optional() }))
     .query(async ({ ctx, input }) => {
       const { identity } = await hostedIdentity(ctx)
       const detail = await hostedTaskDetail(
-        recordDatabaseUrl(),
+        recordDatabase(ctx),
         identity,
         input.key,
         input.spaceId ?? identity.spaceId,

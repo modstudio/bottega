@@ -63,7 +63,7 @@ export async function createHostedRecordFixture(options: {
 
 type SqlFragment = { readonly sql: string }
 
-export function pgliteSql(database: PGlite): SQL {
+function pgliteQuery(database: Pick<PGlite, 'query'>): SQL {
   const query = async (strings: TemplateStringsArray, ...interpolations: unknown[]) => {
     let statement = strings[0]!
     const parameters: unknown[] = []
@@ -80,4 +80,12 @@ export function pgliteSql(database: PGlite): SQL {
   }
   query.unsafe = (sql: string) => ({ sql })
   return query as unknown as SQL
+}
+
+export function pgliteSql(database: PGlite): SQL {
+  const query = pgliteQuery(database)
+  const begin = <T>(work: (tx: SQL) => Promise<T>) =>
+    database.transaction((transaction) => work(pgliteQuery(transaction)))
+  query.begin = begin as SQL['begin']
+  return query
 }

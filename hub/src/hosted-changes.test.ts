@@ -9,6 +9,7 @@ import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import { HUB_CHANGE_SOURCES } from '../../shared/record/schema-hub.ts'
 import {
   hubChangeReadability,
+  laterRowKeys,
   READABLE_HUB_CHANGES,
   readHostedChangesInTransaction,
 } from './hosted-changes.ts'
@@ -23,6 +24,7 @@ const spaceD = '01990000-0000-7000-8000-000000001303'
 const spaceE = '01990000-0000-7000-8000-000000001304'
 const spaceF = '01990000-0000-7000-8000-000000001305'
 const spaceG = '01990000-0000-7000-8000-000000001306'
+const spaceH = '01990000-0000-7000-8000-000000001307'
 const taskId = '01990000-0000-7000-8000-000000001310'
 const lastDeleteId = '01990000-0000-7000-8000-000000001317'
 const recreatedId = '01990000-0000-7000-8000-000000001318'
@@ -71,7 +73,8 @@ async function createDatabase() {
       ('${spaceD}','Changes D','changes-d',now()),
       ('${spaceE}','Changes E','changes-e',now()),
       ('${spaceF}','Changes F','changes-f',now()),
-      ('${spaceG}','Changes G','changes-g',now());
+      ('${spaceG}','Changes G','changes-g',now()),
+      ('${spaceH}','Changes H','changes-h',now());
     INSERT INTO "user" (id,email,name,created_at)
     VALUES ('${userId}','changes@example.test','Change reader',now());
     INSERT INTO membership (id,space_id,user_id,role,permission,created_at) VALUES
@@ -81,7 +84,8 @@ async function createDatabase() {
       ('01990000-0000-7000-8000-000000001293','${spaceD}','${userId}','member','write',now()),
       ('01990000-0000-7000-8000-000000001294','${spaceE}','${userId}','member','write',now()),
       ('01990000-0000-7000-8000-000000001295','${spaceF}','${userId}','member','write',now()),
-      ('01990000-0000-7000-8000-000000001296','${spaceG}','${userId}','member','write',now());
+      ('01990000-0000-7000-8000-000000001296','${spaceG}','${userId}','member','write',now()),
+      ('01990000-0000-7000-8000-000000001297','${spaceH}','${userId}','member','write',now());
   `)
   return database
 }
@@ -140,6 +144,24 @@ test('every logged table is readable or explicitly deferred', () => {
     ['hub_note_acknowledgement', 'readable'],
   ])
   expect(hubChangeReadability('future_logged_table')).toBeNull()
+})
+
+test('later row suppression returns one key for many later changes to the same row', async () => {
+  const sql = pgliteSql(database)
+  await bind(database, spaceH)
+  const repeatedId = '01990000-0000-7000-8000-000000001319'
+  await database.exec(`
+    INSERT INTO hub_task
+      (id,space_id,project_name,key,project,title,source,first_seen,last_seen,created_at,updated_at)
+    VALUES ('${repeatedId}','${spaceH}','${PLATFORM_NAME}','DEV-1401','${PLATFORM_NAME}','first','local',now(),now(),now(),now());
+    UPDATE hub_task SET title='second' WHERE id='${repeatedId}';
+    UPDATE hub_task SET title='third' WHERE id='${repeatedId}';
+    UPDATE hub_task SET title='fourth' WHERE id='${repeatedId}';
+  `)
+
+  expect(await laterRowKeys(sql, spaceH, 1, ['hub_task'], [repeatedId])).toEqual([
+    `hub_task:${repeatedId}`,
+  ])
 })
 
 test('change pages preserve trigger order, current pull shapes, collapse, deletes, and moves', async () => {

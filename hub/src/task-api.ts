@@ -4,6 +4,7 @@ import {
   recordRequestNature,
   recordSpaceAccessDecision,
 } from '../../shared/record-space-request.ts'
+import type { HostedRouteConfig } from './hosted-route-config.ts'
 import { taskSpaceIdentity } from './hosted-route-identity.ts'
 import { hostedTaskPresence, softDeleteHostedTasks } from './hosted-task-prune.ts'
 import {
@@ -16,7 +17,6 @@ import { PUSHABLE_HUB_CHANGE_TABLES } from './push-contract.ts'
 
 const TEST_REFUSAL = `${PLATFORM_SLUG} task API refuses real identity and database clients unless stubs are injected in tests`
 
-type Config = { recordApiUrl: string; recordDatabaseUrl: string }
 type Dependencies = {
   fetch?: (input: string, init?: RequestInit) => Promise<Response>
   list?: typeof listHostedTasks
@@ -47,7 +47,7 @@ function taskRouteHonorsRequestedSpace(method: string, pathname: string): boolea
 type RouteContext = {
   request: Request
   url: URL
-  config: Config
+  config: HostedRouteConfig
   dependencies: Dependencies
   who: {
     userId: string
@@ -143,7 +143,7 @@ async function childWriteRoute(ctx: RouteContext): Promise<Response | null> {
 
 export async function taskApi(
   request: Request,
-  config: Config,
+  config: HostedRouteConfig,
   dependencies: Dependencies = {},
 ): Promise<Response | null> {
   const url = new URL(request.url)

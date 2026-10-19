@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { hostedRouteTestConfig } from '../test/hosted-route-fixture.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { noteMirrorCollision } from './hosted-notes.ts'
@@ -45,7 +46,7 @@ describe('hosted-only note safety', () => {
           },
           ...(method === 'GET' ? {} : { body: '{}' }),
         }),
-        { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+        hostedRouteTestConfig,
         {
           fetch: (async () =>
             Response.json({

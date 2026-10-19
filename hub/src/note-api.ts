@@ -17,15 +17,15 @@ import {
   promoteHostedNote,
   reapHostedNotes,
 } from './hosted-notes.ts'
+import type { HostedRouteConfig } from './hosted-route-config.ts'
 
 const TEST_REFUSAL = `${PLATFORM_SLUG} note API refuses real identity and database clients unless stubs are injected in tests`
-type Config = { recordApiUrl: string; recordDatabaseUrl: string }
 type Dependencies = { fetch?: typeof fetch; [key: string]: unknown }
 type Identity = { userId: string; spaceId: string; memberships: RecordSpaceMembership[] }
 type RouteContext = {
   request: Request
   url: URL
-  config: Config
+  config: HostedRouteConfig
   dependencies: Dependencies
   who: Identity
   body: Record<string, unknown> | null
@@ -38,7 +38,7 @@ const call = <T>(stub: unknown, real: T): T => {
 
 async function authenticate(
   request: Request,
-  config: Config,
+  config: HostedRouteConfig,
   dependencies: Dependencies,
 ): Promise<Identity | { refusedSpace: string } | null> {
   const authorization = request.headers.get('authorization')
@@ -141,7 +141,7 @@ async function batchRoute(context: RouteContext): Promise<Response | null> {
 
 export async function noteApi(
   request: Request,
-  config: Config,
+  config: HostedRouteConfig,
   dependencies: Dependencies = {},
 ): Promise<Response | null> {
   const url = new URL(request.url)

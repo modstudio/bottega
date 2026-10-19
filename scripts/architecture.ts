@@ -396,7 +396,7 @@ export const modules: ArchitectureModule[] = [
     '../../shared/record/schema.ts',
     './hosted-measures.ts',
     './hosted-report-gather.ts',
-    './hosted-tasks.ts',
+    './hosted-tenant.ts',
     './report-delivery.ts',
   ]),
   module('hub/src/hosted-report-gather.ts', [
@@ -405,7 +405,7 @@ export const modules: ArchitectureModule[] = [
     './report-delivery.ts',
     './report-renderer.ts',
     './hosted-task-reference.ts',
-    './hosted-tasks.ts',
+    './hosted-tenant.ts',
   ]),
   module('orchestrator/src/postgres/postgres-migrate.ts', []),
   module('shared/gate-timing-directory.ts', ['./brand.ts', './state-directory.ts']),

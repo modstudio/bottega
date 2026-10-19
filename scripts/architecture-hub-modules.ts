@@ -1,5 +1,13 @@
 export const hubModuleSpecs = [
   {
+    file: 'hub/src/hosted-route-config.ts',
+    allowed: ['bun'],
+  },
+  {
+    file: 'hub/src/hosted-tenant.ts',
+    allowed: ['bun', '../../shared/record/tenant.ts'],
+  },
+  {
     file: 'hub/src/hosted-url.ts',
     allowed: ['../../shared/env-values.ts'],
   },
@@ -23,6 +31,7 @@ export const hubModuleSpecs = [
       './hosted-changes.ts',
       './hosted-identity-set.ts',
       './hosted-push-changes.ts',
+      './hosted-route-config.ts',
       './hosted-route-identity.ts',
       './identity-set-contract.ts',
       './push-contract.ts',
@@ -33,7 +42,7 @@ export const hubModuleSpecs = [
     allowed: [
       'bun',
       '../../shared/record/tenant.ts',
-      './hosted-tasks.ts',
+      './hosted-tenant.ts',
       './identity-set-contract.ts',
       './push-contract.ts',
     ],
@@ -58,6 +67,7 @@ export const hubModuleSpecs = [
       './hosted-notes.ts',
       './hosted-reports.ts',
       './hosted-tasks.ts',
+      './hosted-tenant.ts',
     ],
   },
   {
@@ -104,6 +114,7 @@ export const hubModuleSpecs = [
       '../../shared/record-space-membership.ts',
       '../../shared/record-space-request.ts',
       './hosted-route-identity.ts',
+      './hosted-route-config.ts',
       './hosted-task-prune.ts',
       './hosted-tasks.ts',
       './push-contract.ts',

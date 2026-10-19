@@ -16,9 +16,9 @@ import {
   unsubscribeHostedReportSubscription,
   updateHostedReportSubscription,
 } from './hosted-reports.ts'
+import type { HostedRouteConfig } from './hosted-route-config.ts'
 
 const TEST_REFUSAL = `${PLATFORM_SLUG} report API refuses real identity and database clients unless stubs are injected in tests`
-type Config = { recordApiUrl: string; recordDatabaseUrl: string }
 type Dependencies = { fetch?: typeof fetch; [key: string]: unknown }
 const json = (value: unknown, status = 200) => Response.json(value, { status })
 const call = <T>(stub: unknown, real: T): T => {
@@ -35,7 +35,7 @@ const sendFilters = (url: URL) => ({
 async function sendRoute(
   request: Request,
   url: URL,
-  config: Config,
+  config: HostedRouteConfig,
   dependencies: Dependencies,
   who: { userId: string; spaceId: string },
   body: Record<string, unknown> | null,
@@ -73,7 +73,7 @@ async function sendRoute(
 async function subscriptionRoute(
   request: Request,
   url: URL,
-  config: Config,
+  config: HostedRouteConfig,
   dependencies: Dependencies,
   who: { userId: string; spaceId: string },
   body: Record<string, unknown> | null,
@@ -118,7 +118,7 @@ async function subscriptionRoute(
 async function dispatchReportRequest(
   request: Request,
   url: URL,
-  config: Config,
+  config: HostedRouteConfig,
   dependencies: Dependencies,
   who: { userId: string; spaceId: string },
   body: Record<string, unknown> | null,
@@ -132,7 +132,7 @@ async function dispatchReportRequest(
 
 export async function reportApi(
   request: Request,
-  config: Config,
+  config: HostedRouteConfig,
   dependencies: Dependencies = {},
 ): Promise<Response | null> {
   const url = new URL(request.url)
