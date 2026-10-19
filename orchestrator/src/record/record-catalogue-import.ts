@@ -35,9 +35,7 @@ export function reconcileCatalogueHistory(
   hosted: readonly CatalogueVersionMetadata[],
   seedAuthor: string,
 ): CatalogueReconciliation {
-  const production = imported.some((version) => version.status === 'production')
-  if (!production || !hosted.some((version) => version.status === 'production'))
-    return { action: 'unchanged', outcome: null }
+  if (!hosted.length) return { action: 'unchanged', outcome: null }
   const hostedIds = new Set(hosted.map((version) => version.id))
   if (imported.every((version) => hostedIds.has(version.id)))
     return { action: 'unchanged', outcome: null }
@@ -186,9 +184,8 @@ async function reconcileWorkflowVersions(
     keptVersions = new Set<string>()
   await forEachAsync(input[kind], async (owner) => {
     const ownerId = owners.get(owner.id),
-      imported = input[versionTable].filter((row) => row.ownerId === owner.id),
-      production = imported.find((row) => row.status === 'production')
-    if (!ownerId || !production) return
+      imported = input[versionTable].filter((row) => row.ownerId === owner.id)
+    if (!ownerId) return
     const hosted: { id: unknown; n: unknown; author: unknown; status: unknown }[] =
       kind === 'workflow'
         ? await tx`SELECT id,n,author,status FROM workflow_version WHERE space_id=${input.spaceId}::uuid AND workflow_id=${ownerId}::uuid`
@@ -243,9 +240,9 @@ async function insertWorkflowVersion(
   row: WorkflowVersionRow,
 ): Promise<void> {
   if (kind === 'workflow')
-    await tx`INSERT INTO workflow_version (id,space_id,workflow_id,n,status,definition,author,reason,created_at,promoted_at,retired_at,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${ownerId}::uuid,${row.n},${row.status},${row.definition},${row.author},${row.reason},${row.createdAt}::timestamptz,${row.promotedAt}::timestamptz,${row.retiredAt}::timestamptz,${row.updatedAt}::timestamptz)`
+    await tx`INSERT INTO workflow_version (id,space_id,workflow_id,n,status,definition,author,reason,created_at,promoted_at,retired_at,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${ownerId}::uuid,${row.n},${row.status},${row.definition},${row.author},${row.reason},${row.createdAt}::timestamptz,${row.promotedAt}::timestamptz,${row.retiredAt}::timestamptz,now())`
   else
-    await tx`INSERT INTO step_catalogue_version (id,space_id,catalogue_id,n,status,definition,author,reason,created_at,promoted_at,retired_at,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${ownerId}::uuid,${row.n},${row.status},${row.definition},${row.author},${row.reason},${row.createdAt}::timestamptz,${row.promotedAt}::timestamptz,${row.retiredAt}::timestamptz,${row.updatedAt}::timestamptz)`
+    await tx`INSERT INTO step_catalogue_version (id,space_id,catalogue_id,n,status,definition,author,reason,created_at,promoted_at,retired_at,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${ownerId}::uuid,${row.n},${row.status},${row.definition},${row.author},${row.reason},${row.createdAt}::timestamptz,${row.promotedAt}::timestamptz,${row.retiredAt}::timestamptz,now())`
 }
 
 async function importWorkflowVersions(
@@ -289,10 +286,10 @@ export async function importRecordWorkflowCatalogue(input: Tenant & RecordWorkfl
         const id = foundId(existing)
         if (id) result.alreadyPresent++
         else if (kind === 'workflow') {
-          await tx`INSERT INTO workflow (id,space_id,slug,created_at,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${row.slug},${row.createdAt}::timestamptz,${row.updatedAt}::timestamptz)`
+          await tx`INSERT INTO workflow (id,space_id,slug,created_at,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${row.slug},${row.createdAt}::timestamptz,now())`
           result.inserted++
         } else {
-          await tx`INSERT INTO step_catalogue (id,space_id,slug,created_at,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${row.slug},${row.createdAt}::timestamptz,${row.updatedAt}::timestamptz)`
+          await tx`INSERT INTO step_catalogue (id,space_id,slug,created_at,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${row.slug},${row.createdAt}::timestamptz,now())`
           result.inserted++
         }
         owners.set(row.id, id ?? row.id)

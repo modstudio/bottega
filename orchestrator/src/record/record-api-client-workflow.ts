@@ -17,6 +17,32 @@ type Request = <T>(
   path: string,
   init?: RequestInit & { schema?: (body: unknown) => T; destinationSpaceId?: string },
 ) => Promise<T>
+const RECONCILED_IMPORT_REFUSAL =
+  'record API predates reconciled workflow import; release hosted-api, then retry'
+
+async function importWorkflowCatalogue(
+  request: Request,
+  input: RecordWorkflowImportInput,
+  destination?: RecordRequestDestination,
+): Promise<RecordWorkflowImportResult> {
+  try {
+    return await request('/v1/workflow-catalogue/import/v2', {
+      method: 'POST',
+      body: JSON.stringify(input),
+      ...destination,
+      schema: (body) => recordWorkflowImportResultSchema.parse(body),
+    })
+  } catch (error) {
+    if (
+      error &&
+      typeof error === 'object' &&
+      'status' in error &&
+      (error.status === 404 || error.status === 405)
+    )
+      throw new Error(RECONCILED_IMPORT_REFUSAL)
+    throw error
+  }
+}
 export type RecordWorkflowClient = {
   listWorkflowCatalogue?(
     table: RecordWorkflowTable,
@@ -72,10 +98,5 @@ export const recordWorkflowClient = (request: Request): RecordWorkflowClient => 
       schema: (body) => recordWorkflowWriteResponseSchema.parse(body),
     }),
   importWorkflowCatalogue: (input, destination) =>
-    request('/v1/workflow-catalogue/import', {
-      method: 'POST',
-      body: JSON.stringify(input),
-      ...destination,
-      schema: (body) => recordWorkflowImportResultSchema.parse(body),
-    }),
+    importWorkflowCatalogue(request, input, destination),
 })

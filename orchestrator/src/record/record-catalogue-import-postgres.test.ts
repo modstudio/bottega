@@ -474,6 +474,101 @@ postgres('hosted catalogue bulk imports', () => {
     }
   })
 
+  test('a retired seed-only history is replaced without a production gate', async () => {
+    const spaceId = newRecordId(),
+      userId = newRecordId(),
+      importedWorkflowId = newRecordId(),
+      importedDraftId = newRecordId(),
+      setup = new SQL(setupUrl!)
+    try {
+      await setup`INSERT INTO "user" (id,email,name,email_verified,created_at,updated_at)
+        VALUES (${userId}::uuid,${`${userId}@test.invalid`},'Retired Seed',true,now(),now())`
+      await setup`INSERT INTO space (id,name,slug,created_at)
+        VALUES (${spaceId}::uuid,${`Retired ${spaceId}`},${`retired-${spaceId}`},now())`
+      await setup`INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+        VALUES (${newRecordId()}::uuid,${spaceId}::uuid,${userId}::uuid,'owner','write',now())`
+    } finally {
+      await setup.close()
+    }
+    const tenant = { url: actorUrl!, spaceId, spaceIds: [spaceId], userId }
+    await ensureSpaceBuiltIns(tenant)
+    const retire = new SQL(setupUrl!)
+    let seededVersionId: string
+    try {
+      const rows = await retire`UPDATE workflow_version SET status='retired',promoted_at=NULL,
+        retired_at=now(),updated_at=now() WHERE space_id=${spaceId}::uuid
+        AND workflow_id=(SELECT id FROM workflow WHERE space_id=${spaceId}::uuid AND slug='fix-defect')
+        RETURNING id`
+      seededVersionId = String(rows[0]!.id)
+    } finally {
+      await retire.close()
+    }
+    const historical = '2020-01-01T00:00:00.000Z'
+    const result = await importRecordWorkflowCatalogue({
+      ...tenant,
+      dryRun: false,
+      step_catalogue: [],
+      step_catalogue_version: [],
+      step_catalogue_event: [],
+      workflow: [
+        {
+          id: importedWorkflowId,
+          spaceId,
+          slug: 'fix-defect',
+          createdAt: historical,
+          updatedAt: historical,
+        },
+      ],
+      workflow_version: [
+        {
+          id: importedDraftId,
+          spaceId,
+          ownerId: importedWorkflowId,
+          n: 9,
+          status: 'draft',
+          definition: '{"local":true}',
+          author: 'machine',
+          reason: 'local retired-era history',
+          createdAt: historical,
+          promotedAt: null,
+          retiredAt: null,
+          updatedAt: historical,
+        },
+      ],
+      workflow_event: [],
+    })
+    expect(result.outcomes).toEqual([
+      { kind: 'workflow', slug: 'fix-defect', outcome: 'replaced seeded built-in' },
+    ])
+    const verify = new SQL(setupUrl!)
+    try {
+      expect([
+        ...(await verify`SELECT id,n,status,author,created_at,updated_at
+          FROM workflow_version WHERE space_id=${spaceId}::uuid
+          AND workflow_id=(SELECT id FROM workflow WHERE space_id=${spaceId}::uuid AND slug='fix-defect')`),
+      ]).toEqual([
+        {
+          id: importedDraftId,
+          n: 9,
+          status: 'draft',
+          author: 'machine',
+          created_at: new Date(historical),
+          updated_at: expect.any(Date),
+        },
+      ])
+      const [timestamps] =
+        await verify`SELECT created_at,updated_at FROM workflow_version WHERE id=${importedDraftId}::uuid`
+      expect(new Date(String(timestamps!.updated_at)).getTime()).toBeGreaterThan(
+        new Date(String(timestamps!.created_at)).getTime(),
+      )
+      expect([
+        ...(await verify`SELECT id FROM workflow_version WHERE id=${seededVersionId}::uuid`),
+      ]).toEqual([])
+    } finally {
+      await verify.close()
+    }
+  })
+
   test('newer natural-key matches stay unchanged and reject imported workflow children', async () => {
     const spaceId = newRecordId(),
       userId = newRecordId(),

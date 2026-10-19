@@ -16,9 +16,26 @@ test('unchanged when the imported history is already hosted', () => {
   ).toEqual({ action: 'unchanged', outcome: null })
 })
 
+test('imports normally when hosted history is empty', () => {
+  expect(reconcileCatalogueHistory([version('local', 'machine')], [], 'seed')).toEqual({
+    action: 'unchanged',
+    outcome: null,
+  })
+})
+
 test('replaces a history written entirely by the seeder', () => {
   expect(
     reconcileCatalogueHistory([version('local', 'machine')], [version('seed', 'seed')], 'seed'),
+  ).toEqual({ action: 'replace-seed', outcome: 'replaced seeded built-in' })
+})
+
+test('replaces retired seed-only history without considering production status', () => {
+  expect(
+    reconcileCatalogueHistory(
+      [version('local', 'machine', 'draft')],
+      [version('seed', 'seed', 'retired')],
+      'seed',
+    ),
   ).toEqual({ action: 'replace-seed', outcome: 'replaced seeded built-in' })
 })
 
@@ -27,6 +44,19 @@ test('keeps the complete hosted history when any version is person-authored', ()
     reconcileCatalogueHistory(
       [version('local', 'machine')],
       [version('seed', 'seed'), version('person', 'person', 'draft')],
+      'seed',
+    ),
+  ).toEqual({
+    action: 'keep-hosted',
+    outcome: 'kept hosted history; local history not imported',
+  })
+})
+
+test.each(['draft', 'retired'])('keeps person-authored %s-only hosted history', (status) => {
+  expect(
+    reconcileCatalogueHistory(
+      [version('local', 'machine', 'draft')],
+      [version('person', 'person', status)],
       'seed',
     ),
   ).toEqual({
