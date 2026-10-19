@@ -45,6 +45,25 @@ function matchedResult(row: Candidate, query: string, includeFull: boolean): Rec
   }
 }
 
+function rulingCandidates(d: Database): Record<string, unknown>[] {
+  return d
+    .query(
+      `SELECT q.number,turn.number AS run_number,turn.record_id AS run_record_id,
+          root.number AS root_run_number,root.record_id AS root_run_record_id,
+          root.launch_key AS task_key,turn.started_at,q.question,q.options,
+          q.recommendation,q.why,q.answer
+       FROM question q
+       JOIN run turn ON turn.record_id=q.run_record_id
+       JOIN run root ON root.record_id=COALESCE(turn.parent_run_record_id,turn.record_id)
+      WHERE q.answer IS NOT NULL`,
+    )
+    .all()
+    .map((row) => {
+      const { number, ...rest } = row as Record<string, unknown> & { number: number }
+      return { id: number, ...rest }
+    })
+}
+
 /** A compact excerpt around the first literal match. Never returns the whole record by default. */
 export function searchSnippet(text: string, query: string, directlyLinked: boolean): string {
   const clean = text.replace(/\s+/g, ' ').trim()
@@ -109,25 +128,10 @@ export function searchRecords(
     (row) => String(row.note),
   )
 
-  add(
-    'ruling',
-    d
-      .query(
-        `SELECT q.id, turn.number AS run_number, turn.record_id AS run_record_id,
-            root.number AS root_run_number,
-            root.record_id AS root_run_record_id,
-            root.launch_key AS task_key, turn.started_at, q.question, q.options,
-            q.recommendation, q.why, q.answer
-       FROM question q
-       JOIN run turn ON turn.record_id=q.run_record_id
-       JOIN run root ON root.record_id=COALESCE(turn.parent_run_record_id, turn.record_id)
-      WHERE q.answer IS NOT NULL`,
-      )
-      .all() as Record<string, unknown>[],
-    (row) =>
-      [row.question, row.options, row.recommendation, row.why, row.answer]
-        .filter((value) => value !== null)
-        .join('\n'),
+  add('ruling', rulingCandidates(d), (row) =>
+    [row.question, row.options, row.recommendation, row.why, row.answer]
+      .filter((value) => value !== null)
+      .join('\n'),
   )
 
   add(

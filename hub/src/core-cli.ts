@@ -8,11 +8,16 @@ import {
   QUESTION_DELIVERY_MODE_VALUES,
 } from '../../shared/question-vocabulary.ts'
 import { collectOnce, formatCollectLeg, releaseLease, watch, withLease } from './collect.ts'
-import { formatMigrationRepairSummary, migrateDatabase, nowIso, requireDatabase } from './db.ts'
+import {
+  formatMigrationRepairSummary,
+  migrateDatabaseWithQuestionIdentityMap,
+  nowIso,
+  requireDatabase,
+} from './db.ts'
 import { hubDoctorLines } from './doctor.ts'
 import { reclaimFixtureQuestions } from './fixture-question-reclaim.ts'
 import { LocalHubAuth } from './local-auth.ts'
-import { startDashboardCapability } from './orch.ts'
+import { readQuestionIdentityMap, startDashboardCapability } from './orch.ts'
 import { projects } from './projects.ts'
 import { estateEngagedMs, tasksInWindow } from './query.ts'
 import { printReconcile, reconcileOpenIntervals } from './reconcile.ts'
@@ -127,8 +132,8 @@ function registerCollectionCommands(program: Command): void {
   program
     .command('migrate')
     .description('apply pending checksummed schema migrations')
-    .action(() => {
-      const migrated = migrateDatabase()
+    .action(async () => {
+      const migrated = await migrateDatabaseWithQuestionIdentityMap(readQuestionIdentityMap)
       if (!migrated.versions.length) console.log(`schema already current: ${migrated.path}`)
       else {
         console.log(`migrated ${migrated.path}`)

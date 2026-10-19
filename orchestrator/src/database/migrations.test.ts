@@ -341,7 +341,7 @@ test('note UUID reference migration preserves rows and turns old integers into d
       database
         .query(
           `SELECT filed_as,filed_ref,filed_record_id,filed_label
-           FROM question ORDER BY id`,
+           FROM question ORDER BY number`,
         )
         .all(),
     ).toEqual([

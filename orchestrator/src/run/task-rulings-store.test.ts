@@ -26,8 +26,8 @@ function answeredQuestion(
   db()
     .query(
       `INSERT INTO question
-         (record_id,run_record_id,asked_at,question,answer,answered_at,answerer_kind,overturned_at,replacement)
-       VALUES ('${newRecordId()}',?,'2026-09-01',?,'answer',?,'agent',?,?)`,
+         (number,record_id,run_record_id,asked_at,question,answer,answered_at,answerer_kind,overturned_at,replacement)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'2026-09-01',?,'answer',?,'agent',?,?)`,
     )
     .run(runId, question, answeredAt, overturn?.at ?? null, overturn?.replacement ?? null)
 }
@@ -72,8 +72,8 @@ describe('task ruling candidate query', () => {
     db()
       .query(
         `INSERT INTO question
-        (record_id,workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,answerer_kind,asked_via)
-       VALUES ('${newRecordId()}',?,'DEV-960','2026-09-01','workflow ruling','workflow answer',
+        (number,record_id,workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,answerer_kind,asked_via)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'DEV-960','2026-09-01','workflow ruling','workflow answer',
                '2026-10-05T12:00:00.000Z','agent','workflow')`,
       )
       .run(cursor.id)

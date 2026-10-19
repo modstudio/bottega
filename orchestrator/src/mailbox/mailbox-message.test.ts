@@ -201,8 +201,8 @@ describe('run mailbox', () => {
     const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     db()
       .query(
-        `INSERT INTO question (record_id,run_record_id, asked_at, question)
-       VALUES ('${newRecordId()}',?, ?, 'which interface?')`,
+        `INSERT INTO question (number,record_id,run_record_id, asked_at, question)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?, ?, 'which interface?')`,
       )
       .run(root, new Date().toISOString())
 

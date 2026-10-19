@@ -158,7 +158,7 @@ export type ClaimInput = {
   usingMcp: boolean
   startedByUserId: string | null
   replySchemaName: string
-  carriedQuestionIds: number[]
+  carriedQuestionIds: string[]
 }
 
 import type { ClaimResult } from './run-claim-types.ts'
@@ -451,7 +451,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       closeRunChainQuestions(db(), opts.retryOf, QUESTION_CLOSE_ATTEMPT_FAILED_OVER)
     }
     const recordCarry = db().query(
-      'INSERT INTO run_carried_ruling (record_id,run_record_id,question_id) VALUES (?,?,?)',
+      'INSERT INTO run_carried_ruling (record_id,run_record_id,question_record_id) VALUES (?,?,?)',
     )
     for (const id of carriedQuestionIds) recordCarry.run(newRecordId(), claimed.id, id)
     return claimed

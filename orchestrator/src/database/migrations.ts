@@ -497,6 +497,12 @@ const INTEGER_RUN_REFERENCES = [
   ['worker_note_request', 'run_id'],
 ] as const
 
+const INTEGER_QUESTION_REFERENCES = [
+  ['question_delivery', 'question_id'],
+  ['question_mutation_audit', 'question_id'],
+  ['run_carried_ruling', 'question_id'],
+] as const
+
 function runReferenceOrphanCounts(d: Database): string[] {
   const findings: string[] = []
   for (const [table, column] of INTEGER_RUN_REFERENCES) {
@@ -511,6 +517,32 @@ function runReferenceOrphanCounts(d: Database): string[] {
     ).n
     if (count > 0) findings.push(`${table}.${column}=${count}`)
   }
+  return findings
+}
+
+function questionReferenceOrphanCounts(d: Database): string[] {
+  const findings: string[] = []
+  for (const [table, column] of INTEGER_QUESTION_REFERENCES) {
+    const count = (
+      d
+        .query(
+          `SELECT COUNT(*) AS n FROM ${quoteIdentifier(table)} child
+           WHERE NOT EXISTS (SELECT 1 FROM question parent WHERE parent.id=child.${quoteIdentifier(column)})`,
+        )
+        .get() as { n: number }
+    ).n
+    if (count > 0) findings.push(`${table}.${column}=${count}`)
+  }
+  const notificationCount = (
+    d
+      .query(
+        `SELECT COUNT(*) AS n FROM operator_notification child
+         WHERE child.kind='question'
+           AND NOT EXISTS (SELECT 1 FROM question parent WHERE parent.id=child.item_id)`,
+      )
+      .get() as { n: number }
+  ).n
+  if (notificationCount > 0) findings.push(`operator_notification.item_id=${notificationCount}`)
   return findings
 }
 
@@ -685,11 +717,17 @@ function prepareMigrationEntry(
   beforeApply?: BeforeMigrationApply,
 ): void {
   if (beforeApply?.migration === entry.tag) beforeApply.action(d)
-  if (entry.tag !== RUN_UUID_KEY_MIGRATION) return
-  const orphanCounts = runReferenceOrphanCounts(d)
+  const orphanCounts =
+    entry.tag === RUN_UUID_KEY_MIGRATION
+      ? runReferenceOrphanCounts(d)
+      : entry.tag === '0125_question_uuid_key'
+        ? questionReferenceOrphanCounts(d)
+        : []
   if (orphanCounts.length)
     throw new Error(
-      `refusing run UUID-key migration: integer references have no parent run (${orphanCounts.join(', ')})`,
+      `refusing ${entry.tag === RUN_UUID_KEY_MIGRATION ? 'run' : 'question'} UUID-key migration: ` +
+        `integer references have no parent ${entry.tag === RUN_UUID_KEY_MIGRATION ? 'run' : 'question'} ` +
+        `(${orphanCounts.join(', ')})`,
     )
 }
 

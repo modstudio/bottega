@@ -8,17 +8,17 @@ describe('question identifier', () => {
   test('parses numbers and UUIDs and resolves either form to one row', () => {
     const runId = addRun({ agent: 'codex', job: 'file-question', status: 'asking' })
     const recordId = newRecordId()
-    const { id } = db()
-      .query<{ id: number }, [string, string]>(
-        "INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES (?,?,'2026-10-14','Which?') RETURNING id",
+    const { number } = db()
+      .query<{ number: number }, [string, string]>(
+        "INSERT INTO question (record_id,number,run_record_id,asked_at,question) VALUES (?,1,?,'2026-10-14','Which?') RETURNING number",
       )
       .get(recordId, runId)!
-    expect(parseQuestionIdentifier(String(id))).toEqual({ kind: 'number', id })
+    expect(parseQuestionIdentifier(String(number))).toEqual({ kind: 'number', id: number })
     expect(parseQuestionIdentifier(recordId.toUpperCase())).toEqual({
       kind: 'record-id',
       recordId,
     })
-    expect(resolveQuestionIdentifier(db(), id)).toBe(id)
-    expect(resolveQuestionIdentifier(db(), recordId)).toBe(id)
+    expect(resolveQuestionIdentifier(db(), number)).toBe(recordId)
+    expect(resolveQuestionIdentifier(db(), recordId)).toBe(recordId)
   })
 })

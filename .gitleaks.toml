@@ -7,3 +7,4 @@ useDefault = true
 description = "DEV-977 secret-shaped override-reason test fixture"
 regexTarget = "match"
 regexes = ['''ghp_123456789012345678901234567890123456''']
+

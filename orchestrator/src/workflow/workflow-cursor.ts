@@ -96,14 +96,14 @@ function closeOpenWorkflowQuestion(
   d: Database,
 ): void {
   const questions = d
-    .query<{ id: number }, [number]>(
-      `SELECT id FROM question
+    .query<{ record_id: string }, [number]>(
+      `SELECT record_id FROM question
        WHERE workflow_cursor_id=? AND ${questionOpenSql('question')}`,
     )
     .all(cursorId)
   closeQuestions(
     d,
-    questions.map((question) => question.id),
+    questions.map((question) => question.record_id),
     reason,
     sessionId(),
     at,
@@ -866,7 +866,7 @@ function awaitWorkflowRulingImpl(
     `UPDATE workflow_cursor SET state='awaiting-ruling',question=?,
      session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
   ).run(question.trim(), context.session ?? null, at, row.id)
-  const questionId = upsertWorkflowQuestion(
+  const recordedQuestion = upsertWorkflowQuestion(
     {
       cursorId: row.id,
       workflowKey: row.workflow_key,
@@ -884,7 +884,7 @@ function awaitWorkflowRulingImpl(
       slug: row.step_slug,
       state: 'awaiting-ruling',
       opened: false,
-      questionId,
+      questionId: recordedQuestion.number,
     },
     cursorId: row.id,
   }
@@ -923,8 +923,8 @@ export function ruleWorkflow(
     })
     const at = nowIso()
     const question = d
-      .query<{ id: number }, [number]>(
-        `SELECT id FROM question
+      .query<{ record_id: string; number: number }, [number]>(
+        `SELECT record_id,number FROM question
          WHERE workflow_cursor_id=? AND ${questionOpenSql('question')}`,
       )
       .get(row.id)
@@ -932,7 +932,7 @@ export function ruleWorkflow(
       throw new Error(`${cursorName(slug, mode, row.workflow_key)} has no open question to rule on`)
     answerWorkflowQuestion(
       {
-        questionId: question.id,
+        questionId: question.record_id,
         cursorId: row.id,
         ruling: ruling.trim(),
         at,
@@ -949,7 +949,7 @@ export function ruleWorkflow(
     ).run(adoptionReason ? null : (context.session ?? null), at, row.id)
     return {
       summary: `${cursorName(slug, mode, row.workflow_key, true)} is running at step ${row.ordinal + 1} ${row.step_slug}.`,
-      questionId: question.id,
+      questionId: question.number,
     }
   }, d)
 }

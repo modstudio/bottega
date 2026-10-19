@@ -199,11 +199,11 @@ describe('record doctor decisions', () => {
     addRun.run(4, '01990000-0000-7000-8000-000000000004', '01990000-0000-7000-8000-000000000103')
     database
       .query(
-        `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES
-         ('${newRecordId()}','01990000-0000-7000-8000-000000000001','2026-09-25','default'),
-         ('${newRecordId()}','01990000-0000-7000-8000-000000000002','2026-09-25','unsynced'),
-         ('${newRecordId()}','01990000-0000-7000-8000-000000000003','2026-09-25','other'),
-         ('${newRecordId()}','01990000-0000-7000-8000-000000000004','2026-09-25','unknown')`,
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES
+         (1,'${newRecordId()}','01990000-0000-7000-8000-000000000001','2026-09-25','default'),
+         (2,'${newRecordId()}','01990000-0000-7000-8000-000000000002','2026-09-25','unsynced'),
+         (3,'${newRecordId()}','01990000-0000-7000-8000-000000000003','2026-09-25','other'),
+         (4,'${newRecordId()}','01990000-0000-7000-8000-000000000004','2026-09-25','unknown')`,
       )
       .run()
     database
@@ -217,8 +217,8 @@ describe('record doctor decisions', () => {
       .run()
     database
       .query(
-        `INSERT INTO question (record_id,workflow_cursor_id,asked_at,question)
-         VALUES ('${newRecordId()}',last_insert_rowid(),'2026-09-25','workflow')`,
+        `INSERT INTO question (number,record_id,workflow_cursor_id,asked_at,question)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',last_insert_rowid(),'2026-09-25','workflow')`,
       )
       .run()
     database
@@ -255,7 +255,7 @@ describe('record doctor decisions', () => {
       .run()
     database
       .query(
-        `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}','01990000-0000-7000-8000-000000000001','2026-09-25','no project')`,
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}','01990000-0000-7000-8000-000000000001','2026-09-25','no project')`,
       )
       .run()
     database

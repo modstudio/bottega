@@ -18,6 +18,7 @@ test('fixture question selection removes only documented sessions whose run is a
     sessionId: string,
     runRef = `orch:${questionId}`,
   ): FixtureQuestion => ({
+    record_id: fixtureRecordId(questionId),
     question_id: questionId,
     session_id: sessionId,
     run_ref: runRef,

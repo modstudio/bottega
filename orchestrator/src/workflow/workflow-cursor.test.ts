@@ -125,11 +125,11 @@ function installEvidence(
     '2026-09-01',
   )
   const ruling = d
-    .query<{ id: number }, (string | number | null)[]>(
+    .query<{ number: number }, (string | number | null)[]>(
       `INSERT INTO question
-        (record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,answered_at,answer,
+        (number,record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,answered_at,answer,
          workflow_step_ordinal,workflow_step_slug)
-       VALUES ('${newRecordId()}',?,?,?,?, 'workflow', ?, 'yes', ?, ?) RETURNING id`,
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?, 'workflow', ?, 'yes', ?, ?) RETURNING number`,
     )
     .get(
       row.id,
@@ -139,8 +139,8 @@ function installEvidence(
       '2026-09-01',
       row.ordinal + 1,
       row.step_slug,
-    ) as { id: number }
-  return { gate, artifact: `probe:${probe}`, ruling: ruling.id, task: taskKey }
+    ) as { number: number }
+  return { gate, artifact: `probe:${probe}`, ruling: ruling.number, task: taskKey }
 }
 
 function closeStep(

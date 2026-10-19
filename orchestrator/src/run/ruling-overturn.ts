@@ -10,8 +10,8 @@ import { overturnRulingDecision } from './ruling-overturn-authority.ts'
 import { adoptRunMutation, auditRunMutation, runMutationActor } from './run-authority.ts'
 
 type OverturnRow = {
-  id: number
   record_id: string
+  number: number
   run_record_id: string | null
   root_id: string | null
   workflow_cursor_id: number | null
@@ -31,11 +31,11 @@ function refusal(row: OverturnRow): string | null {
   })
   if (decision.kind === 'allow') return null
   if (decision.code === 'unanswered') {
-    return `question ${row.id} is unanswered and has no ruling to overturn; record its ruling first`
+    return `question ${row.number} is unanswered and has no ruling to overturn; record its ruling first`
   }
   if (decision.code === 'already-overturned') {
     return (
-      `question ${row.id} was already overturned at ${row.overturned_at} by ${row.overturned_by}` +
+      `question ${row.number} was already overturned at ${row.overturned_at} by ${row.overturned_by}` +
       `${row.overturn_reason ? ` because ${row.overturn_reason}` : ''}; ` +
       `review the existing overturn before attempting to overturn it again`
     )
@@ -44,7 +44,7 @@ function refusal(row: OverturnRow): string | null {
 }
 
 export function overturnRuling(input: {
-  questionId: number
+  questionId: string
   reason: string
   replacement: string | null
   fromOperator: boolean
@@ -52,11 +52,11 @@ export function overturnRuling(input: {
   writableDb()
   const row = db()
     .query(
-      `SELECT q.id,q.record_id,q.run_record_id,COALESCE(owner.parent_run_record_id,owner.record_id) root_id,
+      `SELECT q.number,q.record_id,q.run_record_id,COALESCE(owner.parent_run_record_id,owner.record_id) root_id,
               q.workflow_cursor_id,c.session_id workflow_owner,c.updated_at workflow_updated_at,
               q.answered_at,q.overturned_at,q.overturned_by,q.overturn_reason,q.replacement
          FROM question q LEFT JOIN run owner ON owner.record_id=q.run_record_id
-         LEFT JOIN workflow_cursor c ON c.id=q.workflow_cursor_id WHERE q.id=?`,
+         LEFT JOIN workflow_cursor c ON c.id=q.workflow_cursor_id WHERE q.record_id=?`,
     )
     .get(input.questionId) as OverturnRow | null
   if (!row)
@@ -86,25 +86,25 @@ export function overturnRuling(input: {
       .query(
         `UPDATE question
             SET overturned_at=?,overturned_by=?,overturn_reason=?,replacement=?,revision=revision+1
-          WHERE id=? AND answered_at IS NOT NULL AND overturned_at IS NULL`,
+          WHERE record_id=? AND answered_at IS NOT NULL AND overturned_at IS NULL`,
       )
-      .run(at, overturnedBy, input.reason, input.replacement, row.id)
+      .run(at, overturnedBy, input.reason, input.replacement, row.record_id)
     if (changed.changes !== 1)
-      throw new Error(`question ${row.id} changed before it was overturned`)
+      throw new Error(`question ${row.number} changed before it was overturned`)
     if (row.run_record_id !== null) auditRunMutation(authority!, 'overturn', input.reason)
     else
       auditQuestionMutation({
-        questionId: row.id,
+        questionId: row.record_id,
         action: 'overturn',
         actor,
         at,
         reason: input.reason,
         adoptionReason,
       })
-    enqueueQuestionRecord(db(), row.id)
+    enqueueQuestionRecord(db(), row.record_id)
   })
   return {
-    question_id: row.id,
+    question_id: row.number,
     record_id: row.record_id,
     ruling_status: 'overturned',
     overturned_at: at,

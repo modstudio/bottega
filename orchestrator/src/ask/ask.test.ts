@@ -567,7 +567,7 @@ describe('the live ask channel always answers', () => {
     const live = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     db()
       .query(
-        `INSERT INTO question (record_id,run_record_id, asked_at, question) VALUES ('${newRecordId()}',?,?,?)`,
+        `INSERT INTO question (number,record_id,run_record_id, asked_at, question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
       )
       .run(live, new Date().toISOString(), 'which table?')
     const answerable = (id: string) => {
@@ -595,15 +595,15 @@ describe('the live ask channel always answers', () => {
     const child = addRun({ agent: 'codex', job: 'implement', parent: root, turn: 2 })
     db()
       .query(
-        `INSERT INTO question (record_id,run_record_id, asked_at, question) VALUES ('${newRecordId()}',?,?,?)`,
+        `INSERT INTO question (number,record_id,run_record_id, asked_at, question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
       )
       .run(child, new Date().toISOString(), 'and now what?')
     const open = db()
       .query(
-        `SELECT q.id FROM question q JOIN run r ON r.record_id = q.run_record_id
+        `SELECT q.record_id FROM question q JOIN run r ON r.record_id = q.run_record_id
         WHERE (r.record_id = ? OR r.parent_run_record_id = ?) AND q.answered_at IS NULL`,
       )
-      .all(root, root) as { id: number }[]
+      .all(root, root) as { record_id: string }[]
     expect(open.length).toBe(1)
   })
   test('an unanswered question survives the timeout', async () => {

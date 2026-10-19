@@ -11,10 +11,13 @@ import { hostedCreateOperatorWaitingEmail, hostedSignedInUserId } from './task-c
 const DEFAULT_OPERATOR_EMAIL_DELAY_MINUTES = 30
 const OPERATOR_EMAIL_DELAY_SETTING = 'operator_email_delay_minutes'
 
-export type WaitingEmailLedgerKey = Pick<OperatorWaitingItem, 'kind' | 'id' | 'episode'>
+export type WaitingEmailLedgerKey = Pick<
+  OperatorWaitingItem,
+  'kind' | 'id' | 'question_record_id' | 'episode'
+>
 
 const ledgerKey = (item: WaitingEmailLedgerKey) =>
-  `${item.kind}\u0000${item.id}\u0000${item.episode}`
+  `${item.kind}\u0000${item.kind === 'question' ? item.question_record_id : item.id}\u0000${item.episode}`
 
 /** Question text reaches the caller only after this pure decision says the episode is due. */
 export function dueOperatorWaitingEmails(
@@ -54,21 +57,40 @@ export function setOperatorEmailDelayMinutes(value: number): void {
 
 function pushedEpisodes(): WaitingEmailLedgerKey[] {
   return db()
-    .query<{ kind: 'question' | 'workflow'; item_id: number; episode: string }, []>(
-      'SELECT kind,item_id,episode FROM operator_waiting_email ORDER BY kind,item_id,episode',
+    .query<
+      {
+        kind: 'question' | 'workflow'
+        item_id: number | null
+        question_record_id: string | null
+        episode: string
+      },
+      []
+    >(
+      'SELECT kind,item_id,question_record_id,episode FROM operator_waiting_email ORDER BY kind,item_id,question_record_id,episode',
     )
     .all()
-    .map((row) => ({ kind: row.kind, id: row.item_id, episode: row.episode }))
+    .map((row) => ({
+      kind: row.kind,
+      id: row.kind === 'workflow' ? row.item_id! : 0,
+      question_record_id: row.kind === 'question' ? row.question_record_id! : '',
+      episode: row.episode,
+    }))
 }
 
 function recordPushed(item: OperatorWaitingItem): void {
   writeTransaction((conn) =>
     conn
       .query(
-        `INSERT OR IGNORE INTO operator_waiting_email(kind,item_id,episode,pushed_at)
-         VALUES (?,?,?,?)`,
+        `INSERT OR IGNORE INTO operator_waiting_email(kind,item_id,question_record_id,episode,pushed_at)
+         VALUES (?,?,?,?,?)`,
       )
-      .run(item.kind, item.id, item.episode, nowIso()),
+      .run(
+        item.kind,
+        item.kind === 'workflow' ? item.id : null,
+        item.kind === 'question' ? item.question_record_id : null,
+        item.episode,
+        nowIso(),
+      ),
   )
 }
 

@@ -28,7 +28,7 @@ function runRef(rootId: string, questionRunId: string, hasTurns: boolean) {
 }
 
 type RunRefConversionReport = { interval: number; question: number; question_delivery: number }
-type RefRow = { row_id: number; value: string }
+type RefRow = { row_id: string; value: string }
 
 function legacyRunRef(value: string): { root: string; turn: string | null } | null {
   const match = /^orch:([1-9]\d*)(?::turn:([1-9]\d*))?$/.exec(value)
@@ -40,7 +40,7 @@ function convertReferenceRows(
   column: string,
   rows: RefRow[],
   convert: (value: string) => string | null,
-  update: (target: string, rowId: number) => void,
+  update: (target: string, rowId: string) => void,
   report: RunRefConversionReport,
   missing: string[],
 ): void {
@@ -112,13 +112,13 @@ export function convertLegacyRunRefs(
     'question',
     'run_ref',
     conn
-      .query<{ row_id: number; value: string }, []>(
-        "SELECT question_id row_id,run_ref value FROM question WHERE run_ref LIKE 'orch:%'",
+      .query<{ row_id: string; value: string }, []>(
+        "SELECT record_id row_id,run_ref value FROM question WHERE run_ref LIKE 'orch:%'",
       )
       .all(),
     convert,
     (target, rowId) =>
-      conn.query('UPDATE question SET run_ref=? WHERE question_id=?').run(target, rowId),
+      conn.query('UPDATE question SET run_ref=? WHERE record_id=?').run(target, rowId),
     report,
     missing,
   )
@@ -126,13 +126,13 @@ export function convertLegacyRunRefs(
     'question',
     'root_ref',
     conn
-      .query<{ row_id: number; value: string }, []>(
-        "SELECT question_id row_id,root_ref value FROM question WHERE root_ref LIKE 'orch:%'",
+      .query<{ row_id: string; value: string }, []>(
+        "SELECT record_id row_id,root_ref value FROM question WHERE root_ref LIKE 'orch:%'",
       )
       .all(),
     convert,
     (target, rowId) =>
-      conn.query('UPDATE question SET root_ref=? WHERE question_id=?').run(target, rowId),
+      conn.query('UPDATE question SET root_ref=? WHERE record_id=?').run(target, rowId),
     report,
     missing,
   )
@@ -140,7 +140,7 @@ export function convertLegacyRunRefs(
     'question_delivery',
     'run_ref',
     conn
-      .query<{ row_id: number; value: string }, []>(
+      .query<{ row_id: string; value: string }, []>(
         "SELECT rowid row_id,run_ref value FROM question_delivery WHERE run_ref LIKE 'orch:%'",
       )
       .all(),
@@ -191,10 +191,11 @@ function deliveryRunRef(run: OrchRun, receivingRunId: string | null): string | n
 function questionReplacer(conn: Database) {
   const upsertQuestion = conn.query(
     `INSERT INTO question
-      (question_id, run_ref, root_ref, task_key, session_id, asked_at, answered_at,
+      (record_id, number, run_ref, root_ref, task_key, session_id, asked_at, answered_at,
        asked_via, answerer_kind, answer_channel, overturned_at, closed_at, close_reason)
-   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-   ON CONFLICT(question_id) DO UPDATE SET
+   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+   ON CONFLICT(record_id) DO UPDATE SET
+     number         = excluded.number,
      run_ref        = excluded.run_ref,
      root_ref       = excluded.root_ref,
      task_key       = excluded.task_key,
@@ -208,9 +209,11 @@ function questionReplacer(conn: Database) {
      closed_at      = excluded.closed_at,
      close_reason   = excluded.close_reason`,
   )
-  const deleteQuestionDeliveries = conn.query(`DELETE FROM question_delivery WHERE question_id = ?`)
+  const deleteQuestionDeliveries = conn.query(
+    `DELETE FROM question_delivery WHERE question_record_id = ?`,
+  )
   const insertQuestionDelivery = conn.query(
-    `INSERT INTO question_delivery (question_id, run_ref, mode, outcome, at, error)
+    `INSERT INTO question_delivery (question_record_id, run_ref, mode, outcome, at, error)
      VALUES (?,?,?,?,?,?)`,
   )
   const deleteRootQuestions = conn.query(`DELETE FROM question WHERE root_ref = ?`)
@@ -221,6 +224,7 @@ function questionReplacer(conn: Database) {
     deleteRootQuestions.run(root)
     for (const question of run.questions) {
       upsertQuestion.run(
+        question.record_id,
         question.id,
         runRef(run.record_id, question.run_record_id, hasTurns),
         root,
@@ -235,10 +239,10 @@ function questionReplacer(conn: Database) {
         question.closed_at,
         question.close_reason,
       )
-      deleteQuestionDeliveries.run(question.id)
+      deleteQuestionDeliveries.run(question.record_id)
       for (const delivery of question.deliveries) {
         insertQuestionDelivery.run(
-          question.id,
+          question.record_id,
           deliveryRunRef(run, delivery.run_record_id),
           delivery.mode,
           delivery.outcome,
@@ -253,11 +257,12 @@ function questionReplacer(conn: Database) {
 function upsertWorkflowQuestions(conn: Database, questions: readonly RulingListRow[]): void {
   const upsert = conn.query(
     `INSERT INTO question
-      (question_id,run_ref,root_ref,workflow_cursor_id,workflow_key,project,project_record_id,task_key,
+      (record_id,number,run_ref,root_ref,workflow_cursor_id,workflow_key,project,project_record_id,task_key,
        session_id,asked_at,answered_at,asked_via,answerer_kind,answer_channel,
        overturned_at,closed_at,close_reason)
-     VALUES (?,NULL,NULL,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-     ON CONFLICT(question_id) DO UPDATE SET
+     VALUES (?,?,NULL,NULL,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(record_id) DO UPDATE SET
+       number=excluded.number,
        workflow_cursor_id=excluded.workflow_cursor_id,
        workflow_key=excluded.workflow_key,
        project=excluded.project,
@@ -275,6 +280,7 @@ function upsertWorkflowQuestions(conn: Database, questions: readonly RulingListR
   )
   for (const question of questions) {
     upsert.run(
+      question.record_id,
       question.id,
       question.workflow_cursor_id,
       question.workflow_key,

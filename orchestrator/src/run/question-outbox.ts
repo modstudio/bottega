@@ -9,8 +9,8 @@ import { machineId } from '../record/machine-identity.ts'
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 
 type QuestionRow = Record<string, unknown> & {
-  id: number
   record_id: string
+  number: number
   run_record_id: string | null
   project_name: string | null
   project_record_id: string | null
@@ -18,9 +18,9 @@ type QuestionRow = Record<string, unknown> & {
 
 const json = (value: unknown): unknown => (value == null ? null : JSON.parse(String(value)))
 
-function loadQuestion(database: Database, questionId: number): QuestionRow {
+function loadQuestion(database: Database, questionId: string): QuestionRow {
   const row = database
-    .query<QuestionRow, [number]>(
+    .query<QuestionRow, [string]>(
       `SELECT q.*, r.record_id AS run_record_id,
               COALESCE(run_project.name, cursor.project) AS project_name,
               COALESCE(run_project.record_id, cursor_project.record_id) AS project_record_id
@@ -29,21 +29,21 @@ function loadQuestion(database: Database, questionId: number): QuestionRow {
          LEFT JOIN project run_project ON run_project.record_id=r.project_record_id
          LEFT JOIN workflow_cursor cursor ON cursor.id=q.workflow_cursor_id
          LEFT JOIN project cursor_project ON cursor_project.record_id=cursor.project_record_id
-        WHERE q.id=?`,
+        WHERE q.record_id=?`,
     )
     .get(questionId)
   if (!row) throw new Error(`question ${questionId} does not exist and cannot be enqueued`)
   return row
 }
 
-export function enqueueQuestionRecord(database: Database, questionId: number): boolean {
+export function enqueueQuestionRecord(database: Database, questionId: string): boolean {
   const row = loadQuestion(database, questionId)
   const recordId = row.record_id!
   const at = nowIso()
   const audits = database
-    .query<Record<string, unknown>, [number]>(
+    .query<Record<string, unknown>, [string]>(
       `SELECT action,actor_session,at,reason FROM question_mutation_audit
-       WHERE question_id=? ORDER BY at,action`,
+       WHERE question_record_id=? ORDER BY at,action`,
     )
     .all(questionId)
     .map((audit) => ({
@@ -61,7 +61,7 @@ export function enqueueQuestionRecord(database: Database, questionId: number): b
     projectId: row.project_record_id,
     projectName: row.project_name,
     machineId: machineId(),
-    localId: row.id,
+    localId: row.number,
     revision: row.revision,
     askedAt: row.asked_at,
     question: row.question,
@@ -116,12 +116,12 @@ export function enqueueQuestionRecord(database: Database, questionId: number): b
 
 export function backfillQuestionRecords(database: Database): { enqueued: number } {
   const questions = database
-    .query<{ id: number }, []>(
-      `SELECT id FROM question WHERE NOT EXISTS (
+    .query<{ record_id: string }, []>(
+      `SELECT record_id FROM question WHERE NOT EXISTS (
          SELECT 1 FROM outbox WHERE kind='question' AND row_id=question.record_id
-       ) ORDER BY id`,
+       ) ORDER BY number`,
     )
     .all()
-  for (const row of questions) enqueueQuestionRecord(database, row.id)
+  for (const row of questions) enqueueQuestionRecord(database, row.record_id)
   return { enqueued: questions.length }
 }

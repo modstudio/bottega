@@ -190,7 +190,7 @@ export async function follow(
           .query(
             `SELECT q.question FROM question q JOIN run r ON r.record_id = q.run_record_id
             WHERE (r.record_id = ? OR r.parent_run_record_id = ?) AND ${questionOpenSql('q')}
-            ORDER BY q.id`,
+            ORDER BY q.number`,
           )
           .all(
             row.parent_run_record_id ?? chain.finalId,

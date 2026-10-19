@@ -22,7 +22,7 @@ afterEach(() => {
   else process.env.CLAUDE_CODE_SESSION_ID = priorSession
 })
 
-function fixture(status = 'ok'): { database: Database; questionId: number } {
+function fixture(status = 'ok'): { database: Database; questionId: string } {
   const database = new Database(':memory:')
   applyMigrations(database)
   database
@@ -34,11 +34,11 @@ function fixture(status = 'ok'): { database: Database; questionId: number } {
     .run(status)
   const question = database
     .query(
-      `INSERT INTO question (record_id,run_record_id,asked_at,question)
-       VALUES ('${newRecordId()}','01990000-0000-7000-8000-000000000042','2026-09-29T10:01:00.000Z','Which?') RETURNING id`,
+      `INSERT INTO question (record_id,number,run_record_id,asked_at,question)
+       VALUES ('${newRecordId()}',1,'01990000-0000-7000-8000-000000000042','2026-09-29T10:01:00.000Z','Which?') RETURNING record_id`,
     )
-    .get() as { id: number }
-  return { database, questionId: question.id }
+    .get() as { record_id: string }
+  return { database, questionId: question.record_id }
 }
 
 test('close service closes, audits and enqueues once', () => {
@@ -55,7 +55,7 @@ test('close service closes, audits and enqueues once', () => {
   expect(closeQuestions(database, [questionId], QUESTION_CLOSE_CHAIN_TERMINAL)).toBe(0)
   expect(
     database
-      .query('SELECT closed_at,close_reason,revision FROM question WHERE id=?')
+      .query('SELECT closed_at,close_reason,revision FROM question WHERE record_id=?')
       .get(questionId),
   ).toEqual({
     closed_at: '2026-09-29T10:02:00.000Z',
@@ -77,7 +77,9 @@ test('close service closes, audits and enqueues once', () => {
 test('operator close accepts a terminal question and records the supplied reason', () => {
   const { database, questionId } = fixture()
   closeQuestionByOperator(questionId, 'superseded by a later ruling', database)
-  expect(database.query('SELECT close_reason FROM question WHERE id=?').get(questionId)).toEqual({
+  expect(
+    database.query('SELECT close_reason FROM question WHERE record_id=?').get(questionId),
+  ).toEqual({
     close_reason: 'operator-closed: superseded by a later ruling',
   })
 })
@@ -89,7 +91,9 @@ test('operator close refuses live, answered and blank questions', () => {
   )
   const answered = fixture()
   answered.database
-    .query("UPDATE question SET answer='yes',answered_at='2026-09-29T10:02:00.000Z' WHERE id=?")
+    .query(
+      "UPDATE question SET answer='yes',answered_at='2026-09-29T10:02:00.000Z' WHERE record_id=?",
+    )
     .run(answered.questionId)
   expect(() => closeQuestionByOperator(answered.questionId, 'obsolete', answered.database)).toThrow(
     'already answered',
@@ -105,7 +109,7 @@ test('terminal delivery retirement clears only pending state, records history an
     .query(
       `UPDATE question SET answer='yes',answered_at='2026-09-29T10:02:00.000Z',
         answered_by='architect',delivery_pending_at='2026-09-29T10:02:00.000Z'
-       WHERE id=?`,
+       WHERE record_id=?`,
     )
     .run(questionId)
 
@@ -120,7 +124,7 @@ test('terminal delivery retirement clears only pending state, records history an
   expect(
     database
       .query(
-        'SELECT answer,answered_at,answered_by,delivery_pending_at,revision FROM question WHERE id=?',
+        'SELECT answer,answered_at,answered_by,delivery_pending_at,revision FROM question WHERE record_id=?',
       )
       .get(questionId),
   ).toEqual({
@@ -133,7 +137,7 @@ test('terminal delivery retirement clears only pending state, records history an
   expect(
     database
       .query(
-        'SELECT run_record_id,mode,outcome,at,error FROM question_delivery WHERE question_id=?',
+        'SELECT run_record_id,mode,outcome,at,error FROM question_delivery WHERE question_record_id=?',
       )
       .get(questionId),
   ).toEqual({
@@ -153,7 +157,7 @@ test('delivery retirement leaves an asking chain untouched', () => {
   database
     .query(
       `UPDATE question SET answer='yes',answered_at='2026-09-29T10:02:00.000Z',
-        delivery_pending_at='2026-09-29T10:02:00.000Z' WHERE id=?`,
+        delivery_pending_at='2026-09-29T10:02:00.000Z' WHERE record_id=?`,
     )
     .run(questionId)
 
@@ -165,7 +169,9 @@ test('delivery retirement leaves an asking chain untouched', () => {
     ),
   ).toBe(0)
   expect(
-    database.query('SELECT delivery_pending_at,revision FROM question WHERE id=?').get(questionId),
+    database
+      .query('SELECT delivery_pending_at,revision FROM question WHERE record_id=?')
+      .get(questionId),
   ).toEqual({
     delivery_pending_at: '2026-09-29T10:02:00.000Z',
     revision: 1,

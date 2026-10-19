@@ -232,10 +232,10 @@ test('enqueue withholds a planted leaf for score, question, review, override, an
   )
   const question = database
     .query(
-      `INSERT INTO question (record_id,run_record_id,asked_at,question,answer) VALUES ('${newRecordId()}','01990000-0000-7000-8000-000000000010','2026-09-15T00:01:00Z','Which?',?) RETURNING id`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question,answer) VALUES (1,'${newRecordId()}','01990000-0000-7000-8000-000000000010','2026-09-15T00:01:00Z','Which?',?) RETURNING record_id`,
     )
-    .get(SECRET) as { id: number }
-  enqueueQuestionRecord(database, question.id)
+    .get(SECRET) as { record_id: string }
+  enqueueQuestionRecord(database, question.record_id)
   database
     .query(
       "INSERT INTO review (id,record_id,recorded_at,commit_message) VALUES (1,'review-record','2026-09-15T00:02:00Z',?)",

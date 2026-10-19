@@ -187,15 +187,18 @@ test('ordinary sync pushes an asking run before its live question', async () => 
     .run(RECORD_ID)
   local
     .query(
-      `INSERT INTO question (record_id,run_record_id,asked_at,question,asked_via)
-       VALUES ('${newRecordId()}',?,?,'Which?','live')`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question,asked_via)
+       VALUES (1,'${newRecordId()}',?,?,'Which?','live')`,
     )
     .run(RECORD_ID, STAMP)
   local
     .query("INSERT OR REPLACE INTO schema_meta (key,value) VALUES ('machine_id',?)")
     .run(MACHINE_ID)
   enqueueRunRecord(local, RECORD_ID, MACHINE_ID, STAMP)
-  enqueueQuestionRecord(local, 1)
+  enqueueQuestionRecord(
+    local,
+    (local.query('SELECT record_id FROM question').get() as { record_id: string }).record_id,
+  )
 
   const remote = fakePostgres()
   const result = await syncRecord(options(local, remote))
@@ -546,14 +549,17 @@ test('a quarantined parent defers its graph until retry delivers the parent', as
     .run(RECORD_ID)
   local
     .query(
-      `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,'Which?')`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES (1,'${newRecordId()}',?,?,'Which?')`,
     )
     .run(RECORD_ID, STAMP)
   local
     .query("INSERT OR REPLACE INTO schema_meta (key,value) VALUES ('machine_id',?)")
     .run(MACHINE_ID)
   enqueueRunRecord(local, RECORD_ID, MACHINE_ID, STAMP)
-  enqueueQuestionRecord(local, 1)
+  enqueueQuestionRecord(
+    local,
+    (local.query('SELECT record_id FROM question').get() as { record_id: string }).record_id,
+  )
   local
     .query(
       `INSERT INTO score
@@ -694,14 +700,17 @@ test('a dependent reports a retired parent without attempting delivery', async (
     .run(RECORD_ID)
   local
     .query(
-      `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,'Which?')`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES (1,'${newRecordId()}',?,?,'Which?')`,
     )
     .run(RECORD_ID, STAMP)
   local
     .query("INSERT OR REPLACE INTO schema_meta (key,value) VALUES ('machine_id',?)")
     .run(MACHINE_ID)
   enqueueRunRecord(local, RECORD_ID, MACHINE_ID, STAMP)
-  enqueueQuestionRecord(local, 1)
+  enqueueQuestionRecord(
+    local,
+    (local.query('SELECT record_id FROM question').get() as { record_id: string }).record_id,
+  )
   local
     .query(
       `UPDATE outbox SET quarantined_at=?,quarantine_reason='operator review'

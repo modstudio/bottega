@@ -329,8 +329,8 @@ export async function abandonRun(
     authority = reauthorizeRunMutation(authority, 'abandon')
     authority = adoptRunMutation(authority, 'abandon')
     const openQuestions = db()
-      .query<{ id: number }, [string, string]>(
-        `SELECT id FROM question WHERE ${questionOpenSql('question')} AND run_record_id IN
+      .query<{ record_id: string }, [string, string]>(
+        `SELECT record_id FROM question WHERE ${questionOpenSql('question')} AND run_record_id IN
           (SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=?)`,
       )
       .all(authority.rootId, authority.rootId)
@@ -362,7 +362,7 @@ export async function abandonRun(
         authority.rootId,
       )
     enqueueAbandonedChain(row.record_id, authority.rootId, at)
-    for (const question of openQuestions) enqueueQuestionRecord(db(), question.id)
+    for (const question of openQuestions) enqueueQuestionRecord(db(), question.record_id)
     retireRunChainQuestionDeliveries(db(), authority.rootId, 'abandoned', at)
     auditRunMutation(authority, 'abandon', note ?? null)
     return { row, cleanupRow }

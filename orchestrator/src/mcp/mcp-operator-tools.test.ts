@@ -43,11 +43,11 @@ function addQuestion(runId: string, question: string, waiting = false): number {
   return (
     db()
       .query(
-        `INSERT INTO question (record_id,run_record_id,asked_at,question,awaiting_operator_at)
-         VALUES ('${newRecordId()}',?,?,?,?) RETURNING id`,
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question,awaiting_operator_at)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?) RETURNING number`,
       )
-      .get(runId, at, question, waiting ? at : null) as { id: number }
-  ).id
+      .get(runId, at, question, waiting ? at : null) as { number: number }
+  ).number
 }
 
 describe('operator MCP tools', () => {
@@ -122,7 +122,7 @@ describe('operator MCP tools', () => {
       db().query('SELECT record_id FROM run WHERE record_id=?').get(runId) as { record_id: string }
     ).record_id
     const questionRecordId = (
-      db().query('SELECT record_id FROM question WHERE id=?').get(questionId) as {
+      db().query('SELECT record_id FROM question WHERE number=?').get(questionId) as {
         record_id: string
       }
     ).record_id
@@ -148,7 +148,7 @@ describe('operator MCP tools', () => {
       resumed_record_id: null,
     })
     expect(
-      db().query('SELECT answer,answer_channel FROM question WHERE id=?').get(questionId),
+      db().query('SELECT answer,answer_channel FROM question WHERE number=?').get(questionId),
     ).toEqual({ answer: 'Use the existing shape.', answer_channel: 'mcp' })
   })
 
@@ -186,7 +186,7 @@ describe('operator MCP tools', () => {
         expect(result.isError).not.toBe(true)
         expect(
           db()
-            .query('SELECT answer,answered_by,answer_channel FROM question WHERE id=?')
+            .query('SELECT answer,answered_by,answer_channel FROM question WHERE number=?')
             .get(questionId),
         ).toEqual({
           answer: ruling,
@@ -239,7 +239,7 @@ describe('operator MCP tools', () => {
     db()
       .query(
         `UPDATE question SET answer=?,answered_at=?,answered_by=?,answerer_kind=?,answer_channel=?
-         WHERE id=?`,
+         WHERE number=?`,
       )
       .run('Original ruling.', answeredAt, SESSION, 'agent', 'cli', questionId)
 
@@ -284,7 +284,7 @@ describe('operator MCP tools', () => {
     db()
       .query(
         `UPDATE question SET answer=?,answered_at=?,answered_by=?,answerer_kind=?,answer_channel=?
-         WHERE id=?`,
+         WHERE number=?`,
       )
       .run('Keep it.', new Date().toISOString(), SESSION, 'operator', 'cli', questionId)
 
@@ -305,7 +305,7 @@ describe('operator MCP tools', () => {
       filed_at: expect.any(String),
     })
     expect(result.structuredContent).toMatchObject({ question_record_id: expect.any(String) })
-    expect(db().query('SELECT filed_as FROM question WHERE id=?').get(questionId)).toEqual({
+    expect(db().query('SELECT filed_as FROM question WHERE number=?').get(questionId)).toEqual({
       filed_as: 'doc',
     })
 
@@ -320,7 +320,7 @@ describe('operator MCP tools', () => {
     db()
       .query(
         `UPDATE question SET answer=?,answered_at=?,answered_by=?,answerer_kind=?,answer_channel=?
-         WHERE id=?`,
+         WHERE number=?`,
       )
       .run('Keep it.', new Date().toISOString(), SESSION, 'operator', 'cli', workerQuestionId)
     process.env.ORCH_RUN_ID = 'mcp-worker'

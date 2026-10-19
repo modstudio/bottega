@@ -205,6 +205,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'question',
   'question answer',
   'question close',
+  'question identity-map',
   'question inbox',
   'question ruling',
   'question ruling file',

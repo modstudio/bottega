@@ -389,7 +389,7 @@ describe('collection records', () => {
     const asking = addRun({ agent: 'codex', job: 'file-question', status: 'asking' })
     db()
       .query(
-        `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
       )
       .run(asking, new Date().toISOString(), 'which?')
     const logs: string[] = []
@@ -430,7 +430,7 @@ describe('collection records', () => {
     })
     db()
       .query(
-        `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
       )
       .run(child, new Date().toISOString(), 'which?')
     const logs: string[] = []
@@ -466,7 +466,7 @@ describe('collection records', () => {
     db().query('UPDATE run SET output_path=? WHERE record_id=?').run(output, id)
     db()
       .query(
-        `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
       )
       .run(id, new Date().toISOString(), 'which?')
     const logs: string[] = []

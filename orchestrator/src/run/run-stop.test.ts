@@ -93,7 +93,7 @@ test('abandon retires an asking run from the live inbox and keeps it in all as t
   const id = insert('asking')
   db()
     .query(
-      `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
     )
     .run(id, new Date().toISOString(), 'which design?')
   expect((await invoke('abandon', id, { note: 'superseded' })).code).toBe(0)
@@ -125,8 +125,8 @@ test('abandon retires an older answered pending delivery through the chain servi
   db()
     .query(
       `INSERT INTO question
-        (record_id,run_record_id,asked_at,question,answer,answered_at,delivery_pending_at)
-       VALUES ('${newRecordId()}',?,?,?,?,?,?)`,
+        (number,record_id,run_record_id,asked_at,question,answer,answered_at,delivery_pending_at)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?,?,?)`,
     )
     .run(
       id,
@@ -145,7 +145,7 @@ test('abandon retires an older answered pending delivery through the chain servi
     db()
       .query(
         `SELECT mode,outcome,error FROM question_delivery
-         WHERE question_id=(SELECT id FROM question WHERE run_record_id=?)`,
+         WHERE question_record_id=(SELECT record_id FROM question WHERE run_record_id=?)`,
       )
       .get(id),
   ).toEqual({ mode: 'record-only', outcome: 'retired', error: 'abandoned' })
@@ -159,7 +159,7 @@ test('a foreign session can neither stop nor abandon an owned run', async () => 
     .run('other-session', running, asking)
   db()
     .query(
-      `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
     )
     .run(asking, new Date().toISOString(), 'which shape?')
   expect((await invoke('stop', running)).err).toContain('owned by session other-session')
@@ -280,7 +280,7 @@ test('stop closes an unanswered question on the chain', async () => {
   const id = insert('running')
   db()
     .query(
-      `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
     )
     .run(id, new Date().toISOString(), 'which design?')
   expect((await invoke('stop', id)).code).toBe(0)
@@ -395,7 +395,7 @@ test("abandoning a resumed turn keeps the root's prior failure kind", async () =
   db().query('UPDATE run SET parent_run_record_id=?,turn=2 WHERE record_id=?').run(root, child)
   db()
     .query(
-      `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
     )
     .run(child, new Date().toISOString(), 'child question?')
   expect((await invoke('abandon', child)).code).toBe(0)
@@ -424,7 +424,7 @@ test('abandon by a chain root retires its asking child turn', async () => {
   db().query('UPDATE run SET parent_run_record_id=?,turn=2 WHERE record_id=?').run(root, child)
   db()
     .query(
-      `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
     )
     .run(child, new Date().toISOString(), 'last question?')
   const result = await invoke('abandon', root, { note: 'superseded' })

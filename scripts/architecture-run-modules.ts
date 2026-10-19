@@ -5,7 +5,11 @@ export const runModuleSpecs = [
   },
   {
     file: 'orchestrator/src/run/run-number.ts',
-    allowed: ['bun:sqlite'],
+    allowed: ['bun:sqlite', '../database/entity-number.ts'],
+  },
+  {
+    file: 'orchestrator/src/run/question-number.ts',
+    allowed: ['bun:sqlite', '../database/entity-number.ts'],
   },
   {
     file: 'orchestrator/src/evidence/premature-final.ts',
