@@ -20,13 +20,9 @@ import {
   setBaselineForProjects,
   setLedgerRef,
 } from './porting.ts'
-import {
-  applyImport,
-  ImportRefusalError,
-  planImport,
-  projectsForDryRun,
-  sourceCoverage,
-} from './porting-import.ts'
+import { applyImport, planImport, sourceCoverage } from './porting-import.ts'
+import { ImportRefusalError } from './porting-import-contract.ts'
+import { projectsForDryRun } from './porting-import-projects.ts'
 
 type PortFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type PortPresentation = {

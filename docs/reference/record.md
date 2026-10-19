@@ -24,6 +24,7 @@ the hosted record and outbox
 - [bottega record publish](#bottega-record-publish)
 - [bottega record pull](#bottega-record-pull)
 - [bottega record push](#bottega-record-push)
+- [bottega record push-catalogues](#bottega-record-push-catalogues)
 - [bottega record push-docs](#bottega-record-push-docs)
 - [bottega record redact-synced](#bottega-record-redact-synced)
 - [bottega record sign-in](#bottega-record-sign-in)
@@ -58,6 +59,7 @@ the hosted record and outbox
 - [bottega record publish](./record.md#bottega-record-publish)
 - [bottega record pull](./record.md#bottega-record-pull)
 - [bottega record push](./record.md#bottega-record-push)
+- [bottega record push-catalogues](./record.md#bottega-record-push-catalogues)
 - [bottega record push-docs](./record.md#bottega-record-push-docs)
 - [bottega record redact-synced](./record.md#bottega-record-redact-synced)
 - [bottega record sign-in](./record.md#bottega-record-sign-in)
@@ -294,6 +296,20 @@ push this machine's orchestrator record
 ### Options
 
 - `--backfill`: enqueue older records before pushing
+
+### Related
+
+- [bottega record](./record.md#bottega-record)
+
+## bottega record push-catalogues
+
+**Synopsis:** `bottega record push-catalogues [--dry-run]`
+
+push local catalogues and port items to the hosted record
+
+### Options
+
+- `--dry-run`: report the import plan without writing
 
 ### Related
 

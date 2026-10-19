@@ -1,52 +1,17 @@
-import { Database } from 'bun:sqlite'
-import { existsSync, readFileSync } from 'node:fs'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { importDoc, listDocs, removeDoc } from '../doc/docs.ts'
 import type { Project } from '../project/projects.ts'
-import { assertPortImportAllowed } from './port-import-authority.ts'
+import { portImportAuthority } from './port-import-authority.ts'
 import * as porting from './porting.ts'
-
-type ImportIssue = {
-  kind: 'refusal' | 'exclusion'
-  what: string
-  where: string
-  why: string
-  value?: string
-}
-export type ImportRefusal = ImportIssue & { kind: 'refusal' }
-type ImportExclusion = ImportIssue & { kind: 'exclusion' }
-
-export type ImportPlan = {
-  pairs: { source: string; target: string; sourceId: string; targetId: string }[]
-  baselines: { pairKey: string; sourceCommit: string | null; scannedAt: string | null }[]
-  skips: { pairKey: string; candidate: string; reason: string }[]
-  refs: {
-    taskKey: string
-    targetProjectId: string
-    note: string
-    sources: {
-      source_project_record_id: string
-      commits: string[]
-      paths: string[]
-      note: string
-    }[]
-  }[]
-  doctrine: { number: number; title: string; body: string }[]
-  docs: { scope: string; subject: string | null; slug: string; title: string; body: string }[]
-  refusals: ImportRefusal[]
-  exclusions: ImportExclusion[]
-}
-
-export type ImportFiles = {
-  doctrine: string
-  differences: string
-  backports: string
-  refs: string
-  state: string
-  projects: string
-}
-
-export type SourceCoverageGap = { file: string; offset: number; text: string }
+import { applyHostedPortImport } from './porting-hosted-import.ts'
+import {
+  type ImportExclusion,
+  type ImportFiles,
+  type ImportPlan,
+  type ImportRefusal,
+  ImportRefusalError,
+  type SourceCoverageGap,
+} from './porting-import-contract.ts'
 
 function fencedSourceArtifact(body: string): string {
   const longestTildeRun = Math.max(0, ...[...body.matchAll(/~+/g)].map((match) => match[0].length))
@@ -300,6 +265,149 @@ function targetForSources(
   return matches[0]!
 }
 
+function parsePairExclusions(
+  value: Record<string, unknown>,
+  where: string,
+  plan: ImportPlan,
+): void {
+  const known = new Set([
+    'lastPortedSha',
+    'scannedAt',
+    'skipped',
+    'note',
+    'notes',
+    'scope',
+    'staged',
+  ])
+  for (const field of Object.keys(value).filter((candidate) => !known.has(candidate)))
+    plan.exclusions.push(
+      exclusion(
+        `pair field "${field}"`,
+        `${where}.${field}`,
+        'this field has no defined import destination',
+        originalValue(value[field]),
+      ),
+    )
+  for (const field of ['note', 'notes', 'scope', 'staged'])
+    if (Object.hasOwn(value, field))
+      plan.exclusions.push(
+        exclusion(
+          `pair field "${field}"`,
+          `${where}.${field}`,
+          'the port schema has no column for this content',
+          originalValue(value[field]),
+        ),
+      )
+}
+
+function parsePairBaseline(
+  pairKey: string,
+  value: Record<string, unknown>,
+  where: string,
+  source: Project | null,
+  target: Project | null,
+  plan: ImportPlan,
+): void {
+  const sourceCommit = value.lastPortedSha
+  const scannedAt = value.scannedAt
+  const validCommit = sourceCommit === null || typeof sourceCommit === 'string'
+  const validScanned =
+    scannedAt === null || scannedAt === undefined || typeof scannedAt === 'string'
+  if (!validCommit || !validScanned)
+    plan.exclusions.push(
+      exclusion(
+        'baseline',
+        where,
+        sourceCommit === undefined
+          ? 'lastPortedSha is missing'
+          : 'lastPortedSha and scannedAt must be strings or null',
+        JSON.stringify({ lastPortedSha: sourceCommit, scannedAt }),
+      ),
+    )
+  else if ((sourceCommit === null) !== (scannedAt == null))
+    plan.exclusions.push(
+      exclusion(
+        'baseline',
+        where,
+        'source commit and scannedAt must either both be null or both be non-null',
+        JSON.stringify({ lastPortedSha: sourceCommit, scannedAt }),
+      ),
+    )
+  else if (source && target && source.recordId !== target.recordId)
+    plan.baselines.push({ pairKey, sourceCommit, scannedAt: scannedAt ?? null })
+}
+
+function parsePairSkips(
+  pairKey: string,
+  value: Record<string, unknown>,
+  where: string,
+  source: Project | null,
+  target: Project | null,
+  plan: ImportPlan,
+): void {
+  if (value.skipped === undefined) return
+  if (!Array.isArray(value.skipped)) {
+    plan.refusals.push(refusal('skipped candidates', `${where}.skipped`, 'expected an array'))
+    return
+  }
+  value.skipped.forEach((skip, index) => {
+    if (typeof skip === 'string') {
+      if (source && target && source.recordId !== target.recordId)
+        plan.skips.push({
+          pairKey,
+          candidate: skip,
+          reason:
+            'recorded in the source with no separate reason; the candidate text is the entire record',
+        })
+      return
+    }
+    if (!object(skip) || typeof skip.feature !== 'string' || typeof skip.reason !== 'string') {
+      plan.refusals.push(
+        refusal(
+          'skip',
+          `${where}.skipped[${index}]`,
+          'expected an object with string feature and reason fields',
+        ),
+      )
+      return
+    }
+    if (source && target && source.recordId !== target.recordId)
+      plan.skips.push({ pairKey, candidate: skip.feature, reason: skip.reason })
+  })
+}
+
+function parseStatePair(
+  pairKey: string,
+  candidate: unknown,
+  plan: ImportPlan,
+  byName: Map<string, Project[]>,
+): void {
+  const where = `state.json pairs["${pairKey}"]`
+  const names = pairKey.match(/^(.+)->(.+)$/)
+  if (!names || !object(candidate)) {
+    plan.refusals.push(refusal(`pair "${pairKey}"`, where, 'expected a source->target object'))
+    return
+  }
+  const source = resolveProject(names[1]!, where, byName, plan.refusals)
+  const target = resolveProject(names[2]!, where, byName, plan.refusals)
+  if (source && target) {
+    if (source.recordId === target.recordId)
+      plan.refusals.push(
+        refusal(`pair "${pairKey}"`, where, 'source and target are the same project'),
+      )
+    else
+      plan.pairs.push({
+        source: source.name,
+        target: target.name,
+        sourceId: source.recordId,
+        targetId: target.recordId,
+      })
+  }
+  parsePairExclusions(candidate, where, plan)
+  parsePairBaseline(pairKey, candidate, where, source, target, plan)
+  parsePairSkips(pairKey, candidate, where, source, target, plan)
+}
+
 function parseState(text: string, plan: ImportPlan, byName: Map<string, Project[]>): void {
   const state = jsonObject(text, 'state.json', plan.refusals)
   if (!state) return
@@ -317,120 +425,8 @@ function parseState(text: string, plan: ImportPlan, byName: Map<string, Project[
       body: supplement,
     })
   }
-  for (const [pairKey, value] of Object.entries(state.pairs)) {
-    const where = `state.json pairs["${pairKey}"]`
-    const names = pairKey.match(/^(.+)->(.+)$/)
-    if (!names || !object(value)) {
-      plan.refusals.push(refusal(`pair "${pairKey}"`, where, 'expected a source->target object'))
-      continue
-    }
-    const source = resolveProject(names[1]!, where, byName, plan.refusals)
-    const target = resolveProject(names[2]!, where, byName, plan.refusals)
-    if (source && target) {
-      if (source.recordId === target.recordId) {
-        plan.refusals.push(
-          refusal(`pair "${pairKey}"`, where, 'source and target are the same project'),
-        )
-      } else {
-        plan.pairs.push({
-          source: source.name,
-          target: target.name,
-          sourceId: source.recordId,
-          targetId: target.recordId,
-        })
-      }
-    }
-
-    for (const field of ['note', 'notes', 'scope', 'staged']) {
-      if (Object.hasOwn(value, field)) {
-        plan.exclusions.push(
-          exclusion(
-            `pair field "${field}"`,
-            `${where}.${field}`,
-            'the port schema has no column for this content',
-            originalValue(value[field]),
-          ),
-        )
-      }
-    }
-    const knownPairFields = new Set([
-      'lastPortedSha',
-      'scannedAt',
-      'skipped',
-      'note',
-      'notes',
-      'scope',
-      'staged',
-    ])
-    for (const field of Object.keys(value).filter((candidate) => !knownPairFields.has(candidate))) {
-      plan.exclusions.push(
-        exclusion(
-          `pair field "${field}"`,
-          `${where}.${field}`,
-          'this field has no defined import destination',
-          originalValue(value[field]),
-        ),
-      )
-    }
-
-    const sourceCommit = value.lastPortedSha
-    const scannedAt = value.scannedAt
-    const validCommit = sourceCommit === null || typeof sourceCommit === 'string'
-    const validScanned =
-      scannedAt === null || scannedAt === undefined || typeof scannedAt === 'string'
-    if (!validCommit || !validScanned) {
-      plan.exclusions.push(
-        exclusion(
-          'baseline',
-          where,
-          sourceCommit === undefined
-            ? 'lastPortedSha is missing'
-            : 'lastPortedSha and scannedAt must be strings or null',
-          JSON.stringify({ lastPortedSha: sourceCommit, scannedAt }),
-        ),
-      )
-    } else if ((sourceCommit === null) !== (scannedAt == null)) {
-      plan.exclusions.push(
-        exclusion(
-          'baseline',
-          where,
-          'source commit and scannedAt must either both be null or both be non-null',
-          JSON.stringify({ lastPortedSha: sourceCommit, scannedAt }),
-        ),
-      )
-    } else if (source && target && source.recordId !== target.recordId) {
-      plan.baselines.push({ pairKey, sourceCommit, scannedAt: scannedAt ?? null })
-    }
-
-    if (value.skipped === undefined) continue
-    if (!Array.isArray(value.skipped)) {
-      plan.refusals.push(refusal('skipped candidates', `${where}.skipped`, 'expected an array'))
-      continue
-    }
-    value.skipped.forEach((skip, index) => {
-      const skipWhere = `${where}.skipped[${index}]`
-      if (typeof skip === 'string') {
-        if (source && target && source.recordId !== target.recordId) {
-          plan.skips.push({
-            pairKey,
-            candidate: skip,
-            reason:
-              'recorded in the source with no separate reason; the candidate text is the entire record',
-          })
-        }
-        return
-      }
-      if (!object(skip) || typeof skip.feature !== 'string' || typeof skip.reason !== 'string') {
-        plan.refusals.push(
-          refusal('skip', skipWhere, 'expected an object with string feature and reason fields'),
-        )
-        return
-      }
-      if (source && target && source.recordId !== target.recordId) {
-        plan.skips.push({ pairKey, candidate: skip.feature, reason: skip.reason })
-      }
-    })
-  }
+  for (const [pairKey, value] of Object.entries(state.pairs))
+    parseStatePair(pairKey, value, plan, byName)
 }
 
 function appendRef(
@@ -739,8 +735,78 @@ export function planImport(files: ImportFiles, registered: Project[]): ImportPla
   return plan
 }
 
+function stateJsonCovered(plan: ImportPlan, text: string): boolean {
+  const state = jsonObject(text, 'state.json', [])
+  const supplement = state ? stateSupplementBody(state) : ''
+  if (!state || !object(state.pairs)) return false
+  const supplementCovered =
+    !supplement ||
+    plan.docs.some((doc) => doc.slug === 'port-state-metadata' && doc.body === supplement)
+  const pairsCovered = Object.entries(state.pairs).every(([pairKey, value]) => {
+    if (!object(value) || !plan.pairs.some((pair) => `${pair.source}->${pair.target}` === pairKey))
+      return false
+    const where = `state.json pairs["${pairKey}"]`
+    const excluded = Object.keys(value).filter(
+      (field) => !['lastPortedSha', 'scannedAt', 'skipped'].includes(field),
+    )
+    if (
+      !excluded.every((field) =>
+        plan.exclusions.some(
+          (issue) =>
+            issue.where === `${where}.${field}` && issue.value === originalValue(value[field]),
+        ),
+      )
+    )
+      return false
+    const sourceCommit = value.lastPortedSha
+    const scannedAt = value.scannedAt
+    const validCommit = sourceCommit === null || typeof sourceCommit === 'string'
+    const validScanned =
+      scannedAt === null || scannedAt === undefined || typeof scannedAt === 'string'
+    const validBaseline =
+      validCommit && validScanned && (sourceCommit === null) === (scannedAt == null)
+    const baselineCovered = validBaseline
+      ? plan.baselines.some(
+          (baseline) =>
+            baseline.pairKey === pairKey &&
+            baseline.sourceCommit === sourceCommit &&
+            baseline.scannedAt === (scannedAt ?? null),
+        )
+      : plan.exclusions.some(
+          (issue) =>
+            issue.what === 'baseline' &&
+            issue.where === where &&
+            issue.value === JSON.stringify({ lastPortedSha: sourceCommit, scannedAt }),
+        )
+    if (!baselineCovered) return false
+    if (value.skipped === undefined) return plan.skips.every((skip) => skip.pairKey !== pairKey)
+    if (!Array.isArray(value.skipped)) return false
+    const expected = value.skipped.map((skip) => ({
+      pairKey,
+      candidate: typeof skip === 'string' ? skip : object(skip) ? skip.feature : undefined,
+      reason:
+        typeof skip === 'string'
+          ? 'recorded in the source with no separate reason; the candidate text is the entire record'
+          : object(skip)
+            ? skip.reason
+            : undefined,
+    }))
+    return (
+      expected.every(
+        (skip) => typeof skip.candidate === 'string' && typeof skip.reason === 'string',
+      ) &&
+      JSON.stringify(expected) ===
+        JSON.stringify(plan.skips.filter((skip) => skip.pairKey === pairKey))
+    )
+  })
+  return pairsCovered && supplementCovered
+}
+
 function jsonCoverage(plan: ImportPlan, files: ImportFiles): SourceCoverageGap[] {
   const gaps: SourceCoverageGap[] = []
+  if (!stateJsonCovered(plan, files.state))
+    gaps.push({ file: 'state.json', offset: 0, text: files.state })
+  /*
   const state = jsonObject(files.state, 'state.json', [])
   const stateSupplement = state ? stateSupplementBody(state) : ''
   const stateSupplementCovered =
@@ -814,6 +880,7 @@ function jsonCoverage(plan: ImportPlan, files: ImportFiles): SourceCoverageGap[]
   if (!state || !statePairsCovered || !stateSupplementCovered) {
     gaps.push({ file: 'state.json', offset: 0, text: files.state })
   }
+*/
 
   const refs = jsonObject(files.refs, 'refs.json', [])
   const projectIds = new Map<string, string>()
@@ -907,59 +974,6 @@ export function sourceCoverage(plan: ImportPlan, files: ImportFiles): SourceCove
   return [...gapsFromMarks(files, marks), ...jsonCoverage(plan, files)]
 }
 
-export function projectsForDryRun(path: string): Project[] {
-  if (!existsSync(path)) throw new Error(`orchestrator database does not exist: ${path}`)
-  try {
-    const readonly = new Database(path, { readonly: true })
-    try {
-      const rows = readonly
-        .query('SELECT record_id, name, path, stack, canon, settings FROM project ORDER BY name')
-        .all() as {
-        record_id: string
-        name: string
-        path: string
-        stack: string | null
-        canon: number
-        settings: string | null
-      }[]
-      return rows.map((row) => {
-        let settings: Project['settings'] = {}
-        try {
-          settings = row.settings ? JSON.parse(row.settings) : {}
-        } catch {
-          settings = {}
-        }
-        const { record_id: recordId, ...project } = row
-        return { ...project, recordId, canon: row.canon === 1, retiredAt: null, settings }
-      })
-    } finally {
-      readonly.close()
-    }
-  } catch (error) {
-    let walWithoutSharedMemory = false
-    try {
-      const header = readFileSync(path).subarray(0, 20)
-      walWithoutSharedMemory = header[18] === 2 && header[19] === 2 && !existsSync(`${path}-shm`)
-    } catch {}
-    if (!walWithoutSharedMemory) throw error
-    throw new Error(
-      `cannot read project register at ${path}: the database appears to be WAL-mode with no ${path}-shm sidecar, ` +
-        'so a read-only connection cannot open it. Copy the -wal and -shm files alongside the .db, or checkpoint ' +
-        'the source first with PRAGMA wal_checkpoint(TRUNCATE) before copying. ' +
-        `Underlying error: ${String(error)}`,
-    )
-  }
-}
-
-export class ImportRefusalError extends Error {
-  public refusals: ImportRefusal[]
-
-  constructor(refusals: ImportRefusal[]) {
-    super(`port import refused with ${refusals.length} refusal(s)`)
-    this.refusals = refusals
-  }
-}
-
 const GLOBAL_PORT_DOC_SLUGS = [
   'port-doctrine-preface',
   'port-stack-mapping',
@@ -977,7 +991,11 @@ export async function applyImport(
   plan: ImportPlan,
   options: { replace?: boolean; sourceLabel?: string } = {},
 ): Promise<void> {
-  assertPortImportAllowed()
+  const authority = portImportAuthority(Boolean(options.replace))
+  if (authority === 'hosted') {
+    await applyHostedPortImport(plan, options)
+    return
+  }
   writableDb()
   if (plan.refusals.length) throw new ImportRefusalError(plan.refusals)
   const context = {

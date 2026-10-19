@@ -87,6 +87,16 @@ const recordLensRowSchemas = {
   }),
 } as const
 
+export const recordLensImportSchema = z.object({
+  dryRun: z.boolean().default(false),
+  lens: z.array(recordLensRowSchemas.lens),
+  lens_revision: z.array(recordLensRowSchemas.lens_revision),
+  lens_profile: z.array(recordLensRowSchemas.lens_profile),
+  lens_profile_revision: z.array(recordLensRowSchemas.lens_profile_revision),
+  project_lens_profile: z.array(recordLensRowSchemas.project_lens_profile),
+  project_lens_profile_revision: z.array(recordLensRowSchemas.project_lens_profile_revision),
+})
+export type RecordLensImportInput = z.infer<typeof recordLensImportSchema>
 const pageFields = {
   nextCursor: z.string().nullable(),
   endCursor: z.string().nullable().optional(),

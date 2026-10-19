@@ -4,6 +4,7 @@ import { canonBoundarySpecs } from './architecture-canon-boundaries.ts'
 import { cleanupBoundarySpecs } from './architecture-cleanup-boundaries.ts'
 import { databaseBoundarySpecs } from './architecture-database-boundaries.ts'
 import { mcpBoundarySpecs } from './architecture-mcp-boundaries.ts'
+import { portBoundarySpecs } from './architecture-port-boundaries.ts'
 import {
   recordApiBoundaries,
   recordReadBoundariesAfterPublish,
@@ -596,36 +597,13 @@ export const importBoundaries: ImportBoundary[] = [
     ['../../shared/brand.ts'],
     'Keep outcome decisions and interpretation independent of lifecycle concerns.',
   ),
-  boundary(
-    'port-commands-boundary',
-    'orchestrator/src/porting/port-commands.ts',
-    [
-      '../../../shared/brand.ts',
-      'node:fs',
-      'node:path',
-      '../database/db.ts',
-      './porting.ts',
-      './porting-import.ts',
-      '../project/projects.ts',
-    ],
-    'Keep port commands independent of runs, routing, transports, the CLI, and worktrees.',
-  ),
-  boundary(
-    'port-overlay-boundary',
-    'orchestrator/src/porting/port-overlay.ts',
-    [],
-    'Keep port overlay selection pure and independent of stores and transports.',
-  ),
-  boundary(
-    'port-import-authority-boundary',
-    'orchestrator/src/porting/port-import-authority.ts',
-    ['../record/record-write-authority.ts', '../worker-store-write.ts'],
-    'Keep the local-only bulk import refusal separate from import application.',
+  ...portBoundarySpecs.map((spec) =>
+    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
   ),
   boundary(
     'record-api-client-port-boundary',
     'orchestrator/src/record/record-api-client-port.ts',
-    ['./record-api-client-paths.ts', './record-port-contract.ts'],
+    ['./record-api-client-paths.ts', './record-catalogue-contract.ts', './record-port-contract.ts'],
     'Keep the port HTTP client dependent only on its transport contract.',
   ),
   boundary(
@@ -942,6 +920,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../evidence/evidence-query.ts',
       '../run/run-liveness.ts',
       '../workflow/workflow-seeds.ts',
+      '../lens/lens-seeds.ts',
     ],
     'Enforce the store-hooks concern boundary.',
   ),
@@ -963,6 +942,13 @@ export const importBoundaries: ImportBoundary[] = [
     ['../run/run-types.ts'],
   ),
   boundary(
+    'workflow-built-ins-boundary',
+    'orchestrator/src/workflow/workflow-built-ins.ts',
+    ['../../../shared/brand.ts', './workflow-floor.ts', './workflow-step-sequences.ts'],
+    'Keep shared built-in workflow definitions independent of stores and hosted transports.',
+    ['./autonomy.ts'],
+  ),
+  boundary(
     'workflows-boundary',
     'orchestrator/src/workflow/workflow-seeds.ts',
     [
@@ -972,6 +958,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../review/review-vocabulary.ts',
       './step-catalogue.ts',
       './workflow-step-sequences.ts',
+      './workflow-built-ins.ts',
       'bun:sqlite',
     ],
     'Keep workflow seeds dependent only on database transactions, review vocabulary, and catalogue validation.',

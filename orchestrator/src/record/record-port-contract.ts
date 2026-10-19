@@ -97,6 +97,17 @@ export const recordPortPageSchema = (table: RecordPortTable) =>
     nextCursor: z.string().nullable(),
     endCursor: z.string().nullable().optional(),
   })
+export const recordPortImportSchema = z.object({
+  dryRun: z.boolean().default(false),
+  replace: z.boolean().default(false),
+  port_doctrine: z.array(recordPortRows.port_doctrine),
+  port_pair: z.array(recordPortRows.port_pair),
+  port_baseline: z.array(recordPortRows.port_baseline),
+  port_ref: z.array(recordPortRows.port_ref),
+  port_ref_source: z.array(recordPortRows.port_ref_source),
+  port_skip: z.array(recordPortRows.port_skip),
+})
+export type RecordPortImportInput = z.infer<typeof recordPortImportSchema>
 
 const source = z.object({
   sourceProjectId: uuid,

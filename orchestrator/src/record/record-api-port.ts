@@ -7,9 +7,11 @@ import { decodeRecordCursor, pageRecordItems, type RecordCursor } from './record
 import {
   RECORD_PORT_CURSORS,
   RecordPortError,
+  type RecordPortImportInput,
   type RecordPortRow,
   type RecordPortTable,
   type RecordPortWriteInput,
+  recordPortImportSchema,
   recordPortTableSchema,
   recordPortWriteSchema,
 } from './record-port-contract.ts'
@@ -21,6 +23,7 @@ export type RecordPortRouteDeps = {
     input: Tenant & { table: RecordPortTable; limit: number; cursor: RecordCursor | null },
   ): Promise<RecordPortRow[]>
   writePort(input: Tenant & RecordPortWriteInput): Promise<unknown>
+  importPortCatalogue?(input: Tenant & RecordPortImportInput): Promise<unknown>
 }
 type Ports = {
   scope(context: Context<Environment>): Tenant | null
@@ -77,5 +80,16 @@ export function registerRecordPortRoutes(
         return context.json({ error: error.message }, error.status as 404 | 409 | 422)
       throw error
     }
+  })
+  app.post('/v1/port-catalogue/import', async (context) => {
+    const active = ports.scope(context)
+    if (!active) return ports.noSpace(context)
+    const body = recordPortImportSchema.safeParse(await context.req.json().catch(() => null))
+    if (!body.success) return context.json({ error: 'invalid port catalogue import' }, 400)
+    if (body.data.replace)
+      return context.json({ error: 'replacing hosted port items is not supported' }, 409)
+    if (!deps.importPortCatalogue)
+      return context.json({ error: 'port catalogue import is unavailable' }, 503)
+    return context.json(await deps.importPortCatalogue({ ...active, ...body.data }))
   })
 }

@@ -33,6 +33,11 @@ import { createBoardStreamRegistry } from './record-board-stream.ts'
 import { createBoardWakeSource } from './record-board-wake.ts'
 import { importRecordCanon } from './record-canon-import.ts'
 import {
+  importRecordLensCatalogue,
+  importRecordPortCatalogue,
+  importRecordWorkflowCatalogue,
+} from './record-catalogue-import.ts'
+import {
   addDataKeyWraps,
   createDataKey,
   currentDataKey,
@@ -86,6 +91,7 @@ import { getRecordReview, listRecordReviews } from './record-reviews.ts'
 import { getRecordRun, listRecordRuns, viewRecordRuns } from './record-runs.ts'
 import { applyRecordSettingsPermission } from './record-settings.ts'
 import { listRecordSnapshots, upsertRecordSnapshot } from './record-snapshots.ts'
+import { ensureSpaceBuiltIns } from './record-space-built-ins.ts'
 import {
   addRecordSubject,
   defineRecordSubject,
@@ -200,22 +206,35 @@ function recordDocDependencies() {
 
 function recordLensDependencies() {
   return {
+    ensureSpaceBuiltIns,
     listLensCatalogue: listRecordLensCatalogue,
     upsertLens: upsertRecordLens,
     upsertLensProfile: upsertRecordLensProfile,
     selectProjectLensProfile: selectRecordProjectLensProfile,
+    importLensCatalogue: importRecordLensCatalogue,
     listPortCatalogue: listRecordPortCatalogue,
     writePort: writeRecordPort,
+    importPortCatalogue: importRecordPortCatalogue,
     listWorkflowCatalogue: listRecordWorkflowCatalogue,
     draftWorkflow: draftRecordWorkflow,
     promoteWorkflow: promoteRecordWorkflow,
     retireWorkflow: retireRecordWorkflow,
+    importWorkflowCatalogue: importRecordWorkflowCatalogue,
   }
+}
+
+function recordServerAuth(
+  config: ReturnType<typeof recordApiServerConfig>,
+  environment: ServerEnvironment,
+) {
+  return recordAuth(config.recordUrl, environment, config.authDatabaseUrl, undefined, undefined, {
+    ensure: ensureSpaceBuiltIns,
+  })
 }
 
 export async function startRecordApiServer(environment: ServerEnvironment = process.env) {
   const config = recordApiServerConfig(environment)
-  const auth = recordAuth(config.recordUrl, environment, config.authDatabaseUrl)
+  const auth = recordServerAuth(config, environment)
   const boardWakeSource = await createBoardWakeSource(config.recordUrl)
   const boardStreamRegistry = createBoardStreamRegistry()
   const migrations = recordMigrationCount()

@@ -18,6 +18,7 @@ import {
   SIGN_UP_AUTH,
   SIGN_UP_CLI_OUTPUT,
   signUpInvitationFixtures,
+  testRecordAuth,
 } from '../../test/fixtures/record-auth-postgres.ts'
 import {
   installRecordSessionRunner,
@@ -30,10 +31,15 @@ import { registerOwnedCanonPrivacyProof } from '../../test/postgres-owned-canon-
 import { registerProjectSpaceProofs } from '../../test/postgres-project-space-proof.ts'
 import { registerPublicDocProofs } from '../../test/postgres-public-doc-proof.ts'
 import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-proof.ts'
+import * as ids from '../../test/postgres-rls-values.ts'
 import { proveHostedDocs, registerScoreRecordSyncProof } from '../../test/postgres-score-proof.ts'
 import { registerStaleMembershipProof } from '../../test/postgres-stale-membership-proof.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
-import { bearerHeaders, recordAuth, setActiveRecordSpaceForSession } from '../record/record-auth.ts'
+import {
+  bearerHeaders,
+  type recordAuth,
+  setActiveRecordSpaceForSession,
+} from '../record/record-auth.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
 import { diagnoseRecord, recordDoctorExitCode } from '../record/record-doctor.ts'
 import {
@@ -54,23 +60,6 @@ const recordSession = memoryRecordSession()
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
 const ownerUrl = process.env.ORCH_RECORD_MIGRATE_URL
 const { ORCH_RECORD_URL: actorUrl, RECORD_AUTH_DATABASE_URL: authUrl } = process.env
-const SPACE_A = '01990000-0000-7000-8000-00000000000a'
-const SPACE_B = '01990000-0000-7000-8000-00000000000b'
-const USER_A = '01990000-0000-7000-8000-000000000010'
-const AUTH_EMAIL_HTTP = 'auth-http@example.test'
-const PROJECT_A = '01990000-0000-7000-8000-00000000001a'
-const PROJECT_A2 = '01990000-0000-7000-8000-00000000002a'
-const PROJECT_B = '01990000-0000-7000-8000-00000000001b'
-const PLATFORM_PROJECT = '01990000-0000-7000-8000-00000000001c'
-const MACHINE_A = '01990000-0000-7000-8000-000000000019'
-const RUN_A = '01990000-0000-7000-8000-00000000003a'
-const RUN_B = '01990000-0000-7000-8000-00000000003b'
-const REVIEW_A = '01990000-0000-7000-8000-00000000004a'
-const REVIEW_B = '01990000-0000-7000-8000-00000000004b'
-const WRONG_EMAIL_INVITATION = '01990000-0000-7000-8000-00000000012a'
-const EXPIRED_INVITATION = '01990000-0000-7000-8000-00000000012b'
-const ACCEPTED_INVITATION = '01990000-0000-7000-8000-00000000012c'
-
 const realPostgres = container && ownerUrl && actorUrl ? describe : describe.skip
 realPostgres('RLS proof against real Postgres', () => {
   const cliOutput: string[] = []
@@ -96,7 +85,7 @@ realPostgres('RLS proof against real Postgres', () => {
     process.env.BETTER_AUTH_SECRET = 'postgres-harness-secret-at-least-thirty-two-characters'
     process.env.BETTER_AUTH_URL = 'http://127.0.0.1'
     process.env.RECORD_HUB_URL = 'https://hub.example.test'
-    invitationAuth = recordAuth(actorUrl!, process.env, authUrl, undefined, async (input) => {
+    invitationAuth = testRecordAuth(actorUrl!, authUrl, async (input) => {
       invitationEmails.push(input)
     })
     invitationClient = invitationApiClient(invitationAuth, recordSession.token)
@@ -107,84 +96,84 @@ realPostgres('RLS proof against real Postgres', () => {
       'postgres',
       `
       INSERT INTO space (id, name, slug, created_at) VALUES
-        ('${SPACE_A}', 'space-a', 'space-a', now()), ('${SPACE_B}', 'space-b', 'space-b', now());
+        ('${ids.SPACE_A}', 'space-a', 'space-a', now()), ('${ids.SPACE_B}', 'space-b', 'space-b', now());
       INSERT INTO "user" (id, email, name, created_at)
-        VALUES ('${USER_A}', 'owner@example.test', 'Owner', now());
+        VALUES ('${ids.USER_A}', 'owner@example.test', 'Owner', now());
       INSERT INTO membership (id, space_id, user_id, role, permission, created_at)
         VALUES
-        ('01990000-0000-7000-8000-000000000011', '${SPACE_A}', '${USER_A}', 'member', 'write', now()),
-        ('01990000-0000-7000-8000-000000000012', '${SPACE_B}', '${USER_A}', 'member', 'write', now());
+        ('01990000-0000-7000-8000-000000000011', '${ids.SPACE_A}', '${ids.USER_A}', 'member', 'write', now()),
+        ('01990000-0000-7000-8000-000000000012', '${ids.SPACE_B}', '${ids.USER_A}', 'member', 'write', now());
       INSERT INTO invitation
         (id,space_id,email,inviter_id,role,status,expires_at,created_at)
       VALUES
-        ${signUpInvitationFixtures(SPACE_A, USER_A)};
+        ${signUpInvitationFixtures(ids.SPACE_A, ids.USER_A)};
       INSERT INTO project (id, space_id, name, key_prefixes, created_at) VALUES
-        ('${PROJECT_A}', '${SPACE_A}', 'alpha', ARRAY['DEV'], now()),
-        ('${PROJECT_A2}', '${SPACE_A}', 'alpha-two', ARRAY['DEV'], now()),
-        ('${PROJECT_B}', '${SPACE_B}', 'beta', ARRAY['DEV'], now()),
-        ('${PLATFORM_PROJECT}', '${PLATFORM_SPACE_ID}', '${PLATFORM_SLUG}', ARRAY['DEV'], now());
+        ('${ids.PROJECT_A}', '${ids.SPACE_A}', 'alpha', ARRAY['DEV'], now()),
+        ('${ids.PROJECT_A2}', '${ids.SPACE_A}', 'alpha-two', ARRAY['DEV'], now()),
+        ('${ids.PROJECT_B}', '${ids.SPACE_B}', 'beta', ARRAY['DEV'], now()),
+        ('${ids.PLATFORM_PROJECT}', '${PLATFORM_SPACE_ID}', '${PLATFORM_SLUG}', ARRAY['DEV'], now());
       INSERT INTO machine (id, user_id, name, registered_at, last_seen)
-        VALUES ('${MACHINE_A}', '${USER_A}', 'proof-machine', now(), now());
+        VALUES ('${ids.MACHINE_A}', '${ids.USER_A}', 'proof-machine', now(), now());
       INSERT INTO run (
         id, space_id, project_id, machine_id, started_at, agent, job,
         prompt_sha, prompt_bytes, prompt_head, probe, status, turn, no_failover,
         automatic_failover, work_preserved, created_at, updated_at
       ) VALUES
-        ('${RUN_A}', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', now(), 'proof', 'proof',
+        ('${ids.RUN_A}', '${ids.SPACE_A}', '${ids.PROJECT_A}', '${ids.MACHINE_A}', now(), 'proof', 'proof',
          'a', 1, 'a', false, 'ok', 1, false, false, false, now(), now()),
-        ('${RUN_B}', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', now(), 'proof', 'proof',
+        ('${ids.RUN_B}', '${ids.SPACE_B}', '${ids.PROJECT_B}', '${ids.MACHINE_A}', now(), 'proof', 'proof',
          'b', 1, 'b', false, 'ok', 1, false, false, false, now(), now());
       INSERT INTO seq (space_id, project_id, name, next) VALUES
-        ('${SPACE_A}', '${PROJECT_A}', 'task:DEV', 446),
-        ('${SPACE_A}', '${PROJECT_A}', 'dev', 21),
-        ('${SPACE_A}', '${PROJECT_A2}', 'task:DEV', 12),
-        ('${SPACE_B}', '${PROJECT_B}', 'task:DEV', 9);
+        ('${ids.SPACE_A}', '${ids.PROJECT_A}', 'task:DEV', 446),
+        ('${ids.SPACE_A}', '${ids.PROJECT_A}', 'dev', 21),
+        ('${ids.SPACE_A}', '${ids.PROJECT_A2}', 'task:DEV', 12),
+        ('${ids.SPACE_B}', '${ids.PROJECT_B}', 'task:DEV', 9);
       INSERT INTO review
         (id, space_id, project_id, machine_id, recorded_at, created_at, updated_at)
       VALUES
-        ('${REVIEW_A}', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', now(), now(), now()),
-        ('${REVIEW_B}', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', now(), now(), now());
+        ('${ids.REVIEW_A}', '${ids.SPACE_A}', '${ids.PROJECT_A}', '${ids.MACHINE_A}', now(), now(), now()),
+        ('${ids.REVIEW_B}', '${ids.SPACE_B}', '${ids.PROJECT_B}', '${ids.MACHINE_A}', now(), now(), now());
       INSERT INTO review_lens
         (id, space_id, review_id, run_id, machine_id, lens, agent,
          standards_read, files_covered, commands_run, could_not_verify, mcp_tools, docs_read,
          substitutes, created_at, updated_at)
       VALUES
-        ('01990000-0000-7000-8000-00000000005a', '${SPACE_A}', '${REVIEW_A}', '${RUN_A}', '${MACHINE_A}',
+        ('01990000-0000-7000-8000-00000000005a', '${ids.SPACE_A}', '${ids.REVIEW_A}', '${ids.RUN_A}', '${ids.MACHINE_A}',
          'craft', 'proof', '[]', '[]', '[]', '[]', '[]', '[]', '[]', now(), now()),
-        ('01990000-0000-7000-8000-00000000005b', '${SPACE_B}', '${REVIEW_B}', '${RUN_B}', '${MACHINE_A}',
+        ('01990000-0000-7000-8000-00000000005b', '${ids.SPACE_B}', '${ids.REVIEW_B}', '${ids.RUN_B}', '${ids.MACHINE_A}',
          'craft', 'proof', '[]', '[]', '[]', '[]', '[]', '[]', '[]', now(), now());
       INSERT INTO review_finding
         (id, space_id, review_id, review_lens_id, machine_id, ordinal, severity,
          location, evidence, proposed_correction, created_at, updated_at)
       VALUES
-        ('01990000-0000-7000-8000-00000000006a', '${SPACE_A}', '${REVIEW_A}', '01990000-0000-7000-8000-00000000005a', '${MACHINE_A}', 1, 'major', 'a', 'a', 'a', now(), now()),
-        ('01990000-0000-7000-8000-00000000006b', '${SPACE_B}', '${REVIEW_B}', '01990000-0000-7000-8000-00000000005b', '${MACHINE_A}', 1, 'major', 'b', 'b', 'b', now(), now());
+        ('01990000-0000-7000-8000-00000000006a', '${ids.SPACE_A}', '${ids.REVIEW_A}', '01990000-0000-7000-8000-00000000005a', '${ids.MACHINE_A}', 1, 'major', 'a', 'a', 'a', now(), now()),
+        ('01990000-0000-7000-8000-00000000006b', '${ids.SPACE_B}', '${ids.REVIEW_B}', '01990000-0000-7000-8000-00000000005b', '${ids.MACHINE_A}', 1, 'major', 'b', 'b', 'b', now(), now());
       INSERT INTO landing
         (id, space_id, project_id, machine_id, branch, status, started_at, created_at, updated_at)
       VALUES
-        ('01990000-0000-7000-8000-00000000007a', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', 'a', 'landed', now(), now(), now()),
-        ('01990000-0000-7000-8000-00000000007b', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', 'b', 'landed', now(), now(), now());
+        ('01990000-0000-7000-8000-00000000007a', '${ids.SPACE_A}', '${ids.PROJECT_A}', '${ids.MACHINE_A}', 'a', 'landed', now(), now(), now()),
+        ('01990000-0000-7000-8000-00000000007b', '${ids.SPACE_B}', '${ids.PROJECT_B}', '${ids.MACHINE_A}', 'b', 'landed', now(), now(), now());
       INSERT INTO landing_override
         (id, space_id, project_id, machine_id, branch, tip, tree, reason, at, created_at, updated_at)
       VALUES
-        ('01990000-0000-7000-8000-00000000008a', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', 'a', 'tip', 'tree', 'reason', now(), now(), now()),
-        ('01990000-0000-7000-8000-00000000008b', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', 'b', 'tip', 'tree', 'reason', now(), now(), now());
+        ('01990000-0000-7000-8000-00000000008a', '${ids.SPACE_A}', '${ids.PROJECT_A}', '${ids.MACHINE_A}', 'a', 'tip', 'tree', 'reason', now(), now(), now()),
+        ('01990000-0000-7000-8000-00000000008b', '${ids.SPACE_B}', '${ids.PROJECT_B}', '${ids.MACHINE_A}', 'b', 'tip', 'tree', 'reason', now(), now(), now());
       INSERT INTO landing_review_carry
         (id, space_id, project_id, machine_id, branch, tip, tree, review_id,
          reviewed_commit, reviewed_tree, patch_id, old_base, new_base, at, created_at, updated_at)
       VALUES
-        ('01990000-0000-7000-8000-00000000009a', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', 'a', 'tip', 'tree', '${REVIEW_A}', 'commit', 'tree', 'patch', 'old', 'new', now(), now(), now()),
-        ('01990000-0000-7000-8000-00000000009b', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', 'b', 'tip', 'tree', '${REVIEW_B}', 'commit', 'tree', 'patch', 'old', 'new', now(), now(), now());
+        ('01990000-0000-7000-8000-00000000009a', '${ids.SPACE_A}', '${ids.PROJECT_A}', '${ids.MACHINE_A}', 'a', 'tip', 'tree', '${ids.REVIEW_A}', 'commit', 'tree', 'patch', 'old', 'new', now(), now(), now()),
+        ('01990000-0000-7000-8000-00000000009b', '${ids.SPACE_B}', '${ids.PROJECT_B}', '${ids.MACHINE_A}', 'b', 'tip', 'tree', '${ids.REVIEW_B}', 'commit', 'tree', 'patch', 'old', 'new', now(), now(), now());
       INSERT INTO contention
         (id, space_id, machine_id, at, resource_kind, resource_key, event_kind, created_at, updated_at)
       VALUES
-        ('01990000-0000-7000-8000-00000000010a', '${SPACE_A}', '${MACHINE_A}', now(), 'lock', 'a', 'wait', now(), now()),
-        ('01990000-0000-7000-8000-00000000010b', '${SPACE_B}', '${MACHINE_A}', now(), 'lock', 'b', 'wait', now(), now());
+        ('01990000-0000-7000-8000-00000000010a', '${ids.SPACE_A}', '${ids.MACHINE_A}', now(), 'lock', 'a', 'wait', now(), now()),
+        ('01990000-0000-7000-8000-00000000010b', '${ids.SPACE_B}', '${ids.MACHINE_A}', now(), 'lock', 'b', 'wait', now(), now());
       INSERT INTO test_flake
         (id, space_id, project_id, machine_id, test, file, load_at_failure, at, created_at, updated_at)
       VALUES
-        ('01990000-0000-7000-8000-00000000011a', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', 'a', 'a.ts', '{}', now(), now(), now()),
-        ('01990000-0000-7000-8000-00000000011b', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', 'b', 'b.ts', '{}', now(), now(), now());
+        ('01990000-0000-7000-8000-00000000011a', '${ids.SPACE_A}', '${ids.PROJECT_A}', '${ids.MACHINE_A}', 'a', 'a.ts', '{}', now(), now(), now()),
+        ('01990000-0000-7000-8000-00000000011b', '${ids.SPACE_B}', '${ids.PROJECT_B}', '${ids.MACHINE_A}', 'b', 'b.ts', '{}', now(), now(), now());
     `,
     )
 
@@ -212,7 +201,7 @@ realPostgres('RLS proof against real Postgres', () => {
       log: (value) => cliOutput.push(value),
     })
     tokenA = storedToken()
-    const first = await recordAuth(actorUrl!).api.getSession({ headers: bearerHeaders(tokenA) })
+    const first = await testRecordAuth(actorUrl!).api.getSession({ headers: bearerHeaders(tokenA) })
     if (!first?.session.activeOrganizationId) throw new Error('first signup has no active space')
     authUserA = first.user.id
     authSpaceA = first.session.activeOrganizationId
@@ -221,17 +210,19 @@ realPostgres('RLS proof against real Postgres', () => {
       log: (value) => cliOutput.push(value),
     })
     tokenB = storedToken()
-    const second = await recordAuth(actorUrl!).api.getSession({ headers: bearerHeaders(tokenB) })
+    const second = await testRecordAuth(actorUrl!).api.getSession({
+      headers: bearerHeaders(tokenB),
+    })
     if (!second?.session.activeOrganizationId) throw new Error('second signup has no active space')
     authUserB = second.user.id
     authSpaceB = second.session.activeOrganizationId
 
-    const repair = await recordAuth(actorUrl!).api.signUpEmail({
+    const repair = await testRecordAuth(actorUrl!).api.signUpEmail({
       body: SIGN_UP_AUTH.repairBody,
     })
     if (!repair.token) throw new Error('repair signup has no bearer token')
     repairToken = repair.token
-    const repairSession = await recordAuth(actorUrl!).api.getSession({
+    const repairSession = await testRecordAuth(actorUrl!).api.getSession({
       headers: bearerHeaders(repair.token),
     })
     if (!repairSession?.session.activeOrganizationId)
@@ -251,8 +242,8 @@ realPostgres('RLS proof against real Postgres', () => {
          prompt_bytes,prompt_head,probe,status,turn,no_failover,automatic_failover,
          work_preserved,created_at,updated_at
        ) VALUES
-        ('${authRunA}','${authSpaceA}','${authProjectA}','${MACHINE_A}',now(),'proof','proof','a',1,'a',false,'ok',1,false,false,false,now(),now()),
-        ('${authRunB}','${authSpaceB}','${authProjectB}','${MACHINE_A}',now(),'proof','proof','b',1,'b',false,'ok',1,false,false,false,now(),now());`,
+        ('${authRunA}','${authSpaceA}','${authProjectA}','${ids.MACHINE_A}',now(),'proof','proof','a',1,'a',false,'ok',1,false,false,false,now(),now()),
+        ('${authRunB}','${authSpaceB}','${authProjectB}','${ids.MACHINE_A}',now(),'proof','proof','b',1,'b',false,'ok',1,false,false,false,now(),now());`,
     )
 
     recordSession.setToken(tokenA)
@@ -267,9 +258,9 @@ realPostgres('RLS proof against real Postgres', () => {
       `INSERT INTO invitation
         (id,space_id,email,inviter_id,role,status,expires_at,created_at)
        VALUES
-        ('${WRONG_EMAIL_INVITATION}','${authSpaceA}','${SIGN_UP_AUTH.emailA}','${authUserA}','member','pending',now() + interval '1 day',now()),
-        ('${EXPIRED_INVITATION}','${authSpaceA}','${SIGN_UP_AUTH.emailB}','${authUserA}','member','pending',now() - interval '1 day',now()),
-        ('${ACCEPTED_INVITATION}','${authSpaceA}','${SIGN_UP_AUTH.emailB}','${authUserA}','member','accepted',now() + interval '1 day',now());`,
+        ('${ids.WRONG_EMAIL_INVITATION}','${authSpaceA}','${SIGN_UP_AUTH.emailA}','${authUserA}','member','pending',now() + interval '1 day',now()),
+        ('${ids.EXPIRED_INVITATION}','${authSpaceA}','${SIGN_UP_AUTH.emailB}','${authUserA}','member','pending',now() - interval '1 day',now()),
+        ('${ids.ACCEPTED_INVITATION}','${authSpaceA}','${SIGN_UP_AUTH.emailB}','${authUserA}','member','accepted',now() + interval '1 day',now());`,
     )
   })
 
@@ -299,17 +290,17 @@ realPostgres('RLS proof against real Postgres', () => {
   })
 
   registerInvitationAuthProofs(psql, actorUrl!, succeeds, SIGN_UP_AUTH.password)
-  registerHostedConfigProofs(actorUrl!, SPACE_A, SPACE_B, USER_A)
+  registerHostedConfigProofs(actorUrl!, ids.SPACE_A, ids.SPACE_B, ids.USER_A)
   registerBoardRlsProofs({
     admin: (s) => succeeds('postgres', 'postgres', s),
     psql,
     readerRole: RECORD_READER_ROLE,
   })
-  registerBoardApiProofs({ actorUrl: actorUrl!, spaceA: SPACE_A, userA: USER_A, succeeds })
+  registerBoardApiProofs({ actorUrl: actorUrl!, spaceA: ids.SPACE_A, userA: ids.USER_A, succeeds })
   registerPublicDocProofs({
-    spaces: [SPACE_A, SPACE_B, actorUrl!],
-    projects: [PROJECT_A, PROJECT_A2, PROJECT_B],
-    ownerUserId: USER_A,
+    spaces: [ids.SPACE_A, ids.SPACE_B, actorUrl!],
+    projects: [ids.PROJECT_A, ids.PROJECT_A2, ids.PROJECT_B],
+    ownerUserId: ids.USER_A,
     session: () => [authUserA, tokenA, recordSession.setToken],
     admin: (statement) => succeeds('postgres', 'postgres', statement),
     psql,
@@ -329,7 +320,7 @@ realPostgres('RLS proof against real Postgres', () => {
       `${SIGN_UP_AUTH.emailA}|1|owner|write`,
       `${SIGN_UP_AUTH.emailB}|1|owner|write`,
     ])
-    const auth = recordAuth(actorUrl!)
+    const auth = testRecordAuth(actorUrl!)
     expect((await auth.api.getSession({ headers: bearerHeaders(tokenA) }))?.user.id).toBe(authUserA)
     expect((await auth.api.getSession({ headers: bearerHeaders(tokenB) }))?.user.id).toBe(authUserB)
   })
@@ -337,11 +328,11 @@ realPostgres('RLS proof against real Postgres', () => {
   registerProjectSpaceProofs({
     actorUrl: actorUrl!,
     actorRole: RECORD_ACTOR_ROLE,
-    machineId: MACHINE_A,
+    machineId: ids.MACHINE_A,
     userId: () => authUserA,
-    ...{ firstSpaceId: SPACE_A, firstProjectId: PROJECT_A },
-    ...{ secondSpaceId: SPACE_B, secondProjectId: PROJECT_B },
-    otherRunId: RUN_B,
+    ...{ firstSpaceId: ids.SPACE_A, firstProjectId: ids.PROJECT_A },
+    ...{ secondSpaceId: ids.SPACE_B, secondProjectId: ids.PROJECT_B },
+    otherRunId: ids.RUN_B,
     token: (user = 'a') => (user === 'a' ? tokenA : tokenB),
     setToken: (token) => recordSession.setToken(token),
     asSpace,
@@ -393,7 +384,7 @@ realPostgres('RLS proof against real Postgres', () => {
 
   registerOwnedCanonPrivacyProof(
     () => ({ spaceId: authSpaceA, ownerUserId: authUserA, otherUserId: authUserB }),
-    [SPACE_A, SPACE_B, PROJECT_A, PROJECT_B],
+    [ids.SPACE_A, ids.SPACE_B, ids.PROJECT_A, ids.PROJECT_B],
   )
 
   test('CLI whoami prints the user, active space, and only that user memberships', async () => {
@@ -415,7 +406,7 @@ realPostgres('RLS proof against real Postgres', () => {
     sessionB: () => ({ token: tokenB, userId: authUserB }),
     spaceB: () => authSpaceB,
     rememberedSpaceId: () => authSpaceA,
-    outsiderSpaceId: SPACE_B,
+    outsiderSpaceId: ids.SPACE_B,
     password: SIGN_UP_AUTH.password,
     executeAsOwner: (sql) => succeeds('postgres', 'postgres', sql),
     setToken: (token) => recordSession.setToken(token),
@@ -536,8 +527,13 @@ realPostgres('RLS proof against real Postgres', () => {
     )
     expect(visibleToInvitee.code, visibleToInvitee.stderr).toBe(0)
     expect(visibleToInvitee.stdout.split('\n')).toEqual(
-      [WRONG_EMAIL_INVITATION, EXPIRED_INVITATION, ACCEPTED_INVITATION, pendingInvitation]
-        .filter((id) => id !== WRONG_EMAIL_INVITATION)
+      [
+        ids.WRONG_EMAIL_INVITATION,
+        ids.EXPIRED_INVITATION,
+        ids.ACCEPTED_INVITATION,
+        pendingInvitation,
+      ]
+        .filter((id) => id !== ids.WRONG_EMAIL_INVITATION)
         .sort(),
     )
     const visibleToOther = psql(
@@ -553,12 +549,14 @@ realPostgres('RLS proof against real Postgres', () => {
 
     recordSession.setToken(tokenB)
     expect((await pendingRecordInvitations()).map((row) => row.id)).toEqual([pendingInvitation])
-    await expect(acceptRecordInvitation(WRONG_EMAIL_INVITATION)).rejects.toThrow()
-    await expect(acceptRecordInvitation(EXPIRED_INVITATION)).rejects.toThrow()
-    await expect(acceptRecordInvitation(ACCEPTED_INVITATION)).rejects.toThrow()
+    await expect(acceptRecordInvitation(ids.WRONG_EMAIL_INVITATION)).rejects.toThrow()
+    await expect(acceptRecordInvitation(ids.EXPIRED_INVITATION)).rejects.toThrow()
+    await expect(acceptRecordInvitation(ids.ACCEPTED_INVITATION)).rejects.toThrow()
 
     expect(await acceptRecordInvitation(pendingInvitation)).toBe(authSpaceA)
-    const session = await recordAuth(actorUrl!).api.getSession({ headers: bearerHeaders(tokenB) })
+    const session = await testRecordAuth(actorUrl!).api.getSession({
+      headers: bearerHeaders(tokenB),
+    })
     expect(session?.session.activeOrganizationId).toBe(authSpaceA)
     const joined = psql(
       RECORD_ACTOR_ROLE,
@@ -638,7 +636,7 @@ realPostgres('RLS proof against real Postgres', () => {
       'postgres',
       `INSERT INTO invitation
         (id,space_id,email,inviter_id,role,status,expires_at,created_at)
-       VALUES ('${newRecordId()}','${authSpaceA}','${AUTH_EMAIL_HTTP}','${authUserA}',
+       VALUES ('${newRecordId()}','${authSpaceA}','${ids.AUTH_EMAIL_HTTP}','${authUserA}',
          'member','pending',now() + interval '1 day',now());`,
     )
     const origin = process.env.ORCH_RECORD_API_URL!
@@ -646,7 +644,7 @@ realPostgres('RLS proof against real Postgres', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        email: AUTH_EMAIL_HTTP,
+        email: ids.AUTH_EMAIL_HTTP,
         name: 'Auth HTTP',
         password: SIGN_UP_AUTH.password,
       }),
@@ -681,18 +679,18 @@ realPostgres('RLS proof against real Postgres', () => {
            prompt_bytes,prompt_head,probe,status,turn,no_failover,automatic_failover,
            work_preserved,created_at,updated_at
          ) VALUES
-           ('${httpRun}','${identity.activeSpaceId}','${httpProject}','${MACHINE_A}',now(),
+           ('${httpRun}','${identity.activeSpaceId}','${httpProject}','${ids.MACHINE_A}',now(),
             'proof','proof','http',1,'http',false,'ok',1,false,false,false,now(),now()),
-           ('${httpRunOlder}','${identity.activeSpaceId}','${httpProject}','${MACHINE_A}',now() - interval '1 minute',
+           ('${httpRunOlder}','${identity.activeSpaceId}','${httpProject}','${ids.MACHINE_A}',now() - interval '1 minute',
             'proof','proof','older',1,'older',false,'ok',1,false,false,false,now(),now());
          INSERT INTO run_score (run_id,space_id,delivery,quality,fidelity,note,scored_at,scored_by,updated_at)
            VALUES ('${httpRun}','${identity.activeSpaceId}','full','right','faithful','good',now(),'architect',now());
          INSERT INTO review (id,space_id,project_id,machine_id,recorded_at,created_at,updated_at)
-           VALUES ('${httpReview}','${identity.activeSpaceId}','${httpProject}','${MACHINE_A}',now(),now(),now());
+           VALUES ('${httpReview}','${identity.activeSpaceId}','${httpProject}','${ids.MACHINE_A}',now(),now(),now());
          INSERT INTO review_lens (id,space_id,review_id,run_id,machine_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,mcp_tools,docs_read,substitutes,created_at,updated_at)
-           VALUES ('${httpLens}','${identity.activeSpaceId}','${httpReview}','${httpRun}','${MACHINE_A}','correctness','proof','[]','[]','[]','[]','[]','[]','[]',now(),now());
+           VALUES ('${httpLens}','${identity.activeSpaceId}','${httpReview}','${httpRun}','${ids.MACHINE_A}','correctness','proof','[]','[]','[]','[]','[]','[]','[]',now(),now());
          INSERT INTO review_finding (id,space_id,review_id,review_lens_id,machine_id,ordinal,severity,location,evidence,proposed_correction,created_at,updated_at)
-           VALUES ('${httpFinding}','${identity.activeSpaceId}','${httpReview}','${httpLens}','${MACHINE_A}',1,'major','file:1','evidence','fix',now(),now());`,
+           VALUES ('${httpFinding}','${identity.activeSpaceId}','${httpReview}','${httpLens}','${ids.MACHINE_A}',1,'major','file:1','evidence','fix',now(),now());`,
     )
 
     const ownRuns = await fetch(`${origin}/v1/runs`, {
@@ -752,8 +750,8 @@ realPostgres('RLS proof against real Postgres', () => {
       'content-type': 'application/json',
     }
     for (const [machineId, payload] of [
-      [MACHINE_A, { version: 1 }],
-      [MACHINE_A, { version: 2 }],
+      [ids.MACHINE_A, { version: 1 }],
+      [ids.MACHINE_A, { version: 2 }],
       ['01990000-0000-7000-8000-000000000029', { version: 3 }],
     ] as const) {
       const response = await fetch(`${origin}/v1/snapshots/state`, {
@@ -766,7 +764,7 @@ realPostgres('RLS proof against real Postgres', () => {
     const otherSnapshot = await fetch(`${origin}/v1/snapshots/state`, {
       method: 'PUT',
       headers: { Authorization: `Bearer ${tokenB}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ machineId: MACHINE_A, payload: { hidden: true } }),
+      body: JSON.stringify({ machineId: ids.MACHINE_A, payload: { hidden: true } }),
     })
     expect(otherSnapshot.status).toBe(200)
     const snapshots = await fetch(`${origin}/v1/snapshots`, {
@@ -777,7 +775,7 @@ realPostgres('RLS proof against real Postgres', () => {
       items: Array<{ machineId: string; payload: Record<string, unknown> }>
     }
     expect(snapshotItems.items).toHaveLength(2)
-    expect(snapshotItems.items.find((item) => item.machineId === MACHINE_A)?.payload).toEqual({
+    expect(snapshotItems.items.find((item) => item.machineId === ids.MACHINE_A)?.payload).toEqual({
       version: 2,
     })
     expect(snapshotItems.items.some((item) => item.payload.hidden === true)).toBe(false)
@@ -828,9 +826,9 @@ realPostgres('RLS proof against real Postgres', () => {
     const inserted = asSpace(
       RECORD_OWNER_ROLE,
       'owner-password',
-      SPACE_A,
+      ids.SPACE_A,
       `INSERT INTO seq (space_id, project_id, name, next)
-       VALUES ('${SPACE_A}', '${PROJECT_A}', NULL, 1);`,
+       VALUES ('${ids.SPACE_A}', '${ids.PROJECT_A}', NULL, 1);`,
     )
     expect(inserted.code).not.toBe(0)
     expect(inserted.stderr).toContain('null value in column "name"')
@@ -862,7 +860,7 @@ realPostgres('RLS proof against real Postgres', () => {
     const result = psql(
       'public_probe',
       'public-password',
-      `SET app.space_id='${SPACE_A}';SELECT name FROM public.project WHERE id='${PROJECT_A}';`,
+      `SET app.space_id='${ids.SPACE_A}';SELECT name FROM public.project WHERE id='${ids.PROJECT_A}';`,
     )
     expect(result.code).not.toBe(0)
     expect(result.stderr).toContain('permission denied for schema public')
@@ -872,8 +870,8 @@ realPostgres('RLS proof against real Postgres', () => {
     const read = asSpace(
       RECORD_READER_ROLE,
       'reader-password',
-      SPACE_A,
-      `SELECT name FROM project WHERE id = '${PROJECT_A}';`,
+      ids.SPACE_A,
+      `SELECT name FROM project WHERE id = '${ids.PROJECT_A}';`,
     )
     expect(read.code, read.stderr).toBe(0)
     expect(read.stdout).toBe('alpha')
@@ -881,9 +879,9 @@ realPostgres('RLS proof against real Postgres', () => {
     const write = asSpace(
       RECORD_READER_ROLE,
       'reader-password',
-      SPACE_A,
+      ids.SPACE_A,
       `INSERT INTO project (id, space_id, name, created_at)
-       VALUES ('01990000-0000-7000-8000-00000000002c', '${SPACE_A}', 'reader-write', now());`,
+       VALUES ('01990000-0000-7000-8000-00000000002c', '${ids.SPACE_A}', 'reader-write', now());`,
     )
     expect(write.code).not.toBe(0)
     expect(write.stderr).toContain('permission denied for table project')
@@ -916,8 +914,8 @@ realPostgres('RLS proof against real Postgres', () => {
     const result = asSpace(
       RECORD_ACTOR_ROLE,
       'actor-password',
-      SPACE_A,
-      `SELECT name FROM project WHERE id = '${PROJECT_A}';`,
+      ids.SPACE_A,
+      `SELECT name FROM project WHERE id = '${ids.PROJECT_A}';`,
     )
     expect(result.code, result.stderr).toBe(0)
     expect(result.stdout.split('\n').at(-1)).toBe('alpha')
@@ -927,8 +925,8 @@ realPostgres('RLS proof against real Postgres', () => {
     const result = asSpace(
       RECORD_ACTOR_ROLE,
       'actor-password',
-      SPACE_A,
-      `SELECT name FROM project WHERE id = '${PROJECT_B}';`,
+      ids.SPACE_A,
+      `SELECT name FROM project WHERE id = '${ids.PROJECT_B}';`,
     )
     expect(result.code, result.stderr).toBe(0)
     expect(result.stdout.split('\n').at(-1)).toBe('')
@@ -940,8 +938,8 @@ realPostgres('RLS proof against real Postgres', () => {
       const result = asSpaces(
         role,
         password,
-        SPACE_A,
-        [SPACE_A, SPACE_B],
+        ids.SPACE_A,
+        [ids.SPACE_A, ids.SPACE_B],
         `SELECT name FROM project ORDER BY name;`,
       )
       expect(result.code, result.stderr).toBe(0)
@@ -953,10 +951,10 @@ realPostgres('RLS proof against real Postgres', () => {
     const result = asSpaces(
       RECORD_ACTOR_ROLE,
       'actor-password',
-      SPACE_A,
-      [SPACE_A, SPACE_B],
+      ids.SPACE_A,
+      [ids.SPACE_A, ids.SPACE_B],
       `INSERT INTO project (id,space_id,name,created_at)
-       VALUES ('01990000-0000-7000-8000-00000000002d','${SPACE_B}','lens-write',now());`,
+       VALUES ('01990000-0000-7000-8000-00000000002d','${ids.SPACE_B}','lens-write',now());`,
     )
     expect(result.code).not.toBe(0)
     expect(result.stderr).toContain('violates row-level security policy')
@@ -966,9 +964,9 @@ realPostgres('RLS proof against real Postgres', () => {
     const result = psql(
       RECORD_ACTOR_ROLE,
       'actor-password',
-      `SET app.space_ids = '${SPACE_A},${SPACE_B}';
+      `SET app.space_ids = '${ids.SPACE_A},${ids.SPACE_B}';
        INSERT INTO project (id,space_id,name,created_at)
-       VALUES ('01990000-0000-7000-8000-00000000002e','${SPACE_A}','set-only-write',now());`,
+       VALUES ('01990000-0000-7000-8000-00000000002e','${ids.SPACE_A}','set-only-write',now());`,
     )
     expect(result.code).not.toBe(0)
     expect(result.stderr).toContain('violates row-level security policy')
@@ -979,10 +977,10 @@ realPostgres('RLS proof against real Postgres', () => {
       psql(
         RECORD_ACTOR_ROLE,
         'actor-password',
-        `SET app.user_id = '${USER_A}';
+        `SET app.user_id = '${ids.USER_A}';
          SELECT set_config('app.space_ids', COALESCE((
            SELECT string_agg(space_id::text, ',' ORDER BY space_id)
-           FROM membership WHERE user_id='${USER_A}'::uuid
+           FROM membership WHERE user_id='${ids.USER_A}'::uuid
          ), ''), false);
          SELECT name FROM project ORDER BY name;`,
       )
@@ -992,7 +990,7 @@ realPostgres('RLS proof against real Postgres', () => {
     succeeds(
       'postgres',
       'postgres',
-      `DELETE FROM membership WHERE user_id='${USER_A}'::uuid AND space_id='${SPACE_B}'::uuid;`,
+      `DELETE FROM membership WHERE user_id='${ids.USER_A}'::uuid AND space_id='${ids.SPACE_B}'::uuid;`,
     )
     const after = lens()
     expect(after.code, after.stderr).toBe(0)
@@ -1001,14 +999,14 @@ realPostgres('RLS proof against real Postgres', () => {
 
   test('cross-space review graph reads return nothing', () => {
     for (const [table, id] of [
-      ['review', REVIEW_B],
+      ['review', ids.REVIEW_B],
       ['review_lens', '01990000-0000-7000-8000-00000000005b'],
       ['review_finding', '01990000-0000-7000-8000-00000000006b'],
     ]) {
       const result = asSpace(
         RECORD_ACTOR_ROLE,
         'actor-password',
-        SPACE_A,
+        ids.SPACE_A,
         `SELECT id FROM ${table} WHERE id = '${id}';`,
       )
       expect(result.code, result.stderr).toBe(0)
@@ -1027,7 +1025,7 @@ realPostgres('RLS proof against real Postgres', () => {
       const result = asSpace(
         RECORD_ACTOR_ROLE,
         'actor-password',
-        SPACE_A,
+        ids.SPACE_A,
         `SELECT id FROM ${table} WHERE id = '${id}';`,
       )
       expect(result.code, result.stderr).toBe(0)
@@ -1038,7 +1036,7 @@ realPostgres('RLS proof against real Postgres', () => {
   registerScoreRecordSyncProof(() => ({
     actorUrl: actorUrl!,
     actorRole: RECORD_ACTOR_ROLE,
-    machineId: MACHINE_A,
+    machineId: ids.MACHINE_A,
     userId: authUserA,
     spaceId: authSpaceA,
     otherSpaceId: authSpaceB,
@@ -1051,14 +1049,14 @@ realPostgres('RLS proof against real Postgres', () => {
     const rows = asSpace(
       RECORD_ACTOR_ROLE,
       'actor-password',
-      SPACE_A,
+      ids.SPACE_A,
       'SELECT project_id, name, next FROM seq ORDER BY next;',
     )
     expect(rows.code, rows.stderr).toBe(0)
     expect(rows.stdout.split('\n')).toEqual([
-      `${PROJECT_A2}|task:DEV|12`,
-      `${PROJECT_A}|dev|21`,
-      `${PROJECT_A}|task:DEV|446`,
+      `${ids.PROJECT_A2}|task:DEV|12`,
+      `${ids.PROJECT_A}|dev|21`,
+      `${ids.PROJECT_A}|task:DEV|446`,
     ])
   })
 })

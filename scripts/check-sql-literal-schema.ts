@@ -58,6 +58,19 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
     'backfill helper interpolates one of its two controlled table identifiers',
   ),
   ...exempt(
+    'orchestrator/src/record/record-push-catalogues.ts',
+    [
+      '8cb8a' + 'b4259f57b' + 'a0',
+      '962b2e990c8697e4',
+      'b34bffa2f99fee3f',
+      'd76264eb29b5e2c7',
+      'ed0df619e1ff2712',
+      'ce8a4593d4dca020',
+      '79a0d188e8e480f4',
+    ],
+    'workflow plan queries interpolate only the controlled workflow or step-catalogue table and foreign-key identifiers',
+  ),
+  ...exempt(
     'orchestrator/src/board/board-push-service.ts',
     ['449a46c2afd31570'],
     'board push query interpolates a runtime-sized VALUES list',

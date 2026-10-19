@@ -10,7 +10,8 @@ import {
   stepCatalogueVersions,
   validateStepCatalogue,
 } from './step-catalogue.ts'
-import { mergeSeededSteps, seedMayPromote, seedWorkflows } from './workflow-seeds.ts'
+import { mergeSeededSteps, seedMayPromote } from './workflow-built-ins.ts'
+import { seedWorkflows } from './workflow-seeds.ts'
 import {
   listWorkflows,
   showWorkflow,

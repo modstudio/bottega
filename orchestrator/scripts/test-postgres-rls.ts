@@ -256,6 +256,20 @@ try {
       })
       if (remigrate !== 0) process.exitCode = remigrate
       else {
+        const catalogueImport = await run(
+          [
+            'bun',
+            'test',
+            '--timeout',
+            '30000',
+            'src/record/record-catalogue-import-postgres.test.ts',
+          ],
+          {
+            ORCH_TEST_CATALOGUE_IMPORT_URL: actorUrl,
+            ORCH_TEST_CATALOGUE_IMPORT_SETUP_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,
+          },
+        )
+        if (catalogueImport !== 0) process.exit(catalogueImport)
         const jsonbBinding = await run(
           [
             'bun',

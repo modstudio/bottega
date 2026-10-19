@@ -585,6 +585,15 @@ async function sendSyncBatch(input: {
   })
 }
 
+async function ensureActiveSpaceBuiltIns(
+  client: Pick<ReturnType<typeof recordApiClient>, 'whoami' | 'ensureSpaceBuiltIns'>,
+): Promise<Awaited<ReturnType<typeof client.whoami>>> {
+  const session = await client.whoami()
+  if (session.activeSpaceId && client.ensureSpaceBuiltIns)
+    await client.ensureSpaceBuiltIns({ destinationSpaceId: session.activeSpaceId })
+  return session
+}
+
 export async function syncRecord(options: RecordSyncOptions = {}): Promise<RecordSyncResult> {
   const configured = Boolean(resolveRecordApiUrl(process.env) || options.client)
   const identity = options.identity ?? { id: machineId(), name: machineName() }
@@ -613,7 +622,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   const writableLocal = local!
   const client = options.client ?? recordApiClient()
   if (!client.sync) throw new Error('record API client does not provide evidence sync')
-  const session = await client.whoami()
+  const session = await ensureActiveSpaceBuiltIns(client)
   const memberships = parseRecordSpaceMemberships(session.memberships)
   const blocked: BlockedOutboxRow[] = []
   let pushed = 0

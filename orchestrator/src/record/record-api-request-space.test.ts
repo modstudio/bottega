@@ -172,3 +172,65 @@ test('remaining tenant write routes judge and bind the requested destination spa
   }
   expect(destinations).toEqual(Array.from({ length: 5 }, () => 'space-b'))
 })
+
+test('catalogue routes authorize and bind their requested space before services run', async () => {
+  const calls: Array<{ path: string; destination?: string }> = []
+  const app = new Hono<ApiEnvironment>()
+  app.use('/v1/*', async (context, next) => {
+    context.set('identity', {
+      ...identity,
+      memberships: [
+        identity.memberships[0]!,
+        {
+          space_id: 'space-b',
+          name: 'Space B',
+          slug: 'space-b',
+          role: 'member',
+          permission: 'write',
+        },
+        {
+          space_id: 'space-read',
+          name: 'Read Space',
+          slug: 'space-read',
+          role: 'member',
+          permission: 'read',
+        },
+      ],
+    })
+    return next()
+  })
+  registerRecordRequestSpace(app)
+  for (const prefix of ['lens', 'workflow', 'port']) {
+    app.all(`/v1/${prefix}-catalogue/*`, (context) => {
+      calls.push({ path: context.req.path, destination: context.get('destinationSpaceId') })
+      return context.json({ ok: true })
+    })
+  }
+
+  for (const prefix of ['lens', 'workflow', 'port']) {
+    const read = await app.request(`/v1/${prefix}-catalogue/items`, {
+      headers: { 'x-record-space': 'space-b' },
+    })
+    expect(read.status).toBe(200)
+    const write = await app.request(`/v1/${prefix}-catalogue/import`, {
+      method: 'POST',
+      headers: { 'x-record-space': 'space-b' },
+    })
+    expect(write.status).toBe(200)
+    const foreign = await app.request(`/v1/${prefix}-catalogue/items`, {
+      headers: { 'x-record-space': 'space-foreign' },
+    })
+    expect(foreign.status).toBe(403)
+    const readOnly = await app.request(`/v1/${prefix}-catalogue/import`, {
+      method: 'POST',
+      headers: { 'x-record-space': 'space-read' },
+    })
+    expect(readOnly.status).toBe(403)
+  }
+  expect(calls).toEqual(
+    ['lens', 'workflow', 'port'].flatMap((prefix) => [
+      { path: `/v1/${prefix}-catalogue/items`, destination: 'space-b' },
+      { path: `/v1/${prefix}-catalogue/import`, destination: 'space-b' },
+    ]),
+  )
+})

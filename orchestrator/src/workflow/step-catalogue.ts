@@ -21,7 +21,7 @@ import type {
 } from './step-catalogue-definition.ts'
 import { versionedLifecycle } from './versioned-lifecycle.ts'
 import type { WorkflowDefinition, WorkflowModeStep } from './workflow-definition.ts'
-import { type FloorKind, floorKinds, isFloorKind } from './workflow-floor.ts'
+import { floorKinds, isFloorKind } from './workflow-floor.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
 import { inspectWorkflowSteps, validateCatalogueSequences } from './workflow-step-sequences.ts'
 
@@ -30,7 +30,6 @@ export type {
   CatalogueStep,
   StepCatalogueDefinition,
 } from './step-catalogue-definition.ts'
-export type { FloorKind }
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 const object = (value: unknown): value is Record<string, unknown> =>

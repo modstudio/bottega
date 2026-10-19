@@ -25,6 +25,7 @@ import {
   recordSpaceSwitchCommand,
 } from '../record/record-command.ts'
 import { publishSnapshotsCommand } from '../record/record-publish.ts'
+import { pushCataloguesCommand } from '../record/record-push-catalogues.ts'
 import { pushDocsCommand } from '../record/record-push-docs.ts'
 import { useHostedRecord } from '../record/record-use.ts'
 import { requireHostedRecord } from '../record/record-write-authority.ts'
@@ -133,54 +134,28 @@ function registerPublicDocCommands(record: Command): void {
     )
 }
 
-export function register(program: Command): void {
-  const record = program.command('record').description('manage the hosted record and its outbox')
-  registerUseCommand(record)
-  registerIdentityCommands(record)
-  registerPublicDocCommands(record)
+function registerPushCommands(record: Command): void {
   record
-    .command('audit-secrets')
-    .description('scan local outbox payloads for secret material')
-    .option('--json', 'write the audit findings as JSON')
-    .option('--ids', 'include row identifiers in text output')
+    .command('push-docs')
+    .description('push local documents to the hosted record')
+    .option('--dry-run', 'report document changes without pushing them')
     .action((options) =>
-      recordAuditSecretsCommand(
-        { json: Boolean(options.json), ids: Boolean(options.ids) },
-        presentation,
+      hostedCommand(`${PLATFORM_SLUG} record push-docs`, () =>
+        pushDocsCommand({ dryRun: Boolean(options.dryRun) }, { log }),
       ),
     )
   record
-    .command('redact-synced')
-    .description('redact secret material from synchronized record payloads')
-    .option('--rules <comma-list>', 'comma-separated redaction rules to apply')
-    .option('--dry-run', 'report redactions without writing them')
+    .command('push-catalogues')
+    .description('push local catalogues and port items to the hosted record')
+    .option('--dry-run', 'report the import plan without writing')
     .action((options) =>
-      recordRedactSyncedCommand(
-        {
-          ...(options.rules === undefined ? {} : { rules: String(options.rules) }),
-          dryRun: Boolean(options.dryRun),
-        },
-        presentation,
+      hostedCommand(`${PLATFORM_SLUG} record push-catalogues`, () =>
+        pushCataloguesCommand({ dryRun: Boolean(options.dryRun) }, { log }),
       ),
     )
-  const outbox = record.command('outbox').description('operate on orchestrator outbox rows')
-  outbox
-    .command('retry')
-    .description('queue an outbox row for another delivery attempt')
-    .argument('<row-id>')
-    .action((rowId) => {
-      retryOutboxRow(Number(rowId))
-      log(`outbox row ${String(rowId)} will retry on the next sync`)
-    })
-  outbox
-    .command('retire')
-    .description('retire an outbox row after proving its dependencies')
-    .argument('<row-id>')
-    .requiredOption('--reason <text>', 'reason the outbox row is retired')
-    .action((rowId, options) => {
-      retireOutboxRowWithDependencyProof(Number(rowId), String(options.reason))
-      log(`outbox row ${String(rowId)} retired`)
-    })
+}
+
+function registerSpaceCommands(record: Command): void {
   const space = record.command('space').description('manage hosted record spaces')
   space
     .command('list')
@@ -252,15 +227,58 @@ export function register(program: Command): void {
         ),
       ),
     )
+}
+
+export function register(program: Command): void {
+  const record = program.command('record').description('manage the hosted record and its outbox')
+  registerUseCommand(record)
+  registerIdentityCommands(record)
+  registerPublicDocCommands(record)
+  registerPushCommands(record)
+  registerSpaceCommands(record)
   record
-    .command('push-docs')
-    .description('push local documents to the hosted record')
-    .option('--dry-run', 'report document changes without pushing them')
+    .command('audit-secrets')
+    .description('scan local outbox payloads for secret material')
+    .option('--json', 'write the audit findings as JSON')
+    .option('--ids', 'include row identifiers in text output')
     .action((options) =>
-      hostedCommand(`${PLATFORM_SLUG} record push-docs`, () =>
-        pushDocsCommand({ dryRun: Boolean(options.dryRun) }, { log }),
+      recordAuditSecretsCommand(
+        { json: Boolean(options.json), ids: Boolean(options.ids) },
+        presentation,
       ),
     )
+  record
+    .command('redact-synced')
+    .description('redact secret material from synchronized record payloads')
+    .option('--rules <comma-list>', 'comma-separated redaction rules to apply')
+    .option('--dry-run', 'report redactions without writing them')
+    .action((options) =>
+      recordRedactSyncedCommand(
+        {
+          ...(options.rules === undefined ? {} : { rules: String(options.rules) }),
+          dryRun: Boolean(options.dryRun),
+        },
+        presentation,
+      ),
+    )
+  const outbox = record.command('outbox').description('operate on orchestrator outbox rows')
+  outbox
+    .command('retry')
+    .description('queue an outbox row for another delivery attempt')
+    .argument('<row-id>')
+    .action((rowId) => {
+      retryOutboxRow(Number(rowId))
+      log(`outbox row ${String(rowId)} will retry on the next sync`)
+    })
+  outbox
+    .command('retire')
+    .description('retire an outbox row after proving its dependencies')
+    .argument('<row-id>')
+    .requiredOption('--reason <text>', 'reason the outbox row is retired')
+    .action((rowId, options) => {
+      retireOutboxRowWithDependencyProof(Number(rowId), String(options.reason))
+      log(`outbox row ${String(rowId)} retired`)
+    })
   record
     .command('publish')
     .description('publish hosted record snapshots')

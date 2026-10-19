@@ -8,7 +8,7 @@ import {
 import { BOARD_POST_RATE_LIMIT } from '../src/board/board-policy.ts'
 import type { RecordApiClient } from '../src/record/record-api-client.ts'
 import { startRecordApiServer } from '../src/record/record-api-server.ts'
-import { recordAuth } from '../src/record/record-auth.ts'
+import { noSpaceBuiltIns, recordAuth } from '../src/record/record-auth.ts'
 import { SIGN_UP_AUTH } from './fixtures/record-auth-postgres.ts'
 import { registerBoardAdoptionProof } from './postgres-board-adoption-proof.ts'
 import { notice as boardNotice, expiresAt, headers, json } from './postgres-board-api-values.ts'
@@ -105,7 +105,14 @@ export function registerBoardApiProofs(input: {
       RECORD_HUB_URL: 'http://127.0.0.1',
     })
     origin = `http://127.0.0.1:${server.port}`
-    const auth = recordAuth(input.actorUrl)
+    const auth = recordAuth(
+      input.actorUrl,
+      process.env,
+      undefined,
+      undefined,
+      undefined,
+      noSpaceBuiltIns,
+    )
     const signUp = async (email: string, name: string) => {
       const created = await auth.api.signUpEmail({
         body: { email, name, password: SIGN_UP_AUTH.password },
