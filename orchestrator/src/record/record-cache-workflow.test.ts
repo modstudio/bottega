@@ -344,7 +344,10 @@ test('generation migration resets old-client cursors so replacement history repl
         .query('INSERT INTO schema_meta (key,value) VALUES (?,?)')
         .run(`record_workflow_cursor:${space}:${table}`, consumed)
 
-    expect(applyMigrations(local)).toEqual(['0128_workflow_catalogue_generation'])
+    expect(applyMigrations(local)).toEqual([
+      '0128_workflow_catalogue_generation',
+      '0129_catalogue_projects_without_local_parent',
+    ])
     expect(
       local
         .query("SELECT COUNT(*) AS n FROM schema_meta WHERE key GLOB 'record_workflow_cursor:*'")
