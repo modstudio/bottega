@@ -223,7 +223,7 @@ export async function runArchitectGate(input: {
     const row = d
       .query<{ id: number }, (string | number | null)[]>(
         `INSERT INTO gate_execution
-          (record_id,run_id,requested_at,started_at,finished_at,exit_code,timed_out,elapsed_ms,
+          (record_id,run_record_id,requested_at,started_at,finished_at,exit_code,timed_out,elapsed_ms,
            output_tail,output_artifact,tooling_paths,resolved_command,head_commit,session_id,cwd)
          VALUES (?,NULL,?,?,?,?,0,?,?,NULL,'[]',?,?,?,?) RETURNING id`,
       )

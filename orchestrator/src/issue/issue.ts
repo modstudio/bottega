@@ -398,12 +398,12 @@ async function handbackAskingIssue(
 ): Promise<void> {
   const body = outcomeDocument(issue, result, undefined, [
     `Open questions: ${JSON.stringify(result.questions ?? [])}`,
-    `Work: ${stage} run ${run.id}`,
+    `Work: ${stage} run ${run.record_id}`,
   ])
-  await handoff(issue.key, `Issue handback from ${stage} ${run.id}`, body)
+  await handoff(issue.key, `Issue handback from ${stage} ${run.record_id}`, body)
   if (run.status !== 'asking') return
   await abandonRun(
-    run.id,
+    run.record_id,
     {
       force: false,
       note: 'issue coordinator: worker asked; questions recorded on the task',
@@ -437,7 +437,7 @@ async function verifyOrHandbackFix(
   }
   await comment(
     issue.key,
-    `Fix run ${fixRun.id} completed on branch ${fixRun.worktree?.branch ?? fix.branch ?? 'unknown'}; committed work is durable and coordinator verification is starting.`,
+    `Fix run ${fixRun.record_id} completed on branch ${fixRun.worktree?.branch ?? fix.branch ?? 'unknown'}; committed work is durable and coordinator verification is starting.`,
   )
   const before =
     diagnosisRun.worktree && issue.reproduceCommand
@@ -465,14 +465,14 @@ async function verifyOrHandbackFix(
           sandboxHome,
           workerEnvironment: {
             ...workerGateEnvironment(process.env),
-            ...trackedRecipeEnvironment(fixRun.id),
+            ...trackedRecipeEnvironment(fixRun.record_id),
             ...prepareSharedRefGuard(fixRun.worktree.path, `refs/heads/${fixRun.worktree.branch}`),
           },
         })
       : { ok: false, text: 'project has no configured gate', exitCode: -1 }
   await comment(
     issue.key,
-    `Independent measurements and both gates completed for run ${fixRun.id}; tier review is starting.`,
+    `Independent measurements and both gates completed for run ${fixRun.record_id}; tier review is starting.`,
   )
   const reviewPass = await runIssueFixReviews({ issue, fixRun, target, branchKey })
   // Findings runs record their reviews as part of terminalisation. Gathering
@@ -496,7 +496,7 @@ async function verifyOrHandbackFix(
     ...(reviewPass.reviewNotStarted ? [issueReviewStartEvidence(reviewPass.reviewNotStarted)] : []),
     ...reviewPass.results.map(issueReviewEvidence),
     `Ready to land: ${ready ? 'yes' : 'no — handed back'}`,
-    `Fix run: ${fixRun.id}`,
+    `Fix run: ${fixRun.record_id}`,
   ]
   await handoff(
     issue.key,
@@ -546,9 +546,9 @@ function outcomeDocument(
   ].join('\n\n')
 }
 
-async function release(result: Pick<RunResult, 'id'> | null): Promise<string | null> {
+async function release(result: Pick<RunResult, 'record_id'> | null): Promise<string | null> {
   if (!result) return null
-  const failures = releaseRunFailoverAttempts(result.id).filter(
+  const failures = releaseRunFailoverAttempts(result.record_id).filter(
     (closed) => !['released', 'absent', 'forgotten'].includes(closed.outcome),
   )
   return failures.length
@@ -556,13 +556,18 @@ async function release(result: Pick<RunResult, 'id'> | null): Promise<string | n
     : null
 }
 
-function runIdFromCause(cause: unknown): number {
-  return Number(cause && typeof cause === 'object' && 'runId' in cause ? cause.runId : 0)
+function runIdFromCause(cause: unknown): string | null {
+  const runId = cause && typeof cause === 'object' && 'runId' in cause ? cause.runId : null
+  return typeof runId === 'string' ? runId : null
 }
 
-async function releaseFailedDiagnosis(runId: number, job: string | undefined, fallback: string) {
-  if (job !== 'diagnose') return fallback
-  const failure = await release({ id: runId })
+async function releaseFailedDiagnosis(
+  runId: string | null,
+  job: string | undefined,
+  fallback: string,
+) {
+  if (runId === null || job !== 'diagnose') return fallback
+  const failure = await release({ record_id: runId })
   return failure ? `Diagnosis worktree was not released: ${failure}.` : fallback
 }
 
@@ -575,7 +580,7 @@ async function recordIssueFailure(
   const row = runId
     ? (db()
         .query(
-          'SELECT job, repo, cwd, worktree, branch, base_commit, worktree_source, minted_branch FROM run WHERE id=?',
+          'SELECT job, repo, cwd, worktree, branch, base_commit, worktree_source, minted_branch FROM run WHERE record_id=?',
         )
         .get(runId) as {
         job: string
@@ -589,9 +594,13 @@ async function recordIssueFailure(
       } | null)
     : null
   const failedFix =
-    !fixRun?.worktree && row?.job === 'issue-worker' && row.worktree && existsSync(row.worktree)
-      ? ({
-          id: runId,
+    !fixRun?.worktree &&
+    runId !== null &&
+    row?.job === 'issue-worker' &&
+    row.worktree &&
+    existsSync(row.worktree)
+      ? {
+          record_id: runId,
           worktree: {
             path: row.worktree,
             branch: row.branch ?? 'unknown',
@@ -604,7 +613,7 @@ async function recordIssueFailure(
             source: row.worktree_source ?? undefined,
             mintedBranch: row.minted_branch,
           },
-        } as RunResult)
+        }
       : null
   const catchFix = fixRun?.worktree ? fixRun : failedFix
   const disposition = catchFix?.worktree
@@ -721,7 +730,7 @@ export async function workIssue(key: string): Promise<void> {
     const diagnosis = parseIssueReply<Diagnosis>(diagnosisRun.output, ISSUE_DIAGNOSIS_SCHEMA)
     await comment(
       issue.key,
-      `Issue diagnosis run ${diagnosisRun.id}: ${diagnosis.established_cause ?? diagnosis.outcome ?? diagnosis.status}. Evidence has been captured before release.`,
+      `Issue diagnosis run ${diagnosisRun.record_id}: ${diagnosis.established_cause ?? diagnosis.outcome ?? diagnosis.status}. Evidence has been captured before release.`,
     )
 
     if (issueRunAsked(diagnosisRun, diagnosis)) {
@@ -731,7 +740,7 @@ export async function workIssue(key: string): Promise<void> {
     }
     if (diagnosis.outcome && diagnosis.outcome !== 'fixed') {
       const body = outcomeDocument(issue, diagnosis, undefined, [
-        `Work: diagnosis run ${diagnosisRun.id}`,
+        `Work: diagnosis run ${diagnosisRun.record_id}`,
       ])
       await handoff(issue.key, `Issue outcome: ${diagnosis.outcome}`, body)
       await comment(

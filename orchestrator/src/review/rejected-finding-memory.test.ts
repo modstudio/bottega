@@ -27,14 +27,14 @@ function completedFinding(input: {
   })
   db()
     .query(
-      'UPDATE run SET branch=?,project_record_id=(SELECT record_id FROM project WHERE name=?) WHERE id=?',
+      'UPDATE run SET branch=?,project_record_id=(SELECT record_id FROM project WHERE name=?) WHERE record_id=?',
     )
     .run(input.branch, input.project, runId)
   const reply = reviewReply(1, 'high')
   reply.findings[0]!.location = input.location
   reply.findings[0]!.evidence = `evidence at ${input.location}`
   const reviewId = recordReview(runId, reply, db())
-  db().query('UPDATE run SET head_commit=? WHERE id=?').run(input.commit, runId)
+  db().query('UPDATE run SET head_commit=? WHERE record_id=?').run(input.commit, runId)
   triageFinding(
     reviewId,
     1,

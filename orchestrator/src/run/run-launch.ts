@@ -1,5 +1,5 @@
 export type RunLaunchFacts = (
-  | { source: 'resume'; parent: number; turn: number; agent: string }
+  | { source: 'resume'; parent: string; turn: number; agent: string }
   | { source: 'pick'; agent: string; reason: string }
 ) & {
   explicitTransport: boolean
@@ -32,7 +32,7 @@ export function decideRunLaunch(facts: RunLaunchFacts): RunLaunchRuling {
 
 export function resolveRunTransport(opts: {
   transport?: TransportName
-  resume?: { kind: 'continue' | 'fresh-session' | 'retry-root'; parent: number }
+  resume?: { kind: 'continue' | 'fresh-session' | 'retry-root'; parent: string }
 }): TransportName {
   if (opts.resume?.kind === 'continue' || opts.resume?.kind === 'fresh-session') {
     const inherited = chainTransport(opts.resume.parent)

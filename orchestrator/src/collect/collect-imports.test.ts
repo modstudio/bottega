@@ -8,6 +8,7 @@ const DEGRADED_COLLECTION_GRAPH = [
   '../../../shared/built-commit.ts',
   '../../../shared/embedded-assets.ts',
   '../../../shared/install-root.ts',
+  '../../../shared/record-id.ts',
   '../../../shared/state-directory.ts',
   '../artifact-paths.ts',
   '../close/retained-branch.ts',
@@ -17,6 +18,7 @@ const DEGRADED_COLLECTION_GRAPH = [
   'orch.ts',
   '../outcome.ts',
   '../run/question-open.ts',
+  '../run/run-identifier.ts',
   '../collect/result-output.ts',
 ] as const
 const DEGRADED_HEAVY_MODULES = [

@@ -2,7 +2,7 @@
 /**
  * Knows comparison validation, atomic duel persistence, partners, and matrices. Must not know worktrees, runs, routing, transports, or CLI adapters.
  */
-import { newRecordId } from '../../../shared/record-id.ts'
+import { hasRecordIdShape, newRecordId } from '../../../shared/record-id.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import {
   changeIdentityJoin,
@@ -18,13 +18,13 @@ export type DuelJobMatrix = {
   cells: Record<string, Record<string, { wins: number; losses: number }>>
 }
 
-export function parseRunIds(value: string, flagName: string): number[] {
+export function parseRunIds(value: string, flagName: string): string[] {
   if (!value) throw new Error(`${flagName} needs at least one run id`)
   const ids = value.split(',').map((part) => {
-    if (!/^\d+$/.test(part) || Number(part) < 1) {
-      throw new Error(`${flagName} needs run ids separated by commas, got '${value}'`)
+    if (!hasRecordIdShape(part)) {
+      throw new Error(`${flagName} needs resolved run UUIDs separated by commas, got '${value}'`)
     }
-    return Number(part)
+    return part.toLowerCase()
   })
   if (new Set(ids).size !== ids.length) {
     throw new Error(`${flagName} names the same run more than once`)
@@ -33,17 +33,19 @@ export function parseRunIds(value: string, flagName: string): number[] {
 }
 
 function validateComparisons(
-  runId: number,
-  otherRunIds: number[],
+  runId: string,
+  otherRunIds: string[],
   callerSession: string | null,
   force = false,
 ): { job: string } {
   writableDb()
   const ids = [runId, ...otherRunIds]
   const rows = db()
-    .query(`SELECT id, job, session_id FROM run WHERE id IN (${ids.map(() => '?').join(',')})`)
-    .all(...ids) as { id: number; job: string; session_id: string | null }[]
-  const byId = new Map(rows.map((r) => [r.id, r]))
+    .query(
+      `SELECT record_id, job, session_id FROM run WHERE record_id IN (${ids.map(() => '?').join(',')})`,
+    )
+    .all(...ids) as { record_id: string; job: string; session_id: string | null }[]
+  const byId = new Map(rows.map((r) => [r.record_id, r]))
   for (const id of ids) {
     if (!byId.has(id)) throw new Error(`no run ${id}`)
   }
@@ -65,7 +67,7 @@ function validateComparisons(
       const owner = judgeability(row.session_id, callerSession)
       if (owner.verdict === 'foreign') {
         throw new Error(
-          `run ${row.id} was made by another session - you did not read its output.\n` +
+          `run ${row.record_id} was made by another session - you did not read its output.\n` +
             `  its session:   ${owner.owner}\n` +
             `  your session:  ${callerSession}\n\n` +
             `Both runs in a duel must be scoreable by this session; --force overrides.`,
@@ -78,16 +80,16 @@ function validateComparisons(
 
 /** Record one winner against every named loser after validating the comparison. */
 export function recordDuels(
-  winnerRunId: number,
-  loserRunIds: number[],
+  winnerRunId: string,
+  loserRunIds: string[],
   callerSession: string | null,
   at: string,
   force = false,
 ): void {
   const winner = validateComparisons(winnerRunId, loserRunIds, callerSession, force)
   const insert = db().query(
-    `INSERT INTO duel (record_id, job, winner_run_id, loser_run_id, session_id, at)
-     VALUES (?,?,?,?,?,?) ON CONFLICT(winner_run_id, loser_run_id) DO NOTHING`,
+    `INSERT INTO duel (record_id, job, winner_run_record_id, loser_run_record_id, session_id, at)
+     VALUES (?,?,?,?,?,?) ON CONFLICT(winner_run_record_id, loser_run_record_id) DO NOTHING`,
   )
   writeTransaction(() => {
     for (const loserId of loserRunIds) {
@@ -99,16 +101,16 @@ export function recordDuels(
 
 /** Record every named winner over one loser after validating the whole set. */
 export function recordLosses(
-  loserRunId: number,
-  winnerRunIds: number[],
+  loserRunId: string,
+  winnerRunIds: string[],
   callerSession: string | null,
   at: string,
   force = false,
 ): void {
   const loser = validateComparisons(loserRunId, winnerRunIds, callerSession, force)
   const insert = db().query(
-    `INSERT INTO duel (record_id, job, winner_run_id, loser_run_id, session_id, at)
-     VALUES (?,?,?,?,?,?) ON CONFLICT(winner_run_id, loser_run_id) DO NOTHING`,
+    `INSERT INTO duel (record_id, job, winner_run_record_id, loser_run_record_id, session_id, at)
+     VALUES (?,?,?,?,?,?) ON CONFLICT(winner_run_record_id, loser_run_record_id) DO NOTHING`,
   )
   writeTransaction(() => {
     for (const winnerId of winnerRunIds) {
@@ -118,14 +120,14 @@ export function recordLosses(
   })
 }
 
-function orderedPair(a: number, b: number): [number, number] {
+function orderedPair(a: string, b: string): [string, string] {
   return a < b ? [a, b] : [b, a]
 }
 
 /** Mark scored roots as compared without adding directional duel evidence. */
 export function recordTies(
-  runId: number,
-  otherRunIds: number[],
+  runId: string,
+  otherRunIds: string[],
   callerSession: string | null,
   at: string,
   force = false,
@@ -136,52 +138,52 @@ export function recordTies(
   })
 }
 
-function recordComparedPair(a: number, b: number, at: string): void {
+function recordComparedPair(a: string, b: string, at: string): void {
   const [runA, runB] = orderedPair(a, b)
   db()
     .query(
-      `INSERT INTO compared_pair (record_id, run_a_id, run_b_id, compared_at) VALUES (?,?,?,?)
-     ON CONFLICT(run_a_id, run_b_id) DO NOTHING`,
+      `INSERT INTO compared_pair (record_id, run_a_record_id, run_b_record_id, compared_at) VALUES (?,?,?,?)
+     ON CONFLICT(run_a_record_id, run_b_record_id) DO NOTHING`,
     )
     .run(newRecordId(), runA, runB, at)
 }
 
-export type PairPartner = { id: number; agent: string; reason: string }
+export type PairPartner = { record_id: string; agent: string; reason: string }
 export type UnrecordedPair = {
-  runId: number
-  partnerId: number
+  runId: string
+  partnerId: string
   partnerAgent: string
   reason: string
 }
 
 /** Scored sibling roots for the same task and change in this session, not yet compared. */
-export function pairPartners(runId: number, sid: string | null): PairPartner[] {
+export function pairPartners(runId: string, sid: string | null): PairPartner[] {
   if (!sid) return []
   return db()
     .query(
-      `SELECT partner.id, partner.agent,
+      `SELECT partner.record_id, partner.agent,
             ${pairReasonSql('subject', 'partner', 'subject_review', 'partner_review')} AS reason
        FROM run subject
        ${changeIdentityJoin('subject', 'subject_lens', 'subject_review')}
-       JOIN run partner ON partner.id <> subject.id
-        AND partner.parent_run_id IS NULL
+       JOIN run partner ON partner.record_id <> subject.record_id
+        AND partner.parent_run_record_id IS NULL
         AND partner.job = subject.job
         AND partner.session_id = ?
         AND COALESCE(partner.probe, 0) = 0
         AND partner.evidence_excluded IS NULL
        ${changeIdentityJoin('partner', 'partner_lens', 'partner_review')}
-       JOIN score partner_score ON partner_score.run_id = partner.id
+       JOIN score partner_score ON partner_score.run_record_id = partner.record_id
        LEFT JOIN compared_pair compared
-         ON compared.run_a_id = MIN(subject.id, partner.id)
-        AND compared.run_b_id = MAX(subject.id, partner.id)
-      WHERE subject.id = ?
+         ON compared.run_a_record_id = MIN(subject.record_id, partner.record_id)
+        AND compared.run_b_record_id = MAX(subject.record_id, partner.record_id)
+      WHERE subject.record_id = ?
         AND COALESCE(subject.probe, 0) = 0
         AND subject.evidence_excluded IS NULL
         AND ${sameTaskSql('subject', 'partner')}
         AND ${sameChangeSql('subject_review', 'partner_review')}
         AND datetime(partner_score.scored_at) >= datetime('now', '-24 hours')
-        AND compared.run_a_id IS NULL
-      ORDER BY partner.id`,
+        AND compared.run_a_record_id IS NULL
+      ORDER BY partner.number`,
     )
     .all(sid, runId) as PairPartner[]
 }
@@ -191,30 +193,31 @@ export function unrecordedPairsForSession(sid: string | null): UnrecordedPair[] 
   if (!sid) return []
   return db()
     .query(
-      `SELECT newer.id AS runId, older.id AS partnerId, older.agent AS partnerAgent,
+      `SELECT newer.record_id AS runId, older.record_id AS partnerId, older.agent AS partnerAgent,
             ${pairReasonSql('newer', 'older', 'newer_review', 'older_review')} AS reason
        FROM run newer
        ${changeIdentityJoin('newer', 'newer_lens', 'newer_review')}
-       JOIN score newer_score ON newer_score.run_id = newer.id
-       JOIN run older ON older.id < newer.id
-        AND older.parent_run_id IS NULL
+       JOIN score newer_score ON newer_score.run_record_id = newer.record_id
+       JOIN run older ON older.number < newer.number
+        AND older.parent_run_record_id IS NULL
         AND older.job = newer.job
         AND older.session_id = newer.session_id
         AND COALESCE(older.probe, 0) = 0
         AND older.evidence_excluded IS NULL
        ${changeIdentityJoin('older', 'older_lens', 'older_review')}
-       JOIN score older_score ON older_score.run_id = older.id
+       JOIN score older_score ON older_score.run_record_id = older.record_id
        LEFT JOIN compared_pair compared
-         ON compared.run_a_id = older.id AND compared.run_b_id = newer.id
-      WHERE newer.parent_run_id IS NULL AND newer.session_id = ?
+         ON compared.run_a_record_id = MIN(older.record_id,newer.record_id)
+        AND compared.run_b_record_id = MAX(older.record_id,newer.record_id)
+      WHERE newer.parent_run_record_id IS NULL AND newer.session_id = ?
         AND COALESCE(newer.probe, 0) = 0
         AND newer.evidence_excluded IS NULL
         AND ${sameTaskSql('newer', 'older')}
         AND ${sameChangeSql('newer_review', 'older_review')}
         AND datetime(newer_score.scored_at) >= datetime('now', '-24 hours')
         AND datetime(older_score.scored_at) >= datetime('now', '-24 hours')
-        AND compared.run_a_id IS NULL
-      ORDER BY newer.id, older.id`,
+        AND compared.run_a_record_id IS NULL
+      ORDER BY newer.number, older.number`,
     )
     .all(sid) as UnrecordedPair[]
 }
@@ -225,8 +228,8 @@ export function duelMatrices(jobName?: string): DuelJobMatrix[] {
     .query(
       `SELECT d.job, winner.agent AS winner, loser.agent AS loser, COUNT(*) AS n
        FROM duel d
-       JOIN run winner ON winner.id = d.winner_run_id
-       JOIN run loser ON loser.id = d.loser_run_id
+       JOIN run winner ON winner.record_id = d.winner_run_record_id
+       JOIN run loser ON loser.record_id = d.loser_run_record_id
       WHERE (? IS NULL OR d.job = ?)
       GROUP BY d.job, winner.agent, loser.agent
       ORDER BY d.job, winner.agent, loser.agent`,

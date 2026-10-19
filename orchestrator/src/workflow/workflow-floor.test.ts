@@ -44,7 +44,7 @@ const passingGate: ValidatedEvidence = {
   gate: { id: 2, finished: true, exitCode: 0, project: 'fixture', commit: 'abc' },
   tree: { project: 'fixture', commit: 'abc' },
 }
-const passingRun: ValidatedEvidence = { run: { id: 8, terminal: true, exitCode: 0 } }
+const passingRun: ValidatedEvidence = { run: { id: '8', terminal: true, exitCode: 0 } }
 const passingProbe: ValidatedEvidence = { probe: { id: 3, exitCode: 0 } }
 const passingExec: ValidatedEvidence = {
   exec: {
@@ -219,7 +219,7 @@ test('a terminal run with the expected exit satisfies command-exit', () => {
 test('a run offered to an artifact floor names the same run artifact form', () => {
   const decision = decide({
     floors: [artifact],
-    evidence: { runOffered: 8, run: { id: 8, terminal: true, exitCode: 0 } },
+    evidence: { runOffered: 8, run: { id: '8', terminal: true, exitCode: 0 } },
   })
   expect(decision).toEqual({
     action: 'refuse',
@@ -231,7 +231,7 @@ test('a run offered to an artifact floor names the same run artifact form', () =
 test('a run artifact offered to a command floor names the same run command form', () => {
   const decision = decide({
     floors: [commandExit],
-    evidence: { artifactRunOffered: 8, artifact: { ref: '8', exists: true } },
+    evidence: { artifactRunOffered: '8', artifact: { ref: '8', exists: true } },
   })
   expect(decision).toEqual({
     action: 'refuse',
@@ -742,7 +742,7 @@ test('parseArtifactRef accepts each recorded-artifact form', () => {
   expect(parseArtifactRef('probe:12')).toEqual({ kind: 'probe', id: 12 })
   expect(parseArtifactRef('exec:13')).toEqual({ kind: 'exec', id: 13 })
   expect(parseArtifactRef('doc:3')).toEqual({ kind: 'doc', id: 3 })
-  expect(parseArtifactRef('run:8')).toEqual({ kind: 'run', id: 8 })
+  expect(parseArtifactRef('run:8')).toEqual({ kind: 'run', id: '8' })
   expect(parseArtifactRef('attached-text:14')).toEqual({ kind: 'attached-text', id: 14 })
   expect(parseArtifactRef('8')).toEqual({ kind: 'id', id: 8 })
   expect(parseArtifactRef('nope')).toMatchObject({ error: expect.stringContaining('--artifact') })

@@ -15,7 +15,7 @@ describe('run launch ruling', () => {
       name: 'resume wins over any pick and keeps the requested transport',
       facts: {
         source: 'resume' as const,
-        parent: 41,
+        parent: '41',
         turn: 3,
         agent: 'resumed',
         explicitTransport: false,

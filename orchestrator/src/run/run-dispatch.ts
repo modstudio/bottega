@@ -37,6 +37,7 @@ import { RUNS_DIR } from './run-artifacts.ts'
 import { runCoordinatorLogPath } from './run-coordinator-log.ts'
 import { runLeaseState } from './run-lease.ts'
 import { ensureDispatchMcpMainStack } from './run-mcp-main-stack.ts'
+import { nextRunNumber } from './run-number.ts'
 import { repoOf } from './run-project-context.ts'
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
 
@@ -48,13 +49,49 @@ function writeDetachedPrompt(runsDir: string, recordId: string, prompt: string):
   return promptPath
 }
 
+function refuseLiveRetryOwner(spec: DetachSpec): void {
+  if (spec.resume?.kind !== 'retry-root') return
+  const branch = spec.resume.worktree?.branch ?? spec.resume.treePlan?.branch ?? null
+  const tree = spec.resume.worktree?.path ?? null
+  const possibleOwners = db()
+    .query(
+      `SELECT record_id,number,parent_run_record_id,status,pid,branch,worktree FROM run
+       WHERE record_id=? OR parent_run_record_id=?
+          OR (? IS NOT NULL AND branch=?) OR (? IS NOT NULL AND worktree=?)`,
+    )
+    .all(spec.resume.parent, spec.resume.parent, branch, branch, tree, tree) as {
+    record_id: string
+    number: number
+    parent_run_record_id: string | null
+    status: string
+    pid: number | null
+    branch: string | null
+    worktree: string | null
+  }[]
+  const liveOwner = possibleOwners.find((owner) => {
+    const inOriginal =
+      owner.record_id === spec.resume!.parent || owner.parent_run_record_id === spec.resume!.parent
+    if (inOriginal && spec.resume!.retireAsking && owner.status === 'asking') return false
+    return runAlive({
+      status: owner.status,
+      lease: runLeaseState(owner.record_id),
+      pidAlive: Boolean(owner.pid && pidAlive(owner.pid)),
+    })
+  })
+  if (!liveOwner) return
+  throw new Error(
+    `run ${liveOwner.number} (${liveOwner.status}) is alive on the original chain or retained branch/tree; ` +
+      `wait for it or ${PLATFORM_SLUG} run abandon ${spec.resume.parent}`,
+  )
+}
+
 export async function detach(
   jobName: string,
   prompt: string,
   spec: DetachSpec,
   selectedAgent?: string,
   spawnCoordinator: typeof spawn = spawn,
-): Promise<number> {
+): Promise<string> {
   writableDb()
   /**
    * The depth check happens HERE TOO, before a row exists.
@@ -79,7 +116,7 @@ export async function detach(
   // would demand a `--seed` for a database that is already there.
   const firstTurn = resumeFacts(
     spec.resume?.kind ?? null,
-    0,
+    '',
     spec.resume?.parent ?? null,
   ).isFirstTurn
   const seed = !firstTurn
@@ -125,56 +162,24 @@ export async function detach(
     const identity = claimIdentity(spec.resume)
     const projectName = spec.repo ?? repoOf(cwd)
     const projectId = projectName ? (projectByName(projectName)?.recordId ?? null) : null
-    if (spec.resume?.kind === 'retry-root') {
-      const branch = spec.resume.worktree?.branch ?? spec.resume.treePlan?.branch ?? null
-      const tree = spec.resume.worktree?.path ?? null
-      const possibleOwners = db()
-        .query(
-          `SELECT id,parent_run_id,status,pid,branch,worktree FROM run
-           WHERE id=? OR parent_run_id=?
-              OR (? IS NOT NULL AND branch=?) OR (? IS NOT NULL AND worktree=?)`,
-        )
-        .all(spec.resume.parent, spec.resume.parent, branch, branch, tree, tree) as {
-        id: number
-        parent_run_id: number | null
-        status: string
-        pid: number | null
-        branch: string | null
-        worktree: string | null
-      }[]
-      const liveOwner = possibleOwners.find((owner) => {
-        const inOriginal =
-          owner.id === spec.resume!.parent || owner.parent_run_id === spec.resume!.parent
-        if (inOriginal && spec.resume!.retireAsking && owner.status === 'asking') return false
-        return runAlive({
-          status: owner.status,
-          lease: runLeaseState(owner.id),
-          pidAlive: Boolean(owner.pid && pidAlive(owner.pid)),
-        })
-      })
-      if (liveOwner) {
-        throw new Error(
-          `run ${liveOwner.id} (${liveOwner.status}) is alive on the original chain or retained branch/tree; ` +
-            `wait for it or ${PLATFORM_SLUG} run abandon ${spec.resume.parent}`,
-        )
-      }
-    }
+    refuseLiveRetryOwner(spec)
     const inserted = db()
       .query(
-        `INSERT INTO run (record_id, started_at, agent, job, repo, project_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, parent_run_id, turn, mcp,
+        `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, parent_run_record_id, turn, mcp,
                       vendor_session, started_by_user_id)
-       SELECT ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?
+       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?
         WHERE ? IS NULL OR (
-          EXISTS (SELECT 1 FROM run root WHERE root.id = ? AND root.status <> 'stale')
+          EXISTS (SELECT 1 FROM run root WHERE root.record_id = ? AND root.status <> 'stale')
           AND NOT EXISTS (
             SELECT 1 FROM run
-             WHERE (id = ? OR parent_run_id = ?) AND status = 'running'
+             WHERE (record_id = ? OR parent_run_record_id = ?) AND status = 'running'
           )
         )
-       RETURNING id, record_id`,
+       RETURNING record_id, number`,
       )
       .get(
         newRecordId(),
+        nextRunNumber(db()),
         nowIso(),
         jobName,
         projectName,
@@ -187,31 +192,33 @@ export async function detach(
         spec.label ?? null,
         sessionId(),
         spec.probe ? 1 : 0,
-        identity.parent_run_id,
+        identity.parent_run_record_id,
         identity.turn,
         storedMcpRequest(mcpRequest),
         spec.resume?.session ?? null,
         startedByUserId,
-        identity.parent_run_id,
-        identity.parent_run_id,
-        identity.parent_run_id,
-        identity.parent_run_id,
-      ) as { id: number; record_id: string } | null
+        identity.parent_run_record_id,
+        identity.parent_run_record_id,
+        identity.parent_run_record_id,
+        identity.parent_run_record_id,
+      ) as { record_id: string; number: number } | null
     const deliveryRoot =
       spec.resume?.parent ??
       (spec.retryOf
         ? (
             db()
-              .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
-              .get(spec.retryOf) as { root_id: number } | null
+              .query(
+                'SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run WHERE record_id=?',
+              )
+              .get(spec.retryOf) as { root_id: string } | null
           )?.root_id
         : undefined)
     if (inserted && deliveryRoot) {
       db()
         .query(
           `UPDATE question SET delivery_pending_at=NULL
-          WHERE delivery_pending_at IS NOT NULL AND run_id IN
-            (SELECT id FROM run WHERE id=? OR parent_run_id=?)`,
+          WHERE delivery_pending_at IS NOT NULL AND run_record_id IN
+            (SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=?)`,
         )
         .run(deliveryRoot, deliveryRoot)
     }
@@ -220,14 +227,16 @@ export async function detach(
         .query(
           `UPDATE run SET status='failed',failure_kind='stopped',
              error='record-only rulings recovered by retry root'
-           WHERE (id=? OR parent_run_id=?) AND status='asking'`,
+           WHERE (record_id=? OR parent_run_record_id=?) AND status='asking'`,
         )
         .run(spec.resume.parent, spec.resume.parent)
     }
     return inserted
   })
   if (!claimed) {
-    const root = db().query('SELECT status FROM run WHERE id=?').get(spec.resume!.parent) as {
+    const root = db()
+      .query('SELECT status FROM run WHERE record_id=?')
+      .get(spec.resume!.parent) as {
       status: string
     } | null
     if (root?.status === 'stale') {
@@ -235,16 +244,17 @@ export async function detach(
     }
     const running = db()
       .query(
-        `SELECT id, turn FROM run
-        WHERE (id = ? OR parent_run_id = ?) AND status = 'running'
-        ORDER BY turn DESC, id DESC LIMIT 1`,
+        `SELECT record_id, turn FROM run
+        WHERE (record_id = ? OR parent_run_record_id = ?) AND status = 'running'
+        ORDER BY turn DESC, number DESC LIMIT 1`,
       )
-      .get(spec.resume!.parent, spec.resume!.parent) as { id: number; turn: number }
+      .get(spec.resume!.parent, spec.resume!.parent) as { record_id: string; turn: number }
     throw new Error(
-      `run ${spec.resume!.parent} already has running turn ${running.id} (turn ${running.turn})`,
+      `run ${spec.resume!.parent} already has running turn ${running.record_id} (turn ${running.turn})`,
     )
   }
-  const { id, record_id: recordId } = claimed
+  const recordId = claimed.record_id
+  const id = recordId
   let coordinatorLogFd: number | null = null
   let handoffStep = 'write prompt artifact'
   try {
@@ -252,7 +262,7 @@ export async function detach(
     // also stored on the row for run() to reuse rather than creating a second file.
     const promptPath = writeDetachedPrompt(runsDir, recordId, prompt)
     handoffStep = 'record prompt artifact'
-    db().query('UPDATE run SET prompt_path=? WHERE id=?').run(promptPath, id)
+    db().query('UPDATE run SET prompt_path=? WHERE record_id=?').run(promptPath, id)
 
     /**
      * Spawned into its OWN SESSION, which is the whole point and was missing.
@@ -335,7 +345,7 @@ export async function detach(
     // for fifteen minutes.
     handoffStep = 'record coordinator pid'
     if (!child.pid) throw new Error('spawned coordinator has no pid')
-    const pidUpdate = db().query('UPDATE run SET pid=? WHERE id=?').run(child.pid, id)
+    const pidUpdate = db().query('UPDATE run SET pid=? WHERE record_id=?').run(child.pid, id)
     if (pidUpdate.changes !== 1) {
       throw new Error(`coordinator pid update changed ${pidUpdate.changes} rows`)
     }
@@ -344,7 +354,7 @@ export async function detach(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     db()
-      .query(`UPDATE run SET status='failed', failure_kind='harness', error=? WHERE id=?`)
+      .query(`UPDATE run SET status='failed', failure_kind='harness', error=? WHERE record_id=?`)
       .run(`detach handoff failed during ${handoffStep}: ${message}`, id)
     throw error
   } finally {

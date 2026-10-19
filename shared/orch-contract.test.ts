@@ -34,7 +34,14 @@ test('harness health has one validated cross-concern payload contract', () => {
         workPreserved: 0,
         firstSeen: '2026-09-07T01:00:00.000Z',
         lastSeen: '2026-09-07T01:00:00.000Z',
-        clusters: [{ text: 'timeout <n>', count: 1, exampleRunId: 7 }],
+        clusters: [
+          {
+            text: 'timeout <n>',
+            count: 1,
+            exampleRunRecordId: '77777777-7777-4777-8777-777777777777',
+            exampleRunNumber: 7,
+          },
+        ],
         sparkline: [{ day: '2026-09-07', count: 1 }],
       },
     ],

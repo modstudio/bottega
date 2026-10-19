@@ -74,22 +74,22 @@ export function applyRunLeaseMigration(plan: FilesystemIdentityPlan): number {
   return plan.mapped.length
 }
 
-function runLeasePath(runId: number): string {
+function runLeasePath(runId: string): string {
   const row = db()
-    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
     .get(runId)
   if (!row) throw new Error(`no run ${runId} for run lease`)
   return join(leaseDirectory(), runLeaseFileName(row.record_id))
 }
 
 /** Hold this run's coordinator lease until the returned handle is released. */
-export function acquireRunLease(runId: number): KernelLease {
+export function acquireRunLease(runId: string): KernelLease {
   mkdirSync(leaseDirectory(), { recursive: true })
   return acquireKernelLease(runLeasePath(runId))
 }
 
 /** Acquire a required coordinator lease while reporting launch failure to its caller. */
-export function requiredRunLease(runId: number, failed: (cause: unknown) => void): KernelLease {
+export function requiredRunLease(runId: string, failed: (cause: unknown) => void): KernelLease {
   try {
     return acquireRunLease(runId)
   } catch (cause) {
@@ -99,7 +99,7 @@ export function requiredRunLease(runId: number, failed: (cause: unknown) => void
 }
 
 /** Observe a run lease without deleting or otherwise changing its file. */
-export function runLeaseState(runId: number): RunLeaseState {
+export function runLeaseState(runId: string): RunLeaseState {
   const path = runLeasePath(runId)
   if (!existsSync(path)) return 'missing'
   const lease = tryKernelLease(path)
@@ -109,7 +109,7 @@ export function runLeaseState(runId: number): RunLeaseState {
 }
 
 /** Remove a free lease file while holding its lock; a held lease is untouched. */
-export function removeFreeRunLease(runId: number): 'removed' | 'held' | 'missing' {
+export function removeFreeRunLease(runId: string): 'removed' | 'held' | 'missing' {
   const path = runLeasePath(runId)
   if (!existsSync(path)) return 'missing'
   const lease = tryKernelLease(path)

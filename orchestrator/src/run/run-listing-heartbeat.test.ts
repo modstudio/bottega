@@ -31,12 +31,15 @@ test('heartbeat reports both an answerable question and a stalled current turn',
   const birth = 'Tue Sep 22 12:00:00 2026'
   db()
     .query(
-      'UPDATE run SET pid=?,agent_pid=?,agent_pgid=?,agent_start_time=?,last_event_at=? WHERE id=?',
+      'UPDATE run SET pid=?,agent_pid=?,agent_pgid=?,agent_start_time=?,last_event_at=? WHERE record_id=?',
     )
     .run(sleeper.pid, sleeper.pid, sleeper.pid, birth, '2026-09-22T12:00:00.000Z', turn)
+  const turnNumber = (
+    db().query('SELECT number FROM run WHERE record_id=?').get(turn) as { number: number }
+  ).number
   db()
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question,why) VALUES ('${newRecordId()}',?,?,?,?)`,
+      `INSERT INTO question (record_id,run_record_id,asked_at,question,why) VALUES ('${newRecordId()}',?,?,?,?)`,
     )
     .run(root, new Date().toISOString(), 'which way?', 'the fixture needs both conditions')
 
@@ -71,7 +74,7 @@ fi
     expect(result.exitCode).toBe(0)
     const output = result.stdout.toString()
     expect(output).toContain('BLOCKED - 1 question(s) waiting on you')
-    expect(output).toContain(`STALLED - 1 run(s): run ${turn} grok/review-lens`)
+    expect(output).toContain(`STALLED - 1 run(s): run ${turnNumber} grok/review-lens`)
     expect(output).toContain('has used no CPU in that time; stop it and re-dispatch, or wait')
     expect(output).not.toContain(`run ${root} grok/review-lens`)
     expect(output.match(/STALLED/g)).toHaveLength(1)
@@ -102,7 +105,7 @@ test('heartbeat termination reaps an active guarded call and its watchdog', asyn
 if [ "$1" = "question" ] && [ "$2" = "inbox" ]; then
   echo '[]'
 elif [ "$1" = "run" ] && [ "$2" = "list" ]; then
-  echo '{"id":42,"live_member_id":42,"job":"implement","agent":"codex","status":"running","session_id":"termination-session","started_at":"2026-09-22T12:00:00.000Z","latency_ms":null,"failure_kind":null,"idle":null,"stall_state":"healthy","stall":null}'
+  echo '{"record_id":"42424242-4242-4424-8424-424242424242","number":42,"live_member_id":"42424242-4242-4424-8424-424242424242","job":"implement","agent":"codex","status":"running","session_id":"termination-session","started_at":"2026-09-22T12:00:00.000Z","latency_ms":null,"failure_kind":null,"idle":null,"stall_state":"healthy","stall":null}'
 elif [ "$1" = "machine" ] && [ "$2" = "monitor" ] && [ "$3" = "--notices" ]; then
   echo "$$" > "$TARGET_PID_PATH"
   exec /bin/sleep 30
@@ -197,7 +200,7 @@ if [ "$1" = "board" ]; then
 elif [ "$1" = "question" ] && [ "$2" = "inbox" ]; then
   echo '[]'
 elif [ "$1" = "run" ] && [ "$2" = "list" ]; then
-  echo '{"id":42,"live_member_id":42,"job":"implement","agent":"codex","status":"running","session_id":"notice-failure-session","started_at":"2026-09-22T12:00:00.000Z","latency_ms":null,"failure_kind":null,"idle":null,"stall_state":"healthy","stall":null}'
+  echo '{"record_id":"42424242-4242-4424-8424-424242424242","number":42,"live_member_id":"42424242-4242-4424-8424-424242424242","job":"implement","agent":"codex","status":"running","session_id":"notice-failure-session","started_at":"2026-09-22T12:00:00.000Z","latency_ms":null,"failure_kind":null,"idle":null,"stall_state":"healthy","stall":null}'
 elif [ "$1" = "machine" ] && [ "$2" = "monitor" ] && [ "$3" = "--notices" ]; then
   count=0
   [ ! -f "$COUNTER_PATH" ] || count=$(cat "$COUNTER_PATH")

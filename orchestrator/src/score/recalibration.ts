@@ -21,6 +21,15 @@ type RecalibrationPresentation = {
   input: Readable
   output: Writable
 }
+type RecalibrationRow = {
+  record_id: string
+  number: number
+  job: string
+  output_path: string | null
+  original_delivery: Delivery
+  original_quality: Quality | null
+  original_fidelity: Fidelity | null
+}
 
 export async function recalibrate(
   flags: RecalibrationFlags,
@@ -34,28 +43,20 @@ export async function recalibrate(
   const scorer = flags.flag('scorer') ?? process.env.ORCH_SCORER ?? 'claude'
   const rows = db()
     .query(
-      `SELECT r.id, r.job, r.output_path,
+      `SELECT r.record_id, r.number, r.job, r.output_path,
           s.delivery AS original_delivery, s.quality AS original_quality,
           s.fidelity AS original_fidelity
-     FROM score s JOIN run r ON r.id = s.run_id
+     FROM score s JOIN run r ON r.record_id = s.run_record_id
     WHERE datetime(s.scored_at) < datetime('now', '-7 days')
       AND (? = 1 OR s.scored_by = ?)
     ORDER BY random()`,
     )
-    .all(flags.has('force') ? 1 : 0, scorer) as {
-    id: number
-    job: string
-    output_path: string | null
-    original_delivery: Delivery
-    original_quality: Quality | null
-    original_fidelity: Fidelity | null
-  }[]
+    .all(flags.has('force') ? 1 : 0, scorer) as RecalibrationRow[]
   const sample = rows.filter((row) => row.output_path && existsSync(row.output_path)).slice(0, n)
   if (!sample.length) {
     presentation.log('no scored runs older than 7 days with output still on disk')
     return
   }
-
   const rl = createInterface({ input: presentation.input, output: presentation.output })
   const verdicts = rl[Symbol.asyncIterator]()
   const results: {
@@ -71,7 +72,7 @@ export async function recalibrate(
           ? output
           : `${output.slice(0, 4000)}\n\n... output middle hidden ...\n\n${output.slice(-2000)}`
       const writes = Boolean(JOBS[row.job]?.needs.writesRepo)
-      presentation.log(`\nrun ${row.id} / ${row.job}`)
+      presentation.log(`\nrun ${row.number} / ${row.job}`)
       presentation.log(`axes: delivery quality${writes ? ' fidelity' : ''}`)
       presentation.log(excerpt)
       const hint = writes
@@ -110,10 +111,10 @@ export async function recalibrate(
       ]
       db()
         .query(
-          `INSERT INTO calibration (record_id, run_id, delivery, quality, fidelity, at, session_id)
+          `INSERT INTO calibration (record_id, run_record_id, delivery, quality, fidelity, at, session_id)
        VALUES (?,?,?,?,?,?,?)`,
         )
-        .run(newRecordId(), row.id, ...fresh, calibrationAt, sessionId())
+        .run(newRecordId(), row.record_id, ...fresh, calibrationAt, sessionId())
       results.push({
         original: [row.original_delivery, row.original_quality, row.original_fidelity],
         fresh,

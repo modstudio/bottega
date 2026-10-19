@@ -215,13 +215,13 @@ function latestActivity(
 } {
   const liveRows = database
     .query(
-      "SELECT id,status,pid FROM run WHERE project_record_id=? AND status IN ('running','asking')",
+      "SELECT record_id,status,pid FROM run WHERE project_record_id=? AND status IN ('running','asking')",
     )
-    .all(projectId) as { id: number; status: string; pid: number | null }[]
+    .all(projectId) as { record_id: string; status: string; pid: number | null }[]
   const liveRun = liveRows.some((row) =>
     runAlive({
       status: row.status,
-      lease: runLeaseState(row.id),
+      lease: runLeaseState(row.record_id),
       pidAlive: Boolean(row.pid && pidAlive(row.pid)),
     }),
   )
@@ -233,7 +233,7 @@ function latestActivity(
   const gated = database
     .query(
       `SELECT MAX(g.requested_at) value FROM gate_execution g
-       JOIN run r ON r.id=g.run_id WHERE r.project_record_id=?`,
+       JOIN run r ON r.record_id=g.run_record_id WHERE r.project_record_id=?`,
     )
     .get(projectId) as { value: string | null }
   const project = database.query('SELECT name FROM project WHERE record_id=?').get(projectId) as {

@@ -229,7 +229,7 @@ describe('worktree removal safety', () => {
       repoRoot,
       false,
       true,
-      668,
+      'run-record-id-668',
     )
 
     expect(outcome).toEqual({ removed: true, detail: `${path} was already gone` })

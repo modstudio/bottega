@@ -7,7 +7,7 @@ export type RecordedGateCandidate = {
   id: number
   projectId: string | null
   headCommit: string | null
-  runId: number | null
+  runId: string | null
   exitCode: number | null
   timedOut: boolean | null
   elapsedMs: number | null
@@ -19,7 +19,7 @@ type GateExecutionRow = {
   id: number
   project_record_id: string | null
   head_commit: string | null
-  run_id: number | null
+  run_record_id: string | null
   exit_code: number | null
   timed_out: number | null
   elapsed_ms: number | null
@@ -66,7 +66,7 @@ function recordedGateCandidateFromRow(
     id: row.id,
     projectId: row.project_record_id ?? (row.cwd ? (cwdProjectIds.get(row.cwd) ?? null) : null),
     headCommit: row.head_commit,
-    runId: row.run_id,
+    runId: row.run_record_id,
     exitCode: row.exit_code,
     timedOut: row.timed_out === null ? null : row.timed_out === 1,
     elapsedMs: row.elapsed_ms,
@@ -75,11 +75,13 @@ function recordedGateCandidateFromRow(
   }
 }
 
-export function recordedGateResult(runId: number): {
+export function recordedGateResult(runId: string): {
   headCommit: string | null
   result: RecordedGateCandidate | null
 } {
-  const run = db().query('SELECT project_record_id,head_commit FROM run WHERE id=?').get(runId) as {
+  const run = db()
+    .query('SELECT project_record_id,head_commit FROM run WHERE record_id=?')
+    .get(runId) as {
     project_record_id: string | null
     head_commit: string | null
   } | null
@@ -88,9 +90,9 @@ export function recordedGateResult(runId: number): {
 
   const rows = db()
     .query(
-      `SELECT g.id,r.project_record_id,g.head_commit,g.run_id,g.exit_code,g.timed_out,g.elapsed_ms,
+      `SELECT g.id,r.project_record_id,g.head_commit,g.run_record_id,g.exit_code,g.timed_out,g.elapsed_ms,
               g.finished_at,g.output_tail,g.cwd
-       FROM gate_execution g LEFT JOIN run r ON r.id=g.run_id
+       FROM gate_execution g LEFT JOIN run r ON r.record_id=g.run_record_id
        WHERE g.finished_at IS NOT NULL`,
     )
     .all() as GateExecutionRow[]

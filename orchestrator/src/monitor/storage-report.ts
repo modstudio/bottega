@@ -46,7 +46,7 @@ export type StorageReport = {
 
 function walk(
   root: string,
-  classify: (relativePath: string) => { kind: RunStorageKind; runId: number | null },
+  classify: (relativePath: string) => { kind: RunStorageKind; runId: string | null },
   entryLimit = STORAGE_WALK_ENTRY_LIMIT,
 ): ReturnType<typeof walkStoragePaths<ReturnType<typeof classify>>> {
   return walkStoragePaths([root], (_root, relativePath) => classify(relativePath), entryLimit, {
@@ -69,26 +69,25 @@ function runClassifier(
   runsRoot: string,
   promptPaths: ReadonlySet<string>,
   replyPaths: ReadonlySet<string>,
-): (relativePath: string) => { kind: RunStorageKind; runId: number | null } {
+): (relativePath: string) => { kind: RunStorageKind; runId: string | null } {
   return (relativePath) => {
     const absolute = resolve(runsRoot, relativePath)
     const parts = relativePath.split('/')
-    const numericId = parts[0] && /^\d+$/.test(parts[0]) ? Number(parts[0]) : null
-    const sandbox = parts[0]?.match(/^sandbox-(\d+)$/)
-    if (numericId !== null && parts[1] === 'artifacts')
-      return { kind: 'artifacts', runId: numericId }
-    if (numericId !== null && parts[1] === 'scratch') return { kind: 'scratch', runId: numericId }
-    if (sandbox) return { kind: 'sandboxes', runId: Number(sandbox[1]) }
-    if (promptPaths.has(absolute)) return { kind: 'prompts', runId: numericId }
-    if (replyPaths.has(absolute) || (numericId !== null && parts[1] === 'reply.txt')) {
-      return { kind: 'replies', runId: numericId }
+    const runId = parts[0] || null
+    const sandbox = parts[0]?.match(/^sandbox-(.+)$/)
+    if (runId !== null && parts[1] === 'artifacts') return { kind: 'artifacts', runId }
+    if (runId !== null && parts[1] === 'scratch') return { kind: 'scratch', runId }
+    if (sandbox) return { kind: 'sandboxes', runId: sandbox[1]! }
+    if (promptPaths.has(absolute)) return { kind: 'prompts', runId }
+    if (replyPaths.has(absolute) || (runId !== null && parts[1] === 'reply.txt')) {
+      return { kind: 'replies', runId }
     }
-    return { kind: 'other', runId: numericId }
+    return { kind: 'other', runId }
   }
 }
 
 export type StorageRunFact = {
-  id: number
+  record_id: string
   status: string
   started_at: string
   prompt_path: string | null
@@ -129,10 +128,10 @@ export async function measureRunStorage(
     }),
   ) as Record<RunStorageKind, StorageMeasurement>
   const facts = new Map(
-    rows.map((row) => [row.id, { startedAt: row.started_at, status: row.status }]),
+    rows.map((row) => [row.record_id, { startedAt: row.started_at, status: row.status }]),
   )
   const sizesFor = (kind: 'artifacts' | 'scratch') => {
-    const sizes = new Map<number, number>()
+    const sizes = new Map<string, number>()
     for (const entry of runWalk.observations) {
       if (entry.kind !== kind || entry.runId === null) continue
       sizes.set(entry.runId, (sizes.get(entry.runId) ?? 0) + entry.bytes)
@@ -173,9 +172,9 @@ export async function storageReport(clock = Date.now()): Promise<StorageReport> 
   const database = db()
   const runsPath = resolveRunsDirectory(process.env)
   const rows = database
-    .query('SELECT id,status,started_at,prompt_path,output_path FROM run')
+    .query('SELECT record_id,status,started_at,prompt_path,output_path FROM run')
     .all() as {
-    id: number
+    record_id: string
     status: string
     started_at: string
     prompt_path: string | null

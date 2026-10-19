@@ -155,7 +155,7 @@ async function response(
   owner: Record<string, unknown>,
   changedEvents: string[],
 ) {
-  const versionRows = await versions(tx, input.kind, input.spaceId, text(owner.id))
+  const versionRows = await versions(tx, input.kind, input.spaceId, text(owner.record_id))
   const eventRows = await events(tx, input.kind, input.spaceId, changedEvents)
   const identityTable = input.kind === 'workflow' ? 'workflow' : 'step_catalogue'
   const versionTable = input.kind === 'workflow' ? 'workflow_version' : 'step_catalogue_version'
@@ -179,7 +179,7 @@ export async function draftRecordWorkflow(input: Tenant & RecordWorkflowDraftInp
   try {
     return await tenant(input, async (tx) => {
       const owner = await identity(tx, input, true),
-        ownerId = text(owner.id),
+        ownerId = text(owner.record_id),
         now = new Date().toISOString()
       const prior = await versions(tx, input.kind, input.spaceId, ownerId)
       const n = prior.reduce((max, row) => Math.max(max, number(row.n)), 0) + 1
@@ -276,7 +276,7 @@ async function transition(
   try {
     return await tenant(input, async (tx) => {
       const owner = await identity(tx, input, false),
-        ownerId = text(owner.id),
+        ownerId = text(owner.record_id),
         now = new Date().toISOString()
       const rows = await versions(tx, input.kind, input.spaceId, ownerId)
       const current = rows.find((row) => row.status === 'production')

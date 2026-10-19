@@ -22,11 +22,13 @@ export type RecordRecipeResource = (resource: {
   name: string
 }) => void
 export type ClaimRecipePort = () => number
+const LIVE_WORKTREE_OWNER_SQL =
+  "SELECT record_id,number FROM run WHERE worktree = ? AND status IN ('running','asking') LIMIT 1"
 
 export function worktreeCreateVariables(
   branchTemplate: string | undefined,
   existingBranch: string | undefined,
-  runId: number,
+  runId: string,
   key: string | undefined,
   seed: string | undefined,
   base: string,
@@ -61,7 +63,7 @@ export function leftoverRemedy(
 function runRecordedRecipe(
   worktree: Worktree,
   recipe: Recipe,
-  runId: number,
+  runId: string,
   recordRecipeResource?: RecordRecipeResource,
   claimRecipePort?: ClaimRecipePort,
 ): ReturnType<typeof runRecipe> {
@@ -95,12 +97,12 @@ function runRecordedRecipe(
 /** Mark a tree as orch-owned without asking the project to track orch metadata. */
 function markWorktree(
   path: string,
-  runId: number,
+  runId: string,
   repoRoot: string,
   source: NonNullable<Worktree['source']>,
 ): void {
   const owner = db()
-    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
     .get(runId)
   if (!owner) throw new Error(`cannot mark worktree: no run ${runId}`)
   writeFileSync(join(path, ORCH_RUN_MARKER), `${owner.record_id}\n${repoRoot}\nsource: ${source}\n`)
@@ -124,7 +126,7 @@ function markWorktree(
  */
 export function attributeWorktree(
   worktree: Worktree,
-  runId: number,
+  runId: string,
   record?: RecordWorktree,
 ): void {
   try {
@@ -136,14 +138,14 @@ export function attributeWorktree(
         `unrecorded worktree cleanup: ${cleanup.removed ? 'removed' : cleanup.detail}`,
     )
   }
-  const recorded = db().query('SELECT status FROM run WHERE id=?').get(runId) as {
+  const recorded = db().query('SELECT status FROM run WHERE record_id=?').get(runId) as {
     status: string
   } | null
   if (recorded?.status === 'stopped') {
     const cleanup = removeFor(worktree, worktree.repoRoot, false, false, runId)
     settleCreateTimeBranchCleanup(worktree, runId)
     if (cleanup.removed) {
-      db().query('UPDATE run SET worktree=NULL WHERE id=?').run(runId)
+      db().query('UPDATE run SET worktree=NULL WHERE record_id=?').run(runId)
     }
     throw new Error(
       `run ${runId} stopped during worktree creation; ` +
@@ -201,7 +203,7 @@ export function runCreateTool(
 export function createWithTool(
   tool: WorktreeTool,
   cwd: string,
-  runId: number,
+  runId: string,
   seed?: string,
   key?: string,
   baseRef?: string,
@@ -248,7 +250,7 @@ export function createWithTool(
 function createWithToolUnlocked(
   tool: WorktreeTool,
   repoRoot: string,
-  runId: number,
+  runId: string,
   seed?: string,
   key?: string,
   baseRef?: string,
@@ -290,7 +292,6 @@ function createWithToolUnlocked(
       requestedBranch,
     )
   }
-
   // A base is a commit, not a recipe argument. {base} is passed when the
   // template has a slot; without one the branch is still cut at that commit
   // after the tool returns.
@@ -306,7 +307,6 @@ function createWithToolUnlocked(
   const { branch, name } = vars
   const r = runCreateTool(tool.create, vars, repoRoot, targetGitEnvironment(repoRoot))
   if (!r.ok) throw new Error(`the project's worktree tool failed:\n${r.out.slice(-1500)}`)
-
   /**
    * A successful project tool may still fail orch's postconditions. At that
    * point the tree, branch and database belong to the project's lifecycle and
@@ -381,12 +381,13 @@ function createWithToolUnlocked(
    * Read-only jobs never reach here: they get no worktree at all, and need
    * none.
    */
-  const owner = db()
-    .query(`SELECT id FROM run WHERE worktree = ? AND status IN ('running','asking') LIMIT 1`)
-    .get(path) as { id: number } | null
+  const owner = db().query(LIVE_WORKTREE_OWNER_SQL).get(path) as {
+    record_id: string
+    number: number
+  } | null
   if (owner) {
     throw new Error(
-      `the project's worktree tool returned ${path}, which run ${owner.id} is still using.\n` +
+      `the project's worktree tool returned ${path}, which run ${owner.number} is still using.\n` +
         `Each run needs its own tree. Check that this project's branch template makes the\n` +
         `directory unique per run — a template keyed only on a ticket collides on the second.` +
         leftover(path),
@@ -437,7 +438,7 @@ function shouldCheckoutCreatedBranch(detached: boolean, existingBranch?: string)
 function createWithoutCommand(
   tool: WorktreeTool,
   repoRoot: string,
-  runId: number,
+  runId: string,
   seed?: string,
   key?: string,
   baseRef?: string,
@@ -486,7 +487,7 @@ const MISSING_WORKTREE_LIFECYCLE =
 
 export function createWorktree(
   cwd: string,
-  runId: number,
+  runId: string,
   baseRef?: string,
   record?: RecordWorktree,
   detached = false,
@@ -501,7 +502,7 @@ export function createWorktree(
 /** Cut a new disposable tree on a task branch that already exists. */
 export function createWorktreeForBranch(
   cwd: string,
-  runId: number,
+  runId: string,
   branch: string,
   record?: RecordWorktree,
 ): Worktree {
@@ -528,7 +529,7 @@ export function createWorktreeForBranch(
 
 function createWorktreeUnlocked(
   repoRoot: string,
-  runId: number,
+  runId: string,
   baseRef?: string,
   record?: RecordWorktree,
   detached = false,
@@ -615,7 +616,7 @@ function createFromRecipe(
   tool: WorktreeTool,
   recipe: Recipe,
   repoRoot: string,
-  runId: number,
+  runId: string,
   key?: string,
   baseRef?: string,
   record?: RecordWorktree,
@@ -680,7 +681,7 @@ function createFromRecipe(
 function recipeWorktreeIdentity(
   tool: WorktreeTool,
   repoRoot: string,
-  runId: number,
+  runId: string,
   key?: string,
   existingBranch?: string,
   requestedBranch?: string,

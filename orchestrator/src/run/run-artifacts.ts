@@ -182,17 +182,8 @@ export function pruneRuns(dir: string): void {
   }
 }
 
-function runStorageKey(id: number | string): string {
-  if (typeof id === 'string') return id
-  const row = db()
-    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
-    .get(id)
-  if (!row) throw new Error(`no run ${id}`)
-  return row.record_id
-}
-
-export const runScratchDir = (id: number | string, runsDir = RUNS_DIR): string =>
-  scratchDirectory(runStorageKey(id), runsDir)
+export const runScratchDir = (id: string, runsDir = RUNS_DIR): string =>
+  scratchDirectory(id, runsDir)
 
 export function prepareFiles(
   runsDir: string,
@@ -210,27 +201,27 @@ export function prepareFiles(
   return paths
 }
 
-export function noRepoIsolatePath(id: number, runsDir = RUNS_DIR): string {
-  return join(runsDir, 'isolates', runStorageKey(id))
+export function noRepoIsolatePath(id: string, runsDir = RUNS_DIR): string {
+  return join(runsDir, 'isolates', id)
 }
 
-export function runSandboxDir(id: number, runsDir = RUNS_DIR): string {
-  return join(runsDir, `sandbox-${runStorageKey(id)}`)
+export function runSandboxDir(id: string, runsDir = RUNS_DIR): string {
+  return join(runsDir, `sandbox-${id}`)
 }
 
-export const runArtifactsDir = (id: number | string, runsDir = RUNS_DIR): string =>
-  artifactDirectory(runStorageKey(id), runsDir)
+export const runArtifactsDir = (id: string, runsDir = RUNS_DIR): string =>
+  artifactDirectory(id, runsDir)
 
-function declaredDeliverablesPath(id: number, runsDir = RUNS_DIR): string {
-  return join(runsDir, runStorageKey(id), 'deliverables.json')
+function declaredDeliverablesPath(id: string, runsDir = RUNS_DIR): string {
+  return join(runsDir, id, 'deliverables.json')
 }
 
-function runTerminalResultPath(id: number, runsDir = RUNS_DIR): string {
-  return join(runsDir, runStorageKey(id), 'result.json')
+function runTerminalResultPath(id: string, runsDir = RUNS_DIR): string {
+  return join(runsDir, id, 'result.json')
 }
 
-export function runTerminalReplyPath(id: number, runsDir = RUNS_DIR): string {
-  return join(runsDir, runStorageKey(id), 'reply.txt')
+export function runTerminalReplyPath(id: string, runsDir = RUNS_DIR): string {
+  return join(runsDir, id, 'reply.txt')
 }
 
 export type TerminalSnapshot = {
@@ -258,13 +249,13 @@ export type TerminalSnapshot = {
   escalations: number | null
 }
 
-export function persistTerminalSnapshot(id: number, snapshot: TerminalSnapshot): void {
-  mkdirSync(join(RUNS_DIR, runStorageKey(id)), { recursive: true })
+export function persistTerminalSnapshot(id: string, snapshot: TerminalSnapshot): void {
+  mkdirSync(join(RUNS_DIR, id), { recursive: true })
   writeFileSync(runTerminalReplyPath(id), snapshot.output)
   writeFileSync(runTerminalResultPath(id), JSON.stringify(snapshot))
 }
 
-function readTerminalSnapshot(id: number): TerminalSnapshot | null {
+function readTerminalSnapshot(id: string): TerminalSnapshot | null {
   const path = runTerminalResultPath(id)
   if (!existsSync(path)) return null
   try {
@@ -275,7 +266,7 @@ function readTerminalSnapshot(id: number): TerminalSnapshot | null {
 }
 
 /** Record a terminal row from the run directory after a schema-reload failure. */
-export function reconcileRun(id: number): string {
+export function reconcileRun(id: string): string {
   writableDb()
   const snapshot = readTerminalSnapshot(id)
   if (!snapshot) {
@@ -285,8 +276,10 @@ export function reconcileRun(id: number): string {
         `cleared by: the worker must persist reply.txt and result.json before the row write`,
     )
   }
-  const row = db().query('SELECT id, unreconciled, status FROM run WHERE id=?').get(id) as {
-    id: number
+  const row = db()
+    .query('SELECT record_id, unreconciled, status FROM run WHERE record_id=?')
+    .get(id) as {
+    record_id: string
     unreconciled: number
     status: string
   } | null
@@ -307,7 +300,7 @@ export function reconcileRun(id: number): string {
                       pre_confinement=?, confinement=?, unreconciled=0,
                       files_changed=?, changed_paths=?, lines_added=?, lines_removed=?,
                       tests_ran=?, tests_passed=?, deviations=?, escalations=?
-        WHERE id=?`,
+        WHERE record_id=?`,
       )
       .run(
         snapshot.latencyMs,
@@ -341,12 +334,12 @@ export function reconcileRun(id: number): string {
 
 export type DispatchState = { deliverables: string[]; timeoutMinutes: number | null }
 
-export function writeDispatchState(id: number, state: DispatchState): void {
-  mkdirSync(join(RUNS_DIR, runStorageKey(id)), { recursive: true })
+export function writeDispatchState(id: string, state: DispatchState): void {
+  mkdirSync(join(RUNS_DIR, id), { recursive: true })
   writeFileSync(declaredDeliverablesPath(id), JSON.stringify(state))
 }
 
-export function readDispatchState(id: number): DispatchState {
+export function readDispatchState(id: string): DispatchState {
   const p = declaredDeliverablesPath(id)
   if (!existsSync(p)) return { deliverables: [], timeoutMinutes: null }
   try {
@@ -393,7 +386,7 @@ function listArtifacts(source: string, logical: string, listed: Map<string, List
     listArtifacts(join(source, name), logical ? `${logical}/${name}` : name, listed)
 }
 
-function recordArtifactByteTotals(id: number, keptBytes: number, droppedBytes: number): void {
+function recordArtifactByteTotals(id: string, keptBytes: number, droppedBytes: number): void {
   const path = runTerminalResultPath(id)
   if (!existsSync(path)) return
   const result = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
@@ -403,7 +396,7 @@ function recordArtifactByteTotals(id: number, keptBytes: number, droppedBytes: n
 }
 
 type ArtifactCollectionInput = {
-  id: number
+  id: string
   scratch: string
   artifacts: string
   namedPaths: string[]
@@ -430,7 +423,7 @@ function collectNamedCandidate(
   listed: Map<string, ListedArtifact>,
   namedLogical: string[],
 ): string | null {
-  const artifact = namedArtifactPlan(runStorageKey(input.id), RUNS_DIR, named, input.worktreePath)
+  const artifact = namedArtifactPlan(input.id, RUNS_DIR, named, input.worktreePath)
   const logical = relative(input.artifacts, artifact.destination) || '.'
   if (namedLogical.includes(logical)) return null
   namedLogical.push(logical)
@@ -476,7 +469,7 @@ function collectArtifactCandidates(input: ArtifactCollectionInput): {
 }
 
 function publishRetainedArtifacts(input: {
-  id: number
+  id: string
   scratch: string
   artifacts: string
   runDirectory: string
@@ -506,14 +499,14 @@ function publishRetainedArtifacts(input: {
 }
 
 export function persistRunArtifacts(
-  id: number,
+  id: string,
   namedPaths: string[] | null,
   worktree: { path: string } | null,
   changes: { diff?: string } | null,
 ): void {
   const scratch = runScratchDir(id)
   const artifacts = runArtifactsDir(id)
-  const runDirectory = join(RUNS_DIR, runStorageKey(id))
+  const runDirectory = join(RUNS_DIR, id)
   mkdirSync(runDirectory, { recursive: true })
   // A worker can write the runs directory, so it can swap either root for a link;
   // following one would copy files the worker itself is denied into artifacts.

@@ -33,23 +33,23 @@ export function reseedSeed(
   )
 }
 
-export type ReseedChainParticipant = { id: number; status: string }
+export type ReseedChainParticipant = { record_id: string; status: string }
 
 export function reseedLivenessRefusal(participants: ReseedChainParticipant[]): string | null {
   const live = participants.find(
     (participant) => participant.status === 'running' || participant.status === 'asking',
   )
   return live
-    ? `run ${live.id} is ${live.status} in this tree's owning chain; wait for it to finish or stop it before reseeding`
+    ? `run ${live.record_id} is ${live.status} in this tree's owning chain; wait for it to finish or stop it before reseeding`
     : null
 }
 
-function owningChainParticipants(rootRunId: number): ReseedChainParticipant[] {
+function owningChainParticipants(rootRunId: string): ReseedChainParticipant[] {
   return db()
     .query(
-      `SELECT id,status FROM run
-       WHERE id=? OR parent_run_id=?
-       ORDER BY id`,
+      `SELECT record_id,status FROM run
+       WHERE record_id=? OR parent_run_record_id=?
+       ORDER BY number`,
     )
     .all(rootRunId, rootRunId) as ReseedChainParticipant[]
 }

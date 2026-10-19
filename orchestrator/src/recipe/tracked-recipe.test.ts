@@ -101,15 +101,14 @@ describe('tracked recipe execution', () => {
         "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'compose-owner',?,1) RETURNING record_id",
       )
       .get(repoRoot)!.record_id
-    const runId = Number(
-      database
-        .query(
-          `INSERT INTO run
-           (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id,turn)
-           VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'compose ownership','running',?,1)`,
-        )
-        .run(nowIso(), projectId).lastInsertRowid,
-    )
+    const runId = database
+      .query<{ id: string }, [string, string, string]>(
+        `INSERT INTO run
+           (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id,turn)
+           VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'compose ownership','running',?,1)
+           RETURNING record_id AS id`,
+      )
+      .get(newRecordId(), nowIso(), projectId)!.id
     const originalSpawnSync = Bun.spawnSync
     spyOn(Bun, 'spawnSync').mockImplementation(((argv: string[], options?: object) => {
       if (argv[0] !== 'docker') return originalSpawnSync(argv, options as never)
@@ -124,7 +123,9 @@ describe('tracked recipe execution', () => {
 
     const composeSpawn: ComposeSpawn = (argv) => {
       if (argv.includes('up')) {
-        const row = database.query('SELECT recipe_snapshot FROM run WHERE id=?').get(runId) as {
+        const row = database
+          .query('SELECT recipe_snapshot FROM run WHERE record_id=?')
+          .get(runId) as {
           recipe_snapshot: string
         }
         expect(JSON.parse(row.recipe_snapshot).composeOwnership).toBeTrue()
@@ -190,17 +191,18 @@ describe('tracked recipe execution', () => {
         "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'required-provision',?,1) RETURNING record_id",
       )
       .get(repoRoot)!.record_id
-    const insertRun = database.query(
+    const insertRun = database.query<{ id: string }, [string, string, string]>(
       `INSERT INTO run
-       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id,turn)
-       VALUES (?,?,'codex','implement','sha',1,'required provision','running',?,1)`,
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id,turn)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'required provision','running',?,1)
+       RETURNING record_id AS id`,
     )
-    const runId = Number(insertRun.run(newRecordId(), nowIso(), projectId).lastInsertRowid)
-    const unrelatedRunId = Number(insertRun.run(newRecordId(), nowIso(), projectId).lastInsertRowid)
+    const runId = insertRun.get(newRecordId(), nowIso(), projectId)!.id
+    const unrelatedRunId = insertRun.get(newRecordId(), nowIso(), projectId)!.id
     database
       .query(
         `INSERT INTO resource_claim
-         (record_id, root_run_id,run_id,project_record_id,kind,allocation_key,state,claimed_at)
+         (record_id, root_run_record_id,run_record_id,project_record_id,kind,allocation_key,state,claimed_at)
          VALUES ('${newRecordId()}', ?,?,?,'worktree','/unrelated','claimed',?)`,
       )
       .run(unrelatedRunId, unrelatedRunId, projectId, nowIso())
@@ -218,7 +220,7 @@ describe('tracked recipe execution', () => {
         path,
         attribute(worktree) {
           database
-            .query('UPDATE run SET cwd=?,worktree=?,branch=?,minted_branch=? WHERE id=?')
+            .query('UPDATE run SET cwd=?,worktree=?,branch=?,minted_branch=? WHERE record_id=?')
             .run(
               worktree.path,
               worktree.path,
@@ -255,13 +257,13 @@ describe('tracked recipe execution', () => {
 
     expect(earlierProvisionObserved).toBeTrue()
     expect(existsSync(path)).toBeFalse()
-    expect(database.query('SELECT worktree FROM run WHERE id=?').get(runId)).toEqual({
+    expect(database.query('SELECT worktree FROM run WHERE record_id=?').get(runId)).toEqual({
       worktree: null,
     })
     expect(
       database
         .query(
-          'SELECT kind,state FROM resource_claim WHERE root_run_id=? ORDER BY kind,allocation_key',
+          'SELECT kind,state FROM resource_claim WHERE root_run_record_id=? ORDER BY kind,allocation_key',
         )
         .all(runId),
     ).toEqual([
@@ -270,7 +272,9 @@ describe('tracked recipe execution', () => {
       { kind: 'worktree', state: 'released' },
     ])
     expect(
-      database.query('SELECT state FROM resource_claim WHERE root_run_id=?').get(unrelatedRunId),
+      database
+        .query('SELECT state FROM resource_claim WHERE root_run_record_id=?')
+        .get(unrelatedRunId),
     ).toEqual({ state: 'claimed' })
   })
 
@@ -496,15 +500,14 @@ describe('tracked recipe execution', () => {
         "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'shared','/shared',1) RETURNING record_id",
       )
       .get()!.record_id
-    const runId = Number(
-      database
-        .query(
-          `INSERT INTO run
-           (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id,turn)
-           VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'shared claims','running',?,1)`,
-        )
-        .run(nowIso(), projectId).lastInsertRowid,
-    )
+    const runId = database
+      .query<{ id: string }, [string, string, string]>(
+        `INSERT INTO run
+           (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id,turn)
+           VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'shared claims','running',?,1)
+           RETURNING record_id AS id`,
+      )
+      .get(newRecordId(), nowIso(), projectId)!.id
     const plain = trackedAllocator.allocate({ runId, recipe: { create: [] }, staticVars: {} })
     const shared = trackedAllocator.allocate({
       runId,
@@ -526,7 +529,7 @@ describe('tracked recipe execution', () => {
   test('builds the worker environment from recorded allocations and the root label', () => {
     const rootId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const rootRecordId = db()
-      .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
       .get(rootId)!.record_id
     expect(
       recipeAllocationEnvironment(
@@ -552,7 +555,7 @@ describe('tracked recipe execution', () => {
   test('creation variables carry the conversation root label and derived Compose project', () => {
     const rootId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const rootRecordId = db()
-      .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
       .get(rootId)!.record_id
     expect(
       trackedRecipeVars(
@@ -578,35 +581,34 @@ describe('tracked recipe execution', () => {
         "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'resume','/resume',1) RETURNING record_id",
       )
       .get()!.record_id
-    const rootId = Number(
-      database
-        .query(
-          `INSERT INTO run
-           (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id,turn,recipe_snapshot)
-           VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'root','asking',?,1,?)`,
-        )
-        .run(
-          nowIso(),
-          projectId,
-          JSON.stringify({
-            source: { path: '.orch/worktree.jsonc', commit: 'abc' },
-            recipe: { create: [] },
-            allocations: { index: 6, ports: {}, databases: {}, strings: {} },
-          }),
-        ).lastInsertRowid,
-    )
-    const turnId = Number(
-      database
-        .query(
-          `INSERT INTO run
-           (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id,turn,parent_run_id)
-           VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'resume','running',?,2,?)`,
-        )
-        .run(nowIso(), projectId, rootId).lastInsertRowid,
-    )
+    const rootId = database
+      .query<{ id: string }, [string, string, string, string]>(
+        `INSERT INTO run
+           (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id,turn,recipe_snapshot)
+           VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'root','asking',?,1,?)
+           RETURNING record_id AS id`,
+      )
+      .get(
+        newRecordId(),
+        nowIso(),
+        projectId,
+        JSON.stringify({
+          source: { path: '.orch/worktree.jsonc', commit: 'abc' },
+          recipe: { create: [] },
+          allocations: { index: 6, ports: {}, databases: {}, strings: {} },
+        }),
+      )!.id
+    const turnId = database
+      .query<{ id: string }, [string, string, string, string]>(
+        `INSERT INTO run
+           (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id,turn,parent_run_record_id)
+           VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'resume','running',?,2,?)
+           RETURNING record_id AS id`,
+      )
+      .get(newRecordId(), nowIso(), projectId, rootId)!.id
 
     const rootRecordId = database
-      .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
       .get(rootId)!.record_id
     expect(trackedRecipeEnvironment(turnId)).toMatchObject({
       ORCH_RUN_LABEL: `orch.run=${rootRecordId}`,
@@ -622,15 +624,14 @@ describe('tracked recipe execution', () => {
         "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'tracked','/tracked',1) RETURNING record_id",
       )
       .get()!.record_id
-    const runId = Number(
-      database
-        .query(
-          `INSERT INTO run
-           (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id,turn)
-           VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'tracked databases','running',?,1)`,
-        )
-        .run(nowIso(), projectId).lastInsertRowid,
-    )
+    const runId = database
+      .query<{ id: string }, [string, string, string]>(
+        `INSERT INTO run
+           (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id,turn)
+           VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'tracked databases','running',?,1)
+           RETURNING record_id AS id`,
+      )
+      .get(newRecordId(), nowIso(), projectId)!.id
     const recipe: TrackedRecipe = {
       allocate: {
         databases: {
@@ -651,7 +652,7 @@ describe('tracked recipe execution', () => {
       seen.push(
         database
           .query(
-            "SELECT kind,allocation_key,state FROM resource_claim WHERE root_run_id=? AND kind='database' ORDER BY allocation_key",
+            "SELECT kind,allocation_key,state FROM resource_claim WHERE root_run_record_id=? AND kind='database' ORDER BY allocation_key",
           )
           .all(runId),
       )
@@ -784,16 +785,17 @@ describe('tracked recipe execution', () => {
         "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'teardown','/teardown',1) RETURNING record_id",
       )
       .get()!.record_id
-    const insertRun = database.query(
+    const insertRun = database.query<{ id: string }, [string, string, string]>(
       `INSERT INTO run
-       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id,turn)
-       VALUES (?,?,'codex','implement','sha',1,'database teardown','running',?,1)`,
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id,turn)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'database teardown','running',?,1)
+       RETURNING record_id AS id`,
     )
-    const successfulRun = Number(insertRun.run(newRecordId(), nowIso(), projectId).lastInsertRowid)
-    const failedRun = Number(insertRun.run(newRecordId(), nowIso(), projectId).lastInsertRowid)
+    const successfulRun = insertRun.get(newRecordId(), nowIso(), projectId)!.id
+    const failedRun = insertRun.get(newRecordId(), nowIso(), projectId)!.id
     const insertClaim = database.query(
       `INSERT INTO resource_claim
-       (record_id, root_run_id,run_id,project_record_id,kind,allocation_key,state,claimed_at)
+       (record_id, root_run_record_id,run_record_id,project_record_id,kind,allocation_key,state,claimed_at)
        VALUES (?, ?,?,?,'database',?,'claimed',?)`,
     )
     insertClaim.run(
@@ -810,7 +812,7 @@ describe('tracked recipe execution', () => {
       recipe: { create: [step('database')] },
       allocations: { index: 1, ports: {}, databases: { app: 'app' }, strings: {} },
     }
-    const teardown = (runId: number, undoOk: boolean) =>
+    const teardown = (runId: string, undoOk: boolean) =>
       teardownTrackedRecipe(
         {
           runId,
@@ -835,12 +837,12 @@ describe('tracked recipe execution', () => {
     expect(
       database
         .query(
-          "SELECT root_run_id,state FROM resource_claim WHERE kind='database' ORDER BY root_run_id",
+          "SELECT root_run_record_id,state FROM resource_claim WHERE kind='database' ORDER BY root_run_record_id",
         )
         .all(),
     ).toEqual([
-      { root_run_id: successfulRun, state: 'released' },
-      { root_run_id: failedRun, state: 'claimed' },
+      { root_run_record_id: successfulRun, state: 'released' },
+      { root_run_record_id: failedRun, state: 'claimed' },
     ])
   })
 })
@@ -859,7 +861,7 @@ describe('a tree built before its project tracked a recipe', () => {
   test('is removed as a plain tree when it holds no live database claim', () => {
     let removed = false
     const outcome = teardownTrackedRecipe({
-      runId: 1,
+      runId: '1',
       worktree,
       stored,
       liveDatabaseClaims: 0,
@@ -876,7 +878,7 @@ describe('a tree built before its project tracked a recipe', () => {
   test('is kept when a live database claim would be orphaned', () => {
     let removed = false
     const outcome = teardownTrackedRecipe({
-      runId: 1,
+      runId: '1',
       worktree,
       stored,
       liveDatabaseClaims: 2,

@@ -7,7 +7,7 @@ import { age } from './monitor-conditions.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
 type DockerNetworkOwner = {
-  rootId: number
+  rootId: string
   terminal: boolean
   hasWorktree: boolean
 }
@@ -19,7 +19,7 @@ export type ObservedDockerNetworkInventory =
         name: string
         createdAt: string | null
         workingDir: string | null
-        runId: number | null
+        runId: string | null
         workingDirExists: boolean
       }[]
       owners: DockerNetworkOwner[]
@@ -85,7 +85,7 @@ export type TrustEntryInventory =
   | {
       ascertainable: true
       entries: {
-        runId: number
+        runId: string
         heading: string
         path: string | null
         pathExists: boolean

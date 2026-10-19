@@ -93,7 +93,7 @@ function installEvidence(
     (
       d
         .query<{ id: number }, []>(
-          `INSERT INTO gate_execution (record_id, run_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
+          `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
          VALUES ('${newRecordId()}', NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/tmp/work','abc') RETURNING id`,
         )
         .get() as { id: number }

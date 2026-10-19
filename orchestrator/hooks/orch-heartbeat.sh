@@ -228,7 +228,7 @@ for line in sys.stdin:
         d = d.get("data")
         if not isinstance(d, dict):
             raise SystemExit(2)
-    if not isinstance(d.get("id"), int) or not isinstance(d.get("job"), str):
+    if not isinstance(d.get("record_id"), str) or not isinstance(d.get("number"), int) or not isinstance(d.get("job"), str):
         raise SystemExit(2)
     if not isinstance(d.get("agent"), str) or not isinstance(d.get("status"), str):
         raise SystemExit(2)
@@ -270,7 +270,7 @@ for line in sys.stdin:
         else:
             seconds = round(latency / 1000)
             duration = "%dm%02ds" % (seconds // 60, seconds % 60)
-        events.append((str(d["id"]), "1" if recent else "0", status, d["job"], d["agent"],
+        events.append((str(d["number"]), "1" if recent else "0", status, d["job"], d["agent"],
                        d.get("failure_kind") or "-", duration))
     # `asking` counts as live. A heartbeat that watches only `running` reports
     # CLEAR while a worker sits blocked - the exact failure this file prevents.
@@ -295,11 +295,11 @@ for line in sys.stdin:
             raise SystemExit(2)
         stalled.append(stall.replace("\t", " ").replace("\r", " ").replace("\n", " "))
         member_id = d.get("live_member_id")
-        if not isinstance(member_id, int):
+        if not isinstance(member_id, str):
             raise SystemExit(2)
         stalled_subjects.append("run:" + str(member_id))
-    ids.append(str(d.get("id")) + ("s" if stall_state == "stalled" else ("i" if idle_note else "")))
-    out.append("%s/%s %s %s %s%s" % (d.get("id"), d.get("job"), d.get("agent"), d.get("status"), age, idle_note))
+    ids.append(str(d.get("record_id")) + ("s" if stall_state == "stalled" else ("i" if idle_note else "")))
+    out.append("%s/%s %s %s %s%s" % (d.get("number"), d.get("job"), d.get("agent"), d.get("status"), age, idle_note))
 if not saw:
     raise SystemExit(2)
 # count \t detail \t state-key (ids only - elapsed must never enter the key)

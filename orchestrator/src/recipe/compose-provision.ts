@@ -44,7 +44,7 @@ type ComposeContext = {
   treeRoot: string
   commandRoot?: string
   projectName: string
-  rootRunId: number
+  rootRunId: string
   mainComposeProjects: readonly string[]
   treeExists?: boolean
 }

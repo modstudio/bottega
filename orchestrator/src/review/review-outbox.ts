@@ -85,7 +85,7 @@ export function enqueueReviewLens(
       `SELECT lens.*, review.record_id AS review_record_id, run.record_id AS run_record_id,
               project.name AS project_name, project.record_id AS project_record_id
        FROM review_lens lens JOIN review ON review.id=lens.review_id
-       JOIN run ON run.id=lens.run_id
+       JOIN run ON run.record_id=lens.run_record_id
        LEFT JOIN project ON project.record_id=review.project_record_id WHERE lens.id=?`,
     )
     .get(lensId)

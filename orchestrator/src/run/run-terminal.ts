@@ -53,6 +53,9 @@ import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
 import { checkpointRoot, claimIdentity } from './run-resume-kind.ts'
+
+const TERMINAL_STATUS_SQL = 'SELECT status, failure_kind FROM run WHERE record_id=?'
+
 import { type BlockerRow, blockersToRecord } from './run-terminal-blockers.ts'
 import { terminalTurnChanged } from './run-terminal-change.ts'
 import { applyConfinementPrecedence, applyVendorTermination } from './run-terminal-precedence.ts'
@@ -65,14 +68,14 @@ type TerminalOptions = {
   job: string
   resume?: {
     kind: 'continue' | 'fresh-session' | 'retry-root'
-    parent: number
+    parent: string
     turn: number
   }
 }
 
 function closeTerminalQuestions(
   database: Database,
-  rootId: number,
+  rootId: string,
   status: string,
   failureKind: ReturnType<typeof classify> | null,
 ): void {
@@ -84,8 +87,8 @@ function closeTerminalQuestions(
 export function finalizeTerminalChain(
   database: Database,
   input: {
-    runId: number
-    parentRunId: number | null
+    runId: string
+    parentRunId: string | null
     status: string
     failureKind: ReturnType<typeof classify> | null
     error: string | null
@@ -97,7 +100,7 @@ export function finalizeTerminalChain(
     database
       .query(
         `UPDATE run SET status='asking', error=?, failure_kind=NULL
-        WHERE id=? AND parent_run_id IS NULL AND status NOT IN ('stopped', 'stale')`,
+        WHERE record_id=? AND parent_run_record_id IS NULL AND status NOT IN ('stopped', 'stale')`,
       )
       .run(input.error, input.parentRunId)
   }
@@ -123,8 +126,8 @@ type TerminalMcpRuling = {
 export function recordArtifactPersistenceFailure(
   database: Database,
   input: {
-    runId: number
-    parentRunId: number | null
+    runId: string
+    parentRunId: string | null
     error: string | null
     machineId: string
     finishedAt: string
@@ -135,7 +138,7 @@ export function recordArtifactPersistenceFailure(
       .query(
         `UPDATE run SET
            error=CASE WHEN status='stopped' THEN error ELSE ? END
-         WHERE id=?`,
+         WHERE record_id=?`,
       )
       .run(input.error, input.runId)
     enqueueRunRecord(database, input.runId, input.machineId, input.finishedAt)
@@ -151,7 +154,7 @@ export type TerminalInput = {
   idleTimer: ReturnType<typeof setInterval> | null
   proc: { pid?: number | null; kill(sig?: number | string): void } | null
   askLoopback: AskLoopback | null
-  claim: { id: number }
+  claim: { id: string; number: number }
   writesJob: boolean
   worktree: Worktree | null
   launchKey: string | null
@@ -255,7 +258,7 @@ export function artifactPersistenceOutcome<FailureKind extends string>(input: {
 export function recordTerminalReviewEvidence(
   database: Database,
   input: {
-    runId: number
+    runId: string
     parsedReview: ReviewReply | null
     status: string
     failureKind: ReturnType<typeof classify> | null
@@ -264,7 +267,7 @@ export function recordTerminalReviewEvidence(
   if (!input.parsedReview || (input.status !== 'ok' && input.failureKind !== 'escaped')) {
     return null
   }
-  const row = database.query('SELECT probe FROM run WHERE id=?').get(input.runId) as {
+  const row = database.query('SELECT probe FROM run WHERE record_id=?').get(input.runId) as {
     probe: number | null
   } | null
   if (row?.probe) return null
@@ -312,17 +315,17 @@ function applyRequiredMcpFailure(
 
 function recordTerminalMcpEvidence(
   database: Database,
-  runId: number,
+  runId: string,
   ruling: TerminalMcpRuling,
 ): void {
   if (!ruling) return
   database
-    .query('UPDATE run SET mcp_connected=?, mcp_error=? WHERE id=?')
+    .query('UPDATE run SET mcp_connected=?, mcp_error=? WHERE record_id=?')
     .run(ruling.connected, ruling.error, runId)
 }
 
 function persistTerminalArtifacts(
-  id: number,
+  id: string,
   readerReply: ReaderReply | null,
   output: string,
   worktree: Worktree | null,
@@ -336,21 +339,21 @@ function persistTerminalArtifacts(
   )
 }
 
-function recordedReviewedHead(runId: number, required: boolean): string | null {
+function recordedReviewedHead(runId: string, required: boolean): string | null {
   if (!required) return null
   return (
     (
-      db().query('SELECT head_commit FROM run WHERE id=?').get(runId) as {
+      db().query('SELECT head_commit FROM run WHERE record_id=?').get(runId) as {
         head_commit: string | null
       } | null
     )?.head_commit ?? null
   )
 }
 
-function insertBlockerRows(runId: number, rows: BlockerRow[], at: string): void {
+function insertBlockerRows(runId: string, rows: BlockerRow[], at: string): void {
   if (!rows.length) return
   const q = db().query(
-    `INSERT INTO blocker (record_id,run_id,at,what,why,impact,source,kind) VALUES (?,?,?,?,?,?,?,?)`,
+    `INSERT INTO blocker (record_id,run_record_id,at,what,why,impact,source,kind) VALUES (?,?,?,?,?,?,?,?)`,
   )
   for (const r of rows) q.run(newRecordId(), runId, at, r.what, r.why, r.impact, r.source, r.kind)
 }
@@ -418,7 +421,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   if (proc?.pid && proc.pid !== process.pid) await terminateProcessGroup(proc.pid, { direct: proc })
   if (askLoopback) await askLoopback.close()
   await resetSandbox()
-
   const preserveAtTerminal = shouldCheckpointAtTerminal({
     writesJob,
     hasWorktree: Boolean(worktree),
@@ -436,12 +438,11 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       final: true,
     })
     if (checkpoint.created || latestCheckpoint(db(), checkpointRoot(opts.resume, claim.id))) {
-      db().query('UPDATE run SET work_preserved=1 WHERE id=?').run(claim.id)
+      db().query('UPDATE run SET work_preserved=1 WHERE record_id=?').run(claim.id)
     }
     if (checkpoint.error)
       console.error(`orch: run ${claim.id} final checkpoint failed: ${checkpoint.error}`)
   }
-
   let frozenAfter: import('../confinement/confinement.ts').FrozenCheckout[] = []
   try {
     const afterFreeze = freezeCheckouts(watchedCheckouts)
@@ -498,7 +499,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
 
   if (frozenBefore.length && frozenAfter.length && !confinementFailures.length) {
     const startedAt = db()
-      .query('SELECT started_at, head_commit FROM run WHERE id=?')
+      .query('SELECT started_at, head_commit FROM run WHERE record_id=?')
       .get(claim.id) as { started_at: string; head_commit: string | null } | null
     confinementEvent = classifyDivergence({
       before: frozenBefore,
@@ -613,7 +614,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
      * repeating verbatim from its own tool call.
      */
     const existingQuestionTexts = (
-      db().query('SELECT question FROM question WHERE run_id = ?').all(claim.id) as {
+      db().query('SELECT question FROM question WHERE run_record_id = ?').all(claim.id) as {
         question: string
       }[]
     ).map((row) => row.question)
@@ -712,7 +713,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
                         failure_kind=CASE WHEN status='stopped' THEN failure_kind ELSE ? END,
                         vendor_session=COALESCE(?, vendor_session), pre_confinement=?, confinement=?,
                         review_provenance=?, provenance_status=?,
-                        unreconciled=0 WHERE id=?`,
+                        unreconciled=0 WHERE record_id=?`,
         )
         .run(
           Date.now() - started,
@@ -750,7 +751,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
         db()
           .query(
             `UPDATE run SET files_changed=?, changed_paths=?, lines_added=?, lines_removed=?,
-                          tests_ran=?, tests_passed=?, deviations=?, escalations=? WHERE id=?`,
+                          tests_ran=?, tests_passed=?, deviations=?, escalations=? WHERE record_id=?`,
           )
           .run(
             changes?.files.length ?? null,
@@ -790,7 +791,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       // answer.
       finalizeTerminalChain(db(), {
         runId: claim.id,
-        parentRunId: identity.parent_run_id,
+        parentRunId: identity.parent_run_record_id,
         status,
         failureKind,
         error,
@@ -802,7 +803,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       // recorded. Manual `bottega review record` remains the recovery path for
       // historical or otherwise uncaptured outputs.
       recordTerminalReviewEvidence(db(), {
-        runId: identity.parent_run_id ?? claim.id,
+        runId: identity.parent_run_record_id ?? claim.id,
         parsedReview,
         status,
         failureKind,
@@ -820,7 +821,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       try {
         db()
           .query(
-            `UPDATE run SET unreconciled=1, error=? WHERE id=? AND status IN ('running','asking')`,
+            `UPDATE run SET unreconciled=1, error=? WHERE record_id=? AND status IN ('running','asking')`,
           )
           .run(
             `unreconciled: reply at ${runTerminalReplyPath(claim.id)}; ` +
@@ -833,7 +834,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       console.error(`orch: run ${claim.id} left unreconciled: ${detail}`)
     }
   }
-  const recorded = db().query('SELECT status, failure_kind FROM run WHERE id=?').get(claim.id) as {
+  const recorded = db().query(TERMINAL_STATUS_SQL).get(claim.id) as {
     status: string
     failure_kind: string | null
   } | null
@@ -877,7 +878,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     }))
     recordArtifactPersistenceFailure(db(), {
       runId: claim.id,
-      parentRunId: claimIdentity(opts.resume).parent_run_id,
+      parentRunId: claimIdentity(opts.resume).parent_run_record_id,
       error,
       machineId: localMachineId,
       finishedAt: nowIso(),

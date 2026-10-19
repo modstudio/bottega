@@ -237,7 +237,7 @@ describe('canon eval establishment', () => {
     const runId = addRun({ agent: 'codex', job: 'implement', probe: 1 })
     db()
       .query(
-        `INSERT INTO canon_eval (record_id, slug, run_id, canon_sha, agent, model, pass, why, at)
+        `INSERT INTO canon_eval (record_id, slug, run_record_id, canon_sha, agent, model, pass, why, at)
          VALUES ('${newRecordId()}', 'legacy-empty', ?, ?, 'codex', 'model', 1, 'passed', ?)`,
       )
       .run(runId, EMPTY_CANON_SHA, nowIso())

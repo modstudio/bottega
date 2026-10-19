@@ -83,6 +83,7 @@ type PeekEventSummary =
 
 export type PeekSummary = {
   id: number
+  record_id: string
   status: string
   agent: string
   job: string
@@ -101,20 +102,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
-function eventRunRecordId(id: number | string): string {
-  if (typeof id === 'string') return id
-  const row = db()
-    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
-    .get(id)
-  if (!row) throw new Error(`no run ${id}`)
-  return row.record_id
-}
-
-export function runEventsPath(
-  id: number | string,
-  runsDir = resolveRunsDirectory(process.env),
-): string {
-  return join(runsDir, eventRunRecordId(id), 'events.jsonl')
+export function runEventsPath(id: string, runsDir = resolveRunsDirectory(process.env)): string {
+  return join(runsDir, id, 'events.jsonl')
 }
 
 export function idleWarnMs(env: NodeJS.ProcessEnv = process.env): number {
@@ -147,16 +136,16 @@ export function idleMsSince(
   return Math.max(0, now - since)
 }
 
-function touchLastEventAt(runId: number, ts: string): void {
+function touchLastEventAt(runId: string, ts: string): void {
   if (!runId) return
   try {
-    writableDb().query('UPDATE run SET last_event_at=? WHERE id=?').run(ts, runId)
+    writableDb().query('UPDATE run SET last_event_at=? WHERE record_id=?').run(ts, runId)
   } catch {
     /* best-effort: a live tee must not fail the vendor process */
   }
 }
 
-export function appendRunEvent(runId: number, event: RunLogEvent, path?: string): void {
+export function appendRunEvent(runId: string, event: RunLogEvent, path?: string): void {
   // Best-effort, like touchLastEventAt: the live log observes the vendor
   // stream and must never fail the run or reach its outcome (review 349).
   try {
@@ -176,7 +165,7 @@ function isWorkerActivity(event: RunLogEvent): boolean {
 const RESULT_STATUSES = new Set(['completed', 'failed', 'ok', 'error', 'cancelled'])
 
 export function createEventLog(
-  runId: number,
+  runId: string,
   path?: string,
 ): {
   observe(event: StreamEvent, ts?: string): void
@@ -235,7 +224,7 @@ export function createEventLog(
 
 export async function teeTransportEvents(
   events: AsyncIterable<{ kind: string }>,
-  runId: number,
+  runId: string,
 ): Promise<void> {
   const log = createEventLog(runId)
   try {
@@ -573,16 +562,17 @@ function worktreeCommits(worktree: string | null, base: string | null): string[]
 }
 
 export function peekRun(
-  id: number,
+  id: string,
   opts: { events?: number; now?: number; runsDir?: string } = {},
 ): PeekSummary {
   const row = db()
     .query(
-      `SELECT id, status, agent, job, started_at, last_event_at, worktree, base_commit, vendor_tokens
-       FROM run WHERE id=?`,
+      `SELECT number AS id, record_id, status, agent, job, started_at, last_event_at, worktree, base_commit, vendor_tokens
+       FROM run WHERE record_id=?`,
     )
     .get(id) as {
     id: number
+    record_id: string
     status: string
     agent: string
     job: string
@@ -607,6 +597,7 @@ export function peekRun(
   const usage = [...events].reverse().find((event) => event.type === 'usage')
   return {
     id: row.id,
+    record_id: row.record_id,
     status: row.status,
     agent: row.agent,
     job: row.job,

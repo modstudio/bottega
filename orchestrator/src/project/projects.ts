@@ -41,6 +41,7 @@ import {
   writeProjectRegisterRow,
 } from '../database/project-register-store.ts'
 import { loadTrackedRecipe, recipePointerErrors } from '../recipe/recipe-loader.ts'
+import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import { autonomySettingsForStorage, validateAutonomySettings } from '../workflow/autonomy.ts'
 import {
   DEFAULT_PROJECT_CONFIG_PATH,
@@ -108,16 +109,16 @@ export type Project = {
 
 export function resolveBranchRef(value: string): {
   branch: string
-  runId: number | null
+  runId: string | null
 } {
-  if (!/^\d+$/.test(value)) return { branch: value, runId: null }
-  const runId = Number(value)
-  const row = db().query('SELECT branch FROM run WHERE id=?').get(runId) as {
+  if (!classifyRunIdentifier(value)) return { branch: value, runId: null }
+  const recordId = resolveRunIdentifier(db(), value)
+  const row = db().query('SELECT branch FROM run WHERE record_id=?').get(recordId) as {
     branch: string | null
   } | null
-  if (!row) throw new Error(`no run ${runId}`)
-  if (!row.branch) throw new Error(`run ${runId} has no branch and cannot be landed`)
-  return { branch: row.branch, runId }
+  if (!row) throw new Error(`no run ${value}`)
+  if (!row.branch) throw new Error(`run ${value} has no branch and cannot be landed`)
+  return { branch: row.branch, runId: recordId }
 }
 
 /** Whether recorded facts prove that an absent tree has run-owned teardown. */
@@ -1062,10 +1063,10 @@ export function undeclaredCommitHooks(project: Project): string | null {
  * project and looking straight at it, is a convenience they can correct.
  */
 export function sniffStack(path: string): string | null {
-  const has = (f: string) => Bun.spawnSync(['test', '-e', `${path}/${f}`]).exitCode === 0
+  const has = (f: string) => existsSync(join(path, f))
   const read = (f: string) => {
     try {
-      return Bun.spawnSync(['cat', `${path}/${f}`]).stdout.toString()
+      return readFileSync(join(path, f), 'utf8')
     } catch {
       return ''
     }

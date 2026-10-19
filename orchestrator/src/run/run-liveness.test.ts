@@ -23,8 +23,8 @@ async function inbox(): Promise<string> {
         Boolean(
           db()
             .query(
-              `SELECT 1 FROM question q JOIN run r ON r.id=q.run_id
-               WHERE (r.id=? OR r.parent_run_id=?) AND q.delivery_pending_at IS NOT NULL`,
+              `SELECT 1 FROM question q JOIN run r ON r.record_id=q.run_record_id
+               WHERE (r.record_id=? OR r.parent_run_record_id=?) AND q.delivery_pending_at IS NOT NULL`,
             )
             .get(root, root),
         ),
@@ -34,26 +34,32 @@ async function inbox(): Promise<string> {
   return lines.join('\n')
 }
 
+const runNumber = (recordId: string): number =>
+  (db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as { number: number })
+    .number
+
 describe('reapStale', () => {
   test('elapsed time does not kill a legacy run while its pid is alive', () => {
     const id = addRun({ agent: 'grok', job: 'craft', status: 'running' })
     // process.pid is certainly alive: this is the recycled-pid case, and the
     // elapsed time must not decide liveness.
     db()
-      .query('UPDATE run SET started_at=?, pid=? WHERE id=?')
+      .query('UPDATE run SET started_at=?, pid=? WHERE record_id=?')
       .run(new Date(Date.now() - STALE_AFTER_MS - 60_000).toISOString(), process.pid, id)
 
     expect(reapStale(db())).toBe(0)
     expect(
-      (db().query('SELECT status FROM run WHERE id=?').get(id) as { status: string }).status,
+      (db().query('SELECT status FROM run WHERE record_id=?').get(id) as { status: string }).status,
     ).toBe('running')
-    expect(db().query('SELECT rowid FROM run_mutation_audit WHERE run_id=?').get(id)).toBeNull()
+    expect(
+      db().query('SELECT rowid FROM run_mutation_audit WHERE run_record_id=?').get(id),
+    ).toBeNull()
   })
 
   test('a recent run whose process is gone is swept at once, not in thirty minutes', () => {
     const id = addRun({ agent: 'grok', job: 'craft', status: 'running' })
     // Nothing owns pid 2^22; it is above every configured pid_max.
-    db().query('UPDATE run SET pid=?, agent_pid=? WHERE id=?').run(4194304, 4194304, id)
+    db().query('UPDATE run SET pid=?, agent_pid=? WHERE record_id=?').run(4194304, 4194304, id)
     const prior = process.env.CLAUDE_CODE_SESSION_ID
     process.env.CLAUDE_CODE_SESSION_ID = 'session-B'
     try {
@@ -64,7 +70,7 @@ describe('reapStale', () => {
     }
     expect(
       db()
-        .query('SELECT action, actor_session, reason FROM run_mutation_audit WHERE run_id=?')
+        .query('SELECT action, actor_session, reason FROM run_mutation_audit WHERE run_record_id=?')
         .get(id),
     ).toEqual({
       action: 'reap',
@@ -77,9 +83,11 @@ describe('reapStale', () => {
     // Without the kind these rows are indistinguishable from an agent that
     // simply failed, and the router charges them accordingly.
     const id = addRun({ agent: 'grok', job: 'craft', status: 'running' })
-    db().query('UPDATE run SET pid=?, agent_pid=? WHERE id=?').run(4194304, 4194304, id)
+    db().query('UPDATE run SET pid=?, agent_pid=? WHERE record_id=?').run(4194304, 4194304, id)
     reapStale(db())
-    const r = db().query('SELECT status, failure_kind, error FROM run WHERE id=?').get(id) as {
+    const r = db()
+      .query('SELECT status, failure_kind, error FROM run WHERE record_id=?')
+      .get(id) as {
       status: string
       failure_kind: 'interrupted'
       error: string
@@ -92,13 +100,13 @@ describe('reapStale', () => {
 
   test('a legacy run with no lease and no pid is swept at once', () => {
     const id = addRun({ agent: 'grok', job: 'craft', status: 'running' })
-    db().query('UPDATE run SET pid=NULL WHERE id=?').run(id)
+    db().query('UPDATE run SET pid=NULL WHERE record_id=?').run(id)
     expect(reapStale(db())).toBe(1)
   })
 
   test('a live recent run is left alone', () => {
     const id = addRun({ agent: 'grok', job: 'craft', status: 'running' })
-    db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, id)
+    db().query('UPDATE run SET pid=? WHERE record_id=?').run(process.pid, id)
     expect(reapStale(db())).toBe(0)
   })
 
@@ -106,7 +114,7 @@ describe('reapStale', () => {
     const root = addRun({ agent: 'grok', job: 'implement', status: 'asking' })
     db()
       .query(
-        `INSERT INTO question (record_id,run_id, asked_at, question, answer, answered_at)
+        `INSERT INTO question (record_id,run_record_id, asked_at, question, answer, answered_at)
        VALUES ('${newRecordId()}',?,?,?,?,?)`,
       )
       .run(root, nowIso(), 'answered', 'the ruling', nowIso())
@@ -117,38 +125,40 @@ describe('reapStale', () => {
       parent: root,
       turn: 2,
     })
-    db().query('UPDATE run SET pid=?, agent_pid=? WHERE id=?').run(4194304, 4194304, child)
+    db().query('UPDATE run SET pid=?, agent_pid=? WHERE record_id=?').run(4194304, 4194304, child)
 
     expect(reapStale(db())).toBe(1)
-    expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(child)).toEqual({
-      status: 'stale',
-      failure_kind: 'interrupted',
-    })
-    expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(root)).toEqual({
+    expect(db().query('SELECT status, failure_kind FROM run WHERE record_id=?').get(child)).toEqual(
+      {
+        status: 'stale',
+        failure_kind: 'interrupted',
+      },
+    )
+    expect(db().query('SELECT status, failure_kind FROM run WHERE record_id=?').get(root)).toEqual({
       status: 'stale',
       failure_kind: null,
     })
     const childPayload = db()
-      .query<{ payload: string }, [number]>(
+      .query<{ payload: string }, [string]>(
         `SELECT payload FROM outbox
-         WHERE kind='run' AND row_id=(SELECT record_id FROM run WHERE id=?)
+         WHERE kind='run' AND row_id=(SELECT record_id FROM run WHERE record_id=?)
          ORDER BY id DESC LIMIT 1`,
       )
       .get(child)!
     expect(JSON.parse(childPayload.payload)).toMatchObject({
-      localId: child,
+      localId: runNumber(child),
       status: 'stale',
       failureKind: 'interrupted',
     })
     const rootPayload = db()
-      .query<{ payload: string }, [number]>(
+      .query<{ payload: string }, [string]>(
         `SELECT payload FROM outbox
-         WHERE kind='run' AND row_id=(SELECT record_id FROM run WHERE id=?)
+         WHERE kind='run' AND row_id=(SELECT record_id FROM run WHERE record_id=?)
          ORDER BY id DESC LIMIT 1`,
       )
       .get(root)!
     expect(JSON.parse(rootPayload.payload)).toMatchObject({
-      localId: root,
+      localId: runNumber(root),
       status: 'stale',
       failureKind: null,
     })
@@ -162,7 +172,7 @@ describe('reapStale', () => {
     db()
       .query(
         `INSERT INTO question
-          (record_id,run_id,asked_at,question,answer,answered_at,delivery_pending_at)
+          (record_id,run_record_id,asked_at,question,answer,answered_at,delivery_pending_at)
          VALUES ('${newRecordId()}',?,?,?,?,?,?)`,
       )
       .run(root, nowIso(), 'answered', 'the ruling', nowIso(), nowIso())
@@ -173,18 +183,20 @@ describe('reapStale', () => {
       parent: root,
       turn: 2,
     })
-    db().query('UPDATE run SET pid=?, agent_pid=? WHERE id=?').run(4194304, 4194304, child)
+    db().query('UPDATE run SET pid=?, agent_pid=? WHERE record_id=?').run(4194304, 4194304, child)
 
     expect(reapStale(db())).toBe(1)
-    expect(db().query('SELECT status FROM run WHERE id=?').get(root)).toEqual({ status: 'stale' })
-    expect(db().query('SELECT delivery_pending_at FROM question WHERE run_id=?').get(root)).toEqual(
-      { delivery_pending_at: null },
-    )
+    expect(db().query('SELECT status FROM run WHERE record_id=?').get(root)).toEqual({
+      status: 'stale',
+    })
+    expect(
+      db().query('SELECT delivery_pending_at FROM question WHERE run_record_id=?').get(root),
+    ).toEqual({ delivery_pending_at: null })
     expect(
       db()
         .query(
           `SELECT outcome,error FROM question_delivery
-           WHERE question_id=(SELECT id FROM question WHERE run_id=?)`,
+           WHERE question_id=(SELECT id FROM question WHERE run_record_id=?)`,
         )
         .get(root),
     ).toEqual({ outcome: 'retired', error: 'chain-stale' })
@@ -202,14 +214,16 @@ describe('reapStale', () => {
     })
     const young = addRun({ agent: '(pending)', job: 'craft', status: 'running' })
     db()
-      .query('UPDATE run SET pid=NULL, started_at=? WHERE id=?')
+      .query('UPDATE run SET pid=NULL, started_at=? WHERE record_id=?')
       .run(new Date(Date.now() - PENDING_BOOTSTRAP_MS - 1000).toISOString(), old)
     db()
-      .query('UPDATE run SET pid=NULL, started_at=? WHERE id=?')
+      .query('UPDATE run SET pid=NULL, started_at=? WHERE record_id=?')
       .run(new Date(Date.now() - 10_000).toISOString(), young)
 
     expect(reapStale(db())).toBe(1)
-    const swept = db().query('SELECT status, failure_kind, error FROM run WHERE id=?').get(old) as {
+    const swept = db()
+      .query('SELECT status, failure_kind, error FROM run WHERE record_id=?')
+      .get(old) as {
       status: string
       failure_kind: string
       error: string
@@ -220,30 +234,33 @@ describe('reapStale', () => {
       error: 'coordinator exited during setup before the agent started; last output: (no output)',
     })
     const payload = db()
-      .query<{ payload: string }, [number]>(
+      .query<{ payload: string }, [string]>(
         `SELECT payload FROM outbox
-         WHERE kind='run' AND row_id=(SELECT record_id FROM run WHERE id=?)
+         WHERE kind='run' AND row_id=(SELECT record_id FROM run WHERE record_id=?)
          ORDER BY id DESC LIMIT 1`,
       )
       .get(old)!
     expect(JSON.parse(payload.payload)).toMatchObject({
-      localId: old,
+      localId: runNumber(old),
       status: 'failed',
       failureKind: 'harness',
     })
     expect(
-      (db().query('SELECT status FROM run WHERE id=?').get(young) as { status: string }).status,
+      (db().query('SELECT status FROM run WHERE record_id=?').get(young) as { status: string })
+        .status,
     ).toBe('running')
   })
 
   test('a pending row with a dead recorded pid past the bootstrap bound is failed/harness', () => {
     const id = addRun({ agent: '(pending)', job: 'craft', status: 'running' })
     db()
-      .query('UPDATE run SET pid=?, started_at=? WHERE id=?')
+      .query('UPDATE run SET pid=?, started_at=? WHERE record_id=?')
       .run(4_194_304, new Date(Date.now() - PENDING_BOOTSTRAP_MS - 1000).toISOString(), id)
 
     expect(reapStale(db())).toBe(1)
-    expect(db().query('SELECT status, failure_kind, error FROM run WHERE id=?').get(id)).toEqual({
+    expect(
+      db().query('SELECT status, failure_kind, error FROM run WHERE record_id=?').get(id),
+    ).toEqual({
       status: 'failed',
       failure_kind: 'harness',
       error: 'coordinator exited during setup before the agent started; last output: (no output)',
@@ -253,10 +270,10 @@ describe('reapStale', () => {
   test('a pending claim refusal reaches the run error through the coordinator log', () => {
     const id = addRun({ agent: '(pending)', job: 'implement', status: 'running' })
     db()
-      .query('UPDATE run SET pid=?, started_at=? WHERE id=?')
+      .query('UPDATE run SET pid=?, started_at=? WHERE record_id=?')
       .run(4_194_304, new Date(Date.now() - PENDING_BOOTSTRAP_MS - 1000).toISOString(), id)
     const recordId = db()
-      .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
       .get(id)!.record_id
     const logPath = runCoordinatorLogPath(recordId)
     mkdirSync(dirname(logPath), { recursive: true })
@@ -266,7 +283,7 @@ describe('reapStale', () => {
     )
 
     expect(reapStale(db())).toBe(1)
-    expect(db().query('SELECT error FROM run WHERE id=?').get(id)).toEqual({
+    expect(db().query('SELECT error FROM run WHERE record_id=?').get(id)).toEqual({
       error:
         `coordinator exited during setup before the agent started; last output: ` +
         `orch: run ${id} could not start: Error: refusing to create a worktree on branch DEV-1054-orch-7738`,
@@ -282,9 +299,9 @@ describe('reapStale', () => {
       parent: root,
       turn: 2,
     })
-    db().query('UPDATE run SET pid=?, agent_pid=NULL WHERE id=?').run(4_194_304, id)
+    db().query('UPDATE run SET pid=?, agent_pid=NULL WHERE record_id=?').run(4_194_304, id)
     const recordId = db()
-      .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
       .get(id)!.record_id
     const logPath = runCoordinatorLogPath(recordId)
     mkdirSync(dirname(logPath), { recursive: true })
@@ -293,35 +310,39 @@ describe('reapStale', () => {
     expect(reapStale(db())).toBe(1)
     const error =
       'coordinator exited during setup before the agent started; last output: setup began\nmodule import failed'
-    expect(db().query('SELECT status, failure_kind, error FROM run WHERE id=?').get(id)).toEqual({
+    expect(
+      db().query('SELECT status, failure_kind, error FROM run WHERE record_id=?').get(id),
+    ).toEqual({
       status: 'failed',
       failure_kind: 'harness',
       error,
     })
     const payload = db()
-      .query<{ payload: string }, [number]>(
+      .query<{ payload: string }, [string]>(
         `SELECT payload FROM outbox
-         WHERE kind='run' AND row_id=(SELECT record_id FROM run WHERE id=?)
+         WHERE kind='run' AND row_id=(SELECT record_id FROM run WHERE record_id=?)
          ORDER BY id DESC LIMIT 1`,
       )
       .get(id)!
     expect(JSON.parse(payload.payload)).toMatchObject({
-      localId: id,
+      localId: runNumber(id),
       status: 'failed',
       failureKind: 'harness',
       error,
     })
     expect(
-      db().query('SELECT action, reason FROM run_mutation_audit WHERE run_id=?').get(id),
+      db().query('SELECT action, reason FROM run_mutation_audit WHERE run_record_id=?').get(id),
     ).toEqual({ action: 'reap', reason: error })
   })
 
   test('a claimed setup death with no coordinator output says so', () => {
     const id = addRun({ agent: 'codex', job: 'craft', status: 'running' })
-    db().query('UPDATE run SET pid=?, agent_pid=NULL WHERE id=?').run(4_194_304, id)
+    db().query('UPDATE run SET pid=?, agent_pid=NULL WHERE record_id=?').run(4_194_304, id)
 
     expect(reapStale(db())).toBe(1)
-    expect(db().query('SELECT status, failure_kind, error FROM run WHERE id=?').get(id)).toEqual({
+    expect(
+      db().query('SELECT status, failure_kind, error FROM run WHERE record_id=?').get(id),
+    ).toEqual({
       status: 'failed',
       failure_kind: 'harness',
       error: 'coordinator exited during setup before the agent started; last output: (no output)',
@@ -338,14 +359,16 @@ describe('reapStale', () => {
       parent: root,
       turn: 2,
     })
-    db().query('UPDATE run SET pid=?, agent_pid=NULL WHERE id=?').run(4_194_304, child)
+    db().query('UPDATE run SET pid=?, agent_pid=NULL WHERE record_id=?').run(4_194_304, child)
 
     expect(reapStale(db())).toBe(1)
-    expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(child)).toEqual({
-      status: 'failed',
-      failure_kind: 'harness',
-    })
-    expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(root)).toEqual({
+    expect(db().query('SELECT status, failure_kind FROM run WHERE record_id=?').get(child)).toEqual(
+      {
+        status: 'failed',
+        failure_kind: 'harness',
+      },
+    )
+    expect(db().query('SELECT status, failure_kind FROM run WHERE record_id=?').get(root)).toEqual({
       status: 'failed',
       failure_kind: null,
     })

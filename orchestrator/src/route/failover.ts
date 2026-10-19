@@ -53,7 +53,7 @@ export type DetachSpec = {
   launchBase?: string
   avoid?: string[]
   distinctModels?: string[]
-  retryOf?: number
+  retryOf?: string
   cwd?: string
   launchCwd?: string
   noFailover?: boolean
@@ -67,7 +67,7 @@ export type DetachSpec = {
   resolvedTaskBranch?: ResolvedTaskBranch | null
   resume?: {
     kind: 'continue' | 'fresh-session' | 'retry-root'
-    parent: number
+    parent: string
     agent: string
     session?: string
     turn: number
@@ -93,12 +93,12 @@ export function retryModelForAgent(
   return pin.model
 }
 
-export function chainTransport(rootId: number): TransportName | null {
+export function chainTransport(rootId: string): TransportName | null {
   const row = db()
     .query(
       `SELECT transport FROM run
-      WHERE (id = ? OR parent_run_id = ?) AND transport IS NOT NULL
-      ORDER BY turn DESC, id DESC LIMIT 1`,
+      WHERE (record_id = ? OR parent_run_record_id = ?) AND transport IS NOT NULL
+      ORDER BY turn DESC, number DESC LIMIT 1`,
     )
     .get(rootId, rootId) as { transport: string } | null
   return row?.transport === 'cli' || row?.transport === 'acp' ? row.transport : null
@@ -107,7 +107,7 @@ export function chainTransport(rootId: number): TransportName | null {
 export function detachedRunOptions(
   jobName: string,
   prompt: string,
-  reserveId: number,
+  reserveId: string,
   spec: DetachSpec,
 ) {
   const {
@@ -209,48 +209,54 @@ export function detachedRunOptions(
 
 export const MAX_FAILOVER_ATTEMPTS = 3
 
-export function resolveSupersededTurn(database: Database, rootId: number, turn: number): number {
+export function resolveSupersededTurn(database: Database, rootId: string, turn: number): number {
   return database
     .query(
       `UPDATE run AS prior SET status='ok'
-      WHERE prior.parent_run_id=? AND prior.turn=? AND prior.status='asking'
+      WHERE prior.parent_run_record_id=? AND prior.turn=? AND prior.status='asking'
         AND EXISTS (
           SELECT 1 FROM question q
-           WHERE q.run_id=prior.id AND q.answered_at IS NOT NULL
+           WHERE q.run_record_id=prior.record_id AND q.answered_at IS NOT NULL
         )
         AND NOT EXISTS (
           SELECT 1 FROM question q
-           WHERE q.run_id=prior.id AND ${questionOpenSql('q')}
+           WHERE q.run_record_id=prior.record_id AND ${questionOpenSql('q')}
         )
         AND EXISTS (
           SELECT 1 FROM run later
-           WHERE later.parent_run_id=prior.parent_run_id AND later.turn>prior.turn
+           WHERE later.parent_run_record_id=prior.parent_run_record_id AND later.turn>prior.turn
         )`,
     )
     .run(rootId, turn).changes
 }
 
-export type FailoverAttempt = { id: number; agent: string }
+export type FailoverAttempt = { record_id: string; agent: string }
 
-export function failoverAttempts(id: number): FailoverAttempt[] {
+export function failoverAttempts(id: string): FailoverAttempt[] {
   const attempts: FailoverAttempt[] = []
-  let memberId: number | null = id
+  let memberId: string | null = id
   while (memberId) {
     const member = db()
-      .query('SELECT id, agent, parent_run_id FROM run WHERE id=?')
-      .get(memberId) as { id: number; agent: string; parent_run_id: number | null } | null
-    if (!member) break
-    const rootId = member.parent_run_id ?? member.id
-    const root = db()
-      .query('SELECT id, agent, retry_of, automatic_failover FROM run WHERE id=?')
-      .get(rootId) as {
-      id: number
+      .query('SELECT record_id, agent, parent_run_record_id FROM run WHERE record_id=?')
+      .get(memberId) as {
+      record_id: string
       agent: string
-      retry_of: number | null
+      parent_run_record_id: string | null
+    } | null
+    if (!member) break
+    const rootId = member.parent_run_record_id ?? member.record_id
+    const root = db()
+      .query(
+        'SELECT record_id, agent, retry_of_record_id, automatic_failover FROM run WHERE record_id=?',
+      )
+      .get(rootId) as {
+      record_id: string
+      agent: string
+      retry_of_record_id: string | null
       automatic_failover: number
     }
-    attempts.unshift({ id: root.id, agent: root.agent })
-    memberId = root.automatic_failover ? root.retry_of : null
+    attempts.unshift({ record_id: root.record_id, agent: root.agent })
+    memberId = root.automatic_failover ? root.retry_of_record_id : null
   }
   return attempts
 }

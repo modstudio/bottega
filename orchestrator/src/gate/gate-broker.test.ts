@@ -81,15 +81,15 @@ test("a rebased writer runs the gate from its tree and records only a clean tree
         'bun',
         JSON.stringify({ gate: 'scripts/gate', trunk: 'main' }),
       ) as {
-      id: number
+      id: string
     }
   ).id
   const runId = (
     db()
       .query(
         `INSERT INTO run
-          (record_id,started_at,agent,job,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,worktree,base_commit,head_commit,worktree_source)
-         VALUES ('${newRecordId()}',?,?,?,?,?,1,'fixture','running',?,?,?,'git') RETURNING id`,
+          (record_id,number,started_at,agent,job,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,worktree,base_commit,head_commit,worktree_source)
+         VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,?,?,?,?,1,'fixture','running',?,?,?,'git') RETURNING record_id AS id`,
       )
       .get(
         new Date().toISOString(),
@@ -101,13 +101,13 @@ test("a rebased writer runs the gate from its tree and records only a clean tree
         recordedBase,
         git(repository, 'rev-parse', 'HEAD'),
       ) as {
-      id: number
+      id: string
     }
   ).id
   const gateId = (
     db()
       .query(
-        `INSERT INTO gate_execution (record_id, run_id,requested_at) VALUES ('${newRecordId()}', ?,?) RETURNING id`,
+        `INSERT INTO gate_execution (record_id, run_record_id,requested_at) VALUES ('${newRecordId()}', ?,?) RETURNING id`,
       )
       .get(runId, new Date().toISOString()) as { id: number }
   ).id
@@ -149,7 +149,7 @@ test("a rebased writer runs the gate from its tree and records only a clean tree
     const dirtyGateId = (
       db()
         .query(
-          `INSERT INTO gate_execution (record_id, run_id,requested_at) VALUES ('${newRecordId()}', ?,?) RETURNING id`,
+          `INSERT INTO gate_execution (record_id, run_record_id,requested_at) VALUES ('${newRecordId()}', ?,?) RETURNING id`,
         )
         .get(runId, new Date().toISOString()) as { id: number }
     ).id
@@ -166,7 +166,7 @@ test("a rebased writer runs the gate from its tree and records only a clean tree
     const cancelledGateId = (
       db()
         .query(
-          `INSERT INTO gate_execution (record_id, run_id,requested_at) VALUES ('${newRecordId()}', ?,?) RETURNING id`,
+          `INSERT INTO gate_execution (record_id, run_record_id,requested_at) VALUES ('${newRecordId()}', ?,?) RETURNING id`,
         )
         .get(runId, new Date().toISOString()) as { id: number }
     ).id
@@ -208,14 +208,14 @@ test('an occupied gate log path fails the execution without following the path',
         root,
         'bun',
         JSON.stringify({ gate: 'scripts/gate', trunk: 'main' }),
-      ) as { id: number }
+      ) as { id: string }
   ).id
   const runId = (
     db()
       .query(
         `INSERT INTO run
-          (record_id,started_at,agent,job,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,worktree,base_commit,head_commit,worktree_source)
-         VALUES ('${newRecordId()}',?,?,?,?,?,1,'fixture','running',?,?,?,'git') RETURNING id`,
+          (record_id,number,started_at,agent,job,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,worktree,base_commit,head_commit,worktree_source)
+         VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,?,?,?,?,1,'fixture','running',?,?,?,'git') RETURNING record_id AS id`,
       )
       .get(
         new Date().toISOString(),
@@ -226,12 +226,12 @@ test('an occupied gate log path fails the execution without following the path',
         root,
         'base',
         'head',
-      ) as { id: number }
+      ) as { id: string }
   ).id
   const gateId = (
     db()
       .query(
-        `INSERT INTO gate_execution (record_id, run_id,requested_at) VALUES ('${newRecordId()}', ?,?) RETURNING id`,
+        `INSERT INTO gate_execution (record_id, run_record_id,requested_at) VALUES ('${newRecordId()}', ?,?) RETURNING id`,
       )
       .get(runId, new Date().toISOString()) as { id: number }
   ).id

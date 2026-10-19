@@ -32,7 +32,7 @@ type DockerResourceKind = 'container' | 'network' | 'volume'
 export type DockerResource = {
   kind: DockerResourceKind
   name: string
-  runId: number
+  runId: string
   workingDir?: string | null
   composeProject?: string | null
   mainCheckout?: boolean
@@ -55,7 +55,7 @@ type DockerNetwork = {
   name: string
   createdAt: string | null
   workingDir: string | null
-  runId: number | null
+  runId: string | null
   composeProject: string | null
 }
 
@@ -135,9 +135,9 @@ export function orchRunLabel(rootRunRecordId: string): string {
   return `${ORCH_RUN_LABEL_KEY}=${rootRunRecordId.toLowerCase()}`
 }
 
-export function orchRunLabelForRun(rootRunId: number): string {
+export function orchRunLabelForRun(rootRunId: string): string {
   const owner = db()
-    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
     .get(rootRunId)
   if (!owner) throw new Error(`no run ${rootRunId} for Docker ownership label`)
   return orchRunLabel(owner.record_id)
@@ -156,23 +156,15 @@ export function dockerRunResource(
   return runRecordId === null ? null : { runRecordId }
 }
 
-function localRunId(runRecordId: string | null): number | null {
-  if (runRecordId === null) return null
-  return (
-    db().query<{ id: number }, [string]>('SELECT id FROM run WHERE record_id=?').get(runRecordId)
-      ?.id ?? null
-  )
-}
-
-function attributedRunId(labels: Record<string, string>, workingDir: string | null): number | null {
+function attributedRunId(labels: Record<string, string>, workingDir: string | null): string | null {
   const labeled = runIdFromLabels(labels)
-  if (labeled) return localRunId(labeled)
+  if (labeled) return labeled
   if (!workingDir) return null
   const marker = readWorktreeMarker(workingDir)
   if (!marker.runRecordId || !marker.repoRoot) return null
   const owner = db()
-    .query<{ id: number; path: string }, [string]>(
-      `SELECT run.id,project.path FROM run
+    .query<{ record_id: string; path: string }, [string]>(
+      `SELECT run.record_id,project.path FROM run
        JOIN project ON project.record_id=run.project_record_id
        WHERE run.record_id=?`,
     )
@@ -183,7 +175,7 @@ function attributedRunId(labels: Record<string, string>, workingDir: string | nu
   } catch {
     if (resolve(marker.repoRoot) !== resolve(owner.path)) return null
   }
-  return owner.id
+  return owner.record_id
 }
 
 export type UnattributableDockerResource = {
@@ -478,7 +470,7 @@ export function dockerNetworkInventory(): DockerNetworkInventory {
         name: row.Name,
         createdAt: row.Created ?? null,
         workingDir: row.Labels?.['com.docker.compose.project.working_dir'] ?? null,
-        runId: localRunId(runIdFromLabels(row.Labels)),
+        runId: runIdFromLabels(row.Labels),
         composeProject: row.Labels?.['com.docker.compose.project'] ?? null,
       })),
     }
@@ -490,12 +482,12 @@ export function dockerNetworkInventory(): DockerNetworkInventory {
   }
 }
 
-function resourcesForRun(runId: number, inventory = dockerRunResources()): DockerInventory {
+function resourcesForRun(runId: string, inventory = dockerRunResources()): DockerInventory {
   return resourcesForRuns([runId], inventory)
 }
 
 export function resourcesForRuns(
-  runIds: number[],
+  runIds: string[],
   inventory = dockerRunResources(),
 ): DockerInventory {
   if (!inventory.ascertainable) return inventory
@@ -538,7 +530,7 @@ export function removeDockerResource(
 }
 
 export function teardownRunResources(
-  runId: number,
+  runId: string,
   inventory = resourcesForRun(runId),
   canRemove: () => boolean = () => true,
 ): DockerTeardown {
@@ -578,7 +570,7 @@ export function teardownRunResources(
 }
 
 export type RunResourceOwner = {
-  id: number
+  record_id: string
   repo: string | null
   worktree: string | null
   status: string
@@ -597,7 +589,7 @@ export function classifiedDockerResources(
   condition: DockerResourceCondition
   reason: string | null
 }[] {
-  const byId = new Map(owners.map((owner) => [owner.id, owner]))
+  const byId = new Map(owners.map((owner) => [owner.record_id, owner]))
   return resources.flatMap((resource) => {
     const owner = byId.get(resource.runId)
     if (

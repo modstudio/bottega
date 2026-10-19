@@ -171,7 +171,7 @@ export async function listRecordDocRevisions(
       : []
     const subjectNames = new Map(
       subjects.map((subject: Record<string, unknown>) => [
-        String(subject.id),
+        String(subject.record_id),
         String(subject.name),
       ]),
     )

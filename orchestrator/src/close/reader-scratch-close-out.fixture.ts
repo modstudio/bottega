@@ -63,13 +63,10 @@ export function closeOutFixture(options: { submodule?: boolean } = {}) {
   db()
     .query(
       `UPDATE run SET repo=?,cwd=?,worktree=?,branch=NULL,minted_branch=NULL,base_commit=?,
-       worktree_source='clone',head_commit=? WHERE id=?`,
+       worktree_source='clone',head_commit=? WHERE record_id=?`,
     )
     .run(project, worktree, worktree, head, head, id)
-  const recordId = db()
-    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
-    .get(id)!.record_id
-  writeFileSync(join(worktree, '.orch-run'), `${recordId}\n${repo}\nsource: clone\n`)
+  writeFileSync(join(worktree, '.orch-run'), `${id}\n${repo}\nsource: clone\n`)
   appendFileSync(join(worktree, '.git', 'info', 'exclude'), '.orch-run\n')
   const realSpawnSync = Bun.spawnSync
   spyOn(Bun, 'spawnSync').mockImplementation(((command: string[], spawnOptions?: object) =>

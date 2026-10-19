@@ -13,7 +13,7 @@ test('result renders a lifecycle row without a dispatch-job lookup or thin-outpu
   const id = addRun({ agent: '(architect)', job: 'hook-tree', status: 'ok', latency: 360_000 })
   const output = trackResidue(join(dir, `hook-tree-result-${id}.txt`))
   writeFileSync(output, 'hook lifecycle complete')
-  db().query('UPDATE run SET output_path=? WHERE id=?').run(output, id)
+  db().query('UPDATE run SET output_path=? WHERE record_id=?').run(output, id)
   const lines: string[] = []
 
   resultCommand(db(), ['result', String(id)], () => '', {
@@ -30,7 +30,9 @@ test('result renders a lifecycle row without a dispatch-job lookup or thin-outpu
 
 test('result tells the caller how to open a released writing tree', () => {
   const id = addRun({ agent: 'codex', job: 'implement' })
-  db().query('UPDATE run SET minted_branch=?, worktree=NULL WHERE id=?').run('DEV-1084-work', id)
+  db()
+    .query('UPDATE run SET minted_branch=?, worktree=NULL WHERE record_id=?')
+    .run('DEV-1084-work', id)
   const lines: string[] = []
 
   resultCommand(db(), ['result', String(id)], () => '', {
@@ -49,7 +51,9 @@ test('result tells the caller how to open a released writing tree', () => {
 test('result explains why a released writing branch remains and how to prune it', () => {
   const id = addRun({ agent: 'codex', job: 'implement', repo: 'fixture-project' })
   db()
-    .query('UPDATE run SET minted_branch=?,branch_kept=?,launch_key=?,worktree=NULL WHERE id=?')
+    .query(
+      'UPDATE run SET minted_branch=?,branch_kept=?,launch_key=?,worktree=NULL WHERE record_id=?',
+    )
     .run('DEV-1199-orch-1', 'DEV-1199-orch-1', 'DEV-1199', id)
   const lines: string[] = []
 

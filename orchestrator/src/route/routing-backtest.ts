@@ -21,7 +21,7 @@ const ROUTING_BACKTEST_SEED = 287
 export const ROUTING_BACKTEST_SEEDS = Object.freeze(Array.from({ length: 20 }, (_, i) => i + 1))
 
 type Event = {
-  id: number
+  record_id: string
   agent: string
   job: string
   stack: string | null
@@ -41,7 +41,7 @@ type Event = {
 }
 
 type OperationalEvent = {
-  id: number
+  record_id: string
   agent: string
   status: string
   failureKind: string | null
@@ -122,11 +122,19 @@ function cooling(
         event.status === 'failed' &&
         COOLS_DOWN.includes(event.failureKind as (typeof COOLS_DOWN)[number]),
     )
-    .sort((a, b) => b.finishedAt.localeCompare(a.finishedAt) || b.id - a.id)[0]
+    .sort(newestOperationalEvent)[0]
   if (!latest) return false
   if (terminal.some((event) => event.status === 'ok' && event.finishedAt > latest.finishedAt))
     return false
   return Date.parse(at.startedAt) - Date.parse(latest.finishedAt) < COOLDOWN_MIN * 60_000
+}
+
+function newestOperationalEvent(a: OperationalEvent, b: OperationalEvent): number {
+  return b.finishedAt.localeCompare(a.finishedAt) || b.record_id.localeCompare(a.record_id)
+}
+
+function chronologicalEvent(a: Event, b: Event): number {
+  return a.startedAt.localeCompare(b.startedAt) || a.record_id.localeCompare(b.record_id)
 }
 
 function priorLatency(
@@ -266,19 +274,19 @@ function events(includeVoided = false): Event[] {
   const database = db()
   const rows = database
     .query(
-      `SELECT r.id, r.agent, r.job, r.stack, r.model, r.prompt_bytes AS promptBytes,
+      `SELECT r.record_id, r.agent, r.job, r.stack, r.model, r.prompt_bytes AS promptBytes,
             r.started_at AS startedAt, r.latency_ms AS latencyMs, r.status,
             r.failure_kind AS failureKind,
             s.delivery, s.quality, s.fidelity, s.scored_at AS scoredAt
-       FROM run r LEFT JOIN score s ON s.run_id=r.id
-      WHERE r.parent_run_id IS NULL AND r.probe=0
+       FROM run r LEFT JOIN score s ON s.run_record_id=r.record_id
+      WHERE r.parent_run_record_id IS NULL AND r.probe=0
         AND r.agent <> '(pending)'
         ${
           includeVoided
             ? `AND (r.evidence_excluded IS NULL OR r.evidence_excluded='${VOID_EXCLUSION_REASON}')`
             : 'AND r.evidence_excluded IS NULL'
         }
-      ORDER BY r.job, r.started_at, r.id`,
+      ORDER BY r.job, r.started_at, r.record_id`,
     )
     .all() as Row[]
   return rows.map((row) => {
@@ -290,12 +298,14 @@ function events(includeVoided = false): Event[] {
       delivery: row.delivery,
       failureKind: row.failureKind,
     })
-      ? (row.scoredAt ?? chainTerminationAt(database, row.id))
+      ? (row.scoredAt ?? chainTerminationAt(database, row.record_id))
       : null
     const latencyAt =
-      row.status === 'ok' && row.latencyMs !== null ? chainTerminationAt(database, row.id) : null
+      row.status === 'ok' && row.latencyMs !== null
+        ? chainTerminationAt(database, row.record_id)
+        : null
     return {
-      id: row.id,
+      record_id: row.record_id,
       agent: row.agent,
       job: row.job,
       stack: row.stack,
@@ -321,15 +331,15 @@ function operationalEvents(): OperationalEvent[] {
   const database = db()
   const rows = database
     .query(
-      `SELECT id, agent, status, failure_kind AS failureKind, parent_run_id AS parentRunId,
+      `SELECT record_id, agent, status, failure_kind AS failureKind, parent_run_record_id AS parentRunId,
             started_at AS startedAt, latency_ms AS latencyMs
        FROM run
       WHERE status IN ('ok','failed')
-      ORDER BY started_at, id`,
+      ORDER BY started_at, record_id`,
     )
     .all() as Array<
     Omit<OperationalEvent, 'finishedAt'> & {
-      parentRunId: number | null
+      parentRunId: string | null
       startedAt: string
       latencyMs: number | null
     }
@@ -337,14 +347,14 @@ function operationalEvents(): OperationalEvent[] {
   return rows.flatMap((row) => {
     const finishedAt =
       row.parentRunId === null
-        ? chainTerminationAt(database, row.id)
+        ? chainTerminationAt(database, row.record_id)
         : row.latencyMs === null
           ? null
           : new Date(Date.parse(row.startedAt) + row.latencyMs).toISOString()
     return finishedAt
       ? [
           {
-            id: row.id,
+            record_id: row.record_id,
             agent: row.agent,
             status: row.status,
             failureKind: row.failureKind,
@@ -381,16 +391,14 @@ function replay(
     const thompsonLatencies: History = []
     // Detached workers reserve ids before they reset started_at at dispatch,
     // so only started_at is chronology; id breaks simultaneous-start ties.
-    const rows = all
-      .filter((e) => e.job === name)
-      .sort((a, b) => a.startedAt.localeCompare(b.startedAt) || a.id - b.id)
+    const rows = all.filter((e) => e.job === name).sort(chronologicalEvent)
     for (const [index, event] of rows.entries()) {
       const earlier = rows.slice(0, index)
       causalExcludedJudgments += earlier.filter(
         (candidate) => candidate.evidenceAt !== null && candidate.evidenceAt >= event.startedAt,
       ).length
       const byAvailability = (a: Event, b: Event) =>
-        a.evidenceAt!.localeCompare(b.evidenceAt!) || a.id - b.id
+        a.evidenceAt!.localeCompare(b.evidenceAt!) || a.record_id.localeCompare(b.record_id)
       const currentHistory = currentObserved
         .filter(
           (candidate) => candidate.evidenceAt !== null && candidate.evidenceAt < event.startedAt,

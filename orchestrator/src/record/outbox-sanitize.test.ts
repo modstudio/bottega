@@ -166,11 +166,16 @@ test('a sanitized run row stays eligible for the send-time payload re-check', ()
   database
     .query(
       `INSERT INTO run
-       (record_id,id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,error)
-       VALUES ('${newRecordId()}',42,'2026-09-15T01:00:00.000Z','codex','implement','sha',4,'head','ok',?)`,
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,error)
+       VALUES (42,'run-record-42','2026-09-15T01:00:00.000Z','codex','implement','sha',4,'head','ok',?)`,
     )
     .run(SECRET)
-  enqueueRunRecord(database, 42, '01990000-0000-7000-8000-000000000099', '2026-09-15T01:01:00.000Z')
+  enqueueRunRecord(
+    database,
+    'run-record-42',
+    '01990000-0000-7000-8000-000000000099',
+    '2026-09-15T01:01:00.000Z',
+  )
   const row = database
     .query<
       {
@@ -193,7 +198,9 @@ test('a sanitized run row stays eligible for the send-time payload re-check', ()
   expect(payload.error).toBe(WITHHELD_SECRET_SHAPED)
   expect(payload.withheldFields).toEqual(['error'])
   expect(row.payload).not.toContain(SECRET)
-  expect(database.query('SELECT error FROM run WHERE id=42').get()).toEqual({ error: SECRET })
+  expect(database.query("SELECT error FROM run WHERE record_id='run-record-42'").get()).toEqual({
+    error: SECRET,
+  })
   expect(outboxRowIsEligible(database, row)).toBe(true)
   database.close()
 })
@@ -208,20 +215,24 @@ test('enqueue withholds a planted leaf for score, question, review, override, an
     .run()
   database
     .query(
-      `INSERT INTO run (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+      `INSERT INTO run (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
        VALUES (1,'01990000-0000-7000-8000-000000000010','2026-09-15T00:00:00Z','codex','implement','sha',1,'head','ok')`,
     )
     .run()
   database
     .query(
-      `INSERT INTO score (record_id, run_id,delivery,quality,fidelity,note,scored_at,scored_by)
-       VALUES ('${newRecordId()}', 1,'full','right','faithful',?,'2026-09-15T01:00:00.000Z','architect')`,
+      `INSERT INTO score (record_id, run_record_id,delivery,quality,fidelity,note,scored_at,scored_by)
+       VALUES ('${newRecordId()}', '01990000-0000-7000-8000-000000000010','full','right','faithful',?,'2026-09-15T01:00:00.000Z','architect')`,
     )
     .run(SECRET)
-  enqueueScoreRecord(database, 1, '01990000-0000-7000-8000-000000000099')
+  enqueueScoreRecord(
+    database,
+    '01990000-0000-7000-8000-000000000010',
+    '01990000-0000-7000-8000-000000000099',
+  )
   const question = database
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question,answer) VALUES ('${newRecordId()}',1,'2026-09-15T00:01:00Z','Which?',?) RETURNING id`,
+      `INSERT INTO question (record_id,run_record_id,asked_at,question,answer) VALUES ('${newRecordId()}','01990000-0000-7000-8000-000000000010','2026-09-15T00:01:00Z','Which?',?) RETURNING id`,
     )
     .get(SECRET) as { id: number }
   enqueueQuestionRecord(database, question.id)
@@ -268,7 +279,7 @@ test('review finding and read enqueue withhold planted leaves', () => {
   database.query("INSERT INTO schema_meta (key,value) VALUES ('machine_id','machine-record')").run()
   database
     .query(
-      `INSERT INTO run (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+      `INSERT INTO run (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
        VALUES (1,'run-record','2026-09-15T00:00:00Z','codex','review-lens','sha',1,'head','ok')`,
     )
     .run()
@@ -280,8 +291,8 @@ test('review finding and read enqueue withhold planted leaves', () => {
   database
     .query(
       `INSERT INTO review_lens
-       (id,record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
-       VALUES (1,'lens-record',1,1,'craft','codex','[]','[]',?,'[]')`,
+       (id,record_id,review_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+       VALUES (1,'lens-record',1,'run-record','craft','codex','[]','[]',?,'[]')`,
     )
     .run(JSON.stringify([SECRET]))
   database

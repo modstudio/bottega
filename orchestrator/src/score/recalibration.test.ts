@@ -45,7 +45,7 @@ describe('recalibrating the scorer', () => {
     return { code: 0, out: [...logs, out].join('\n'), err: '' }
   }
   const oldScore = (
-    runId: number,
+    runId: string,
     delivery: string,
     quality: string | null,
     fidelity: string | null,
@@ -54,7 +54,7 @@ describe('recalibrating the scorer', () => {
   ) =>
     db()
       .query(
-        `INSERT INTO score (record_id, run_id, delivery, quality, fidelity, scored_at, scored_by)
+        `INSERT INTO score (record_id, run_record_id, delivery, quality, fidelity, scored_at, scored_by)
      VALUES ('${newRecordId()}', ?,?,?,?,?,?)`,
       )
       .run(runId, delivery, quality, fidelity, scoredAt, scorer)
@@ -70,7 +70,7 @@ describe('recalibrating the scorer', () => {
       const output = join(dir, `calibration-${i}.txt`)
       outputs.push(output)
       writeFileSync(output, `answer ${i}`)
-      db().query('UPDATE run SET output_path=? WHERE id=?').run(output, id)
+      db().query('UPDATE run SET output_path=? WHERE record_id=?').run(output, id)
       oldScore(id, original[0], original[1], original[2])
     }
 
@@ -114,18 +114,20 @@ describe('recalibrating the scorer', () => {
     const foreignOut = join(dir, 'calibration-foreign.txt')
     outputs.push(foreignOut)
     writeFileSync(foreignOut, 'foreign output')
-    db().query('UPDATE run SET output_path=? WHERE id=?').run(foreignOut, foreign)
+    db().query('UPDATE run SET output_path=? WHERE record_id=?').run(foreignOut, foreign)
     oldScore(foreign, 'full', 'right', null, 'someone-else')
 
     const recent = addRun({ agent: 'codex', job: 'file-question' })
     const recentOut = join(dir, 'calibration-recent.txt')
     outputs.push(recentOut)
     writeFileSync(recentOut, 'recent output')
-    db().query('UPDATE run SET output_path=? WHERE id=?').run(recentOut, recent)
+    db().query('UPDATE run SET output_path=? WHERE record_id=?').run(recentOut, recent)
     oldScore(recent, 'full', 'right', null, 'claude', new Date().toISOString())
 
     const missing = addRun({ agent: 'codex', job: 'file-question' })
-    db().query('UPDATE run SET output_path=? WHERE id=?').run('/definitely/missing/DEV-86', missing)
+    db()
+      .query('UPDATE run SET output_path=? WHERE record_id=?')
+      .run('/definitely/missing/DEV-86', missing)
     oldScore(missing, 'full', 'right', null)
 
     const filtered = await runRecalibrate('')

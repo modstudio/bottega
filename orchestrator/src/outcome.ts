@@ -42,7 +42,7 @@ export function hasRealQuestions(r: FinalizationReply | null | undefined): boole
   return realQuestions(r).length > 0
 }
 export type OutcomeRow = {
-  id: number
+  record_id: string
   status: string
   error?: string | null
   failure_kind?: string | null
@@ -265,7 +265,7 @@ export function outcomeOf(row: OutcomeRow): { terminal: boolean; ok: boolean; li
     return {
       terminal: true,
       ok: true,
-      line: `asking - ${PLATFORM_SLUG} question inbox (or ${PLATFORM_SLUG} question answer ${row.id})`,
+      line: `asking - ${PLATFORM_SLUG} question inbox (or ${PLATFORM_SLUG} question answer ${row.record_id})`,
     }
   }
   if (row.status === 'ok') {

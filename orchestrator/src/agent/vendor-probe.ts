@@ -8,6 +8,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { writableDb } from '../database/db.ts'
 import { classify, type FailureKind } from '../failure/failure.ts'
+import { nextRunNumber } from '../run/run-number.ts'
 import {
   outcomeFromTransport,
   TransportOperationTimeout,
@@ -47,7 +48,7 @@ async function drainTransportEvents(events: AsyncIterable<unknown>): Promise<voi
 }
 
 function finishProbeRun(
-  id: number,
+  id: string,
   started: number,
   status: 'ok' | 'failed',
   error: string | null,
@@ -56,7 +57,7 @@ function finishProbeRun(
 ): void {
   writableDb()
     .query(
-      `UPDATE run SET status=?,latency_ms=?,exit_code=?,output_bytes=?,error=?,failure_kind=? WHERE id=?`,
+      `UPDATE run SET status=?,latency_ms=?,exit_code=?,output_bytes=?,error=?,failure_kind=? WHERE record_id=?`,
     )
     .run(status, Date.now() - started, status === 'ok' ? 0 : 1, outputBytes, error, failureKind, id)
 }
@@ -113,7 +114,7 @@ async function collectProbe(name: string, agent: ReturnType<typeof rowAgent>, sc
 
 function settleCollected(
   name: string,
-  id: number,
+  id: string,
   started: number,
   collected: TransportResult,
 ): VendorProbeResult {
@@ -128,7 +129,7 @@ function settleCollected(
   return failedResult(kind, text)
 }
 
-function settleThrown(id: number, started: number, error: unknown): VendorProbeResult {
+function settleThrown(id: string, started: number, error: unknown): VendorProbeResult {
   const timedOut = error instanceof TransportOperationTimeout
   const detail = String((error as Error).message ?? error)
   const kind = classify(detail, 1, timedOut)
@@ -152,11 +153,12 @@ export async function probeVendor(name: string): Promise<VendorProbeResult> {
   const inserted = writableDb()
     .query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,cwd,prompt_sha,prompt_bytes,prompt_head,probe,status,model,transport)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+       (record_id,number,started_at,agent,job,cwd,prompt_sha,prompt_bytes,prompt_head,probe,status,model,transport)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
     )
     .get(
       newRecordId(),
+      nextRunNumber(writableDb()),
       new Date(started).toISOString(),
       name,
       VENDOR_PROBE_JOB,
@@ -168,11 +170,16 @@ export async function probeVendor(name: string): Promise<VendorProbeResult> {
       'running',
       agent.model,
       agent.defaultTransport,
-    ) as { id: number }
+    ) as { record_id: string }
   try {
-    return settleCollected(name, inserted.id, started, await collectProbe(name, agent, scratch))
+    return settleCollected(
+      name,
+      inserted.record_id,
+      started,
+      await collectProbe(name, agent, scratch),
+    )
   } catch (error) {
-    return settleThrown(inserted.id, started, error)
+    return settleThrown(inserted.record_id, started, error)
   } finally {
     rmSync(scratch, { recursive: true, force: true })
   }

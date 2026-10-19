@@ -111,7 +111,7 @@ function calibrationCell(
   const reviews = database
     .query(
       `SELECT DISTINCT r.id FROM review r JOIN review_lens rl ON rl.review_id=r.id
-      JOIN run ON run.id=rl.run_id
+      JOIN run ON run.record_id=rl.run_record_id
       WHERE rl.lens=? AND rl.agent=? AND ${completedReviewEvidenceSql('r', 'run', 'rl')} ${modelClause}
       ORDER BY r.completed_at DESC, r.id DESC LIMIT ?`,
     )
@@ -181,7 +181,7 @@ function calibrationCell(
   const hits = counts.hits ?? 0
   const mirrorLenses = database
     .query(
-      `SELECT COUNT(*) AS count FROM review_lens rl JOIN run ON run.id=rl.run_id
+      `SELECT COUNT(*) AS count FROM review_lens rl JOIN run ON run.record_id=rl.run_record_id
       WHERE rl.review_id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}
         AND run.mcp_connected=0 AND run.mcp_error LIKE 'mirror:%'`,
     )
@@ -240,7 +240,7 @@ function calibrationCell(
     .query(
       `SELECT r.id AS review_id, r.tier, rl.id AS lens_id, run.branch, run.launch_key
        FROM review r JOIN review_lens rl ON rl.review_id=r.id
-       JOIN run ON run.id=rl.run_id
+       JOIN run ON run.record_id=rl.run_record_id
       WHERE r.id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}
       ORDER BY r.id, rl.id`,
     )
@@ -322,7 +322,7 @@ export function reviewCalibrationFleet(database: Database = db()): ReviewCalibra
     .query(
       `SELECT rl.lens, rl.agent, rl.model, MAX(s.scored_at) AS last_graded_at
        FROM review_lens rl JOIN review r ON r.id=rl.review_id
-       LEFT JOIN score s ON s.run_id=rl.run_id
+       LEFT JOIN score s ON s.run_record_id=rl.run_record_id
       WHERE r.completed_at IS NOT NULL
         AND (rl.reproduced IS NOT NULL OR rl.coverage IS NOT NULL OR rl.limits IS NOT NULL OR rl.overlap IS NOT NULL)
       GROUP BY rl.lens, rl.agent, rl.model ORDER BY rl.lens, rl.agent, rl.model`,

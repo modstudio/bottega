@@ -7,24 +7,32 @@ import { thinOutputWarning } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
 import { sampleProcesses } from '../idle-kill.ts'
 import { job } from '../jobs/jobs.ts'
-import { resolveRunIdentifier } from '../run/run-identifier.ts'
+import {
+  classifyRunIdentifier,
+  resolveRunIdentifier,
+  resolveRunIdentifierOrNull,
+} from '../run/run-identifier.ts'
 import { runIdentityMap, runListingCommand } from '../run/run-listing.ts'
 import { collect, duration, log, optionFlags } from './support.ts'
 
-function chainHasPendingDelivery(rootId: number): boolean {
+function chainHasPendingDelivery(rootId: string): boolean {
   return Boolean(
     db()
       .query(
-        `SELECT 1 FROM question q JOIN run owner ON owner.id=q.run_id
-      WHERE (owner.id=? OR owner.parent_run_id=?)
+        `SELECT 1 FROM question q JOIN run owner ON owner.record_id=q.run_record_id
+      WHERE (owner.record_id=? OR owner.parent_run_record_id=?)
         AND q.answered_at IS NOT NULL AND q.delivery_pending_at IS NOT NULL LIMIT 1`,
       )
       .get(rootId, rootId),
   )
 }
 
-const strandedRecovery = (id: number) =>
-  `stranded — ${PLATFORM_SLUG} run retry ${id} --agent … with the recorded ruling, or ${PLATFORM_SLUG} run abandon ${id}`
+const strandedRecovery = (id: string) => {
+  const number = (
+    db().query('SELECT number FROM run WHERE record_id=?').get(id) as { number: number }
+  ).number
+  return `stranded — ${PLATFORM_SLUG} run retry ${number} --agent … with the recorded ruling, or ${PLATFORM_SLUG} run abandon ${number}`
+}
 
 export function register(program: Command): void {
   program
@@ -65,7 +73,12 @@ export function register(program: Command): void {
             ...flags,
             values: (name: string) =>
               name === 'id'
-                ? requested.map((value) => String(resolveRunIdentifier(db(), value)))
+                ? requested.map((value) => {
+                    const parsed = classifyRunIdentifier(value)
+                    if (!parsed) return value
+                    if (parsed.kind === 'record-id') return parsed.recordId
+                    return resolveRunIdentifierOrNull(db(), parsed.number) ?? value
+                  })
                 : flags.values(name),
           }
         : flags

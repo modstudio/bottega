@@ -17,6 +17,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import uuid
 
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
@@ -32,6 +33,15 @@ def heartbeat_path() -> str:
 
 def bottega_path() -> str:
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "bin", "bottega"))
+
+
+def uuid_string(value) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        return str(uuid.UUID(value)) == value.lower()
+    except ValueError:
+        return False
 
 
 def heartbeat_armed(session_id: str) -> bool | None:
@@ -119,9 +129,9 @@ def live_run_ids(session_id: str):
             if not isinstance(data, dict):
                 raise ValueError("run data is not an object")
             if data.get("session_id") == session_id and data.get("status") in ("running", "asking"):
-                run_id = data.get("id")
-                if not isinstance(run_id, int):
-                    raise ValueError("live run has no integer id")
+                run_id = data.get("record_id")
+                if not uuid_string(run_id):
+                    raise ValueError("live run has no UUID record_id")
                 ids.append(run_id)
         return sorted(set(ids))
     except Exception:

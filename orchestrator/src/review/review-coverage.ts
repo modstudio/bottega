@@ -297,7 +297,7 @@ export function coverageAudit(database: Database = db()): CoverageAudit {
       `SELECT review.id, run.repo, run.started_at, run.base_commit, review_lens.reviewed_tree
        FROM review
        JOIN review_lens ON review_lens.review_id=review.id
-       JOIN run ON run.id=review_lens.run_id
+       JOIN run ON run.record_id=review_lens.run_record_id
       WHERE review.completed_at IS NOT NULL AND run.review_ref IS NULL
       ORDER BY review.id, review_lens.id`,
     )

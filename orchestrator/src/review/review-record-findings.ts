@@ -9,7 +9,7 @@ type ReviewRecordFinding = {
   category?: string
   severity?: string
   location?: string
-  run: number
+  run: string
 }
 
 export type ReviewRecordFindingsFile = {
@@ -20,7 +20,7 @@ export type ReviewRecordFindingsFile = {
 
 export type ReviewRecordRow = {
   lens: string
-  run: number
+  run: string
   disposition: 'accepted' | 'modified' | 'rejected' | 'skipped' | null
   category: string | null
   severity: string | null

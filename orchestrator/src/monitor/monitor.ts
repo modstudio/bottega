@@ -132,15 +132,15 @@ function recipeDatabaseObservations(
   const owners = (
     database
       .query(
-        `SELECT allocation_key,root_run_id FROM resource_claim
+        `SELECT allocation_key,root_run_record_id FROM resource_claim
          WHERE project_record_id=? AND kind='database' AND state IN ('claimed','retained')`,
       )
-      .all(project.recordId) as { allocation_key: string; root_run_id: number }[]
+      .all(project.recordId) as { allocation_key: string; root_run_record_id: string }[]
   )
     .filter((claim) => claim.allocation_key.startsWith('postgres:'))
     .map((claim) => ({
       database: claim.allocation_key.slice('postgres:'.length),
-      ownerLabel: orchRunLabelForRun(claim.root_run_id),
+      ownerLabel: orchRunLabelForRun(claim.root_run_record_id),
     }))
   return {
     conditions: [
@@ -253,7 +253,7 @@ function worktreesWithoutLiveRuns(input: {
 
 function retainedDockerResourceAction(
   owner: {
-    id: number
+    record_id: string
     repo: string | null
     status: string
     worktree: string | null
@@ -273,7 +273,7 @@ function retainedDockerResourceAction(
       })
     : false
   return terminal && owner.worktree && !existsSync(owner.worktree) && teardownPlan
-    ? `run ${PLATFORM_SLUG} run close-out ${owner.id}`
+    ? `run ${PLATFORM_SLUG} run close-out ${owner.record_id}`
     : 'informational; retained resources require review before any removal'
 }
 
@@ -320,9 +320,9 @@ function trustEntryInventory(database: ReturnType<typeof db>) {
   try {
     const rows = database
       .query(
-        'SELECT id, worktree, mcp_trust_path FROM run WHERE worktree IS NOT NULL AND mcp_trust_path IS NOT NULL',
+        'SELECT record_id, worktree, mcp_trust_path FROM run WHERE worktree IS NOT NULL AND mcp_trust_path IS NOT NULL',
       )
-      .all() as { id: number; worktree: string; mcp_trust_path: string }[]
+      .all() as { record_id: string; worktree: string; mcp_trust_path: string }[]
     const present = new Set(grokTrustHeadings())
     const registeredProjectPaths = projects()
       .filter(isProjectRepository)
@@ -330,14 +330,14 @@ function trustEntryInventory(database: ReturnType<typeof db>) {
     const entries = rows.flatMap((row) => {
       const headings = JSON.parse(row.mcp_trust_path) as unknown
       if (!Array.isArray(headings) || headings.some((heading) => typeof heading !== 'string')) {
-        throw new Error(`run ${row.id} mcp_trust_path is not a JSON string array`)
+        throw new Error(`run ${row.record_id} mcp_trust_path is not a JSON string array`)
       }
       return (headings as string[])
         .filter((heading) => present.has(heading))
         .map((heading) => {
           const path = grokTrustPathFromHeading(heading)
           return {
-            runId: row.id,
+            runId: row.record_id,
             heading,
             path,
             pathExists: path !== null && existsSync(path),
@@ -366,15 +366,17 @@ function trustEntryInventory(database: ReturnType<typeof db>) {
 function observedDockerNetworkInventory(database: ReturnType<typeof db>) {
   const inventory = dockerNetworkInventory()
   if (!inventory.ascertainable) return inventory
-  const ownership = new Map<number, { statuses: string[]; worktrees: string[] }>()
-  const rows = database.query('SELECT id, parent_run_id, status, worktree FROM run').all() as {
-    id: number
-    parent_run_id: number | null
+  const ownership = new Map<string, { statuses: string[]; worktrees: string[] }>()
+  const rows = database
+    .query('SELECT record_id, parent_run_record_id, status, worktree FROM run')
+    .all() as {
+    record_id: string
+    parent_run_record_id: string | null
     status: string
     worktree: string | null
   }[]
   for (const row of rows) {
-    const rootId = row.parent_run_id ?? row.id
+    const rootId = row.parent_run_record_id ?? row.record_id
     const owner = ownership.get(rootId) ?? { statuses: [], worktrees: [] }
     owner.statuses.push(row.status)
     if (row.worktree) owner.worktrees.push(row.worktree)
@@ -540,6 +542,14 @@ function persistMonitorConditions(
 }
 
 /** Observe machine state, record the pass, and make no judgment-shaped repair. */
+function terminalCloseOutDetail(run: {
+  record_id: string
+  close_out_detail: string | null
+  close_out_outcome: string
+}): string {
+  return run.close_out_detail ?? `terminal run ${run.record_id} close-out ${run.close_out_outcome}`
+}
+
 export async function monitor(
   trigger: 'invoked' | 'backstop' = 'invoked',
   clock = Date.now(),
@@ -583,10 +593,10 @@ export async function monitor(
   for (const run of asking)
     add({
       kind: 'asking-run',
-      subject: `run:${run.id}`,
+      subject: `run:${run.record_id}`,
       since: run.started_at,
-      detail: `run ${run.id} is marked asking but has no unanswered question (stranded)`,
-      action: `run ${PLATFORM_SLUG} run abandon ${run.id} to close it, or ${PLATFORM_SLUG} run continue ${run.id} to resume it; an intent decision`,
+      detail: `run ${run.record_id} is marked asking but has no unanswered question (stranded)`,
+      action: `run ${PLATFORM_SLUG} run abandon ${run.record_id} to close it, or ${PLATFORM_SLUG} run continue ${run.record_id} to resume it; an intent decision`,
       ownerSession: run.session_id,
     })
 
@@ -607,10 +617,10 @@ export async function monitor(
   for (const run of closeOuts)
     add({
       kind: TERMINAL_CLOSE_OUT_NOTICE_KINDS[run.close_out_outcome],
-      subject: `run:${run.id}`,
+      subject: `run:${run.record_id}`,
       since: run.close_out_attempted_at,
-      detail: run.close_out_detail ?? `terminal run ${run.id} close-out ${run.close_out_outcome}`,
-      action: `run ${PLATFORM_SLUG} run close-out ${run.id}`,
+      detail: terminalCloseOutDetail(run),
+      action: `run ${PLATFORM_SLUG} run close-out ${run.record_id}`,
       ownerSession: run.session_id,
     })
 
@@ -626,14 +636,14 @@ export async function monitor(
   const dockerOwners = (
     database
       .query(
-        `SELECT r.id,COALESCE(root.repo,r.repo) repo,r.worktree,r.status,
+        `SELECT r.record_id,COALESCE(root.repo,r.repo) repo,r.worktree,r.status,
                 COALESCE(root.worktree_source,r.worktree_source) worktree_source,
                 COALESCE(root.recipe_snapshot,r.recipe_snapshot) recipe_snapshot,
                 COALESCE(root.resource_teardown,r.resource_teardown) resource_teardown
-         FROM run r LEFT JOIN run root ON root.id=r.parent_run_id`,
+         FROM run r LEFT JOIN run root ON root.record_id=r.parent_run_record_id`,
       )
       .all() as {
-      id: number
+      record_id: string
       repo: string | null
       worktree: string | null
       status: string
@@ -653,13 +663,13 @@ export async function monitor(
           resolvedWorktreeTool(owner.repo ? projectByName(owner.repo) : null)?.remove,
         ),
       }),
-    retentionReason: dockerOwnerIds.has(owner.id)
-      ? terminalDockerRetentionReasonForRun(database, owner.id)
+    retentionReason: dockerOwnerIds.has(owner.record_id)
+      ? terminalDockerRetentionReasonForRun(database, owner.record_id)
       : null,
   }))
   for (const item of classifiedDockerResources(runDockerResources, dockerOwners)) {
     if (item.condition !== 'retained-worktree-resources') continue
-    const owner = dockerOwners.find(({ id }) => id === item.resource.runId)
+    const owner = dockerOwners.find(({ record_id }) => record_id === item.resource.runId)
     add({
       kind: 'retained-worktree-docker-resource',
       subject: item.resource.name,
@@ -683,9 +693,9 @@ export async function monitor(
   for (const run of unscored)
     add({
       kind: 'unscored-run',
-      subject: `run:${run.id}`,
+      subject: `run:${run.record_id}`,
       since: run.started_at,
-      detail: `completed run ${run.id} has no score`,
+      detail: `completed run ${run.record_id} has no score`,
       action: 'reported; only its owning reader may score it',
       ownerSession: run.session_id,
     })
@@ -728,7 +738,7 @@ export async function monitor(
 
     const heldTrees = database
       .query(
-        `SELECT MIN(id) id, worktree, MAX(keep_tree) keep_tree,
+        `SELECT MIN(number) number, worktree, MAX(keep_tree) keep_tree,
                 MAX(keep_tree_until) keep_tree_until, MAX(keep_tree_reason) keep_tree_reason,
                 MIN(started_at) started_at
          FROM run WHERE project_record_id=? AND worktree IS NOT NULL
@@ -736,7 +746,7 @@ export async function monitor(
         GROUP BY worktree`,
       )
       .all(project.recordId) as {
-      id: number
+      number: number
       worktree: string
       keep_tree: number
       keep_tree_until: string | null
@@ -760,11 +770,11 @@ export async function monitor(
         subject: held.worktree,
         since: held.started_at,
         detail: explicit
-          ? `run ${held.id} retained by ${held.keep_tree_reason ?? 'explicit --keep-tree'} until ${hold.until}`
-          : `run ${held.id} ${dirty!.detail}`,
+          ? `run ${held.number} retained by ${held.keep_tree_reason ?? 'explicit --keep-tree'} until ${hold.until}`
+          : `run ${held.number} ${dirty!.detail}`,
         action: explicit
-          ? `clear with ${PLATFORM_SLUG} run discard ${held.id}`
-          : `commit or remove the work, then run ${PLATFORM_SLUG} run close-out ${held.id}`,
+          ? `clear with ${PLATFORM_SLUG} run discard ${held.number}`
+          : `commit or remove the work, then run ${PLATFORM_SLUG} run close-out ${held.number}`,
         severity: ageMs !== null && ageMs >= 48 * 60 * 60 * 1000 ? 'attention' : 'informational',
       })
     }

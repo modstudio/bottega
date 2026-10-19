@@ -3,6 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { formatPeek, peekRun } from '../events.ts'
 import { job } from '../jobs/jobs.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { reapStale } from '../run/run-liveness.ts'
 import { isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { collectResult, collectWait, resolveFailover, thinOutputWarning } from './collect.ts'
@@ -14,7 +15,7 @@ type Presentation = {
 }
 
 export function peekCommand(
-  id: number,
+  id: string,
   options: { events?: number; json: boolean },
   presentation: Presentation,
 ): void {
@@ -37,9 +38,9 @@ export function resultCommand(
     presentation,
     (jobName) => !isSyntheticLifecycleJob(jobName) && Boolean(job(jobName).needs.writesRepo),
   )
-  const chain = resolveFailover(database, Number(argv[1]))
+  const chain = resolveFailover(database, resolveRunIdentifier(database, argv[1] ?? ''))
   const row = database
-    .query('SELECT job, status, latency_ms, probe, output_path FROM run WHERE id=?')
+    .query('SELECT job, status, latency_ms, probe, output_path FROM run WHERE record_id=?')
     .get(chain.finalId) as {
     job: string
     status: string

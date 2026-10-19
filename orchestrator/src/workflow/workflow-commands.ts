@@ -8,6 +8,7 @@ import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
 import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import { projects } from '../project/projects.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from './autonomy.ts'
 import { resolveProjectAutonomy } from './autonomy-scopes.ts'
 import {
@@ -301,11 +302,12 @@ function presentCommandOutcome(
 }
 
 function evidenceFromArgv(argv: string[]): WorkflowEvidenceInput {
+  const run = flagValue(argv, 'run')
   return {
     ruling: positive(flagValue(argv, 'ruling'), '--ruling'),
     review: positive(flagValue(argv, 'review'), '--review'),
     gate: positive(flagValue(argv, 'gate'), '--gate'),
-    run: positive(flagValue(argv, 'run'), '--run'),
+    run: run === undefined ? undefined : resolveRunIdentifier(db(), run),
     artifact: flagValue(argv, 'artifact'),
     task: flagValue(argv, 'task'),
     defer: flagValue(argv, 'defer'),

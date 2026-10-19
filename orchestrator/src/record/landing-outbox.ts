@@ -243,12 +243,12 @@ export function enqueueContention(database: Database, id: number, at = nowIso())
     .query<LocalRow, [number]>(
       `SELECT contention.*, run.record_id AS run_record_id,
               landing.record_id AS landing_record_id
-       FROM contention LEFT JOIN run ON run.id=contention.run_id
+       FROM contention LEFT JOIN run ON run.record_id=contention.run_record_id
        LEFT JOIN landing ON landing.id=contention.landing_id WHERE contention.id=?`,
     )
     .get(id)
   if (!row) throw new Error(`contention ${id} does not exist and cannot be enqueued`)
-  if (row.run_id != null && row.run_record_id == null)
+  if (row.run_record_id != null && row.run_record_id == null)
     throw new Error(`contention ${id} has a run without a record id`)
   if (row.landing_id != null && row.landing_record_id == null)
     throw new Error(`contention ${id} has a landing without a record id`)

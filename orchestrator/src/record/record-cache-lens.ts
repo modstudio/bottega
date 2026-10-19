@@ -67,7 +67,7 @@ async function pullLensTable(local: Database, spaceId: string, table: RecordLens
         ? decodeRecordCursor(page.endCursor)
         : {
             at: String(last[table.includes('revision') ? 'at' : 'updatedAt']),
-            id: String(last.id),
+            id: String(last.record_id),
           }
       if (cursor) writeRecordCursor(local, cursorKey, cursor)
     }, local)

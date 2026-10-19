@@ -23,7 +23,7 @@ import type { Worktree } from './worktree-types.ts'
 
 export function createReadOnlyWorktree(
   cwd: string,
-  runId: number,
+  runId: string,
   base: string,
   record?: RecordWorktree,
   provision: WorktreeProvision = [],
@@ -119,7 +119,7 @@ function restoreRemoteTrackingRefs(path: string, refs: RemoteTrackingRef[]): voi
 export function createReadOnlyWithTool(
   tool: WorktreeTool,
   cwd: string,
-  runId: number,
+  runId: string,
   base: string,
   record?: RecordWorktree,
 ): Worktree {

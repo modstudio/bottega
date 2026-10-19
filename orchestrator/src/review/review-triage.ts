@@ -87,7 +87,7 @@ export type ReviewGrades = {
 
 function assertLensFindingIntegrity(row: {
   review_id: number
-  run_id: number
+  run_record_id: string
   output_path: string | null
   findings: number
 }): void {
@@ -95,26 +95,26 @@ function assertLensFindingIntegrity(row: {
   const output = parseReviewOutput(readFileSync(row.output_path, 'utf8'))
   if (!output || output.findings.length === row.findings) return
   throw new Error(
-    `review finding integrity error for run ${row.run_id}: persisted reply has ` +
+    `review finding integrity error for run ${row.run_record_id}: persisted reply has ` +
       `${output.findings.length} findings but stored rows have ${row.findings}; ` +
       `restore the missing review_finding rows before judging, scoring, or completing review ${row.review_id}`,
   )
 }
 
 function assertReviewFindingIntegrity(
-  scope: { column: 'run_id' | 'review_id'; id: number },
+  scope: { column: 'run_record_id' | 'review_id'; id: string | number },
   database: Database,
 ): void {
   const rows = database
     .query(
-      `SELECT rl.review_id, rl.run_id, run.output_path, COUNT(rf.id) AS findings
-         FROM review_lens rl JOIN run ON run.id=rl.run_id
+      `SELECT rl.review_id, rl.run_record_id, run.output_path, COUNT(rf.id) AS findings
+         FROM review_lens rl JOIN run ON run.record_id=rl.run_record_id
          LEFT JOIN review_finding rf ON rf.review_lens_id=rl.id
         WHERE rl.${scope.column}=? GROUP BY rl.id ORDER BY rl.id`,
     )
     .all(scope.id) as {
     review_id: number
-    run_id: number
+    run_record_id: string
     output_path: string | null
     findings: number
   }[]
@@ -122,27 +122,29 @@ function assertReviewFindingIntegrity(
 }
 
 export function assertRunReviewFindingIntegrity(
-  runId: number,
+  runId: string,
   database: Database = writableDb(),
 ): void {
-  assertReviewFindingIntegrity({ column: 'run_id', id: runId }, database)
+  assertReviewFindingIntegrity({ column: 'run_record_id', id: runId }, database)
 }
 
 function atomic<T>(database: Database, operation: () => T): T {
   return database.inTransaction ? operation() : writeTransaction(operation, database)
 }
 
-export function recordReview(runId: number, output: ReviewReply, database: Database): number {
+export function recordReview(runId: string, output: ReviewReply, database: Database): number {
   return recordReviews([{ runId, output }], database)
 }
 
 export function gradeReviewLens(
-  runId: number,
+  runId: string,
   output: ReviewReply | null,
   grades: ReviewGrades,
   database: Database = writableDb(),
 ): number {
-  let row = database.query('SELECT id, review_id FROM review_lens WHERE run_id=?').get(runId) as {
+  let row = database
+    .query('SELECT id, review_id FROM review_lens WHERE run_record_id=?')
+    .get(runId) as {
     id: number
     review_id: number
   } | null
@@ -151,7 +153,9 @@ export function gradeReviewLens(
     // The scoring path records through recordReview so it shares the same
     // best-effort commit pinning as `bottega review record`.
     const reviewId = recordReview(runId, output, database)
-    row = database.query('SELECT id, review_id FROM review_lens WHERE run_id=?').get(runId) as {
+    row = database
+      .query('SELECT id, review_id FROM review_lens WHERE run_record_id=?')
+      .get(runId) as {
       id: number
       review_id: number
     }

@@ -50,7 +50,7 @@ function receipt(messageId: number, reader: string) {
     .run(messageId, reader, new Date(NOW).toISOString(), newRecordId())
 }
 
-function claim(runId: number | null = null) {
+function claim(runId: string | null = null) {
   db()
     .query(
       `INSERT OR IGNORE INTO project(record_id,name,path,canon,settings)
@@ -60,7 +60,7 @@ function claim(runId: number | null = null) {
   return db()
     .query(
       `INSERT INTO board_claim
-       (project,subject_kind,subject_value,holder_kind,holder_session,note,run_id,duration_ms,
+       (project,subject_kind,subject_value,holder_kind,holder_session,note,run_record_id,duration_ms,
         taken_at,renewed_at,lapses_at,record_id)
        VALUES (?,'task','DEV-968','architect','reader','moving',?,3600000,?,?,?,?)
        RETURNING id`,
@@ -752,10 +752,10 @@ test('the plan and upload include only receipts for readers that are still aroun
   const finishedRun = db()
     .query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
-       VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'prompt','ok',1) RETURNING id`,
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','ok',1) RETURNING record_id AS id`,
     )
-    .get(new Date(NOW - 1_000).toISOString()) as { id: number }
+    .get(new Date(NOW - 1_000).toISOString()) as { id: string }
   const notice = postNotice(
     { audience: 'session:live-reader', title: 'reader liveness', body: 'receipt' },
     {},

@@ -138,12 +138,12 @@ export function continuationFindings(
 /** Resolve a run's current branch review round and render it for continuation. */
 export function continuationFindingsForRun(
   database: Database,
-  runId: number,
+  runId: string,
   architectMessage: string | undefined,
 ): string {
   const run = database
-    .query<{ repo: string | null; branch: string | null; branch_kept: string | null }, [number]>(
-      'SELECT repo,branch,branch_kept FROM run WHERE id=?',
+    .query<{ repo: string | null; branch: string | null; branch_kept: string | null }, [string]>(
+      'SELECT repo,branch,branch_kept FROM run WHERE record_id=?',
     )
     .get(runId)
   if (!run) throw new Error(`no run ${runId}`)

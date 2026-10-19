@@ -14,6 +14,10 @@ import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { runDetail, state } from './serve.ts'
 
 const trackResidue = trackedTestResidue()
+const runNumber = (recordId: string) =>
+  db()
+    .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
+    .get(recordId)!.number
 describe('probes are excluded from every query that reports', () => {
   test('byRepo leaves calibration traffic out', () => {
     // The rule is stated in AGENTS.md and this was the one aggregate that had
@@ -21,7 +25,7 @@ describe('probes are excluded from every query that reports', () => {
     const real = addRun({ agent: 'grok', job: 'craft' })
     const probe = addRun({ agent: 'grok', job: 'craft', probe: 1 })
     for (const id of [real, probe]) {
-      db().query("UPDATE run SET repo='devbox', vendor_tokens=100 WHERE id=?").run(id)
+      db().query("UPDATE run SET repo='devbox', vendor_tokens=100 WHERE record_id=?").run(id)
     }
     const rows = state(null).byRepo as { repo: string; runs: number; toks: number }[]
     const devbox = rows.find((r) => r.repo === 'devbox')!
@@ -41,11 +45,14 @@ test('live child turns publish their chain root for hub badge matching', () => {
   })
   db()
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+      `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
     )
     .run(child, nowIso(), 'Which?')
   const live = state(null).live as { id: number; root_id: number }[]
-  expect(live.find((row) => row.id === child)).toMatchObject({ id: child, root_id: root })
+  expect(live.find((row) => row.id === runNumber(child))).toMatchObject({
+    id: runNumber(child),
+    root_id: runNumber(root),
+  })
 })
 
 describe('run detail', () => {
@@ -62,7 +69,7 @@ describe('run detail', () => {
       tests: null,
     })
     writeFileSync(outputPath, oldReply)
-    db().query('UPDATE run SET output_path=? WHERE id=?').run(outputPath, id)
+    db().query('UPDATE run SET output_path=? WHERE record_id=?').run(outputPath, id)
     expect(runDetail(id)?.output).toBe(oldReply)
   })
 
@@ -104,7 +111,7 @@ describe('run detail', () => {
     db()
       .query(
         `INSERT INTO question
-          (record_id,run_id,asked_at,question,answer,answered_at,overturned_at,overturned_by,overturn_reason)
+          (record_id,run_record_id,asked_at,question,answer,answered_at,overturned_at,overturned_by,overturn_reason)
          VALUES ('${newRecordId()}',?,'2026-09-20','Which?','Old','2026-09-21','2026-09-22','owner','Wrong evidence')`,
       )
       .run(id)
@@ -123,7 +130,7 @@ describe('run detail', () => {
     db()
       .query(
         `INSERT INTO question
-          (record_id,run_id,asked_at,question,answer,answered_at,filed_as,filed_record_id,filed_label,filed_at)
+          (record_id,run_record_id,asked_at,question,answer,answered_at,filed_as,filed_record_id,filed_label,filed_at)
          VALUES ('${newRecordId()}',?,'2026-09-20','Which?','Keep it.','2026-09-21','canon-proposal',
                  '11111111-1111-4111-8111-111111111111','${PLATFORM_SLUG}#44','2026-09-22')`,
       )
@@ -142,7 +149,7 @@ describe('run detail', () => {
 
   test('publishes local review lenses and findings in hosted detail shape', () => {
     const id = addRun({ agent: 'codex', job: 'review-lens' })
-    db().query("UPDATE run SET lens='correctness', model='gpt' WHERE id=?").run(id)
+    db().query("UPDATE run SET lens='correctness', model='gpt' WHERE record_id=?").run(id)
     recordReview(id, reviewReply(1), db())
     expect(runDetail(id)!.reviews).toMatchObject([
       {
@@ -171,7 +178,7 @@ describe('run detail', () => {
     db()
       .query(
         `UPDATE run SET vendor_tokens=?, failure_kind=?, evidence_excluded=?, error=?,
-                      prompt_path=?, output_path=?, run_token=?, doc_revisions=?, canon_sha=? WHERE id=?`,
+                      prompt_path=?, output_path=?, run_token=?, doc_revisions=?, canon_sha=? WHERE record_id=?`,
       )
       .run(
         5678,
@@ -186,13 +193,14 @@ describe('run detail', () => {
         id,
       )
     score(id, 'partial', 'mixed')
-    db().query('UPDATE score SET note=? WHERE run_id=?').run('read by hub', id)
+    db().query('UPDATE score SET note=? WHERE run_record_id=?').run('read by hub', id)
     const detail = runDetail(id)!
     expect(detail).toMatchObject({
-      id,
+      id: runNumber(id),
+      record_id: id,
       requested_id: id,
       resolved_from: 'root',
-      root_id: id,
+      root_id: runNumber(id),
       agent: 'grok',
       job: 'craft',
       latency_ms: 1234,
@@ -215,9 +223,9 @@ describe('run detail', () => {
   test('publishes ordered chain audit and renders a missing actor explicitly', () => {
     const root = addRun({ agent: 'codex', job: 'implement' })
     const child = addRun({ agent: 'codex', job: 'implement' })
-    db().query('UPDATE run SET parent_run_id=?, turn=2 WHERE id=?').run(root, child)
+    db().query('UPDATE run SET parent_run_record_id=?, turn=2 WHERE record_id=?').run(root, child)
     const insertAudit = db().query(
-      `INSERT INTO run_mutation_audit (record_id, run_id, root_id, action, actor_session, at, reason)
+      `INSERT INTO run_mutation_audit (record_id, run_record_id, root_run_record_id, action, actor_session, at, reason)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
     insertAudit.run(newRecordId(), root, root, 'stop', null, '2026-09-05T01:00:00.000Z', null)
@@ -232,16 +240,16 @@ describe('run detail', () => {
     )
     expect(runDetail(child)!.audit).toMatchObject([
       {
-        run_id: root,
-        root_id: root,
+        run_record_id: root,
+        root_id: runNumber(root),
         action: 'stop',
         actor_session: 'anonymous (no session id)',
         at: '2026-09-05T01:00:00.000Z',
         reason: null,
       },
       {
-        run_id: child,
-        root_id: root,
+        run_record_id: child,
+        root_id: runNumber(root),
         action: 'continue',
         actor_session: 'architect-session',
         at: '2026-09-05T02:00:00.000Z',
@@ -249,10 +257,11 @@ describe('run detail', () => {
       },
     ])
     expect(runDetail(child)).toMatchObject({
-      id: child,
+      id: runNumber(child),
+      record_id: child,
       requested_id: child,
       resolved_from: 'turn',
-      root_id: root,
+      root_id: runNumber(root),
     })
     expect(() =>
       insertAudit.run(newRecordId(), root, root, 'invented', null, nowIso(), null),

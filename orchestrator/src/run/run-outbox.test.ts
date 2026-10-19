@@ -14,7 +14,7 @@ test('terminal payload maps every hosted run column and no execution-state colum
     'run',
     buildRunRecordPayload(
       {
-        id: 42,
+        number: 42,
         record_id: '01990000-0000-7000-8000-000000000042',
         project_name: 'project',
         project_record_id: '01990000-0000-7000-8000-000000001214',
@@ -59,12 +59,13 @@ test('backfill resolves chains, enqueues finished turns once, and skips running 
     .run()
   const insert = database.query(
     `INSERT INTO run (record_id,
-       id, started_at, last_event_at, agent, job, project_record_id, prompt_sha, prompt_bytes,
-       prompt_head, status, retry_of, parent_run_id
+       number, started_at, last_event_at, agent, job, project_record_id, prompt_sha, prompt_bytes,
+       prompt_head, status, retry_of_record_id, parent_run_record_id
      ) VALUES (?, ?, ?, ?, 'codex', 'implement', ?, 'sha', 4, 'head', ?, ?, ?)`,
   )
+  const runIds = Array.from({ length: 5 }, () => newRecordId())
   insert.run(
-    newRecordId(),
+    runIds[0]!,
     1,
     '2026-09-15T01:00:00.000Z',
     '2026-09-15T01:01:00.000Z',
@@ -74,27 +75,27 @@ test('backfill resolves chains, enqueues finished turns once, and skips running 
     null,
   )
   insert.run(
-    newRecordId(),
+    runIds[1]!,
     2,
     '2026-09-15T02:00:00.000Z',
     null,
     '01990000-0000-7000-8000-000000000201',
     'failed',
-    1,
+    runIds[0]!,
     null,
   )
   insert.run(
-    newRecordId(),
+    runIds[2]!,
     3,
     '2026-09-15T03:00:00.000Z',
     null,
     '01990000-0000-7000-8000-000000000201',
     'stale',
     null,
-    1,
+    runIds[0]!,
   )
   insert.run(
-    newRecordId(),
+    runIds[3]!,
     4,
     '2026-09-15T04:00:00.000Z',
     null,
@@ -104,7 +105,7 @@ test('backfill resolves chains, enqueues finished turns once, and skips running 
     null,
   )
   insert.run(
-    newRecordId(),
+    runIds[4]!,
     5,
     '2026-09-15T05:00:00.000Z',
     null,
@@ -120,8 +121,8 @@ test('backfill resolves chains, enqueues finished turns once, and skips running 
     skippedLive: 1,
   })
   const runs = database
-    .query<{ id: number; record_id: string; status: string }, []>(
-      'SELECT id, record_id, status FROM run ORDER BY id',
+    .query<{ id: string; record_id: string; status: string }, []>(
+      'SELECT record_id AS id, record_id, status FROM run ORDER BY number',
     )
     .all()
   expect(runs.every((row) => typeof row.record_id === 'string')).toBe(true)
@@ -160,8 +161,8 @@ test('backfill leaves hook-tree rows local', () => {
   database
     .query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,evidence_excluded)
-       VALUES ('${newRecordId()}','2026-09-16T00:00:00.000Z','(hook)',?,'sha',4,'tree','ok','hook tree')`,
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,evidence_excluded)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-09-16T00:00:00.000Z','(hook)',?,'sha',4,'tree','ok','hook tree')`,
     )
     .run(HOOK_TREE_JOB)
 
@@ -184,19 +185,25 @@ test('backfill refreshes only roots whose latest run payload disagrees', () => {
   applyMigrations(database)
   const insert = database.query(
     `INSERT INTO run
-       (record_id,id,started_at,last_event_at,agent,job,prompt_sha,prompt_bytes,prompt_head,
-        status,failure_kind,parent_run_id,turn)
+       (record_id,number,started_at,last_event_at,agent,job,prompt_sha,prompt_bytes,prompt_head,
+        status,failure_kind,parent_run_record_id,turn)
      VALUES (?,?,'2026-10-16T12:00:00.000Z','2026-10-16T12:01:00.000Z',
              'codex','implement','sha',4,'head',?,?,NULL,1)`,
   )
-  insert.run(newRecordId(), 1, 'ok', null)
-  insert.run(newRecordId(), 2, 'failed', 'capacity')
+  const firstRecordId = newRecordId()
+  const secondRecordId = newRecordId()
+  insert.run(firstRecordId, 1, 'ok', null)
+  insert.run(secondRecordId, 2, 'failed', 'capacity')
   const machine = '01990000-0000-7000-8000-000000000099'
   // Give both roots an existing row: root 1 is stale and root 2 agrees.
-  database.query("UPDATE run SET status='failed', failure_kind='capacity' WHERE id=1").run()
-  enqueueRunRecord(database, 1, machine, '2026-10-16T12:01:00.000Z')
-  enqueueRunRecord(database, 2, machine, '2026-10-16T12:01:00.000Z')
-  database.query("UPDATE run SET status='ok', failure_kind=NULL WHERE id=1").run()
+  database
+    .query("UPDATE run SET status='failed', failure_kind='capacity' WHERE record_id=?")
+    .run(firstRecordId)
+  enqueueRunRecord(database, firstRecordId, machine, '2026-10-16T12:01:00.000Z')
+  enqueueRunRecord(database, secondRecordId, machine, '2026-10-16T12:01:00.000Z')
+  database
+    .query("UPDATE run SET status='ok', failure_kind=NULL WHERE record_id=?")
+    .run(firstRecordId)
 
   expect(backfillRunRecords(database, machine)).toEqual({
     enqueued: 0,
@@ -204,15 +211,15 @@ test('backfill refreshes only roots whose latest run payload disagrees', () => {
     skippedLive: 0,
   })
   const counts = database
-    .query<{ id: number; count: number }, []>(
-      `SELECT run.id, count(outbox.id) AS count FROM run
+    .query<{ id: string; count: number }, []>(
+      `SELECT run.record_id AS id, count(outbox.id) AS count FROM run
        JOIN outbox ON outbox.row_id=run.record_id
-       GROUP BY run.id ORDER BY run.id`,
+       GROUP BY run.record_id ORDER BY run.number`,
     )
     .all()
   expect(counts).toEqual([
-    { id: 1, count: 2 },
-    { id: 2, count: 1 },
+    { id: firstRecordId, count: 2 },
+    { id: secondRecordId, count: 1 },
   ])
   database.close()
 })
@@ -224,8 +231,8 @@ test('backfill timestamps a refreshed root from its outcome-producing turn', () 
   database
     .query(
       `INSERT INTO run
-       (record_id,id,started_at,last_event_at,latency_ms,agent,job,prompt_sha,prompt_bytes,
-        prompt_head,status,failure_kind,parent_run_id,turn)
+       (record_id,number,started_at,last_event_at,latency_ms,agent,job,prompt_sha,prompt_bytes,
+        prompt_head,status,failure_kind,parent_run_record_id,turn)
        VALUES (?,1,'2026-10-16T12:00:00.000Z','2026-10-16T12:01:00.000Z',60000,
                'codex','implement','sha',4,'root','ok',NULL,NULL,1)`,
     )
@@ -233,17 +240,26 @@ test('backfill timestamps a refreshed root from its outcome-producing turn', () 
   database
     .query(
       `INSERT INTO run
-       (record_id,id,started_at,last_event_at,latency_ms,agent,job,prompt_sha,prompt_bytes,
-        prompt_head,status,failure_kind,parent_run_id,turn)
+       (record_id,number,started_at,last_event_at,latency_ms,agent,job,prompt_sha,prompt_bytes,
+        prompt_head,status,failure_kind,parent_run_record_id,turn)
        VALUES (?,2,'2026-10-16T12:10:00.000Z','2026-10-16T12:15:00.000Z',300000,
-               'codex','implement','sha',4,'turn','ok',NULL,1,2)`,
+               'codex','implement','sha',4,'turn','ok',NULL,?,2)`,
     )
-    .run(newRecordId())
+    .run(newRecordId(), rootRecordId)
   const machine = '01990000-0000-7000-8000-000000000099'
-  enqueueRunRecord(database, 2, machine, '2026-10-16T12:15:00.000Z')
-  database.query("UPDATE run SET status='failed', failure_kind='capacity' WHERE id=1").run()
-  enqueueRunRecord(database, 1, machine, '2026-10-16T12:01:00.000Z')
-  database.query("UPDATE run SET status='ok', failure_kind=NULL WHERE id=1").run()
+  const childRecordId = (
+    database.query('SELECT record_id FROM run WHERE parent_run_record_id=?').get(rootRecordId) as {
+      record_id: string
+    }
+  ).record_id
+  enqueueRunRecord(database, childRecordId, machine, '2026-10-16T12:15:00.000Z')
+  database
+    .query("UPDATE run SET status='failed', failure_kind='capacity' WHERE record_id=?")
+    .run(rootRecordId)
+  enqueueRunRecord(database, rootRecordId, machine, '2026-10-16T12:01:00.000Z')
+  database
+    .query("UPDATE run SET status='ok', failure_kind=NULL WHERE record_id=?")
+    .run(rootRecordId)
 
   expect(backfillRunRecords(database, machine)).toEqual({
     enqueued: 0,

@@ -457,9 +457,14 @@ test('board worker suggestion migration preserves messages, receipts, and tags',
     )
     expect(
       database
-        .query('SELECT kind,author_kind,author_run_id,title FROM board_message WHERE id=?')
+        .query('SELECT kind,author_kind,author_run_record_id,title FROM board_message WHERE id=?')
         .get(message.id),
-    ).toEqual({ kind: 'notice', author_kind: 'architect', author_run_id: null, title: 'Title' })
+    ).toEqual({
+      kind: 'notice',
+      author_kind: 'architect',
+      author_run_record_id: null,
+      title: 'Title',
+    })
     expect(database.query('SELECT reader_session FROM board_receipt').get()).toEqual({
       reader_session: 'operator',
     })
@@ -785,21 +790,26 @@ test('task rulings migration applies cleanly and preserves mutation audit rows',
       action: 'answer',
       reason: 'because',
     })
+    const runRecordId = (
+      database.query('SELECT record_id FROM run WHERE number=?').get(run.id) as {
+        record_id: string
+      }
+    ).record_id
     expect(() =>
       database
         .query(
-          `INSERT INTO run_mutation_audit (record_id,run_id,root_id,action,at)
+          `INSERT INTO run_mutation_audit (record_id,run_record_id,root_run_record_id,action,at)
            VALUES (?,?,?,'overturn','2026-09-22')`,
         )
-        .run(newRecordId(), run.id, run.id),
+        .run(newRecordId(), runRecordId, runRecordId),
     ).not.toThrow()
     expect(() =>
       database
         .query(
-          `INSERT INTO run_mutation_audit (record_id,run_id,root_id,action,at)
+          `INSERT INTO run_mutation_audit (record_id,run_record_id,root_run_record_id,action,at)
            VALUES (?,?,?,'file','2026-09-23')`,
         )
-        .run(newRecordId(), run.id, run.id),
+        .run(newRecordId(), runRecordId, runRecordId),
     ).not.toThrow()
     expect(
       database
@@ -824,9 +834,11 @@ test('task rulings migration applies cleanly and preserves mutation audit rows',
     ).toEqual({ name: 'run_carried_ruling' })
     expect(
       database
-        .query("SELECT name FROM pragma_table_info('run_mutation_audit') WHERE name='turn_id'")
+        .query(
+          "SELECT name FROM pragma_table_info('run_mutation_audit') WHERE name='turn_run_record_id'",
+        )
         .get(),
-    ).toEqual({ name: 'turn_id' })
+    ).toEqual({ name: 'turn_run_record_id' })
   } finally {
     database.close()
     rmSync(folder, { recursive: true, force: true })

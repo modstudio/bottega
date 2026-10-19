@@ -6,8 +6,8 @@ const recipe = recipeSchema.parse({ compose: { files: ['compose.yaml'] }, create
 
 describe('Compose provision planning', () => {
   test('derives a sanitized project carrying the attributable run token', () => {
-    expect(composeProjectName('_My.Project', 42)).toBe('my-project-orch-42')
-    expect(composeProjectName('---', 42)).toBe('orch-42')
+    expect(composeProjectName('_My.Project', '42')).toBe('my-project-orch-42')
+    expect(composeProjectName('---', '42')).toBe('orch-42')
   })
 
   test('refuses a derived project used by a registered main checkout', () => {
@@ -15,7 +15,7 @@ describe('Compose provision planning', () => {
       composeCommandPlan({
         recipe,
         projectName: 'My Project',
-        rootRunId: 42,
+        rootRunId: '42',
         mainComposeProjects: ['my-project-orch-42'],
       }),
     ).toThrow('registered main checkout')
@@ -28,7 +28,7 @@ describe('Compose provision planning', () => {
         create: [],
       }),
       projectName: 'app',
-      rootRunId: 7,
+      rootRunId: '7',
       mainComposeProjects: [],
     })!
     expect(planned.up).toEqual([

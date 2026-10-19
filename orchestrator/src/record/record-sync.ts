@@ -244,7 +244,7 @@ function sourceProjectRecordId(local: Database, row: OutboxRow): string | null |
     score: `SELECT project.record_id FROM run
       LEFT JOIN project ON project.record_id=run.project_record_id WHERE run.record_id=?`,
     question: `SELECT project.record_id FROM question
-      LEFT JOIN run ON run.id=question.run_id
+      LEFT JOIN run ON run.record_id=question.run_record_id
       LEFT JOIN project ON project.record_id=run.project_record_id WHERE question.record_id=?`,
     review: `SELECT project.record_id FROM review
       LEFT JOIN project ON project.record_id=review.project_record_id WHERE review.record_id=?`,

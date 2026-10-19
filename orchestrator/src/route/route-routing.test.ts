@@ -435,7 +435,7 @@ describe('fan-out routing exclusions', () => {
       .get() as { record_id: string }
     const run = addRun({ agent: 'codex', job: 'mcp-query', repo: 'compat-fixture' })
     db()
-      .query('UPDATE run SET project_record_id=?, mcp_server=?, mcp_probe=? WHERE id=?')
+      .query('UPDATE run SET project_record_id=?, mcp_server=?, mcp_probe=? WHERE record_id=?')
       .run(
         project.record_id,
         'compat-fixture',
@@ -458,7 +458,7 @@ describe('fan-out routing exclusions', () => {
       startedAt: '2099-01-01T00:00:00.000Z',
     })
     db()
-      .query('UPDATE run SET project_record_id=?, mcp_server=?, mcp_probe=? WHERE id=?')
+      .query('UPDATE run SET project_record_id=?, mcp_server=?, mcp_probe=? WHERE record_id=?')
       .run(
         project.record_id,
         'compat-fixture',

@@ -21,10 +21,10 @@ export function decideTaskBranchSessionReuse(
 
 /** Compose the refusal for implicit reuse across a session boundary. */
 export function taskBranchSessionRefusal(candidate: TaskBranchCandidate): string {
-  const owners = new Map<string, number[]>()
+  const owners = new Map<string, string[]>()
   for (const run of candidate.nominatingRuns) {
     const owner = run.sessionId ?? 'no session'
-    owners.set(owner, [...(owners.get(owner) ?? []), run.id])
+    owners.set(owner, [...(owners.get(owner) ?? []), run.record_id])
   }
   const ownership = [...owners].map(([owner, ids]) => `runs ${ids.join(', ')}: ${owner}`).join('; ')
   return (

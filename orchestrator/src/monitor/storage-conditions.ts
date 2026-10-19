@@ -16,7 +16,7 @@ export type StorageMeasurement = {
 }
 
 type LargestRun = {
-  runId: number
+  runId: string
   ageMs: number | null
   bytes: number
   status: 'live' | 'terminal'
@@ -80,8 +80,8 @@ export function storageMeasurement(input: {
 
 /** Rank already-aggregated run sizes deterministically and retain scan completeness. */
 export function largestRuns(
-  sizes: ReadonlyMap<number, number>,
-  facts: ReadonlyMap<number, { startedAt: string; status: string }>,
+  sizes: ReadonlyMap<string, number>,
+  facts: ReadonlyMap<string, { startedAt: string; status: string }>,
   clock: number,
   partial = false,
 ): LargestRuns {
@@ -102,7 +102,7 @@ export function largestRuns(
           state: partial ? ('partial' as const) : ('complete' as const),
         }
       })
-      .sort((left, right) => right.bytes - left.bytes || left.runId - right.runId)
+      .sort((left, right) => right.bytes - left.bytes || left.runId.localeCompare(right.runId))
       .slice(0, LARGEST_RUN_LIMIT),
   }
 }

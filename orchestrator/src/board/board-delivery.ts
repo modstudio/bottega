@@ -132,7 +132,7 @@ export async function readBoardNotices(
 }
 
 export async function claimRunBoardNotices(
-  runId: number,
+  runId: string,
   all = false,
   budgetMs = BOARD_PROMPT_REFRESH_BUDGET_MS,
   sessionStart = false,
@@ -164,7 +164,7 @@ export async function claimRunBoardNotices(
 }
 
 export async function markRunBoardNoticesDelivered(
-  runId: number,
+  runId: string,
   sourceIds: Array<string | number>,
 ): Promise<void> {
   const ids = splitBoardIds(sourceIds)

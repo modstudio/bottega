@@ -360,8 +360,8 @@ describe('lens catalogue', () => {
     const renamedRunId = addRun({ agent: 'codex', job: 'review-lens', repo: 'devbox' })
     const live = db()
     live.exec('PRAGMA foreign_keys=ON')
-    live.query('UPDATE run SET project_record_id=NULL WHERE id=?').run(runId)
-    live.query('UPDATE run SET project_record_id=NULL WHERE id=?').run(renamedRunId)
+    live.query('UPDATE run SET project_record_id=NULL WHERE record_id=?').run(runId)
+    live.query('UPDATE run SET project_record_id=NULL WHERE record_id=?').run(renamedRunId)
     live
       .query(`INSERT INTO canon_pack (id,record_id,job,project,sha256,bytes,doc_count,doc_revisions,compiled_at,findings,project_record_id)
       VALUES (8001,?,'review-lens','one','sha',1,1,'[]','now',0,NULL)`)
@@ -372,7 +372,7 @@ describe('lens catalogue', () => {
       )
       .run(newRecordId())
     live
-      .query(`INSERT INTO review_lens (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+      .query(`INSERT INTO review_lens (record_id,review_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
       VALUES (?,8002,?,'correctness','codex','[]','[]','[]','[]')`)
       .run(newRecordId(), runId)
     live
@@ -400,7 +400,9 @@ describe('lens catalogue', () => {
       .run(newRecordId())
 
     expect(applyMigrations(live)).toEqual([])
-    expect(live.query('SELECT project_record_id FROM run WHERE id=?').get(renamedRunId)).toEqual({
+    expect(
+      live.query('SELECT project_record_id FROM run WHERE record_id=?').get(renamedRunId),
+    ).toEqual({
       project_record_id: (
         live.query(`SELECT record_id AS id FROM project WHERE name='${PLATFORM_SLUG}'`).get() as {
           id: number
@@ -428,8 +430,8 @@ describe('lens catalogue', () => {
       (
         live
           .query(`SELECT COUNT(*) n FROM review rv WHERE rv.project_record_id IS NULL
-        AND 1=(SELECT COUNT(DISTINCT r.project_record_id) FROM review_lens rl JOIN run r ON r.id=rl.run_id WHERE rl.review_id=rv.id)
-        AND 0=(SELECT COUNT(*) FROM review_lens rl JOIN run r ON r.id=rl.run_id WHERE rl.review_id=rv.id AND r.project_record_id IS NULL)`)
+        AND 1=(SELECT COUNT(DISTINCT r.project_record_id) FROM review_lens rl JOIN run r ON r.record_id=rl.run_record_id WHERE rl.review_id=rv.id)
+        AND 0=(SELECT COUNT(*) FROM review_lens rl JOIN run r ON r.record_id=rl.run_record_id WHERE rl.review_id=rv.id AND r.project_record_id IS NULL)`)
           .get() as { n: number }
       ).n,
     ).toBe(0)

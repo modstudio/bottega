@@ -843,7 +843,7 @@ describe('record cache pull', () => {
     db()
       .query(
         `INSERT INTO run
-          (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,evidence_excluded)
+          (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,evidence_excluded)
          VALUES (?,?,?,?,?,?,?,?,?,?)`,
       )
       .run(
@@ -862,10 +862,10 @@ describe('record cache pull', () => {
       db()
         .query(
           `INSERT INTO score
-            (record_id, run_id,delivery,quality,fidelity,note,scored_at,scored_by)
+            (record_id, run_record_id,delivery,quality,fidelity,note,scored_at,scored_by)
            VALUES ('${newRecordId()}', ?,'full','right',NULL,'kept',?,'architect')`,
         )
-        .run(localId, scoreAt)
+        .run(recordId, scoreAt)
     }
     db()
       .query(
@@ -900,11 +900,13 @@ describe('record cache pull', () => {
     expect(await pullRecordCache(db())).toMatchObject({ scores: 1 })
     expect(
       db()
-        .query<{ evidence_excluded: string | null }, [number]>(
-          'SELECT evidence_excluded FROM run WHERE id=?',
+        .query<{ evidence_excluded: string | null }, [string]>(
+          'SELECT evidence_excluded FROM run WHERE record_id=?',
         )
-        .get(localId)?.evidence_excluded,
+        .get(recordId)?.evidence_excluded,
     ).toBeNull()
-    expect(db().query('SELECT 1 FROM score WHERE run_id=?').get(localId) !== null).toBe(scored)
+    expect(db().query('SELECT 1 FROM score WHERE run_record_id=?').get(recordId) !== null).toBe(
+      scored,
+    )
   })
 })

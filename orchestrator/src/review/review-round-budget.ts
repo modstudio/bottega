@@ -69,19 +69,19 @@ function eligibleRows(
 ): ReviewRoundEvidenceRow[] {
   return database
     .query(
-      `SELECT rl.id AS lens_id, r.id AS review_id, r.recorded_at, r.completed_at, r.tier,
+      `SELECT rl.id AS lens_id, r.record_id AS review_id, r.recorded_at, r.completed_at, r.tier,
               r.patch_id, r.path_set, p.name AS project, run.repo AS run_repo,
               run.launch_key, run.branch, rl.lens, rl.agent, rl.model,
               run.latency_ms, run.input_tree, run.head_commit, rl.overlap
          FROM review_lens rl
          JOIN review r ON r.id=rl.review_id
-         JOIN run ON run.id=rl.run_id
+         JOIN run ON run.record_id=rl.run_record_id
          LEFT JOIN project p ON p.record_id=r.project_record_id
         WHERE ${reviewRunEvidenceSql('run', 'rl')}
           AND (? IS NULL OR r.recorded_at >= ?)
           AND (? IS NULL OR run.project_record_id=(SELECT record_id FROM project WHERE name=?))
           AND (? IS NULL OR run.branch = ?)
-        ORDER BY r.recorded_at,r.id,rl.id`,
+        ORDER BY r.recorded_at,r.record_id,rl.id`,
     )
     .all(
       since ?? null,

@@ -87,15 +87,19 @@ export type SweepHelpers = {
 
 const KEPT_ROW_LIMIT = 10
 
-type NamedRun = { id: number; status: string; alive: boolean }
+type NamedRun = { record_id: string; status: string; alive: boolean }
+
+function worktreeSharerList(rows: { record_id: string; status: string }[]): string {
+  return rows.map((owner) => `${owner.record_id} (${owner.status})`).join(', ')
+}
 type NamedRunLookup =
   | { outcome: 'absent' }
   | { outcome: 'owned'; run: NamedRun }
-  | { outcome: 'unknown'; runId: number; reason: string }
+  | { outcome: 'unknown'; runId: string; reason: string }
 type ClosedSweepOutcome = 'released' | 'absent' | 'forgotten'
 type SweepCandidate = {
-  id: number
-  root_id: number
+  record_id: string
+  root_record_id: string
   repo: string | null
   project_record_id: string | null
   worktree: string | null
@@ -117,33 +121,33 @@ function namedRun(name: string, project: Project): NamedRunLookup {
   if (runRecordId === null) return { outcome: 'absent' }
   const member = db()
     .query(
-      `SELECT member.id, member.parent_run_id,
+      `SELECT member.record_id, member.parent_run_record_id,
               member.project_record_id, root.project_record_id root_project_record_id
        FROM run member
-       JOIN run root ON root.id=COALESCE(member.parent_run_id,member.id)
+       JOIN run root ON root.record_id=COALESCE(member.parent_run_record_id,member.record_id)
        WHERE member.record_id=?`,
     )
     .get(runRecordId) as {
-    id: number
-    parent_run_id: number | null
+    record_id: string
+    parent_run_record_id: string | null
     project_record_id: string | null
     root_project_record_id: string | null
   } | null
   if (!member) return { outcome: 'absent' }
 
-  const rootId = member.parent_run_id ?? member.id
+  const rootId = member.parent_run_record_id ?? member.record_id
   const members = db()
     .query(
-      `SELECT id,project_record_id
+      `SELECT record_id,project_record_id
        FROM run
-       WHERE id=? OR parent_run_id=?
-       ORDER BY id`,
+       WHERE record_id=? OR parent_run_record_id=?
+       ORDER BY number`,
     )
-    .all(rootId, rootId) as { id: number; project_record_id: string | null }[]
+    .all(rootId, rootId) as { record_id: string; project_record_id: string | null }[]
   const ownership = decideConversationProjectOwnership({
-    root: { id: rootId, projectRecordId: member.root_project_record_id },
-    members: members.map(({ id, project_record_id }) => ({
-      id,
+    root: { record_id: rootId, projectRecordId: member.root_project_record_id },
+    members: members.map(({ record_id, project_record_id }) => ({
+      record_id,
       projectRecordId: project_record_id,
     })),
     expectedProjectRecordId: project.recordId,
@@ -151,24 +155,24 @@ function namedRun(name: string, project: Project): NamedRunLookup {
   if (ownership.outcome === 'unknown')
     return {
       outcome: 'unknown',
-      runId: member.id,
+      runId: member.record_id,
       reason: ownership.reason,
     }
   const latest = db()
     .query(
-      `SELECT id,status,pid FROM run
-      WHERE id=? OR parent_run_id=?
-      ORDER BY turn DESC, id DESC LIMIT 1`,
+      `SELECT record_id,status,pid FROM run
+      WHERE record_id=? OR parent_run_record_id=?
+      ORDER BY turn DESC, number DESC LIMIT 1`,
     )
-    .get(rootId, rootId) as { id: number; status: string; pid: number | null }
+    .get(rootId, rootId) as { record_id: string; status: string; pid: number | null }
   return {
     outcome: 'owned',
     run: {
-      id: member.id,
+      record_id: member.record_id,
       status: latest.status,
       alive: runAlive({
         status: latest.status,
-        lease: runLeaseState(latest.id),
+        lease: runLeaseState(latest.record_id),
         pidAlive: Boolean(latest.pid && pidAlive(latest.pid)),
       }),
     },
@@ -197,7 +201,7 @@ type OrphanCandidateDecision =
   | { action: 'dry'; detail: string; failed: boolean }
   | {
       action: 'reclaim'
-      runId: number
+      runId: string
       safe: ReturnType<typeof orphanSafety>
       failed: boolean
     }
@@ -219,7 +223,7 @@ function orphanCandidateDecision(
     }
   }
   const owner = db()
-    .query<{ id: number }, [string]>('SELECT id FROM run WHERE record_id=?')
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
     .get(runRecordId)
   if (!owner) {
     return {
@@ -252,26 +256,29 @@ function orphanCandidateDecision(
   if (ruling.action === 'dry-would-reclaim') {
     return { action: 'dry', detail: safe.detail, failed: named.failed }
   }
-  return { action: 'reclaim', runId: owner.id, safe, failed: named.failed }
+  return { action: 'reclaim', runId: owner.record_id, safe, failed: named.failed }
 }
 
 function conversationProjectOwnershipIssue(
-  rootId: number,
+  rootId: string,
   expectedProjectRecordId: string | null,
 ): string | null {
   const members = db()
     .query(
-      `SELECT id,project_record_id
+      `SELECT record_id,project_record_id
        FROM run
-       WHERE id=? OR parent_run_id=?
-       ORDER BY id`,
+       WHERE record_id=? OR parent_run_record_id=?
+       ORDER BY number`,
     )
-    .all(rootId, rootId) as { id: number; project_record_id: string | null }[]
-  const root = members.find(({ id }) => id === rootId) ?? { id: rootId, project_record_id: null }
+    .all(rootId, rootId) as { record_id: string; project_record_id: string | null }[]
+  const root = members.find(({ record_id }) => record_id === rootId) ?? {
+    record_id: rootId,
+    project_record_id: null,
+  }
   const ruling = decideConversationProjectOwnership({
-    root: { id: root.id, projectRecordId: root.project_record_id },
-    members: members.map(({ id, project_record_id }) => ({
-      id,
+    root: { record_id: root.record_id, projectRecordId: root.project_record_id },
+    members: members.map(({ record_id, project_record_id }) => ({
+      record_id,
       projectRecordId: project_record_id,
     })),
     expectedProjectRecordId: expectedProjectRecordId ?? root.project_record_id ?? '',
@@ -282,8 +289,8 @@ function conversationProjectOwnershipIssue(
 function sweepCandidateInProject(row: SweepCandidate, selectedProject: Project | null): boolean {
   if (!selectedProject) return true
   const members = db()
-    .query('SELECT project_record_id FROM run WHERE id=? OR parent_run_id=?')
-    .all(row.root_id, row.root_id) as { project_record_id: string | null }[]
+    .query('SELECT project_record_id FROM run WHERE record_id=? OR parent_run_record_id=?')
+    .all(row.root_record_id, row.root_record_id) as { project_record_id: string | null }[]
   return members.some(
     ({ project_record_id }) =>
       project_record_id === selectedProject.recordId || project_record_id === null,
@@ -326,7 +333,7 @@ function printSweepKept(
 
 function reportClosedSweepRow(
   outcome: ClosedSweepOutcome,
-  row: { id: number; root_id: number; worktree: string | null },
+  row: { record_id: string; root_record_id: string; worktree: string | null },
   dry: boolean,
   presentation: CleanupPresentation,
 ): ClosedSweepOutcome {
@@ -334,8 +341,8 @@ function reportClosedSweepRow(
     writeTransaction(() => {
       auditRunMutation(
         {
-          runId: row.id,
-          rootId: row.root_id,
+          runId: row.record_id,
+          rootId: row.root_record_id,
           owner: null,
           actor: sessionId(),
           ownerLastSeenAt: null,
@@ -357,7 +364,7 @@ function reportClosedSweepRow(
         : dry
           ? 'would reclaim'
           : 'reclaimed'
-  presentation.log(`${action} ${row.id}  ${row.worktree}`)
+  presentation.log(`${action} ${row.record_id}  ${row.worktree}`)
   return outcome
 }
 
@@ -367,9 +374,11 @@ function sweepTreeIsOwned(row: SweepCandidate): boolean {
   if (!project) return false
   const conversationIds = (
     db()
-      .query('SELECT id FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
-      .all(row.root_id, row.root_id) as { id: number }[]
-  ).map((turn) => turn.id)
+      .query(
+        'SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY number',
+      )
+      .all(row.root_record_id, row.root_record_id) as { record_id: string }[]
+  ).map((turn) => turn.record_id)
   return inspectTreeOwnership(row.worktree, project.path, conversationIds) === 'owned'
 }
 
@@ -380,12 +389,14 @@ function shouldInventoryBeforeSweep(row: SweepCandidate, dry: boolean): boolean 
 function sweepTerminalRunLeases(dry: boolean): void {
   if (dry) return
   for (const runRecordId of runLeaseIds()) {
-    const row = db().query('SELECT id,status FROM run WHERE record_id=?').get(runRecordId) as {
-      id: number
+    const row = db()
+      .query('SELECT record_id,status FROM run WHERE record_id=?')
+      .get(runRecordId) as {
+      record_id: string
       status: string
     } | null
     if (row && ['ok', 'failed', 'stale', 'stopped'].includes(row.status)) {
-      removeFreeRunLease(row.id)
+      removeFreeRunLease(row.record_id)
     }
   }
 }
@@ -394,9 +405,9 @@ function sweepUnjudgedRuns(
   dry: boolean,
   selectedProject: { name: string } | null,
   presentation: CleanupPresentation,
-): Set<number> {
+): Set<string> {
   const now = Date.now()
-  const evidenceExcluded = new Set<number>()
+  const evidenceExcluded = new Set<string>()
   let expired = 0
   let kept = 0
   for (const row of unjudgedRuns(selectedProject?.name ?? null)) {
@@ -413,8 +424,8 @@ function sweepUnjudgedRuns(
     }
     if (dry || expireUnjudgedRun(row, shouldExpireUnjudgedOwner, UNJUDGED_OWNER_WINDOW_MS)) {
       expired++
-      evidenceExcluded.add(row.id)
-      presentation.log(`${dry ? 'would expire' : 'expired'} unjudged run ${row.id}`)
+      evidenceExcluded.add(row.record_id)
+      presentation.log(`${dry ? 'would expire' : 'expired'} unjudged run ${row.record_id}`)
     } else {
       kept++
     }
@@ -441,7 +452,7 @@ function sweepExpiredRunStore(
 type RecordedSweepState = {
   cleanupFailed: boolean
   inventoryErrors: Set<string>
-  leaked: Map<string, { resource: DockerResource; project: string; runId: number }>
+  leaked: Map<string, { resource: DockerResource; project: string; runId: string }>
   kept: { line: string; reason: string }[]
   counts: ClosedSweepCounts
 }
@@ -469,23 +480,23 @@ function applyRecordedPostInventory(
   if (ruling.action === 'inventory-unavailable') {
     state.inventoryErrors.add(inventoryReason!)
     state.kept.push({
-      line: `${r.id}  inventory unavailable`,
+      line: `${r.record_id}  inventory unavailable`,
       reason: ruling.keepReason!,
     })
-    presentation.error(`could not verify reclaim ${r.id}: ${ruling.presentationError}`)
+    presentation.error(`could not verify reclaim ${r.record_id}: ${ruling.presentationError}`)
   } else if (ruling.action === 'leak') {
     for (const resource of resources)
       state.leaked.set(`${resource.kind}:${resource.name}`, {
         resource,
         project,
-        runId: r.id,
+        runId: r.record_id,
       })
     state.kept.push({
-      line: `${r.id}  leaked Docker resources`,
+      line: `${r.record_id}  leaked Docker resources`,
       reason: ruling.keepReason!,
     })
     presentation.error(
-      `could not fully reclaim ${r.id}: project ${project}'s ${ruling.presentationError}`,
+      `could not fully reclaim ${r.record_id}: project ${project}'s ${ruling.presentationError}`,
     )
   } else {
     const outcome = reportClosedSweepRow(closeOutcome, r, false, presentation)
@@ -532,14 +543,17 @@ function sweepRecordedRow(
   expectedProjectRecordId: string | null,
 ): void {
   const keep = (line: string, reason: string) => state.kept.push({ line, reason })
-  const ownershipIssue = conversationProjectOwnershipIssue(r.root_id, expectedProjectRecordId)
+  const ownershipIssue = conversationProjectOwnershipIssue(
+    r.root_record_id,
+    expectedProjectRecordId,
+  )
   if (ownershipIssue) {
     state.cleanupFailed = true
-    keep(`${r.id}  ownership unknown: ${ownershipIssue}`, 'project ownership unknown')
-    presentation.error(`could not reclaim ${r.id}: ${ownershipIssue}`)
+    keep(`${r.record_id}  ownership unknown: ${ownershipIssue}`, 'project ownership unknown')
+    presentation.error(`could not reclaim ${r.record_id}: ${ownershipIssue}`)
     return
   }
-  const current = db().query('SELECT worktree FROM run WHERE id=?').get(r.id) as {
+  const current = db().query('SELECT worktree FROM run WHERE record_id=?').get(r.record_id) as {
     worktree: string | null
   } | null
   const pointerRuling = decideRecordedRunPointer({
@@ -549,14 +563,14 @@ function sweepRecordedRow(
   if (r.job === LANDING_TREE_JOB) {
     const landing = landingTreeSweepRuling(r)
     if (!landing.approved) {
-      keep(`${r.id}  held: ${r.worktree}`, landing.reason)
+      keep(`${r.record_id}  held: ${r.worktree}`, landing.reason)
       return
     }
   }
   let preInventory: 'unavailable' | 'ok' | 'not-needed' = 'not-needed'
   let preInventoryReason: string | null = null
   if (shouldInventoryBeforeSweep(r, dry)) {
-    const before = resourcesForConversation(r.id)
+    const before = resourcesForConversation(r.record_id)
     preInventory = before.ascertainable ? 'ok' : 'unavailable'
     preInventoryReason = before.ascertainable ? null : before.reason
   }
@@ -566,11 +580,13 @@ function sweepRecordedRow(
   if (preInventoryRuling.action === 'keep') {
     state.inventoryErrors.add(preInventoryReason!)
     state.cleanupFailed = preInventoryRuling.cleanupFailed
-    keep(`${r.id}  inventory unavailable`, preInventoryRuling.keepReason)
-    presentation.error(`could not verify reclaim ${r.id}: ${preInventoryRuling.presentationError}`)
+    keep(`${r.record_id}  inventory unavailable`, preInventoryRuling.keepReason)
+    presentation.error(
+      `could not verify reclaim ${r.record_id}: ${preInventoryRuling.presentationError}`,
+    )
     return
   }
-  const closed = closeOutRun(r.id, {
+  const closed = closeOutRun(r.record_id, {
     intent: 'sweep',
     dryRun: dry,
   })
@@ -586,13 +602,13 @@ function sweepRecordedRow(
   }
   if (closeRuling.action === 'keep' || closeRuling.action === 'fail') {
     state.cleanupFailed ||= closeRuling.cleanupFailed
-    keep(`${r.id}  ${closed.outcome}: ${closed.detail}`, closeRuling.keepReason)
+    keep(`${r.record_id}  ${closed.outcome}: ${closed.detail}`, closeRuling.keepReason)
     if (closeRuling.action === 'fail')
-      presentation.error(`could not reclaim ${r.id}: ${closeRuling.presentationError}`)
+      presentation.error(`could not reclaim ${r.record_id}: ${closeRuling.presentationError}`)
     return
   }
 
-  const inventory = resourcesForConversation(r.id)
+  const inventory = resourcesForConversation(r.record_id)
   applyRecordedPostInventory(r, closeRuling.closeOutcome, inventory, state, presentation)
 }
 
@@ -636,14 +652,14 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   const rows = (
     db()
       .query(
-        `SELECT r.id, COALESCE(r.parent_run_id, r.id) root_id,
+        `SELECT r.record_id, COALESCE(r.parent_run_record_id, r.record_id) root_record_id,
               r.repo, r.project_record_id, r.worktree, r.branch, r.base_commit, r.worktree_source, r.status, r.job,
               r.pid, r.agent_pid, r.session_id, seen.last_seen AS session_last_seen,
               r.launch_key, r.close_out_outcome
          FROM run r
          LEFT JOIN session_seen seen ON seen.session_id=r.session_id
         WHERE r.status IN ('ok','failed','stale','stopped')
-        ORDER BY r.id`,
+        ORDER BY r.number`,
       )
       .all() as Array<SweepCandidate & { close_out_outcome: string | null }>
   )
@@ -681,7 +697,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   })
   cleanupFailed ||= unattended.failed
   const inventoryErrors = new Set<string>()
-  const leaked = new Map<string, { resource: DockerResource; project: string; runId: number }>()
+  const leaked = new Map<string, { resource: DockerResource; project: string; runId: string }>()
   const kept: { line: string; reason: string }[] = []
   const keep = (line: string, reason: string) => {
     kept.push({ line, reason })
@@ -755,8 +771,8 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       }
       try {
         withCleanupLock(p.path, `sweep ${label}`, path, () => {
-          const ownerRow = { id: runId, repo: p.name, branch: safe.branch }
-          const worktreeRow = { id: runId, worktree: path }
+          const ownerRow = { record_id: runId, repo: p.name, branch: safe.branch }
+          const worktreeRow = { record_id: runId, worktree: path }
           const sharersBefore = liveWorktreeSharers(db(), worktreeRow)
           const locked = observeNamedRunForSweep(path, p, label, options.presentation)
           cleanupFailed ||= locked.failed
@@ -765,7 +781,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
             lockedAlive: locked.alive,
           })
           if (lockedRuling.action === 'shared-before') {
-            const owners = sharersBefore.map((owner) => `${owner.id} (${owner.status})`).join(', ')
+            const owners = worktreeSharerList(sharersBefore)
             cleanupFailed ||= lockedRuling.cleanupFailed
             keep(`${label}  ${lockedRuling.keepLine}: ${owners}`, lockedRuling.keepReason!)
             options.presentation.error(`could not reclaim ${label}: acquired by run(s) ${owners}`)
@@ -810,7 +826,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
             return
           }
           if (afterRemoval.action === 'shared-after') {
-            const owners = sharersAfter.map((owner) => `${owner.id} (${owner.status})`).join(', ')
+            const owners = worktreeSharerList(sharersAfter)
             cleanupFailed ||= afterRemoval.cleanupFailed
             keep(`${label}  ${afterRemoval.keepLine}: ${owners}`, afterRemoval.keepReason!)
             options.presentation.error(
@@ -854,7 +870,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
             const owner = ownersAfter[0] ?? ownersBefore[0] ?? null
             if (owner && safe.branch) {
               options.presentation.log(
-                `branch ${safe.branch} left because run ${owner.id} records it`,
+                `branch ${safe.branch} left because run ${owner.record_id} records it`,
               )
             }
             closedCounts.released++

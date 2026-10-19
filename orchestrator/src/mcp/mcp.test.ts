@@ -12,6 +12,7 @@ import {
   installRecordSessionRunner,
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
+import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { missingIssueReportFields } from '../issue/issue-report-fields.ts'
 import { type Project, removeProject, upsertProject } from '../project/projects.ts'
@@ -350,11 +351,22 @@ describe('orch MCP', () => {
           cursor: first.id,
         }),
       ).toContain(`cursor ${first.id}`)
+      const evidenceRun = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
+      db()
+        .query(
+          `UPDATE run SET project_record_id=(SELECT record_id FROM project WHERE name=?),
+                  launch_key=?,branch=?,exit_code=0 WHERE record_id=?`,
+        )
+        .run(project, 'DEV-1082-MCP-A', 'DEV-1082-MCP-A-work', evidenceRun)
+      const evidenceRunNumber = db()
+        .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
+        .get(evidenceRun)!.number
       await call('next_workflow_step', {
         ...common,
         args: args('DEV-1082-MCP-A'),
         cursor: first.id,
         note: 'closed through MCP handle',
+        run: evidenceRunNumber,
       })
       await call('await_workflow_ruling', {
         ...common,
@@ -380,6 +392,7 @@ describe('orch MCP', () => {
     } finally {
       await client.close()
       await server.close()
+      db().query('DELETE FROM run WHERE repo=?').run(project)
       removeProject(project)
     }
   })

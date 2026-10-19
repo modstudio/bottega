@@ -41,8 +41,12 @@ export type WorktreeRemovalResult = {
   resourceTeardownFailed?: true
 }
 
-function portFor(runId: number): number {
-  return 21000 + (runId % 4000)
+function portFor(runId: string): number {
+  const row = db()
+    .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
+    .get(runId)
+  if (!row) throw new Error(`no run ${runId} for legacy recipe port derivation`)
+  return 21000 + (row.number % 4000)
 }
 
 export type Changes = {
@@ -63,7 +67,7 @@ export type Changes = {
 function teardownBuiltInRecipe(
   recipe: Recipe,
   w: Worktree,
-  runId: number,
+  runId: string,
 ): { ok: true } | { ok: false; step: string; detail: string } {
   const dbName = dbNameFor(w.repoRoot.split('/').pop() ?? 'app', runId)
   const treeExists = existsSync(w.path)
@@ -209,7 +213,7 @@ function removeWithTool(
   w: Worktree,
   forceOrchTree = false,
   keepBranch = false,
-  runId?: number,
+  runId?: string,
   removeTree: () => { removed: boolean; detail: string } = () => removeWorktree(w, keepBranch),
 ): WorktreeRemovalResult {
   const name = w.path.split('/').pop() ?? w.path
@@ -300,7 +304,7 @@ function removeWithoutCommand(
   tool: WorktreeTool,
   w: Worktree,
   keepBranch: boolean,
-  runId?: number,
+  runId?: string,
 ): WorktreeRemovalResult {
   const snapshotRefusal = snapshotlessTrackedRecipeRefusal({
     hasRunRow: runId !== undefined,
@@ -312,7 +316,7 @@ function removeWithoutCommand(
   if (tool.recipePath) {
     let teardownCompleted = false
     const removed = teardownTrackedRecipe({
-      runId: runId as number,
+      runId: runId!,
       worktree: w,
       remove: () => {
         teardownCompleted = true
@@ -424,10 +428,10 @@ export function removeReadOnlyDirectory(w: Worktree): { removed: boolean; detail
     : { removed: true, detail: w.path }
 }
 
-function mintedBranchOwnedBy(w: Worktree, runId?: number): string | null {
+function mintedBranchOwnedBy(w: Worktree, runId?: string): string | null {
   if (runId !== undefined) {
     try {
-      const row = db().query('SELECT minted_branch FROM run WHERE id=?').get(runId) as {
+      const row = db().query('SELECT minted_branch FROM run WHERE record_id=?').get(runId) as {
         minted_branch: string | null
       } | null
       if (row) return row.minted_branch
@@ -438,22 +442,22 @@ function mintedBranchOwnedBy(w: Worktree, runId?: number): string | null {
   return w.mintedBranch ?? null
 }
 
-function setRecordedResourceTeardownDone(runId: number): void {
+function setRecordedResourceTeardownDone(runId: string): void {
   db()
     .query(
       `UPDATE run SET resource_teardown='done'
-       WHERE id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)
+       WHERE record_id=(SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?)
          AND resource_teardown='pending'`,
     )
     .run(runId)
 }
 
-function markRecordedResourceTeardownDone(runId: number | undefined): void {
+function markRecordedResourceTeardownDone(runId: string | undefined): void {
   if (runId === undefined) return
   writeTransaction(() => setRecordedResourceTeardownDone(runId))
 }
 
-function recordedTeardownFacts(runId: number | undefined): {
+function recordedTeardownFacts(runId: string | undefined): {
   recipeSnapshot: string | null
   worktreeSource: Worktree['source'] | null
   resourceTeardown: 'pending' | 'done' | null
@@ -463,7 +467,7 @@ function recordedTeardownFacts(runId: number | undefined): {
   const row = db()
     .query(
       `SELECT recipe_snapshot,worktree_source,resource_teardown FROM run
-       WHERE id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)`,
+       WHERE record_id=(SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?)`,
     )
     .get(runId) as {
     recipe_snapshot: string | null
@@ -478,7 +482,7 @@ function recordedTeardownFacts(runId: number | undefined): {
 }
 
 /** Whether an absent tree still has a recorded lifecycle capable of releasing its resources. */
-export function hasAbsentTreeTeardownPlan(repoRoot: string, runId: number): boolean {
+export function hasAbsentTreeTeardownPlan(repoRoot: string, runId: string): boolean {
   const facts = recordedTeardownFacts(runId)
   return absentTreeTeardownPlan({
     ...facts,
@@ -488,7 +492,7 @@ export function hasAbsentTreeTeardownPlan(repoRoot: string, runId: number): bool
 
 function absentLifecycleRemoval(input: {
   worktree: Worktree
-  runId?: number
+  runId?: string
   removeTree(): { removed: boolean; detail: string }
 }): WorktreeRemovalResult | null {
   if (existsSync(input.worktree.path)) return null
@@ -497,7 +501,7 @@ function absentLifecycleRemoval(input: {
   if (!facts.recipeSnapshot) return null
   let teardownCompleted = false
   const removed = teardownTrackedRecipe({
-    runId: input.runId as number,
+    runId: input.runId!,
     worktree: input.worktree,
     remove: () => {
       teardownCompleted = true
@@ -516,7 +520,7 @@ function removeByLifecycle(input: {
   projectName: string | null
   forceOrchTree: boolean
   retainBranch: boolean
-  runId?: number
+  runId?: string
   removeTree(): { removed: boolean; detail: string }
 }): WorktreeRemovalResult {
   const { worktree, tool, runId, removeTree } = input
@@ -550,7 +554,7 @@ export function removeFor(
   repoRoot: string,
   forceOrchTree = false,
   keepBranch = false,
-  runId?: number,
+  runId?: string,
   forceUnmerged = false,
   skipGitRemoval = false,
   scratchAlreadyArchived = false,

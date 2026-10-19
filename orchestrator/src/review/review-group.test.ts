@@ -18,9 +18,9 @@ test('change-group lookup carries the same patch after rebase and rejects a diff
   const run = database
     .query<{ id: number }, [string]>(
       `INSERT INTO run
-         (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_record_id,branch)
-       VALUES ('${newRecordId()}','2026-09-25','codex','review-lens','sha',1,'head','ok','fixture',?,'DEV-977')
-       RETURNING id`,
+         (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_record_id,branch)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-09-25','codex','review-lens','sha',1,'head','ok','fixture',?,'DEV-977')
+       RETURNING record_id AS id`,
     )
     .get(projectId)!
   const review = database
@@ -32,7 +32,7 @@ test('change-group lookup carries the same patch after rebase and rejects a diff
   database
     .query(
       `INSERT INTO review_lens
-         (record_id,review_id,run_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify)
+         (record_id,review_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify)
        VALUES ('${newRecordId()}',?,?,'correctness','codex','model','[]','["a.ts"]','[]','[]')`,
     )
     .run(review.id, run.id)
@@ -69,9 +69,9 @@ test('a rebase credits the complete round from the same branch and never another
     const run = database
       .query<{ id: number }, [string, string]>(
         `INSERT INTO run
-           (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_record_id,branch)
-         VALUES ('${newRecordId()}','2026-09-25','codex','review-lens','sha',1,'head','ok','fixture',?,?)
-         RETURNING id`,
+           (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_record_id,branch)
+         VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-09-25','codex','review-lens','sha',1,'head','ok','fixture',?,?)
+         RETURNING record_id AS id`,
       )
       .get(projectId, branch)!
     database
@@ -83,7 +83,7 @@ test('a rebase credits the complete round from the same branch and never another
     database
       .query(
         `INSERT INTO review_lens
-           (record_id,review_id,run_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify)
+           (record_id,review_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify)
          VALUES ('${newRecordId()}', ?, ?, ?, 'codex','model','[]','["a.ts"]','[]','[]')`,
       )
       .run(reviewId, run.id, lens)

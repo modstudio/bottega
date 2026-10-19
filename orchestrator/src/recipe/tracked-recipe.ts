@@ -68,7 +68,7 @@ export type RecipeAllocations = {
 export type AllocationAttempt = { allocations: RecipeAllocations; insertedClaimIds: number[] }
 export type TrackedAllocator = {
   allocate(input: {
-    runId: number
+    runId: string
     recipe: TrackedRecipe
     staticVars: Record<string, string>
   }): AllocationAttempt
@@ -77,7 +77,7 @@ export type TrackedAllocator = {
 type StepRunner = (step: Step, context: StepContext) => StepResult
 
 function composeContext(input: {
-  runId: number
+  runId: string
   treeRoot: string
   commandRoot?: string
   treeExists?: boolean
@@ -89,17 +89,17 @@ function composeContext(input: {
         commandRoot?: string
         treeExists?: boolean
         projectName: string
-        rootRunId: number
+        rootRunId: string
         mainComposeProjects: string[]
       }
     }
   | { ok: false; failure: StepResult } {
   const owner = db()
     .query(
-      `SELECT COALESCE(r.parent_run_id,r.id) root_run_id,p.name project_name
-       FROM run r JOIN project p ON p.record_id=r.project_record_id WHERE r.id=?`,
+      `SELECT COALESCE(r.parent_run_record_id,r.record_id) root_run_record_id,p.name project_name
+       FROM run r JOIN project p ON p.record_id=r.project_record_id WHERE r.record_id=?`,
     )
-    .get(input.runId) as { root_run_id: number; project_name: string } | null
+    .get(input.runId) as { root_run_record_id: string; project_name: string } | null
   if (!owner) {
     return {
       ok: false,
@@ -142,7 +142,7 @@ function composeContext(input: {
     context: {
       ...input,
       projectName: owner.project_name,
-      rootRunId: owner.root_run_id,
+      rootRunId: owner.root_run_record_id,
       mainComposeProjects: [...mainComposeProjects],
     },
   }
@@ -154,10 +154,10 @@ export const trackedAllocator: TrackedAllocator = {
       const database = db()
       const owner = database
         .query(
-          `SELECT COALESCE(parent_run_id,id) root_run_id,project_record_id
-           FROM run WHERE id=?`,
+          `SELECT COALESCE(parent_run_record_id,record_id) root_run_record_id,project_record_id
+           FROM run WHERE record_id=?`,
         )
-        .get(input.runId) as { root_run_id: number; project_record_id: string | null } | null
+        .get(input.runId) as { root_run_record_id: string; project_record_id: string | null } | null
       if (!owner?.project_record_id) {
         throw new Error(`tracked recipe allocation for run ${input.runId} requires a project`)
       }
@@ -165,7 +165,7 @@ export const trackedAllocator: TrackedAllocator = {
         database.query('SELECT COALESCE(MAX(id),0) id FROM resource_claim').get() as { id: number }
       ).id
       const identity = {
-        rootRunId: owner.root_run_id,
+        rootRunId: owner.root_run_record_id,
         runId: input.runId,
         projectId: owner.project_record_id,
         claimedAt: nowIso(),
@@ -195,10 +195,10 @@ export const trackedAllocator: TrackedAllocator = {
         database
           .query(
             `SELECT id FROM resource_claim
-             WHERE id>? AND root_run_id=? AND run_id=? AND kind IN ('port','index','string','database')
+             WHERE id>? AND root_run_record_id=? AND run_record_id=? AND kind IN ('port','index','string','database')
              ORDER BY id`,
           )
-          .all(before, owner.root_run_id, input.runId) as { id: number }[]
+          .all(before, owner.root_run_record_id, input.runId) as { id: number }[]
       ).map((row) => row.id)
       return { allocations: { index, ports, databases, strings }, insertedClaimIds }
     })
@@ -296,7 +296,7 @@ export function trackedRecipeNotes(tool: WorktreeTool, repoRoot: string): string
 
 export function recipeAllocationEnvironment(
   allocations: RecipeAllocations | undefined,
-  rootRunId?: number,
+  rootRunId?: string,
 ): Record<string, string> {
   const environment: Record<string, string> = {}
   if (rootRunId !== undefined) environment.ORCH_RUN_LABEL = orchRunLabelForRun(rootRunId)
@@ -317,7 +317,7 @@ export function recipeAllocationEnvironment(
 export function trackedRecipeVars(
   staticVars: Record<string, string>,
   allocations: RecipeAllocations,
-  rootRunId: number,
+  rootRunId: string,
   compose?: { projectName: string },
 ): Record<string, string> {
   const vars: Record<string, string> = {
@@ -342,13 +342,13 @@ export function trackedRecipeVars(
 function composeVariableIdentity(
   recipe: TrackedRecipe,
   projectName: string | null | undefined,
-  rootRunId: number | undefined,
-): { projectName: string; rootRunId: number } | undefined {
+  rootRunId: string | undefined,
+): { projectName: string; rootRunId: string } | undefined {
   if (!recipe.compose || !projectName || rootRunId === undefined) return undefined
   return { projectName, rootRunId }
 }
 
-export function trackedRecipeEnvironment(runId: number): Record<string, string> {
+export function trackedRecipeEnvironment(runId: string): Record<string, string> {
   const stored = readSnapshot(runId)
   return recipeAllocationEnvironment(stored.snapshot?.allocations, stored.rootRunId)
 }
@@ -405,11 +405,11 @@ export function executeTrackedPreSteps(
   }
 }
 
-function writeSnapshot(runId: number, snapshot: RecipeSnapshot): void {
+function writeSnapshot(runId: string, snapshot: RecipeSnapshot): void {
   db()
     .query(
       `UPDATE run SET recipe_snapshot=?, resource_teardown='pending'
-       WHERE id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)`,
+       WHERE record_id=(SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?)`,
     )
     .run(JSON.stringify(snapshot), runId)
 }
@@ -420,34 +420,34 @@ function recordedRecipe(recipe: TrackedRecipe): TrackedRecipe {
   return recorded
 }
 
-function liveDatabaseClaims(runId: number): number {
+function liveDatabaseClaims(runId: string): number {
   return (
     db()
       .query(
         `SELECT COUNT(*) count FROM resource_claim
-         WHERE root_run_id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)
+         WHERE root_run_record_id=(SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?)
            AND kind='database' AND state='claimed'`,
       )
       .get(runId) as { count: number }
   ).count
 }
 
-export function readSnapshot(runId: number): {
+export function readSnapshot(runId: string): {
   snapshot: RecipeSnapshot | null
   key: string | null
   seed: string | null
-  rootRunId: number
+  rootRunId: string
   projectName: string | null
 } {
   const row = db()
     .query(
-      `SELECT r.id root_run_id,r.recipe_snapshot snapshot,r.launch_key key,r.launch_seed seed,
+      `SELECT r.record_id root_run_record_id,r.recipe_snapshot snapshot,r.launch_key key,r.launch_seed seed,
               p.name project_name
        FROM run r LEFT JOIN project p ON p.record_id=r.project_record_id
-       WHERE r.id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)`,
+       WHERE r.record_id=(SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?)`,
     )
     .get(runId) as {
-    root_run_id: number
+    root_run_record_id: string
     snapshot: string | null
     key: string | null
     seed: string | null
@@ -457,7 +457,7 @@ export function readSnapshot(runId: number): {
     snapshot: row?.snapshot ? (JSON.parse(row.snapshot) as RecipeSnapshot) : null,
     key: row?.key ?? null,
     seed: row?.seed ?? null,
-    rootRunId: row?.root_run_id ?? runId,
+    rootRunId: row?.root_run_record_id ?? runId,
     projectName: row?.project_name ?? null,
   }
 }
@@ -465,7 +465,7 @@ export function readSnapshot(runId: number): {
 export type TrackedCreateInput = {
   tool: WorktreeTool
   repoRoot: string
-  runId: number
+  runId: string
   seed?: string
   key?: string
   baseRef?: string
@@ -558,10 +558,12 @@ function failTrackedCreation(input: {
       writeTransaction(() => {
         const database = db()
         const run = database
-          .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
-          .get(input.createInput.runId) as { root_id: number } | null
+          .query(
+            'SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run WHERE record_id=?',
+          )
+          .get(input.createInput.runId) as { root_id: string } | null
         database
-          .query('UPDATE run SET worktree=NULL WHERE id=? AND worktree=?')
+          .query('UPDATE run SET worktree=NULL WHERE record_id=? AND worktree=?')
           .run(input.createInput.runId, input.worktree.path)
         if (run) {
           settleClaims(database, {
@@ -829,16 +831,39 @@ export function createTrackedRecipe(
   return worktree
 }
 
+function settleTrackedTeardown(runId: string): void {
+  writeTransaction(() => {
+    const owner = db()
+      .query(
+        'SELECT COALESCE(parent_run_record_id,record_id) root_run_record_id FROM run WHERE record_id=?',
+      )
+      .get(runId) as { root_run_record_id: string } | null
+    if (!owner) return
+    settleClaims(db(), {
+      rootRunId: owner.root_run_record_id,
+      kind: 'database',
+      state: 'released',
+      settledAt: nowIso(),
+      detail: 'tracked recipe teardown completed',
+    })
+    db()
+      .query(
+        "UPDATE run SET resource_teardown='done' WHERE record_id=? AND resource_teardown='pending'",
+      )
+      .run(owner.root_run_record_id)
+  })
+}
+
 export function teardownTrackedRecipe(
   input: {
-    runId: number
+    runId: string
     worktree: Worktree
     remove(): { removed: boolean; detail: string }
     stored?: {
       snapshot: RecipeSnapshot | null
       key: string | null
       seed: string | null
-      rootRunId?: number
+      rootRunId?: string
       projectName?: string | null
     }
     treeExists?: boolean
@@ -924,22 +949,6 @@ export function teardownTrackedRecipe(
       detail: `recipe teardown failed at "${failed.name}" (${failed.phase}): ${failed.detail}`,
     }
   }
-  writeTransaction(() => {
-    const owner = db()
-      .query('SELECT COALESCE(parent_run_id,id) root_run_id FROM run WHERE id=?')
-      .get(input.runId) as { root_run_id: number } | null
-    if (owner) {
-      settleClaims(db(), {
-        rootRunId: owner.root_run_id,
-        kind: 'database',
-        state: 'released',
-        settledAt: nowIso(),
-        detail: 'tracked recipe teardown completed',
-      })
-      db()
-        .query("UPDATE run SET resource_teardown='done' WHERE id=? AND resource_teardown='pending'")
-        .run(owner.root_run_id)
-    }
-  })
+  settleTrackedTeardown(input.runId)
   return input.remove()
 }

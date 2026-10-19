@@ -10,7 +10,7 @@ import {
 } from './resume-tree.ts'
 
 const base: ResumeTreeFacts = {
-  rootId: 3970,
+  rootId: '3970',
   branch: 'technical/ADN-123-orch-3970',
   recordedTreeMatches: false,
   hasCreate: false,
@@ -94,7 +94,7 @@ describe('resume tree decision', () => {
       branch: 'technical/ADN-123-orch-3970',
       tip: null,
       tipSource: null,
-      rootId: 3970,
+      rootId: '3970',
     })
   })
 
@@ -105,7 +105,7 @@ describe('resume tree decision', () => {
       existingBranch: 'technical/ADN-123-orch-3970',
       tip: 'branch-tip',
       tipSource: 'branch ref',
-      rootId: 3970,
+      rootId: '3970',
     })
   })
 
@@ -116,7 +116,7 @@ describe('resume tree decision', () => {
       existingBranch: 'technical/ADN-123-orch-3970',
       tip: 'branch-tip',
       tipSource: 'branch ref',
-      rootId: 3970,
+      rootId: '3970',
     })
   })
 
@@ -128,7 +128,7 @@ describe('resume tree decision', () => {
       branch: 'technical/ADN-123-orch-3970',
       tip: null,
       tipSource: null,
-      rootId: 3970,
+      rootId: '3970',
     })
   })
 

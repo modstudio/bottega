@@ -148,7 +148,7 @@ type DispatchPresentation = {
     reportReuse: boolean,
   ): NonNullable<DetachSpec['resolvedTaskBranch']> | null
   contractConflicts(prompt: string): { line: number; text: string }[]
-  warnImplementContractConflicts(conflicts: { line: number; text: string }[], runId: number): void
+  warnImplementContractConflicts(conflicts: { line: number; text: string }[], runId: string): void
   checkoutHasUncommittedWork(cwd: string): boolean
   resolveBase(cwd: string, base: string): string
   isWorktreeRelativeRef(ref: string): boolean
@@ -163,14 +163,15 @@ type DispatchPresentation = {
   }
   resolveDispatchOptions(jobName: string): Promise<DispatchOptions>
   lookupTaskKey: TaskKeyLookup
-  recordRunWarning(runId: number, warning: string): void
+  recordRunWarning(runId: string, warning: string): void
   earlierReviewRejections(
     project: string,
     cwd: string,
     explicitBranch: string | null,
   ): ReviewFindingMemory
-  detach(jobName: string, prompt: string, spec: DetachSpec): Promise<number>
-  follow(id: number, quiet: boolean): Promise<unknown>
+  detach(jobName: string, prompt: string, spec: DetachSpec): Promise<string>
+  follow(id: string, quiet: boolean): Promise<unknown>
+  runNumber(id: string): number
 }
 
 export function resolveDispatchBase(
@@ -317,15 +318,16 @@ async function taskKeyWarningForDispatch(
 }
 
 function recordTaskKeyWarning(
-  runId: number,
+  runId: string,
   warning: string | null,
-  record: (runId: number, warning: string) => void,
+  record: (runId: string, warning: string) => void,
 ): void {
   if (warning) record(runId, warning)
 }
 
-function detachedRunCollectRemedy(id: number): string {
-  return `detached as run ${id}: ${PLATFORM_SLUG} run wait ${id}, then ${PLATFORM_SLUG} run result ${id}`
+function detachedRunCollectRemedy(id: string, runNumber: (id: string) => number): string {
+  const number = runNumber(id)
+  return `detached as run ${number}: ${PLATFORM_SLUG} run wait ${number}, then ${PLATFORM_SLUG} run result ${number}`
 }
 
 export async function dispatchCommand(
@@ -481,7 +483,6 @@ export async function dispatchCommand(
     flag('keep-tree-reason'),
   )
   const conflicts = jobName === 'implement' ? contractConflicts(prompt) : []
-
   // A fan-out cannot be run synchronously, and that is not a caller's problem
   // to solve.
   //
@@ -537,14 +538,14 @@ export async function dispatchCommand(
     })
     recordTaskKeyWarning(id, taskKeyWarning, recordRunWarning)
     if (!porcelain) warnImplementContractConflicts(conflicts, id)
-    printRunId(id)
+    printRunId(presentation.runNumber(id))
     if (!has('quiet') && !porcelain) {
-      error(detachedRunCollectRemedy(id))
+      error(detachedRunCollectRemedy(id, presentation.runNumber))
     }
     if (detachByDefault && !has('detach') && !has('quiet') && !porcelain) {
       error(
         `\n— ${jobName} detached by default; collect it when it finishes.` +
-          `\n  ${PLATFORM_SLUG} run wait ${id}      then:  ${PLATFORM_SLUG} run result ${id}` +
+          `\n  ${PLATFORM_SLUG} run wait ${presentation.runNumber(id)}      then:  ${PLATFORM_SLUG} run result ${presentation.runNumber(id)}` +
           `\n  ${PLATFORM_SLUG} question inbox          if it stops to ask` +
           `\n  --follow            to watch it here instead`,
       )

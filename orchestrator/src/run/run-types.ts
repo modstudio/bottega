@@ -4,10 +4,11 @@ import type { WorkerReply } from '../contract/contract.ts'
 import type { Changes } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 
-export type TaskBranchNominatingRun = { id: number; sessionId: string | null }
+export type TaskBranchNominatingRun = { record_id: string; sessionId: string | null }
 
 export type RunResult = {
-  id: number
+  record_id: string
+  number: number
   agent: string
   reason: string
   output: string

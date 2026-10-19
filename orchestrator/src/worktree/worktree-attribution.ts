@@ -188,16 +188,11 @@ export function treeOwnership(input: TreeOwnershipInput): TreeOwnership {
 export function inspectTreeOwnership(
   path: string,
   repoRoot: string,
-  conversationRunIds: readonly number[],
+  conversationRunIds: readonly string[],
 ): TreeOwnership {
   if (!existsSync(path)) {
     return treeOwnership({
-      conversationRunIds: conversationRunIds.flatMap((id) => {
-        const row = db()
-          .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
-          .get(id)
-        return row ? [row.record_id] : []
-      }),
+      conversationRunIds,
       repoRoot,
       checkout: 'unknown',
       marker: { state: 'absent' },
@@ -210,12 +205,7 @@ export function inspectTreeOwnership(
       ? { state: 'present', runRecordId: read.runRecordId, repoRoot: read.repoRoot }
       : { state: read.state }
   return treeOwnership({
-    conversationRunIds: conversationRunIds.flatMap((id) => {
-      const row = db()
-        .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
-        .get(id)
-      return row ? [row.record_id] : []
-    }),
+    conversationRunIds,
     repoRoot,
     checkout: checkout === null ? 'unknown' : checkout === 'true',
     marker,
@@ -326,7 +316,7 @@ export function worktreeDirty(path: string): { dirty: boolean; detail: string } 
 }
 
 export type WorktreeExtraction = {
-  runId: number | null
+  runId: string | null
   tree: string
   headSha: string | null
   branch: string | null
@@ -336,11 +326,12 @@ export type WorktreeExtraction = {
   ok: boolean
 }
 
-function runRecordId(id: number): string | null {
+function recordedRunId(id: string): string | null {
   try {
     return (
-      db().query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?').get(id)
-        ?.record_id ?? null
+      db()
+        .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
+        .get(id)?.record_id ?? null
     )
   } catch {
     return null
@@ -355,11 +346,11 @@ function sanitizeOrphanExtractionPath(path: string): string {
 
 function extractionDest(
   tree: string,
-  runId: number | null,
+  runId: string | null,
   runsDir = resolveRunsDirectory(process.env),
 ): string {
   if (runId !== null) {
-    const recordId = runRecordId(runId)
+    const recordId = recordedRunId(runId)
     if (recordId) return join(runsDir, recordId, 'artifacts')
   }
   return join(runsDir, 'orphans', sanitizeOrphanExtractionPath(tree))
@@ -377,10 +368,10 @@ function writeExtractionJson(dest: string, record: WorktreeExtraction): void {
  */
 export function extractWorktree(
   tree: string,
-  runId: number | null,
+  runId: string | null,
   runsDir = resolveRunsDirectory(process.env),
 ): { ok: true; dest: string; record: WorktreeExtraction } | { ok: false; detail: string } {
-  const recordedId = runId !== null && runRecordId(runId) ? runId : null
+  const recordedId = runId !== null && recordedRunId(runId) ? runId : null
   const dest = extractionDest(tree, runId, runsDir)
   const record: WorktreeExtraction = {
     runId: recordedId,

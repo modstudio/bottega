@@ -26,11 +26,11 @@ function run(status = 'asking') {
   return db()
     .query(
       `INSERT INTO run
-        (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,launch_key)
-       VALUES ('${newRecordId()}','2026-09-25','codex','implement','fixture','x',1,'x',?,'operator-waiting-test','DEV-943')
-       RETURNING id`,
+        (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,launch_key)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-09-25','codex','implement','fixture','x',1,'x',?,'operator-waiting-test','DEV-943')
+       RETURNING record_id AS id, number`,
     )
-    .get(status) as { id: number }
+    .get(status) as { id: string; number: number }
 }
 
 describe('operator waiting decision', () => {
@@ -63,7 +63,7 @@ describe('relay', () => {
     const owner = run()
     const question = db()
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question,answer,answered_at)
+        `INSERT INTO question (record_id,run_record_id,asked_at,question,answer,answered_at)
          VALUES ('${newRecordId()}',?,'2026-09-25','Which?','This.','2026-09-25') RETURNING id`,
       )
       .get(owner.id) as { id: number }
@@ -76,7 +76,7 @@ describe('relay', () => {
     const owner = run()
     const question = db()
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question)
+        `INSERT INTO question (record_id,run_record_id,asked_at,question)
          VALUES ('${newRecordId()}',?,'2026-09-25','Which?') RETURNING id`,
       )
       .get(owner.id) as { id: number }
@@ -109,7 +109,7 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
   const question = db()
     .query(
       `INSERT INTO question
-        (record_id,run_id,asked_at,question,options,recommendation,why,awaiting_operator_at)
+        (record_id,run_record_id,asked_at,question,options,recommendation,why,awaiting_operator_at)
        VALUES ('${newRecordId()}',?,'2026-09-25','Run question?', '["a","b"]','a','because','2026-09-25')
        RETURNING id`,
     )
@@ -136,7 +136,7 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
     {
       kind: 'question',
       id: question.id,
-      run_id: owner.id,
+      run_record_id: owner.id,
       project: 'fixture',
       task_key: 'DEV-943',
       session_id: null,
@@ -146,12 +146,12 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
       why: 'because',
       waiting_since: '2026-09-25',
       episode: '2026-09-25',
-      answer_command: `${PLATFORM_SLUG} question answer ${owner.id} --q${question.id} --from-operator "<ruling>"`,
+      answer_command: `${PLATFORM_SLUG} question answer ${owner.number} --q${question.id} --from-operator "<ruling>"`,
     },
     {
       kind: 'workflow',
       id: cursor.id,
-      run_id: null,
+      run_record_id: null,
       project: 'fixture',
       task_key: 'DEV-943',
       session_id: 'session-1',
@@ -166,8 +166,11 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
   ])
   expect(waiting.every((item) => /^[0-9a-f-]{36}$/.test(item.question_record_id))).toBe(true)
   expect(waiting[0]?.run_record_id).toBe(
-    (db().query('SELECT record_id FROM run WHERE id=?').get(owner.id) as { record_id: string })
-      .record_id,
+    (
+      db().query('SELECT record_id FROM run WHERE record_id=?').get(owner.id) as {
+        record_id: string
+      }
+    ).record_id,
   )
 })
 
@@ -175,7 +178,7 @@ test('notification claims return each waiting episode once', () => {
   const owner = run()
   const question = db()
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question,awaiting_operator_at)
+      `INSERT INTO question (record_id,run_record_id,asked_at,question,awaiting_operator_at)
        VALUES ('${newRecordId()}',?,'2026-09-25','Question?','2026-09-25') RETURNING id`,
     )
     .get(owner.id) as { id: number }
@@ -249,10 +252,10 @@ test('notification claims return each waiting episode once', () => {
 
 test('a no-project question lists and notifies without a project label', () => {
   const owner = run()
-  db().query('UPDATE run SET repo=NULL,launch_key=NULL WHERE id=?').run(owner.id)
+  db().query('UPDATE run SET repo=NULL,launch_key=NULL WHERE record_id=?').run(owner.id)
   const question = db()
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question,awaiting_operator_at)
+      `INSERT INTO question (record_id,run_record_id,asked_at,question,awaiting_operator_at)
        VALUES ('${newRecordId()}',?,'2026-09-25','No project?','2026-09-25') RETURNING id`,
     )
     .get(owner.id) as { id: number }

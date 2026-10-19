@@ -7,7 +7,7 @@ import { resolveRunBase, shouldResolveRunBase } from './run-base-resolution.ts'
 test('an unresolved recorded commit refusal names both the commit and launch branch', () => {
   const root = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
   db()
-    .query('UPDATE run SET launch_base=?,base_commit=? WHERE id=?')
+    .query('UPDATE run SET launch_base=?,base_commit=? WHERE record_id=?')
     .run('DEV-1042-orch-8083', '956304fe', root)
 
   expect(() =>

@@ -490,11 +490,11 @@ test('a local claim run id is exposed as an opaque string', async () => {
   const inserted = db()
     .query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id)
-       VALUES ('${newRecordId()}','2026-10-05','codex','implement','board-route-architect','sha',1,'prompt',
-               'running','claim-route-session') RETURNING id`,
+       (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id)
+       VALUES ('${newRecordId()}',1,'2026-10-05','codex','implement','board-route-architect','sha',1,'prompt',
+               'running','claim-route-session') RETURNING record_id AS id`,
     )
-    .get() as { id: number }
+    .get() as { id: string }
   const result = await boardClaimTake(
     { subject: 'resource:run-bound', runId: inserted.id },
     {
@@ -505,8 +505,11 @@ test('a local claim run id is exposed as an opaque string', async () => {
   )
   expect(result.runId).toBe(String(inserted.id))
   expect(result.run_record_id).toBe(
-    (db().query('SELECT record_id FROM run WHERE id=?').get(inserted.id) as { record_id: string })
-      .record_id,
+    (
+      db().query('SELECT record_id FROM run WHERE record_id=?').get(inserted.id) as {
+        record_id: string
+      }
+    ).record_id,
   )
 })
 

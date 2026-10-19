@@ -7,17 +7,19 @@ import type { Project } from '../project/projects.ts'
 import { reclaimResidue } from '../reclaim/reclaim-residue.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 
-function recordedTrustOwners(): Map<string, number> {
-  const owners = new Map<string, number>()
+function recordedTrustOwners(): Map<string, string> {
+  const owners = new Map<string, string>()
   const runs = db()
-    .query('SELECT id, mcp_trust_path FROM run WHERE mcp_trust_path IS NOT NULL ORDER BY id')
-    .all() as { id: number; mcp_trust_path: string }[]
+    .query(
+      'SELECT record_id, mcp_trust_path FROM run WHERE mcp_trust_path IS NOT NULL ORDER BY number',
+    )
+    .all() as { record_id: string; mcp_trust_path: string }[]
   for (const run of runs) {
     try {
       const headings = JSON.parse(run.mcp_trust_path) as unknown
       if (!Array.isArray(headings)) continue
       for (const heading of headings) {
-        if (typeof heading === 'string' && !owners.has(heading)) owners.set(heading, run.id)
+        if (typeof heading === 'string' && !owners.has(heading)) owners.set(heading, run.record_id)
       }
     } catch {
       /* observation from an older or incomplete row is not authority */
@@ -34,7 +36,7 @@ function reclaimAbsentTrustEntry(input: {
   dryRun: boolean
   heading: string
   path: string
-  runId: number | undefined
+  runId: string | undefined
   presentation: CleanupPresentation
 }): boolean {
   if (!input.runId) {

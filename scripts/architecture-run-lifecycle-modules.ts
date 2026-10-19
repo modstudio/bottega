@@ -79,6 +79,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../resources/resource-ownership.ts',
     '../review/review-target.ts',
     './run-artifacts.ts',
+    './run-number.ts',
     './run-claim-types.ts',
     './question-close.ts',
     './branch-owner-guard.ts',

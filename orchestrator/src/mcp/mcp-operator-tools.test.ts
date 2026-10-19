@@ -38,12 +38,12 @@ async function withClient<T>(run: (client: Client) => Promise<T>): Promise<T> {
   }
 }
 
-function addQuestion(runId: number, question: string, waiting = false): number {
+function addQuestion(runId: string, question: string, waiting = false): number {
   const at = new Date().toISOString()
   return (
     db()
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question,awaiting_operator_at)
+        `INSERT INTO question (record_id,run_record_id,asked_at,question,awaiting_operator_at)
          VALUES ('${newRecordId()}',?,?,?,?) RETURNING id`,
       )
       .get(runId, at, question, waiting ? at : null) as { id: number }
@@ -60,6 +60,11 @@ describe('operator MCP tools', () => {
       repo: PLATFORM_SLUG,
     })
     const questionId = addQuestion(runId, 'Which shape?', true)
+    const runNumber = (
+      db().query('SELECT number FROM run WHERE record_id=?').get(runId) as {
+        number: number
+      }
+    ).number
 
     const result = await withClient((client) =>
       client.callTool({ name: 'list_open_questions', arguments: {} }),
@@ -67,8 +72,8 @@ describe('operator MCP tools', () => {
 
     expect(result.isError).not.toBe(true)
     expect(result.structuredContent).toMatchObject({
-      questions: [{ question_id: questionId, answer_id: runId, can_answer: true }],
-      waiting_on_operator: [{ kind: 'question', id: questionId, run_id: runId }],
+      questions: [{ question_id: questionId, answer_id: runNumber, can_answer: true }],
+      waiting_on_operator: [{ kind: 'question', id: questionId, run_record_id: runId }],
     })
   })
 
@@ -79,7 +84,7 @@ describe('operator MCP tools', () => {
       status: 'asking',
       session: SESSION,
     })
-    db().query('UPDATE run SET repo=NULL WHERE id=?').run(ownRun)
+    db().query('UPDATE run SET repo=NULL WHERE record_id=?').run(ownRun)
     const ownQuestion = addQuestion(ownRun, 'Owned without a project?', true)
     const foreignRun = addRun({
       agent: 'codex',
@@ -111,10 +116,10 @@ describe('operator MCP tools', () => {
       status: 'running',
       session: SESSION,
     })
-    db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, runId)
+    db().query('UPDATE run SET pid=? WHERE record_id=?').run(process.pid, runId)
     const questionId = addQuestion(runId, 'Which shape?')
     const runRecordId = (
-      db().query('SELECT record_id FROM run WHERE id=?').get(runId) as { record_id: string }
+      db().query('SELECT record_id FROM run WHERE record_id=?').get(runId) as { record_id: string }
     ).record_id
     const questionRecordId = (
       db().query('SELECT record_id FROM question WHERE id=?').get(questionId) as {
@@ -126,7 +131,7 @@ describe('operator MCP tools', () => {
       client.callTool({
         name: 'answer_questions',
         arguments: {
-          run_id: runRecordId.toUpperCase(),
+          run_record_id: runRecordId.toUpperCase(),
           rulings: [
             { question_id: questionRecordId.toUpperCase(), ruling: 'Use the existing shape.' },
           ],
@@ -137,11 +142,9 @@ describe('operator MCP tools', () => {
     expect(result.isError).not.toBe(true)
     expect(result.structuredContent).toMatchObject({
       outcome: 'delivered-live',
-      run_id: runId,
-      resumed_as: null,
-    })
-    expect(result.structuredContent).toMatchObject({
-      record_id: runRecordId,
+      run_record_id: runId,
+      run_number: expect.any(Number),
+      resumed_number: null,
       resumed_record_id: null,
     })
     expect(
@@ -167,14 +170,14 @@ describe('operator MCP tools', () => {
           status: 'running',
           session: SESSION,
         })
-        db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, runId)
+        db().query('UPDATE run SET pid=? WHERE record_id=?').run(process.pid, runId)
         const questionId = addQuestion(runId, `Literal ${index}?`)
         const fromOperator = index === literals.length - 1
 
         const result = await client.callTool({
           name: 'answer_questions',
           arguments: {
-            run_id: runId,
+            run_record_id: runId,
             rulings: [{ question_id: questionId, ruling }],
             from_operator: fromOperator,
           },
@@ -208,7 +211,7 @@ describe('operator MCP tools', () => {
       client.callTool({
         name: 'answer_questions',
         arguments: {
-          run_id: runId,
+          run_record_id: runId,
           rulings: [{ question_id: first, ruling: 'Only one ruling.' }],
           record_only: true,
         },

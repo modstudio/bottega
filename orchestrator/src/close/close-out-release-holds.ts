@@ -8,14 +8,14 @@ import { projectAt } from '../project/projects.ts'
 import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 
 type ReleaseHoldResult = {
-  runId: number
+  runId: string
   worktree: string
   outcome: 'held' | 'failed'
   detail: string
 }
 
 export function landingTreeReleaseHold(input: {
-  runId: number
+  runId: string
   job: string
   repo: string | null
   worktree: string
@@ -51,7 +51,7 @@ export function protectRetainedBranch(input: {
   retainedRef: string | null
   branchSnapshot: string | null
   retainedBranch: string | null
-  runId: number
+  runId: string
   treePath: string
 }): ReleaseHoldResult | null {
   if (!input.retainedRef || !input.branchSnapshot) return null

@@ -77,7 +77,10 @@ async function pullTable(
       const last = page.items.at(-1)!
       current = page.endCursor
         ? decodeRecordCursor(page.endCursor)
-        : { at: String(last[table.endsWith('_event') ? 'at' : 'updatedAt']), id: String(last.id) }
+        : {
+            at: String(last[table.endsWith('_event') ? 'at' : 'updatedAt']),
+            id: String(last.record_id),
+          }
       remember(local, key, current)
     }, local)
     if (!page.nextCursor) return { count, completed: true }

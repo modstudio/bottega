@@ -59,8 +59,10 @@ export type Candidate = {
   declared: string[] | null
   preferred: boolean
   maxConcurrent: number | null
-  runningRunIds: number[]
+  runningRunIds: string[]
 }
+const RUNNING_RUNS_SQL =
+  "SELECT record_id FROM run WHERE agent=? AND status='running' AND probe=0 ORDER BY number"
 
 /**
  * How long to leave an agent alone after it runs out of quota or loses its
@@ -132,7 +134,7 @@ export function promptBucketsForJob(jobName: string): PromptSizeBucket[] {
       `SELECT DISTINCT CASE WHEN prompt_bytes < ? THEN 'small' ELSE 'large' END AS bucket
        FROM run
       WHERE job = ? AND status IN ('ok','failed','stale') AND probe = 0
-        AND evidence_excluded IS NULL AND parent_run_id IS NULL
+        AND evidence_excluded IS NULL AND parent_run_record_id IS NULL
         AND agent != '(pending)'`,
     )
     .all(PROMPT_SIZE_BOUNDARY, jobName) as { bucket: PromptSizeBucket }[]
@@ -180,7 +182,7 @@ export function isRoutingEvidence(row: RoutingEvidenceInput): boolean {
 }
 
 type RoutingWindowRow = {
-  id: number
+  record_id: string
   agent: string
   model: string | null
   startedAt: string
@@ -199,7 +201,9 @@ export function routingEvidenceWindow<T extends RoutingWindowRow>(
 ): { rows: T[]; evidenceModel: string | null } {
   const modelRows = rows
     .filter((row) => row.agent === agent && (row.model === currentModel || row.model === null))
-    .sort((a, b) => b.startedAt.localeCompare(a.startedAt) || b.id - a.id)
+    .sort(
+      (a, b) => b.startedAt.localeCompare(a.startedAt) || b.record_id.localeCompare(a.record_id),
+    )
     .slice(0, EVIDENCE_WINDOW)
   return { rows: modelRows, evidenceModel: currentModel }
 }
@@ -469,16 +473,16 @@ export function candidates(
                        THEN ${weightCase()} ELSE 0 END) AS pts,
               SUM(CASE WHEN r.status = 'ok' THEN COALESCE(r.vendor_tokens, 0) ELSE 0 END) AS tokens,
               SUM(CASE WHEN r.status = 'ok' THEN COALESCE(r.vendor_cost_usd, 0) ELSE 0 END) AS cost
-         FROM run r LEFT JOIN score s ON s.run_id = r.id
+         FROM run r LEFT JOIN score s ON s.run_record_id = r.record_id
         -- Child turns are excluded: a conversation is ONE piece of evidence
         -- about an agent, and its root row carries the outcome. Counting each
         -- turn would let an agent cross MIN_SAMPLE by asking questions.
         WHERE r.job = ? AND r.status IN ('ok','failed','stale') AND r.probe = 0
           AND r.evidence_excluded IS NULL
-          AND r.parent_run_id IS NULL
+          AND r.parent_run_record_id IS NULL
           AND ${promptBucketSql('r', promptBytes)}
           ${stack ? 'AND r.stack = ?' : ''}
-          ${lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_id = r.id AND rl.lens = ?)' : ''}
+          ${lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_record_id = r.record_id AND rl.lens = ?)' : ''}
         GROUP BY r.agent`,
     )
     .all(jobName, ...(stack ? [stack] : []), ...(lens ? [lens] : [])) as {
@@ -491,22 +495,21 @@ export function candidates(
     cost: number
   }[]
   const hist = new Map(rows.map((r) => [r.agent, r]))
-
   const evidenceRows = (
     db()
       .query(
-        `SELECT r.id, r.agent, r.model, r.started_at AS startedAt, r.status,
+        `SELECT r.record_id, r.agent, r.model, r.started_at AS startedAt, r.status,
               r.failure_kind AS failureKind, s.delivery, ${weightCase()} AS pts
-         FROM run r LEFT JOIN score s ON s.run_id = r.id
+         FROM run r LEFT JOIN score s ON s.run_record_id = r.record_id
         WHERE r.job = ? AND r.status IN ('ok','failed','stale') AND r.probe = 0
           AND r.evidence_excluded IS NULL
-          AND r.parent_run_id IS NULL
+          AND r.parent_run_record_id IS NULL
           AND ${promptBucketSql('r', promptBytes)}
           ${stack ? 'AND r.stack = ?' : ''}
-          ${lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_id = r.id AND rl.lens = ?)' : ''}`,
+          ${lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_record_id = r.record_id AND rl.lens = ?)' : ''}`,
       )
       .all(jobName, ...(stack ? [stack] : []), ...(lens ? [lens] : [])) as {
-      id: number
+      record_id: string
       agent: string
       model: string | null
       startedAt: string
@@ -516,7 +519,6 @@ export function candidates(
       pts: number | null
     }[]
   ).filter(isRoutingEvidence)
-
   type Evidence = { scored: number; failures: number; none: number; pts: number }
   const aggregate = (rs: typeof evidenceRows): Evidence => ({
     scored: rs.filter((r) => r.delivery !== null).length,
@@ -534,7 +536,7 @@ export function candidates(
         WHERE job = ? AND status = 'ok' AND probe = 0 AND latency_ms IS NOT NULL
           AND ${promptBucketSql('run', promptBytes)}
           ${stack ? 'AND stack = ?' : ''}
-          ${lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_id = run.id AND rl.lens = ?)' : ''}`,
+          ${lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_record_id = run.record_id AND rl.lens = ?)' : ''}`,
     )
     .all(jobName, ...(stack ? [stack] : []), ...(lens ? [lens] : [])) as {
     agent: string
@@ -560,14 +562,14 @@ export function candidates(
       db()
         .query(
           `WITH terminal AS (
-         SELECT id, agent, status, failure_kind,
+         SELECT record_id, agent, status, failure_kind,
                 julianday(started_at) + latency_ms / 86400000.0 AS finished_at
            FROM run
           WHERE status IN ('ok','failed') AND latency_ms IS NOT NULL
        ), cooling_failures AS (
-         SELECT id, agent, failure_kind, finished_at,
+         SELECT record_id, agent, failure_kind, finished_at,
                 ROW_NUMBER() OVER (
-                  PARTITION BY agent ORDER BY finished_at DESC, id DESC
+                  PARTITION BY agent ORDER BY finished_at DESC, record_id DESC
                 ) AS recency
            FROM terminal
           WHERE status = 'failed' AND failure_kind IN (${coolsDownSql()})
@@ -603,11 +605,9 @@ export function candidates(
     let why = ''
     const mcpWhy = mcpCandidateIneligibility(a.mcpToolNamePattern, requiredMcp)
     const unavailable = unavailableReason(name)
-    const runningRunIds = (
-      db()
-        .query("SELECT id FROM run WHERE agent=? AND status='running' AND probe=0 ORDER BY id")
-        .all(name) as { id: number }[]
-    ).map((row) => row.id)
+    const runningRunIds = (db().query(RUNNING_RUNS_SQL).all(name) as { record_id: string }[]).map(
+      (row) => row.record_id,
+    )
     const declared = a.jobs ?? null
     const preferred = Boolean(a.preferredJobs?.includes(jobName))
     if (declared && !declared.includes(jobName)) {

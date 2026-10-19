@@ -25,8 +25,8 @@ export function decideEvalScratchWorktreeMatch(input: {
   return worktree === root || worktree.startsWith(`${root}/`)
 }
 
-export function thrownEvalRunId(error: unknown): number | null {
+export function thrownEvalRunId(error: unknown): string | null {
   if (typeof error !== 'object' || error === null || !('runId' in error)) return null
   const value = error.runId
-  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null
+  return typeof value === 'string' && value.length > 0 ? value : null
 }

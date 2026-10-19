@@ -18,10 +18,10 @@ import {
   thinOutputWarning,
 } from './collect.ts'
 
-const recordedResult = (id: number) => {
+const recordedResult = (recordId: string) => {
   const logs: string[] = []
   const errors: string[] = []
-  collectResult(db(), ['result', String(id)], () => '', {
+  collectResult(db(), ['result', recordId], () => '', {
     log: (...values) => logs.push(values.join(' ')),
     error: (...values) => errors.push(values.join(' ')),
     exit: (code): never => {
@@ -148,7 +148,7 @@ describe('collection records', () => {
     })
     try {
       writeFileSync(output, oldReply)
-      db().query('UPDATE run SET output_path=? WHERE id=?').run(output, id)
+      db().query('UPDATE run SET output_path=? WHERE record_id=?').run(output, id)
       expect(recordedResult(id).logs.join('\n')).toContain(oldReply)
     } finally {
       rmSync(output, { force: true })
@@ -159,11 +159,11 @@ describe('collection records', () => {
     const requestedId = addRun({ agent: 'codex', job: 'review-lens', status: 'failed' })
     const finalId = addRun({ agent: 'claude', job: 'review-lens' })
     db()
-      .query('UPDATE run SET retry_of=?,automatic_failover=1 WHERE id=?')
+      .query('UPDATE run SET retry_of_record_id=?,automatic_failover=1 WHERE record_id=?')
       .run(requestedId, finalId)
     const output = join(dir, `structured-wait-${finalId}.txt`)
     writeFileSync(output, 'review result')
-    db().query('UPDATE run SET output_path=? WHERE id=?').run(output, finalId)
+    db().query('UPDATE run SET output_path=? WHERE record_id=?').run(output, finalId)
     try {
       const result = await collectWaitForRuns(db(), [requestedId], { beforePoll: () => {} })
       expect(result).toMatchObject({
@@ -188,7 +188,7 @@ describe('collection records', () => {
     const id = addRun({ agent: 'codex', job: 'review-lens', status: 'failed' })
     db()
       .query(
-        "UPDATE run SET error='harness refused',failure_kind='harness',exit_code=17 WHERE id=?",
+        "UPDATE run SET error='harness refused',failure_kind='harness',exit_code=17 WHERE record_id=?",
       )
       .run(id)
     const result = await collectWaitForRuns(db(), [id], { beforePoll: () => {} })
@@ -224,7 +224,7 @@ describe('collection records', () => {
     const id = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
     const output = join(dir, `structured-wait-sleep-${id}.txt`)
     writeFileSync(output, 'partial review result')
-    db().query('UPDATE run SET output_path=? WHERE id=?').run(output, id)
+    db().query('UPDATE run SET output_path=? WHERE record_id=?').run(output, id)
     let reads = 0
     let now = 100
     try {
@@ -251,16 +251,16 @@ describe('collection records', () => {
   test('dead-run callback fires once on first observation before a timeout', async () => {
     const dead = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
     const live = addRun({ agent: 'claude', job: 'review-lens', status: 'running' })
-    const callbacks: number[] = []
+    const callbacks: string[] = []
     let polls = 0
     let now = 100
     const result = await collectWaitForRuns(db(), [dead, live], {
       timeoutMs: 5,
       beforePoll: () => {
         polls++
-        return [{ id: dead, reason: 'process gone' }]
+        return [{ record_id: dead, reason: 'process gone' }]
       },
-      onObservedDead: (run) => callbacks.push(run.id),
+      onObservedDead: (run) => callbacks.push(run.record_id),
       now: () => now,
       sleep: async () => {
         expect(callbacks).toEqual([dead])
@@ -281,20 +281,30 @@ describe('collection records', () => {
 
   test('result shows an ok outcome note directly before the score hint', () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
-    db().query('UPDATE run SET error=? WHERE id=?').run('this turn changed nothing', id)
+    const number = (
+      db().query('SELECT number FROM run WHERE record_id=?').get(id) as {
+        number: number
+      }
+    ).number
+    db().query('UPDATE run SET error=? WHERE record_id=?').run('this turn changed nothing', id)
     const shown = recordedResult(id).errors.join('\n')
     expect(shown).toContain(
-      `— run ${id} · codex · 1.0s · vendor tokens not reported\n  this turn changed nothing\n  score it:`,
+      `— run ${number} · codex · 1.0s · vendor tokens not reported\n  this turn changed nothing\n  score it:`,
     )
   })
 
   test('result rendering is byte-identical when an ok run has no outcome note', () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
+    const number = (
+      db().query('SELECT number FROM run WHERE record_id=?').get(id) as {
+        number: number
+      }
+    ).number
     const recordId = db()
-      .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
       .get(id)!.record_id
     expect(recordedResult(id).errors).toEqual([
-      `\n— run ${id} · codex · 1.0s · vendor tokens not reported\n  score it:  ${PLATFORM_SLUG} score ${id} <none|partial|full> [wrong|mixed|right] --note "..."\n  record_id: ${recordId}`,
+      `\n— run ${number} · codex · 1.0s · vendor tokens not reported\n  score it:  ${PLATFORM_SLUG} score ${id} <none|partial|full> [wrong|mixed|right] --note "..."\n  record_id: ${recordId}`,
     ])
   })
 
@@ -307,12 +317,12 @@ describe('collection records', () => {
     ],
     ['non-writing run', { writingRun: false, worktree: null }, ''],
   ])('%s controls the open-tree footer', (_name, facts, expected) => {
-    expect(releasedWritingTreeNote(facts, 42)).toBe(expected)
+    expect(releasedWritingTreeNote(facts, '42')).toBe(expected)
   })
 
   test('--follow names the branch minted by a writing run', () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
-    db().query('UPDATE run SET minted_branch=? WHERE id=?').run('feature/DEV-498', id)
+    db().query('UPDATE run SET minted_branch=? WHERE record_id=?').run('feature/DEV-498', id)
     expect(branchNote(db(), id)).toContain('feature/DEV-498')
   })
 
@@ -334,7 +344,7 @@ describe('collection records', () => {
 
   test('result and wait name the branch actually minted for a writing run', () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
-    db().query('UPDATE run SET minted_branch=? WHERE id=?').run('feature/minted', id)
+    db().query('UPDATE run SET minted_branch=? WHERE record_id=?').run('feature/minted', id)
     expect(mintedBranchForRun(db(), id)).toBe('feature/minted')
     expect(branchNote(db(), id)).toContain('feature/minted')
   })
@@ -348,8 +358,10 @@ describe('collection records', () => {
   test('a resumed chain reports the branch the turn actually ran on', () => {
     const root = addRun({ agent: 'codex', job: 'implement' })
     const child = addRun({ agent: 'codex', job: 'implement', parent: root, turn: 2 })
-    db().query('UPDATE run SET minted_branch=? WHERE id=?').run('root-owned', root)
-    db().query('UPDATE run SET branch=?,minted_branch=NULL WHERE id=?').run('turn-branch', child)
+    db().query('UPDATE run SET minted_branch=? WHERE record_id=?').run('root-owned', root)
+    db()
+      .query('UPDATE run SET branch=?,minted_branch=NULL WHERE record_id=?')
+      .run('turn-branch', child)
     expect(mintedBranchForRun(db(), child)).toBe('turn-branch')
   })
 
@@ -357,10 +369,14 @@ describe('collection records', () => {
     const root = addRun({ agent: 'codex', job: 'implement' })
     const child = addRun({ agent: 'codex', job: 'implement', parent: root, turn: 2 })
     db()
-      .query('UPDATE run SET branch=?,base_commit=?,branch_kept_tip=?,changed_paths=? WHERE id=?')
+      .query(
+        'UPDATE run SET branch=?,base_commit=?,branch_kept_tip=?,changed_paths=? WHERE record_id=?',
+      )
       .run('root-branch', base, 'f'.repeat(40), changed, root)
     db()
-      .query('UPDATE run SET branch=?,base_commit=?,branch_kept_tip=?,changed_paths=? WHERE id=?')
+      .query(
+        'UPDATE run SET branch=?,base_commit=?,branch_kept_tip=?,changed_paths=? WHERE record_id=?',
+      )
       .run('turn-branch', base, base, changed, child)
 
     const note = branchNote(db(), child)
@@ -373,7 +389,7 @@ describe('collection records', () => {
     const asking = addRun({ agent: 'codex', job: 'file-question', status: 'asking' })
     db()
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+        `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
       )
       .run(asking, new Date().toISOString(), 'which?')
     const logs: string[] = []
@@ -414,7 +430,7 @@ describe('collection records', () => {
     })
     db()
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+        `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
       )
       .run(child, new Date().toISOString(), 'which?')
     const logs: string[] = []
@@ -447,10 +463,10 @@ describe('collection records', () => {
     const id = addRun({ agent: 'codex', job: 'file-question', status: 'asking' })
     const output = join(dir, `asking-${id}.txt`)
     writeFileSync(output, 'partial answer')
-    db().query('UPDATE run SET output_path=? WHERE id=?').run(output, id)
+    db().query('UPDATE run SET output_path=? WHERE record_id=?').run(output, id)
     db()
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+        `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
       )
       .run(id, new Date().toISOString(), 'which?')
     const logs: string[] = []
@@ -474,7 +490,7 @@ describe('collection records', () => {
 
   test('result surfaces the recorded base commit for a writing run', () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
-    db().query('UPDATE run SET base_commit=? WHERE id=?').run('base-commit-123', id)
+    db().query('UPDATE run SET base_commit=? WHERE record_id=?').run('base-commit-123', id)
     const errors: string[] = []
     const error = spyOn(console, 'error').mockImplementation((...parts) => {
       errors.push(parts.join(' '))
@@ -494,7 +510,7 @@ describe('collection records', () => {
     writeFileSync(output, JSON.stringify(partial))
     db()
       .query(
-        "UPDATE run SET output_path=?,error='agent died',failure_kind='interrupted',exit_code=1 WHERE id=?",
+        "UPDATE run SET output_path=?,error='agent died',failure_kind='interrupted',exit_code=1 WHERE record_id=?",
       )
       .run(output, id)
     const logs: string[] = []
@@ -507,7 +523,8 @@ describe('collection records', () => {
     try {
       expect(() => collectResult(db(), ['result', String(id)])).toThrow('EXIT:1')
       const shown = JSON.parse(logs.join('\n'))
-      expect(shown.run).toMatchObject({ id, status: 'failed', complete: false })
+      expect(shown.run).toMatchObject({ record_id: id, status: 'failed', complete: false })
+      expect(shown.run.record_id).toBe(id)
       expect(shown.findings).toBeUndefined()
       expect(JSON.parse(readFileSync(output, 'utf8'))).toEqual(partial)
     } finally {
@@ -521,7 +538,7 @@ describe('collection records', () => {
     const id = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
     db()
       .query(
-        "UPDATE run SET error='worktree creation failed',failure_kind='harness',exit_code=17 WHERE id=?",
+        "UPDATE run SET error='worktree creation failed',failure_kind='harness',exit_code=17 WHERE record_id=?",
       )
       .run(id)
     const logs: string[] = []
@@ -543,7 +560,7 @@ describe('collection records', () => {
 
   test(`${PLATFORM_SLUG} run result says so on the record a person would score from`, () => {
     const id = addRun({ agent: 'codex', job: 'review-lens' })
-    db().query("UPDATE run SET evidence_excluded='shared an output file' WHERE id=?").run(id)
+    db().query("UPDATE run SET evidence_excluded='shared an output file' WHERE record_id=?").run(id)
     expect(recordedResult(id).errors.join('\n')).toContain(
       'not routing evidence: shared an output file',
     )
@@ -578,7 +595,7 @@ describe('collection records', () => {
     const id = addRun({ agent: 'grok', job: 'review-lens' })
     db()
       .query(
-        "UPDATE run SET cwd='/tmp/a lens tree',mcp=1,mcp_server='starship',mcp_connected=0,mcp_error='folder untrusted: repo-local server not started' WHERE id=?",
+        "UPDATE run SET cwd='/tmp/a lens tree',mcp=1,mcp_server='starship',mcp_connected=0,mcp_error='folder untrusted: repo-local server not started' WHERE record_id=?",
       )
       .run(id)
     const shown = recordedResult(id).errors.join('\n')
@@ -590,12 +607,12 @@ describe('collection records', () => {
     const unverified = addRun({ agent: 'codex', job: 'review-lens' })
     db()
       .query(
-        "UPDATE run SET mcp=1,mcp_server='fixture-project',mcp_connected=NULL,mcp_error='codex does not expose an MCP connection diagnostic' WHERE id=?",
+        "UPDATE run SET mcp=1,mcp_server='fixture-project',mcp_connected=NULL,mcp_error='codex does not expose an MCP connection diagnostic' WHERE record_id=?",
       )
       .run(unverified)
     const confirmed = addRun({ agent: 'grok', job: 'review-lens' })
     db()
-      .query("UPDATE run SET mcp=1,mcp_server='fixture-project',mcp_connected=1 WHERE id=?")
+      .query("UPDATE run SET mcp=1,mcp_server='fixture-project',mcp_connected=1 WHERE record_id=?")
       .run(confirmed)
     const unknown = recordedResult(unverified).errors.join('\n')
     const known = recordedResult(confirmed).errors.join('\n')

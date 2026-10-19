@@ -211,19 +211,25 @@ test('score gate claim and audit identity migration fills ids, keeps rows and ke
           .get()?.dflt_value,
       ).toBeNull()
     }
-    expect(database.query('SELECT run_a_id,run_b_id FROM compared_pair').get()).toEqual({
-      run_a_id: 1,
-      run_b_id: 2,
+    expect(
+      database.query('SELECT run_a_record_id,run_b_record_id FROM compared_pair').get(),
+    ).toEqual({
+      run_a_record_id: '01990000-0000-7000-8000-000000000701',
+      run_b_record_id: '01990000-0000-7000-8000-000000000702',
     })
     expect(
-      database.query('SELECT run_id,question_id FROM run_carried_ruling ORDER BY run_id').all(),
+      database
+        .query('SELECT run_record_id,question_id FROM run_carried_ruling ORDER BY run_record_id')
+        .all(),
     ).toEqual([
-      { run_id: 1, question_id: 1 },
-      { run_id: 2, question_id: 2 },
+      { run_record_id: '01990000-0000-7000-8000-000000000701', question_id: 1 },
+      { run_record_id: '01990000-0000-7000-8000-000000000702', question_id: 2 },
     ])
-    expect(database.query('SELECT winner_run_id,loser_run_id FROM duel').get()).toEqual({
-      winner_run_id: 1,
-      loser_run_id: 2,
+    expect(
+      database.query('SELECT winner_run_record_id,loser_run_record_id FROM duel').get(),
+    ).toEqual({
+      winner_run_record_id: '01990000-0000-7000-8000-000000000701',
+      loser_run_record_id: '01990000-0000-7000-8000-000000000702',
     })
     expect(
       database.query('SELECT gate_execution_id,check_name FROM check_execution ORDER BY id').all(),

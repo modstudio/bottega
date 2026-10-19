@@ -25,11 +25,11 @@ export type QuestionCloseReason =
   | 'advanced-without-ruling'
   | 'abandoned'
 
-function questionIdsForRunChain(database: Database, rootId: number): number[] {
+function questionIdsForRunChain(database: Database, rootId: string): number[] {
   return database
-    .query<{ id: number }, [number, number]>(
-      `SELECT q.id FROM question q JOIN run owner ON owner.id=q.run_id
-       WHERE (owner.id=? OR owner.parent_run_id=?) AND ${questionOpenSql('q')}
+    .query<{ id: number }, [string, string]>(
+      `SELECT q.id FROM question q JOIN run owner ON owner.record_id=q.run_record_id
+       WHERE (owner.record_id=? OR owner.parent_run_record_id=?) AND ${questionOpenSql('q')}
        ORDER BY q.id`,
     )
     .all(rootId, rootId)
@@ -59,7 +59,7 @@ export function closeQuestions(
 
 export function closeRunChainQuestions(
   database: Database,
-  rootId: number,
+  rootId: string,
   reason: QuestionCloseReason,
 ): number {
   const closed = closeQuestions(database, questionIdsForRunChain(database, rootId), reason)
@@ -70,22 +70,22 @@ export function closeRunChainQuestions(
 /** Retires rulings that can no longer be delivered because their chain has ended. */
 export function retireRunChainQuestionDeliveries(
   database: Database,
-  rootId: number,
+  rootId: string,
   reason: QuestionCloseReason,
   at: string = nowIso(),
 ): number {
   const live = database
     .query(
       `SELECT 1 FROM run
-       WHERE (id=? OR parent_run_id=?) AND status IN ('running','asking')
+       WHERE (record_id=? OR parent_run_record_id=?) AND status IN ('running','asking')
        LIMIT 1`,
     )
     .get(rootId, rootId)
   if (live) return 0
   const questionIds = database
-    .query<{ id: number }, [number, number]>(
-      `SELECT q.id FROM question q JOIN run owner ON owner.id=q.run_id
-       WHERE (owner.id=? OR owner.parent_run_id=?)
+    .query<{ id: number }, [string, string]>(
+      `SELECT q.id FROM question q JOIN run owner ON owner.record_id=q.run_record_id
+       WHERE (owner.record_id=? OR owner.parent_run_record_id=?)
          AND q.answered_at IS NOT NULL AND q.delivery_pending_at IS NOT NULL
        ORDER BY q.id`,
     )
@@ -127,22 +127,22 @@ export function closeQuestionByOperator(
       {
         answered_at: string | null
         closed_at: string | null
-        run_id: number | null
+        run_record_id: number | null
         workflow_cursor_id: number | null
         cursor_state: string | null
-        root_id: number | null
+        root_id: string | null
         latest_status: string | null
       },
       [number]
     >(
-      `SELECT q.answered_at,q.closed_at,q.run_id,q.workflow_cursor_id,c.state cursor_state,
-              COALESCE(owner.parent_run_id,owner.id) root_id,
+      `SELECT q.answered_at,q.closed_at,q.run_record_id,q.workflow_cursor_id,c.state cursor_state,
+              COALESCE(owner.parent_run_record_id,owner.record_id) root_id,
               (SELECT latest.status FROM run latest
-                WHERE latest.id=COALESCE(owner.parent_run_id,owner.id)
-                   OR latest.parent_run_id=COALESCE(owner.parent_run_id,owner.id)
-                ORDER BY latest.turn DESC,latest.id DESC LIMIT 1) latest_status
+                WHERE latest.record_id=COALESCE(owner.parent_run_record_id,owner.record_id)
+                   OR latest.parent_run_record_id=COALESCE(owner.parent_run_record_id,owner.record_id)
+                ORDER BY latest.turn DESC,latest.number DESC LIMIT 1) latest_status
          FROM question q
-         LEFT JOIN run owner ON owner.id=q.run_id
+         LEFT JOIN run owner ON owner.record_id=q.run_record_id
          LEFT JOIN workflow_cursor c ON c.id=q.workflow_cursor_id
         WHERE q.id=?`,
     )
@@ -155,7 +155,10 @@ export function closeQuestionByOperator(
       `question ${questionId} belongs to a workflow awaiting a ruling; use ${PLATFORM_SLUG} workflow rule or ${PLATFORM_SLUG} workflow abandon`,
     )
   }
-  if (row.run_id !== null && (row.latest_status === 'running' || row.latest_status === 'asking')) {
+  if (
+    row.run_record_id !== null &&
+    (row.latest_status === 'running' || row.latest_status === 'asking')
+  ) {
     throw new Error(
       `question ${questionId}'s chain is live; use ${PLATFORM_SLUG} question answer ${row.root_id}`,
     )

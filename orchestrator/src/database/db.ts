@@ -387,8 +387,8 @@ function seedProjects(d: Database): void {
     .query(
       `SELECT repo, cwd FROM run r
       WHERE project_record_id IS NOT NULL AND cwd IS NOT NULL
-        AND id = (SELECT MAX(id) FROM run x
-                   WHERE x.project_record_id = r.project_record_id AND x.cwd IS NOT NULL)`,
+        AND number = (SELECT MAX(number) FROM run x
+                       WHERE x.project_record_id = r.project_record_id AND x.cwd IS NOT NULL)`,
     )
     .all() as { repo: string; cwd: string }[]
   for (const { repo, cwd } of rows) {
@@ -482,10 +482,10 @@ export function backfillSpecSha(): { updated: number; missing: number } {
   const database = writableDb()
   const roots = database
     .query(
-      `SELECT id, prompt_path FROM run
-      WHERE parent_run_id IS NULL AND spec_sha IS NULL AND prompt_path IS NOT NULL`,
+      `SELECT record_id, prompt_path FROM run
+      WHERE parent_run_record_id IS NULL AND spec_sha IS NULL AND prompt_path IS NOT NULL`,
     )
-    .all() as { id: number; prompt_path: string }[]
+    .all() as { record_id: string; prompt_path: string }[]
   let updated = 0
   let missing = 0
   writeTransaction(() => {
@@ -497,8 +497,8 @@ export function backfillSpecSha(): { updated: number; missing: number } {
       const prompt = readFileSync(root.prompt_path)
       const specSha = createHash('sha256').update(prompt).digest('hex').slice(0, 16)
       updated += database
-        .query('UPDATE run SET spec_sha=? WHERE id=? AND spec_sha IS NULL')
-        .run(specSha, root.id).changes
+        .query('UPDATE run SET spec_sha=? WHERE record_id=? AND spec_sha IS NULL')
+        .run(specSha, root.record_id).changes
     }
   }, database)
   return { updated, missing }
@@ -558,7 +558,7 @@ export function recordSessionSeen(sid: string | null = sessionId(), at = nowIso(
  * command that actually tells you what to do about it — reported none.
  */
 /**
- * `parent_run_id IS NULL` is what keeps a conversation one thing to judge.
+ * `parent_run_record_id IS NULL` is what keeps a conversation one thing to judge.
  *
  * A worker that asks two questions produces three rows, and only the first is
  * the unit of work — the other two are turns inside it. Asking for a verdict on

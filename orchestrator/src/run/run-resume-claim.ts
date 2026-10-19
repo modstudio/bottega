@@ -28,7 +28,7 @@ export function prepareResumeBranchIfNeeded(
 export function restoreResumeIfNeeded(
   created: Worktree,
   plan: RecreateResumeTreePlan | undefined,
-  runId: number,
+  runId: string,
 ): Worktree {
   if (!plan) return created
   if (plan.action === 'recreate-then-restore') {

@@ -16,10 +16,10 @@ afterEach(() => {
 test('a terminal child leaves its live conversation resource untouched', () => {
   const parent = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
   const parentRecordId = db()
-    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
     .get(parent)!.record_id
   const failed = addRun({ agent: 'codex', job: 'implement', status: 'failed', parent, turn: 2 })
-  db().query('UPDATE run SET worktree=? WHERE id=?').run(dir, parent)
+  db().query('UPDATE run SET worktree=? WHERE record_id=?').run(dir, parent)
   const commands: string[] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     const command = args.join(' ')
@@ -137,7 +137,9 @@ test('a dry-run retains a main-checkout resource just like the real path', () =>
 
 test('an absent unregistered tree with no resources is already clean', () => {
   const terminal = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
-  db().query('UPDATE run SET worktree=? WHERE id=?').run(join(dir, 'absent-worktree'), terminal)
+  db()
+    .query('UPDATE run SET worktree=? WHERE record_id=?')
+    .run(join(dir, 'absent-worktree'), terminal)
   const commands: string[] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     commands.push(args.join(' '))
@@ -163,7 +165,7 @@ test('a registered project root resolves safety after the worktree is gone', () 
   const tree = join(repo, '.claude', 'worktrees', `orch-${terminal}`)
   upsertProject({ recordId: newRecordId(), name: project, path: repo, settings: { trunk: 'main' } })
   db()
-    .query('UPDATE run SET repo=?,cwd=?,worktree=? WHERE id=?')
+    .query('UPDATE run SET repo=?,cwd=?,worktree=? WHERE record_id=?')
     .run(project, join(dir, 'also-gone'), tree, terminal)
 
   expect(terminalDockerRetentionReasonForRun(db(), terminal)).toBeNull()
@@ -171,7 +173,7 @@ test('a registered project root resolves safety after the worktree is gone', () 
 
 test('stopped runs with gone trees treat disposable infrastructure as ordinary cleanup', () => {
   const stopped = addRun({ agent: 'codex', job: 'implement', status: 'stopped' })
-  db().query('UPDATE run SET worktree=? WHERE id=?').run(join(dir, 'gone-worktree'), stopped)
+  db().query('UPDATE run SET worktree=? WHERE record_id=?').run(join(dir, 'gone-worktree'), stopped)
   const commands: string[] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     commands.push(args.join(' '))

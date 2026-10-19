@@ -20,14 +20,14 @@ import {
 
 const POLL_MS = 100
 
-type ReviewLaunch = { runId: number | null; failedToRun: string | null }
+type ReviewLaunch = { runId: string | null; failedToRun: string | null }
 type DispatchResult<T> = { claim: T; dispatchNext: boolean }
 
 type IssueReviewOperations = {
   dispatch(lens: string, distinctModels: readonly string[]): Promise<DispatchResult<ReviewLaunch>>
   blocked(lens: string, blockingLens: string): ReviewLaunch
   gather(lens: string, claim: ReviewLaunch): Promise<IssueReviewLensResult>
-  modelForRun(runId: number): string
+  modelForRun(runId: string): string
 }
 
 /** Fan out primary lenses, then gather the first declared opinion before routing its repeat. */
@@ -92,7 +92,7 @@ export async function runIssueFixReviews(input: {
 }> {
   const { issue, fixRun, target, branchKey } = input
   if (!fixRun.worktree) {
-    return reviewNotStarted(`fix run ${fixRun.id} has no worktree to review`)
+    return reviewNotStarted(`fix run ${fixRun.number} has no worktree to review`)
   }
   const worktree = fixRun.worktree
   const trunk = target.settings.trunk?.trim()
@@ -119,7 +119,7 @@ export async function runIssueFixReviews(input: {
   const lenses = issueReviewLenses(tier.lenses)
   const results = await dispatchThenGatherIssueReviews(lenses, tier.secondOpinion, {
     dispatch: async (lens, distinctModels): Promise<DispatchResult<ReviewLaunch>> => {
-      let runId: number
+      let runId: string
       try {
         runId = await detach('review-lens', reviewPrompt(issue, lens, tier.tier), {
           cwd: worktree.path,
@@ -189,8 +189,8 @@ export async function runIssueFixReviews(input: {
   return { tier: tier.tier, selectedLenses: tier.lenses, reviewNotStarted: null, results }
 }
 
-function modelForRun(runId: number): string {
-  const row = db().query('SELECT model FROM run WHERE id=?').get(runId) as {
+function modelForRun(runId: string): string {
+  const row = db().query('SELECT model FROM run WHERE record_id=?').get(runId) as {
     model: string | null
   } | null
   if (!row?.model) throw new Error(`run ${runId} recorded no model for second opinion to exclude`)
@@ -203,10 +203,10 @@ function reviewPrompt(issue: FiledIssue, lens: string, tier: 0 | 1 | 2 | 3): str
     : `Independently inspect task ${issue.key} and the current commit/diff through the ${lens} lens selected by review tier ${tier}. Do not seek agreement and do not use any worker conclusion. Task filing:\n${boundedIssuePack(issue)}`
 }
 
-async function waitUntilRoutingCounts(runId: number): Promise<boolean> {
+async function waitUntilRoutingCounts(runId: string): Promise<boolean> {
   const deadline = Date.now() + RUN_FOLLOW_TIMEOUT_MS
   for (;;) {
-    const row = db().query('SELECT agent,status,error FROM run WHERE id=?').get(runId) as {
+    const row = db().query('SELECT agent,status,error FROM run WHERE record_id=?').get(runId) as {
       agent: string
       status: string
       error: string | null
@@ -234,16 +234,16 @@ function failedReviewReason(run: CollectedWaitRun): string {
   return `run ${run.finalId} ended ${run.status}: ${run.error ?? (run.output.trim() || `exit ${run.exitCode}`)}`
 }
 
-function errorRunId(cause: unknown): number | null {
+function errorRunId(cause: unknown): string | null {
   const runId = (cause as { runId?: unknown })?.runId
-  return typeof runId === 'number' ? runId : null
+  return typeof runId === 'string' ? runId : null
 }
 
 function pollDelay(): Promise<void> {
   return new Promise((resolve) => globalThis.setTimeout(resolve, POLL_MS))
 }
 
-function failedLens(lens: string, reason: string, runId: number | null): IssueReviewLensResult {
+function failedLens(lens: string, reason: string, runId: string | null): IssueReviewLensResult {
   return {
     lens,
     finished: false,

@@ -11,7 +11,7 @@ export function assertRetryRootWorkspace(input: {
   worktree: Worktree
   expectedBranch: string
   validatedTip: string
-  conversationRootId: number
+  conversationRootId: string
   projectId: string | null
   projectName: string | null
   operation: 'creation' | 'reuse'

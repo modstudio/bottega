@@ -1,5 +1,13 @@
 export const runModuleSpecs = [
   {
+    file: 'orchestrator/src/run/run-mcp-mode.ts',
+    allowed: [],
+  },
+  {
+    file: 'orchestrator/src/run/run-number.ts',
+    allowed: ['bun:sqlite'],
+  },
+  {
     file: 'orchestrator/src/evidence/premature-final.ts',
     allowed: [],
   },

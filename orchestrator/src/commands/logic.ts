@@ -63,6 +63,9 @@ import { collect, log, productArgv, rawArgv, write, writeStdout } from './suppor
 import { registerWorkflowCommands } from './workflow.ts'
 
 const localRunId = (input: string | number) => resolveRunIdentifier(db(), input)
+const displayRunNumber = (recordId: string): number =>
+  (db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as { number: number })
+    .number
 const presentation = {
   log,
   error: (...values: unknown[]) => console.error(...values),
@@ -71,15 +74,17 @@ const presentation = {
   },
   exit: (code: number): never => process.exit(code),
   now: Date.now,
-  printRunId: (id: number) => write(`${id}\n`),
+  printRunId: (id: string) => write(`${displayRunNumber(id)}\n`),
 }
 const scoreSuffix = (jobName: string) =>
   (JOBS[jobName]?.needs.writesRepo ? ' [drifted|partial|faithful]' : '') +
   (JOBS[jobName]?.findings
     ? ` [--reproduced ${REVIEW_REPRODUCED.join('|')}] [--coverage ${REVIEW_COVERAGE.join('|')}] [--limits ${REVIEW_LIMITS.join('|')}] [--overlap ${REVIEW_OVERLAP.join('|')}]`
     : '')
-const pairHint = (partner: { id: number; agent: string; reason?: string }) =>
-  `pair: run ${partner.id} (${partner.agent}) is comparable (${partner.reason ?? 'same task'}) — record with --better-than ${partner.id} | --worse-than ${partner.id} | --same-as ${partner.id}`
+const pairHint = (partner: { id: string; agent: string; reason?: string }) => {
+  const number = displayRunNumber(partner.id)
+  return `pair: run ${number} (${partner.agent}) is comparable (${partner.reason ?? 'same task'}) — record with --better-than ${number} | --worse-than ${number} | --same-as ${number}`
+}
 const runFlags = (options: OptionValues) => ({
   detach: Boolean(options.detach),
   follow: Boolean(options.follow),

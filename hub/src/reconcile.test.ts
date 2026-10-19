@@ -44,14 +44,19 @@ function orchAnswers(rows: object[]) {
 }
 
 function runLine(row: object): string {
-  if ('unknown' in row) return JSON.stringify({ schema_version: 2, kind: 'run', data: row })
   const value = row as { id: number; status: string }
   const recordId = `00000000-0000-4000-8000-${String(value.id).padStart(12, '0')}`
+  if ('unknown' in row)
+    return JSON.stringify({
+      schema_version: 2,
+      kind: 'run',
+      data: { status: value.status, unknown: true, number: value.id, record_id: recordId },
+    })
   return JSON.stringify({
     schema_version: 2,
     kind: 'run',
     data: {
-      id: value.id,
+      number: value.id,
       record_id: recordId,
       started_at: '2026-09-03T00:00:00.000Z',
       agent: 'codex',
@@ -69,10 +74,11 @@ function runLine(row: object): string {
       status: value.status,
       delivery: null,
       quality: null,
-      retry_of: null,
+      retry_record_id: null,
       turns: [
         {
-          id: value.id,
+          id: recordId,
+          number: value.id,
           record_id: recordId,
           started_at: '2026-09-03T00:00:00.000Z',
           latency_ms: null,
@@ -102,7 +108,8 @@ function chain(row: {
   turns: { id: number; status: string }[]
 }): Parameters<typeof indexRunAnswers>[0][number] {
   return {
-    id: row.id,
+    id: `00000000-0000-4000-8000-${String(row.id).padStart(12, '0')}`,
+    number: row.id,
     record_id: `00000000-0000-4000-8000-${String(row.id).padStart(12, '0')}`,
     started_at: '2026-09-03T00:00:00.000Z',
     agent: 'codex',
@@ -118,7 +125,8 @@ function chain(row: {
     probe: 0,
     status: row.status,
     turns: row.turns.map((turn) => ({
-      id: turn.id,
+      id: `00000000-0000-4000-8000-${String(turn.id).padStart(12, '0')}`,
+      number: turn.id,
       record_id: `00000000-0000-4000-8000-${String(turn.id).padStart(12, '0')}`,
       started_at: '2026-09-03T00:00:00.000Z',
       latency_ms: null,

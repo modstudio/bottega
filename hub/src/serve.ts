@@ -410,7 +410,7 @@ export async function view(
       const shaped = raw.map((r) => {
         const a = attributeRun(r)
         return {
-          id: r.id,
+          id: r.number,
           agent: r.agent,
           job: r.job,
           task: a.key,

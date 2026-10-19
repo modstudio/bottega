@@ -221,7 +221,7 @@ test('a missing second opinion refusal names the lens and distinct first run', (
     unfinishedReviewIds: [],
     undisposedFindings: [],
     missingLenses: [],
-    missingSecondOpinion: { lens: 'correctness', firstRunId: 47 },
+    missingSecondOpinion: { lens: 'correctness', firstRunId: '47' },
     architectReadRequired: false,
     earlierReviewId: null,
     earlierReviewTier: null,

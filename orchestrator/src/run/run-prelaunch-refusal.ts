@@ -4,7 +4,7 @@ import { db } from '../database/db.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 
 export async function refuseUnstartedRun(input: {
-  runId: number
+  runId: string
   started: number
   why: string
   mcpError?: string
@@ -13,7 +13,7 @@ export async function refuseUnstartedRun(input: {
   db()
     .query(
       `UPDATE run SET status='failed', error=?, mcp_error=COALESCE(?,mcp_error),
-       failure_kind='mcp_unverified', latency_ms=? WHERE id=?`,
+       failure_kind='mcp_unverified', latency_ms=? WHERE record_id=?`,
     )
     .run(input.why, input.mcpError ?? null, Date.now() - input.started, input.runId)
   await input.resetSandbox()

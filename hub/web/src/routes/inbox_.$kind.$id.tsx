@@ -39,7 +39,8 @@ function InboxDetailPage() {
     answeredQuestions ??
     (item?.kind === 'question'
       ? (waiting.data ?? []).filter(
-          (candidate) => candidate.kind === 'question' && candidate.run_id === item.run_id,
+          (candidate) =>
+            candidate.kind === 'question' && candidate.run_record_id === item.run_record_id,
         )
       : [])
   return item?.kind === 'workflow' && !answeredQuestions ? (
@@ -94,7 +95,7 @@ function QuestionRuling({
       await queryClient.invalidateQueries({ queryKey: trpc.operator.waiting.queryKey() })
     },
   })
-  const runId = first.run_id
+  const runId = first.run_record_id
   const rulings = questions.map((question) => ({
     questionId: question.id,
     ruling: drafts[question.id]?.freeText.trim() || drafts[question.id]?.choice || '',
@@ -166,7 +167,7 @@ function QuestionRuling({
           <div className="space-y-4">
             <p data-tone="success" className="text-status-text">
               {answer.data.outcome === 'resumed'
-                ? `resumed as run ${answer.data.resumed_as}`
+                ? `resumed as run ${answer.data.resumed_number}`
                 : answer.data.outcome === 'delivered-live'
                   ? 'delivered to the live worker'
                   : 'recorded'}

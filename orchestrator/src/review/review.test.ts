@@ -171,7 +171,7 @@ describe('review files_covered matching', () => {
     reply.provenance.files_covered = []
     reply.provenance.commands_run = []
 
-    expect(cleanReviewEvidence(0, reply, db())).toEqual({
+    expect(cleanReviewEvidence('run-0', reply, db())).toEqual({
       failure: UNEVIDENCED_REVIEW_ERROR,
       note: null,
       kind: 'unevidenced',
@@ -183,7 +183,7 @@ describe('review files_covered matching', () => {
     reply.findings[0]!.evidence = 'prompt truncated, read the offloaded prompt'
     reply.provenance.commands_run = []
 
-    expect(cleanReviewEvidence(0, reply, db())).toEqual({ failure: null, note: null })
+    expect(cleanReviewEvidence('run-0', reply, db())).toEqual({ failure: null, note: null })
   })
 
   test('an absolute worktree path ending in a changed path counts as coverage', () => {

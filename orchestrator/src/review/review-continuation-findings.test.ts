@@ -39,12 +39,12 @@ function addReview(
   }>,
 ): void {
   const run = database
-    .query<{ id: number }, []>(
+    .query<{ id: string }, []>(
       `INSERT INTO run
-         (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_record_id,branch)
-       VALUES ('${newRecordId()}','2026-10-12','codex','review-lens','sha',1,'head','ok','fixture',
+         (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_record_id,branch)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-10-12','codex','review-lens','sha',1,'head','ok','fixture',
                (SELECT record_id FROM project WHERE name='fixture'),'DEV-1258')
-       RETURNING id`,
+       RETURNING record_id AS id`,
     )
     .get()!
   database
@@ -54,9 +54,9 @@ function addReview(
     )
     .run(reviewId)
   const reviewLens = database
-    .query<{ id: number }, [number, number, string]>(
+    .query<{ id: number }, [number, string, string]>(
       `INSERT INTO review_lens
-         (record_id,review_id,run_id,lens,agent,model,standards_read,files_covered,commands_run,
+         (record_id,review_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,
           could_not_verify,reproduced,coverage,limits,overlap)
        VALUES ('${newRecordId()}', ?, ?, ?, 'codex','model','[]','["one.ts"]','[]','[]','all','adequate','absent','none')
        RETURNING id`,

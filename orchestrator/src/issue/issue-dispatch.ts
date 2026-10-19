@@ -23,7 +23,7 @@ import {
 } from './issue-queue.ts'
 import { filedIssueQueueFailureAction } from './issue-queue-failure.ts'
 
-type HeldIssueTree = { runId: number; path: string; why: string }
+type HeldIssueTree = { runId: string; path: string; why: string }
 
 function issueLeaseDirectory(): string {
   const platform = projectByName(PLATFORM_SLUG)
@@ -182,12 +182,12 @@ async function claimAndWork(key: string, queueMode: boolean): Promise<ClaimResul
 function heldIssueTrees(): HeldIssueTree[] {
   const rows = db()
     .query(
-      `SELECT id, worktree, keep_tree, keep_tree_reason, status FROM run
+      `SELECT record_id, worktree, keep_tree, keep_tree_reason, status FROM run
        WHERE job IN ('diagnose','issue-worker') AND worktree IS NOT NULL
-         AND status IN ('ok','failed','stale','stopped') ORDER BY id`,
+         AND status IN ('ok','failed','stale','stopped') ORDER BY number`,
     )
     .all() as {
-    id: number
+    record_id: string
     worktree: string
     keep_tree: number
     keep_tree_reason: string | null
@@ -202,8 +202,8 @@ function heldIssueTrees(): HeldIssueTree[] {
       ? (row.keep_tree_reason ?? 'explicitly retained')
       : dirty.dirty
         ? dirty.detail
-        : `terminal ${row.status} ${row.id} tree remains on disk`
-    return [{ runId: row.id, path: row.worktree, why }]
+        : `terminal ${row.status} ${row.record_id} tree remains on disk`
+    return [{ runId: row.record_id, path: row.worktree, why }]
   })
 }
 
@@ -268,16 +268,16 @@ export function filedIssueStateForProject(
 export function unscoredFiledIssueLoopRuns(): FiledIssueLoopRun[] {
   const rows = db()
     .query(
-      `SELECT r.id, r.job, r.label
-       FROM run r LEFT JOIN score s ON s.run_id = r.id
+      `SELECT r.record_id, r.job, r.label
+       FROM run r LEFT JOIN score s ON s.run_record_id = r.record_id
        WHERE r.job IN ('diagnose','issue-worker','review-lens')
          AND r.session_id IS NULL
          AND ${UNSCORED_WHERE}
-       ORDER BY r.id`,
+       ORDER BY r.number`,
     )
-    .all() as { id: number; job: string; label: string | null }[]
+    .all() as { record_id: string; job: string; label: string | null }[]
   return rows.flatMap((row) => {
-    const found = filedIssueLoopRun(row)
+    const found = filedIssueLoopRun({ id: row.record_id, job: row.job, label: row.label })
     return found ? [found] : []
   })
 }

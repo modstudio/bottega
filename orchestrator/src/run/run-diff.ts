@@ -51,7 +51,7 @@ export function validateRunDiffBounds(flags: RunDiffFlags): void {
 }
 
 export function chooseSinceReadBound(input: {
-  runId: number
+  runId: string
   branch: string
   read: ArchitectRead | null
   comparisonTip: string
@@ -159,7 +159,7 @@ export function readRunDiffSource<T>(input: {
 }
 
 export async function runDiffCommand(
-  id: number,
+  id: string,
   flags: RunDiffFlags,
   presentation: RunDiffPresentation,
 ): Promise<void> {
@@ -182,20 +182,20 @@ export async function runDiffCommand(
   validateRunDiffBounds(flags)
   const row = db()
     .query(
-      `SELECT id, repo, cwd, worktree, branch, branch_kept, base_commit,
-            parent_run_id, carry_happened,
+      `SELECT record_id, repo, cwd, worktree, branch, branch_kept, base_commit,
+            parent_run_record_id, carry_happened,
             carry_base_commit, carry_tracked_paths, carry_untracked_paths
-       FROM run WHERE id = ?`,
+       FROM run WHERE record_id = ?`,
     )
     .get(id) as {
-    id: number
+    record_id: string
     repo: string | null
     cwd: string | null
     worktree: string | null
     branch: string | null
     branch_kept: string | null
     base_commit: string | null
-    parent_run_id: number | null
+    parent_run_record_id: string | null
     carry_happened: number | null
     carry_base_commit: string | null
     carry_tracked_paths: string | null
@@ -338,7 +338,7 @@ export async function runDiffCommand(
     },
   })
   const { c, commits, sinceNote, read } = result
-  const runKind = db().query('SELECT job FROM run WHERE id=?').get(id) as { job: string }
+  const runKind = db().query('SELECT job FROM run WHERE record_id=?').get(id) as { job: string }
   if (!writesRepo(runKind.job)) {
     error(
       `WARNING: run ${id} is a review/read job. Its findings are the product; this diff ` +
@@ -386,7 +386,7 @@ export async function runDiffCommand(
         // The ROOT owns the worktree. Discarding a child would clear that one
         // row's pointer and leave the root still naming a directory that had
         // just been deleted.
-        `\n  discard:  ${PLATFORM_SLUG} run discard ${row.parent_run_id ?? id}`,
+        `\n  discard:  ${PLATFORM_SLUG} run discard ${row.parent_run_record_id ?? id}`,
     )
   }
   return

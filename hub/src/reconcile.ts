@@ -19,7 +19,7 @@ type OpenInterval = {
 }
 
 type ReconcileItem = OpenInterval & {
-  runId: number | null
+  runId: string | null
   status: string | null
   reason: string
   removesMs: number
@@ -105,7 +105,7 @@ export async function reconcileOpenIntervals(
     if (status == null) {
       leftOpen.push({
         ...interval,
-        runId: answer && !('unknown' in answer) ? answer.id : null,
+        runId: answer && !('unknown' in answer) ? answer.record_id : null,
         status: null,
         removesMs: 0,
         reason: `run ${ref.turn ?? ref.root} is unknown to orch; needs a decision`,
@@ -115,7 +115,7 @@ export async function reconcileOpenIntervals(
     if (status === 'running') {
       leftOpen.push({
         ...interval,
-        runId: answer && !('unknown' in answer) ? answer.id : null,
+        runId: answer && !('unknown' in answer) ? answer.record_id : null,
         status,
         removesMs: 0,
         reason: `run ${ref.turn ?? ref.root} is still running`,
@@ -124,7 +124,7 @@ export async function reconcileOpenIntervals(
     }
     closed.push({
       ...interval,
-      runId: answer && !('unknown' in answer) ? answer.id : null,
+      runId: answer && !('unknown' in answer) ? answer.record_id : null,
       status,
       removesMs: Math.max(0, now - new Date(interval.end_at).getTime()),
       reason: `run ${ref.turn ?? ref.root} is terminal (${status})`,

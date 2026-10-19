@@ -44,7 +44,7 @@ export type CreateWorkerWorktreeOptions = {
   tool: WorktreeTool | null
   cwd: string
   mainProjectPath: string
-  runId: number
+  runId: string
   writes: boolean
   readOnlyBase: string
   seed?: string

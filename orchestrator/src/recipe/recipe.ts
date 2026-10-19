@@ -115,7 +115,7 @@ function sh(cmd: string, cwd: string, env?: Record<string, string>): StepResult 
  * name carries slashes and a ticket key's case, and a name that needs quoting
  * is a name that will one day be used unquoted.
  */
-export function dbNameFor(base: string, runId: number): string {
+export function dbNameFor(base: string, runId: string): string {
   const clean = base
     .toLowerCase()
     .replace(/[^a-z0-9_]+/g, '_')

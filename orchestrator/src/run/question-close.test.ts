@@ -28,14 +28,14 @@ function fixture(status = 'ok'): { database: Database; questionId: number } {
   database
     .query(
       `INSERT INTO run
-       (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
        VALUES (42,'01990000-0000-7000-8000-000000000042','2026-09-29','codex','implement','sha',3,'ask',?)`,
     )
     .run(status)
   const question = database
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question)
-       VALUES ('${newRecordId()}',42,'2026-09-29T10:01:00.000Z','Which?') RETURNING id`,
+      `INSERT INTO question (record_id,run_record_id,asked_at,question)
+       VALUES ('${newRecordId()}','01990000-0000-7000-8000-000000000042','2026-09-29T10:01:00.000Z','Which?') RETURNING id`,
     )
     .get() as { id: number }
   return { database, questionId: question.id }
@@ -85,7 +85,7 @@ test('operator close accepts a terminal question and records the supplied reason
 test('operator close refuses live, answered and blank questions', () => {
   const live = fixture('asking')
   expect(() => closeQuestionByOperator(live.questionId, 'obsolete', live.database)).toThrow(
-    `chain is live; use ${PLATFORM_SLUG} question answer 42`,
+    `chain is live; use ${PLATFORM_SLUG} question answer 01990000-0000-7000-8000-000000000042`,
   )
   const answered = fixture()
   answered.database
@@ -112,7 +112,7 @@ test('terminal delivery retirement clears only pending state, records history an
   expect(
     retireRunChainQuestionDeliveries(
       database,
-      42,
+      '01990000-0000-7000-8000-000000000042',
       QUESTION_CLOSE_CHAIN_TERMINAL,
       '2026-09-29T10:03:00.000Z',
     ),
@@ -132,10 +132,12 @@ test('terminal delivery retirement clears only pending state, records history an
   })
   expect(
     database
-      .query('SELECT run_id,mode,outcome,at,error FROM question_delivery WHERE question_id=?')
+      .query(
+        'SELECT run_record_id,mode,outcome,at,error FROM question_delivery WHERE question_id=?',
+      )
       .get(questionId),
   ).toEqual({
-    run_id: null,
+    run_record_id: null,
     mode: 'record-only',
     outcome: 'retired',
     at: '2026-09-29T10:03:00.000Z',
@@ -155,7 +157,13 @@ test('delivery retirement leaves an asking chain untouched', () => {
     )
     .run(questionId)
 
-  expect(retireRunChainQuestionDeliveries(database, 42, QUESTION_CLOSE_CHAIN_TERMINAL)).toBe(0)
+  expect(
+    retireRunChainQuestionDeliveries(
+      database,
+      '01990000-0000-7000-8000-000000000042',
+      QUESTION_CLOSE_CHAIN_TERMINAL,
+    ),
+  ).toBe(0)
   expect(
     database.query('SELECT delivery_pending_at,revision FROM question WHERE id=?').get(questionId),
   ).toEqual({

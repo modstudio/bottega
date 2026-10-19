@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Agent } from '../agent/agents.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
-import type { McpServerConfig } from '../mcp/mcp-probe.ts'
+import { type McpServerConfig, readMcpConfig } from '../mcp/mcp-probe.ts'
 import type { Project } from '../project/projects.ts'
 import { trackedRecipeEnvironment } from '../recipe/tracked-recipe.ts'
 import { preflightCodexMcpCatalogues } from '../sandbox/codex-mcp-preflight.ts'
@@ -57,6 +57,19 @@ export function grokReaderServersForRun(
   )
 }
 
+export function claimedGrokReaderConfig(
+  agent: Agent,
+  writesRepository: boolean,
+  cwd: string,
+  project: Project,
+) {
+  const treeConfig = readMcpConfig(cwd)
+  return {
+    treeConfig,
+    readerServers: grokReaderServersForRun(agent, true, writesRepository, treeConfig, project, cwd),
+  }
+}
+
 export function projectMcpServerName(
   connection: { server: string } | null,
   project: Project | null,
@@ -81,7 +94,7 @@ export function trackedWorkerEnvironment(
   repoJob: boolean,
   writesJob: boolean,
   worktree: Worktree | null,
-  runId: number,
+  runId: string,
 ): Record<string, string> {
   return {
     ...(writesJob && worktree ? trackedRecipeEnvironment(runId) : {}),
@@ -93,7 +106,7 @@ export async function prepareWorkerHomeLaunch(input: {
   agent: Agent
   sandbox: RunSandbox
   runDir: string
-  runId: number
+  runNumber: number
   runRecordId: string
   runToken: string
   environment: Record<string, string>
@@ -124,7 +137,7 @@ export async function prepareWorkerHomeLaunch(input: {
       ...grokReaderScope?.environment,
     },
     input.includeStore,
-    input.runId,
+    input.runNumber,
   )
   const codexMcpCatalogues = await preflightCodexMcpCatalogues(input.codexMcpScope, environment)
   return {

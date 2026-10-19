@@ -63,7 +63,7 @@ describe('scheduled run leftover sweep adapter', () => {
       status: 'ok',
       startedAt: old.toISOString(),
     })
-    db().query('UPDATE run SET latency_ms=? WHERE id=?').run(1_000, runId)
+    db().query('UPDATE run SET latency_ms=? WHERE record_id=?').run(1_000, runId)
     score(runId, 'full', 'right', 'faithful')
     const paths = [
       runScratchDir(runId, root),
@@ -105,7 +105,7 @@ describe('scheduled run leftover sweep adapter', () => {
       status: 'failed',
       startedAt: old.toISOString(),
     })
-    db().query('UPDATE run SET latency_ms=? WHERE id=?').run(1_000, runId)
+    db().query('UPDATE run SET latency_ms=? WHERE record_id=?').run(1_000, runId)
     const artifacts = runArtifactsDir(runId, root)
     directory(artifacts)
     const lines: string[] = []
@@ -120,7 +120,10 @@ describe('scheduled run leftover sweep adapter', () => {
     })
 
     expect(existsSync(artifacts)).toBeTrue()
-    expect(lines.join('\n')).toContain(`example runs: ${runId}`)
+    const runNumber = (
+      db().query('SELECT number FROM run WHERE record_id=?').get(runId) as { number: number }
+    ).number
+    expect(lines.join('\n')).toContain(`example runs: ${runNumber}`)
     expect(lines.join('\n')).toContain(`${PLATFORM_SLUG} score pending lists every unjudged run`)
 
     const dry = sweepRunLeftovers({
@@ -140,7 +143,7 @@ describe('scheduled run leftover sweep adapter', () => {
     const kept = Array.from({ length: RUN_LEFTOVER_REPORT_EXAMPLES + 2 }, (_, index) => ({
       path: `/runs/${index + 1}/artifacts`,
       kind: 'artifacts' as const,
-      runId: index + 1,
+      runNumber: index + 1,
       reason: 'no recorded verdict' as const,
       bytes: 10,
       complete: true,
@@ -158,7 +161,7 @@ describe('scheduled run leftover sweep adapter', () => {
       {
         path: '/runs/1/scratch',
         kind: 'scratch' as const,
-        runId: 1,
+        runNumber: 1,
         reason: 'recently finished' as const,
         bytes: 8,
         complete: true,
@@ -166,7 +169,7 @@ describe('scheduled run leftover sweep adapter', () => {
       {
         path: '/runs/2/scratch',
         kind: 'scratch' as const,
-        runId: 2,
+        runNumber: 2,
         reason: 'live' as const,
         status: 'asking',
         bytes: 9,
@@ -256,7 +259,7 @@ describe('scheduled run leftover sweep adapter', () => {
     directory(sandbox)
     directory(worktree)
     roots.push(sandbox)
-    db().query('UPDATE run SET worktree=? WHERE id=?').run(worktree, runId)
+    db().query('UPDATE run SET worktree=? WHERE record_id=?').run(worktree, runId)
     const lines: string[] = []
 
     const result = sweepRunLeftovers({
@@ -295,7 +298,7 @@ describe('scheduled run leftover sweep adapter', () => {
       status: 'failed',
       startedAt: old.toISOString(),
     })
-    db().query('UPDATE run SET latency_ms=? WHERE id=?').run(1_000, runId)
+    db().query('UPDATE run SET latency_ms=? WHERE record_id=?').run(1_000, runId)
     const lines: string[] = []
 
     sweepRunLeftovers({

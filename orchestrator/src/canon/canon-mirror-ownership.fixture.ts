@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
@@ -14,8 +14,10 @@ import { type CanonMirrorPort, systemCanonMirrorPort } from './canon-mirror.ts'
 export function mirrorRepository(prefix: string): string {
   const root = mkdtempSync(join(tmpdir(), `${prefix}-`))
   spawnFixtureGitSync(['init', '-b', 'main'], { cwd: root })
-  spawnFixtureGitSync(['config', 'user.email', 'mirror@example.test'], { cwd: root })
-  spawnFixtureGitSync(['config', 'user.name', 'Mirror Test'], { cwd: root })
+  appendFileSync(
+    join(root, '.git', 'config'),
+    '\n[user]\n\temail = mirror@example.test\n\tname = Mirror Test\n',
+  )
   spawnFixtureGitSync(['commit', '--allow-empty', '-m', 'fixture'], { cwd: root })
   return root
 }

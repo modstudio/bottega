@@ -42,11 +42,11 @@ const FOCUSED_TEST_CLOSE_REASON = 'Focused test run cancelled because the superv
 type ActiveFocusedTest = { completion: Promise<void>; cancel(): Promise<void> }
 export type FocusedTestBroker = { close(): Promise<void> }
 
-function focusedTestPlan(runId: number) {
+function focusedTestPlan(runId: string) {
   const row = db()
     .query(
       `SELECT r.worktree,p.record_id project_record_id,p.name project_name,p.settings
-       FROM run r JOIN project p ON p.record_id=r.project_record_id WHERE r.id=?`,
+       FROM run r JOIN project p ON p.record_id=r.project_record_id WHERE r.record_id=?`,
     )
     .get(runId) as {
     worktree: string | null
@@ -120,7 +120,7 @@ function claimRequest(scratchDir: string): FocusedTestRequest | null {
 }
 
 function startFocusedTest(input: {
-  runId: number
+  runId: string
   scratchDir: string
   environment: Record<string, string>
   request: FocusedTestRequest
@@ -208,7 +208,7 @@ function startFocusedTest(input: {
 }
 
 export function startFocusedTestBroker(input: {
-  runId: number
+  runId: string
   scratchDir: string
   environment: Record<string, string>
   registerActive?: (terminate: () => Promise<void>) => () => void

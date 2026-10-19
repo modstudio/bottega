@@ -538,7 +538,8 @@ describe('hub migration journal', () => {
     d.close()
 
     const run = {
-      id: 7001,
+      id: '00000000-0000-4000-8000-000000007001',
+      number: 7001,
       record_id: '00000000-0000-4000-8000-000000007001',
       started_at: askedAt,
       agent: 'fixture',
@@ -560,7 +561,7 @@ describe('hub migration journal', () => {
         {
           id: 7001,
           record_id: '00000000-0000-4000-8000-000000007001',
-          run_id: 7001,
+          run_number: 7001,
           run_record_id: '00000000-0000-4000-8000-000000007001',
           asked_at: askedAt,
           answered_at: new Date(Date.now() - 6 * 86_400_000).toISOString(),
@@ -573,7 +574,7 @@ describe('hub migration journal', () => {
               id: 1,
               question_id: 7001,
               question_record_id: '00000000-0000-4000-8000-000000007001',
-              run_id: 7001,
+              run_number: 7001,
               run_record_id: '00000000-0000-4000-8000-000000007001',
               mode: 'resume',
               outcome: 'delivered',
@@ -589,7 +590,7 @@ describe('hub migration journal', () => {
       `#!/usr/bin/env bun\n` +
         `if (process.argv.includes('project')) console.log('[]')\n` +
         `else if (process.argv.includes('ruling')) console.log('[]')\n` +
-        `else if (process.argv.includes('identity-map')) console.log(${JSON.stringify(JSON.stringify([{ id: run.id, record_id: run.record_id }]))})\n` +
+        `else if (process.argv.includes('identity-map')) console.log(${JSON.stringify(JSON.stringify([{ number: run.number, record_id: run.record_id }]))})\n` +
         `else { const i=process.argv.indexOf('--since'); if (process.argv[i+1] <= ${JSON.stringify(askedAt)}) console.log(${JSON.stringify(JSON.stringify(run))}) }\n`,
     )
     chmodSync(fakeOrch, 0o755)

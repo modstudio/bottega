@@ -1,7 +1,9 @@
 import { Database } from 'bun:sqlite'
-import { afterEach, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, expect, test } from 'bun:test'
 import {
+  appendFileSync,
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -25,6 +27,34 @@ import {
 } from './run-filesystem-identity.ts'
 
 const roots: string[] = []
+let repositoryTemplate = ''
+
+beforeAll(() => {
+  repositoryTemplate = mkdtempSync(join(tmpdir(), 'run-filesystem-identity-repository-'))
+  writeFileSync(join(repositoryTemplate, 'tracked'), 'fixture')
+  for (const args of [
+    ['init'],
+    ['add', 'tracked'],
+    ['commit', '-m', 'fixture'],
+    ['update-ref', 'refs/orch/retained/7', 'HEAD'],
+    ['update-ref', 'refs/orch/retained/88', 'HEAD'],
+  ]) {
+    const result = Bun.spawnSync(['git', ...args], { cwd: repositoryTemplate, stderr: 'pipe' })
+    if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+    if (args[0] === 'init')
+      appendFileSync(
+        join(repositoryTemplate, '.git', 'config'),
+        '\n[user]\n\tname = Fixture\n\temail = fixture@example.com\n',
+      )
+  }
+  mkdirSync(join(repositoryTemplate, '.git', 'orch-guards', '7'), { recursive: true })
+  mkdirSync(join(repositoryTemplate, '.git', 'orch-guards', '88'), { recursive: true })
+})
+
+afterAll(() => {
+  rmSync(repositoryTemplate, { recursive: true, force: true })
+})
+
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
@@ -39,27 +69,12 @@ function fixture() {
   mkdirSync(join(runs, '99'), { recursive: true })
   mkdirSync(join(runs, 'leases'), { recursive: true })
   mkdirSync(tree)
-  mkdirSync(project)
+  cpSync(repositoryTemplate, project, { recursive: true })
   writeFileSync(join(runs, '7', 'prompt.txt'), 'kept')
   writeFileSync(join(runs, 'leases', '7.lock'), '')
   writeFileSync(join(runs, 'leases', '88.lock'), '')
   writeFileSync(join(runs, '7.coordinator.log'), 'coordinator')
   writeFileSync(join(tree, '.orch-run'), `7\n${project}\nsource: git\n`)
-  writeFileSync(join(project, 'tracked'), 'fixture')
-  for (const args of [
-    ['init'],
-    ['config', 'user.name', 'Fixture'],
-    ['config', 'user.email', 'fixture@example.com'],
-    ['add', 'tracked'],
-    ['commit', '-m', 'fixture'],
-    ['update-ref', 'refs/orch/retained/7', 'HEAD'],
-    ['update-ref', 'refs/orch/retained/88', 'HEAD'],
-  ]) {
-    const result = Bun.spawnSync(['git', ...args], { cwd: project, stderr: 'pipe' })
-    if (result.exitCode !== 0) throw new Error(result.stderr.toString())
-  }
-  mkdirSync(join(project, '.git', 'orch-guards', '7'), { recursive: true })
-  mkdirSync(join(project, '.git', 'orch-guards', '88'), { recursive: true })
   const database = new Database(':memory:')
   database.run(
     'CREATE TABLE run (id INTEGER PRIMARY KEY, record_id TEXT NOT NULL, worktree TEXT, status TEXT NOT NULL, project_record_id TEXT)',
@@ -106,17 +121,12 @@ test('renames numeric folders, rewrites numeric markers, reports unknowns, and r
   expect(
     readFileSync(join(runs, 'leases', '77777777-7777-4777-8777-777777777777.lock'), 'utf8'),
   ).toBe('')
-  expect(
-    Bun.spawnSync(
-      ['git', 'rev-parse', '--verify', 'refs/orch/retained/77777777-7777-4777-8777-777777777777'],
-      { cwd: project },
-    ).exitCode,
-  ).toBe(0)
-  expect(
-    Bun.spawnSync(['git', 'rev-parse', '--verify', 'refs/orch/retained/7'], {
-      cwd: project,
-    }).exitCode,
-  ).not.toBe(0)
+  const retainedRefs = Bun.spawnSync(
+    ['git', 'for-each-ref', '--format=%(refname)', 'refs/orch/retained'],
+    { cwd: project },
+  ).stdout.toString()
+  expect(retainedRefs).toContain('refs/orch/retained/77777777-7777-4777-8777-777777777777')
+  expect(retainedRefs).not.toContain('refs/orch/retained/7\n')
   expect(
     existsSync(join(project, '.git', 'orch-guards', '77777777-7777-4777-8777-777777777777')),
   ).toBeTrue()

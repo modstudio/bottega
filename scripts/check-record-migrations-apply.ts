@@ -141,7 +141,7 @@ function migrationFailure(
   )
 }
 
-async function provision(database: PGlite): Promise<void> {
+export async function provisionRecordDatabase(database: PGlite): Promise<void> {
   await database.exec(`
     CREATE ROLE ${RECORD_OWNER_ROLE} LOGIN NOSUPERUSER NOBYPASSRLS;
     CREATE ROLE ${RECORD_ACTOR_ROLE} LOGIN NOSUPERUSER NOBYPASSRLS;
@@ -163,7 +163,10 @@ async function provision(database: PGlite): Promise<void> {
   `)
 }
 
-async function applyMigration(transaction: Transaction, migration: MigrationMeta): Promise<void> {
+export async function applyRecordMigration(
+  transaction: Transaction,
+  migration: MigrationMeta,
+): Promise<void> {
   for (const chunk of migration.sql) {
     try {
       await transaction.exec(chunk)
@@ -831,7 +834,7 @@ async function applyAndProveMigration(
     throw new CheckFailure('DEV-1217 board notify migration does not use the exported channel')
   }
   await seedMigrationProof(transaction, migration.name)
-  await applyMigration(transaction, migration)
+  await applyRecordMigration(transaction, migration)
   if (migration.name === brokenDocBackfill && (await proofLatestRevision(transaction)) !== null) {
     throw new CheckFailure('DEV-906 doc backfill unexpectedly populated the proof row')
   }
@@ -913,7 +916,7 @@ async function main(): Promise<void> {
       throw phaseFailure('starting PGlite', error)
     }
     try {
-      await provision(database)
+      await provisionRecordDatabase(database)
     } catch (error) {
       throw phaseFailure('provisioning PGlite', error)
     }
@@ -944,9 +947,11 @@ async function main(): Promise<void> {
   console.log(`record migrations apply: ${applied} applied`)
 }
 
-try {
-  await main()
-} catch (error) {
-  console.error(errorMessage(error))
-  process.exitCode = 1
+if (import.meta.main) {
+  try {
+    await main()
+  } catch (error) {
+    console.error(errorMessage(error))
+    process.exitCode = 1
+  }
 }

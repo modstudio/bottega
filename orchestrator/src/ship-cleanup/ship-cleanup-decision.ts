@@ -8,8 +8,9 @@ const SHIP_CLEANUP_TERMINAL_STATUSES = new Set(['ok', 'failed', 'stale', 'stoppe
 const ARCHITECT_TREE_JOBS: ReadonlySet<string> = new Set([LANDING_TREE_JOB, HOOK_TREE_JOB])
 
 export type ShipCleanupRunFact = {
-  id: number
-  rootId: number
+  record_id: string
+  number: number
+  root_record_id: string
   startedAt: string
   job: string
   status: string
@@ -34,13 +35,13 @@ function scopeFor(
   run: ShipCleanupRunFact,
   branch: string,
   landingMergedAt: string,
-  branchChainRoots: ReadonlySet<number>,
+  branchChainRoots: ReadonlySet<string>,
 ): ShipCleanupRunDecision['scope'] {
   if (!run.launchKey || !run.branch) return 'outside'
   if (!startedByLanding(run.startedAt, landingMergedAt)) return 'outside'
   if (ARCHITECT_TREE_JOBS.has(run.job) && run.branch === branch) return 'landing-tree'
   if (run.job === 'review-lens' && run.branch === branch) return 'review-lens'
-  return branchChainRoots.has(run.rootId) ? 'chain' : 'outside'
+  return branchChainRoots.has(run.root_record_id) ? 'chain' : 'outside'
 }
 
 /** Decide removal independently for each run; turns inherit their root verdict in gathered facts. */
@@ -59,7 +60,7 @@ export function decideShipCleanup(
           run.job !== 'review-lens' &&
           !ARCHITECT_TREE_JOBS.has(run.job),
       )
-      .map((run) => run.rootId),
+      .map((run) => run.root_record_id),
   )
   return runs.map((run) => {
     const scope = scopeFor(run, branch, landingMergedAt, branchChainRoots)

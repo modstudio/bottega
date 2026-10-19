@@ -36,7 +36,7 @@ export function startupFailureDiagnostic(error: unknown): string {
 }
 
 /** Record why this run never started, using as little of the codebase as possible. */
-function recordStartupFailure(id: number, reason: string): void {
+function recordStartupFailure(id: string, reason: string): void {
   if (!id) return
   try {
     // The dispatcher always exports the already-resolved store to detached
@@ -55,7 +55,7 @@ function recordStartupFailure(id: number, reason: string): void {
     // else already recorded.
     d.query(
       `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=0
-        WHERE id=? AND status='running'`,
+        WHERE record_id=? AND status='running'`,
     ).run(reason.slice(0, 2000), id)
     d.close()
   } catch {
@@ -66,7 +66,7 @@ function recordStartupFailure(id: number, reason: string): void {
 
 export async function main(argv: string[]): Promise<number> {
   const [idArg, promptPath, jobName, specJson] = argv
-  const id = Number(idArg)
+  const id = idArg ?? ''
   try {
     if (!id || !promptPath || !jobName)
       throw new Error('__exec <run-id> <prompt-file> <job> [spec]')

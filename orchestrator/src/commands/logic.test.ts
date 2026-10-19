@@ -6,6 +6,12 @@ import { register } from './logic.ts'
 import { setRawArgv } from './support.ts'
 
 test('continue parses --findings before the message and hands the rendered text to continuation', async () => {
+  const recordId = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+  const number = (
+    db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as {
+      number: number
+    }
+  ).number
   const program = new Command().exitOverride()
   let received: string | undefined
   register(program, {
@@ -14,7 +20,7 @@ test('continue parses --findings before the message and hands the rendered text 
     continueCommandDependencies: {
       continueRun: async (_id, message, _limit, produceMessage) => {
         received = produceMessage ? produceMessage() : message
-        return { childId: 99, job: 'implement' }
+        return { childId: '99', job: 'implement' }
       },
       reportContinuedRun: async () => {},
     },
@@ -24,7 +30,7 @@ test('continue parses --findings before the message and hands the rendered text 
     'node',
     'orch',
     'continue',
-    '42',
+    String(number),
     '--findings',
     'Keep this architect message verbatim.',
   ]
@@ -32,11 +38,17 @@ test('continue parses --findings before the message and hands the rendered text 
   await program.parseAsync(argv)
 
   expect(received).toBe(
-    'REVIEW FINDINGS\n\n1. review for 42\n\nARCHITECT MESSAGE\n\nKeep this architect message verbatim.',
+    `REVIEW FINDINGS\n\n1. review for ${recordId}\n\nARCHITECT MESSAGE\n\nKeep this architect message verbatim.`,
   )
 })
 
 test('continue without --findings hands the architect message through unchanged', async () => {
+  const recordId = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+  const number = (
+    db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as {
+      number: number
+    }
+  ).number
   const program = new Command().exitOverride()
   let received: string | undefined
   register(program, {
@@ -46,13 +58,13 @@ test('continue without --findings hands the architect message through unchanged'
     continueCommandDependencies: {
       continueRun: async (_id, message, _limit, produceMessage) => {
         received = produceMessage ? produceMessage() : message
-        return { childId: 99, job: 'implement' }
+        return { childId: '99', job: 'implement' }
       },
       reportContinuedRun: async () => {},
     },
   })
 
-  const argv = ['node', 'orch', 'continue', '42', 'Continue exactly as before.']
+  const argv = ['node', 'orch', 'continue', String(number), 'Continue exactly as before.']
   setRawArgv(argv.slice(2))
   await program.parseAsync(argv)
 
@@ -60,10 +72,16 @@ test('continue without --findings hands the architect message through unchanged'
 })
 
 test('continue refuses --findings after the message and names the working order', async () => {
+  const recordId = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+  const number = (
+    db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as {
+      number: number
+    }
+  ).number
   const program = new Command().exitOverride()
   register(program)
 
-  const argv = ['node', 'orch', 'continue', '42', 'Apply this.', '--findings']
+  const argv = ['node', 'orch', 'continue', String(number), 'Apply this.', '--findings']
   setRawArgv(argv.slice(2))
   await expect(program.parseAsync(argv)).rejects.toThrow(
     /--findings must appear before the message[\s\S]*working form/,
@@ -71,18 +89,20 @@ test('continue refuses --findings after the message and names the working order'
 })
 
 test('continue resolves a run UUID to the same local row as its number', async () => {
-  const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
-  const recordId = (
-    db().query('SELECT record_id FROM run WHERE id=?').get(id) as { record_id: string }
-  ).record_id
-  const received: number[] = []
-  for (const identifier of [String(id), recordId.toUpperCase()]) {
+  const recordId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const number = (
+    db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as {
+      number: number
+    }
+  ).number
+  const received: string[] = []
+  for (const identifier of [String(number), recordId.toUpperCase()]) {
     const program = new Command().exitOverride()
     register(program, {
       continueCommandDependencies: {
         continueRun: async (runId) => {
           received.push(runId)
-          return { childId: 99, job: 'implement' }
+          return { childId: '99', job: 'implement' }
         },
         reportContinuedRun: async () => {},
       },
@@ -91,5 +111,5 @@ test('continue resolves a run UUID to the same local row as its number', async (
     setRawArgv(argv.slice(2))
     await program.parseAsync(argv)
   }
-  expect(received).toEqual([id, id])
+  expect(received).toEqual([recordId, recordId])
 })

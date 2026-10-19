@@ -33,11 +33,11 @@ export function boardContext(
   return { taskKeys, changedPaths }
 }
 
-export function boardRunContext(rootRunId: number, database: Database = db()): BoardSessionContext {
+export function boardRunContext(rootRunId: string, database: Database = db()): BoardSessionContext {
   const runs = database
     .query(
       `SELECT launch_key,changed_paths FROM run
-       WHERE id=? OR parent_run_id=? ORDER BY turn`,
+       WHERE record_id=? OR parent_run_record_id=? ORDER BY turn`,
     )
     .all(rootRunId, rootRunId) as ContextRun[]
   const taskKeys = new Set<string>()

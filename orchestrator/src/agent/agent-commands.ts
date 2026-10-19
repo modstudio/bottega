@@ -96,7 +96,7 @@ function showCommand(name: string, presentation: Presentation): void {
   if (!row) throw new Error(`unknown agent "${name}"`)
   const judged = db()
     .query(
-      'SELECT job, COUNT(*) AS count FROM run r JOIN score s ON s.run_id=r.id WHERE r.agent=? GROUP BY job ORDER BY job',
+      'SELECT job, COUNT(*) AS count FROM run r JOIN score s ON s.run_record_id=r.record_id WHERE r.agent=? GROUP BY job ORDER BY job',
     )
     .all(name) as { job: string; count: number }[]
   presentation.log(

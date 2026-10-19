@@ -28,7 +28,7 @@ const findings: JobFacts = { ...readOnly, producesFindings: true }
 
 describe('verdict rules', () => {
   test('refuses voiding a child turn and names the conversation root', () => {
-    expect(refuseChildTurnVoid(5988, 5931, true)).toBe(
+    expect(refuseChildTurnVoid('5988', '5931', true)).toBe(
       'refused: turn 5988 is not routing evidence on its own because routing reads roots; ' +
         'voiding one turn is never needed. ' +
         `To void the whole conversation, run ${PLATFORM_SLUG} score 5931 --void.`,
@@ -36,8 +36,8 @@ describe('verdict rules', () => {
   })
 
   test('allows a root void and a child-turn non-void score', () => {
-    expect(refuseChildTurnVoid(5931, 5931, true)).toBeNull()
-    expect(refuseChildTurnVoid(5988, 5931, false)).toBeNull()
+    expect(refuseChildTurnVoid('5931', '5931', true)).toBeNull()
+    expect(refuseChildTurnVoid('5988', '5931', false)).toBeNull()
   })
 
   test(`unvoid allows only the ${PLATFORM_SLUG} score --void exclusion reason`, () => {

@@ -138,23 +138,23 @@ describe('storage totals', () => {
 
 test('largest runs are ordered by size and carry age, liveness, and partial state', () => {
   const sizes = new Map([
-    [7, 50],
-    [3, 80],
-    [2, 80],
-    [9, 20],
+    ['7', 50],
+    ['3', 80],
+    ['2', 80],
+    ['9', 20],
   ])
-  const facts = new Map<number, { startedAt: string; status: string }>([
-    [2, { startedAt: '2026-10-18T11:00:00.000Z', status: 'running' }],
-    [3, { startedAt: '2026-10-18T10:00:00.000Z', status: 'ok' }],
-    [7, { startedAt: 'unreadable', status: 'failed' }],
+  const facts = new Map<string, { startedAt: string; status: string }>([
+    ['2', { startedAt: '2026-10-18T11:00:00.000Z', status: 'running' }],
+    ['3', { startedAt: '2026-10-18T10:00:00.000Z', status: 'ok' }],
+    ['7', { startedAt: 'unreadable', status: 'failed' }],
   ])
   expect(largestRuns(sizes, facts, Date.parse('2026-10-18T12:00:00.000Z'), true)).toEqual({
     state: 'partial',
     runs: [
-      { runId: 2, bytes: 80, ageMs: 3_600_000, status: 'live', state: 'partial' },
-      { runId: 3, bytes: 80, ageMs: 7_200_000, status: 'terminal', state: 'partial' },
-      { runId: 7, bytes: 50, ageMs: null, status: 'terminal', state: 'partial' },
-      { runId: 9, bytes: 20, ageMs: null, status: 'terminal', state: 'partial' },
+      { runId: '2', bytes: 80, ageMs: 3_600_000, status: 'live', state: 'partial' },
+      { runId: '3', bytes: 80, ageMs: 7_200_000, status: 'terminal', state: 'partial' },
+      { runId: '7', bytes: 50, ageMs: null, status: 'terminal', state: 'partial' },
+      { runId: '9', bytes: 20, ageMs: null, status: 'terminal', state: 'partial' },
     ],
   })
 })

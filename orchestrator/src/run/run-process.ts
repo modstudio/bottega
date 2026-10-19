@@ -75,8 +75,8 @@ export function childEnv(
 export type LiveProcess = { pid?: number | null; kill(sig?: number | string): void }
 export const live = new Set<LiveProcess>()
 export type LiveCheckpoint = {
-  runId: number
-  rootId: number
+  runId: string
+  rootId: string
   worktree: string
   branch: string
   taskKey: string
@@ -373,9 +373,9 @@ function reapVerifiedVendor(
   }
 }
 
-function readRunProcessRecord(id: number): RunProcessRecord {
+function readRunProcessRecord(id: string): RunProcessRecord {
   const row = db()
-    .query('SELECT pid, agent_pid, agent_pgid, agent_start_time FROM run WHERE id=?')
+    .query('SELECT pid, agent_pid, agent_pgid, agent_start_time FROM run WHERE record_id=?')
     .get(id) as {
     pid: number | null
     agent_pid: number | null
@@ -397,7 +397,7 @@ function selfPgidFromInventory(inventory: ProcessInventory, pid: number): number
 }
 
 export function planRecordedRunTermination(
-  id: number,
+  id: string,
   exclude: number[] = [],
   deps: TerminateRunProcessesDeps = {},
 ): RunProcessTerminationPlan {
@@ -425,7 +425,7 @@ export function confirmRunProcessTermination(
 }
 
 export function terminateRunProcesses(
-  id: number,
+  id: string,
   exclude: number[] = [],
   deps: TerminateRunProcessesDeps = {},
 ): TerminateRunProcessesResult {
@@ -459,7 +459,7 @@ export function bindSignals() {
           final: true,
         })
         if (result.created || latestCheckpoint(db(), checkpoint.rootId)) {
-          db().query('UPDATE run SET work_preserved=1 WHERE id=?').run(checkpoint.runId)
+          db().query('UPDATE run SET work_preserved=1 WHERE record_id=?').run(checkpoint.runId)
         }
         if (result.error) {
           console.error(`orch: run ${checkpoint.runId} final checkpoint failed: ${result.error}`)

@@ -8,8 +8,9 @@ import { jobWritesRepo } from './branch-owner-guard.ts'
 
 const branch = 'DEV-772-orch-4878'
 const row = (overrides: Partial<BranchConversationRow> = {}): BranchConversationRow => ({
-  id: 4878,
-  parent_run_id: null,
+  record_id: 'run-4878',
+  number: 4878,
+  parent_run_record_id: null,
   status: 'running',
   branch,
   job: 'implement',
@@ -25,31 +26,40 @@ describe('alive branch conversation owner', () => {
   })
 
   test('a live writer in another conversation is an owner', () => {
-    expect(aliveBranchConversationOwner([row()], branch, 5000)).toEqual(row())
+    expect(aliveBranchConversationOwner([row()], branch, 'run-5000')).toEqual(row())
   })
 
   test('a live review lens on the branch is not an owner', () => {
     expect(
-      aliveBranchConversationOwner([row({ job: 'review-lens', writesRepo: false })], branch, 5000),
+      aliveBranchConversationOwner(
+        [row({ job: 'review-lens', writesRepo: false })],
+        branch,
+        'run-5000',
+      ),
     ).toBeNull()
   })
 
   test('an unregistered job fails closed as a writer', () => {
     const unregistered = row({ job: 'unregistered', writesRepo: true })
-    expect(aliveBranchConversationOwner([unregistered], branch, 5000)).toEqual(unregistered)
+    expect(aliveBranchConversationOwner([unregistered], branch, 'run-5000')).toEqual(unregistered)
   })
 
   test('refuses another conversation waiting on a ruling', () => {
-    const asking = row({ id: 4910, parent_run_id: 4878, status: 'asking' })
-    expect(aliveBranchConversationOwner([asking], branch, 5000)).toEqual(asking)
+    const asking = row({
+      record_id: 'run-4910',
+      number: 4910,
+      parent_run_record_id: 'run-4878',
+      status: 'asking',
+    })
+    expect(aliveBranchConversationOwner([asking], branch, 'run-5000')).toEqual(asking)
   })
 
   test('allows a finished conversation', () => {
-    expect(aliveBranchConversationOwner([row({ status: 'ok' })], branch, 5000)).toBeNull()
+    expect(aliveBranchConversationOwner([row({ status: 'ok' })], branch, 'run-5000')).toBeNull()
   })
 
   test("the conversation's own turns are not owners", () => {
-    const child = row({ id: 4910, parent_run_id: 4878 })
-    expect(aliveBranchConversationOwner([child], branch, 4878)).toBeNull()
+    const child = row({ record_id: 'run-4910', number: 4910, parent_run_record_id: 'run-4878' })
+    expect(aliveBranchConversationOwner([child], branch, 'run-4878')).toBeNull()
   })
 })

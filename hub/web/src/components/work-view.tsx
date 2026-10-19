@@ -82,7 +82,7 @@ type TaskData = {
 }
 type TaskResponse = ChromeResponse & { data: TaskData }
 type Run = TaskRow['runs'][number]
-type WaitingRow = { kind: 'question' | 'workflow'; id: number; run_id: number | null }
+type WaitingRow = { kind: 'question' | 'workflow'; id: number }
 type WaitingByRun = ReadonlyMap<string, WaitingRow>
 const EMPTY_WAITING_BY_RUN: WaitingByRun = new Map()
 

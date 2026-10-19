@@ -7,7 +7,7 @@ const item: OperatorWaitingItem = {
   kind: 'question',
   id: 7,
   question_record_id: '00000000-0000-4000-8000-000000000007',
-  run_id: 42,
+  run_number: 42,
   run_record_id: '00000000-0000-4000-8000-000000000042',
   project: PLATFORM_NAME.toLowerCase(),
   task_key: 'DEV-943',
@@ -29,10 +29,10 @@ test('waiting query and answer mutation use the orch seam', async () => {
       calls.push(args)
       return {
         outcome: 'resumed' as const,
-        run_id: 42,
-        record_id: '00000000-0000-4000-8000-000000000042',
-        resumed_as: 43,
+        run_record_id: '00000000-0000-4000-8000-000000000042',
+        run_number: 42,
         resumed_record_id: '00000000-0000-4000-8000-000000000043',
+        resumed_number: 43,
       }
     },
     file: async (input) => {
@@ -52,12 +52,17 @@ test('waiting query and answer mutation use the orch seam', async () => {
   })
   const caller = router.createCaller({})
   expect(await caller.waiting()).toEqual([item])
-  expect(await caller.answer({ runId: 42, rulings: [{ questionId: 7, ruling: 'A' }] })).toEqual({
+  expect(
+    await caller.answer({
+      runId: '00000000-0000-4000-8000-000000000042',
+      rulings: [{ questionId: 7, ruling: 'A' }],
+    }),
+  ).toEqual({
     outcome: 'resumed',
-    run_id: 42,
-    record_id: '00000000-0000-4000-8000-000000000042',
-    resumed_as: 43,
+    run_record_id: '00000000-0000-4000-8000-000000000042',
+    run_number: 42,
     resumed_record_id: '00000000-0000-4000-8000-000000000043',
+    resumed_number: 43,
   })
   expect(await caller.file({ questionId: 7, as: 'doc' })).toEqual({
     question_id: 7,
@@ -69,7 +74,7 @@ test('waiting query and answer mutation use the orch seam', async () => {
     filed_at: '2026-09-25T12:00:00.000Z',
   })
   expect(calls).toEqual([
-    [42, [{ questionId: 7, ruling: 'A' }]],
+    ['00000000-0000-4000-8000-000000000042', [{ questionId: 7, ruling: 'A' }]],
     ['file', { questionId: 7, as: 'doc' }],
   ])
   expect(await caller.emailSettings()).toEqual({ delayMinutes: 30 })
@@ -91,13 +96,19 @@ test('answer mutation surfaces orch refusals and validates input at the edge', a
   })
   const caller = router.createCaller({})
   await expect(
-    caller.answer({ runId: 42, rulings: [{ questionId: 7, ruling: 'A' }] }),
+    caller.answer({
+      runId: '00000000-0000-4000-8000-000000000042',
+      rulings: [{ questionId: 7, ruling: 'A' }],
+    }),
   ).rejects.toMatchObject({
     code: 'BAD_REQUEST',
     message: 'run 42 is no longer asking',
   })
   await expect(
-    caller.answer({ runId: 42, rulings: [{ questionId: 7, ruling: '   ' }] }),
+    caller.answer({
+      runId: '00000000-0000-4000-8000-000000000042',
+      rulings: [{ questionId: 7, ruling: '   ' }],
+    }),
   ).rejects.toMatchObject({
     code: 'BAD_REQUEST',
   })

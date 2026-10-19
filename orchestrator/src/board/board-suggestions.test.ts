@@ -24,11 +24,11 @@ function runFixture(session: string | null, status = 'running') {
   return db()
     .query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,launch_key)
-       VALUES ('${newRecordId()}','2026-10-04','codex','implement','suggestion-project','sha',1,'prompt',?,?, 'DEV-968')
-       RETURNING id`,
+       (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,launch_key)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-10-04','codex','implement','suggestion-project','sha',1,'prompt',?,?, 'DEV-968')
+       RETURNING record_id AS id`,
     )
-    .get(status, session) as { id: number }
+    .get(status, session) as { id: string }
 }
 
 test('worker suggestion can be edited, posted with both origins, and withdrawn', () => {

@@ -7,7 +7,7 @@ export type AskLifecycle = {
   initialized(): void
 }
 
-export function askLifecycle(runId: number): AskLifecycle {
+export function askLifecycle(runId: string): AskLifecycle {
   const append = (event: RunLogEvent) => appendRunEvent(runId, event)
   return {
     started: (tools) => append({ ts: new Date().toISOString(), type: 'ask_started', tools }),
@@ -16,7 +16,7 @@ export function askLifecycle(runId: number): AskLifecycle {
 }
 
 export function recordAskExpected(
-  runId: number,
+  runId: string,
   transport: 'host' | 'srt',
   command: string[],
 ): void {
@@ -40,7 +40,7 @@ function listedTools(message: JSONRPCMessage): string[] | null {
 }
 
 /** Observe tools/list at the transport boundary without replacing an SDK handler. */
-export function observeAskTransport(transport: Transport, runId: number): Transport {
+export function observeAskTransport(transport: Transport, runId: string): Transport {
   const pendingLists = new Set<string | number>()
   const observed: Transport = {
     get sessionId() {

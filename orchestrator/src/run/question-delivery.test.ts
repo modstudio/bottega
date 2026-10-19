@@ -11,7 +11,7 @@ test('question delivery rows mint a version-7 record id', () => {
   const questionId = (
     db()
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question)
+        `INSERT INTO question (record_id,run_record_id,asked_at,question)
          VALUES (? ,?, '2026-10-14', 'Which?') RETURNING id`,
       )
       .get(newRecordId(), runId) as { id: number }

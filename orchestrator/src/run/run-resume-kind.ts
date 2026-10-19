@@ -5,20 +5,20 @@ export type ResumeKind = 'continue' | 'fresh-session' | 'retry-root'
 
 export type ResumeIdentityInput = {
   kind: ResumeKind
-  parent: number
+  parent: string
   turn: number
 }
 
 export type ClaimIdentity = {
-  parent_run_id: number | null
+  parent_run_record_id: string | null
   turn: number
   resolveSupersededTurn: boolean
 }
 
 export function resumeFacts(
   kind: ResumeKind | null,
-  claimId: number,
-  parent: number | null = null,
+  claimId: string,
+  parent: string | null = null,
 ) {
   return {
     isFirstTurn: kind === null || kind === 'retry-root',
@@ -28,16 +28,16 @@ export function resumeFacts(
   }
 }
 
-export function checkpointRoot(resume: ResumeIdentityInput | undefined, claimId: number): number {
+export function checkpointRoot(resume: ResumeIdentityInput | undefined, claimId: string): string {
   return resume?.kind === 'continue' || resume?.kind === 'fresh-session' ? resume.parent : claimId
 }
 
 export function claimIdentity(resume: ResumeIdentityInput | undefined): ClaimIdentity {
   if (!resume || resume.kind === 'retry-root') {
-    return { parent_run_id: null, turn: 1, resolveSupersededTurn: false }
+    return { parent_run_record_id: null, turn: 1, resolveSupersededTurn: false }
   }
   return {
-    parent_run_id: resume.parent,
+    parent_run_record_id: resume.parent,
     turn: resume.turn,
     resolveSupersededTurn: true,
   }

@@ -50,17 +50,17 @@ test("a contention row binds its run project's declared space", async () => {
   local
     .query(
       `INSERT INTO run
-       (id,record_id,project_record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       (number,record_id,project_record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
        VALUES (42,?,(SELECT record_id FROM project WHERE name='declared'),'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','ok')`,
     )
     .run(RECORD_ID)
   local
     .query(
       `INSERT INTO contention
-       (id,record_id,at,resource_kind,resource_key,event_kind,run_id)
-       VALUES (1,'01990000-0000-7000-8000-000000000077',?,'lock','resource','wait',42)`,
+       (id,record_id,at,resource_kind,resource_key,event_kind,run_record_id)
+       VALUES (1,'01990000-0000-7000-8000-000000000077',?,'lock','resource','wait',?)`,
     )
-    .run(STAMP)
+    .run(STAMP, RECORD_ID)
   enqueueContention(local, 1, STAMP)
   const remote = fakePostgres()
   const memberships = [

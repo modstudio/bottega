@@ -84,7 +84,7 @@ function replyContract(schemaPath: string | undefined, textContract: boolean): R
 }
 
 function recordConfiguredAsk(input: {
-  runId: number
+  runId: string
   sandbox: SandboxSelection['sandbox']
   transport: ReturnType<typeof transportFor>
   startOpts: TransportStartOpts
@@ -140,7 +140,7 @@ export function replyFileFallbackError(
 type LiveOptions = {
   resume?: {
     kind: 'continue' | 'fresh-session' | 'retry-root'
-    parent: number
+    parent: string
     turn: number
     session?: string
   }
@@ -153,7 +153,7 @@ export type LiveInput = {
   repoJob: boolean
   name: string
   worktree: Worktree | null
-  claim: { id: number; recordId: string }
+  claim: { id: string; recordId: string; number: number }
   provisionedMcpConfig: { measure<T>(operation: () => T): T } | null
   reviewTarget: { branch: string; commit: string; base: string } | null
   sandboxSelection: SandboxSelection
@@ -233,7 +233,7 @@ export type LiveResult = {
 type ConfiguredAsk = Parameters<typeof recordConfiguredAsk>[0]
 
 function recordRunAsk(
-  runId: number,
+  runId: string,
   sandbox: ConfiguredAsk['sandbox'],
   transport: ConfiguredAsk['transport'],
   startOpts: ConfiguredAsk['startOpts'],
@@ -258,6 +258,40 @@ function applyRunWallDeadline(input: {
 
 async function closeWorkerNoteBroker(broker: WorkerNoteBroker | null): Promise<void> {
   if (broker) await broker.close()
+}
+
+function idleRunRow(runId: string): {
+  status: string
+  last_event_at: string | null
+  started_at: string
+} | null {
+  return db()
+    .query('SELECT status, last_event_at, started_at FROM run WHERE record_id=?')
+    .get(runId) as {
+    status: string
+    last_event_at: string | null
+    started_at: string
+  } | null
+}
+
+function runHasOpenQuestion(runId: string): boolean {
+  return Boolean(
+    db()
+      .query(
+        `SELECT 1 n FROM question WHERE run_record_id=? AND ${questionOpenSql('question')} LIMIT 1`,
+      )
+      .get(runId),
+  )
+}
+
+function recordedRunStatus(runId: string): string | null {
+  return (
+    (
+      db().query('SELECT status FROM run WHERE record_id=?').get(runId) as {
+        status: string
+      } | null
+    )?.status ?? null
+  )
 }
 
 export async function runLive(input: LiveInput): Promise<LiveResult> {
@@ -351,7 +385,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         ? reviewChangedPaths(worktree.path, reviewTarget.base, inputTree)
         : null
       const measured = db()
-        .query('UPDATE run SET input_tree=?, head_commit=?, changed_paths=? WHERE id=?')
+        .query('UPDATE run SET input_tree=?, head_commit=?, changed_paths=? WHERE record_id=?')
         .run(inputTree, headCommit, changedPaths ? JSON.stringify(changedPaths) : null, claim.id)
       if (measured.changes !== 1) throw new Error(`run ${claim.id} could not record its input tree`)
     }
@@ -430,7 +464,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
           ...(askLoopback ? { ORCH_ASK_URL: askLoopback.url } : {}),
         },
         repoJob,
-        claim.id,
+        claim.number,
       ),
     }
     recordRunAsk(claim.id, sandboxSelection.sandbox, t, startOpts)
@@ -446,7 +480,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     live.add(handle)
     effectiveModel = handle.effectiveModel ?? null
     if (effectiveModel)
-      db().query('UPDATE run SET model=? WHERE id=?').run(effectiveModel, claim.id)
+      db().query('UPDATE run SET model=? WHERE record_id=?').run(effectiveModel, claim.id)
     // The VENDOR CLI pid. pid stays the worker's for the whole run: after the
     // agent exits the worker is still parsing output and writing questions, and
     // a reaper that tested this pid would mark the run stale under a process
@@ -468,7 +502,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     db()
       .query(
         `UPDATE run SET agent_pid=?, agent_pgid=?, agent_start_time=?,
-              last_event_at=COALESCE(last_event_at, ?) WHERE id=?`,
+              last_event_at=COALESCE(last_event_at, ?) WHERE record_id=?`,
       )
       .run(vendorPid, vendorPgid, vendorStartTime, nowIso(), claim.id)
     const createCheckpoint = (final = false) => {
@@ -505,7 +539,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         })
       }
     }
-
     // Two timeouts, composed, not one: the wall stays, and idle kill is the
     // second, shorter no-activity bound. Do not replace the wall.
     wallArmedAtMs = Date.now()
@@ -541,30 +574,21 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       })
     }
     rearmWallDeadline()
-
     let forceCollect: ((result: TransportResult) => void) | null = null
     const forcedCollect = new Promise<TransportResult>((resolve) => {
       forceCollect = resolve
     })
     const maybeIdleKill = async () => {
-      const row = db()
-        .query('SELECT status, last_event_at, started_at FROM run WHERE id=?')
-        .get(claim.id) as {
-        status: string
-        last_event_at: string | null
-        started_at: string
-      } | null
+      const row = idleRunRow(claim.id)
       if (!row) return
-      const openQuestion = db()
-        .query(`SELECT 1 n FROM question WHERE run_id=? AND ${questionOpenSql('question')} LIMIT 1`)
-        .get(claim.id) as { n: number } | null
+      const openQuestion = runHasOpenQuestion(claim.id)
       const idleThresholdMs = jobIdleKillMs(opts.job, process.env, boundMs)
       const decision = shouldIdleKill({
         lastEventAt: row.last_event_at,
         startedAt: row.started_at,
         pid: handle.pid,
         asking: row.status === 'asking',
-        openQuestion: Boolean(openQuestion),
+        openQuestion,
         alreadyTimedOut: timedOut,
         alreadyIdleKilled: idleKilled,
         thresholdMs: idleThresholdMs,
@@ -578,18 +602,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         boundMs,
       })
       const checkpoint = createCheckpoint(true)
-      const afterCheckpoint = db().query('SELECT status FROM run WHERE id=?').get(claim.id) as {
-        status: string
-      } | null
-      const askedDuringCheckpoint =
-        afterCheckpoint?.status === 'asking' ||
-        Boolean(
-          db()
-            .query(
-              `SELECT 1 n FROM question WHERE run_id=? AND ${questionOpenSql('question')} LIMIT 1`,
-            )
-            .get(claim.id),
-        )
+      const afterCheckpoint = recordedRunStatus(claim.id)
+      const askedDuringCheckpoint = afterCheckpoint === 'asking' || runHasOpenQuestion(claim.id)
       if (askedDuringCheckpoint) {
         idleKilled = false
         idleKillError = null
@@ -617,7 +631,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         return
       }
       if (checkpoint?.created || prior) {
-        db().query('UPDATE run SET work_preserved=1 WHERE id=?').run(claim.id)
+        db().query('UPDATE run SET work_preserved=1 WHERE record_id=?').run(claim.id)
       }
       void t.cancel(handle)
       const terminated = await terminateProcessGroup(handle.pid ?? 0, {
@@ -670,7 +684,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       },
       idlePollMs(jobIdleKillMs(opts.job, process.env, boundMs)),
     )
-
     const teeing = teeTransportEvents(handle.events(), claim.id)
     await t.prompt(handle, prompt)
     receiptWorkerMessages(
@@ -752,7 +765,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         (event.toolKind ? ` (${event.toolKind})` : '')
       mcpSetupHeader = mcpSetupHeader ? `${mcpSetupHeader}\n${line}` : line
     }
-
     /**
      * A worker that stopped to ask is neither a success nor a failure.
      *
@@ -780,7 +792,10 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
      */
     const undelivered = unreadWorkerMessages(claim.id)
     if (undelivered.length) {
-      const remedy = deferredWorkerMessageNotice(undelivered[0]!.root_run_id, t.canInjectMidTurn)
+      const remedy = deferredWorkerMessageNotice(
+        undelivered[0]!.root_run_record_id,
+        t.canInjectMidTurn,
+      )
       const header = [
         `undelivered worker messages: ${undelivered.map((message) => message.id).join(', ')}`,
         remedy,

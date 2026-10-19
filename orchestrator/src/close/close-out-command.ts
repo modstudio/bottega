@@ -5,7 +5,7 @@ import { writableDb } from '../database/db.ts'
 import { closeOutRun } from './close-out.ts'
 
 export function closeOutCommand(
-  id: number,
+  id: string,
   nonBlocking: boolean,
   presentation: { log(value: string): void; setExitCode(code: number): void },
 ): void {

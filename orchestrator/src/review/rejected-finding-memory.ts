@@ -27,7 +27,7 @@ export function reviewFindingMemoryRows(
       },
       [string]
     >(
-      `SELECT run.repo project,run.branch,r.id review_id,r.completed_at,rf.ordinal,
+      `SELECT run.repo project,run.branch,r.record_id review_id,r.completed_at,rf.ordinal,
               rf.disposition,rf.location,rf.evidence,rf.rejection_category,rl.lens,
               run.head_commit reviewed_commit,
               (SELECT amendment.reason FROM review_finding_amendment amendment
@@ -37,7 +37,7 @@ export function reviewFindingMemoryRows(
          FROM review_finding rf
          JOIN review r ON r.id=rf.review_id
          JOIN review_lens rl ON rl.id=rf.review_lens_id
-         JOIN run ON run.id=rl.run_id
+         JOIN run ON run.record_id=rl.run_record_id
         WHERE run.project_record_id=(SELECT record_id FROM project WHERE name=?)`,
     )
     .all(project)

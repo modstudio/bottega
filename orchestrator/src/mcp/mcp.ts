@@ -93,13 +93,16 @@ const nextWorkflowStepInputSchema = z.object({
   question: z.string().trim().min(1).optional(),
   review: z.number().int().positive().optional(),
   gate: z.number().int().positive().optional(),
-  run: z.number().int().positive().optional(),
+  run: z.union([z.number().int().positive(), z.string().trim().min(1)]).optional(),
   artifact: z.string().trim().min(1).optional(),
   task: z.string().trim().min(1).optional(),
   cursor: z.number().int().positive().optional(),
   defer: z.string().trim().min(1).optional(),
   satisfies: z.number().int().positive().optional(),
 })
+
+const workflowRunEvidence = (run: string | number | undefined) =>
+  run === undefined ? undefined : resolveRunIdentifier(db(), run)
 
 const reporterFields = {
   reporter_kind: z
@@ -201,9 +204,11 @@ type WorkerReporter = {
   launch_key: string | null
 }
 
-const workerReporter = (runId: number) =>
+const workerReporter = (runId: string) =>
   db()
-    .query('SELECT id, record_id, job, agent, launch_cwd, launch_key FROM run WHERE id=?')
+    .query(
+      'SELECT record_id, record_id, job, agent, launch_cwd, launch_key FROM run WHERE record_id=?',
+    )
     .get(runId) as WorkerReporter | null
 
 function registeredProject(name: string) {
@@ -375,7 +380,6 @@ export async function fileIssue(
     title_shortened: titleShortened,
     reporter: worker ? 'worker' : reporter.kind,
     reporter_id: reporterId,
-    worker_run_id: worker?.id ?? null,
     worker_run_record_id: worker?.record_id ?? null,
     ...(worker ? { origin: worker.launch_key } : {}),
     monitor_invocation_id: reporter.kind === 'monitor' ? reporter.invocationId : null,
@@ -580,7 +584,7 @@ export function createDocsMcpServer(): McpServer {
           note,
           context,
           undefined,
-          { ruling, review, gate, run, artifact, task, defer, satisfies },
+          { ruling, review, gate, run: workflowRunEvidence(run), artifact, task, defer, satisfies },
           undefined,
           cursor,
           self_ruling === undefined

@@ -57,9 +57,9 @@ describe('eval-owned scratch worktree release', () => {
   })
 
   test('a thrown run with runId on the error is released', () => {
-    const error = Object.assign(new Error('run 6092 failed: agent died'), { runId: 6092 })
+    const error = Object.assign(new Error('run 6092 failed: agent died'), { runId: '6092' })
     const runId = thrownEvalRunId(error)
-    expect(runId).toBe(6092)
+    expect(runId).toBe('6092')
     expect(
       decideEvalOwnedScratchRelease({
         scratchOwnedByEval: true,

@@ -19,7 +19,7 @@ export type DisposeSuggestionInput = Partial<SuggestBoardPostInput> & { audience
 
 type SuggestionRow = {
   id: number
-  author_run_id: number
+  author_run_record_id: string
   audience: string
   title: string
   body: string
@@ -43,18 +43,22 @@ function validateText(input: SuggestBoardPostInput): void {
     throw new Error('board suggestion contains secret-shaped text; remove the credential and retry')
 }
 
-function rootRun(runId: number) {
+function rootRun(runId: string) {
   return db()
     .query(
-      `SELECT root.id,root.session_id,root.repo
-       FROM run turn JOIN run root ON root.id=COALESCE(turn.parent_run_id,turn.id)
-       WHERE turn.id=?`,
+      `SELECT root.record_id,root.session_id,root.repo
+       FROM run turn JOIN run root ON root.record_id=COALESCE(turn.parent_run_record_id,turn.record_id)
+       WHERE turn.record_id=?`,
     )
-    .get(runId) as { id: number; session_id: string | null; repo: string | null } | null
+    .get(runId) as {
+    record_id: string
+    session_id: string | null
+    repo: string | null
+  } | null
 }
 
 export function suggestBoardPost(
-  runId: number,
+  runId: string,
   input: SuggestBoardPostInput,
   clock = Date.now(),
 ): { id: number; dropped: boolean } {
@@ -64,7 +68,7 @@ export function suggestBoardPost(
   if (!run) throw new Error(`run ${runId} does not exist; put the suggestion in the final reply`)
   if (!run.session_id)
     throw new Error(
-      `run ${run.id} has no owning architect session; put the suggestion in the final reply instead`,
+      `run ${run.record_id} has no owning architect session; put the suggestion in the final reply instead`,
     )
   const audience = `session:${run.session_id}`
   const since = new Date(clock - BOARD_POST_RATE_WINDOW_MS).toISOString()
@@ -73,17 +77,17 @@ export function suggestBoardPost(
     db()
       .query(
         `SELECT COUNT(*) n FROM board_message
-         WHERE author_kind='worker' AND author_run_id=? AND created_at>=?`,
+         WHERE author_kind='worker' AND author_run_record_id=? AND created_at>=?`,
       )
-      .get(run.id, since) as { n: number }
+      .get(run.record_id, since) as { n: number }
   ).n
   const candidates = db()
     .query(
       `SELECT id FROM board_message
-       WHERE kind='suggestion' AND author_kind='worker' AND author_run_id=?
+       WHERE kind='suggestion' AND author_kind='worker' AND author_run_record_id=?
          AND audience=? AND title=? AND body=? AND created_at>=? ORDER BY id DESC`,
     )
-    .all(run.id, audience, input.title, input.body, duplicateSince) as { id: number }[]
+    .all(run.record_id, audience, input.title, input.body, duplicateSince) as { id: number }[]
   const key = senderTagKey(senderTags)
   const duplicate = candidates.find((candidate) => {
     const tags = db()
@@ -107,16 +111,16 @@ export function suggestBoardPost(
       database
         .query(
           `INSERT INTO board_message
-           (kind,purpose,author_kind,author_session,author_run_id,author_harness,author_project,
+           (kind,purpose,author_kind,author_session,author_run_record_id,author_harness,author_project,
             author_project_record_id,
             audience,title,body,ack_required,ack_deadline,expires_at,created_at,withdrawn_at,record_id)
            VALUES ('suggestion','request','worker',NULL,?,NULL,?,
-                   (SELECT project_record_id FROM run WHERE id=?),?,?,?,0,NULL,?,?,NULL,?)`,
+                   (SELECT project_record_id FROM run WHERE record_id=?),?,?,?,0,NULL,?,?,NULL,?)`,
         )
         .run(
-          run.id,
+          run.record_id,
           run.repo,
-          run.id,
+          run.record_id,
           audience,
           input.title,
           input.body,
@@ -186,7 +190,7 @@ export function postBoardSuggestion(
       task: input.task ?? defaults.task,
       paths: input.paths ?? defaults.paths,
       topics: input.topics ?? defaults.topics,
-      suggestingRunId: row.author_run_id,
+      suggestingRunId: row.author_run_record_id,
     }
     const posted = postNoticeInTransaction(notice, env, clock, cwd, database)
     database

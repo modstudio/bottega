@@ -26,7 +26,7 @@ describe('fresh retry continuation recovery', () => {
       turn: 3,
     })
     const insertAudit = db().query(
-      `INSERT INTO run_mutation_audit (record_id, run_id,root_id,turn_id,action,at,reason)
+      `INSERT INTO run_mutation_audit (record_id, run_record_id,root_run_record_id,turn_run_record_id,action,at,reason)
        VALUES (?, ?,?,?,?,?,?)`,
     )
     insertAudit.run(
@@ -83,7 +83,7 @@ describe('fresh retry continuation recovery', () => {
       turn: 3,
     })
     const insertAudit = db().query(
-      `INSERT INTO run_mutation_audit (record_id, run_id,root_id,turn_id,action,at,reason)
+      `INSERT INTO run_mutation_audit (record_id, run_record_id,root_run_record_id,turn_run_record_id,action,at,reason)
        VALUES (?, ?,?,?,?,?,?)`,
     )
     insertAudit.run(
@@ -155,7 +155,7 @@ describe('fresh retry continuation recovery', () => {
       startedAt: '2026-09-25T15:21:16.986Z',
     })
     const insertAudit = db().query(
-      `INSERT INTO run_mutation_audit (record_id, run_id,root_id,action,at,reason)
+      `INSERT INTO run_mutation_audit (record_id, run_record_id,root_run_record_id,action,at,reason)
        VALUES (?, ?,?,?,?,?)`,
     )
     insertAudit.run(
@@ -253,7 +253,7 @@ describe('fresh retry continuation recovery', () => {
       startedAt: '2026-09-25T03:00:00.500Z',
     })
     const insertAudit = db().query(
-      `INSERT INTO run_mutation_audit (record_id, run_id,root_id,action,at,reason)
+      `INSERT INTO run_mutation_audit (record_id, run_record_id,root_run_record_id,action,at,reason)
        VALUES (?, ?,?,?,?,?)`,
     )
     insertAudit.run(newRecordId(), id, id, 'answer', '2026-09-24T23:20:29.266Z', null)
@@ -314,7 +314,7 @@ describe('fresh retry continuation recovery', () => {
     })
     db()
       .query(
-        `INSERT INTO run_mutation_audit (record_id, run_id,root_id,turn_id,action,at,reason)
+        `INSERT INTO run_mutation_audit (record_id, run_record_id,root_run_record_id,turn_run_record_id,action,at,reason)
        VALUES (?, ?,?,?,?,?,?)`,
       )
       .run(
@@ -340,7 +340,7 @@ describe('fresh retry continuation recovery', () => {
     const id = failedRoot()
     const child = addRun({ agent: 'grok', job: 'implement', status: 'failed', parent: id, turn: 2 })
     const insertAudit = db().query(
-      `INSERT INTO run_mutation_audit (record_id, run_id,root_id,turn_id,action,at,reason)
+      `INSERT INTO run_mutation_audit (record_id, run_record_id,root_run_record_id,turn_run_record_id,action,at,reason)
        VALUES (?, ?,?,?,?,?,?)`,
     )
     insertAudit.run(newRecordId(), id, id, child, 'continue', '2026-09-25T10:00:00.000Z', null)
@@ -362,7 +362,7 @@ describe('fresh retry continuation recovery', () => {
     const child = addRun({ agent: 'grok', job: 'implement', status: 'failed', parent: id, turn: 2 })
     db()
       .query(
-        `INSERT INTO run_mutation_audit (record_id, run_id,root_id,turn_id,action,at,reason)
+        `INSERT INTO run_mutation_audit (record_id, run_record_id,root_run_record_id,turn_run_record_id,action,at,reason)
        VALUES (?, ?,?,?,?,?,NULL)`,
       )
       .run(newRecordId(), id, id, child, 'continue', '2026-09-25T09:10:55.600Z')
@@ -381,7 +381,7 @@ describe('fresh retry continuation recovery', () => {
       startedAt: '2026-09-25T09:10:55.576Z',
     })
     const insertAudit = db().query(
-      `INSERT INTO run_mutation_audit (record_id, run_id,root_id,action,at,reason)
+      `INSERT INTO run_mutation_audit (record_id, run_record_id,root_run_record_id,action,at,reason)
        VALUES (?, ?,?,?,?,?)`,
     )
     insertAudit.run(

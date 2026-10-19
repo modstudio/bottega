@@ -313,8 +313,8 @@ test('tagged project notices are not pushed to a late session even when acknowle
   )
   const insertRun = db().query(
     `INSERT INTO run
-     (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,changed_paths)
-     VALUES (?,?,'codex','implement','sha',1,'prompt','ok',?,?)`,
+     (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,changed_paths)
+     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','ok',?,?)`,
   )
   for (const [session, paths] of [
     ['matching-reader', ['orchestrator/src/board/board-service.ts']],
@@ -421,8 +421,8 @@ test('tagged project notice reaches a matching worker chain and withholds from a
   const clock = Date.now() + 12_000
   const insertRun = db().query(
     `INSERT INTO run
-     (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,changed_paths,parent_run_id,turn)
-     VALUES (?,?,'codex','implement','worker-board-project','sha',1,'prompt',?,?,?,?,?) RETURNING id`,
+     (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,changed_paths,parent_run_record_id,turn)
+     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','worker-board-project','sha',1,'prompt',?,?,?,?,?) RETURNING record_id AS id`,
   )
   const matching = insertRun.get(
     newRecordId(),
@@ -432,7 +432,7 @@ test('tagged project notice reaches a matching worker chain and withholds from a
     JSON.stringify(['orchestrator/src/board/board-service.ts']),
     null,
     1,
-  ) as { id: number }
+  ) as { id: string }
   const other = insertRun.get(
     newRecordId(),
     new Date(clock).toISOString(),
@@ -441,7 +441,7 @@ test('tagged project notice reaches a matching worker chain and withholds from a
     JSON.stringify(['hub/web/src/routes/index.tsx']),
     null,
     1,
-  ) as { id: number }
+  ) as { id: string }
   const posted = postNotice(
     {
       audience: 'project:worker-board-project',
@@ -464,11 +464,11 @@ test('a run reader is pushed only notices posted after its start', () => {
   const run = db()
     .query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,turn)
-       VALUES ('${newRecordId()}',?,'codex','implement','worker-board-project','sha',1,'prompt','running','DEV-PUSH',1)
-       RETURNING id`,
+       (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,turn)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','worker-board-project','sha',1,'prompt','running','DEV-PUSH',1)
+       RETURNING record_id AS id`,
     )
-    .get(new Date(clock).toISOString()) as { id: number }
+    .get(new Date(clock).toISOString()) as { id: string }
   const older = postNotice(
     { audience: `run:${run.id}`, title: 'Older', body: 'Do not push this.' },
     {},
@@ -503,10 +503,11 @@ test('a run reader is pushed only notices posted after its start', () => {
 })
 
 test('a missing run reader returns an unbounded empty selection with a warning', () => {
-  expect(claimRunPushNotices(999_999)).toEqual({
+  expect(claimRunPushNotices('missing-run-record-id')).toEqual({
     notices: [],
     withheldOlderCount: 0,
-    warning: 'Board reader run:999999 has no recorded start; no messages were withheld by age.',
+    warning:
+      'Board reader run:missing-run-record-id has no recorded start; no messages were withheld by age.',
   })
 })
 
@@ -515,8 +516,8 @@ test('run audience is owner-gated for architects and resolves a turn to its chai
   const posting = postingProject()
   const insertRun = db().query(
     `INSERT INTO run
-     (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,parent_run_id,turn)
-     VALUES (?,?,'codex','implement','owned-run-project','sha',1,'prompt','running',?,?,?) RETURNING id`,
+     (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,parent_run_record_id,turn)
+     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','owned-run-project','sha',1,'prompt','running',?,?,?) RETURNING record_id AS id`,
   )
   const root = insertRun.get(
     newRecordId(),
@@ -524,7 +525,7 @@ test('run audience is owner-gated for architects and resolves a turn to its chai
     'run-owner',
     null,
     1,
-  ) as { id: number }
+  ) as { id: string }
   const turn = insertRun.get(
     newRecordId(),
     new Date(clock + 1).toISOString(),
@@ -573,10 +574,10 @@ test('an unregistered live chain resolves for run and machine but not project au
   const run = db()
     .query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,turn)
-       VALUES ('${newRecordId()}',?,'codex','implement',NULL,'sha',1,'prompt','asking',1) RETURNING id`,
+       (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,turn)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement',NULL,'sha',1,'prompt','asking',1) RETURNING record_id AS id`,
     )
-    .get(new Date(clock).toISOString()) as { id: number }
+    .get(new Date(clock).toISOString()) as { id: string }
   const byMachine = postNotice(
     { audience: `machine:${hostname()}`, title: 'Machine notice', body: 'Includes local runs.' },
     {},

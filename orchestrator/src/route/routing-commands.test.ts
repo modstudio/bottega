@@ -42,7 +42,7 @@ test('stats reports Bradley-Terry strengths once a job reaches MIN_SAMPLE duels'
 
 test('pick previews the same fan-out exclusions do uses', () => {
   const prior = addRun({ agent: 'grok', job: 'review-lens' })
-  db().query('UPDATE run SET model=? WHERE id=?').run(AGENTS.grok!.model, prior)
+  db().query('UPDATE run SET model=? WHERE record_id=?').run(AGENTS.grok!.model, prior)
   expect(preview(['grok'])).toContain('review-lens -> codex')
   expect(preview([], [AGENTS.grok!.model!])).toContain('review-lens -> codex')
 })

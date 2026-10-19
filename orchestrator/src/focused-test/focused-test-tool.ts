@@ -11,7 +11,7 @@ type TextResult = { content: Array<{ type: 'text'; text: string }>; isError?: tr
 
 export function registerFocusedTestTool(input: {
   registerTool: McpServer['registerTool']
-  runId: number
+  runId: string
   token: string
   text(value: string, isError?: true): TextResult
 }): void {

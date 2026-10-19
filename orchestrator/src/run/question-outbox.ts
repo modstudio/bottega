@@ -11,7 +11,6 @@ import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 type QuestionRow = Record<string, unknown> & {
   id: number
   record_id: string
-  run_id: number | null
   run_record_id: string | null
   project_name: string | null
   project_record_id: string | null
@@ -26,7 +25,7 @@ function loadQuestion(database: Database, questionId: number): QuestionRow {
               COALESCE(run_project.name, cursor.project) AS project_name,
               COALESCE(run_project.record_id, cursor_project.record_id) AS project_record_id
          FROM question q
-         LEFT JOIN run r ON r.id=q.run_id
+         LEFT JOIN run r ON r.record_id=q.run_record_id
          LEFT JOIN project run_project ON run_project.record_id=r.project_record_id
          LEFT JOIN workflow_cursor cursor ON cursor.id=q.workflow_cursor_id
          LEFT JOIN project cursor_project ON cursor_project.record_id=cursor.project_record_id

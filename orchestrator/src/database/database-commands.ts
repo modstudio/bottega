@@ -111,6 +111,6 @@ export async function migrateCommand(
   )
 }
 
-export function reconcileCommand(id: number, presentation: DatabaseCommandPresentation): void {
+export function reconcileCommand(id: string, presentation: DatabaseCommandPresentation): void {
   presentation.log(reconcileRun(id))
 }

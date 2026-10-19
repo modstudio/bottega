@@ -15,7 +15,7 @@ export function renderRulingFileText(input: {
   ruling: string
   basis?: string | null
   answererKind: string | null
-  runId: number | null
+  runId: string | null
   runRecordId: string | null
   workflow?: { slug: string; mode: string; cursorId: number } | null
   taskKey: string | null

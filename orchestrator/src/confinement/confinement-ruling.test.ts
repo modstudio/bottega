@@ -51,13 +51,13 @@ test('clearing confinement re-enqueues every transitioned run and the rolled-up 
   db()
     .query(
       `UPDATE run SET repo=?,worktree=?,branch='DEV-1371-test',head_commit=?,input_tree=?,
-        error=?,pre_confinement=?,confinement='{}' WHERE id=?`,
+        error=?,pre_confinement=?,confinement='{}' WHERE record_id=?`,
     )
     .run(project, worktree, tip, tip, priorRoot.error, JSON.stringify(priorRoot), root)
   db()
     .query(
       `UPDATE run SET repo=?,worktree=?,branch='DEV-1371-test',head_commit=?,input_tree=?,
-        error='unverified',pre_confinement=?,confinement='{}' WHERE id=?`,
+        error='unverified',pre_confinement=?,confinement='{}' WHERE record_id=?`,
     )
     .run(project, worktree, tip, tip, JSON.stringify(priorChild), child)
   const before = new Date().toISOString()
@@ -67,11 +67,11 @@ test('clearing confinement re-enqueues every transitioned run and the rolled-up 
 
   clearConfinement(child, { writer: 'architect', note: 'verified', tip: null }, { log: () => {} })
 
-  const payloads = (runId: number) =>
+  const payloads = (runId: string) =>
     db()
-      .query<{ payload: string }, [number]>(
+      .query<{ payload: string }, [string]>(
         `SELECT payload FROM outbox
-         WHERE kind='run' AND row_id=(SELECT record_id FROM run WHERE id=?) ORDER BY id`,
+         WHERE kind='run' AND row_id=(SELECT record_id FROM run WHERE record_id=?) ORDER BY id`,
       )
       .all(runId)
       .map(({ payload }) => JSON.parse(payload))

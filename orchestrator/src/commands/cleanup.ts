@@ -17,13 +17,16 @@ function keptBranchLine(
   branch: string,
   uniqueCount: number,
   afterCutCount: number | null,
-  id: number,
+  id: string,
 ): string {
+  const number = (
+    db().query('SELECT number FROM run WHERE record_id=?').get(id) as { number: number }
+  ).number
   const reason =
     afterCutCount === null
       ? `${uniqueCount} commit(s) reachable only from this branch`
       : `deleting it would lose commits reachable from no other ref; ${afterCutCount} commit(s) after the cut`
-  return `kept branch ${branch}: ${reason} — merge it, or ${PLATFORM_SLUG} run discard ${id} --force to delete it after checking no other run owns it`
+  return `kept branch ${branch}: ${reason} — merge it, or ${PLATFORM_SLUG} run discard ${number} --force to delete it after checking no other run owns it`
 }
 
 const presentation: CleanupPresentation = {

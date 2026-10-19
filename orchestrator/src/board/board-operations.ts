@@ -23,7 +23,7 @@ import type {
   HostedBoardStatus,
   HostedBoardThread,
 } from '../record/record-board-contract.ts'
-import { resolveRunIdentifier, runRecordIdOrNull } from '../run/run-identifier.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import {
   acceptedAnswerNoteText,
   fileAcceptedAnswerNote,
@@ -242,13 +242,11 @@ function hostedThread(value: HostedBoardThread): BoardThreadResult {
 }
 
 function claimResult(value: ClaimView | HostedBoardClaim): BoardClaimResult {
-  const runRecordId =
-    typeof value.runId === 'number' ? runRecordIdOrNull(db(), value.runId) : value.runId
   return {
     ...value,
     id: String(value.id),
     runId: stringId(value.runId),
-    run_record_id: runRecordId,
+    run_record_id: value.runId,
     previousClaimIds: value.previousClaimIds.map(String),
     supersededByClaimId: stringId(value.supersededByClaimId),
   }
@@ -337,15 +335,14 @@ export function hostedBoardStatusResult(
 function authorFacts(env: Environment, database = db()) {
   const actor = boardActor(env)
   const identity = architectIdentity(env)
-  const localRunId = env.ORCH_RUN_ID ? resolveRunIdentifier(database, env.ORCH_RUN_ID) : 0
-  const run =
-    localRunId > 0
-      ? database
-          .query<{ record_id: string | null; session_id: string | null }, [number]>(
-            'SELECT record_id,session_id FROM run WHERE id=?',
-          )
-          .get(localRunId)
-      : null
+  const localRunId = env.ORCH_RUN_ID ? resolveRunIdentifier(database, env.ORCH_RUN_ID) : null
+  const run = localRunId
+    ? database
+        .query<{ record_id: string | null; session_id: string | null }, [string]>(
+          'SELECT record_id,session_id FROM run WHERE record_id=?',
+        )
+        .get(localRunId)
+    : null
   return {
     session: actor.session,
     harness: identity?.harness ?? null,
@@ -653,12 +650,12 @@ export async function boardStatus(id: string, inputContext?: Context) {
     : localStatus(noticeStatus(parsed as number, c.env, c.clock), c.clock)
 }
 
-function hostedClaimRunId(runId: number | undefined, env: Environment): string | null | undefined {
+function hostedClaimRunId(runId: string | undefined, env: Environment): string | null | undefined {
   if (runId === undefined) return undefined
   const actor = boardActor(env)
   const row = db()
-    .query<{ record_id: string; session_id: string | null }, [number]>(
-      'SELECT record_id,session_id FROM run WHERE id=?',
+    .query<{ record_id: string; session_id: string | null }, [string]>(
+      'SELECT record_id,session_id FROM run WHERE record_id=?',
     )
     .get(runId)
   if (!row) throw new Error(`no run ${runId}; use a run owned by this session`)

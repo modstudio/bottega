@@ -38,10 +38,10 @@ const flags = (input: FlagInput = {}) => ({
 const presentation = {
   log: (..._values: unknown[]) => {},
   error: (..._values: unknown[]) => {},
-  pairHint: (p: { id: number }) => `pair ${p.id}`,
+  pairHint: (p: { id: string }) => `pair ${p.id}`,
 }
 const score = (
-  id: number,
+  id: string,
   words: string[],
   input: FlagInput = {},
   extra: { dashboardAuthorized?: boolean; note?: string | null; auditReason?: string | null } = {},
@@ -59,7 +59,7 @@ const score = (
     presentation,
   )
 const judge = (
-  id: number,
+  id: string,
   words: string[],
   input: FlagInput = {},
   extra: { note?: string | null; auditReason?: string | null } = {},
@@ -91,39 +91,39 @@ describe('score ruling', () => {
       `run ${id} is a lifecycle row, not agent work; it cannot be scored. No action is needed because lifecycle rows are evidence-excluded`,
     )
     await score(id, [], { void: true })
-    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id)).toEqual({
+    expect(db().query('SELECT evidence_excluded FROM run WHERE record_id=?').get(id)).toEqual({
       evidence_excluded: `voided with orch score --void`,
     })
   })
 
   test('score --unvoid refuses lifecycle rows without restoring evidence debt', async () => {
     const id = insert('ok', 'hook-tree')
-    db().query("UPDATE run SET evidence_excluded='lifecycle evidence' WHERE id=?").run(id)
+    db().query("UPDATE run SET evidence_excluded='lifecycle evidence' WHERE record_id=?").run(id)
 
     await expect(score(id, [], { unvoid: true }, { note: 'restore evidence' })).rejects.toThrow(
       `run ${id} is a lifecycle row, not agent work; it cannot be unvoided. No action is needed because lifecycle rows are evidence-excluded`,
     )
-    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id)).toEqual({
+    expect(db().query('SELECT evidence_excluded FROM run WHERE record_id=?').get(id)).toEqual({
       evidence_excluded: 'lifecycle evidence',
     })
     expect(
       db()
-        .query(`SELECT COUNT(*) n FROM run r LEFT JOIN score s ON s.run_id=r.id
-          WHERE r.id=? AND ${UNSCORED_WHERE}`)
+        .query(`SELECT COUNT(*) n FROM run r LEFT JOIN score s ON s.run_record_id=r.record_id
+          WHERE r.record_id=? AND ${UNSCORED_WHERE}`)
         .get(id),
     ).toEqual({ n: 0 })
   })
 
   test('an owner score revives evidence expired while no judgment was available', async () => {
     const id = insert()
-    db().query("UPDATE run SET evidence_excluded='unjudged: owner gone' WHERE id=?").run(id)
+    db().query("UPDATE run SET evidence_excluded='unjudged: owner gone' WHERE record_id=?").run(id)
 
     await score(id, ['full', 'right'])
 
     expect(
       db()
         .query(
-          'SELECT run.evidence_excluded, score.delivery, score.quality FROM run JOIN score ON score.run_id=run.id WHERE run.id=?',
+          'SELECT run.evidence_excluded, score.delivery, score.quality FROM run JOIN score ON score.run_record_id=run.record_id WHERE run.record_id=?',
         )
         .get(id),
     ).toEqual({ evidence_excluded: null, delivery: 'full', quality: 'right' })
@@ -132,43 +132,45 @@ describe('score ruling', () => {
   test('a child void writes nothing, while a child verdict still scores the root', async () => {
     const root = insert()
     const child = insert()
-    db().query('UPDATE run SET parent_run_id=?,turn=2 WHERE id=?').run(root, child)
+    db().query('UPDATE run SET parent_run_record_id=?,turn=2 WHERE record_id=?').run(root, child)
     await expect(score(child, [], { void: true })).rejects.toThrow(
       `run ${PLATFORM_SLUG} score ${root} --void`,
     )
-    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(root)).toEqual({
+    expect(db().query('SELECT evidence_excluded FROM run WHERE record_id=?').get(root)).toEqual({
       evidence_excluded: null,
     })
     expect(db().query('SELECT COUNT(*) n FROM score').get()).toEqual({ n: 0 })
     await score(child, ['full', 'right'])
-    expect(db().query('SELECT run_id FROM score').all()).toEqual([{ run_id: root }])
+    expect(db().query('SELECT run_record_id FROM score').all()).toEqual([{ run_record_id: root }])
   })
 
   test('score refuses a harness-failed run even with force', async () => {
     const id = insert('failed')
-    db().query("UPDATE run SET failure_kind='harness' WHERE id=?").run(id)
+    db().query("UPDATE run SET failure_kind='harness' WHERE record_id=?").run(id)
     await expect(score(id, ['none'], { force: true })).rejects.toThrow(
       "failure kind 'harness' is not evidence",
     )
-    expect(db().query('SELECT * FROM score WHERE run_id=?').get(id)).toBeNull()
+    expect(db().query('SELECT * FROM score WHERE run_record_id=?').get(id)).toBeNull()
   })
 
   test("score refuses a run whose agent is '(pending)'", async () => {
     const id = insert('failed')
-    db().query("UPDATE run SET agent='(pending)' WHERE id=?").run(id)
+    db().query("UPDATE run SET agent='(pending)' WHERE record_id=?").run(id)
     await expect(score(id, ['none'])).rejects.toThrow("agent is the placeholder '(pending)'")
-    expect(db().query('SELECT * FROM score WHERE run_id=?').get(id)).toBeNull()
+    expect(db().query('SELECT * FROM score WHERE run_record_id=?').get(id)).toBeNull()
   })
 
   test("score --void accepts only a harness-failed '(pending)' run", async () => {
     const harness = insert('failed')
-    db().query("UPDATE run SET agent='(pending)',failure_kind='harness' WHERE id=?").run(harness)
+    db()
+      .query("UPDATE run SET agent='(pending)',failure_kind='harness' WHERE record_id=?")
+      .run(harness)
     await score(harness, ['none'], { void: true })
-    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(harness)).toEqual({
+    expect(db().query('SELECT evidence_excluded FROM run WHERE record_id=?').get(harness)).toEqual({
       evidence_excluded: `voided with orch score --void`,
     })
     const other = insert('failed')
-    db().query("UPDATE run SET agent='(pending)',failure_kind='other' WHERE id=?").run(other)
+    db().query("UPDATE run SET agent='(pending)',failure_kind='other' WHERE record_id=?").run(other)
     await expect(score(other, ['none'], { void: true })).rejects.toThrow(
       "agent is the placeholder '(pending)'",
     )
@@ -176,13 +178,13 @@ describe('score ruling', () => {
 
   test(`only a live ${PLATFORM_SLUG} dashboard start capability lets the dashboard scorer cross ownership`, async () => {
     const id = insert()
-    db().query('UPDATE run SET session_id=? WHERE id=?').run('owner-session', id)
+    db().query('UPDATE run SET session_id=? WHERE record_id=?').run('owner-session', id)
     process.env.CLAUDE_CODE_SESSION_ID = 'foreign-session'
     await expect(score(id, ['full', 'right'], { scorer: 'forged-dashboard' })).rejects.toThrow(
       'another session',
     )
     await score(id, ['full', 'right'], { scorer: 'hub-dashboard' }, { dashboardAuthorized: true })
-    expect(db().query('SELECT scored_by FROM score WHERE run_id=?').get(id)).toEqual({
+    expect(db().query('SELECT scored_by FROM score WHERE run_record_id=?').get(id)).toEqual({
       scored_by: 'hub-dashboard',
     })
     await expect(
@@ -192,14 +194,14 @@ describe('score ruling', () => {
 
   test('bridge-only --force scores an unowned run without adopting', async () => {
     const id = insert()
-    db().query('UPDATE run SET session_id=NULL WHERE id=?').run(id)
+    db().query('UPDATE run SET session_id=NULL WHERE record_id=?').run(id)
     delete process.env.CLAUDE_CODE_SESSION_ID
     process.env.CLAUDE_CODE_BRIDGE_SESSION_ID = 'shared-bridge'
     await score(id, ['full', 'right'], { force: true }, { auditReason: '--force' })
-    expect(db().query('SELECT session_id FROM run WHERE id=?').get(id)).toEqual({
+    expect(db().query('SELECT session_id FROM run WHERE record_id=?').get(id)).toEqual({
       session_id: null,
     })
-    expect(db().query('SELECT delivery,quality FROM score WHERE run_id=?').get(id)).toEqual({
+    expect(db().query('SELECT delivery,quality FROM score WHERE run_record_id=?').get(id)).toEqual({
       delivery: 'full',
       quality: 'right',
     })
@@ -207,16 +209,16 @@ describe('score ruling', () => {
 
   test('the first score adopts an unowned root and refuses foreign rescore and void', async () => {
     const id = insert()
-    db().query('UPDATE run SET session_id=NULL WHERE id=?').run(id)
+    db().query('UPDATE run SET session_id=NULL WHERE record_id=?').run(id)
     process.env.CLAUDE_CODE_SESSION_ID = 'session-A'
     await score(id, ['full', 'right'])
-    expect(db().query('SELECT session_id FROM run WHERE id=?').get(id)).toEqual({
+    expect(db().query('SELECT session_id FROM run WHERE record_id=?').get(id)).toEqual({
       session_id: 'session-A',
     })
     process.env.CLAUDE_CODE_SESSION_ID = 'session-B'
     await expect(score(id, ['partial', 'mixed'])).rejects.toThrow('another session')
     await expect(score(id, [], { void: true })).rejects.toThrow('owned by session session-A')
-    expect(db().query('SELECT delivery,quality FROM score WHERE run_id=?').get(id)).toEqual({
+    expect(db().query('SELECT delivery,quality FROM score WHERE run_record_id=?').get(id)).toEqual({
       delivery: 'full',
       quality: 'right',
     })
@@ -234,18 +236,20 @@ describe('score ruling', () => {
 
     await score(id, [], { void: true }, { auditReason: 'operator cleanup' })
 
-    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id)).toEqual({
+    expect(db().query('SELECT evidence_excluded FROM run WHERE record_id=?').get(id)).toEqual({
       evidence_excluded: `voided with orch score --void`,
     })
     expect(
       db()
-        .query("SELECT action,reason FROM run_mutation_audit WHERE run_id=? AND action='void'")
+        .query(
+          "SELECT action,reason FROM run_mutation_audit WHERE run_record_id=? AND action='void'",
+        )
         .get(id),
     ).toEqual({
       action: 'void',
       reason: 'adopted from gone owner gone-owner by adopting-session; operator cleanup',
     })
-    expect(db().query('SELECT session_id FROM run WHERE id=?').get(id)).toEqual({
+    expect(db().query('SELECT session_id FROM run WHERE record_id=?').get(id)).toEqual({
       session_id: 'gone-owner',
     })
   })
@@ -260,14 +264,16 @@ describe('score ruling', () => {
         overlap: 'unique',
       }),
     ).rejects.toThrow('not a findings-producing lens')
-    expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
+    expect(db().query('SELECT id FROM score WHERE run_record_id=?').get(id)).toBeNull()
   })
 
   test('re-scoring keeps the old note and confirms every latest axis', async () => {
     const id = insert()
     await score(id, ['full', 'right'], {}, { note: 'first note' })
     await score(id, ['partial', 'mixed'], {}, { note: 'second note' })
-    const row = db().query('SELECT delivery,quality,note FROM score WHERE run_id=?').get(id) as {
+    const row = db()
+      .query('SELECT delivery,quality,note FROM score WHERE run_record_id=?')
+      .get(id) as {
       delivery: string
       quality: string
       note: string
@@ -280,34 +286,38 @@ describe('score ruling', () => {
   test('scoring same-tree roots offers a pair and --worse-than records the inverse duel', async () => {
     const a = insert()
     const b = insert()
-    db().query("UPDATE run SET spec_sha='same',input_tree='tree' WHERE id IN (?,?)").run(a, b)
+    db()
+      .query("UPDATE run SET spec_sha='same',input_tree='tree' WHERE record_id IN (?,?)")
+      .run(a, b)
     seedScore(a, 'full', 'right')
-    expect(pairPartners(b, 'orch-test-session').map((p) => p.id)).toEqual([a])
+    expect(pairPartners(b, 'orch-test-session').map((p) => p.record_id)).toEqual([a])
     await score(b, ['full', 'right'], { 'worse-than': String(a) })
     expect(
       db()
         .query(
-          'SELECT winner_run_id,loser_run_id FROM duel WHERE winner_run_id=? AND loser_run_id=?',
+          'SELECT winner_run_record_id,loser_run_record_id FROM duel WHERE winner_run_record_id=? AND loser_run_record_id=?',
         )
         .get(a, b),
-    ).toEqual({ winner_run_id: a, loser_run_id: b })
+    ).toEqual({ winner_run_record_id: a, loser_run_record_id: b })
   })
 
   test('--same-as marks a scored pair compared without adding a duel', async () => {
     const a = insert()
     const b = insert()
-    db().query("UPDATE run SET spec_sha='same',input_tree='tree' WHERE id IN (?,?)").run(a, b)
+    db()
+      .query("UPDATE run SET spec_sha='same',input_tree='tree' WHERE record_id IN (?,?)")
+      .run(a, b)
     seedScore(a, 'full', 'right')
     await score(b, ['full', 'right'], { 'same-as': String(a) })
     expect(
       db()
         .query(
-          'SELECT COUNT(*) n FROM duel WHERE (winner_run_id=? AND loser_run_id=?) OR (winner_run_id=? AND loser_run_id=?)',
+          'SELECT COUNT(*) n FROM duel WHERE (winner_run_record_id=? AND loser_run_record_id=?) OR (winner_run_record_id=? AND loser_run_record_id=?)',
         )
         .get(a, b, b, a),
     ).toEqual({ n: 0 })
-    expect(db().query('SELECT run_a_id,run_b_id FROM compared_pair').all()).toEqual([
-      { run_a_id: a, run_b_id: b },
+    expect(db().query('SELECT run_a_record_id,run_b_record_id FROM compared_pair').all()).toEqual([
+      { run_a_record_id: a, run_b_record_id: b },
     ])
   })
 
@@ -315,17 +325,19 @@ describe('score ruling', () => {
     const a = insert()
     const b = insert()
     db()
-      .query("UPDATE run SET prompt_sha='same',spec_sha='same',input_tree=NULL WHERE id IN (?,?)")
+      .query(
+        "UPDATE run SET prompt_sha='same',spec_sha='same',input_tree=NULL WHERE record_id IN (?,?)",
+      )
       .run(a, b)
     seedScore(a, 'full', 'right')
-    expect(pairPartners(b, 'orch-test-session').map((p) => p.id)).toEqual([a])
+    expect(pairPartners(b, 'orch-test-session').map((p) => p.record_id)).toEqual([a])
   })
 
   test('score --void without a new verdict keeps the existing score', async () => {
     const id = insert()
     await score(id, ['full', 'right'])
     await score(id, [], { void: true })
-    expect(db().query('SELECT delivery,quality FROM score WHERE run_id=?').get(id)).toEqual({
+    expect(db().query('SELECT delivery,quality FROM score WHERE run_record_id=?').get(id)).toEqual({
       delivery: 'full',
       quality: 'right',
     })
@@ -334,12 +346,12 @@ describe('score ruling', () => {
   test('score --blocked-by-tree refuses a scored root without changing its verdict or exclusion', async () => {
     const root = insert()
     const child = insert()
-    db().query('UPDATE run SET parent_run_id=?,turn=2 WHERE id=?').run(root, child)
+    db().query('UPDATE run SET parent_run_record_id=?,turn=2 WHERE record_id=?').run(root, child)
     await score(root, ['full', 'right'])
     const before = db()
       .query(
         `SELECT score.delivery, score.quality, run.evidence_excluded
-           FROM run JOIN score ON score.run_id=run.id WHERE run.id=?`,
+           FROM run JOIN score ON score.run_record_id=run.record_id WHERE run.record_id=?`,
       )
       .get(root)
 
@@ -352,7 +364,7 @@ describe('score ruling', () => {
       db()
         .query(
           `SELECT score.delivery, score.quality, run.evidence_excluded
-             FROM run JOIN score ON score.run_id=run.id WHERE run.id=?`,
+             FROM run JOIN score ON score.run_record_id=run.record_id WHERE run.record_id=?`,
         )
         .get(root),
     ).toEqual(before)
@@ -363,8 +375,8 @@ describe('score ruling', () => {
     await score(id, ['full', 'right'], {}, { note: 'first' })
     await score(id, ['partial', 'mixed'], {}, { note: 'second' })
     const stored = db()
-      .query<{ delivery: string; quality: string; note: string }, [number]>(
-        'SELECT delivery, quality, note FROM score WHERE run_id=?',
+      .query<{ delivery: string; quality: string; note: string }, [string]>(
+        'SELECT delivery, quality, note FROM score WHERE run_record_id=?',
       )
       .get(id)
     expect(stored).toMatchObject({ delivery: 'partial', quality: 'mixed' })
@@ -373,7 +385,7 @@ describe('score ruling', () => {
     expect(db().query<{ n: number }, []>('SELECT count(*) AS n FROM score').get()!.n).toBe(1)
     expect(
       db()
-        .query<{ record_id: string }, [number]>('SELECT record_id FROM score WHERE run_id=?')
+        .query<{ record_id: string }, [string]>('SELECT record_id FROM score WHERE run_record_id=?')
         .get(id)?.record_id,
     ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
     const outbox = db()
@@ -392,8 +404,8 @@ describe('score ruling', () => {
   test('no pair offer across different spec_sha', async () => {
     const a = insert()
     const b = insert()
-    db().query("UPDATE run SET input_tree='tree',spec_sha='one' WHERE id=?").run(a)
-    db().query("UPDATE run SET input_tree='tree',spec_sha='two' WHERE id=?").run(b)
+    db().query("UPDATE run SET input_tree='tree',spec_sha='one' WHERE record_id=?").run(a)
+    db().query("UPDATE run SET input_tree='tree',spec_sha='two' WHERE record_id=?").run(b)
     seedScore(a, 'full', 'right')
     expect(pairPartners(b, 'orch-test-session')).toEqual([])
   })
@@ -401,8 +413,8 @@ describe('score ruling', () => {
   test('a scored probe partner is excluded from score, pending, and Stop-hook pair offers', async () => {
     const a = insert()
     const b = insert()
-    db().query("UPDATE run SET input_tree='tree',spec_sha='same',probe=1 WHERE id=?").run(a)
-    db().query("UPDATE run SET input_tree='tree',spec_sha='same' WHERE id=?").run(b)
+    db().query("UPDATE run SET input_tree='tree',spec_sha='same',probe=1 WHERE record_id=?").run(a)
+    db().query("UPDATE run SET input_tree='tree',spec_sha='same' WHERE record_id=?").run(b)
     seedScore(a, 'full', 'right')
     expect(pairPartners(b, 'orch-test-session')).toEqual([])
   })
@@ -412,10 +424,10 @@ describe('score ruling', () => {
     const b = insert()
     db()
       .query(
-        "UPDATE run SET input_tree='tree',spec_sha='same',evidence_excluded='operator void' WHERE id=?",
+        "UPDATE run SET input_tree='tree',spec_sha='same',evidence_excluded='operator void' WHERE record_id=?",
       )
       .run(a)
-    db().query("UPDATE run SET input_tree='tree',spec_sha='same' WHERE id=?").run(b)
+    db().query("UPDATE run SET input_tree='tree',spec_sha='same' WHERE record_id=?").run(b)
     seedScore(a, 'full', 'right')
     expect(pairPartners(b, 'orch-test-session')).toEqual([])
   })
@@ -435,7 +447,7 @@ describe('judge ruling', () => {
     const output = trackResidue(join(dir, `graded-${id}.json`))
     writeFileSync(output, JSON.stringify(reviewReply(1)))
     db()
-      .query('UPDATE run SET lens=?,model=?,output_path=? WHERE id=?')
+      .query('UPDATE run SET lens=?,model=?,output_path=? WHERE record_id=?')
       .run('correctness', 'm', output, id)
     await score(id, ['full', 'right'], {
       reproduced: 'all',
@@ -444,7 +456,7 @@ describe('judge ruling', () => {
       overlap: 'alone',
     })
     expect(
-      db().query('SELECT delivery,quality,fidelity FROM score WHERE run_id=?').get(id),
+      db().query('SELECT delivery,quality,fidelity FROM score WHERE run_record_id=?').get(id),
     ).toEqual({ delivery: 'full', quality: 'right', fidelity: null })
   })
 
@@ -453,15 +465,15 @@ describe('judge ruling', () => {
     const output = trackResidue(join(dir, `ungraded-${id}.json`))
     writeFileSync(output, JSON.stringify(reviewReply(1)))
     db()
-      .query('UPDATE run SET lens=?,model=?,output_path=? WHERE id=?')
+      .query('UPDATE run SET lens=?,model=?,output_path=? WHERE record_id=?')
       .run('safety', 'm', output, id)
     await expect(score(id, ['full', 'right'])).rejects.toThrow(/reproduced/)
-    expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
+    expect(db().query('SELECT id FROM score WHERE run_record_id=?').get(id)).toBeNull()
   })
 
   test('lens scoring updates an already-recorded review row instead of creating another review', async () => {
     const id = insert('ok', 'review-lens')
-    db().query('UPDATE run SET lens=?,model=? WHERE id=?').run('existing', 'm', id)
+    db().query('UPDATE run SET lens=?,model=? WHERE record_id=?').run('existing', 'm', id)
     const reviewId = recordReview(id, reviewReply(1), db())
     const before = (db().query('SELECT COUNT(*) n FROM review').get() as { n: number }).n
     await score(id, ['partial', 'mixed'], {
@@ -472,7 +484,7 @@ describe('judge ruling', () => {
     })
     expect((db().query('SELECT COUNT(*) n FROM review').get() as { n: number }).n).toBe(before)
     expect(
-      db().query('SELECT review_id,reproduced FROM review_lens WHERE run_id=?').get(id),
+      db().query('SELECT review_id,reproduced FROM review_lens WHERE run_record_id=?').get(id),
     ).toEqual({ review_id: reviewId, reproduced: 'some' })
   })
 
@@ -481,7 +493,7 @@ describe('judge ruling', () => {
     const output = trackResidue(join(dir, `voided-graded-${id}.json`))
     writeFileSync(output, JSON.stringify(reviewReply(1)))
     db()
-      .query('UPDATE run SET lens=?,model=?,output_path=? WHERE id=?')
+      .query('UPDATE run SET lens=?,model=?,output_path=? WHERE record_id=?')
       .run('correctness', 'm', output, id)
     await score(id, ['full', 'right'], {
       reproduced: 'all',
@@ -534,27 +546,27 @@ describe('judge ruling', () => {
     ).toBeNull()
     expect(
       db()
-        .query('SELECT reproduced,coverage,limits,overlap FROM review_lens WHERE run_id=?')
+        .query('SELECT reproduced,coverage,limits,overlap FROM review_lens WHERE run_record_id=?')
         .get(id),
     ).toEqual({ reproduced: 'all', coverage: 'adequate', limits: 'absent', overlap: 'alone' })
   })
 
   test('an empty lens defaults reproduced and overlap while delivery none captures nothing', async () => {
     const failed = insert('failed', 'safety')
-    db().query("UPDATE run SET failure_kind='other' WHERE id=?").run(failed)
+    db().query("UPDATE run SET failure_kind='other' WHERE record_id=?").run(failed)
     await score(failed, ['none'])
-    expect(db().query('SELECT id FROM review_lens WHERE run_id=?').get(failed)).toBeNull()
+    expect(db().query('SELECT id FROM review_lens WHERE run_record_id=?').get(failed)).toBeNull()
   })
 
   test('score refuses an unevidenced clean lens without creating score or review rows', async () => {
     const id = insert('ok', 'review-lens')
     db()
-      .query("UPDATE run SET failure_kind='unevidenced',lens='empty',model='m' WHERE id=?")
+      .query("UPDATE run SET failure_kind='unevidenced',lens='empty',model='m' WHERE record_id=?")
       .run(id)
     await expect(
       score(id, ['full', 'right'], { coverage: 'empty', limits: 'named' }),
     ).rejects.toThrow('unevidenced review')
-    expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
+    expect(db().query('SELECT id FROM score WHERE run_record_id=?').get(id)).toBeNull()
   })
 
   test('duplicate singleton review grades are refused without recording a score or review', async () => {
@@ -562,7 +574,7 @@ describe('judge ruling', () => {
     const output = trackResidue(join(dir, `duplicate-${id}.json`))
     writeFileSync(output, JSON.stringify(reviewReply(1)))
     db()
-      .query('UPDATE run SET lens=?,model=?,output_path=? WHERE id=?')
+      .query('UPDATE run SET lens=?,model=?,output_path=? WHERE record_id=?')
       .run('duplicate', 'm', output, id)
     await expect(
       score(id, ['full', 'right'], {
@@ -580,7 +592,7 @@ describe('judge ruling', () => {
     for (const run of [partner, id])
       db()
         .query(
-          "UPDATE run SET lens='correctness',model='m',spec_sha='same',input_tree='tree' WHERE id=?",
+          "UPDATE run SET lens='correctness',model='m',spec_sha='same',input_tree='tree' WHERE record_id=?",
         )
         .run(run)
     recordReview(id, reviewReply(2, 'high'), db())
@@ -596,7 +608,7 @@ describe('judge ruling', () => {
     expect(
       db()
         .query(
-          'SELECT completed_at FROM review WHERE id=(SELECT review_id FROM review_lens WHERE run_id=?)',
+          'SELECT completed_at FROM review WHERE id=(SELECT review_id FROM review_lens WHERE run_record_id=?)',
         )
         .get(id),
     ).toEqual({ completed_at: expect.any(String) })
@@ -604,7 +616,7 @@ describe('judge ruling', () => {
 
   test('judge records a findings verdict locally and enqueues it while the record is unreachable', async () => {
     const id = insert('ok', 'review-lens')
-    db().query("UPDATE run SET lens='correctness',model='m' WHERE id=?").run(id)
+    db().query("UPDATE run SET lens='correctness',model='m' WHERE record_id=?").run(id)
     const reviewId = recordReview(id, reviewReply(2, 'high'), db())
     const unavailable = createMemoryRecordApiClient()
     installRecordApiClient({
@@ -622,13 +634,13 @@ describe('judge ruling', () => {
       finding: ['1=accepted:high', '2=modified:medium'],
     })
 
-    expect(db().query('SELECT delivery,quality FROM score WHERE run_id=?').get(id)).toEqual({
+    expect(db().query('SELECT delivery,quality FROM score WHERE run_record_id=?').get(id)).toEqual({
       delivery: 'full',
       quality: 'right',
     })
     expect(
       db()
-        .query('SELECT reproduced,coverage,limits,overlap FROM review_lens WHERE run_id=?')
+        .query('SELECT reproduced,coverage,limits,overlap FROM review_lens WHERE run_record_id=?')
         .get(id),
     ).toEqual({ reproduced: 'all', coverage: 'adequate', limits: 'absent', overlap: 'alone' })
     expect(
@@ -663,7 +675,7 @@ describe('judge ruling', () => {
     const output = trackResidue(join(dir, `wiped-findings-${id}.json`))
     writeFileSync(output, JSON.stringify(reviewReply(2, 'high')))
     db()
-      .query('UPDATE run SET lens=?,model=?,output_path=? WHERE id=?')
+      .query('UPDATE run SET lens=?,model=?,output_path=? WHERE record_id=?')
       .run('correctness', 'm', output, id)
     const reviewId = recordReview(id, reviewReply(2, 'high'), db())
     db().query('DELETE FROM review_finding WHERE review_id=?').run(reviewId)
@@ -688,7 +700,7 @@ describe('judge ruling', () => {
       }),
     ).rejects.toThrow(integrity)
     expect(() => completeReview(reviewId, db())).toThrow(integrity)
-    expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
+    expect(db().query('SELECT id FROM score WHERE run_record_id=?').get(id)).toBeNull()
     expect(db().query('SELECT completed_at FROM review WHERE id=?').get(reviewId)).toEqual({
       completed_at: null,
     })
@@ -696,7 +708,7 @@ describe('judge ruling', () => {
 
   test('judge rolls every close-out write back when a finding flag fails during the transaction', async () => {
     const id = insert('ok', 'review-lens')
-    db().query("UPDATE run SET lens='correctness',model='m' WHERE id=?").run(id)
+    db().query("UPDATE run SET lens='correctness',model='m' WHERE record_id=?").run(id)
     recordReview(id, reviewReply(1), db())
     await expect(
       judge(id, ['full', 'right'], {
@@ -707,14 +719,15 @@ describe('judge ruling', () => {
         finding: ['2=accepted:high'],
       }),
     ).rejects.toThrow('has no finding 2')
-    expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
+    expect(db().query('SELECT id FROM score WHERE run_record_id=?').get(id)).toBeNull()
   })
 
   test('score and judge read notes from files and reject shell-fragment notes', async () => {
     const scored = insert()
     await score(scored, ['full', 'right'], {}, { note: 'long note\nwith a second line' })
     expect(
-      (db().query('SELECT note FROM score WHERE run_id=?').get(scored) as { note: string }).note,
+      (db().query('SELECT note FROM score WHERE run_record_id=?').get(scored) as { note: string })
+        .note,
     ).toContain('second line')
     const judged = insert('ok', 'implement')
     await judge(
@@ -724,7 +737,8 @@ describe('judge ruling', () => {
       { note: 'long note\nwith a second line' },
     )
     expect(
-      (db().query('SELECT note FROM score WHERE run_id=?').get(judged) as { note: string }).note,
+      (db().query('SELECT note FROM score WHERE run_record_id=?').get(judged) as { note: string })
+        .note,
     ).toContain('second line')
   })
 
@@ -732,33 +746,35 @@ describe('judge ruling', () => {
     const a = insert('ok', 'review-lens')
     const b = insert('ok', 'review-lens')
     for (const id of [a, b])
-      db().query("UPDATE run SET lens='correctness',model='m',spec_sha='same' WHERE id=?").run(id)
+      db()
+        .query("UPDATE run SET lens='correctness',model='m',spec_sha='same' WHERE record_id=?")
+        .run(id)
     const reviewA = recordReview(a, reviewReply(1), db())
     const reviewB = recordReview(b, reviewReply(1), db())
     db()
-      .query("UPDATE review SET patch_id='patch',path_set='[\"x.ts\"]' WHERE id IN (?,?)")
+      .query("UPDATE review SET patch_id='patch',path_set='[\"x.ts\"]' WHERE record_id IN (?,?)")
       .run(reviewA, reviewB)
     seedScore(a, 'full', 'right')
-    expect(pairPartners(b, 'orch-test-session').map((p) => p.id)).toEqual([a])
+    expect(pairPartners(b, 'orch-test-session').map((p) => p.record_id)).toEqual([a])
   })
 
   test('judge closes a writer score with fidelity', async () => {
     const id = insert('ok', 'implement')
     await judge(id, ['full', 'right', 'faithful'])
     expect(
-      db().query('SELECT delivery,quality,fidelity FROM score WHERE run_id=?').get(id),
+      db().query('SELECT delivery,quality,fidelity FROM score WHERE run_record_id=?').get(id),
     ).toEqual({ delivery: 'full', quality: 'right', fidelity: 'faithful' })
   })
 
   test('judge lists every missing writer axis in one refusal', async () => {
     const id = insert('ok', 'implement')
     await expect(judge(id, [])).rejects.toThrow(/<none\|partial\|full>[\s\S]*<wrong\|mixed\|right>/)
-    expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
+    expect(db().query('SELECT id FROM score WHERE run_record_id=?').get(id)).toBeNull()
   })
 
   test('a lens without axes and finding verdicts names every score remedy', async () => {
     const id = insert('ok', 'review-lens')
-    db().query("UPDATE run SET lens='correctness',model='m' WHERE id=?").run(id)
+    db().query("UPDATE run SET lens='correctness',model='m' WHERE record_id=?").run(id)
     recordReview(id, reviewReply(1), db())
     await expect(judge(id, [])).rejects.toThrow(
       new RegExp(
@@ -768,14 +784,14 @@ describe('judge ruling', () => {
           '--finding 1=',
       ),
     )
-    expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
+    expect(db().query('SELECT id FROM score WHERE run_record_id=?').get(id)).toBeNull()
   })
 
   test('judge none closes review debt without entering reviewer calibration', async () => {
     const id = insert('ok', 'review-lens')
-    db().query('UPDATE run SET lens=?,model=? WHERE id=?').run('correctness', 'm', id)
+    db().query('UPDATE run SET lens=?,model=? WHERE record_id=?').run('correctness', 'm', id)
     const reviewId = recordReview(id, reviewReply(1), db())
-    db().query("UPDATE run SET status='failed' WHERE id=?").run(id)
+    db().query("UPDATE run SET status='failed' WHERE record_id=?").run(id)
     await judge(id, ['none'])
     expect(db().query('SELECT completed_at FROM review WHERE id=?').get(reviewId)).toEqual({
       completed_at: expect.any(String),
@@ -791,18 +807,22 @@ describe('voided output evidence', () => {
     const id = insert('asking', 'review-lens')
     db()
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+        `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
       )
       .run(id, '2026-09-29', 'Which behavior is correct?')
 
     await score(id, [], { void: true })
 
-    expect(db().query('SELECT status,evidence_excluded FROM run WHERE id=?').get(id)).toEqual({
+    expect(
+      db().query('SELECT status,evidence_excluded FROM run WHERE record_id=?').get(id),
+    ).toEqual({
       status: 'asking',
       evidence_excluded: `voided with orch score --void`,
     })
     expect(
-      db().query('SELECT answered_at,closed_at,close_reason FROM question WHERE run_id=?').get(id),
+      db()
+        .query('SELECT answered_at,closed_at,close_reason FROM question WHERE run_record_id=?')
+        .get(id),
     ).toEqual({ answered_at: null, closed_at: null, close_reason: null })
   })
 
@@ -816,26 +836,32 @@ describe('voided output evidence', () => {
       parent: root,
     })
     seedScore(root, 'full', 'right')
-    db().query('UPDATE run SET evidence_excluded=? WHERE id=?').run(VOID_EXCLUSION_REASON, root)
+    db()
+      .query('UPDATE run SET evidence_excluded=? WHERE record_id=?')
+      .run(VOID_EXCLUSION_REASON, root)
 
     await score(turn, [], { unvoid: true }, { note: 'void targeted the wrong run' })
 
-    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(root)).toEqual({
+    expect(db().query('SELECT evidence_excluded FROM run WHERE record_id=?').get(root)).toEqual({
       evidence_excluded: null,
     })
-    expect(db().query('SELECT delivery,quality FROM score WHERE run_id=?').get(root)).toEqual({
+    expect(
+      db().query('SELECT delivery,quality FROM score WHERE run_record_id=?').get(root),
+    ).toEqual({
       delivery: 'full',
       quality: 'right',
     })
     expect(
       db()
-        .query('SELECT action,reason FROM run_mutation_audit WHERE run_id=? ORDER BY rowid DESC')
+        .query(
+          'SELECT action,reason FROM run_mutation_audit WHERE run_record_id=? ORDER BY rowid DESC',
+        )
         .get(root),
     ).toEqual({ action: 'unvoid', reason: 'void targeted the wrong run' })
     const payload = db()
-      .query<{ payload: string }, [number]>(
+      .query<{ payload: string }, [string]>(
         `SELECT payload FROM outbox
-WHERE row_id=(SELECT record_id FROM run WHERE id=?) ORDER BY id DESC`,
+WHERE row_id=(SELECT record_id FROM run WHERE record_id=?) ORDER BY id DESC`,
       )
       .get(root)
     expect(JSON.parse(payload!.payload)).toMatchObject({
@@ -846,12 +872,14 @@ WHERE row_id=(SELECT record_id FROM run WHERE id=?) ORDER BY id DESC`,
 
   test('score --unvoid requires a note and refuses other exclusions and verdicts', async () => {
     const id = insert('ok', 'review-lens')
-    db().query('UPDATE run SET evidence_excluded=? WHERE id=?').run(VOID_EXCLUSION_REASON, id)
+    db()
+      .query('UPDATE run SET evidence_excluded=? WHERE record_id=?')
+      .run(VOID_EXCLUSION_REASON, id)
     await expect(score(id, [], { unvoid: true })).rejects.toThrow('--note is required')
     await expect(
       score(id, ['full', 'right'], { unvoid: true }, { note: 'mistake' }),
     ).rejects.toThrow('--unvoid cannot be combined with a verdict')
-    db().query("UPDATE run SET evidence_excluded='unjudged: owner gone' WHERE id=?").run(id)
+    db().query("UPDATE run SET evidence_excluded='unjudged: owner gone' WHERE record_id=?").run(id)
     await expect(score(id, [], { unvoid: true }, { note: 'mistake' })).rejects.toThrow(
       "actual exclusion is 'unjudged: owner gone'",
     )
@@ -867,10 +895,10 @@ WHERE row_id=(SELECT record_id FROM run WHERE id=?) ORDER BY id DESC`,
       { 'blocked-by-tree': true },
       { note: 'the seeded database could not start' },
     )
-    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(blocked)).toEqual({
+    expect(db().query('SELECT evidence_excluded FROM run WHERE record_id=?').get(blocked)).toEqual({
       evidence_excluded: 'blocked by its tree: the seeded database could not start',
     })
-    expect(db().query('SELECT * FROM score WHERE run_id=?').get(blocked)).toBeNull()
+    expect(db().query('SELECT * FROM score WHERE run_record_id=?').get(blocked)).toBeNull()
     expect(candidates('understand').find((row) => row.agent === 'codex')).toMatchObject({
       scored: 1,
       evidence: 1,
@@ -883,7 +911,7 @@ WHERE row_id=(SELECT record_id FROM run WHERE id=?) ORDER BY id DESC`,
     const id = insert('ok', 'review-lens')
     db()
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+        `INSERT INTO question (record_id,run_record_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
       )
       .run(id, '2026-09-29', 'still relevant?')
     const partner = addRun({
@@ -895,26 +923,26 @@ WHERE row_id=(SELECT record_id FROM run WHERE id=?) ORDER BY id DESC`,
     })
     db()
       .query(
-        "UPDATE run SET output_path=?,input_tree='voided-tree',spec_sha='voided-spec' WHERE id=?",
+        "UPDATE run SET output_path=?,input_tree='voided-tree',spec_sha='voided-spec' WHERE record_id=?",
       )
       .run(outputPath, id)
     seedScore(partner, 'full', 'right')
     await score(id, ['none'], { void: true, 'better-than': String(partner) })
     expect(readFileSync(outputPath, 'utf8')).toBe('the retained answer')
-    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id)).toEqual({
+    expect(db().query('SELECT evidence_excluded FROM run WHERE record_id=?').get(id)).toEqual({
       evidence_excluded: `voided with orch score --void`,
     })
-    expect(db().query('SELECT close_reason FROM question WHERE run_id=?').get(id)).toEqual({
+    expect(db().query('SELECT close_reason FROM question WHERE run_record_id=?').get(id)).toEqual({
       close_reason: 'chain-voided',
     })
-    expect(db().query('SELECT delivery,quality FROM score WHERE run_id=?').get(id)).toEqual({
+    expect(db().query('SELECT delivery,quality FROM score WHERE run_record_id=?').get(id)).toEqual({
       delivery: 'none',
       quality: null,
     })
     const outbox = db()
-      .query<{ kind: string; payload: string }, [number]>(
+      .query<{ kind: string; payload: string }, [string]>(
         `SELECT kind,payload FROM outbox
-WHERE row_id=(SELECT record_id FROM run WHERE id=?) ORDER BY id`,
+WHERE row_id=(SELECT record_id FROM run WHERE record_id=?) ORDER BY id`,
       )
       .all(id)
     expect(outbox.map((row) => row.kind)).toEqual(['score', 'run'])
@@ -922,31 +950,37 @@ WHERE row_id=(SELECT record_id FROM run WHERE id=?) ORDER BY id`,
       evidenceExcluded: `voided with orch score --void`,
     })
     expect(
-      db().query('SELECT COUNT(*) n FROM duel WHERE winner_run_id=? OR loser_run_id=?').get(id, id),
+      db()
+        .query('SELECT COUNT(*) n FROM duel WHERE winner_run_record_id=? OR loser_run_record_id=?')
+        .get(id, id),
     ).toEqual({ n: 0 })
     expect(
-      db().query('SELECT action,actor_session FROM run_mutation_audit WHERE run_id=?').get(id),
+      db()
+        .query('SELECT action,actor_session FROM run_mutation_audit WHERE run_record_id=?')
+        .get(id),
     ).toEqual({ action: 'void', actor_session: 'orch-test-session' })
   })
 
   test('score --void rolls back the exclusion when recording the verdict fails', async () => {
     const id = insert('ok', 'understand')
     db().exec(
-      `CREATE TRIGGER reject_void_score BEFORE INSERT ON score WHEN NEW.run_id=${id} BEGIN SELECT RAISE(ABORT,'fixture score refusal'); END`,
+      `CREATE TRIGGER reject_void_score BEFORE INSERT ON score WHEN NEW.run_record_id='${id}' BEGIN SELECT RAISE(ABORT,'fixture score refusal'); END`,
     )
     try {
       await expect(score(id, ['none'], { void: true })).rejects.toThrow('fixture score refusal')
     } finally {
       db().exec('DROP TRIGGER reject_void_score')
     }
-    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id)).toEqual({
+    expect(db().query('SELECT evidence_excluded FROM run WHERE record_id=?').get(id)).toEqual({
       evidence_excluded: null,
     })
-    expect(db().query('SELECT COUNT(*) n FROM score WHERE run_id=?').get(id)).toEqual({ n: 0 })
+    expect(db().query('SELECT COUNT(*) n FROM score WHERE run_record_id=?').get(id)).toEqual({
+      n: 0,
+    })
     expect(
       db()
-        .query<{ n: number }, [number]>(
-          'SELECT COUNT(*) n FROM outbox WHERE row_id=(SELECT record_id FROM run WHERE id=?)',
+        .query<{ n: number }, [string]>(
+          'SELECT COUNT(*) n FROM outbox WHERE row_id=(SELECT record_id FROM run WHERE record_id=?)',
         )
         .get(id),
     ).toEqual({ n: 0 })
@@ -954,7 +988,7 @@ WHERE row_id=(SELECT record_id FROM run WHERE id=?) ORDER BY id`,
 
   test('score --void says why a NOT_EVIDENCE failure verdict was not recorded', async () => {
     const id = insert('failed', 'understand')
-    db().query("UPDATE run SET failure_kind='quota' WHERE id=?").run(id)
+    db().query("UPDATE run SET failure_kind='quota' WHERE record_id=?").run(id)
     const lines: string[] = []
     await scoreRun(
       id,
@@ -971,28 +1005,30 @@ WHERE row_id=(SELECT record_id FROM run WHERE id=?) ORDER BY id`,
     expect(lines.join('\n')).toContain(
       "verdict was not recorded: failure kind 'quota' is not evidence",
     )
-    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id)).toEqual({
+    expect(db().query('SELECT evidence_excluded FROM run WHERE record_id=?').get(id)).toEqual({
       evidence_excluded: `voided with orch score --void`,
     })
-    expect(db().query('SELECT COUNT(*) n FROM score WHERE run_id=?').get(id)).toEqual({ n: 0 })
+    expect(db().query('SELECT COUNT(*) n FROM score WHERE run_record_id=?').get(id)).toEqual({
+      n: 0,
+    })
   })
 
   test('score --void refuses a foreign owner and permits an attributed unowned run', async () => {
     const owned = insert('ok', 'review-lens')
-    db().query('UPDATE run SET session_id=? WHERE id=?').run('owner-session', owned)
+    db().query('UPDATE run SET session_id=? WHERE record_id=?').run('owner-session', owned)
     process.env.CLAUDE_CODE_SESSION_ID = 'foreign-session'
     await expect(score(owned, [], { void: true })).rejects.toThrow('owner-session')
-    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(owned)).toEqual({
+    expect(db().query('SELECT evidence_excluded FROM run WHERE record_id=?').get(owned)).toEqual({
       evidence_excluded: null,
     })
     const unowned = insert('ok', 'review-lens')
-    db().query('UPDATE run SET session_id=NULL WHERE id=?').run(unowned)
+    db().query('UPDATE run SET session_id=NULL WHERE record_id=?').run(unowned)
     process.env.CLAUDE_CODE_SESSION_ID = 'acting-session'
     await score(unowned, [], { void: true })
     expect(
       db()
         .query(
-          'SELECT action,actor_session,reason FROM run_mutation_audit WHERE run_id=? ORDER BY rowid',
+          'SELECT action,actor_session,reason FROM run_mutation_audit WHERE run_record_id=? ORDER BY rowid',
         )
         .all(unowned),
     ).toEqual([

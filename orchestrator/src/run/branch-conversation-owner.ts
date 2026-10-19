@@ -2,8 +2,9 @@
 /** Decides whether an existing branch is already owned by another live conversation. */
 
 export type BranchConversationRow = {
-  id: number
-  parent_run_id: number | null
+  record_id: string
+  number: number
+  parent_run_record_id: string | null
   status: string
   branch: string | null
   job: string
@@ -14,7 +15,7 @@ export type BranchConversationRow = {
 export function aliveBranchConversationOwner(
   rows: readonly BranchConversationRow[],
   branch: string,
-  conversationRootId: number | null,
+  conversationRootId: string | null,
 ): BranchConversationRow | null {
   return (
     rows.find(
@@ -22,7 +23,8 @@ export function aliveBranchConversationOwner(
         row.branch === branch &&
         row.writesRepo &&
         (row.status === 'running' || row.status === 'asking') &&
-        (conversationRootId === null || (row.parent_run_id ?? row.id) !== conversationRootId),
+        (conversationRootId === null ||
+          (row.parent_run_record_id ?? row.record_id) !== conversationRootId),
     ) ?? null
   )
 }

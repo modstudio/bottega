@@ -307,7 +307,7 @@ function registerConfinement(program: Command): void {
     .allowExcessArguments(false)
     .action((runId: string | undefined, options) => {
       const flags = optionFlags(options)
-      const id = runId === undefined ? Number.NaN : resolveRunIdentifier(db(), runId)
+      const id = runId === undefined ? null : resolveRunIdentifier(db(), runId)
       const writer = flags.flag('writer')?.trim()
       const note = flags.flag('note')?.trim()
       if (!id || !writer || !note) throw new Error(CLEAR_USAGE)

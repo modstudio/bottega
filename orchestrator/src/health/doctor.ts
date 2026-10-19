@@ -256,7 +256,7 @@ export async function doctorCommand(
         `SELECT s.delivery original_delivery, c.delivery fresh_delivery,
               s.quality original_quality, c.quality fresh_quality,
               s.fidelity original_fidelity, c.fidelity fresh_fidelity
-         FROM calibration c JOIN score s ON s.run_id = c.run_id
+         FROM calibration c JOIN score s ON s.run_record_id = c.run_record_id
         WHERE c.at = ?`,
       )
       .all(latestCalibration.at) as Record<string, string | null>[]
@@ -483,14 +483,14 @@ export async function doctorCommand(
   const owners = (
     db()
       .query(
-        `SELECT r.id,COALESCE(root.repo,r.repo) repo,r.worktree,r.status,
+        `SELECT r.record_id,COALESCE(root.repo,r.repo) repo,r.worktree,r.status,
                 COALESCE(root.worktree_source,r.worktree_source) worktree_source,
                 COALESCE(root.recipe_snapshot,r.recipe_snapshot) recipe_snapshot,
                 COALESCE(root.resource_teardown,r.resource_teardown) resource_teardown
-         FROM run r LEFT JOIN run root ON root.id=r.parent_run_id`,
+         FROM run r LEFT JOIN run root ON root.record_id=r.parent_run_record_id`,
       )
       .all() as {
-      id: number
+      record_id: string
       repo: string | null
       worktree: string | null
       status: string
@@ -510,8 +510,8 @@ export async function doctorCommand(
           resolvedWorktreeTool(owner.repo ? projectByName(owner.repo) : null)?.remove,
         ),
       }),
-    retentionReason: dockerOwnerIds.has(owner.id)
-      ? terminalDockerRetentionReasonForRun(db(), owner.id)
+    retentionReason: dockerOwnerIds.has(owner.record_id)
+      ? terminalDockerRetentionReasonForRun(db(), owner.record_id)
       : null,
   }))
   const classified = classifiedDockerResources(dockerResources, owners)

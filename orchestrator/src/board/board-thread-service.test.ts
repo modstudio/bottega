@@ -83,10 +83,10 @@ test('questions are withheld from run readers and architect broadcasts reject no
   const run = db()
     .query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,turn)
-       VALUES ('${newRecordId()}',?,'codex','implement','thread-workers','sha',1,'prompt','running',1) RETURNING id`,
+       (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,turn)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','thread-workers','sha',1,'prompt','running',1) RETURNING record_id AS id`,
     )
-    .get(new Date(clock).toISOString()) as { id: number }
+    .get(new Date(clock).toISOString()) as { id: string }
   const workerQuestion = askQuestion(
     { audience: 'project:thread-workers', title: 'Architect only', body: 'Workers cannot answer.' },
     {},

@@ -25,14 +25,14 @@ import {
 /** A pending check is a plain read; only an actual claim takes the write lock. */
 const GATE_REQUEST_POLL_MS = 1000
 
-type PendingGate = { id: number; run_id: number; startedAt: string }
+type PendingGate = { id: number; run_record_id: string; startedAt: string }
 type ActiveGate = { completion: Promise<void>; cancel(reason: string): Promise<void> }
 export type GateExecutionMoment = { executionId: number; at: string }
 
-const PENDING_GATE_SQL = `SELECT id,run_id FROM gate_execution
-  WHERE run_id=? AND started_at IS NULL AND finished_at IS NULL ORDER BY id LIMIT 1`
+const PENDING_GATE_SQL = `SELECT id,run_record_id FROM gate_execution
+  WHERE run_record_id=? AND started_at IS NULL AND finished_at IS NULL ORDER BY id LIMIT 1`
 
-function claimPendingGate(runId: number): PendingGate | null {
+function claimPendingGate(runId: string): PendingGate | null {
   if (!db().query(PENDING_GATE_SQL).get(runId)) return null
   return writeTransaction(() => {
     const row = db().query(PENDING_GATE_SQL).get(runId) as Omit<PendingGate, 'startedAt'> | null
@@ -45,7 +45,7 @@ function claimPendingGate(runId: number): PendingGate | null {
   })
 }
 
-function gatePlan(runId: number): {
+function gatePlan(runId: string): {
   command: string
   worktree: string
   baseCommit: string
@@ -58,7 +58,7 @@ function gatePlan(runId: number): {
   const row = db()
     .query(
       `SELECT r.worktree,r.base_commit,p.record_id project_record_id,p.name project_name,p.settings
-       FROM run r JOIN project p ON p.record_id=r.project_record_id WHERE r.id=?`,
+       FROM run r JOIN project p ON p.record_id=r.project_record_id WHERE r.record_id=?`,
     )
     .get(runId) as {
     worktree: string | null
@@ -88,6 +88,12 @@ function gatePlan(runId: number): {
     projectId: row.project_record_id,
     projectName: row.project_name,
   }
+}
+
+function requiredMainCheckout(environment: Record<string, string>, runId: string): string {
+  const mainCheckout = environment.ORCH_MAIN_CHECKOUT
+  if (!mainCheckout) throw new Error(`run ${runId} has no recorded main checkout`)
+  return mainCheckout
 }
 
 function gitPaths(worktree: string, args: string[]): string[] {
@@ -194,7 +200,7 @@ function startGateExecution(
   completion = (async () => {
     mkdirSync(scratchDir, { recursive: true })
     const scratchPath = join(scratchDir, `gate-${request.id}.log`)
-    const artifactPath = join(runArtifactsDir(request.run_id), `gate-${request.id}.log`)
+    const artifactPath = join(runArtifactsDir(request.run_record_id), `gate-${request.id}.log`)
     const started = Date.now()
     let fd: number | null = null
     let tail = ''
@@ -209,9 +215,8 @@ function startGateExecution(
     }
     try {
       fd = createGateLog(scratchPath)
-      const plan = gatePlan(request.run_id)
-      const mainCheckout = environment.ORCH_MAIN_CHECKOUT
-      if (!mainCheckout) throw new Error(`run ${request.run_id} has no recorded main checkout`)
+      const plan = gatePlan(request.run_record_id)
+      const mainCheckout = requiredMainCheckout(environment, request.run_record_id)
       ensureMainStackStarted({
         projectId: plan.projectId,
         projectName: plan.projectName,
@@ -289,7 +294,7 @@ export type GateBroker = { close(): Promise<void> }
 
 /** Poll while the supervised worker lives; no resident service is introduced. */
 export function startGateBroker(input: {
-  runId: number
+  runId: string
   scratchDir: string
   environment: Record<string, string>
   registerActive?: (terminate: () => Promise<void>) => () => void
@@ -330,11 +335,11 @@ export function startGateBroker(input: {
         await active.completion
       }
       writeTransaction(() => {
-        db().query('UPDATE run SET gate_requests_closed=1 WHERE id=?').run(input.runId)
+        db().query('UPDATE run SET gate_requests_closed=1 WHERE record_id=?').run(input.runId)
         db()
           .query(
             `UPDATE gate_execution SET finished_at=?,exit_code=-1,timed_out=0,elapsed_ms=0,
-             cancelled_reason=? WHERE run_id=? AND finished_at IS NULL`,
+             cancelled_reason=? WHERE run_record_id=? AND finished_at IS NULL`,
           )
           .run(nowIso(), GATE_CLOSE_REASON, input.runId)
       })

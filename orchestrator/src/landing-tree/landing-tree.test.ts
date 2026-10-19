@@ -13,7 +13,7 @@ describe('landing-tree decisions', () => {
   test('keeps a clean existing landing tree without holding close-out', () => {
     expect(
       landingTreeHoldDecision(
-        { job: LANDING_TREE_JOB, treeExists: true, branch: 'DEV-1037-orch-1', runId: 1 },
+        { job: LANDING_TREE_JOB, treeExists: true, branch: 'DEV-1037-orch-1', runId: '1' },
         true,
         { held: false as const },
       ),
@@ -28,7 +28,7 @@ describe('landing-tree decisions', () => {
     const ordinary = { held: false as const }
     expect(
       landingTreeHoldDecision(
-        { job: LANDING_TREE_JOB, treeExists: true, branch: 'DEV-1037-orch-1', runId: 1 },
+        { job: LANDING_TREE_JOB, treeExists: true, branch: 'DEV-1037-orch-1', runId: '1' },
         false,
         ordinary,
       ),
@@ -43,7 +43,7 @@ describe('landing-tree decisions', () => {
     const ordinary = { held: true as const, until: null, reason: 'ordinary hold' }
     expect(
       landingTreeHoldDecision(
-        { job: 'implement', treeExists: true, branch: 'DEV-1037-orch-1', runId: 1 },
+        { job: 'implement', treeExists: true, branch: 'DEV-1037-orch-1', runId: '1' },
         true,
         ordinary,
       ),

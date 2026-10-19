@@ -7,7 +7,7 @@ test('maps only the exact active run named by a waiting question', () => {
     kind: 'question' as const,
     id: 7,
     question_record_id: '00000000-0000-4000-8000-000000000007',
-    run_id: 42,
+    run_number: 42,
     run_record_id: '00000000-0000-4000-8000-000000000042',
     project: PLATFORM_NAME.toLowerCase(),
     task_key: 'DEV-943',
@@ -24,12 +24,20 @@ test('maps only the exact active run named by a waiting question', () => {
     ...question,
     kind: 'workflow' as const,
     id: 8,
-    run_id: null,
+    run_number: null,
     run_record_id: null,
     session_id: 'session-1',
   }
   const mapped = waitingByRun(
-    [{ id: 41 }, { id: 99, root_id: 42 }, { id: 43 }],
+    [
+      { id: 41, record_id: '00000000-0000-4000-8000-000000000041' },
+      {
+        id: 99,
+        record_id: '00000000-0000-4000-8000-000000000099',
+        root_record_id: '00000000-0000-4000-8000-000000000042',
+      },
+      { id: 43, record_id: '00000000-0000-4000-8000-000000000043' },
+    ],
     [question, workflow],
   )
   expect([...mapped.keys()]).toEqual(['99'])

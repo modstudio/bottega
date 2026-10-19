@@ -44,7 +44,7 @@ export function decideWritingRetryWorkspace(input: {
 export type AtomicRetryReuseDecision = { action: 'reuse' } | { action: 'refuse'; reason: string }
 
 export type ContinuationInstruction = {
-  turnId: number
+  turnId: string
   at: string
   instructions: string
 }

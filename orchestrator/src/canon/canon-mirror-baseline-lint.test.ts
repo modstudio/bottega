@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
@@ -15,8 +15,10 @@ import { mirrorRepositoryCanon, systemCanonMirrorPort } from './canon-mirror.ts'
 function repository(): string {
   const root = mkdtempSync(join(tmpdir(), 'canon-mirror-baseline-lint-'))
   spawnFixtureGitSync(['init', '-b', 'main'], { cwd: root })
-  spawnFixtureGitSync(['config', 'user.email', 'mirror@example.test'], { cwd: root })
-  spawnFixtureGitSync(['config', 'user.name', 'Mirror Test'], { cwd: root })
+  appendFileSync(
+    join(root, '.git', 'config'),
+    '\n[user]\n\temail = mirror@example.test\n\tname = Mirror Test\n',
+  )
   writeFileSync(join(root, 'README.txt'), 'fixture\n')
   writeFileSync(join(root, 'AGENTS.md'), 'Keep 123 rules.\n\nOld managed context.\n')
   spawnFixtureGitSync(['add', '.'], { cwd: root })

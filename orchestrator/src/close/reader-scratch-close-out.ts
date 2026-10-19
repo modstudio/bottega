@@ -22,7 +22,7 @@ type ReaderCloneCloseOutPlan =
   | { action: 'ordinary' | 'remove' | 'archive' }
   | { action: 'hold'; detail: string }
 type ScratchCloseOutResult = {
-  runId: number
+  runId: string
   worktree: string
   outcome: 'held' | 'released' | 'absent'
   detail: string
@@ -130,7 +130,7 @@ function readerScratchCloseOutPlan(input: {
 }
 
 export function prepareReaderScratchCloseOut(input: {
-  runId: number
+  runId: string
   job: string
   terminal: boolean
   treeAbsent: boolean
@@ -163,12 +163,12 @@ export function prepareReaderScratchCloseOut(input: {
   return { proceed: true, archive: plan.action === 'archive' }
 }
 
-function archiveDestination(runId: number, now = new Date()): string {
+function archiveDestination(runId: string, now = new Date()): string {
   const timestamp = now.toISOString().replaceAll(':', '').replaceAll('.', '')
   return join(dirname(RUNS_DIR), 'archive', 'reader-clones', `${runId}-${timestamp}`)
 }
 
-function writeConveniencePatch(runId: number, treePath: string): void {
+function writeConveniencePatch(runId: string, treePath: string): void {
   try {
     const intent = gitResult(['add', '-N', '--', '.'], treePath)
     if (!intent.ok) return
@@ -183,7 +183,7 @@ function writeConveniencePatch(runId: number, treePath: string): void {
 }
 
 export function archiveReaderScratchForRelease(input: {
-  runId: number
+  runId: string
   treePath: string
   terminal: boolean
   planned: boolean

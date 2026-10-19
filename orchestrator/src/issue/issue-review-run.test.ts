@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { dispatchThenGatherIssueReviews, runIssueFixReviews } from './issue-review-run.ts'
 
-const gathered = (lens: string, runId: number | null) => ({
+const gathered = (lens: string, runId: string | null) => ({
   lens,
   finished: runId !== null,
   failedToRun: runId === null ? 'blocked' : null,
@@ -25,10 +25,10 @@ describe('filed issue review adapter', () => {
           if (lens === 'issue-blast-radius') {
             await Promise.resolve()
             firstClaimed = true
-            return { claim: { runId: 11, failedToRun: null }, dispatchNext: true }
+            return { claim: { runId: '11', failedToRun: null }, dispatchNext: true }
           }
           expect(firstClaimed).toBe(true)
-          return { claim: { runId: 12, failedToRun: null }, dispatchNext: true }
+          return { claim: { runId: '12', failedToRun: null }, dispatchNext: true }
         },
         blocked: () => ({ runId: null, failedToRun: 'blocked' }),
         gather: async (lens, claim) => {
@@ -65,7 +65,7 @@ describe('filed issue review adapter', () => {
       {
         dispatch: async (lens) => {
           dispatched.push(lens)
-          return { claim: { runId: 11, failedToRun: null }, dispatchNext: false }
+          return { claim: { runId: '11', failedToRun: null }, dispatchNext: false }
         },
         blocked: (_lens, blockingLens) => ({
           runId: null,
@@ -82,7 +82,7 @@ describe('filed issue review adapter', () => {
     expect(dispatched).toEqual(['issue-blast-radius'])
     expect(gathered).toEqual(['issue-blast-radius', 'correctness'])
     expect(results.map(({ lens, runId, failedToRun }) => ({ lens, runId, failedToRun }))).toEqual([
-      { lens: 'issue-blast-radius', runId: 11, failedToRun: null },
+      { lens: 'issue-blast-radius', runId: '11', failedToRun: null },
       { lens: 'correctness', runId: null, failedToRun: 'blocked-by:issue-blast-radius' },
     ])
   })
@@ -98,7 +98,7 @@ describe('filed issue review adapter', () => {
         dispatch: async (lens, distinctModels) => {
           events.push(`dispatch:${lens}:${distinctModels.join(',')}`)
           return {
-            claim: { runId: ++nextRunId, failedToRun: null },
+            claim: { runId: String(++nextRunId), failedToRun: null },
             dispatchNext: true,
           }
         },
@@ -133,7 +133,7 @@ describe('filed issue review adapter', () => {
   test('returns review-not-started when the fix has no worktree', async () => {
     const result = await runIssueFixReviews({
       issue: { key: 'DEV-42' } as never,
-      fixRun: { id: 42, worktree: null } as never,
+      fixRun: { record_id: 'run-record-id-42', number: 42, worktree: null } as never,
       target: { name: 'sample' } as never,
       branchKey: 'DEV-42',
     })
@@ -147,7 +147,7 @@ describe('filed issue review adapter', () => {
   })
 })
 
-function gatheredResult(lens: string, runId: number | null, failure: string | null) {
+function gatheredResult(lens: string, runId: string | null, failure: string | null) {
   return {
     ...gathered(lens, runId),
     failedToRun: failure,
