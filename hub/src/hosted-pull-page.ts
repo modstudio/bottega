@@ -1,4 +1,5 @@
 const HOSTED_PULL_PAGE_SIZE = 500
+export const HOSTED_PULL_BODY_BYTE_BUDGET = 4 * 1024 * 1024
 
 const FIRST_ID = '00000000-0000-0000-0000-000000000000'
 const FIRST_AT = '1970-01-01T00:00:00.000000Z'
@@ -54,7 +55,7 @@ const hostedPullCursorAt = (value: unknown) => String(value)
 
 export function hostedPullPage<
   Stream extends string,
-  Row extends { id: string; cursor_at: string },
+  Row extends { id: string; cursor_at: string; pull_more?: boolean },
 >(
   streams: readonly Stream[],
   cursor: HostedPullCursor<Stream>,
@@ -79,6 +80,9 @@ export function hostedPullPage<
     kind: 'page' as const,
     rows,
     cursor: last ? { ...cursor, at: hostedPullCursorAt(last.cursor_at), id: last.id } : cursor,
-    more: candidates.length > limit || position < streams.length - 1,
+    more:
+      candidates.length > limit ||
+      candidates.some((candidate) => candidate.pull_more === true) ||
+      position < streams.length - 1,
   }
 }
