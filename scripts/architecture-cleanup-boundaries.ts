@@ -2,7 +2,7 @@ export const cleanupBoundarySpecs = [
   {
     name: 'ship-cleanup-decision-boundary',
     file: 'orchestrator/src/ship-cleanup/ship-cleanup-decision.ts',
-    allowed: [],
+    allowed: ['../run/synthetic-lifecycle-job.ts'],
     typeOnlyAllowed: [],
     reason:
       'Keep ship cleanup selection pure and independent of filesystems, stores, commands, and processes.',

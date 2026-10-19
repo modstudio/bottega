@@ -1,9 +1,11 @@
 // concern: ship cleanup decision
 /** Selects branch-owned ephemeral run data without filesystem or database access. */
 
+import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
+
 const SHIP_CLEANUP_TERMINAL_STATUSES = new Set(['ok', 'failed', 'stale', 'stopped'])
 // Architect-owned trees, from `tree open` and `tree create`, are released by tree removal, never close-out.
-const ARCHITECT_TREE_JOBS = new Set(['landing-tree', 'hook-tree'])
+const ARCHITECT_TREE_JOBS: ReadonlySet<string> = new Set([LANDING_TREE_JOB, HOOK_TREE_JOB])
 
 export type ShipCleanupRunFact = {
   id: number
