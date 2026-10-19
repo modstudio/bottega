@@ -2,21 +2,16 @@
 /** Plans and performs the one-time null-space catalogue backfill. */
 import type { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
-import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { activeRecordSpace } from '../project-space.ts'
-import { projects } from '../project/projects.ts'
 import type { RecordApiClient, RecordRequestDestination } from './record-api-client.ts'
 import { recordApiClient } from './record-api-client.ts'
-import type { RecordIdentity } from './record-auth.ts'
 import { pullRecordCache } from './record-cache.ts'
 import type { RecordLensImportInput } from './record-lens-contract.ts'
 import type { RecordPortImportInput } from './record-port-contract.ts'
-import {
-  declaredRecordSpace,
-  noActiveRecordSpaceRefusal,
-  projectRecordDestination,
-} from './record-project-destination.ts'
+import { noActiveRecordSpaceRefusal } from './record-project-destination.ts'
+import { projectRoutesFromIdentity } from './record-project-destination-client.ts'
 import { syncRecord } from './record-sync.ts'
 import type { RecordWorkflowImportInput } from './record-workflow-contract.ts'
 
@@ -48,10 +43,6 @@ function replicatedId(spaceId: string, kind: string, sourceId: string): string {
 
 type ProjectRoutes = ReadonlyMap<string, string | null>
 
-function registeredProjects(local: Database) {
-  return [...projects(undefined, local), ...projects({ retired: true }, local)]
-}
-
 function cachedProjectRoutes(local: Database): Map<string, string | null> {
   const stored = local
     .query<{ value: string }, []>("SELECT value FROM schema_meta WHERE key='record_project_spaces'")
@@ -62,29 +53,11 @@ function cachedProjectRoutes(local: Database): Map<string, string | null> {
   } catch {
     cache = {}
   }
+  const registered = local.query('SELECT name FROM project').all() as { name: string }[]
   return new Map(
-    registeredProjects(local).flatMap((project) => {
+    registered.flatMap((project) => {
       const value = cache[project.name]
       return typeof value === 'string' || value === null ? [[project.name, value]] : []
-    }),
-  )
-}
-
-function currentProjectRoutes(
-  local: Database,
-  identity: RecordIdentity,
-  activeSpaceId: string,
-): Map<string, string | null> {
-  const memberships = parseRecordSpaceMemberships(identity.memberships)
-  return new Map(
-    registeredProjects(local).map((project) => {
-      const destination = projectRecordDestination(
-        project.name,
-        declaredRecordSpace(project.settings),
-        activeSpaceId,
-        memberships,
-      )
-      return [project.name, 'refused' in destination ? null : destination.spaceId]
     }),
   )
 }
@@ -350,7 +323,7 @@ function addPortPair(r: Record<string, unknown>, context: PortPlanContext): void
       id: String(r.record_id),
       reason:
         source === undefined
-          ? 'source project route unknown, run `bottega record sync`'
+          ? `source project route unknown, run \`${PLATFORM_SLUG} record sync\``
           : 'source project has no hosted space',
     })
     return
@@ -361,7 +334,7 @@ function addPortPair(r: Record<string, unknown>, context: PortPlanContext): void
       id: String(r.record_id),
       reason:
         target === undefined
-          ? 'target project route unknown, run `bottega record sync`'
+          ? `target project route unknown, run \`${PLATFORM_SLUG} record sync\``
           : 'target project has no hosted space',
     })
     return
@@ -407,7 +380,7 @@ function addPortRef(r: Record<string, unknown>, context: PortPlanContext): void 
       id: String(r.record_id),
       reason:
         space === undefined
-          ? 'target project route unknown, run `bottega record sync`'
+          ? `target project route unknown, run \`${PLATFORM_SLUG} record sync\``
           : 'target project has no hosted space',
     })
     return
@@ -446,7 +419,7 @@ function addPortRefSource(r: Record<string, unknown>, context: PortPlanContext):
       id: String(r.record_id),
       reason:
         source === undefined
-          ? 'source project route unknown, run `bottega record sync`'
+          ? `source project route unknown, run \`${PLATFORM_SLUG} record sync\``
           : 'source project has no hosted space',
     })
     return
@@ -610,7 +583,7 @@ export async function pushCataloguesCommand(
   const identity = await client.whoami(),
     active = identity.activeSpaceId ?? localActive
   if (!active) throw new Error(noActiveRecordSpaceRefusal())
-  const plan = planCataloguePush(local, active, currentProjectRoutes(local, identity, active))
+  const plan = planCataloguePush(local, active, projectRoutesFromIdentity(local, identity, active))
   logPlan(plan, presentation)
   for (const skip of plan.skipped)
     presentation.log(`skipped ${skip.kind} ${skip.id}: ${skip.reason}`)

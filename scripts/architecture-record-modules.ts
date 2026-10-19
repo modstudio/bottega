@@ -72,6 +72,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-push-catalogues.ts', [
     'bun:sqlite',
+    '../../../shared/brand.ts',
     '../database/db.ts',
     '../project-space.ts',
     './record-api-client.ts',
@@ -79,6 +80,7 @@ export const recordModules: RecordModule[] = [
     './record-lens-contract.ts',
     './record-port-contract.ts',
     './record-project-destination.ts',
+    './record-project-destination-client.ts',
     './record-sync.ts',
     './record-workflow-contract.ts',
   ]),

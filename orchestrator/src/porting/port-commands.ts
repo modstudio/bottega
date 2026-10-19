@@ -13,6 +13,8 @@ import {
   listDoctrineRules,
   listLedgerRefs,
   listSkips,
+  type LedgerRef,
+  type LedgerSource,
   pairByProjects,
   removeLedgerRef,
   resolveLedgerRef,
@@ -40,6 +42,12 @@ function refusePortUsage(usage: string): never {
 
 const portProjectLabel = (recordId: string) =>
   projects().find((candidate) => candidate.recordId === recordId)?.name ?? `project:${recordId}`
+
+const portRefListLine = (row: LedgerRef) =>
+  `${portProjectLabel(row.target_project_record_id)} ${row.task_key}  ${row.sources.length} source(s)  ${row.resolved_at ?? 'unresolved'}  ${row.note}`
+
+const portRefSourceLine = (source: LedgerSource) =>
+  `  ${portProjectLabel(source.source_project_record_id)}  commits=${source.commits.join(',')}  paths=${source.paths.join(',')}  ${source.note}`
 
 export async function portCommand(
   group: string | undefined,
@@ -313,11 +321,7 @@ export async function portCommand(
       log(JSON.stringify(rows))
       return
     }
-    for (const row of rows) {
-      log(
-        `${portProjectLabel(row.target_project_record_id)} ${row.task_key}  ${row.sources.length} source(s)  ${row.resolved_at ?? 'unresolved'}  ${row.note}`,
-      )
-    }
+    for (const row of rows) log(portRefListLine(row))
     return
   }
 
@@ -334,11 +338,7 @@ export async function portCommand(
       return
     }
     log(`${ref.task_key}  ${ref.resolved_at ?? 'unresolved'}\n${ref.note}`)
-    for (const source of ref.sources) {
-      log(
-        `  ${portProjectLabel(source.source_project_record_id)}  commits=${source.commits.join(',')}  paths=${source.paths.join(',')}  ${source.note}`,
-      )
-    }
+    for (const source of ref.sources) log(portRefSourceLine(source))
     return
   }
 

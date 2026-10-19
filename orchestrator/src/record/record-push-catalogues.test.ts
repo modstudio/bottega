@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -168,7 +169,7 @@ test('dry run names an uncached project route as unknown', async () => {
   const logs: string[] = []
   await pushCataloguesCommand({ dryRun: true }, { log: (line) => logs.push(line) }, { local })
   expect(logs).toContainEqual(
-    expect.stringContaining('source project route unknown, run `bottega record sync`'),
+    expect.stringContaining(`source project route unknown, run \`${PLATFORM_SLUG} record sync\``),
   )
   expect(logs.some((line) => line.includes('source project has no hosted space'))).toBeFalse()
 })
