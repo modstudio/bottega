@@ -14,6 +14,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { installRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { takeClaim } from './board-claim-service.ts'
 import { BOARD_PUSH_REFRESH_SECONDS } from './board-delivery.ts'
@@ -37,6 +38,7 @@ function ensurePostingProject() {
 
 afterEach(() => {
   for (const root of hookRoots.splice(0)) rmSync(root, { recursive: true, force: true })
+  installRecordApiClient(null)
 })
 
 function createHookFixture(
@@ -48,8 +50,8 @@ function createHookFixture(
   const databasePath = join(root, 'orch.db')
   const database = new Database(databasePath)
   database.exec(`
-    CREATE TABLE board_message(id INTEGER,kind TEXT,ack_required INTEGER,withdrawn_at TEXT,expires_at TEXT,author_session TEXT);
-    CREATE TABLE board_receipt(message_id INTEGER,reader_session TEXT,delivered_at TEXT,acknowledged_at TEXT);
+    CREATE TABLE board_message(record_id TEXT,number INTEGER,kind TEXT,ack_required INTEGER,withdrawn_at TEXT,expires_at TEXT,author_session TEXT);
+    CREATE TABLE board_receipt(message_record_id TEXT,reader_session TEXT,delivered_at TEXT,acknowledged_at TEXT);
     CREATE TABLE hosted_board_message_cache(id TEXT,kind TEXT,payload TEXT);
     CREATE TABLE hosted_board_receipt_cache(message_id TEXT,reader_session TEXT,delivered_at TEXT,acknowledged_at TEXT);
     CREATE TABLE schema_meta(key TEXT PRIMARY KEY,value TEXT);
@@ -89,8 +91,8 @@ function setCommandOutput(fixture: ReturnType<typeof createHookFixture>, output:
 
 function addCandidate(fixture: ReturnType<typeof createHookFixture>, id: number) {
   fixture.database
-    .query("INSERT INTO board_message VALUES (?,'notice',1,NULL,?,NULL)")
-    .run(id, new Date(Date.now() + 60_000).toISOString())
+    .query("INSERT INTO board_message VALUES (?,?, 'notice',1,NULL,?,NULL)")
+    .run(newRecordId(), id, new Date(Date.now() + 60_000).toISOString())
 }
 
 function runHook(
@@ -330,29 +332,29 @@ test('mid-session local delivery includes an ordinary notice, question, and part
     clock: clock + 2,
   })
   expect(first.delivery.map((message) => message.id)).toEqual([
-    String(ordinary.id),
-    String(request.id),
-    String(standing.id),
-    String(question.id),
+    String(ordinary.number),
+    String(request.number),
+    String(standing.number),
+    String(question.number),
   ])
-  const text = (id: number) => first.delivery.find((message) => message.id === String(id))!.text
-  expect(text(ordinary.id)).not.toContain('notice body')
-  expect(text(request.id)).toContain('request body')
-  expect(text(standing.id)).toContain('standing body')
+  const text = (id: string) => first.delivery.find((message) => message.id === id)!.text
+  expect(text(String(ordinary.number))).not.toContain('notice body')
+  expect(text(String(request.number))).toContain('request body')
+  expect(text(String(standing.number))).toContain('standing body')
   await markBoardDeliveryDelivered({
     session: 'delivery-reader',
-    ids: first.delivery.map((message) => message.id),
+    ids: [ordinary.recordId, ...first.delivery.slice(1).map((message) => message.id)],
     clock: clock + 2,
   })
   replyToThread(
-    question.id,
+    question.recordId,
     'reader participated',
     { CLAUDE_CODE_SESSION_ID: 'delivery-reader' },
     clock + 3,
     postingCwd,
   )
   const reply = replyToThread(
-    question.id,
+    question.recordId,
     'author followed up',
     { CLAUDE_CODE_SESSION_ID: 'thread-author' },
     clock + 4,
@@ -363,7 +365,7 @@ test('mid-session local delivery includes an ordinary notice, question, and part
     budgetMs: 1,
     clock: clock + 5,
   })
-  expect(second.delivery.map((message) => message.id)).toEqual([String(reply.id)])
+  expect(second.delivery.map((message) => message.id)).toEqual([String(reply.number)])
   await markBoardDeliveryDelivered({
     session: 'delivery-reader',
     ids: second.delivery.map((message) => message.id),
@@ -537,10 +539,12 @@ test('delivery returns every pending notice and preserves its first delivered ti
       includeAcknowledgementReminders: true,
       clock: at,
     })
-  expect((await claim(clock + 1)).delivery.map((notice) => notice.id)).toEqual([String(posted.id)])
+  expect((await claim(clock + 1)).delivery.map((notice) => notice.id)).toEqual([
+    String(posted.number),
+  ])
   await markBoardDeliveryDelivered({
     session: 'remind-reader',
-    ids: [String(posted.id)],
+    ids: [String(posted.number)],
     clock: clock + 1,
   })
   expect(
@@ -553,21 +557,23 @@ test('delivery returns every pending notice and preserves its first delivered ti
     ).delivery,
   ).toEqual([])
   const first = db()
-    .query('SELECT delivered_at FROM board_receipt WHERE message_id=? AND reader_session=?')
-    .get(posted.id, 'remind-reader') as { delivered_at: string }
+    .query('SELECT delivered_at FROM board_receipt WHERE message_record_id=? AND reader_session=?')
+    .get(posted.recordId, 'remind-reader') as { delivered_at: string }
   expect((await claim(clock + 299_999)).pendingAcknowledgements.map((notice) => notice.id)).toEqual(
-    [String(posted.id)],
+    [String(posted.number)],
   )
   expect((await claim(clock + 299_999)).delivery.map((notice) => notice.id)).toEqual([
-    String(posted.id),
+    String(posted.number),
   ])
   expect((await claim(clock + 300_001)).pendingAcknowledgements.map((notice) => notice.id)).toEqual(
-    [String(posted.id)],
+    [String(posted.number)],
   )
   expect(
     db()
-      .query('SELECT delivered_at FROM board_receipt WHERE message_id=? AND reader_session=?')
-      .get(posted.id, 'remind-reader'),
+      .query(
+        'SELECT delivered_at FROM board_receipt WHERE message_record_id=? AND reader_session=?',
+      )
+      .get(posted.recordId, 'remind-reader'),
   ).toEqual(first)
 })
 
@@ -595,7 +601,7 @@ test('recent reminders are removed before bounding without changing pending ackn
   )
   await markBoardDeliveryDelivered({
     session,
-    ids: reminders.map((notice) => String(notice.id)),
+    ids: reminders.map((notice) => String(notice.number)),
     clock: clock + 10,
   })
   const ordinary = postNotice(
@@ -608,13 +614,13 @@ test('recent reminders are removed before bounding without changing pending ackn
     session,
     budgetMs: 0,
     includeAcknowledgementReminders: true,
-    recentlyInjectedIds: reminders.map((notice) => String(notice.id)),
+    recentlyInjectedIds: reminders.map((notice) => String(notice.number)),
     clock: clock + 12,
   })
 
-  expect(result.delivery.map((notice) => notice.id)).toEqual([String(ordinary.id)])
+  expect(result.delivery.map((notice) => notice.id)).toEqual([String(ordinary.number)])
   expect(result.pendingAcknowledgements.map((notice) => notice.id)).toEqual(
-    reminders.map((notice) => String(notice.id)),
+    reminders.map((notice) => String(notice.number)),
   )
 })
 
@@ -654,9 +660,9 @@ test('ordinary-only delivery excludes required notices before bounding', async (
     clock: clock + required.length + 1,
   })
 
-  expect(result.delivery.map((notice) => notice.id)).toEqual([String(ordinary.id)])
+  expect(result.delivery.map((notice) => notice.id)).toEqual([String(ordinary.number)])
   expect(result.pendingAcknowledgements.map((notice) => notice.id)).toEqual(
-    required.map((notice) => String(notice.id)),
+    required.map((notice) => String(notice.number)),
   )
 })
 
@@ -685,11 +691,11 @@ test('recently-injected ids do not suppress messages never delivered to the sess
     session,
     budgetMs: 0,
     includeAcknowledgementReminders: true,
-    recentlyInjectedIds: [String(unread.id)],
+    recentlyInjectedIds: [String(unread.number)],
     clock: clock + 1,
   })
 
-  expect(result.delivery.map((notice) => notice.id)).toEqual([String(unread.id)])
+  expect(result.delivery.map((notice) => notice.id)).toEqual([String(unread.number)])
 })
 
 test('PostToolUse is silent for workers, malformed input, missing stores, and the cheap no-pending path', () => {
@@ -773,9 +779,11 @@ test('PostToolUse passes recent reminders before selection and stamps only fresh
   addCandidate(item, 7)
   addCandidate(item, 8)
   item.database
-    .query("INSERT INTO board_receipt VALUES (7,'reader',?,NULL)")
+    .query(
+      "INSERT INTO board_receipt SELECT record_id,'reader',?,NULL FROM board_message WHERE number=7",
+    )
     .run(new Date().toISOString())
-  item.database.query('UPDATE board_message SET ack_required=0 WHERE id=8').run()
+  item.database.query('UPDATE board_message SET ack_required=0 WHERE number=8').run()
   writeFileSync(
     item.command,
     `#!/bin/sh\nprintf '%s\\n' "$*" >> '${item.invocationLog}'\nif [ "$2" = "pending" ]; then printf '%s\\n' '${freshOutput}'; fi\n`,

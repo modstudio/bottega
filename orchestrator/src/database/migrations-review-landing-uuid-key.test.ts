@@ -115,7 +115,7 @@ test('review and landing UUID-key migration preserves every table, relationship,
     database.query("UPDATE sqlite_sequence SET seq=80 WHERE name='review'").run()
 
     const before = new Map(TABLES.map((table) => [table, count(database, table)]))
-    expect(applyMigrations(database)).toEqual(['0126_review_landing_uuid_key'])
+    expect(applyMigrations(database)).toContain('0126_review_landing_uuid_key')
     for (const [table, rows] of before) expect(count(database, table), table).toBe(rows)
     expect(database.query('SELECT record_id,number FROM review').get()).toEqual({
       record_id: ids.review,

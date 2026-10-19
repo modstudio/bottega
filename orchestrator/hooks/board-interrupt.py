@@ -32,14 +32,14 @@ def cheap_state(session: str, refresh_seconds: int) -> tuple[set[str], bool]:
     connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=0.05)
     try:
         local = connection.execute(
-            """SELECT CAST(m.id AS TEXT) FROM board_message m
+            """SELECT CAST(m.number AS TEXT) FROM board_message m
                WHERE m.withdrawn_at IS NULL
                  AND (m.kind='reply' OR julianday(m.expires_at)>julianday('now'))
                  AND (m.author_session IS NULL OR m.author_session<>?)
-                 AND (NOT EXISTS (SELECT 1 FROM board_receipt r WHERE r.message_id=m.id
+                 AND (NOT EXISTS (SELECT 1 FROM board_receipt r WHERE r.message_record_id=m.record_id
                    AND r.reader_session=? AND r.delivered_at IS NOT NULL)
                    OR (m.kind='notice' AND m.ack_required=1 AND NOT EXISTS
-                     (SELECT 1 FROM board_receipt r WHERE r.message_id=m.id
+                     (SELECT 1 FROM board_receipt r WHERE r.message_record_id=m.record_id
                       AND r.reader_session=? AND r.acknowledged_at IS NOT NULL)))""",
             (session, session, session),
         ).fetchall()

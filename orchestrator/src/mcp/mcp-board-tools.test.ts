@@ -52,7 +52,7 @@ test('board_status MCP tool refuses worker callers', async () => {
   process.env.ORCH_RUN_ID = 'mcp-board-worker'
   try {
     const result = await withBoardClient((client) =>
-      client.callTool({ name: 'board_status', arguments: { id: String(posted.id) } }),
+      client.callTool({ name: 'board_status', arguments: { id: String(posted.recordId) } }),
     )
     expect(result.isError).toBe(true)
     expect(result.content).toEqual([
@@ -92,9 +92,9 @@ test('board_read MCP result is the delivery envelope with one normalized notice 
   expect(parsed).toEqual({
     notices: [
       {
-        id: String(posted.id),
-        text: expect.stringContaining(`BOARD NOTICE ${posted.id}`),
-        oneLine: `Board message ${posted.id}: MCP read shape — from operator; acknowledgement not required. ${PLATFORM_SLUG} board thread ${posted.id} shows the body.`,
+        id: String(posted.number),
+        text: expect.stringContaining(`BOARD NOTICE ${posted.number}`),
+        oneLine: `Board message ${posted.number}: MCP read shape — from operator; acknowledgement not required. ${PLATFORM_SLUG} board thread ${posted.number} shows the body.`,
         ackRequired: false,
         purpose: 'information',
         createdAt: expect.any(String),

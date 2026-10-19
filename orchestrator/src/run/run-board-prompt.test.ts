@@ -75,8 +75,8 @@ test('a dispatch-delivered notice is not returned by the worker pull path', asyn
     clock,
   )
   const bound = await appendInitialRunBoardPrompt('PROMPT', run.id)
-  expect(bound.noticeIds).toEqual([String(posted.id)])
-  markLocalRunNoticesDelivered(run.id, bound.noticeIds.map(Number), clock + 1)
+  expect(bound.noticeIds).toEqual([String(posted.number)])
+  markLocalRunNoticesDelivered(run.id, [posted.recordId], clock + 1)
   expect(claimRunNotices(run.id, false, clock + 2)).toEqual([])
 })
 
@@ -154,7 +154,7 @@ test('dispatch and later-turn injection each combine hosted and local once with 
     Date.parse(createdAt),
   )
   const initial = await appendInitialRunBoardPrompt('PROMPT', root.id)
-  expect(initial.noticeIds).toEqual([String(firstLocal.id), firstHosted.id])
+  expect(initial.noticeIds).toEqual([String(firstLocal.number), firstHosted.id])
   expect(initial.prompt).toContain('Local prompt')
   expect(initial.prompt).toContain('Hosted prompt')
   expect(initial.prompt).not.toContain('local prompt body')
@@ -176,7 +176,7 @@ test('dispatch and later-turn injection each combine hosted and local once with 
     Date.parse(createdAt) + 1_000,
   )
   const later = await prepareLaterRunBoardPrompt(root.id, true, [], 'NEXT')
-  expect(later.notices.map((row) => row.id)).toEqual([String(laterLocal.id), laterHosted.id])
+  expect(later.notices.map((row) => row.id)).toEqual([String(laterLocal.number), laterHosted.id])
   expect(later.prompt).toContain('Local later')
   expect(later.prompt).toContain('Hosted prompt')
   expect(later.prompt).not.toContain('local later body')

@@ -40,14 +40,14 @@ function presence(session = 'reader', lastSeen = NOW) {
     )
 }
 
-function receipt(messageId: number, reader: string) {
+function receipt(messageRecordId: string, reader: string) {
   db()
     .query(
       `INSERT OR REPLACE INTO board_receipt
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
-       VALUES (?,?,1,?,NULL,?)`,
+       (record_id,message_record_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
+       VALUES (?,?,?,1,?,NULL)`,
     )
-    .run(messageId, reader, new Date(NOW).toISOString(), newRecordId())
+    .run(newRecordId(), messageRecordId, reader, new Date(NOW).toISOString())
 }
 
 function claim(runId: string | null = null) {
@@ -60,19 +60,19 @@ function claim(runId: string | null = null) {
   return db()
     .query(
       `INSERT INTO board_claim
-       (project,subject_kind,subject_value,holder_kind,holder_session,note,run_record_id,duration_ms,
-        taken_at,renewed_at,lapses_at,record_id)
-       VALUES (?,'task','DEV-968','architect','reader','moving',?,3600000,?,?,?,?)
-       RETURNING id`,
+       (record_id,project,subject_kind,subject_value,holder_kind,holder_session,note,run_record_id,duration_ms,
+        taken_at,renewed_at,lapses_at)
+       VALUES (?,?,'task','DEV-968','architect','reader','moving',?,3600000,?,?,?)
+       RETURNING record_id AS recordId`,
     )
     .get(
+      newRecordId(),
       PLATFORM_SLUG,
       runId,
       new Date(NOW - 1_000).toISOString(),
       new Date(NOW - 1_000).toISOString(),
       new Date(NOW + 3_600_000).toISOString(),
-      newRecordId(),
-    ) as { id: number }
+    ) as { recordId: string }
 }
 
 function hostedMessage(
@@ -121,9 +121,7 @@ test('a new adoption upload sends the row record id as the hosted id', async () 
     {},
     NOW,
   )
-  const recordId = db()
-    .query<{ record_id: string }, [number]>('SELECT record_id FROM board_message WHERE id=?')
-    .get(posted.id)!.record_id
+  const recordId = posted.recordId
   const ids: string[] = []
   const base = capturingClient([]).client
   const client: RecordApiClient = {
@@ -151,9 +149,7 @@ test('an adoption resume uploads with the row record id', async () => {
     {},
     NOW,
   )
-  const recordId = db()
-    .query<{ record_id: string }, [number]>('SELECT record_id FROM board_message WHERE id=?')
-    .get(posted.id)!.record_id
+  const recordId = posted.recordId
   db()
     .query(
       `INSERT INTO board_hosted_adoption_ledger
@@ -181,13 +177,15 @@ test('adoption uploads a reply local project name and hosted record id', async (
     {},
     NOW,
   )
-  const reply = replyToThread(root.id, 'reply identity body', {}, NOW + 1)
+  const reply = replyToThread(root.recordId, 'reply identity body', {}, NOW + 1)
   const project = { name: 'adoption-reply-project' }
   const projectId = newRecordId()
   db()
     .query('INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?)')
     .run(projectId, project.name, '/tmp/adoption-reply-project', '{}')
-  db().query('UPDATE board_message SET author_project=? WHERE id=?').run(project.name, reply.id)
+  db()
+    .query('UPDATE board_message SET author_project=? WHERE record_id=?')
+    .run(project.name, reply.recordId)
   let uploaded: Parameters<RecordApiClient['replyBoardMessage']>[1] | undefined
   const base = capturingClient([]).client
   const client: RecordApiClient = {
@@ -243,12 +241,12 @@ test('adoption preserves request and acknowledgement-required standing purposes'
     { title: 'Standing to adopt', purpose: 'standing', ackRequired: true },
   ])
   expect(
-    db().query('SELECT withdrawn_at FROM board_message WHERE id=?').get(request.id),
+    db().query('SELECT withdrawn_at FROM board_message WHERE record_id=?').get(request.recordId),
   ).not.toEqual({
     withdrawn_at: null,
   })
   expect(
-    db().query('SELECT withdrawn_at FROM board_message WHERE id=?').get(standing.id),
+    db().query('SELECT withdrawn_at FROM board_message WHERE record_id=?').get(standing.recordId),
   ).not.toEqual({
     withdrawn_at: null,
   })
@@ -366,16 +364,16 @@ test('confirmed adoption uploads roots before replies, then receipts and claims,
   db()
     .query(
       `INSERT OR REPLACE INTO board_receipt
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
-       VALUES (?,'reader',1,?,NULL,?)`,
+       (record_id,message_record_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
+       VALUES (?,?,'reader',1,?,NULL)`,
     )
-    .run(notice.id, new Date(NOW - 2_000).toISOString(), newRecordId())
+    .run(newRecordId(), notice.recordId, new Date(NOW - 2_000).toISOString())
   const question = askQuestion(
     { audience: 'session:reader', title: 'second', body: 'question' },
     {},
     NOW - 2_000,
   )
-  replyToThread(question.id, 'reply body', {}, NOW - 1_000)
+  replyToThread(question.recordId, 'reply body', {}, NOW - 1_000)
   const localClaim = claim()
   const calls: string[] = []
   const { client } = capturingClient(calls)
@@ -398,7 +396,9 @@ test('confirmed adoption uploads roots before replies, then receipts and claims,
       )
       .get()?.count,
   ).toBe(3)
-  expect(db().query('SELECT close_reason FROM board_claim WHERE id=?').get(localClaim.id)).toEqual({
+  expect(
+    db().query('SELECT close_reason FROM board_claim WHERE record_id=?').get(localClaim.recordId),
+  ).toEqual({
     close_reason: 'released',
   })
   expect(
@@ -476,10 +476,12 @@ test.each(['notice', 'claim'] as const)(
     }
     const action = adoptHostedBoard({ confirm: 1, clock: () => NOW, client })
     await expect(action).rejects.toThrow(
-      `hosted service refused local ${kind} ${local.id}: hosted policy rejected this row`,
+      `hosted service refused local ${kind} ${local.recordId}: hosted policy rejected this row`,
     )
     await expect(action).rejects.toThrow(
-      kind === 'notice' ? `withdraw local notice ${local.id}` : `release local claim ${local.id}`,
+      kind === 'notice'
+        ? `withdraw local notice ${local.recordId}`
+        : `release local claim ${local.recordId}`,
     )
     expect(
       db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_HOSTED_ADOPTED_KEY),
@@ -505,9 +507,9 @@ test('withdrawing a row after an unexpected refusal drops its pending ledger row
   }
 
   await expect(adoptHostedBoard({ confirm: 1, clock: () => NOW, client })).rejects.toThrow(
-    `withdraw local notice ${local.id}`,
+    `withdraw local notice ${local.recordId}`,
   )
-  withdrawNotice(local.id, {}, NOW + 1)
+  withdrawNotice(local.recordId, {}, NOW + 1)
 
   const result = await adoptHostedBoard({ confirm: 0, clock: () => NOW + 2, client })
 
@@ -525,7 +527,7 @@ test('withdrawing a pending root drops its reply from the rerun', async () => {
     {},
     NOW,
   )
-  replyToThread(question.id, 'blocked reply', {}, NOW + 1)
+  replyToThread(question.recordId, 'blocked reply', {}, NOW + 1)
   let postAttempts = 0
   let replyAttempts = 0
   const base = capturingClient([]).client
@@ -542,9 +544,9 @@ test('withdrawing a pending root drops its reply from the rerun', async () => {
   }
 
   await expect(adoptHostedBoard({ confirm: 2, clock: () => NOW + 2, client })).rejects.toThrow(
-    `withdraw local question ${question.id}`,
+    `withdraw local question ${question.recordId}`,
   )
-  withdrawNotice(question.id, {}, NOW + 3)
+  withdrawNotice(question.recordId, {}, NOW + 3)
 
   const result = await adoptHostedBoard({ confirm: 0, clock: () => NOW + 4, client })
 
@@ -563,7 +565,7 @@ test('a lasting hosted root refusal leaves its thread local and live and still s
     {},
     NOW,
   )
-  const reply = replyToThread(question.id, 'reply remains', {}, NOW + 1)
+  const reply = replyToThread(question.recordId, 'reply remains', {}, NOW + 1)
   const base = capturingClient([]).client
   const client: RecordApiClient = {
     ...base,
@@ -578,12 +580,16 @@ test('a lasting hosted root refusal leaves its thread local and live and still s
   expect(result).toMatchObject({ status: 'adopted', refused: 2 })
   expect(
     db()
-      .query('SELECT id,withdrawn_at FROM board_message WHERE id IN (?,?) ORDER BY id')
-      .all(question.id, reply.id),
-  ).toEqual([
-    { id: question.id, withdrawn_at: null },
-    { id: reply.id, withdrawn_at: null },
-  ])
+      .query(
+        'SELECT record_id,withdrawn_at FROM board_message WHERE record_id IN (?,?) ORDER BY record_id',
+      )
+      .all(question.recordId, reply.recordId),
+  ).toEqual(
+    [
+      { record_id: question.recordId, withdrawn_at: null },
+      { record_id: reply.recordId, withdrawn_at: null },
+    ].sort((left, right) => left.record_id.localeCompare(right.record_id)),
+  )
   expect(
     db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_HOSTED_ADOPTED_KEY),
   ).toEqual({ value: '1' })
@@ -594,8 +600,8 @@ test('an absent or wrong confirmation writes no ledger, local row, claim, or ado
   const notice = postNotice({ audience: 'session:reader', title: 'one', body: 'one' }, {}, NOW)
   const localClaim = claim()
   const before = JSON.stringify({
-    message: db().query('SELECT * FROM board_message WHERE id=?').get(notice.id),
-    claim: db().query('SELECT * FROM board_claim WHERE id=?').get(localClaim.id),
+    message: db().query('SELECT * FROM board_message WHERE record_id=?').get(notice.recordId),
+    claim: db().query('SELECT * FROM board_claim WHERE record_id=?').get(localClaim.recordId),
   })
   const client = capturingClient([]).client
   expect((await adoptHostedBoard({ clock: () => NOW, client })).status).toBe('plan')
@@ -607,8 +613,8 @@ test('an absent or wrong confirmation writes no ledger, local row, claim, or ado
   })
   expect(
     JSON.stringify({
-      message: db().query('SELECT * FROM board_message WHERE id=?').get(notice.id),
-      claim: db().query('SELECT * FROM board_claim WHERE id=?').get(localClaim.id),
+      message: db().query('SELECT * FROM board_message WHERE record_id=?').get(notice.recordId),
+      claim: db().query('SELECT * FROM board_claim WHERE record_id=?').get(localClaim.recordId),
     }),
   ).toBe(before)
 })
@@ -626,20 +632,20 @@ test('keeps source record ids for roots, replies, receipts, and the ledger', asy
     {},
     NOW,
   )
-  const reply = replyToThread(root.id, 'answer', {}, NOW + 1)
+  const reply = replyToThread(root.recordId, 'answer', {}, NOW + 1)
   db()
     .query(
       `INSERT OR REPLACE INTO board_receipt
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
-       VALUES (?,'reader',1,?,NULL,?),(?,'reader',1,?,NULL,?)`,
+       (record_id,message_record_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
+       VALUES (?,?,'reader',1,?,NULL),(?,?,'reader',1,?,NULL)`,
     )
     .run(
-      root.id,
+      newRecordId(),
+      root.recordId,
       new Date(NOW).toISOString(),
       newRecordId(),
-      reply.id,
+      reply.recordId,
       new Date(NOW).toISOString(),
-      newRecordId(),
     )
   const base = capturingClient([]).client
   const receiptIds: string[] = []
@@ -673,12 +679,8 @@ test('keeps source record ids for roots, replies, receipts, and the ledger', asy
 
   await adoptHostedBoard({ confirm: 2, clock: () => NOW + 2, client })
 
-  const rootRecordId = db()
-    .query<{ record_id: string }, [number]>('SELECT record_id FROM board_message WHERE id=?')
-    .get(root.id)!.record_id
-  const replyRecordId = db()
-    .query<{ record_id: string }, [number]>('SELECT record_id FROM board_message WHERE id=?')
-    .get(reply.id)!.record_id
+  const rootRecordId = root.recordId
+  const replyRecordId = reply.recordId
   expect(replyRoot).toBe(rootRecordId)
   expect(receiptIds).toEqual([rootRecordId, replyRecordId])
   expect(
@@ -702,10 +704,10 @@ test('counts refused receipts without blocking adoption', async () => {
   db()
     .query(
       `INSERT OR REPLACE INTO board_receipt
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
-       VALUES (?,'reader',1,?,NULL,?)`,
+       (record_id,message_record_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
+       VALUES (?,?,'reader',1,?,NULL)`,
     )
-    .run(notice.id, new Date(NOW).toISOString(), newRecordId())
+    .run(newRecordId(), notice.recordId, new Date(NOW).toISOString())
   const base = capturingClient([]).client
   const refusedClient: RecordApiClient = {
     ...base,
@@ -727,10 +729,10 @@ test('a receipt network failure stops adoption with its mark unset', async () =>
   db()
     .query(
       `INSERT OR REPLACE INTO board_receipt
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
-       VALUES (?,'reader',1,?,NULL,?)`,
+       (record_id,message_record_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
+       VALUES (?,?,'reader',1,?,NULL)`,
     )
-    .run(notice.id, new Date(NOW).toISOString(), newRecordId())
+    .run(newRecordId(), notice.recordId, new Date(NOW).toISOString())
   const base = capturingClient([]).client
   const client: RecordApiClient = {
     ...base,
@@ -761,9 +763,9 @@ test('the plan and upload include only receipts for readers that are still aroun
     {},
     NOW,
   )
-  receipt(notice.id, 'live-reader')
-  receipt(notice.id, 'long-gone-reader')
-  receipt(notice.id, `run:${finishedRun.id}`)
+  receipt(notice.recordId, 'live-reader')
+  receipt(notice.recordId, 'long-gone-reader')
+  receipt(notice.recordId, `run:${finishedRun.id}`)
   const readers: string[] = []
   const base = capturingClient([]).client
   const client: RecordApiClient = {
@@ -789,7 +791,7 @@ test('a receipt network failure resumes after recorded successes and sends only 
     {},
     NOW,
   )
-  for (const reader of ['resume-a', 'resume-b', 'resume-c']) receipt(notice.id, reader)
+  for (const reader of ['resume-a', 'resume-b', 'resume-c']) receipt(notice.recordId, reader)
   const firstRequests: string[] = []
   const base = capturingClient([]).client
   const failingClient: RecordApiClient = {
@@ -839,9 +841,7 @@ test('an install with uploaded message ledger rows and no receipt ledger complet
       {},
       NOW + index,
     )
-    const hostedId = db()
-      .query<{ record_id: string }, [number]>('SELECT record_id FROM board_message WHERE id=?')
-      .get(notice.id)!.record_id
+    const hostedId = notice.recordId
     db()
       .query(
         `INSERT INTO board_hosted_adoption_ledger
@@ -850,9 +850,9 @@ test('an install with uploaded message ledger rows and no receipt ledger complet
       )
       .run(hostedId, new Date(NOW).toISOString(), new Date(NOW).toISOString())
     db()
-      .query('UPDATE board_message SET withdrawn_at=? WHERE id=?')
-      .run(new Date(NOW + 10).toISOString(), notice.id)
-    receipt(notice.id, 'stuck-reader')
+      .query('UPDATE board_message SET withdrawn_at=? WHERE record_id=?')
+      .run(new Date(NOW + 10).toISOString(), notice.recordId)
+    receipt(notice.recordId, 'stuck-reader')
   }
   const calls: string[] = []
   const client = capturingClient(calls).client
@@ -875,8 +875,8 @@ test('a refused receipt is recorded as skipped and is not sent again on a rerun'
     {},
     NOW,
   )
-  receipt(notice.id, 'refused-a')
-  receipt(notice.id, 'refused-b')
+  receipt(notice.recordId, 'refused-a')
+  receipt(notice.recordId, 'refused-b')
   const firstRequests: string[] = []
   const base = capturingClient([]).client
   const firstClient: RecordApiClient = {
@@ -897,9 +897,9 @@ test('a refused receipt is recorded as skipped and is not sent again on a rerun'
     db()
       .query(
         `SELECT state,refusal FROM board_hosted_adoption_receipt
-         WHERE message_record_id=(SELECT record_id FROM board_message WHERE id=?) AND reader_session=?`,
+         WHERE message_record_id=? AND reader_session=?`,
       )
-      .get(notice.id, 'refused-a'),
+      .get(notice.recordId, 'refused-a'),
   ).toEqual({ state: 'skipped', refusal: 'receipt is no longer visible' })
 
   const resumedRequests: string[] = []
@@ -929,7 +929,9 @@ test('records a hosted claim conflict as a lasting refusal and still adopts', as
   const result = await adoptHostedBoard({ confirm: 1, clock: () => NOW, client })
 
   expect(result).toMatchObject({ status: 'adopted', refused: 1 })
-  expect(db().query('SELECT closed_at FROM board_claim WHERE id=?').get(local.id)).toEqual({
+  expect(
+    db().query('SELECT closed_at FROM board_claim WHERE record_id=?').get(local.recordId),
+  ).toEqual({
     closed_at: null,
   })
 })
@@ -960,9 +962,9 @@ test('drops a claim that expires before its request and clears its pending ledge
     db()
       .query(
         `SELECT * FROM board_hosted_adoption_ledger
-         WHERE source_record_id=(SELECT record_id FROM board_claim WHERE id=?)`,
+         WHERE source_record_id=?`,
       )
-      .get(local.id),
+      .get(local.recordId),
   ).toBeNull()
 })
 

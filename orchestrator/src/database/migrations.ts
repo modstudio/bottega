@@ -514,6 +514,15 @@ const REVIEW_LANDING_REFERENCES = [
   ['contention', 'landing_id', 'landing', 'landing_record_id'],
 ] as const
 
+const BOARD_REFERENCES = [
+  ['board_claim', 'superseded_by_claim_id', 'board_claim', 'superseded_by_claim_record_id'],
+  ['board_message', 'thread_root_id', 'board_message', 'thread_root_record_id'],
+  ['board_message', 'accepted_reply_id', 'board_message', 'accepted_reply_record_id'],
+  ['board_message', 'claim_id', 'board_claim', 'claim_record_id'],
+  ['board_message_tag', 'message_id', 'board_message', 'message_record_id'],
+  ['board_receipt', 'message_id', 'board_message', 'message_record_id'],
+] as const
+
 function runReferenceOrphanCounts(d: Database): string[] {
   const findings: string[] = []
   for (const [table, column] of INTEGER_RUN_REFERENCES) {
@@ -595,6 +604,35 @@ function reviewLandingReferenceOrphanCounts(d: Database): string[] {
       .get() as { n: number }
   ).n
   if (jsonCount > 0) findings.push(`landing_triage_snapshot.review_record_ids=${jsonCount}`)
+  return findings
+}
+
+function boardReferenceOrphanCounts(d: Database): string[] {
+  const findings: string[] = []
+  for (const [table, column, parent, migratedColumn] of BOARD_REFERENCES) {
+    const count = (
+      d
+        .query(
+          `SELECT COUNT(*) AS n FROM ${quoteIdentifier(table)} child
+           WHERE child.${quoteIdentifier(column)} IS NOT NULL
+             AND NOT EXISTS (SELECT 1 FROM ${quoteIdentifier(parent)} parent
+               WHERE parent.id=child.${quoteIdentifier(column)})`,
+        )
+        .get() as { n: number }
+    ).n
+    if (count > 0) findings.push(`${table}.${migratedColumn}=${count}`)
+  }
+  const reachCount = (
+    d
+      .query(
+        `SELECT COUNT(*) AS n FROM board_reach_delivery child
+         WHERE child.message_source='local'
+           AND NOT EXISTS (SELECT 1 FROM board_message parent
+             WHERE parent.id=CAST(child.message_id AS INTEGER))`,
+      )
+      .get() as { n: number }
+  ).n
+  if (reachCount > 0) findings.push(`board_reach_delivery.message_record_id=${reachCount}`)
   return findings
 }
 
@@ -773,7 +811,16 @@ function migrationOrphanCounts(d: Database, tag: string): string[] {
   if (tag === RUN_UUID_KEY_MIGRATION) return runReferenceOrphanCounts(d)
   if (tag === '0125_question_uuid_key') return questionReferenceOrphanCounts(d)
   if (tag === '0126_review_landing_uuid_key') return reviewLandingReferenceOrphanCounts(d)
+  if (tag === '0127_board_uuid_key') return boardReferenceOrphanCounts(d)
   return []
+}
+
+function migrationEntityLabel(tag: string): { migration: string; parent: string } {
+  if (tag === RUN_UUID_KEY_MIGRATION) return { migration: 'run', parent: 'run' }
+  if (tag === '0125_question_uuid_key') return { migration: 'question', parent: 'question' }
+  if (tag === '0126_review_landing_uuid_key')
+    return { migration: 'review/landing', parent: 'review/landing row' }
+  return { migration: 'board', parent: 'board row' }
 }
 
 function prepareMigrationEntry(
@@ -783,12 +830,14 @@ function prepareMigrationEntry(
 ): void {
   if (beforeApply?.migration === entry.tag) beforeApply.action(d)
   const orphanCounts = migrationOrphanCounts(d, entry.tag)
-  if (orphanCounts.length)
+  if (orphanCounts.length) {
+    const label = migrationEntityLabel(entry.tag)
     throw new Error(
-      `refusing ${entry.tag === RUN_UUID_KEY_MIGRATION ? 'run' : entry.tag === '0125_question_uuid_key' ? 'question' : 'review/landing'} UUID-key migration: ` +
-        `integer references have no parent ${entry.tag === RUN_UUID_KEY_MIGRATION ? 'run' : entry.tag === '0125_question_uuid_key' ? 'question' : 'review/landing row'} ` +
+      `refusing ${label.migration} UUID-key migration: ` +
+        `integer references have no parent ${label.parent} ` +
         `(${orphanCounts.join(', ')})`,
     )
+  }
 }
 
 function applyMigrationRange(

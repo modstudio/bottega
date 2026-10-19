@@ -41,11 +41,7 @@ test('a created claim carries a version-7 record id', () => {
   const clock = Date.now()
   presence('id-holder', null, clock)
   const taken = takeClaim({ subject: 'path:src/**' }, env('id-holder'), clock, cwd)
-  expect(
-    db()
-      .query<{ record_id: string }, [number]>('SELECT record_id FROM board_claim WHERE id=?')
-      .get(taken.id)?.record_id,
-  ).toMatch(UUID_V7)
+  expect(taken.recordId).toMatch(UUID_V7)
 })
 
 test('a conflicting take is refused and tells the holder with an interrupting notice', () => {
@@ -68,11 +64,11 @@ test('a lapsed claim is taken over, linked, closed, and its holder is told', () 
   const first = takeClaim({ subject: 'resource:gpu', durationMs: 1 }, env('holder'), clock, cwd)
   const next = takeClaim({ subject: 'resource:gpu' }, env('other'), clock + 2, cwd)
   expect(next.action).toBe('taken-over')
-  expect(next.previousClaimIds).toEqual([first.id])
+  expect(next.previousClaimRecordIds).toEqual([first.recordId])
   expect(listClaims(undefined, true, env('holder'), clock + 2, cwd).claims[0]).toMatchObject({
-    id: first.id,
+    recordId: first.recordId,
     closeReason: 'lapsed',
-    supersededByClaimId: next.id,
+    supersededByClaimRecordId: next.recordId,
   })
   expect(claimNoticesFor('holder', clock + 3)).toHaveLength(1)
 })
@@ -99,8 +95,8 @@ test('a holder may take an overlapping path claim without closing or notifying i
   const broad = takeClaim({ subject: 'path:src/**' }, env('holder'), clock + 1, cwd)
   expect(broad.action).toBe('taken')
   expect(listClaims(undefined, false, env('holder'), clock + 1, cwd).claims).toEqual([
-    expect.objectContaining({ id: narrow.id, live: true }),
-    expect.objectContaining({ id: broad.id, live: true }),
+    expect.objectContaining({ recordId: narrow.recordId, live: true }),
+    expect.objectContaining({ recordId: broad.recordId, live: true }),
   ])
   expect(claimNoticesFor('holder', clock + 2)).toEqual([])
 })
@@ -116,7 +112,7 @@ test('an overlapping take ignores the holder own claim but refuses and tells ano
     /claim conflicts with: session other/,
   )
   expect(listClaims(undefined, false, env('holder'), clock + 1, cwd).claims).toContainEqual(
-    expect.objectContaining({ id: own.id, live: true }),
+    expect.objectContaining({ recordId: own.recordId, live: true }),
   )
   expect(claimNoticesFor('holder', clock + 2)).toEqual([])
   expect(claimNoticesFor('other', clock + 2)).toHaveLength(1)
@@ -140,11 +136,11 @@ test('a broad path takeover closes and links every stale conflict', () => {
     cwd,
   )
   const broad = takeClaim({ subject: 'path:src/**' }, env('requester'), clock + 2, cwd)
-  expect(broad.previousClaimIds).toEqual([first.id, second.id])
+  expect(broad.previousClaimRecordIds).toEqual([first.recordId, second.recordId])
   const history = listClaims(undefined, true, env('requester'), clock + 2, cwd).claims
-  expect(history.slice(0, 2).map((claim) => claim.supersededByClaimId)).toEqual([
-    broad.id,
-    broad.id,
+  expect(history.slice(0, 2).map((claim) => claim.supersededByClaimRecordId)).toEqual([
+    broad.recordId,
+    broad.recordId,
   ])
   expect(claimNoticesFor('first-holder', clock + 3)).toHaveLength(1)
   expect(claimNoticesFor('second-holder', clock + 3)).toHaveLength(1)
@@ -162,16 +158,16 @@ test('a tied claim follows the chain latest turn and renewal restarts its lease'
     )
     .run(runId, new Date(clock).toISOString())
   const claim = takeClaim({ subject: 'task:DEV-1', runId }, env('holder'), clock, cwd)
-  const renewed = renewClaim(claim.id, env('holder'), clock + 100)
+  const renewed = renewClaim(claim.recordId, env('holder'), clock + 100)
   expect(Date.parse(renewed.lapsesAt)).toBe(Date.parse(claim.lapsesAt) + 100)
   db().query("UPDATE run SET status='ok' WHERE record_id=?").run(runId)
   expect(listClaims(undefined, false, env('holder'), clock + 101, cwd).claims).toEqual([])
   const next = takeClaim({ subject: 'task:DEV-1' }, env('other'), clock + 101, cwd)
   expect(next.action).toBe('taken-over')
   expect(listClaims(undefined, true, env('holder'), clock + 101, cwd).claims[0]).toMatchObject({
-    id: claim.id,
+    recordId: claim.recordId,
     closeReason: 'run-ended',
-    supersededByClaimId: next.id,
+    supersededByClaimRecordId: next.recordId,
   })
 })
 
@@ -180,10 +176,10 @@ test('a foreign architect cannot release, and release-task closes only that task
   const clock = Date.now()
   const first = takeClaim({ subject: 'task:DEV-1' }, env('holder'), clock, cwd)
   takeClaim({ subject: 'task:DEV-2' }, env('other'), clock, cwd)
-  expect(() => releaseClaim(first.id, env('other'), clock + 1)).toThrow(/holder or operator/)
+  expect(() => releaseClaim(first.recordId, env('other'), clock + 1)).toThrow(/holder or operator/)
   expect(releaseTaskClaims('DEV-1', project, {}, clock + 2)).toEqual({ released: 1 })
   expect(listClaims(project, true, {}, clock + 2).claims).toEqual([
-    expect.objectContaining({ id: first.id, closeReason: 'task-closed' }),
+    expect.objectContaining({ recordId: first.recordId, closeReason: 'task-closed' }),
     expect.objectContaining({ subject: { kind: 'task', value: 'DEV-2' }, live: true }),
   ])
 })
@@ -194,7 +190,7 @@ test('an architect environment may release task claims', () => {
   const claim = takeClaim({ subject: 'task:DEV-1' }, env('holder'), clock, cwd)
   expect(releaseTaskClaims('DEV-1', project, env('architect'), clock + 1)).toEqual({ released: 1 })
   expect(listClaims(undefined, true, env('architect'), clock + 1, cwd).claims[0]).toMatchObject({
-    id: claim.id,
+    recordId: claim.recordId,
     closeReason: 'task-closed',
   })
 })
@@ -222,7 +218,9 @@ test('claims survive board message reaping', () => {
   const clock = Date.now()
   const claim = takeClaim({ subject: 'resource:durable evidence' }, env('holder'), clock, cwd)
   reapBoardMessages(clock + 100 * 24 * 60 * 60 * 1000)
-  expect(listClaims(undefined, true, env('holder'), clock + 1, cwd).claims[0]!.id).toBe(claim.id)
+  expect(listClaims(undefined, true, env('holder'), clock + 1, cwd).claims[0]!.recordId).toBe(
+    claim.recordId,
+  )
 })
 
 test('task audience reaches its claim holder, current architect, and live launch key only', () => {
@@ -252,8 +250,10 @@ test('task audience reaches its claim holder, current architect, and live launch
   expect(posted.reached).toBe(3)
   expect(
     db()
-      .query('SELECT reader_session FROM board_receipt WHERE message_id=? ORDER BY reader_session')
-      .all(posted.id),
+      .query(
+        'SELECT reader_session FROM board_receipt WHERE message_record_id=? ORDER BY reader_session',
+      )
+      .all(posted.recordId),
   ).toEqual([
     { reader_session: 'claim-holder' },
     { reader_session: 'current-task' },

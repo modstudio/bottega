@@ -25,9 +25,11 @@ export const mcpModules: McpModule[] = [
     'zod',
     '../../../shared/board-purpose.ts',
     '../board/board-delivery.ts',
+    '../board/board-message-identifier.ts',
     '../board/board-operations.ts',
     '../board/board-policy.ts',
     '../board/board-suggestions.ts',
+    '../database/db.ts',
     './mcp-board-claim-tools.ts',
   ]),
   module('orchestrator/src/mcp/mcp-board-claim-tools.ts', [

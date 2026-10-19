@@ -63,7 +63,7 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
     {},
     clock + 1,
   )
-  acknowledgeNotice(acknowledged.id, { CLAUDE_CODE_SESSION_ID: 'push-reader' }, clock + 2)
+  acknowledgeNotice(acknowledged.recordId, { CLAUDE_CODE_SESSION_ID: 'push-reader' }, clock + 2)
   const setMeta = db().query(
     'INSERT INTO schema_meta(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
   )
@@ -143,12 +143,12 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
     clock: clock + 3,
   })
   expect(pending.delivery.map((notice) => notice.id).sort()).toEqual(
-    [String(local.id), hosted.id].sort(),
+    [String(local.number), hosted.id].sort(),
   )
   expect(pending.pendingAcknowledgements.map((notice) => notice.id).sort()).toEqual(
-    [String(local.id), hosted.id].sort(),
+    [String(local.number), hosted.id].sort(),
   )
-  expect(pending.delivery.map((notice) => notice.id)).not.toContain(String(olderLocal.id))
+  expect(pending.delivery.map((notice) => notice.id)).not.toContain(String(olderLocal.number))
   expect(pending.pendingAcknowledgements.map((notice) => notice.id)).not.toContain(olderHosted.id)
 
   const afterDeadline = await pendingBoardDelivery({
