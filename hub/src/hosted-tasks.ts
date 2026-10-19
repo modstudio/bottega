@@ -4,12 +4,7 @@ import { newRecordId } from '../../shared/record/schema.ts'
 import { MISSING_PROJECT_ID_REMEDY } from '../../shared/record-project-identity.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { storedHubProjectId } from './hosted-project-identity.ts'
-import {
-  hostedTaskJoin,
-  hostedTaskRelationship,
-  repairHostedTaskReferences,
-  taskIdFor,
-} from './hosted-task-reference.ts'
+import { hostedTaskJoin, repairHostedTaskReferences, taskIdFor } from './hosted-task-reference.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 import type {
   PushedComment,
@@ -33,65 +28,6 @@ export const hostedTaskPullSerializers = {
 } as const
 
 const rows = <T>(value: unknown) => value as T[]
-
-export async function listHostedTasks(
-  client: SQL,
-  identity: TaskIdentity,
-  filters: {
-    project?: string
-    status?: string
-    parent?: string
-    updatedSince?: string
-    includeDeleted?: boolean
-    cursor?: string
-  },
-) {
-  return withHostedTenant(client, identity, async (tx) => {
-    const since = filters.updatedSince ?? filters.cursor ?? '1970-01-01T00:00:00.000Z'
-    const parentId = filters.parent ? await taskIdFor(tx, identity.spaceId, filters.parent) : null
-    const parent = hostedTaskRelationship('hub_task')
-    const tasks = rows<HostedTask>(
-      await tx`
-      SELECT * FROM hub_task WHERE space_id=${identity.spaceId}::uuid
-        AND (${filters.project ?? null}::text IS NULL OR project_name=${filters.project ?? null})
-        AND (${filters.status ?? null}::text IS NULL OR status_category=${filters.status ?? null})
-        AND (${filters.parent ?? null}::text IS NULL
-          OR ${tx.unsafe(parent.idColumn)}=${parentId}::uuid
-          OR (${tx.unsafe(parent.idColumn)} IS NULL AND
-            ${tx.unsafe(parent.keyColumn)}=${filters.parent ?? null}))
-        AND updated_at > ${since}::timestamptz
-        AND (${filters.includeDeleted ?? false} OR deleted_at IS NULL)
-      ORDER BY updated_at, key`,
-    ).map(hostedTaskPullSerializers.hub_task)
-    const comments = rows<HostedComment>(
-      await tx`
-      SELECT * FROM hub_task_comment WHERE space_id=${identity.spaceId}::uuid
-        AND updated_at > ${since}::timestamptz
-        AND (${filters.includeDeleted ?? false} OR deleted_at IS NULL)
-        ORDER BY updated_at,id`,
-    ).map(hostedTaskPullSerializers.hub_task_comment)
-    const documents = rows<HostedDocument>(
-      await tx`
-      SELECT * FROM hub_task_document WHERE space_id=${identity.spaceId}::uuid
-        AND updated_at > ${since}::timestamptz
-        AND (${filters.includeDeleted ?? false} OR deleted_at IS NULL)
-        ORDER BY updated_at,id`,
-    ).map(hostedTaskPullSerializers.hub_task_document)
-    const statusEvents = rows<HostedStatusEvent>(
-      await tx`
-      SELECT * FROM hub_task_status_event WHERE space_id=${identity.spaceId}::uuid
-        AND updated_at > ${since}::timestamptz
-        AND (${filters.includeDeleted ?? false} OR deleted_at IS NULL)
-        ORDER BY updated_at,id`,
-    ).map(hostedTaskPullSerializers.hub_task_status_event)
-    const changed = [...tasks, ...comments, ...documents, ...statusEvents]
-    const cursor = changed.reduce((latest, row) => {
-      const stamp = new Date(row.updated_at).toISOString()
-      return stamp > latest ? stamp : latest
-    }, since)
-    return { tasks, comments, documents, statusEvents, cursor }
-  })
-}
 
 export async function getHostedTask(client: SQL, identity: TaskIdentity, key: string) {
   return withHostedTenant(client, identity, async (tx) => {

@@ -21,11 +21,6 @@ const HOSTED_SQL_EXEMPTIONS: readonly HostedSqlExemption[] = [
     reason: 'project rename selects a table from a closed hosted project-name table catalogue',
   },
   {
-    file: 'hub/src/hosted-tasks.ts',
-    fingerprint: 'b4b5ad2251c6ecca',
-    reason: 'task parent lookup interpolates columns from the closed task relationship catalogue',
-  },
-  {
     file: 'hub/src/hosted-task-prune.ts',
     fingerprint: 'ca0b14628c1ef236',
     reason:

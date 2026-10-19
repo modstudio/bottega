@@ -3,7 +3,7 @@ import type { PGlite } from '@electric-sql/pglite'
 import { PLATFORM_NAME } from '../../shared/brand.ts'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
 import { hostedRequestHandler } from './hosted.ts'
-import { listHostedTasks } from './hosted-tasks.ts'
+import { listHostedTasks } from './hosted-task-list.ts'
 
 const spaceA = '01990000-0000-7000-8000-000000001401'
 const spaceB = '01990000-0000-7000-8000-000000001402'

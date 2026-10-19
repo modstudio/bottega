@@ -5,10 +5,10 @@ import { newRecordId } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
 import type { IntervalEvidence } from '../src/hosted-evidence.ts'
 import { hostedMeasures, loadHostedMeasureRows } from '../src/hosted-measures.ts'
+import { listHostedNotes } from '../src/hosted-note-list.ts'
 import {
   createHostedNote,
   getHostedNote,
-  listHostedNotes,
   mirrorHostedNotes,
   promoteHostedNote,
   reapHostedNotes,
@@ -25,13 +25,9 @@ import {
   unsubscribeHostedReportSubscription,
   updateHostedReportSubscription,
 } from '../src/hosted-reports.ts'
+import { listHostedTasks } from '../src/hosted-task-list.ts'
 import { hostedTaskPresence, softDeleteHostedTasks } from '../src/hosted-task-prune.ts'
-import {
-  createHostedDocument,
-  createHostedTask,
-  type HostedTask,
-  listHostedTasks,
-} from '../src/hosted-tasks.ts'
+import { createHostedDocument, createHostedTask, type HostedTask } from '../src/hosted-tasks.ts'
 import {
   hostedFlightDone,
   hostedNotes,

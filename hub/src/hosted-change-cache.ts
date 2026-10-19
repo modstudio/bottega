@@ -117,6 +117,39 @@ function storeCursor(conn: Database, family: HostedChangeFamily, spaceId: string
     )
     .run(`${family.cursorPrefix}.${spaceId}`, String(cursor))
 }
+type SnapshotState = { head: number; cursor: string | null }
+const snapshotKey = (family: HostedChangeFamily, spaceId: string) =>
+  `${family.cursorPrefix}.snapshot.${spaceId}`
+function readSnapshotState(family: HostedChangeFamily, spaceId: string): SnapshotState | null {
+  const value = db()
+    .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
+    .get(snapshotKey(family, spaceId))?.value
+  if (!value) return null
+  try {
+    const parsed = JSON.parse(value) as SnapshotState
+    if (
+      Number.isSafeInteger(parsed.head) &&
+      parsed.head >= 0 &&
+      (parsed.cursor === null || typeof parsed.cursor === 'string')
+    )
+      return parsed
+  } catch {
+    // A malformed partial snapshot is restarted from its first page.
+  }
+  return null
+}
+function storeSnapshotState(
+  conn: Database,
+  family: HostedChangeFamily,
+  spaceId: string,
+  state: SnapshotState,
+) {
+  conn
+    .query(
+      'INSERT INTO setting(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+    )
+    .run(snapshotKey(family, spaceId), JSON.stringify(state))
+}
 function applyDelete(conn: Database, change: HostedSpaceChange, family: HostedChangeFamily) {
   if (Object.hasOwn(HOSTED_MACHINE_TABLES, change.table))
     return reconcilePulledRow(conn, {
@@ -237,12 +270,26 @@ async function startSpace(
   options: HostedChangeRequestOptions,
   head?: number,
 ): Promise<SpaceCounts> {
-  const sequence = head ?? (await hostedSpaceChanges(0, { ...options, limit: 1 })).head
-  const applySnapshot = await family.fullPull(options)
-  writeTransaction((conn) => {
-    applySnapshot(conn)
-    storeCursor(conn, family, spaceId, sequence)
-  })
+  const stored = readSnapshotState(family, spaceId)
+  const sequence =
+    stored?.head ?? head ?? (await hostedSpaceChanges(0, { ...options, limit: 1 })).head
+  let snapshotCursor = stored?.cursor ?? null
+  for (;;) {
+    const page = await family.fullPull(snapshotCursor, options)
+    if (page.more && page.cursor === snapshotCursor)
+      throw new Error('hosted snapshot cursor did not advance')
+    writeTransaction((conn) => {
+      page.apply(conn)
+      if (page.more)
+        storeSnapshotState(conn, family, spaceId, { head: sequence, cursor: page.cursor })
+      else {
+        storeCursor(conn, family, spaceId, sequence)
+        conn.query('DELETE FROM setting WHERE key=?').run(snapshotKey(family, spaceId))
+      }
+    })
+    snapshotCursor = page.cursor
+    if (!page.more) break
+  }
   const counts = emptyCounts(spaceId)
   counts.resets = 1
   return addCounts(counts, await followSpace(family, spaceId, sequence, options))
@@ -313,9 +360,13 @@ function noteFamily(
     cursorPrefix: HOSTED_NOTE_CHANGES_CURSOR_KEY,
     tables: NOTE_TABLES,
     spaces: notePullSpaces,
-    fullPull: async (options) => {
-      const snapshot = await hostedNotePullRows(null, options)
-      return (conn) => applyHostedNoteRows(conn, snapshot)
+    fullPull: async (cursor, options) => {
+      const snapshot = await hostedNotePullRows(cursor, options)
+      return {
+        cursor: snapshot.cursor,
+        more: snapshot.more ?? false,
+        apply: (conn) => applyHostedNoteRows(conn, snapshot),
+      }
     },
     preparePage: async (page, options) => {
       const noteChanges = page.changes

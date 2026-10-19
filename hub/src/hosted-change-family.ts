@@ -29,7 +29,10 @@ export type HostedChangeFamily = {
     registered: readonly RegisteredTaskSpace[],
     identity: TaskDestinationIdentity,
   ) => string[]
-  fullPull: (options: HostedChangeRequestOptions) => Promise<(conn: Database) => void>
+  fullPull: (
+    cursor: string | null,
+    options: HostedChangeRequestOptions,
+  ) => Promise<{ cursor: string; more: boolean; apply: (conn: Database) => void }>
   preparePage?: (
     page: HostedSpaceChangePage,
     options: HostedChangeRequestOptions,

@@ -16,6 +16,15 @@ const REMEDY = MISSING_HOSTED_URL_REMEDY
 const UNREACHABLE_REMEDY = HOSTED_UNREACHABLE_REMEDY
 type NoteFetch = (input: string, init?: RequestInit) => Promise<Response>
 type Options = { baseUrl?: string; token?: string | null; fetch?: NoteFetch; recordSpace?: string }
+class HostedNoteRequestError extends Error {
+  readonly status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+  }
+}
+export const isMissingHostedNote = (cause: unknown) =>
+  cause instanceof HostedNoteRequestError && cause.status === 404
 async function request<T>(
   path: string,
   method: string,
@@ -56,7 +65,8 @@ async function request<T>(
     )
   const value = bodyResult.value as Record<string, unknown> | null
   if (!response.ok)
-    throw new Error(
+    throw new HostedNoteRequestError(
+      response.status,
       `hosted hub refused the write (${response.status}): ${String(value?.error ?? 'unknown error')}. ${REMEDY}`,
     )
   return value as T
@@ -87,6 +97,7 @@ export async function hostedNoteChanges(cursor: string | null, options?: Options
     acknowledgements: HostedAcknowledgement[]
     projectCounters: Array<{ project: string; next: number }>
     cursor: string
+    more?: boolean
   }>(`/v1/notes?${query}`, 'GET', undefined, options)
 }
 export const hostedMirrorNotes = async (body: unknown, options?: Options) => {

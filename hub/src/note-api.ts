@@ -8,11 +8,11 @@ import {
   recordSpaceAccessDecision,
   recordSpaceRequestDecision,
 } from '../../shared/record-space-request.ts'
+import { listHostedNotes } from './hosted-note-list.ts'
 import {
   createHostedNote,
   getHostedNote,
   hostedNoteCounts,
-  listHostedNotes,
   mirrorHostedNotes,
   promoteHostedNote,
   reapHostedNotes,
@@ -74,6 +74,7 @@ async function readRoute(context: RouteContext): Promise<Response | null> {
         actionable: url.searchParams.get('actionable') === 'true',
         updatedSince: url.searchParams.get('updatedSince') ?? undefined,
         cursor: url.searchParams.get('cursor') ?? undefined,
+        limit: url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined,
         includeDeleted: url.searchParams.get('includeDeleted') === 'true',
       }),
     )

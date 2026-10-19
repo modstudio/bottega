@@ -196,14 +196,33 @@ export const hostedCreateDocument = (
   options?: Parameters<typeof request>[3],
 ) =>
   request<HostedDocument>(`/v1/tasks/${encodeURIComponent(key)}/documents`, 'POST', body, options)
-export const hostedListTasks = (options?: Parameters<typeof request>[3]) =>
-  request<{
+export async function hostedListTasks(options?: Parameters<typeof request>[3]) {
+  type Result = {
     tasks: HostedTask[]
     comments: HostedComment[]
     documents: HostedDocument[]
     statusEvents: import('./hosted-tasks.ts').HostedStatusEvent[]
-    cursor: string
-  }>('/v1/tasks', 'GET', undefined, options)
+  }
+  const rows = { tasks: [], comments: [], documents: [], statusEvents: [] } as Result
+  let cursor: string | null = null
+  for (;;) {
+    const query = new URLSearchParams()
+    if (cursor) query.set('cursor', cursor)
+    const page = await request<Result & { cursor: string; more: boolean }>(
+      `/v1/tasks?${query}`,
+      'GET',
+      undefined,
+      options,
+    )
+    rows.tasks.push(...page.tasks)
+    rows.comments.push(...page.comments)
+    rows.documents.push(...page.documents)
+    rows.statusEvents.push(...page.statusEvents)
+    if (!page.more) return { ...rows, cursor: page.cursor, more: false }
+    if (page.cursor === cursor) throw new Error('hosted task list cursor did not advance')
+    cursor = page.cursor
+  }
+}
 
 export const hostedTaskPresence = (
   pairs: HostedTaskPresencePair[],
@@ -238,6 +257,7 @@ export async function hostedTaskChanges(
     documents: HostedDocument[]
     statusEvents: import('./hosted-tasks.ts').HostedStatusEvent[]
     cursor: string
+    more?: boolean
   }>(`/v1/tasks?${query}`, 'GET', undefined, options)
 }
 

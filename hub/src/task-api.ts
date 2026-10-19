@@ -6,13 +6,9 @@ import {
 } from '../../shared/record-space-request.ts'
 import type { HostedRouteConfig } from './hosted-route-config.ts'
 import { taskSpaceIdentity } from './hosted-route-identity.ts'
+import { listHostedTasks } from './hosted-task-list.ts'
 import { hostedTaskPresence, softDeleteHostedTasks } from './hosted-task-prune.ts'
-import {
-  createHostedDocument,
-  createHostedTask,
-  getHostedTask,
-  listHostedTasks,
-} from './hosted-tasks.ts'
+import { createHostedDocument, createHostedTask, getHostedTask } from './hosted-tasks.ts'
 import { PUSHABLE_HUB_CHANGE_TABLES } from './push-contract.ts'
 
 const TEST_REFUSAL = `${PLATFORM_SLUG} task API refuses real identity and database clients unless stubs are injected in tests`
@@ -71,6 +67,7 @@ async function readRoute(ctx: RouteContext): Promise<Response | null> {
         parent: url.searchParams.get('parent') ?? undefined,
         updatedSince: url.searchParams.get('updatedSince') ?? undefined,
         cursor: url.searchParams.get('cursor') ?? undefined,
+        limit: url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined,
         includeDeleted: url.searchParams.get('includeDeleted') === 'true',
       }),
     )

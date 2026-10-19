@@ -36,7 +36,7 @@ export const hostedTaskRelationships = [
 export type HostedTaskRelationshipTable = (typeof hostedTaskRelationships)[number]['table']
 type Relationship = (typeof hostedTaskRelationships)[number]
 
-export function hostedTaskRelationship(table: HostedTaskRelationshipTable): Relationship {
+function hostedTaskRelationship(table: HostedTaskRelationshipTable): Relationship {
   return hostedTaskRelationships.find((relationship) => relationship.table === table)!
 }
 
