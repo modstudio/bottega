@@ -121,6 +121,9 @@
     "hub/views": {
       "entry": [".storybook/preview.css!"]
     },
+    "hub/site": {
+      "project": ["src/**/*.{ts,tsx}!", "!src/**/*.test.{ts,tsx}"]
+    },
     "retrieval": {
       "entry": ["src/benchmark/benchmark.ts!", "src/search-cli.ts!"],
       "project": ["src/**/*.ts!", "!src/**/*.test.ts"]

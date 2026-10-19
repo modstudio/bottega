@@ -1,5 +1,5 @@
-import { Link } from '@tanstack/react-router'
-import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { SiteLink as Link } from './navigation.tsx'
 
 export const installCommand = `curl -fsSL https://raw.githubusercontent.com/modstudio/${PLATFORM_SLUG}/main/install.sh | sh`
 export const Check = () => (

@@ -1,14 +1,28 @@
 import { expect, test } from 'bun:test'
 import {
+  hubSiteArchitectureRules,
   hubUtilArchitectureRules,
   hubUtilRuntimeDependencyViolations,
 } from './architecture-hub-packages.ts'
 
 const utilRule = hubUtilArchitectureRules()[0]
+const siteRule = hubSiteArchitectureRules((target) => `node_modules/${target}`)[0]
 
 function utilImportIsAllowed(target: string) {
   return utilRule.to.pathNot.some((pattern) => new RegExp(pattern).test(target))
 }
+
+function siteImportIsAllowed(target: string) {
+  return siteRule.to.pathNot.some((pattern) => new RegExp(pattern).test(target))
+}
+
+test('hub site imports only React, its own modules, and shared modules', () => {
+  expect(siteImportIsAllowed('hub/site/src/navigation.tsx')).toBeTrue()
+  expect(siteImportIsAllowed('shared/brand.ts')).toBeTrue()
+  expect(siteImportIsAllowed('node_modules/react/index.js')).toBeTrue()
+  expect(siteImportIsAllowed('node_modules/@tanstack/react-router/dist/esm/index.js')).toBeFalse()
+  expect(siteImportIsAllowed('hub/ui/src/button/button.tsx')).toBeFalse()
+})
 
 test('hub util imports only its own modules and shared modules', () => {
   expect(utilImportIsAllowed('hub/util/src/format.ts')).toBeTrue()

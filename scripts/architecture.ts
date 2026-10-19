@@ -27,6 +27,7 @@ import {
   HUB_DATA_PACKAGE,
   HUB_UI_PACKAGE,
   HUB_VIEWS_PACKAGE,
+  hubSiteArchitectureRules,
   hubUtilArchitectureRules,
 } from './architecture-hub-packages.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
@@ -814,6 +815,7 @@ const hubWebAllowedConcernImports = [
   exactArchitecturePath(hubWebRouterException.to),
   '^hub/ui/src/',
   '^hub/data/src/',
+  '^hub/site/src/',
   '^hub/util/src/',
   '^hub/views/src/',
 ]
@@ -832,6 +834,7 @@ export function writeTimeArchitectureRules(): ArchitectureRule[] {
     ...uiArchitectureRules(architectureDependencyPath, HUB_UI_PACKAGE),
     ...viewArchitectureRules(architectureDependencyPath, HUB_VIEWS_PACKAGE),
     ...hubDataBoundaryRules,
+    ...hubSiteArchitectureRules(architectureDependencyPath),
     ...hubUtilArchitectureRules(),
     hubWebViewDataRule,
   ]

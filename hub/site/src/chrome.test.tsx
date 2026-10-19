@@ -1,23 +1,22 @@
 import { expect, test } from 'bun:test'
-import {
-  createMemoryHistory,
-  createRootRoute,
-  createRouter,
-  RouterProvider,
-} from '@tanstack/react-router'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { SiteHeader } from './chrome.tsx'
+import { SiteNavigation } from './navigation.tsx'
 
-async function renderHeader(identity: 'signed-in' | 'signed-out', appSignInHref?: string) {
-  const root = createRootRoute({
-    component: () => <SiteHeader identity={identity} appSignInHref={appSignInHref} />,
-  })
-  const router = createRouter({
-    routeTree: root,
-    history: createMemoryHistory({ initialEntries: ['/'] }),
-  })
-  await router.load()
-  return renderToStaticMarkup(<RouterProvider router={router} />)
+function TestLink({ to, children, ...props }: React.ComponentProps<'a'> & { to: string }) {
+  return (
+    <a href={to} {...props}>
+      {children}
+    </a>
+  )
+}
+
+function renderHeader(identity: 'signed-in' | 'signed-out', appSignInHref?: string) {
+  return renderToStaticMarkup(
+    <SiteNavigation link={TestLink} currentPath="/">
+      <SiteHeader identity={identity} appSignInHref={appSignInHref} />
+    </SiteNavigation>,
+  )
 }
 
 test('site header offers sign in to signed-out visitors', async () => {

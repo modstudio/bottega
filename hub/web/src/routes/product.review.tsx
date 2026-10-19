@@ -1,5 +1,5 @@
+import { ReviewPage } from '@bottega/hub-site/review'
 import { createFileRoute } from '@tanstack/react-router'
-import { ReviewPage } from '@/site/review'
 import { requireHostedSite, siteHead } from './-site'
 export const Route = createFileRoute('/product/review')({
   beforeLoad: requireHostedSite,

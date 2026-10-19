@@ -1,8 +1,8 @@
 import { trpc } from '@bottega/hub-data/client'
 import { hostedOrigin, isHostedMode } from '@bottega/hub-data/hub-mode'
+import { HomePage } from '@bottega/hub-site/home'
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { HomePage } from '@/site/home'
 import { Flight } from './-flight'
 import { siteHead } from './-site'
 
