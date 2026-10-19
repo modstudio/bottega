@@ -11,6 +11,11 @@ export type RecordCursorRow = {
   [recordCursorAt]?: string
 }
 
+export type RecordListCursorRow = {
+  id: string
+  [recordCursorAt]: string
+}
+
 const RecordCursorSchema = z.object({
   at: z.string().datetime({ offset: true }),
   id: z.string().uuid(),
@@ -21,10 +26,13 @@ export const encodeRecordCursor = (cursor: RecordCursor): string => btoa(JSON.st
 export const decodeRecordCursor = (value: string): RecordCursor =>
   RecordCursorSchema.parse(JSON.parse(atob(value)))
 
-export const recordCursorOf = (row: RecordCursorRow): RecordCursor => ({
-  at: row[recordCursorAt] ?? row.updatedAt,
-  id: row.id,
-})
+export const recordCursorOf = (row: RecordCursorRow | RecordListCursorRow): RecordCursor => {
+  const cursorAt = row[recordCursorAt]
+  return {
+    at: cursorAt === undefined ? (row as RecordCursorRow).updatedAt : cursorAt,
+    id: row.id,
+  }
+}
 
 export type StoredRecordCursorParse =
   | { cursor: RecordCursor; migrated: boolean }

@@ -3,7 +3,13 @@
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
 import type { RecordIdentity } from './record-auth.ts'
-import { decodeRecordCursor, pageRecordItems, type RecordCursor } from './record-cursor.ts'
+import {
+  decodeRecordCursor,
+  pageRecordItems,
+  type RecordCursor,
+  type RecordListCursorRow,
+  recordCursorOf,
+} from './record-cursor.ts'
 import {
   RecordLensError,
   type RecordLensImportInput,
@@ -28,7 +34,7 @@ export type RecordLensRouteDeps = {
       limit: number
       cursor: RecordCursor | null
     },
-  ): Promise<Record<string, unknown>[]>
+  ): Promise<(Record<string, unknown> & RecordListCursorRow)[]>
   upsertLens(input: Tenant & RecordLensWriteInput): Promise<unknown>
   upsertLensProfile(input: Tenant & RecordLensProfileWriteInput): Promise<unknown>
   selectProjectLensProfile(input: Tenant & RecordProjectLensSelectionInput): Promise<unknown>
@@ -77,17 +83,7 @@ export function registerRecordLensRoutes(
       limit: query.data.limit,
       cursor,
     })
-    return context.json(
-      pageRecordItems(
-        items,
-        query.data.limit,
-        (item) => ({
-          at: String(item[table.data.includes('revision') ? 'at' : 'updatedAt']),
-          id: String(item.id),
-        }),
-        true,
-      ),
-    )
+    return context.json(pageRecordItems(items, query.data.limit, recordCursorOf, true))
   })
   app.put('/v1/lens-catalogue/lenses', async (context) => {
     const active = ports.scope(context)

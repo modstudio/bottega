@@ -3,7 +3,7 @@
 import { SQL } from 'bun'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
-import type { RecordCursor } from './record-cursor.ts'
+import { type RecordCursor, type RecordListCursorRow, recordCursorAt } from './record-cursor.ts'
 import type {
   RecordLensProfileWriteInput,
   RecordLensTable,
@@ -31,7 +31,10 @@ const nullable = (value: unknown) => (value == null ? null : String(value))
 const number = (value: unknown) => Number(value)
 const iso = (value: unknown) => (value instanceof Date ? value.toISOString() : String(value))
 
-function mapped(table: RecordLensTable, row: Record<string, unknown>): Record<string, unknown> {
+function mapped(
+  table: RecordLensTable,
+  row: Record<string, unknown>,
+): { id: string } & Record<string, unknown> {
   const common = { id: text(row.id), spaceId: text(row.space_id) }
   switch (table) {
     case 'lens':
@@ -105,7 +108,7 @@ function mapped(table: RecordLensTable, row: Record<string, unknown>): Record<st
 
 export async function listRecordLensCatalogue(
   input: Tenant & { table: RecordLensTable; limit: number; cursor: RecordCursor | null },
-): Promise<Record<string, unknown>[]> {
+): Promise<(Record<string, unknown> & RecordListCursorRow)[]> {
   return tenant(input, async (tx) => {
     const at = input.cursor?.at ?? null
     const id = input.cursor?.id ?? null
@@ -113,30 +116,33 @@ export async function listRecordLensCatalogue(
     switch (input.table) {
       case 'lens':
         rows =
-          await tx`SELECT * FROM lens WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
+          await tx`SELECT *,to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM lens WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
         break
       case 'lens_revision':
         rows =
-          await tx`SELECT * FROM lens_revision WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY at,id LIMIT ${input.limit + 1}`
+          await tx`SELECT *,to_char(at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM lens_revision WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY at,id LIMIT ${input.limit + 1}`
         break
       case 'lens_profile':
         rows =
-          await tx`SELECT * FROM lens_profile WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
+          await tx`SELECT *,to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM lens_profile WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
         break
       case 'lens_profile_revision':
         rows =
-          await tx`SELECT * FROM lens_profile_revision WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY at,id LIMIT ${input.limit + 1}`
+          await tx`SELECT *,to_char(at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM lens_profile_revision WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY at,id LIMIT ${input.limit + 1}`
         break
       case 'project_lens_profile':
         rows =
-          await tx`SELECT * FROM project_lens_profile WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
+          await tx`SELECT *,to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM project_lens_profile WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
         break
       case 'project_lens_profile_revision':
         rows =
-          await tx`SELECT * FROM project_lens_profile_revision WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY at,id LIMIT ${input.limit + 1}`
+          await tx`SELECT *,to_char(at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM project_lens_profile_revision WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY at,id LIMIT ${input.limit + 1}`
         break
     }
-    return rows.map((row) => mapped(input.table, row))
+    return rows.map((row) => ({
+      ...mapped(input.table, row),
+      [recordCursorAt]: text(row.cursor_at),
+    }))
   })
 }
 

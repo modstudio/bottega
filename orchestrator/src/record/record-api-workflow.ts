@@ -3,7 +3,13 @@
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
 import type { RecordIdentity } from './record-auth.ts'
-import { decodeRecordCursor, pageRecordItems, type RecordCursor } from './record-cursor.ts'
+import {
+  decodeRecordCursor,
+  pageRecordItems,
+  type RecordCursor,
+  type RecordListCursorRow,
+  recordCursorOf,
+} from './record-cursor.ts'
 import {
   type RecordWorkflowDraftInput,
   RecordWorkflowError,
@@ -21,7 +27,7 @@ type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[]
 export type RecordWorkflowRouteDeps = {
   listWorkflowCatalogue(
     input: Tenant & { table: RecordWorkflowTable; limit: number; cursor: RecordCursor | null },
-  ): Promise<Record<string, unknown>[]>
+  ): Promise<(Record<string, unknown> & RecordListCursorRow)[]>
   draftWorkflow(input: Tenant & RecordWorkflowDraftInput): Promise<unknown>
   promoteWorkflow(input: Tenant & RecordWorkflowTransitionInput): Promise<unknown>
   retireWorkflow(input: Tenant & RecordWorkflowTransitionInput): Promise<unknown>
@@ -63,17 +69,7 @@ export function registerRecordWorkflowRoutes(
       limit: query.data.limit,
       cursor,
     })
-    return context.json(
-      pageRecordItems(
-        items,
-        query.data.limit,
-        (item) => ({
-          at: String(item.updatedAt),
-          id: String(item.id),
-        }),
-        true,
-      ),
-    )
+    return context.json(pageRecordItems(items, query.data.limit, recordCursorOf, true))
   })
   app.post('/v1/workflow-catalogue/draft', async (context) => {
     const active = ports.scope(context)

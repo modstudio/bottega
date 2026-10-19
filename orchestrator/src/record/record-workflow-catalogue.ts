@@ -3,7 +3,7 @@
 import { SQL } from 'bun'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
-import type { RecordCursor } from './record-cursor.ts'
+import { type RecordCursor, type RecordListCursorRow, recordCursorAt } from './record-cursor.ts'
 import {
   type RecordWorkflowDraftInput,
   RecordWorkflowError,
@@ -71,7 +71,7 @@ function mapped(table: RecordWorkflowTable, row: Record<string, unknown>) {
 
 export async function listRecordWorkflowCatalogue(
   input: Tenant & { table: RecordWorkflowTable; limit: number; cursor: RecordCursor | null },
-) {
+): Promise<(Record<string, unknown> & RecordListCursorRow)[]> {
   return tenant(input, async (tx) => {
     const at = input.cursor?.at ?? null,
       id = input.cursor?.id ?? null
@@ -79,30 +79,33 @@ export async function listRecordWorkflowCatalogue(
     switch (input.table) {
       case 'step_catalogue':
         rows =
-          await tx`SELECT * FROM step_catalogue WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
+          await tx`SELECT *,to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM step_catalogue WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
         break
       case 'step_catalogue_version':
         rows =
-          await tx`SELECT * FROM step_catalogue_version WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
+          await tx`SELECT *,to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM step_catalogue_version WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
         break
       case 'step_catalogue_event':
         rows =
-          await tx`SELECT * FROM step_catalogue_event WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
+          await tx`SELECT *,to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM step_catalogue_event WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
         break
       case 'workflow':
         rows =
-          await tx`SELECT * FROM workflow WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
+          await tx`SELECT *,to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM workflow WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
         break
       case 'workflow_version':
         rows =
-          await tx`SELECT * FROM workflow_version WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
+          await tx`SELECT *,to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM workflow_version WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
         break
       case 'workflow_event':
         rows =
-          await tx`SELECT * FROM workflow_event WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
+          await tx`SELECT *,to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM workflow_event WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
         break
     }
-    return rows.map((row) => mapped(input.table, row))
+    return rows.map((row) => ({
+      ...mapped(input.table, row),
+      [recordCursorAt]: text(row.cursor_at),
+    }))
   })
 }
 

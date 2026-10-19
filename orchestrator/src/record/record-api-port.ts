@@ -3,9 +3,14 @@
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
 import type { RecordIdentity } from './record-auth.ts'
-import { decodeRecordCursor, pageRecordItems, type RecordCursor } from './record-cursor.ts'
 import {
-  RECORD_PORT_CURSORS,
+  decodeRecordCursor,
+  pageRecordItems,
+  type RecordCursor,
+  type RecordListCursorRow,
+  recordCursorOf,
+} from './record-cursor.ts'
+import {
   RecordPortError,
   type RecordPortImportInput,
   type RecordPortRow,
@@ -21,7 +26,7 @@ type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[]
 export type RecordPortRouteDeps = {
   listPortCatalogue(
     input: Tenant & { table: RecordPortTable; limit: number; cursor: RecordCursor | null },
-  ): Promise<RecordPortRow[]>
+  ): Promise<(RecordPortRow & RecordListCursorRow)[]>
   writePort(input: Tenant & RecordPortWriteInput): Promise<unknown>
   importPortCatalogue?(input: Tenant & RecordPortImportInput): Promise<unknown>
 }
@@ -55,18 +60,7 @@ export function registerRecordPortRoutes(
       limit: query.data.limit,
       cursor,
     })
-    const timestamp = RECORD_PORT_CURSORS[table.data].field
-    return context.json(
-      pageRecordItems(
-        items,
-        query.data.limit,
-        (item) => ({
-          at: String((item as RecordPortRow & Record<string, unknown>)[timestamp]),
-          id: item.id,
-        }),
-        true,
-      ),
-    )
+    return context.json(pageRecordItems(items, query.data.limit, recordCursorOf, true))
   })
   app.post('/v1/port-catalogue/write', async (context) => {
     const active = ports.scope(context)
