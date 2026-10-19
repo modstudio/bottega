@@ -153,14 +153,17 @@ async function reconcileWorkflowVersions(
       imported = input[versionTable].filter((row) => row.ownerId === owner.id),
       production = imported.find((row) => row.status === 'production')
     if (!ownerId || !production) return
-    const hosted: { id: unknown; author: unknown }[] =
+    const hosted: { id: unknown; author: unknown; status: unknown }[] =
       kind === 'workflow'
-        ? await tx`SELECT id,author FROM workflow_version WHERE space_id=${input.spaceId}::uuid AND workflow_id=${ownerId}::uuid`
-        : await tx`SELECT id,author FROM step_catalogue_version WHERE space_id=${input.spaceId}::uuid AND catalogue_id=${ownerId}::uuid`
+        ? await tx`SELECT id,author,status FROM workflow_version WHERE space_id=${input.spaceId}::uuid AND workflow_id=${ownerId}::uuid`
+        : await tx`SELECT id,author,status FROM step_catalogue_version WHERE space_id=${input.spaceId}::uuid AND catalogue_id=${ownerId}::uuid`
     if (!hosted.length) return
     const hostedIds = new Set(hosted.map((row) => text(row.id)))
     if (imported.every((row) => hostedIds.has(row.id))) return
-    if (hosted.every((row) => text(row.author) === BUILT_IN_WORKFLOW_AUTHOR)) {
+    if (
+      hosted.some((row) => text(row.status) === 'production') &&
+      hosted.every((row) => text(row.author) === BUILT_IN_WORKFLOW_AUTHOR)
+    ) {
       if (kind === 'workflow') {
         await tx`DELETE FROM workflow_event WHERE space_id=${input.spaceId}::uuid AND workflow_version_id IN (SELECT id FROM workflow_version WHERE space_id=${input.spaceId}::uuid AND workflow_id=${ownerId}::uuid)`
         await tx`DELETE FROM workflow_version WHERE space_id=${input.spaceId}::uuid AND workflow_id=${ownerId}::uuid`
