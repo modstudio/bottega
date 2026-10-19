@@ -1,6 +1,6 @@
 import type { SQL } from 'bun'
 import { bindTenant } from '../../shared/record/tenant.ts'
-import type { TaskIdentity } from './hosted-tasks.ts'
+import type { TaskIdentity } from './hosted-tenant.ts'
 import {
   HUB_IDENTITY_SET_PAGE_SIZE,
   type IdentitySetPage,

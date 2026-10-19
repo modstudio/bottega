@@ -1,4 +1,3 @@
-import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { parseRecordSpaceMemberships } from '../../shared/record-space-membership.ts'
 import {
@@ -17,12 +16,11 @@ import {
   unsubscribeHostedReportSubscription,
   updateHostedReportSubscription,
 } from './hosted-reports.ts'
+import type { HostedRouteConfig } from './hosted-route-config.ts'
 
 const TEST_REFUSAL = `${PLATFORM_SLUG} report API refuses real identity and database clients unless stubs are injected in tests`
-type Config = { recordApiUrl: string; recordDatabaseUrl: SQL | string }
 type Dependencies = { fetch?: typeof fetch; [key: string]: unknown }
 const json = (value: unknown, status = 200) => Response.json(value, { status })
-const database = (config: Config) => config.recordDatabaseUrl as SQL
 const call = <T>(stub: unknown, real: T): T => {
   if (process.env.NODE_ENV === 'test' && !stub) throw new Error(TEST_REFUSAL)
   return (stub ?? real) as T
@@ -37,25 +35,37 @@ const sendFilters = (url: URL) => ({
 async function sendRoute(
   request: Request,
   url: URL,
-  config: Config,
+  config: HostedRouteConfig,
   dependencies: Dependencies,
   who: { userId: string; spaceId: string },
   body: Record<string, unknown> | null,
 ) {
   if (request.method === 'GET' && url.pathname === '/v1/sends/counts')
-    return json(await call(dependencies.counts, hostedReportCounts)(database(config), who))
+    return json(await call(dependencies.counts, hostedReportCounts)(config.recordDatabaseUrl, who))
   if (request.method === 'GET' && url.pathname === '/v1/sends')
     return json(
-      await call(dependencies.listSends, listHostedSends)(database(config), who, sendFilters(url)),
+      await call(dependencies.listSends, listHostedSends)(
+        config.recordDatabaseUrl,
+        who,
+        sendFilters(url),
+      ),
     )
   if (request.method === 'POST' && url.pathname === '/v1/sends')
     return json(
-      await call(dependencies.appendSend, appendHostedSend)(database(config), who, body as never),
+      await call(dependencies.appendSend, appendHostedSend)(
+        config.recordDatabaseUrl,
+        who,
+        body as never,
+      ),
       201,
     )
   if (request.method === 'PUT' && url.pathname === '/v1/sends/mirror')
     return json(
-      await call(dependencies.mirror, mirrorHostedReports)(database(config), who, body as never),
+      await call(dependencies.mirror, mirrorHostedReports)(
+        config.recordDatabaseUrl,
+        who,
+        body as never,
+      ),
     )
   return null
 }
@@ -63,7 +73,7 @@ async function sendRoute(
 async function subscriptionRoute(
   request: Request,
   url: URL,
-  config: Config,
+  config: HostedRouteConfig,
   dependencies: Dependencies,
   who: { userId: string; spaceId: string },
   body: Record<string, unknown> | null,
@@ -71,14 +81,14 @@ async function subscriptionRoute(
   if (request.method === 'GET' && url.pathname === '/v1/report-subscriptions')
     return json(
       await call(dependencies.listSubscriptions, listHostedReportSubscriptions)(
-        database(config),
+        config.recordDatabaseUrl,
         who,
       ),
     )
   if (request.method === 'POST' && url.pathname === '/v1/report-subscriptions')
     return json(
       await call(dependencies.createSubscription, createHostedReportSubscription)(
-        database(config),
+        config.recordDatabaseUrl,
         who,
         body as never,
       ),
@@ -88,7 +98,7 @@ async function subscriptionRoute(
   if (request.method === 'PUT' && unsubscribe)
     return json(
       await call(dependencies.updateSubscription, updateHostedReportSubscription)(
-        database(config),
+        config.recordDatabaseUrl,
         who,
         unsubscribe[1]!,
         body as never,
@@ -97,7 +107,7 @@ async function subscriptionRoute(
   if (request.method === 'DELETE' && unsubscribe)
     return json(
       await call(dependencies.unsubscribe, unsubscribeHostedReportSubscription)(
-        database(config),
+        config.recordDatabaseUrl,
         who,
         unsubscribe[1]!,
       ),
@@ -108,7 +118,7 @@ async function subscriptionRoute(
 async function dispatchReportRequest(
   request: Request,
   url: URL,
-  config: Config,
+  config: HostedRouteConfig,
   dependencies: Dependencies,
   who: { userId: string; spaceId: string },
   body: Record<string, unknown> | null,
@@ -122,7 +132,7 @@ async function dispatchReportRequest(
 
 export async function reportApi(
   request: Request,
-  config: Config,
+  config: HostedRouteConfig,
   dependencies: Dependencies = {},
 ): Promise<Response | null> {
   const url = new URL(request.url)
@@ -131,7 +141,7 @@ export async function reportApi(
   if (emailUnsubscribe && request.method === 'GET')
     return json(
       await call(dependencies.emailRecipientByToken, hostedEmailRecipientByToken)(
-        database(config),
+        config.recordDatabaseUrl,
         emailUnsubscribe[1]!,
         emailUnsubscribe[2]!,
       ),
@@ -142,7 +152,7 @@ export async function reportApi(
       unsubscribed: await call(
         dependencies.unsubscribeEmailRecipient,
         unsubscribeHostedEmailRecipient,
-      )(database(config), postedUnsubscribe[1]!, postedUnsubscribe[2]!),
+      )(config.recordDatabaseUrl, postedUnsubscribe[1]!, postedUnsubscribe[2]!),
     })
   if (!url.pathname.startsWith('/v1/report-subscriptions') && !url.pathname.startsWith('/v1/sends'))
     return null

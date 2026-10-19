@@ -1,4 +1,3 @@
-import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { recordSpaceAccessDecision } from '../../shared/record-space-request.ts'
 import {
@@ -9,6 +8,7 @@ import {
 } from './hosted-changes.ts'
 import { listHostedIdentitySet } from './hosted-identity-set.ts'
 import { applyHostedPushChanges } from './hosted-push-changes.ts'
+import type { HostedRouteConfig } from './hosted-route-config.ts'
 import { taskSpaceIdentity } from './hosted-route-identity.ts'
 import { parseIdentitySetRequest } from './identity-set-contract.ts'
 import {
@@ -20,7 +20,6 @@ import {
 const TEST_REFUSAL =
   'hub change API refuses real identity and database clients unless stubs are injected in tests'
 
-type Config = { recordApiUrl: string; recordDatabaseUrl: SQL | string }
 type Dependencies = {
   fetch?: (input: string, init?: RequestInit) => Promise<Response>
   list?: typeof listHostedChanges
@@ -31,7 +30,6 @@ type ChangeIdentity = Exclude<
   Awaited<ReturnType<typeof taskSpaceIdentity>>,
   null | { refusedSpace: string }
 >
-const database = (config: Config) => config.recordDatabaseUrl as SQL
 
 const allowed = Object.keys(READABLE_HUB_CHANGES) as ReadableHubChangeTable[]
 const allowedMessage = allowed.join(', ')
@@ -91,7 +89,7 @@ function pushInput(
 
 async function pushResponse(
   request: Request,
-  config: Config,
+  config: HostedRouteConfig,
   dependencies: Dependencies,
   who: ChangeIdentity,
 ): Promise<Response> {
@@ -101,7 +99,7 @@ async function pushResponse(
   if ('error' in decision) return json({ error: decision.error }, 400)
   try {
     const applied = await (dependencies.push ?? applyHostedPushChanges)(
-      database(config),
+      config.recordDatabaseUrl,
       who,
       decision.inputs,
     )
@@ -115,7 +113,11 @@ async function pushResponse(
   }
 }
 
-async function identityWho(request: Request, config: Config, dependencies: Dependencies) {
+async function identityWho(
+  request: Request,
+  config: HostedRouteConfig,
+  dependencies: Dependencies,
+) {
   return taskSpaceIdentity(
     request,
     config.recordApiUrl,
@@ -143,7 +145,7 @@ function refusedSpaceResponse(space: string) {
 async function identitySetResponse(
   request: Request,
   url: URL,
-  config: Config,
+  config: HostedRouteConfig,
   dependencies: Dependencies,
 ): Promise<Response> {
   if (request.method !== 'GET') return new Response('not found', { status: 404 })
@@ -157,7 +159,9 @@ async function identitySetResponse(
     return json({ error: (error as Error).message }, 400)
   }
   try {
-    return json(await (dependencies.ids ?? listHostedIdentitySet)(database(config), who, input))
+    return json(
+      await (dependencies.ids ?? listHostedIdentitySet)(config.recordDatabaseUrl, who, input),
+    )
   } catch (error) {
     return json({ error: (error as Error).message }, 409)
   }
@@ -166,7 +170,7 @@ async function identitySetResponse(
 async function changeLogResponse(
   request: Request,
   url: URL,
-  config: Config,
+  config: HostedRouteConfig,
   dependencies: Dependencies,
 ): Promise<Response> {
   if (request.method !== 'GET' && request.method !== 'POST')
@@ -182,7 +186,9 @@ async function changeLogResponse(
     return json({ error: (error as Error).message }, 400)
   }
   try {
-    return json(await (dependencies.list ?? listHostedChanges)(database(config), who, input))
+    return json(
+      await (dependencies.list ?? listHostedChanges)(config.recordDatabaseUrl, who, input),
+    )
   } catch (error) {
     return json({ error: (error as Error).message }, 409)
   }
@@ -190,7 +196,7 @@ async function changeLogResponse(
 
 export async function changeApi(
   request: Request,
-  config: Config,
+  config: HostedRouteConfig,
   dependencies: Dependencies = {},
 ): Promise<Response | null> {
   const url = new URL(request.url)

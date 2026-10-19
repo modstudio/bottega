@@ -484,6 +484,7 @@ export const importBoundaries: ImportBoundary[] = [
       './app-static.ts',
       './change-api.ts',
       './hosted-health.ts',
+      './hosted-route-config.ts',
       './hosted-version.ts',
       './note-api.ts',
       './operator-waiting-email-api.ts',

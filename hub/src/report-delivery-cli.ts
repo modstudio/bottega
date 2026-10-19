@@ -59,7 +59,7 @@ export async function runReportDeliveryCommand(
     return await runScheduledReportDelivery({
       deliveryEnabled: environment.HUB_REPORT_DELIVERY_ENABLED === 'true',
       dryRun: input.dryRun,
-      prune: () => pruneHostedChanges(databaseUrl),
+      prune: () => pruneHostedChanges(database),
       deliver: () =>
         runReportDeliveryPass({
           repository: hostedDeliveryRepository(database),

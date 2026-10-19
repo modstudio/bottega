@@ -1,6 +1,6 @@
 import type { SQL } from 'bun'
 import { hostedTaskJoin } from './hosted-task-reference.ts'
-import { type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
+import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 import {
   computeMeasures,
   type MeasureInterval,

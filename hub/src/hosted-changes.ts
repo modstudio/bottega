@@ -12,8 +12,8 @@ import {
   type HostedStatusEvent,
   type HostedTask,
   hostedTaskPullSerializers,
-  type TaskIdentity,
 } from './hosted-tasks.ts'
+import type { TaskIdentity } from './hosted-tenant.ts'
 
 export const MAX_HUB_CHANGE_PAGE_SIZE = 500
 

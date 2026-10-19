@@ -1,7 +1,8 @@
 import type { SQL } from 'bun'
 import type { TenantPrincipal } from '../../shared/record/tenant.ts'
 import { hostedTaskRelationships } from './hosted-task-reference.ts'
-import { confirmCount, type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
+import { confirmCount } from './hosted-tasks.ts'
+import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 
 export type HostedTaskPresencePair = { space_id: string; key: string }
 

@@ -1,10 +1,10 @@
-import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import type { RecordSpaceMembership } from '../../shared/record-space-membership.ts'
 import {
   recordRequestNature,
   recordSpaceAccessDecision,
 } from '../../shared/record-space-request.ts'
+import type { HostedRouteConfig } from './hosted-route-config.ts'
 import { taskSpaceIdentity } from './hosted-route-identity.ts'
 import { hostedTaskPresence, softDeleteHostedTasks } from './hosted-task-prune.ts'
 import {
@@ -17,7 +17,6 @@ import { PUSHABLE_HUB_CHANGE_TABLES } from './push-contract.ts'
 
 const TEST_REFUSAL = `${PLATFORM_SLUG} task API refuses real identity and database clients unless stubs are injected in tests`
 
-type Config = { recordApiUrl: string; recordDatabaseUrl: SQL | string }
 type Dependencies = {
   fetch?: (input: string, init?: RequestInit) => Promise<Response>
   list?: typeof listHostedTasks
@@ -29,7 +28,6 @@ type Dependencies = {
 }
 
 const json = (value: unknown, status = 200) => Response.json(value, { status })
-const database = (config: Config) => config.recordDatabaseUrl as SQL
 const bodyOf = (request: Request) =>
   request.json().catch(() => null) as Promise<Record<string, unknown> | null>
 
@@ -49,7 +47,7 @@ function taskRouteHonorsRequestedSpace(method: string, pathname: string): boolea
 type RouteContext = {
   request: Request
   url: URL
-  config: Config
+  config: HostedRouteConfig
   dependencies: Dependencies
   who: {
     userId: string
@@ -67,7 +65,7 @@ async function readRoute(ctx: RouteContext): Promise<Response | null> {
   const { request, url, config, dependencies, who, keyMatch } = ctx
   if (request.method === 'GET' && url.pathname === '/v1/tasks')
     return json(
-      await call(dependencies.list, listHostedTasks)(database(config), who, {
+      await call(dependencies.list, listHostedTasks)(config.recordDatabaseUrl, who, {
         project: url.searchParams.get('project') ?? undefined,
         status: url.searchParams.get('status') ?? undefined,
         parent: url.searchParams.get('parent') ?? undefined,
@@ -78,7 +76,7 @@ async function readRoute(ctx: RouteContext): Promise<Response | null> {
     )
   if (request.method !== 'GET' || !keyMatch) return null
   const value = await call(dependencies.get, getHostedTask)(
-    database(config),
+    config.recordDatabaseUrl,
     who,
     decodeURIComponent(keyMatch[1]!),
   )
@@ -92,7 +90,7 @@ async function taskWriteRoute(ctx: RouteContext): Promise<Response | null> {
   if (request.method === 'POST' && url.pathname === '/v1/tasks')
     return json(
       await call(dependencies.create, createHostedTask)(
-        database(config),
+        config.recordDatabaseUrl,
         who,
         body as Parameters<typeof createHostedTask>[2],
       ),
@@ -106,7 +104,7 @@ async function taskBulkRoute(ctx: RouteContext): Promise<Response | null> {
   if (request.method === 'POST' && url.pathname === '/v1/tasks/presence')
     return json(
       await call(dependencies.presence, hostedTaskPresence)(
-        database(config),
+        config.recordDatabaseUrl,
         who,
         Array.isArray(body?.pairs)
           ? (body.pairs as Array<{ space_id: string; key: string }>).filter(
@@ -118,7 +116,7 @@ async function taskBulkRoute(ctx: RouteContext): Promise<Response | null> {
   if (request.method === 'DELETE' && url.pathname === '/v1/tasks')
     return json(
       await call(dependencies.deleteTasks, softDeleteHostedTasks)(
-        database(config),
+        config.recordDatabaseUrl,
         who,
         Array.isArray(body?.ids)
           ? body.ids.filter((id): id is string => typeof id === 'string')
@@ -133,7 +131,7 @@ async function childWriteRoute(ctx: RouteContext): Promise<Response | null> {
   const { request, config, dependencies, who, body, documentsMatch } = ctx
   if (request.method === 'POST' && documentsMatch) {
     const value = await call(dependencies.createDocument, createHostedDocument)(
-      database(config),
+      config.recordDatabaseUrl,
       who,
       decodeURIComponent(documentsMatch[1]!),
       body as Parameters<typeof createHostedDocument>[3],
@@ -145,7 +143,7 @@ async function childWriteRoute(ctx: RouteContext): Promise<Response | null> {
 
 export async function taskApi(
   request: Request,
-  config: Config,
+  config: HostedRouteConfig,
   dependencies: Dependencies = {},
 ): Promise<Response | null> {
   const url = new URL(request.url)

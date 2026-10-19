@@ -1,11 +1,9 @@
 import { expect, test } from 'bun:test'
+import { hostedRouteTestConfig } from '../test/hosted-route-fixture.ts'
 import { changeApi } from './change-api.ts'
 import { hostedPushChanges } from './task-client.ts'
 
-const config = {
-  recordApiUrl: 'https://record.example.test',
-  recordDatabaseUrl: 'postgres://unused',
-}
+const config = hostedRouteTestConfig
 const whoami = async () =>
   Response.json({
     user: { id: 'user-1' },

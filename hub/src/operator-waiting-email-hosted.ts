@@ -4,7 +4,7 @@
 import type { SQL } from 'bun'
 import { bindJsonb } from '../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
-import { withHostedTenant } from './hosted-tasks.ts'
+import { withHostedTenant } from './hosted-tenant.ts'
 import type {
   OperatorWaitingEmailInput,
   OperatorWaitingEmailResult,

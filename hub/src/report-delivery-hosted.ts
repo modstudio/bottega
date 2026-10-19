@@ -7,7 +7,7 @@ import type { SQL } from 'bun'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { emptyHostedMeasures, hostedMeasures } from './hosted-measures.ts'
 import { gatherHostedReport, hostedGatherReport } from './hosted-report-gather.ts'
-import { withHostedTenant } from './hosted-tasks.ts'
+import { withHostedTenant } from './hosted-tenant.ts'
 import type {
   DeliveryCandidate,
   DeliveryPeriod,

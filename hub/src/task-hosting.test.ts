@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { hostedRouteTestConfig } from '../test/hosted-route-fixture.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import {
@@ -38,7 +39,7 @@ describe('hosted-only task safety', () => {
         },
         body: JSON.stringify({ project: 'workshop', title: 'Bound write' }),
       }),
-      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+      hostedRouteTestConfig,
       {
         fetch: async () =>
           Response.json({
@@ -81,7 +82,7 @@ describe('hosted-only task safety', () => {
           },
           body: JSON.stringify({ project: 'workshop', title: 'Refused write' }),
         }),
-        { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+        hostedRouteTestConfig,
         {
           fetch: async () =>
             Response.json({
@@ -113,7 +114,7 @@ describe('hosted-only task safety', () => {
         headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
         body: JSON.stringify({ project: 'workshop', title: 'Active write' }),
       }),
-      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+      hostedRouteTestConfig,
       {
         fetch: async () =>
           Response.json({
@@ -136,7 +137,7 @@ describe('hosted-only task safety', () => {
       new Request('https://hub.example.test/v1/tasks', {
         headers: { authorization: 'Bearer test', 'x-record-space': 'not-a-member' },
       }),
-      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+      hostedRouteTestConfig,
       {
         fetch: async () =>
           Response.json({
@@ -355,10 +356,7 @@ describe('hosted-only task safety', () => {
         new Request('https://hub.example.test/v1/tasks', {
           headers: { authorization: 'Bearer test' },
         }),
-        {
-          recordApiUrl: 'https://record.example.test',
-          recordDatabaseUrl: 'postgres://real',
-        },
+        hostedRouteTestConfig,
       ),
     ).rejects.toThrow('unless stubs are injected')
   })
@@ -368,10 +366,7 @@ describe('hosted-only task safety', () => {
       new Request('https://hub.example.test/v1/tasks/identity', {
         headers: { authorization: 'Bearer test' },
       }),
-      {
-        recordApiUrl: 'https://record.example.test',
-        recordDatabaseUrl: 'postgres://unused',
-      },
+      hostedRouteTestConfig,
       {
         fetch: async () =>
           Response.json({
@@ -430,7 +425,7 @@ describe('hosted-only task safety', () => {
         headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
         body: JSON.stringify({ pairs: [{ space_id: 'space-b', key: 'STO-1' }] }),
       }),
-      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+      hostedRouteTestConfig,
       {
         fetch: whoami,
         presence: async (_url, identity, pairs) => ({
@@ -450,7 +445,7 @@ describe('hosted-only task safety', () => {
         headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
         body: JSON.stringify({ ids: ['task-1'], confirmation: 1 }),
       }),
-      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+      hostedRouteTestConfig,
       {
         fetch: whoami,
         deleteTasks: async (_url, identity, ids, confirmation) => ({
@@ -483,7 +478,7 @@ describe('hosted-only task safety', () => {
           headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
           body: JSON.stringify({}),
         }),
-        { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://test' },
+        hostedRouteTestConfig,
         {
           fetch: async () =>
             Response.json({

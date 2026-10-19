@@ -1,8 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import type { SQL } from 'bun'
 import { newRecordId } from '../../shared/record/schema.ts'
-import { bindTenant } from '../../shared/record/tenant.ts'
-import { type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
+import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 
 export type HostedSend = {
   id: string
@@ -341,19 +340,14 @@ type SubscriptionFacts = {
 
 const unsubscribeToken = () => randomBytes(32).toString('base64url')
 
-async function tenant<T>(client: SQL, identity: TaskIdentity, work: (tx: SQL) => Promise<T>) {
-  return client.begin(async (tx) => {
-    await bindTenant(tx, identity)
-    return work(tx)
-  })
-}
-
 export async function listHostedSends(
   url: SQL,
   identity: TaskIdentity,
   filters: { limit?: number; updatedSince?: string; cursor?: string },
 ) {
-  return tenant(url, identity, (tx) => readHostedSendsInTransaction(tx, identity, filters))
+  return withHostedTenant(url, identity, (tx) =>
+    readHostedSendsInTransaction(tx, identity, filters),
+  )
 }
 
 type SendCursor = { createdAt: string; id: string }
@@ -414,7 +408,7 @@ export async function appendHostedSend(
   identity: TaskIdentity,
   input: Omit<HostedSend, 'id' | 'created_at'>,
 ) {
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
     return rows<HostedSend>(
       await tx`INSERT INTO hub_send
       (id,space_id,at,"window",recipients,projects,items,status,error,test,created_at,machine)
@@ -432,7 +426,7 @@ export async function mirrorHostedReports(
   identity: TaskIdentity,
   input: { sends?: HostedSend[] },
 ) {
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
     const writes: unknown[][] = []
     for (const row of input.sends ?? [])
       writes.push(
@@ -454,7 +448,7 @@ export function countMirrorWrites(results: readonly (readonly unknown[])[]) {
 }
 
 export async function hostedReportCounts(url: SQL, identity: TaskIdentity) {
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
     const result = rows<{ sends: number }>(
       await tx`SELECT
       (SELECT count(*)::int FROM hub_send WHERE space_id=${identity.spaceId}::uuid) sends`,
@@ -532,7 +526,7 @@ async function selectHostedReportSubscription(tx: SQL, spaceId: string, id: stri
 }
 
 export async function listHostedReportSubscriptions(url: SQL, identity: TaskIdentity) {
-  return tenant(url, identity, async (tx) => ({
+  return withHostedTenant(url, identity, async (tx) => ({
     subscriptions: await selectHostedReportSubscriptions(tx, identity.spaceId),
   }))
 }
@@ -542,7 +536,7 @@ export async function createHostedReportSubscription(
   identity: TaskIdentity,
   input: ReportSubscriptionWriteInput,
 ) {
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
     const ownSpaceProjects = rows<{ id: string; space_id: string; name: string }>(
       await tx`SELECT id,space_id,name FROM project
       WHERE space_id=${identity.spaceId}::uuid AND retired_at IS NULL`,
@@ -608,7 +602,7 @@ export async function updateHostedReportSubscription(
   id: string,
   input: ReportSubscriptionUpdateInput,
 ) {
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
     const existing = await selectHostedReportSubscription(tx, identity.spaceId, id)
     const ownSpaceProjects = rows<{ id: string; space_id: string; name: string }>(
       await tx`SELECT id,space_id,name FROM project
@@ -735,7 +729,7 @@ export async function unsubscribeHostedReportSubscription(
   identity: TaskIdentity,
   id: string,
 ) {
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
     const updated = assertReportSubscriptionFound(
       rows<{ id: string }>(
         await tx`UPDATE hub_report_subscription SET deleted_at=now(),updated_at=now()

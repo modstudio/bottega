@@ -1,12 +1,12 @@
 // concern: operator-waiting-email-api
 /** Authenticated hosted endpoint for idempotent operator-waiting email delivery. */
 
-import type { SQL } from 'bun'
 import { parseRecordSpaceMemberships } from '../../shared/record-space-membership.ts'
 import {
   recordRequestNature,
   recordSpaceAccessDecision,
 } from '../../shared/record-space-request.ts'
+import type { HostedRouteConfig } from './hosted-route-config.ts'
 import { operatorWaitingEmailRequestSchema } from './operator-waiting-email-contract.ts'
 import {
   OperatorEmailBudgetExceededError,
@@ -15,7 +15,6 @@ import {
 import type { ReportMailClient } from './report-delivery.ts'
 import { sesReportMailClient } from './report-delivery-hosted.ts'
 
-type Config = { recordApiUrl: string; recordDatabaseUrl: SQL | string }
 type Dependencies = {
   fetch?: typeof fetch
   mail?: ReportMailClient
@@ -23,11 +22,10 @@ type Dependencies = {
 }
 const TEST_REFUSAL =
   'hub operator waiting email API refuses real clients unless stubs are injected in tests'
-const database = (config: Config) => config.recordDatabaseUrl as SQL
 
 export async function operatorWaitingEmailApi(
   request: Request,
-  config: Config,
+  config: HostedRouteConfig,
   dependencies: Dependencies = {},
 ): Promise<Response | null> {
   const url = new URL(request.url)
@@ -71,7 +69,7 @@ export async function operatorWaitingEmailApi(
     return Response.json({ error: 'invalid operator waiting email body' }, { status: 400 })
   try {
     const result = await (dependencies.send ?? sendOperatorWaitingEmail)(
-      database(config),
+      config.recordDatabaseUrl,
       { userId: user.id, spaceId: identity.activeSpaceId },
       parsed.data,
       { mail: dependencies.mail ?? sesReportMailClient() },

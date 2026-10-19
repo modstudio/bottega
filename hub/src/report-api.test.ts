@@ -1,10 +1,8 @@
 import { expect, test } from 'bun:test'
+import { hostedRouteTestConfig } from '../test/hosted-route-fixture.ts'
 import { reportApi } from './report-api.ts'
 
-const config = {
-  recordApiUrl: 'https://record.example.test',
-  recordDatabaseUrl: 'postgres://record',
-}
+const config = hostedRouteTestConfig
 const ownSpace = '01990000-0000-7000-8000-00000000070a'
 const otherSpace = '01990000-0000-7000-8000-00000000070b'
 const userId = '01990000-0000-7000-8000-000000000701'

@@ -6,6 +6,7 @@ import { readBuiltCommit } from '../../shared/built-commit.ts'
 import { appStaticPath, resolveAppStatic } from './app-static.ts'
 import { changeApi } from './change-api.ts'
 import { hostedHealthResponse } from './hosted-health.ts'
+import type { HostedRouteConfig } from './hosted-route-config.ts'
 import { hostedVersionResponse } from './hosted-version.ts'
 import { noteApi } from './note-api.ts'
 import { operatorWaitingEmailApi } from './operator-waiting-email-api.ts'
@@ -15,7 +16,6 @@ import { createContext } from './trpc/context.ts'
 import { hostedRouter } from './trpc/hosted-router.ts'
 
 type ServerEnvironment = Record<string, string | undefined>
-type HostedRouteConfig = { recordApiUrl: string; recordDatabaseUrl: SQL }
 type HostedRouteDependencies = {
   changes?: Parameters<typeof changeApi>[2]
   tasks?: Parameters<typeof taskApi>[2]

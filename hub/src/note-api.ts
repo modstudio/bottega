@@ -1,4 +1,3 @@
-import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   parseRecordSpaceMemberships,
@@ -18,21 +17,20 @@ import {
   promoteHostedNote,
   reapHostedNotes,
 } from './hosted-notes.ts'
+import type { HostedRouteConfig } from './hosted-route-config.ts'
 
 const TEST_REFUSAL = `${PLATFORM_SLUG} note API refuses real identity and database clients unless stubs are injected in tests`
-type Config = { recordApiUrl: string; recordDatabaseUrl: SQL | string }
 type Dependencies = { fetch?: typeof fetch; [key: string]: unknown }
 type Identity = { userId: string; spaceId: string; memberships: RecordSpaceMembership[] }
 type RouteContext = {
   request: Request
   url: URL
-  config: Config
+  config: HostedRouteConfig
   dependencies: Dependencies
   who: Identity
   body: Record<string, unknown> | null
 }
 const json = (value: unknown, status = 200) => Response.json(value, { status })
-const database = (config: Config) => config.recordDatabaseUrl as SQL
 const call = <T>(stub: unknown, real: T): T => {
   if (process.env.NODE_ENV === 'test' && !stub) throw new Error(TEST_REFUSAL)
   return (stub ?? real) as T
@@ -40,7 +38,7 @@ const call = <T>(stub: unknown, real: T): T => {
 
 async function authenticate(
   request: Request,
-  config: Config,
+  config: HostedRouteConfig,
   dependencies: Dependencies,
 ): Promise<Identity | { refusedSpace: string } | null> {
   const authorization = request.headers.get('authorization')
@@ -70,7 +68,7 @@ async function readRoute(context: RouteContext): Promise<Response | null> {
   if (request.method !== 'GET') return null
   if (url.pathname === '/v1/notes')
     return json(
-      await call(dependencies.list, listHostedNotes)(database(config), who, {
+      await call(dependencies.list, listHostedNotes)(config.recordDatabaseUrl, who, {
         project: url.searchParams.get('project') ?? undefined,
         stale: url.searchParams.has('stale') ? url.searchParams.get('stale') === 'true' : undefined,
         actionable: url.searchParams.get('actionable') === 'true',
@@ -80,10 +78,14 @@ async function readRoute(context: RouteContext): Promise<Response | null> {
       }),
     )
   if (url.pathname === '/v1/notes/counts')
-    return json(await call(dependencies.counts, hostedNoteCounts)(database(config), who))
+    return json(await call(dependencies.counts, hostedNoteCounts)(config.recordDatabaseUrl, who))
   const match = /^\/v1\/notes\/([0-9a-f-]{36})$/i.exec(url.pathname)
   if (!match) return null
-  const value = await call(dependencies.get, getHostedNote)(database(config), who, match[1]!)
+  const value = await call(dependencies.get, getHostedNote)(
+    config.recordDatabaseUrl,
+    who,
+    match[1]!,
+  )
   return value ? json(value) : json({ error: 'note not found' }, 404)
 }
 
@@ -91,7 +93,7 @@ async function noteWriteRoute(context: RouteContext): Promise<Response | null> {
   const { request, url, config, dependencies, who, body } = context
   if (request.method === 'POST' && url.pathname === '/v1/notes') {
     const value = await call(dependencies.create, createHostedNote)(
-      database(config),
+      config.recordDatabaseUrl,
       who,
       body as never,
     )
@@ -106,7 +108,7 @@ async function noteActionRoute(context: RouteContext): Promise<Response | null> 
   const promote = /^\/v1\/notes\/([0-9a-f-]{36})\/promote$/i.exec(url.pathname)
   if (promote) {
     const value = await call(dependencies.promote, promoteHostedNote)(
-      database(config),
+      config.recordDatabaseUrl,
       who,
       promote[1]!,
       { task: typeof body?.task === 'string' ? body.task : undefined },
@@ -123,19 +125,23 @@ async function batchRoute(context: RouteContext): Promise<Response | null> {
     if (typeof cutoff !== 'string' || !Number.isFinite(Date.parse(cutoff)))
       throw new Error('reap requires a staleness cutoff')
     return json(
-      await call(dependencies.reap, reapHostedNotes)(database(config), who, body as never),
+      await call(dependencies.reap, reapHostedNotes)(config.recordDatabaseUrl, who, body as never),
     )
   }
   if (request.method === 'PUT' && url.pathname === '/v1/notes/mirror')
     return json(
-      await call(dependencies.mirror, mirrorHostedNotes)(database(config), who, body as never),
+      await call(dependencies.mirror, mirrorHostedNotes)(
+        config.recordDatabaseUrl,
+        who,
+        body as never,
+      ),
     )
   return null
 }
 
 export async function noteApi(
   request: Request,
-  config: Config,
+  config: HostedRouteConfig,
   dependencies: Dependencies = {},
 ): Promise<Response | null> {
   const url = new URL(request.url)
