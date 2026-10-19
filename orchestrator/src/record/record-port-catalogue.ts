@@ -19,6 +19,7 @@ const text = (value: unknown) => String(value)
 const number = (value: unknown) => Number(value)
 const nullable = (value: unknown) => (value == null ? null : String(value))
 const iso = (value: unknown) => (value instanceof Date ? value.toISOString() : String(value))
+const nullableIso = (value: unknown) => (value == null ? null : iso(value))
 
 async function tenant<T>(input: Tenant, use: (tx: SQL) => Promise<T>): Promise<T> {
   const client = new SQL(input.url)
@@ -58,7 +59,7 @@ function mapped(table: RecordPortTable, row: Record<string, unknown>): RecordPor
         title: text(row.title),
         body: text(row.body),
         createdAt: iso(row.created_at),
-        retiredAt: nullable(row.retired_at),
+        retiredAt: nullableIso(row.retired_at),
         version: number(row.version),
         updatedAt: iso(row.updated_at),
       }
@@ -74,7 +75,7 @@ function mapped(table: RecordPortTable, row: Record<string, unknown>): RecordPor
         ...common,
         pairId: text(row.pair_id),
         sourceCommit: nullable(row.source_commit),
-        scannedAt: nullable(row.scanned_at),
+        scannedAt: nullableIso(row.scanned_at),
         version: number(row.version),
         updatedAt: iso(row.updated_at),
       }
@@ -85,8 +86,8 @@ function mapped(table: RecordPortTable, row: Record<string, unknown>): RecordPor
         targetProjectId: text(row.target_project_id),
         note: text(row.note),
         createdAt: iso(row.created_at),
-        resolvedAt: nullable(row.resolved_at),
-        deletedAt: nullable(row.deleted_at),
+        resolvedAt: nullableIso(row.resolved_at),
+        deletedAt: nullableIso(row.deleted_at),
         version: number(row.version),
         updatedAt: iso(row.updated_at),
       }
@@ -98,7 +99,7 @@ function mapped(table: RecordPortTable, row: Record<string, unknown>): RecordPor
         commits: text(row.commits),
         paths: text(row.paths),
         note: text(row.note),
-        deletedAt: nullable(row.deleted_at),
+        deletedAt: nullableIso(row.deleted_at),
         updatedAt: iso(row.updated_at),
       }
     case 'port_skip':
