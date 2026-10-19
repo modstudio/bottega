@@ -379,6 +379,23 @@ export const JOBS: Record<string, Job> = {
   },
 }
 
+export type RecordedRunJob = {
+  job: string
+  branch: string | null
+  minted_branch: string | null
+}
+
+/** Resolve writing behavior for presentation of history without requiring the job to remain declared. */
+export function resolveRecordedRunJob(row: RecordedRunJob): {
+  writesRepo: boolean
+  declared: boolean
+} {
+  const declared = JOBS[row.job]
+  return declared
+    ? { writesRepo: Boolean(declared.needs.writesRepo), declared: true }
+    : { writesRepo: Boolean(row.branch ?? row.minted_branch), declared: false }
+}
+
 /**
  * Every name in a `prefer` list must appear in MIGRATED_AGENT_NAMES.
  *

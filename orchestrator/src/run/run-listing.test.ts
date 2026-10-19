@@ -5,7 +5,6 @@ import { runJson } from '../../test/fixtures/replies.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import type { ProcessSample } from '../idle-kill.ts'
-import { job } from '../jobs/jobs.ts'
 import { runDetail } from '../state/serve.ts'
 import { runIdentityMap, runListingCommand } from './run-listing.ts'
 
@@ -88,16 +87,6 @@ describe('run listing', () => {
     expect(lines.join('\n')).toMatch(new RegExp(`\\b${runNumber(id)}\\s+codex\\s+landing-tree\\b`))
     expect(lines.join('\n')).not.toContain('unexpected warning')
     expect(warningCalls).toBe(0)
-  })
-
-  test('human runs keeps strict dispatch resolution for an unknown non-lifecycle job', async () => {
-    insert('ok', 'not-a-job')
-    await expect(
-      command({ job: ['not-a-job'] }, (row) => {
-        job(row.job)
-        return null
-      }),
-    ).rejects.toThrow('unknown job "not-a-job"')
   })
 
   test('runs shows asking in the status column', async () => {
