@@ -242,8 +242,16 @@ describe('lens catalogue', () => {
     })
   })
 
-  test('a project routed to a hosted space that holds the lens resolves the hosted copy', () => {
-    upsertProject({ recordId: newRecordId(), name: 'hosted', path: '/tmp/hosted', settings: {} })
+  test('a project routed to a hosted space that holds the lens resolves the hosted copy', async () => {
+    const projectRecordId = newRecordId()
+    upsertProject({ recordId: projectRecordId, name: 'hosted', path: '/tmp/hosted', settings: {} })
+    await selectProjectProfile({
+      project: 'hosted',
+      axis: 'framework',
+      name: 'default',
+      lensId: 'correctness',
+      reason: 'test',
+    })
     const space = newRecordId()
     db()
       .query(
@@ -281,6 +289,14 @@ describe('lens catalogue', () => {
           newRecordId(),
           space,
         )
+    // Core and profiles are hosted, but the project's selection is not: still local.
+    expect(resolveLens('correctness', 'hosted')!.question).not.toBe('Hosted question?')
+    db()
+      .query(
+        `INSERT INTO project_lens_profile (record_id,space_id,project_record_id,lens_id,axis,profile_name,selected_version,selection_version)
+         VALUES (?,?,?,?,?,?,?,?)`,
+      )
+      .run(newRecordId(), space, projectRecordId, 'correctness', 'framework', 'default', null, 1)
     expect(resolveLens('correctness', 'hosted')!.question).toBe('Hosted question?')
     expect(resolveLens('correctness', null)!.question).not.toBe('Hosted question?')
   })
