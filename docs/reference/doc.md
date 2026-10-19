@@ -728,7 +728,7 @@ publish the generated command reference
 
 ## bottega doc reorder
 
-**Synopsis:** `bottega doc reorder [--scope <value>] [--subject <value>] [--user] [--parent-id <value>] [--id <value>] [--json]`
+**Synopsis:** `bottega doc reorder [--scope <value>] [--subject <value>] [--user] [--parent <value>] [--slug <value>] [--json]`
 
 replace one document sibling order
 
@@ -737,8 +737,8 @@ replace one document sibling order
 - `--scope <value>`: select the document scope
 - `--subject <value>`: select the document subject
 - `--user`: address the signed-in user document
-- `--parent-id <value>`: select the parent document id
-- `--id <value>`: add a document id to the sibling order
+- `--parent <value>`: set the parent article slug
+- `--slug <value>`: select a canon evaluation
 - `--json`: print JSON output
 
 ### Related

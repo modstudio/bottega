@@ -14,6 +14,8 @@ import {
 } from '../../../shared/docs.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import type { CanonLintInputCollector } from '../canon/canon-files.ts'
+import { db } from '../database/db.ts'
+import { resolveDocRevisionIdentifier } from '../doc/doc-revision-identifier.ts'
 import type { SelectedDocWriteTree } from '../doc/doc-write-tree.ts'
 import {
   consumeDoc,
@@ -115,6 +117,27 @@ function setDocToolPayload(
 async function docToolOwner(user: boolean | undefined, subject: string | null | undefined) {
   if (user && subject !== undefined) throw new Error('user cannot be used with subject')
   return user ? await signedInDocOwner() : null
+}
+
+function registerDocRevisionTool(server: McpServer): void {
+  server.registerTool(
+    'get_doc_revision',
+    {
+      description: 'Get one operator document revision, including its body.',
+      inputSchema: z.object({
+        id: z.union([z.number().int().positive(), z.string().uuid()]),
+        user: z.boolean().optional(),
+      }),
+    },
+    async ({ id, user }) => {
+      const revision = getDocRevision(
+        resolveDocRevisionIdentifier(db(), id),
+        user ? await signedInDocOwner() : null,
+      )
+      if (!revision) throw new Error(`no doc revision ${id}`)
+      return text(revision)
+    },
+  )
 }
 
 export function registerDocTools(
@@ -410,16 +433,5 @@ export function registerDocTools(
     },
   )
 
-  server.registerTool(
-    'get_doc_revision',
-    {
-      description: 'Get one operator document revision, including its body.',
-      inputSchema: z.object({ id: z.number().int().positive(), user: z.boolean().optional() }),
-    },
-    async ({ id, user }) => {
-      const revision = getDocRevision(id, user ? await signedInDocOwner() : null)
-      if (!revision) throw new Error(`no doc revision ${id}`)
-      return text(revision)
-    },
-  )
+  registerDocRevisionTool(server)
 }

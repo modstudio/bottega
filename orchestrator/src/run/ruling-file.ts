@@ -51,7 +51,9 @@ type RulingFileDoc = {
 }
 
 export type RulingFileStores = {
-  writeDoc: (input: RulingFileDoc) => Promise<{ id: number; revision: string | null }>
+  writeDoc: (
+    input: RulingFileDoc,
+  ) => Promise<{ id: string; revision: string; revisionNumber: number }>
   fileNote: (
     input: { text: string; new: boolean },
     options?: { cwd?: string },
@@ -248,7 +250,7 @@ async function writeDocFiling(
   row: QuestionRow,
   body: string,
   stores: RulingFileStores,
-): Promise<{ filed_ref: string; filed_record_id: null; filed_label: null }> {
+): Promise<{ filed_ref: string; filed_record_id: string; filed_label: null }> {
   const scope = filingScope(input.scope)
   const title = input.title?.trim() || shortRulingTitle(row.question)
   const saved = await stores.writeDoc({
@@ -261,8 +263,11 @@ async function writeDocFiling(
     reason: `file ruling ${row.number}`,
   })
   return {
-    filed_ref: filedDocRef(saved.id, saved.revision),
-    filed_record_id: null,
+    filed_ref: filedDocRef(
+      `${scope}/${docSubject(scope, input.subject, row.repo) ?? '_'}/${rulingDocSlug(title, row.number)}`,
+      saved.revisionNumber,
+    ),
+    filed_record_id: saved.revision,
     filed_label: null,
   }
 }

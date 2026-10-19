@@ -12,7 +12,7 @@ import {
   OverturnRulingResultSchema,
 } from '../../../shared/orch-contract.ts'
 import { db } from '../database/db.ts'
-import { setDoc } from '../doc/docs.ts'
+import { getDocRevision, setDoc } from '../doc/docs.ts'
 import { operatorWaiting, relayQuestion } from '../operator/operator-waiting.ts'
 import { resolveQuestionIdentifier } from '../run/question-identifier.ts'
 import { fileRuling, type RulingFileStores } from '../run/ruling-file.ts'
@@ -71,7 +71,9 @@ const presentation = {
 const rulingFileStores: RulingFileStores = {
   writeDoc: async (input) => {
     const doc = await setDoc(input)
-    return { id: doc.id, revision: doc.revision }
+    const revision = doc.revision ? getDocRevision(doc.revision) : null
+    if (!revision) throw new Error('filed ruling document has no revision')
+    return { id: doc.record_id, revision: revision.record_id, revisionNumber: revision.number }
   },
   fileNote,
 }

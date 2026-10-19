@@ -3,13 +3,14 @@
 
 import type { DocAudiences, DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
 import { db, sessionId } from '../database/db.ts'
+import { nextEntityNumber } from '../database/entity-number.ts'
 import { decodeStoredDocAudiences, encodeStoredDocAudiences } from './doc-audiences-codec.ts'
 import type { DocRevision, DocRevisionMetadata } from './doc-read-store.ts'
 import { validateHistoricDocAddress } from './doc-subjects.ts'
 import { type DocRevisionOp, decideDocRevisionWrite } from './doc-write-allowed.ts'
 
 type RevisionDoc = {
-  id: number
+  record_id: string
   scope: string
   subject: string | null
   owner: string | null
@@ -19,7 +20,7 @@ type RevisionDoc = {
   body: string
   delivery: 'inject' | 'demand'
   audiences: DocAudiences
-  parent_id: number | null
+  parent_record_id: string | null
   position: number
   featured: boolean
   status: DocStatus
@@ -90,7 +91,7 @@ export function currentDocRevision(
 ): string | null {
   const row = db()
     .query(
-      'SELECT record_id FROM doc_revision WHERE scope=? AND subject IS ? AND owner IS ? AND slug=? ORDER BY id DESC LIMIT 1',
+      'SELECT record_id FROM doc_revision WHERE scope=? AND subject IS ? AND owner IS ? AND slug=? ORDER BY number DESC LIMIT 1',
     )
     .get(scope, subject, owner, slug) as { record_id: string } | null
   return row?.record_id ?? null
@@ -106,11 +107,13 @@ export function insertLocalRevision(
   db()
     .query(
       `INSERT INTO doc_revision
-       (doc_id, scope, subject, owner, project_record_id, slug, op, title, body, delivery, audiences, parent_id, position, featured, status, kind, form, article_subject_id, related_subject_ids, source_files, checked_against_commit, summary, replacement_slug, author, reason, session_id, at, record_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (record_id, number, doc_record_id, scope, subject, owner, project_record_id, slug, op, title, body, delivery, audiences, parent_record_id, position, featured, status, kind, form, article_subject_id, related_subject_ids, source_files, checked_against_commit, summary, replacement_slug, author, reason, session_id, at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
-      doc.id,
+      recordId,
+      nextEntityNumber(db(), 'doc_revision'),
+      doc.record_id,
       doc.scope,
       doc.subject,
       doc.owner,
@@ -121,7 +124,7 @@ export function insertLocalRevision(
       doc.body,
       doc.delivery,
       encodeStoredDocAudiences(doc.audiences),
-      doc.parent_id,
+      doc.parent_record_id,
       doc.position,
       doc.featured,
       doc.status,
@@ -137,7 +140,6 @@ export function insertLocalRevision(
       identity.reason,
       identity.session,
       at,
-      recordId,
     )
 }
 
@@ -150,9 +152,9 @@ export function listStoredDocRevisions(
   validateHistoricDocAddress(scope, slug)
   const rows = db()
     .query(
-      `SELECT id, op, author, reason, at, status, kind, form, article_subject_id, related_subject_ids, source_files, checked_against_commit, summary, replacement_slug, record_id,
+      `SELECT number, op, author, reason, at, status, kind, form, article_subject_id, related_subject_ids, source_files, checked_against_commit, summary, replacement_slug, record_id,
               length(CAST(body AS BLOB)) AS bytes
-       FROM doc_revision WHERE scope=? AND subject IS ? AND owner IS ? AND slug=? ORDER BY id DESC`,
+       FROM doc_revision WHERE scope=? AND subject IS ? AND owner IS ? AND slug=? ORDER BY number DESC`,
     )
     .all(scope, subject, owner, slug) as Array<
     Omit<
@@ -205,8 +207,13 @@ export function listStoredDocRevisions(
   })
 }
 
-export function getStoredDocRevision(id: number, owner: string | null = null): DocRevision | null {
-  const row = db().query('SELECT * FROM doc_revision WHERE id=? AND owner IS ?').get(id, owner) as
+export function getStoredDocRevision(
+  recordId: string,
+  owner: string | null = null,
+): DocRevision | null {
+  const row = db()
+    .query('SELECT * FROM doc_revision WHERE record_id=? AND owner IS ?')
+    .get(recordId, owner) as
     | (Omit<DocRevision, 'audiences'> & { featured: boolean | number; audiences: string })
     | null
   return row
@@ -244,7 +251,7 @@ export function getStoredDocRevision(id: number, owner: string | null = null): D
     : null
 }
 
-export function diffStoredDocRevisions(a: number, b: number, owner: string | null = null): string {
+export function diffStoredDocRevisions(a: string, b: string, owner: string | null = null): string {
   const left = getStoredDocRevision(a, owner)
   const right = getStoredDocRevision(b, owner)
   if (!left) throw new Error(`no doc revision ${a}`)
@@ -285,7 +292,7 @@ export function diffStoredDocRevisions(a: number, b: number, owner: string | nul
           ? lengths[i + 1]![j + 1]! + 1
           : Math.max(lengths[i + 1]![j]!, lengths[i]![j + 1]!)
     }
-  const lines = [`--- revision-${a}`, `+++ revision-${b}`]
+  const lines = [`--- revision-${left.number}`, `+++ revision-${right.number}`]
   let i = 0
   let j = 0
   while (i < x.length || j < y.length) {

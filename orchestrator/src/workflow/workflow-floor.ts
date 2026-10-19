@@ -20,7 +20,7 @@ export const floorGuidance = {
   ruling: `call \`await_workflow_ruling\` (or \`${PLATFORM_SLUG} workflow await\`), answer it with \`rule_workflow\`, then pass \`--ruling <the returned question id>\`; where you rule the step yourself, pass \`self_ruling\` with \`self_ruling_basis\` (or \`--self-ruling <text>\` with \`--basis <text>\`) on the closing call`,
   'command-exit': `run it with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass \`--artifact exec:<id>\``,
   'recorded-artifact':
-    'record or attach the artifact and pass `--artifact <doc id | task:<KEY> | task:<KEY>#comment:<id> | run id | probe:<id> | exec:<id> | attached-text:<id>>`',
+    'record or attach the artifact and pass `--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number | probe:<id> | exec:<id> | attached-text:<id>>`',
   'tracker-transition': 'make the tracker transition and pass `--task <KEY>`',
 } satisfies Record<FloorKind, string>
 
@@ -53,7 +53,7 @@ export type ArtifactRef =
   | { kind: 'comment'; key: string; id: string }
   | { kind: 'probe'; id: number }
   | { kind: 'exec'; id: number }
-  | { kind: 'doc'; id: number }
+  | { kind: 'doc'; address: string }
   | { kind: 'run'; id: string }
   | { kind: 'attached-text'; id: number }
   | { kind: 'id'; id: number }
@@ -147,7 +147,7 @@ export function flagForFloor(kind: FloorKind): string {
   if (kind === 'command-exit')
     return '--gate <gate execution id> or --run <run id> or --artifact probe:<id> or --artifact exec:<id>'
   if (kind === 'recorded-artifact')
-    return '--artifact <doc id | task:<KEY> | task:<KEY>#comment:<id> | run id | probe:<id> | exec:<id> | attached-text:<id>>'
+    return '--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number | probe:<id> | exec:<id> | attached-text:<id>>'
   if (kind === 'tracker-transition') return '--task <KEY>'
   throw new Error(`unknown floor kind "${String(kind)}"`)
 }
@@ -162,15 +162,15 @@ export function parseArtifactRef(value: string): ArtifactRef | { error: string }
   if (probe) return { kind: 'probe', id: Number(probe[1]) }
   const exec = /^exec:(\d+)$/i.exec(trimmed)
   if (exec) return { kind: 'exec', id: Number(exec[1]) }
-  const doc = /^doc:(\d+)$/i.exec(trimmed)
-  if (doc) return { kind: 'doc', id: Number(doc[1]) }
+  const doc = /^doc:(\S+)$/i.exec(trimmed)
+  if (doc) return { kind: 'doc', address: doc[1]! }
   const run = /^run:(\S+)$/i.exec(trimmed)
   if (run) return { kind: 'run', id: run[1]! }
   const attachedText = /^attached-text:(\d+)$/i.exec(trimmed)
   if (attachedText) return { kind: 'attached-text', id: Number(attachedText[1]) }
   if (/^\d+$/.test(trimmed)) return { kind: 'id', id: Number(trimmed) }
   return {
-    error: `--artifact ${trimmed} is not a doc id, task:<KEY>, task:<KEY>#comment:<id>, run id, probe:<id>, exec:<id>, or attached-text:<id>`,
+    error: `--artifact ${trimmed} is not doc:<scope>/<subject-or-_>/<slug>, doc:<UUID>, task:<KEY>, task:<KEY>#comment:<id>, a run number, probe:<id>, exec:<id>, or attached-text:<id>`,
   }
 }
 

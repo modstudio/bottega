@@ -194,7 +194,9 @@ export function useDocHistory(
   const items = [...(source === 'hosted' ? (hosted.data?.items ?? []) : (local.data ?? []))].sort(
     (left, right) =>
       new Date(right.at).getTime() - new Date(left.at).getTime() ||
-      String(right.id).localeCompare(String(left.id)),
+      String('id' in right ? right.id : right.number).localeCompare(
+        String('id' in left ? left.id : left.number),
+      ),
   )
   return { items, pending: result.isPending, error: result.error }
 }
@@ -243,7 +245,7 @@ export function useRevisionView(
   const comparison =
     typeof revisionId === 'number'
       ? revisionComparison(
-          (localHistory.data ?? []).map(({ id }) => id),
+          (localHistory.data ?? []).map(({ number }) => number),
           revisionId,
         )
       : null
@@ -271,7 +273,7 @@ export function useRevisionView(
       : hostedComparison?.kind === 'current'
         ? (doc?.body ?? null)
         : (hostedNewer?.body ?? null)
-  const localIds = localHistory.data?.map(({ id }) => id)
+  const localIds = localHistory.data?.map(({ number }) => number)
   const error = revisionViewError({
     param: revisionParam,
     id: revisionId,

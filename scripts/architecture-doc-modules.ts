@@ -11,6 +11,10 @@ const module = (file: string, allowed: string[]): DocModule => ({
 })
 
 export const docModules: DocModule[] = [
+  module('orchestrator/src/doc/doc-reference-read.ts', [
+    'bun:sqlite',
+    '../../../shared/record-id.ts',
+  ]),
   module('orchestrator/src/doc/doc-command-mentions.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/doc/doc-command-check.ts', [
     '../../../shared/command-spellings.ts',
@@ -64,6 +68,10 @@ export const docModules: DocModule[] = [
   ]),
   module('shared/doc-snippet.ts', []),
   module('orchestrator/src/doc/doc-audiences-codec.ts', ['../../../shared/docs.ts']),
+  module('orchestrator/src/doc/doc-revision-identifier.ts', [
+    'bun:sqlite',
+    '../../../shared/record-id.ts',
+  ]),
   module('orchestrator/src/doc/doc-hosted-client.ts', [
     '../project/projects.ts',
     '../record/record-api-client.ts',

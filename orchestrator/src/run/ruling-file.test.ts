@@ -3,7 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { getDoc, setDoc } from '../doc/docs.ts'
+import { getDoc, getDocRevision, setDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
 import { type FileRulingInput, fileRuling, type RulingFileStores } from './ruling-file.ts'
 
@@ -71,7 +71,7 @@ const questionNumber = (recordId: string): number =>
     .number
 
 const stores = (overrides: Partial<RulingFileStores> = {}): RulingFileStores => ({
-  writeDoc: async () => ({ id: 12, revision: 'rev-1' }),
+  writeDoc: async () => ({ id: newRecordId(), revision: 'rev-1', revisionNumber: 1 }),
   fileNote: async () => ({
     noteRecordId: '11111111-1111-4111-8111-111111111111',
     noteLabel: `${PLATFORM_SLUG}#44`,
@@ -119,7 +119,7 @@ describe('file ruling', () => {
       stores({
         writeDoc: async (input) => {
           writes.push({ subject: input.subject, body: input.body })
-          return { id: 88, revision: null }
+          return { id: newRecordId(), revision: newRecordId(), revisionNumber: 1 }
         },
       }),
     )
@@ -188,7 +188,7 @@ describe('file ruling', () => {
       stores({
         writeDoc: async (input) => {
           writes.push(input)
-          return { id: 12, revision: 'rev-1' }
+          return { id: newRecordId(), revision: 'rev-1', revisionNumber: 1 }
         },
       }),
     )
@@ -198,8 +198,8 @@ describe('file ruling', () => {
     expect(result).toMatchObject({
       question_id: identity.number,
       filed_as: 'doc',
-      filed_ref: '12@rev-1',
-      filed_record_id: null,
+      filed_ref: `project/${PLATFORM_SLUG}/which-shape-should-this-take-q${identity.number}@1`,
+      filed_record_id: 'rev-1',
       filed_label: null,
       filed_at: expect.any(String),
     })
@@ -227,7 +227,10 @@ describe('file ruling', () => {
     )
     expect(
       db().query('SELECT filed_as, filed_ref FROM question WHERE record_id=?').get(questionId),
-    ).toEqual({ filed_as: 'doc', filed_ref: '12@rev-1' })
+    ).toEqual({
+      filed_as: 'doc',
+      filed_ref: `project/${PLATFORM_SLUG}/which-shape-should-this-take-q${identity.number}@1`,
+    })
     expect(
       db().query("SELECT action, reason FROM run_mutation_audit WHERE action='file'").get(),
     ).toEqual({ action: 'file', reason: 'as doc' })
@@ -251,7 +254,7 @@ describe('file ruling', () => {
       stores({
         writeDoc: async (input) => {
           writes.push(input.body)
-          return { id: 1, revision: 'r' }
+          return { id: newRecordId(), revision: 'r', revisionNumber: 1 }
         },
       }),
     )
@@ -344,7 +347,7 @@ describe('file ruling', () => {
     const questionId = addAnsweredQuestion(run)
     await file({ questionId, as: 'doc' })
     await expect(file({ questionId, as: 'doc' })).rejects.toThrow(
-      `question ${questionNumber(questionId)} is already filed as doc at 12@rev-1`,
+      `question ${questionNumber(questionId)} is already filed as doc at project/${PLATFORM_SLUG}/which-shape-q${questionNumber(questionId)}@1`,
     )
   })
 
@@ -359,7 +362,7 @@ describe('file ruling', () => {
     const questionId = addAnsweredQuestion(run)
     await file({ questionId, as: 'doc' })
     await expect(file({ questionId, as: 'canon' })).rejects.toThrow(
-      `question ${questionNumber(questionId)} is already filed as doc at 12@rev-1`,
+      `question ${questionNumber(questionId)} is already filed as doc at project/${PLATFORM_SLUG}/which-shape-q${questionNumber(questionId)}@1`,
     )
   })
 
@@ -373,7 +376,7 @@ describe('file ruling', () => {
         stores({
           writeDoc: async (input) => {
             writes.push(input)
-            return { id: 1, revision: 'r' }
+            return { id: newRecordId(), revision: 'r', revisionNumber: 1 }
           },
         }),
       ),
@@ -391,7 +394,7 @@ describe('file ruling', () => {
         stores({
           writeDoc: async (input) => {
             writes.push(input)
-            return { id: 1, revision: 'r' }
+            return { id: newRecordId(), revision: 'r', revisionNumber: 1 }
           },
         }),
       ),
@@ -416,7 +419,7 @@ describe('file ruling', () => {
         stores({
           writeDoc: async (input) => {
             writes.push(input)
-            return { id: 1, revision: 'r' }
+            return { id: newRecordId(), revision: 'r', revisionNumber: 1 }
           },
         }),
       ),
@@ -445,7 +448,12 @@ describe('file ruling', () => {
       stores({
         writeDoc: async (input) => {
           const doc = await setDoc(input)
-          return { id: doc.id, revision: doc.revision }
+          const revision = getDocRevision(doc.revision!)!
+          return {
+            id: doc.record_id,
+            revision: revision.record_id,
+            revisionNumber: revision.number,
+          }
         },
       }),
     )

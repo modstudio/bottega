@@ -130,19 +130,17 @@ export async function importCanon(input: {
       let stored: Doc
       if (existing) {
         db()
-          .query('UPDATE doc SET title=?, body=?, delivery=?, updated_at=?, record_id=? WHERE id=?')
-          .run(row.title, row.body, 'demand', at, result.id, existing.id)
-        stored = { ...existing, title: row.title, body: row.body, record_id: result.id }
+          .query('UPDATE doc SET title=?, body=?, delivery=?, updated_at=? WHERE record_id=?')
+          .run(row.title, row.body, 'demand', at, existing.record_id)
+        stored = { ...existing, title: row.title, body: row.body }
       } else {
         db()
           .query(
             `INSERT INTO doc
-             (scope, subject, owner, project_record_id, slug, title, body, delivery, audiences, created_at, updated_at, record_id)
-             VALUES ('canon',?,?,?, ?,?,?, 'demand','["technical"]',?,?,?)`,
+             (record_id,scope, subject, owner, project_record_id, slug, title, body, delivery, audiences, created_at, updated_at)
+             VALUES (?,'canon',?,?,?, ?,?,?, 'demand','["technical"]',?,?)`,
           )
-          .get(subject, owner, projectId, row.slug, row.title, row.body, at, at, result.id) as {
-          id: number
-        }
+          .run(result.id, subject, owner, projectId, row.slug, row.title, row.body, at, at)
         stored = getDocStore('canon', subject, row.slug, owner)!
       }
       insertLocalRevision(stored, 'import', identity, at, result.revisionId)
@@ -150,8 +148,8 @@ export async function importCanon(input: {
     for (const result of hosted.deletions) {
       const existing = liveBySlug.get(result.slug)
       if (!existing) throw new Error(`no canon doc "${result.slug}"`)
-      db().query('DELETE FROM doc WHERE id=?').run(existing.id)
       insertLocalRevision(existing, 'delete', identity, at, result.revisionId)
+      db().query('DELETE FROM doc WHERE record_id=?').run(existing.record_id)
     }
     return hosted
   })

@@ -104,6 +104,8 @@ export const mcpModules: McpModule[] = [
     '../../../shared/docs.ts',
     '../canon/canon-files.ts',
     '../canon/canon.ts',
+    '../database/db.ts',
+    '../doc/doc-revision-identifier.ts',
     '../doc/doc-write-tree.ts',
     '../doc/docs.ts',
     '../worker-store-write.ts',

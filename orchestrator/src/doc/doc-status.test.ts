@@ -41,7 +41,7 @@ describe('document status', () => {
     expect(superseded.replacement_slug).toBe(replacement.slug)
     const draftRevision = listDocRevisions('job', 'file-question', draft.slug).at(-1)!
     expect(draftRevision).toMatchObject({ status: 'draft', replacement_slug: null })
-    const restored = await restoreDoc('job', 'file-question', draft.slug, draftRevision.id, {
+    const restored = await restoreDoc('job', 'file-question', draft.slug, draftRevision.record_id, {
       reason: 'restore draft state',
       expectedRevision: superseded.revision!,
     })

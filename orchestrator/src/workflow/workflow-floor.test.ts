@@ -225,7 +225,7 @@ test('a run offered to an artifact floor names the same run artifact form', () =
   expect(decision).toEqual({
     action: 'refuse',
     message:
-      'floor recorded-artifact is unmet; pass --artifact <doc id | task:<KEY> | task:<KEY>#comment:<id> | run id | probe:<id> | exec:<id> | attached-text:<id>>; run 8 is accepted as --artifact 8 when it has a reply or a recorded artifact',
+      'floor recorded-artifact is unmet; pass --artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number | probe:<id> | exec:<id> | attached-text:<id>>; run 8 is accepted as --artifact 8 when it has a reply or a recorded artifact',
   })
 })
 
@@ -742,7 +742,10 @@ test('parseArtifactRef accepts each recorded-artifact form', () => {
   expect(parseArtifactRef('task:DEV-977')).toEqual({ kind: 'task', key: 'DEV-977' })
   expect(parseArtifactRef('probe:12')).toEqual({ kind: 'probe', id: 12 })
   expect(parseArtifactRef('exec:13')).toEqual({ kind: 'exec', id: 13 })
-  expect(parseArtifactRef('doc:3')).toEqual({ kind: 'doc', id: 3 })
+  expect(parseArtifactRef(`doc:project/${PLATFORM_SLUG}/uuid-keys`)).toEqual({
+    kind: 'doc',
+    address: `project/${PLATFORM_SLUG}/uuid-keys`,
+  })
   expect(parseArtifactRef('run:8')).toEqual({ kind: 'run', id: '8' })
   expect(parseArtifactRef('attached-text:14')).toEqual({ kind: 'attached-text', id: 14 })
   expect(parseArtifactRef('8')).toEqual({ kind: 'id', id: 8 })

@@ -15,10 +15,10 @@ function localDocContract(row: DocRow, includeBody: false): ReturnType<typeof Lo
 function localDocContract(row: DocRow, includeBody: true): ReturnType<typeof LocalDocSchema.parse>
 function localDocContract(row: DocRow, includeBody: boolean) {
   const item = {
-    id: String(row.id),
+    id: row.record_id,
     slug: row.slug,
     title: row.title,
-    parentId: row.parent_id === null ? null : String(row.parent_id),
+    parentId: row.parent_record_id,
     position: row.position,
     updatedAt: row.updated_at,
     scope: row.scope,
@@ -58,7 +58,7 @@ export async function localDocRevisionRead(
   scope: string,
   subject: string | null,
   slug: string,
-  revisionId: number,
+  revisionId: string | number,
   audience?: DocAudience,
 ) {
   return docRevision(scope, subject, slug, revisionId, audience)

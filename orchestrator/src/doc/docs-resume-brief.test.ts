@@ -35,9 +35,9 @@ describe('scoped operator docs', () => {
       body: '---\nstatus: open\n---\n\nOriginal.',
     })
     const createRevision = listDocRevisions('resume', 'resume-restore', 'restore-project-id')[0]!
-    db().query('UPDATE doc SET project_record_id=NULL WHERE id=?').run(created.id)
+    db().query('UPDATE doc SET project_record_id=NULL WHERE record_id=?').run(created.record_id)
 
-    await restoreDoc('resume', 'resume-restore', created.slug, createRevision.id, {
+    await restoreDoc('resume', 'resume-restore', created.slug, createRevision.record_id, {
       reason: 'restore over existing resume',
     })
     expect(getDoc('resume', 'resume-restore', created.slug)?.project_record_id).toBe(
@@ -45,9 +45,15 @@ describe('scoped operator docs', () => {
     )
 
     await removeDoc('resume', 'resume-restore', created.slug)
-    const restored = await restoreDoc('resume', 'resume-restore', created.slug, createRevision.id, {
-      reason: 'restore removed resume',
-    })
+    const restored = await restoreDoc(
+      'resume',
+      'resume-restore',
+      created.slug,
+      createRevision.record_id,
+      {
+        reason: 'restore removed resume',
+      },
+    )
     expect(restored.project_record_id).toBe(project.record_id)
   })
 

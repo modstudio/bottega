@@ -300,7 +300,7 @@ describe('operator MCP tools', () => {
       question_id: questionId,
       filed_as: 'doc',
       filed_ref: expect.stringMatching(/@/),
-      filed_record_id: null,
+      filed_record_id: expect.any(String),
       filed_label: null,
       filed_at: expect.any(String),
     })

@@ -325,14 +325,14 @@ async function pullSubjects(
 
 function resolveRememberedParents(local: Database, unresolved: Map<string, string>): void {
   for (const [childRecordId, parentRecordId] of unresolved) {
-    const child = local
-      .query<{ id: number }, [string]>('SELECT id FROM doc WHERE record_id=?')
-      .get(childRecordId)
-    const parent = local
-      .query<{ id: number }, [string]>('SELECT id FROM doc WHERE record_id=?')
-      .get(parentRecordId)
-    if (!child || !parent) continue
-    local.query('UPDATE doc SET parent_id=? WHERE id=?').run(parent.id, child.id)
+    if (
+      !local.query('SELECT 1 FROM doc WHERE record_id=?').get(childRecordId) ||
+      !local.query('SELECT 1 FROM doc WHERE record_id=?').get(parentRecordId)
+    )
+      continue
+    local
+      .query('UPDATE doc SET parent_record_id=? WHERE record_id=?')
+      .run(parentRecordId, childRecordId)
     unresolved.delete(childRecordId)
   }
 }
@@ -409,13 +409,11 @@ function syncPulledDocRelatedSubjects(
       .run(newRecordId(), newRecordId(), recordId, id)
 }
 
-function pulledDocParentId(local: Database, parentRecordId: string | null): number | null {
+function pulledDocParentId(local: Database, parentRecordId: string | null): string | null {
   if (parentRecordId == null) return null
-  return (
-    local
-      .query<{ id: number }, [string]>('SELECT id FROM doc WHERE record_id=?')
-      .get(parentRecordId)?.id ?? null
-  )
+  return local.query('SELECT 1 FROM doc WHERE record_id=?').get(parentRecordId)
+    ? parentRecordId
+    : null
 }
 
 function applyDoc(
@@ -451,13 +449,11 @@ function applyDoc(
   else unresolvedParents.delete(recordId)
   const updatedAt = String(item.updatedAt ?? nowIso())
   const createdAt = String(item.createdAt ?? updatedAt)
-  const existing = local
-    .query<{ id: number }, [string]>('SELECT id FROM doc WHERE record_id=?')
-    .get(recordId)
+  const existing = local.query('SELECT 1 FROM doc WHERE record_id=?').get(recordId)
   if (existing) {
     local
       .query(
-        'UPDATE doc SET title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, checked_against_commit=?, summary=?, replacement_slug=?, updated_at=?, subject=?, owner=? WHERE id=?',
+        'UPDATE doc SET title=?, body=?, delivery=?, audiences=?, parent_record_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, checked_against_commit=?, summary=?, replacement_slug=?, updated_at=?, subject=?, owner=? WHERE record_id=?',
       )
       .run(
         title,
@@ -478,47 +474,24 @@ function applyDoc(
         updatedAt,
         subject,
         owner,
-        existing.id,
+        recordId,
       )
     syncPulledDocRelatedSubjects(local, recordId, relatedSubjectIds)
     return
   }
   const byAddress = local
-    .query<{ id: number }, [string, string | null, string | null, string]>(
-      'SELECT id FROM doc WHERE scope=? AND subject IS ? AND owner IS ? AND slug=?',
+    .query<{ record_id: string }, [string, string | null, string | null, string]>(
+      'SELECT record_id FROM doc WHERE scope=? AND subject IS ? AND owner IS ? AND slug=?',
     )
     .get(scope, subject, owner, slug)
   if (byAddress) {
-    local
-      .query(
-        'UPDATE doc SET title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, checked_against_commit=?, summary=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
-      )
-      .run(
-        title,
-        body,
-        delivery,
-        audiences,
-        parentId,
-        position,
-        featured,
-        status,
-        kind,
-        form,
-        articleSubjectId,
-        JSON.stringify(sourceFiles),
-        checkedAgainstCommit,
-        summary,
-        replacementSlug,
-        updatedAt,
-        recordId,
-        byAddress.id,
-      )
-    syncPulledDocRelatedSubjects(local, recordId, relatedSubjectIds)
-    return
+    throw new Error(
+      `hosted document UUID ${recordId} collides with local document UUID ${byAddress.record_id} at ${scope}/${subject ?? '_'}/${slug}`,
+    )
   }
   local
     .query(
-      `INSERT INTO doc (scope, subject, owner, project_record_id, slug, title, body, delivery, audiences, parent_id, position, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, created_at, updated_at, record_id)
+      `INSERT INTO doc (scope, subject, owner, project_record_id, slug, title, body, delivery, audiences, parent_record_id, position, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, created_at, updated_at, record_id)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(

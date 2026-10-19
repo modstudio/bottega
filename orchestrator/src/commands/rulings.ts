@@ -10,7 +10,7 @@ import {
   type AnswerChannel,
 } from '../../../shared/question-vocabulary.ts'
 import { db } from '../database/db.ts'
-import { setDoc } from '../doc/docs.ts'
+import { getDocRevision, setDoc } from '../doc/docs.ts'
 import { fileNote } from '../mcp/hub-notes.ts'
 import { questionIdentityMap, resolveQuestionIdentifier } from '../run/question-identifier.ts'
 import { fileRuling, type RulingFileStores } from '../run/ruling-file.ts'
@@ -48,7 +48,9 @@ function filingChannel(value: string | undefined): AnswerChannel {
 const rulingFileStores: RulingFileStores = {
   writeDoc: async (input) => {
     const doc = await setDoc(input)
-    return { id: doc.id, revision: doc.revision }
+    const revision = doc.revision ? getDocRevision(doc.revision) : null
+    if (!revision) throw new Error('filed ruling document has no revision')
+    return { id: doc.record_id, revision: revision.record_id, revisionNumber: revision.number }
   },
   fileNote,
 }

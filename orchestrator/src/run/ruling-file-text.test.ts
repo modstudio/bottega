@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { lintProse } from '../canon/prose-lint.ts'
 import {
-  filedDocRef,
   operatorAttributedRuling,
   renderCanonProposalNote,
   renderRulingFileText,
@@ -109,12 +108,5 @@ describe('operator file-offer hint', () => {
     expect(operatorAttributedRuling({ fromOperator: false, channel: 'ui' })).toBe(true)
     expect(operatorAttributedRuling({ fromOperator: false, channel: 'cli' })).toBe(false)
     expect(operatorAttributedRuling({ fromOperator: false, channel: 'mcp' })).toBe(false)
-  })
-})
-
-describe('filed refs', () => {
-  test('joins a doc id and revision', () => {
-    expect(filedDocRef(12, 'rev-1')).toBe('12@rev-1')
-    expect(filedDocRef(12, null)).toBe('12')
   })
 })

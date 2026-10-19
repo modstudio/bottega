@@ -20,7 +20,7 @@ export const ArticleDocFieldsSchema = z.object({
 type ArticleDocFields = z.infer<typeof ArticleDocFieldsSchema>
 
 export type ContractDocRow = ArticleDocFields & {
-  id: number
+  record_id: string
   scope: DocScope
   subject: string | null
   slug: string
@@ -29,7 +29,7 @@ export type ContractDocRow = ArticleDocFields & {
   summary?: string | null
   delivery: 'inject' | 'demand'
   audiences: DocAudiences
-  parent_id: number | null
+  parent_record_id: string | null
   parent_slug: string | null
   position: number
   featured?: boolean

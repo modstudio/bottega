@@ -64,7 +64,7 @@ test('local search short-circuits an empty query without calling orch', async ()
 
 test('local search makes one orch call and excludes a subject-only store match', async () => {
   const base = {
-    id: 1,
+    record_id: '01990000-0000-7000-8000-000000000001',
     scope: 'global' as const,
     subject: null,
     slug: 'guide',
@@ -72,7 +72,7 @@ test('local search makes one orch call and excludes a subject-only store match',
     body: 'A needle in the body.',
     delivery: 'demand' as const,
     audiences: ['technical'] as ['technical'],
-    parent_id: null,
+    parent_record_id: null,
     parent_slug: null,
     position: 0,
     revision: null,
@@ -81,10 +81,18 @@ test('local search makes one orch call and excludes a subject-only store match',
     status: 'current' as const,
     kind: 'article' as const,
   }
-  const list = mock(async () => [base, { ...base, id: 2, body: 'Other.', subject: 'needle' }])
+  const list = mock(async () => [
+    base,
+    {
+      ...base,
+      record_id: '01990000-0000-7000-8000-000000000002',
+      body: 'Other.',
+      subject: 'needle',
+    },
+  ])
   expect(await searchLocalDocs({ query: 'needle' }, list as never)).toEqual([
     {
-      id: '1',
+      id: '01990000-0000-7000-8000-000000000001',
       slug: 'guide',
       title: 'Guide',
       audiences: ['technical'],

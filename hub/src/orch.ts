@@ -597,7 +597,7 @@ export async function score(
 export type DocRow = ContractDocRow
 
 const DocRowSchema = z.object({
-  id: z.number(),
+  record_id: z.string().uuid(),
   scope: z.enum(DOC_SCOPES),
   subject: z.string().nullable(),
   slug: z.string(),
@@ -605,7 +605,7 @@ const DocRowSchema = z.object({
   body: z.string(),
   delivery: z.enum(['inject', 'demand']),
   audiences: z.array(z.enum(DOC_AUDIENCES)).nonempty(),
-  parent_id: z.number().nullable(),
+  parent_record_id: z.string().uuid().nullable(),
   parent_slug: z.string().nullable(),
   position: z.number().int(),
   featured: z.boolean().default(false),

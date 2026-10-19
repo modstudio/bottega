@@ -81,6 +81,22 @@ test('converted families execute leaf options and refuse options before the verb
   })
 })
 
+test('registered doc reorder accepts parent and repeatable slug handles', async () => {
+  const result = await runRegisteredCommand([
+    'doc',
+    'reorder',
+    '--scope',
+    'global',
+    '--parent',
+    '01990000-0000-7000-8000-000000001214',
+    '--slug',
+    'first',
+    '--slug',
+    'second',
+  ])
+  expect(result.firstLine).not.toContain('unknown option')
+})
+
 test('converted command families preserve trunk output and exit status without optional arguments', async () => {
   const originalCwd = process.cwd()
   const fixtureRoot = mkdtempSync(join(tmpdir(), 'command-family-'))
@@ -111,7 +127,7 @@ test('converted command families preserve trunk output and exit status without o
     [
       ['doc', 'reorder'],
       1,
-      `${PLATFORM_SLUG} doc reorder --scope S [--subject X] [--parent-id ID] --id ID...`,
+      `${PLATFORM_SLUG} doc reorder --scope S [--subject X] [--parent SLUG|UUID] --slug SLUG|UUID...`,
     ],
     [
       ['doc', 'consume'],

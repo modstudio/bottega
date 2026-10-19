@@ -2,7 +2,7 @@
 /** Knows how a terminal local run becomes an ordered hosted-record mutation. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
+import { hasRecordIdShape, newRecordId } from '../../../shared/record-id.ts'
 
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 import { chainTerminationAtForRoot } from './run-chain.ts'
@@ -26,6 +26,17 @@ export type RunRecordBackfillResult = {
 
 function json(value: unknown): unknown {
   return value == null ? null : JSON.parse(String(value))
+}
+
+function docRevisions(value: unknown): string[] | null {
+  const parsed = json(value)
+  if (parsed === null) return null
+  if (
+    !Array.isArray(parsed) ||
+    !parsed.every((item) => typeof item === 'string' && hasRecordIdShape(item))
+  )
+    throw new Error('run.doc_revisions must be a UUID array')
+  return parsed
 }
 
 /** Terminal payloads use last_event_at as finished_at when present, otherwise started_at. */
@@ -85,7 +96,7 @@ export function buildRunRecordPayload(
     baseCommit: row.base_commit,
     mintedBranch: row.minted_branch,
     docsInjected: row.docs_injected,
-    docRevisions: json(row.doc_revisions),
+    docRevisions: docRevisions(row.doc_revisions),
     canonSha: row.canon_sha,
     transport: row.transport,
     sessionId: row.session_id,

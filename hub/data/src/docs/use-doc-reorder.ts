@@ -53,11 +53,17 @@ export function useReorderableDocsTree(
         const order = {
           scope: active.scope as DocScope,
           subject: active.subject,
-          parentId: active.parentId,
-          orderedIds,
+          parentRecordId: active.parentId,
+          orderedRecordIds: orderedIds,
         }
         if (source === 'hosted' && active.spaceId)
-          await hosted.mutateAsync({ ...order, spaceId: active.spaceId })
+          await hosted.mutateAsync({
+            parentId: active.parentId,
+            orderedIds,
+            scope: order.scope,
+            subject: order.subject,
+            spaceId: active.spaceId,
+          })
         else await local.mutateAsync(order)
         await queryClient.invalidateQueries()
       } catch (error) {

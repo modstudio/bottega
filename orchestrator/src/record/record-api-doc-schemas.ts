@@ -128,6 +128,7 @@ export const recordDocImportSchema = z.object({
   }),
   revisions: z.array(
     z.object({
+      id: z.string().uuid(),
       scope: z.string().min(1),
       subject: z.string().nullable(),
       owner: z.string().uuid().nullable().optional(),

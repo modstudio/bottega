@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { newRecordId } from '../../shared/record-id.ts'
 import { createMemoryRecordApiClient, installRecordApiClient } from '../test/fixtures/record-api.ts'
 import { applyMigrations } from './database/migrations.ts'
 import { importCanon } from './doc/canon-import.ts'
@@ -107,7 +108,7 @@ describe('worker shared-text store writes', () => {
       refusal,
     )
     await expect(
-      restoreDoc('global', null, created.slug, 1, { reason: 'worker fixture' }),
+      restoreDoc('global', null, created.slug, newRecordId(), { reason: 'worker fixture' }),
     ).rejects.toThrow(refusal)
     await expect(
       importCanon({

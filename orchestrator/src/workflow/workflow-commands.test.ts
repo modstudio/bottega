@@ -66,14 +66,14 @@ const outcomePresentation = () => {
 
 const recordedArtifact = (project: string) => {
   const row = db()
-    .query<{ id: number }, [string, string, string]>(
+    .query<{ record_id: string }, [string, string, string]>(
       `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_record_id,record_id)
        SELECT 'project', ?, 'floor-artifact', 't', 'b', 'inject', '["technical"]', 't', 't', record_id, ?
          FROM project WHERE name=?
-       RETURNING id`,
+       RETURNING record_id`,
     )
-    .get(project, newRecordId(), project) as { id: number }
-  return [`--artifact`, `doc:${row.id}`] as const
+    .get(project, newRecordId(), project) as { record_id: string }
+  return [`--artifact`, `doc:${row.record_id}`] as const
 }
 
 const registerFixtureProject = (name: string) =>

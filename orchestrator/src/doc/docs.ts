@@ -43,13 +43,7 @@ import { exportDocFiles, importDocFiles } from './doc-files.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
 import { storedDocLintRefusal } from './doc-lint-adapter.ts'
 import { listDocMetadata, listDocs } from './doc-list.ts'
-import {
-  type DocOrderInput,
-  docOrderRefusal,
-  hostedDocOrder,
-  type LocalDocOrderRow,
-  localDocId,
-} from './doc-order.ts'
+import { type DocOrderInput, docOrderRefusal, type LocalDocOrderRow } from './doc-order.ts'
 import {
   type Doc,
   type DocRevision,
@@ -166,7 +160,7 @@ function assertInjectSize(input: {
         (doc) => `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}` !== identity,
       )
       const proposed: Doc = {
-        id: -1,
+        record_id: '00000000-0000-4000-8000-000000000000',
         project_record_id: null,
         scope: input.scope as DocScope,
         subject: input.subject,
@@ -187,12 +181,11 @@ function assertInjectSize(input: {
         checkedAgainstCommit: null,
         summary: null,
         replacement_slug: null,
-        parent_id: null,
+        parent_record_id: null,
         parent_slug: null,
         position: 0,
         created_at: '',
         updated_at: '',
-        record_id: null,
         revision: null,
       }
       const docs = [...selected, proposed]
@@ -421,7 +414,7 @@ async function setDocWithOp(
           scope: input.scope,
           subject: input.subject,
           owner,
-          parent_id: tree.parentId,
+          parent_record_id: tree.parentId,
           parent_slug: tree.parentSlug,
         }),
         position: tree.position,
@@ -486,34 +479,20 @@ export async function reorderDocs(input: DocOrderInput): Promise<{ orderedIds: s
   return applyRecordWriteAuthority({
     local: () => executeLocalDocOrder(input),
     hosted: async () => {
-      const parentId = input.parentId === null ? null : localDocId(input.parentId)
       const siblings = db()
-        .query<LocalDocOrderRow, [string, string, number | null]>(
-          `SELECT id, slug, record_id FROM doc
-           WHERE scope=? AND COALESCE(subject, '')=? AND parent_id IS ?
-           ORDER BY position, title, id`,
+        .query<LocalDocOrderRow, [string, string, string | null]>(
+          `SELECT record_id, slug FROM doc
+           WHERE scope=? AND COALESCE(subject, '')=? AND parent_record_id IS ?
+           ORDER BY position, title, record_id`,
         )
-        .all(input.scope, input.subject ?? '', parentId)
+        .all(input.scope, input.subject ?? '', input.parentId)
       const refusal = docOrderRefusal(
-        siblings.map((row) => String(row.id)),
+        siblings.map((row) => row.record_id),
         input.orderedIds,
       )
       if (refusal) throw new Error(refusal)
-      const parent =
-        parentId === null
-          ? null
-          : (db()
-              .query<LocalDocOrderRow, [number]>('SELECT id, slug, record_id FROM doc WHERE id=?')
-              .get(parentId) ?? null)
       const client = await hostedDocClient(input.scope, input.subject)
-      await client.reorderDocs(
-        hostedDocOrder(
-          input,
-          siblings,
-          parent,
-          `run ${PLATFORM_SLUG} record push-docs before reordering documents`,
-        ),
-      )
+      await client.reorderDocs(input)
       return executeLocalDocOrder(input)
     },
   })
@@ -730,7 +709,7 @@ export async function consumeDoc(
   })
 }
 
-export type InjectedDoc = Doc & { revision_id: number }
+export type InjectedDoc = Doc & { revision_id: string }
 
 export function docsForRun(input: { job: string; cwd: string }): InjectedDoc[] {
   const project = projectAt(input.cwd)
@@ -739,10 +718,12 @@ export function docsForRun(input: { job: string; cwd: string }): InjectedDoc[] {
     ...listDocs({ scope: 'job', subject: input.job, status: 'current' }),
     ...(project ? listDocs({ scope: 'project', subject: project.name, status: 'current' }) : []),
   ].filter((doc) => doc.delivery === 'inject')
-  const latest = db().query('SELECT MAX(id) AS id FROM doc_revision WHERE doc_id=?')
+  const latest = db().query(
+    'SELECT record_id FROM doc_revision WHERE doc_record_id=? ORDER BY number DESC LIMIT 1',
+  )
   return docs.map((doc) => {
-    const revisionId = (latest.get(doc.id) as { id: number | null }).id
-    if (revisionId === null) {
+    const revisionId = (latest.get(doc.record_id) as { record_id: string } | null)?.record_id
+    if (!revisionId) {
       throw new Error(
         `doc ${doc.scope}/${doc.subject ?? '_'}/${doc.slug} has no revision; refusing run`,
       )
@@ -831,11 +812,11 @@ export function readDocRevision(
   scope: string,
   subject: string | null,
   slug: string,
-  id: number,
+  recordId: string,
   owner: string | null = null,
   audience?: DocAudience,
 ): DocRevision {
-  const revision = getDocRevision(id, owner)
+  const revision = getDocRevision(recordId, owner)
   if (
     !revision ||
     revision.scope !== scope ||
@@ -843,10 +824,14 @@ export function readDocRevision(
     revision.slug !== slug
   )
     throw new Error(
-      `revision ${id} does not belong to ${scope}/${subject ?? '_'}/${slug}; run ${PLATFORM_SLUG} doc history ${scope} ${subject ?? '-'} ${slug}`,
+      `revision ${recordId} does not belong to ${scope}/${subject ?? '_'}/${slug}; run ${PLATFORM_SLUG} doc history ${scope} ${subject ?? '-'} ${slug}`,
     )
   return audience
-    ? docForAudience(revision, audience, `${scope}/${subject ?? '_'}/${slug} revision ${id}`)
+    ? docForAudience(
+        revision,
+        audience,
+        `${scope}/${subject ?? '_'}/${slug} revision ${revision.number}`,
+      )
     : revision
 }
 
@@ -854,7 +839,7 @@ export async function restoreDoc(
   scope: string,
   subject: string | null,
   slug: string,
-  revisionId: number,
+  revisionId: string,
   context: DocWriteContext,
   owner: string | null = null,
 ): Promise<Doc> {
@@ -910,7 +895,7 @@ export async function restoreDoc(
     scope,
     subject,
     slug,
-    parentId: revision.parent_id,
+    parentId: revision.parent_record_id,
   })
   const tree = localDocTreeFields(
     {
@@ -969,7 +954,7 @@ export async function restoreDoc(
             (row.subject ?? null) === subject &&
             (row.owner ?? null) === owner,
         )
-        recordId = match && typeof match.id === 'string' ? match.id : null
+        recordId = match && typeof match.id === 'string' ? match.id : undefined
       }
       if (!recordId) {
         const created = await client.upsertDoc({
@@ -985,7 +970,7 @@ export async function restoreDoc(
             scope,
             subject,
             owner,
-            parent_id: tree.parentId,
+            parent_record_id: tree.parentId,
             parent_slug: tree.parentSlug,
           }),
           position: revision.position,
@@ -1033,6 +1018,6 @@ export async function restoreDoc(
   })
 }
 
-export function diffDocRevisions(a: number, b: number, owner: string | null = null): string {
+export function diffDocRevisions(a: string, b: string, owner: string | null = null): string {
   return diffStoredDocRevisions(a, b, owner)
 }

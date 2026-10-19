@@ -649,7 +649,7 @@ describe('record cache pull', () => {
     expect(
       db()
         .query<{ parent_slug: string | null }, [string]>(
-          'SELECT parent.slug AS parent_slug FROM doc child LEFT JOIN doc parent ON parent.id=child.parent_id WHERE child.record_id=?',
+          'SELECT parent.slug AS parent_slug FROM doc child LEFT JOIN doc parent ON parent.record_id=child.parent_record_id WHERE child.record_id=?',
         )
         .get(childId)?.parent_slug,
     ).toBe('parent')
@@ -693,7 +693,6 @@ describe('record cache pull', () => {
     const updatedDraftId = newRecordId()
     const articleId = newRecordId()
     const supersededId = newRecordId()
-    const adoptedId = newRecordId()
     db()
       .query(
         `INSERT INTO doc
@@ -735,7 +734,6 @@ describe('record cache pull', () => {
                       status: 'superseded',
                       replacementSlug: 'new',
                     }),
-                    item(adoptedId, 'adopted', { status: 'draft', kind: 'article' }),
                   ]
                 : [
                     item(updatedDraftId, 'updated-draft', {
@@ -772,11 +770,6 @@ describe('record cache pull', () => {
       kind: 'working',
       replacement_slug: null,
     })
-    expect(lifecycle(adoptedId)).toEqual({
-      status: 'draft',
-      kind: 'article',
-      replacement_slug: null,
-    })
     expect(
       db()
         .query<{ audiences: string }, [string]>('SELECT audiences FROM doc WHERE record_id=?')
@@ -785,6 +778,49 @@ describe('record cache pull', () => {
 
     await pullRecordCache(db())
     expect(lifecycle(updatedDraftId)?.status).toBe('draft')
+  })
+
+  test('refuses a same-address hosted document with a different UUID without rewriting the key', async () => {
+    const localId = newRecordId()
+    const hostedId = newRecordId()
+    db()
+      .query(
+        `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,record_id)
+         VALUES ('global',NULL,'collision','Local','local','demand','["technical"]','a','a',?)`,
+      )
+      .run(localId)
+    installRecordApiClient(
+      clientWith({
+        listDocs: async () => ({
+          items: [
+            {
+              id: hostedId,
+              scope: 'global',
+              subject: null,
+              owner: null,
+              slug: 'collision',
+              title: 'Hosted',
+              body: 'hosted',
+              delivery: 'demand',
+              audiences: ['technical'],
+              parentId: null,
+              position: 0,
+              createdAt: '2026-10-19T00:00:00.000Z',
+              updatedAt: '2026-10-19T00:00:00.000Z',
+              deletedAt: null,
+            },
+          ],
+          nextCursor: null,
+        }),
+      }),
+    )
+    await expect(pullRecordCache(db())).rejects.toThrow(
+      `hosted document UUID ${hostedId} collides with local document UUID ${localId} at global/_/collision`,
+    )
+    expect(db().query('SELECT record_id,title FROM doc WHERE slug=?').get('collision')).toEqual({
+      record_id: localId,
+      title: 'Local',
+    })
   })
 
   test('applies an update and a soft delete', async () => {

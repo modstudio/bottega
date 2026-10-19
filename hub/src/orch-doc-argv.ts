@@ -42,7 +42,8 @@ export type DocSetInput = {
 }
 
 export type DocRevisionMetadata = {
-  id: number
+  record_id: string
+  number: number
   op: 'create' | 'set' | 'consume' | 'delete' | 'restore' | 'import' | 'backfill'
   author: string
   authorName?: string | null
@@ -84,8 +85,8 @@ export type DocOp = 'list' | 'get' | 'set' | 'remove' | 'history' | 'subjects'
 export type DocReorderInput = {
   scope: string
   subject: string | null
-  parentId: string | null
-  orderedIds: string[]
+  parentRecordId: string | null
+  orderedRecordIds: string[]
 }
 
 export function docReorderArgv(input: DocReorderInput): string[] {
@@ -93,8 +94,8 @@ export function docReorderArgv(input: DocReorderInput): string[] {
     'doc',
     'reorder',
     ...docAddressFlags(input),
-    ...(input.parentId ? ['--parent-id', input.parentId] : []),
-    ...input.orderedIds.flatMap((id) => ['--id', id]),
+    ...(input.parentRecordId ? ['--parent', input.parentRecordId] : []),
+    ...input.orderedRecordIds.flatMap((id) => ['--slug', id]),
     '--json',
   ]
 }

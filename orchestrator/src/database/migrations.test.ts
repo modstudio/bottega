@@ -310,13 +310,17 @@ test('note UUID reference migration preserves rows and turns old integers into d
          VALUES ('question','architect','author','operator','Title','Body',0,'2026-10-10','2026-10-09',72)`,
       )
       .run()
+    const revisionId = '01990000-0000-7000-8000-000000000091'
+    database.exec(
+      `INSERT INTO doc (id,scope,slug,title,body,created_at,updated_at,record_id) VALUES (91,'global','filed-doc','Filed doc','Body','2026-10-09','2026-10-09','01990000-0000-7000-8000-000000000090'); INSERT INTO doc_revision (id,doc_id,scope,slug,op,title,body,author,reason,at,record_id) VALUES (1,91,'global','filed-doc','create','Filed doc','Body','tester','seed','2026-10-09','${revisionId}')`,
+    )
     database
       .query(
         `INSERT INTO question (record_id,run_id,asked_at,question,filed_as,filed_ref)
          VALUES ('${newRecordId()}',?,'2026-10-09','Canon?','canon-proposal','73'),
-                ('${newRecordId()}',?,'2026-10-09','Doc?','doc','12@rev-1')`,
+                ('${newRecordId()}',?,'2026-10-09','Doc?','doc',?)`,
       )
-      .run(run.id, run.id)
+      .run(run.id, run.id, `12@${revisionId}`)
 
     expect(applyMigrations(database)).toEqual(pendingMigrationsFrom('0091_note_uuid_references'))
     expect(
@@ -353,8 +357,8 @@ test('note UUID reference migration preserves rows and turns old integers into d
       },
       {
         filed_as: 'doc',
-        filed_ref: '12@rev-1',
-        filed_record_id: null,
+        filed_ref: 'global/_/filed-doc@1',
+        filed_record_id: revisionId,
         filed_label: null,
       },
     ])

@@ -86,11 +86,11 @@ describe('Drizzle migration journal', () => {
     expect(indexes).toEqual([
       {
         name: 'canon_pack_address',
-        sql: "CREATE UNIQUE INDEX canon_pack_address ON canon_pack(job, COALESCE(project, ''))",
+        sql: "CREATE UNIQUE INDEX canon_pack_address ON canon_pack(job,COALESCE(project,''))",
       },
       {
         name: 'doc_address',
-        sql: "CREATE UNIQUE INDEX doc_address ON doc(scope, COALESCE(subject, ''), COALESCE(owner, ''), slug)",
+        sql: "CREATE UNIQUE INDEX doc_address ON doc(scope,COALESCE(subject,''),COALESCE(owner,''),slug)",
       },
     ])
     d.close()

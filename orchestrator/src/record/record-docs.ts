@@ -360,6 +360,7 @@ export async function deleteRecordDoc(
       audiences: recordDocAudiences(doc.audiences),
       parentId: doc.parent_id == null ? null : String(doc.parent_id),
       position: Number(doc.position),
+      featured: doc.featured == null ? false : Boolean(doc.featured),
       status: (doc.status == null ? 'current' : String(doc.status)) as DocStatus,
       kind: (doc.kind == null ? 'working' : String(doc.kind)) as DocKind,
       form: doc.form == null ? null : (String(doc.form) as DocForm),
@@ -426,6 +427,7 @@ export async function consumeRecordDoc(
       audiences: recordDocAudiences(doc.audiences),
       parentId: doc.parent_id == null ? null : String(doc.parent_id),
       position: Number(doc.position),
+      featured: doc.featured == null ? false : Boolean(doc.featured),
       status: (doc.status == null ? 'current' : String(doc.status)) as DocStatus,
       kind: (doc.kind == null ? 'working' : String(doc.kind)) as DocKind,
       form: doc.form == null ? null : (String(doc.form) as DocForm),
@@ -656,6 +658,49 @@ function assertImportAddress(doc: ReturnType<typeof normalizeRecordDocImport>['d
   assertWrite(refuseMismatchedDocProject(doc.scope, doc.subject, doc.projectName))
 }
 
+type NormalizedDocImport = ReturnType<typeof normalizeRecordDocImport>
+
+function insertImportedRevision(
+  tx: SQL,
+  spaceId: string,
+  docId: string,
+  projectId: string | null,
+  doc: NormalizedDocImport['doc'],
+  revision: NormalizedDocImport['revisions'][number],
+): Promise<string> {
+  return insertRecordDocRevision(tx, {
+    id: revision.id,
+    spaceId,
+    docId,
+    scope: doc.scope,
+    subject: doc.subject,
+    owner: doc.owner ?? null,
+    slug: doc.slug,
+    projectId,
+    op: revision.op,
+    title: revision.title,
+    body: revision.body,
+    delivery: revision.delivery,
+    audiences: recordDocAudiences(revision.audiences),
+    parentId: revision.parentId,
+    position: revision.position,
+    featured: revision.featured,
+    status: revision.status,
+    kind: revision.kind,
+    form: revision.form,
+    articleSubjectId: revision.articleSubjectId,
+    relatedSubjectIds: revision.relatedSubjectIds,
+    sourceFiles: revision.sourceFiles,
+    checkedAgainstCommit: revision.checkedAgainstCommit,
+    summary: revision.summary,
+    replacementSlug: revision.replacementSlug,
+    author: revision.author,
+    reason: revision.reason,
+    sessionId: revision.sessionId ?? null,
+    at: revision.at,
+  })
+}
+
 export async function importRecordDoc(
   input: Tenant & RecordDocImportInput,
 ): Promise<{ id: string; revisionIds: string[] } & HostedArticleResponse> {
@@ -728,35 +773,7 @@ export async function importRecordDoc(
     const revisionIds: string[] = []
     for (const revision of revisions) {
       revisionIds.push(
-        await insertRecordDocRevision(tx, {
-          spaceId: input.spaceId,
-          docId: id,
-          scope: doc.scope,
-          subject: doc.subject,
-          owner: doc.owner ?? null,
-          slug: doc.slug,
-          projectId: resolvedProject,
-          op: revision.op,
-          title: revision.title,
-          body: revision.body,
-          delivery: revision.delivery,
-          audiences: recordDocAudiences(revision.audiences),
-          parentId: revision.parentId,
-          position: revision.position,
-          featured: revision.featured,
-          status: revision.status,
-          kind: revision.kind,
-          form: revision.form,
-          articleSubjectId: revision.articleSubjectId,
-          relatedSubjectIds: revision.relatedSubjectIds,
-          sourceFiles: revision.sourceFiles,
-          checkedAgainstCommit: revision.checkedAgainstCommit,
-          replacementSlug: revision.replacementSlug,
-          author: revision.author,
-          reason: revision.reason,
-          sessionId: revision.sessionId ?? null,
-          at: revision.at,
-        }),
+        await insertImportedRevision(tx, input.spaceId, id, resolvedProject, doc, revision),
       )
     }
     return { id, revisionIds, ...hostedArticleResponse(doc, importedSubjectNames) }

@@ -20,7 +20,7 @@ import { decodeStoredDocAudiences } from './doc-audiences-codec.ts'
 import type { DocRevisionOp } from './doc-write-allowed.ts'
 
 export type Doc = {
-  id: number
+  record_id: string
   scope: DocScope
   subject: string | null
   owner: string | null
@@ -41,17 +41,16 @@ export type Doc = {
   checkedAgainstCommit: string | null
   summary: string | null
   replacement_slug: string | null
-  parent_id: number | null
+  parent_record_id: string | null
   parent_slug: string | null
   position: number
   created_at: string
   updated_at: string
-  record_id: string | null
   revision: string | null
 }
 export type DocMetadata = Pick<
   Doc,
-  | 'id'
+  | 'record_id'
   | 'scope'
   | 'subject'
   | 'slug'
@@ -67,7 +66,7 @@ export type DocMetadata = Pick<
   | 'checkedAgainstCommit'
   | 'summary'
   | 'replacement_slug'
-  | 'parent_id'
+  | 'parent_record_id'
   | 'parent_slug'
   | 'position'
   | 'updated_at'
@@ -88,8 +87,9 @@ export type DocListFilters = {
 }
 
 export type DocRevision = {
-  id: number
-  doc_id: number
+  record_id: string
+  number: number
+  doc_record_id: string | null
   scope: DocScope
   subject: string | null
   owner: string | null
@@ -111,17 +111,16 @@ export type DocRevision = {
   checkedAgainstCommit: string | null
   summary: string | null
   replacement_slug: string | null
-  parent_id: number | null
+  parent_record_id: string | null
   position: number
   author: string
   reason: string
   session_id: string | null
   at: string
-  record_id: string | null
 }
 export type DocRevisionMetadata = Pick<
   DocRevision,
-  | 'id'
+  | 'number'
   | 'op'
   | 'author'
   | 'reason'
@@ -139,7 +138,7 @@ export type DocRevisionMetadata = Pick<
 > & { bytes: number }
 
 const LATEST_REVISION_SQL =
-  '(SELECT r.record_id FROM doc_revision r WHERE r.doc_id=d.id ORDER BY r.id DESC LIMIT 1)'
+  '(SELECT r.record_id FROM doc_revision r WHERE r.doc_record_id=d.record_id ORDER BY r.number DESC LIMIT 1)'
 
 const articleFields = (
   database: Database,
@@ -214,11 +213,11 @@ function docTreeSelect(database: Database): { columns: string; join: string; pos
   return treeColumns(database)
     ? {
         columns: `d.*, p.slug AS parent_slug${status}${kind}`,
-        join: ' LEFT JOIN doc p ON p.id=d.parent_id',
+        join: ' LEFT JOIN doc p ON p.record_id=d.parent_record_id',
         position: 'd.position',
       }
     : {
-        columns: `d.*, '["technical"]' AS audiences, 0 AS featured, NULL AS parent_id, NULL AS parent_slug, 0 AS position${status}${kind}`,
+        columns: `d.*, '["technical"]' AS audiences, 0 AS featured, NULL AS parent_record_id, NULL AS parent_slug, 0 AS position${status}${kind}`,
         join: '',
         position: '0+0',
       }
@@ -398,8 +397,8 @@ export function listDocMetadataStore(filters: DocListFilters = {}): DocMetadata[
   const rows = (
     db()
       .query(
-        `SELECT d.id, d.record_id, d.scope, d.subject, d.slug, d.title, d.body, d.audiences, d.featured, d.status, d.kind, d.form, d.article_subject_id, d.source_files, d.checked_against_commit, d.summary, d.replacement_slug, d.parent_id, p.slug AS parent_slug, d.position, length(CAST(d.body AS BLOB)) AS bytes, d.updated_at, ${LATEST_REVISION_SQL} AS revision
-       FROM doc d LEFT JOIN doc p ON p.id=d.parent_id${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${order}`,
+        `SELECT d.record_id, d.scope, d.subject, d.slug, d.title, d.body, d.audiences, d.featured, d.status, d.kind, d.form, d.article_subject_id, d.source_files, d.checked_against_commit, d.summary, d.replacement_slug, d.parent_record_id, p.slug AS parent_slug, d.position, length(CAST(d.body AS BLOB)) AS bytes, d.updated_at, ${LATEST_REVISION_SQL} AS revision
+       FROM doc d LEFT JOIN doc p ON p.record_id=d.parent_record_id${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${order}`,
       )
       .all(...queryValues) as Array<
       Omit<DocMetadata, 'summarySource'> & { body: string; featured: boolean | number }
