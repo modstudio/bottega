@@ -11,7 +11,14 @@ const postgres = url ? describe : describe.skip
 const migrationsFolder = join(import.meta.dir, '..', '..', '..', 'shared', 'record', 'migrations')
 const generationMigration = '20261019210000_dev_1406_workflow_generation_replay'
 let priorMigrations = ''
-let priorHistoryCounts: Record<string, unknown> | undefined
+let priorHistoryCounts:
+  | {
+      workflow_versions: number
+      workflow_events: number
+      catalogue_versions: number
+      catalogue_events: number
+    }
+  | undefined
 
 const SPACE_ID = '01990000-0000-7000-8000-000000014060'
 const WORKFLOW_ID = '01990000-0000-7000-8000-000000014061'
@@ -88,7 +95,7 @@ postgres('populated workflow generation replay migration', () => {
         workflow_events: row?.workflow_events,
         catalogue_versions: row?.catalogue_versions,
         catalogue_events: row?.catalogue_events,
-      }).toEqual(priorHistoryCounts)
+      }).toEqual(priorHistoryCounts!)
     } finally {
       await sql.close()
     }
