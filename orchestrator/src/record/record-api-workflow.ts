@@ -68,7 +68,7 @@ export function registerRecordWorkflowRoutes(
         items,
         query.data.limit,
         (item) => ({
-          at: String(item[table.data.endsWith('_event') ? 'at' : 'updatedAt']),
+          at: String(item.updatedAt),
           id: String(item.id),
         }),
         true,

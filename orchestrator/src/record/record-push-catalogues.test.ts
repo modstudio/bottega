@@ -33,7 +33,7 @@ function fakeCatalogueClient(
   workflowOutcomes: Array<{
     kind: 'workflow' | 'step_catalogue'
     slug: string
-    outcome: 'replaced seeded built-in' | 'local production imported as draft'
+    outcome: 'replaced seeded built-in' | 'kept hosted history; local history not imported'
   }> = [],
 ): RecordApiClient {
   const base = createMemoryRecordApiClient()
@@ -60,7 +60,7 @@ function fakeCatalogueClient(
       }
       store.set(table, held)
     }
-    return { inserted, alreadyPresent, skipped: [], outcomes: [] }
+    return { inserted, alreadyPresent, skipped: [] }
   }
   return {
     ...base,
@@ -173,7 +173,7 @@ test('prints workflow import reconciliation outcomes', async () => {
       {
         kind: 'step_catalogue',
         slug: 'shared',
-        outcome: 'local production imported as draft',
+        outcome: 'kept hosted history; local history not imported',
       },
     ])
   rememberActiveRecordSpace(local, spaceId)
@@ -184,7 +184,9 @@ test('prints workflow import reconciliation outcomes', async () => {
     { local, client },
   )
   expect(logs).toContain('workflow workflow fix-defect: replaced seeded built-in')
-  expect(logs).toContain('workflow step_catalogue shared: local production imported as draft')
+  expect(logs).toContain(
+    'workflow step_catalogue shared: kept hosted history; local history not imported',
+  )
 })
 
 test('dry run names an uncached project route as unknown', async () => {

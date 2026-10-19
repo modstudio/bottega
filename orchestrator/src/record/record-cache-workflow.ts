@@ -78,7 +78,7 @@ async function pullTable(
       current = page.endCursor
         ? decodeRecordCursor(page.endCursor)
         : {
-            at: String(last[table.endsWith('_event') ? 'at' : 'updatedAt']),
+            at: String(last.updatedAt),
             id: String(last.record_id),
           }
       remember(local, key, current)
@@ -175,13 +175,13 @@ function applyVersion(
     .get(String(item.ownerId), spaceId)!
   const found =
     local
-      .query<{ id: number }, [string, string]>(
-        `SELECT id FROM ${n.version} WHERE record_id=? AND space_id=?`,
+      .query<{ id: number; record_id: string }, [string, string]>(
+        `SELECT id,record_id FROM ${n.version} WHERE record_id=? AND space_id=?`,
       )
       .get(recordId, spaceId) ??
     local
-      .query<{ id: number }, [number, number]>(
-        `SELECT id FROM ${n.version} WHERE ${n.foreign}=? AND n=?`,
+      .query<{ id: number; record_id: string }, [number, number]>(
+        `SELECT id,record_id FROM ${n.version} WHERE ${n.foreign}=? AND n=?`,
       )
       .get(parent.id, Number(item.n))
   const values = [
@@ -197,13 +197,17 @@ function applyVersion(
     item.promotedAt == null ? null : String(item.promotedAt),
     item.retiredAt == null ? null : String(item.retiredAt),
   ]
-  if (found)
+  if (found) {
+    if (found.record_id !== recordId)
+      local
+        .query(`DELETE FROM ${n.event} WHERE space_id=? AND ${n.foreign}=? AND version_n=?`)
+        .run(spaceId, parent.id, Number(item.n))
     local
       .query(
         `UPDATE ${n.version} SET record_id=?,space_id=?,${n.foreign}=?,n=?,status=?,definition=?,author=?,reason=?,created_at=?,promoted_at=?,retired_at=? WHERE id=?`,
       )
       .run(...values, found.id)
-  else
+  } else
     local
       .query(
         `INSERT INTO ${n.version} (record_id,space_id,${n.foreign},n,status,definition,author,reason,created_at,promoted_at,retired_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,

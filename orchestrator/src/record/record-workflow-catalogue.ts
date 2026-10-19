@@ -64,6 +64,7 @@ function mapped(table: RecordWorkflowTable, row: Record<string, unknown>) {
     reason: text(row.reason),
     sessionId: nullable(row.session_id),
     at: iso(row.at),
+    updatedAt: iso(row.updated_at),
   }
 }
 
@@ -85,7 +86,7 @@ export async function listRecordWorkflowCatalogue(
         break
       case 'step_catalogue_event':
         rows =
-          await tx`SELECT * FROM step_catalogue_event WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY at,id LIMIT ${input.limit + 1}`
+          await tx`SELECT * FROM step_catalogue_event WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
         break
       case 'workflow':
         rows =
@@ -97,7 +98,7 @@ export async function listRecordWorkflowCatalogue(
         break
       case 'workflow_event':
         rows =
-          await tx`SELECT * FROM workflow_event WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY at,id LIMIT ${input.limit + 1}`
+          await tx`SELECT * FROM workflow_event WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
         break
     }
     return rows.map((row) => mapped(input.table, row))
@@ -201,11 +202,11 @@ export async function draftRecordWorkflow(input: Tenant & RecordWorkflowDraftInp
         eventId = newRecordId()
       if (input.kind === 'workflow') {
         await tx`INSERT INTO workflow_version (id,space_id,workflow_id,n,status,definition,author,reason,created_at,updated_at) VALUES (${versionId}::uuid,${input.spaceId}::uuid,${ownerId}::uuid,${n},'draft',${definition},${input.author},${input.reason},${now}::timestamptz,${now}::timestamptz)`
-        await tx`INSERT INTO workflow_event (id,space_id,workflow_version_id,event,author,reason,session_id,at) VALUES (${eventId}::uuid,${input.spaceId}::uuid,${versionId}::uuid,${input.event},${input.author},${input.reason},${input.sessionId ?? null},${now}::timestamptz)`
+        await tx`INSERT INTO workflow_event (id,space_id,workflow_version_id,event,author,reason,session_id,at,updated_at) VALUES (${eventId}::uuid,${input.spaceId}::uuid,${versionId}::uuid,${input.event},${input.author},${input.reason},${input.sessionId ?? null},${now}::timestamptz,${now}::timestamptz)`
         await tx`UPDATE workflow SET updated_at=${now}::timestamptz WHERE id=${ownerId}::uuid`
       } else {
         await tx`INSERT INTO step_catalogue_version (id,space_id,catalogue_id,n,status,definition,author,reason,created_at,updated_at) VALUES (${versionId}::uuid,${input.spaceId}::uuid,${ownerId}::uuid,${n},'draft',${definition},${input.author},${input.reason},${now}::timestamptz,${now}::timestamptz)`
-        await tx`INSERT INTO step_catalogue_event (id,space_id,catalogue_version_id,event,author,reason,session_id,at) VALUES (${eventId}::uuid,${input.spaceId}::uuid,${versionId}::uuid,${input.event},${input.author},${input.reason},${input.sessionId ?? null},${now}::timestamptz)`
+        await tx`INSERT INTO step_catalogue_event (id,space_id,catalogue_version_id,event,author,reason,session_id,at,updated_at) VALUES (${eventId}::uuid,${input.spaceId}::uuid,${versionId}::uuid,${input.event},${input.author},${input.reason},${input.sessionId ?? null},${now}::timestamptz,${now}::timestamptz)`
         await tx`UPDATE step_catalogue SET updated_at=${now}::timestamptz WHERE id=${ownerId}::uuid`
       }
       return response(tx, input, { ...owner, updated_at: now }, [versionId])
@@ -224,9 +225,9 @@ async function writeTransitionEvent(
 ) {
   const id = newRecordId()
   if (input.kind === 'workflow')
-    await tx`INSERT INTO workflow_event (id,space_id,workflow_version_id,event,author,reason,session_id,at) VALUES (${id}::uuid,${input.spaceId}::uuid,${versionId}::uuid,${event},${input.author},${input.reason},${input.sessionId ?? null},${now}::timestamptz)`
+    await tx`INSERT INTO workflow_event (id,space_id,workflow_version_id,event,author,reason,session_id,at,updated_at) VALUES (${id}::uuid,${input.spaceId}::uuid,${versionId}::uuid,${event},${input.author},${input.reason},${input.sessionId ?? null},${now}::timestamptz,${now}::timestamptz)`
   else
-    await tx`INSERT INTO step_catalogue_event (id,space_id,catalogue_version_id,event,author,reason,session_id,at) VALUES (${id}::uuid,${input.spaceId}::uuid,${versionId}::uuid,${event},${input.author},${input.reason},${input.sessionId ?? null},${now}::timestamptz)`
+    await tx`INSERT INTO step_catalogue_event (id,space_id,catalogue_version_id,event,author,reason,session_id,at,updated_at) VALUES (${id}::uuid,${input.spaceId}::uuid,${versionId}::uuid,${event},${input.author},${input.reason},${input.sessionId ?? null},${now}::timestamptz,${now}::timestamptz)`
 }
 
 async function updateTransitionVersion(

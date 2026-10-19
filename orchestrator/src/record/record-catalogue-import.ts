@@ -3,15 +3,19 @@
 import { SQL } from 'bun'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import type { RecordCatalogueImportResult } from './record-catalogue-contract.ts'
+import { reconcileCatalogueHistory } from './record-catalogue-reconciliation.ts'
 import type { RecordLensImportInput } from './record-lens-contract.ts'
 import type { RecordPortImportInput } from './record-port-contract.ts'
-import type { RecordWorkflowImportInput } from './record-workflow-contract.ts'
+import type {
+  RecordWorkflowImportInput,
+  RecordWorkflowImportResult,
+} from './record-workflow-contract.ts'
 
 type Tenant = { url: string } & TenantPrincipal
-type Result = RecordCatalogueImportResult
 const BUILT_IN_WORKFLOW_AUTHOR = 'seed'
 const text = (value: unknown) => String(value)
-const empty = (): Result => ({ inserted: 0, alreadyPresent: 0, skipped: [], outcomes: [] })
+const empty = (): RecordCatalogueImportResult => ({ inserted: 0, alreadyPresent: 0, skipped: [] })
+const emptyWorkflow = (): RecordWorkflowImportResult => ({ ...empty(), outcomes: [] })
 async function forEachAsync<T>(
   values: readonly T[],
   use: (value: T) => Promise<void>,
@@ -144,26 +148,30 @@ async function reconcileWorkflowVersions(
   input: Tenant & RecordWorkflowImportInput,
   kind: 'workflow' | 'step_catalogue',
   owners: ReadonlyMap<string, string>,
-  result: Result,
+  result: RecordWorkflowImportResult,
 ): Promise<Set<string>> {
   const versionTable = `${kind}_version` as 'workflow_version' | 'step_catalogue_version',
-    draftProductions = new Set<string>()
+    keptVersions = new Set<string>()
   await forEachAsync(input[kind], async (owner) => {
     const ownerId = owners.get(owner.id),
       imported = input[versionTable].filter((row) => row.ownerId === owner.id),
       production = imported.find((row) => row.status === 'production')
     if (!ownerId || !production) return
-    const hosted: { id: unknown; author: unknown; status: unknown }[] =
+    const hosted: { id: unknown; n: unknown; author: unknown; status: unknown }[] =
       kind === 'workflow'
-        ? await tx`SELECT id,author,status FROM workflow_version WHERE space_id=${input.spaceId}::uuid AND workflow_id=${ownerId}::uuid`
-        : await tx`SELECT id,author,status FROM step_catalogue_version WHERE space_id=${input.spaceId}::uuid AND catalogue_id=${ownerId}::uuid`
-    if (!hosted.length) return
-    const hostedIds = new Set(hosted.map((row) => text(row.id)))
-    if (imported.every((row) => hostedIds.has(row.id))) return
-    if (
-      hosted.some((row) => text(row.status) === 'production') &&
-      hosted.every((row) => text(row.author) === BUILT_IN_WORKFLOW_AUTHOR)
-    ) {
+        ? await tx`SELECT id,n,author,status FROM workflow_version WHERE space_id=${input.spaceId}::uuid AND workflow_id=${ownerId}::uuid`
+        : await tx`SELECT id,n,author,status FROM step_catalogue_version WHERE space_id=${input.spaceId}::uuid AND catalogue_id=${ownerId}::uuid`
+    const decision = reconcileCatalogueHistory(
+      imported.map(({ id, n, author, status }) => ({ id, n, author, status })),
+      hosted.map((row) => ({
+        id: text(row.id),
+        n: Number(row.n),
+        author: text(row.author),
+        status: text(row.status),
+      })),
+      BUILT_IN_WORKFLOW_AUTHOR,
+    )
+    if (decision.action === 'replace-seed') {
       if (kind === 'workflow') {
         await tx`DELETE FROM workflow_event WHERE space_id=${input.spaceId}::uuid AND workflow_version_id IN (SELECT id FROM workflow_version WHERE space_id=${input.spaceId}::uuid AND workflow_id=${ownerId}::uuid)`
         await tx`DELETE FROM workflow_version WHERE space_id=${input.spaceId}::uuid AND workflow_id=${ownerId}::uuid`
@@ -171,17 +179,13 @@ async function reconcileWorkflowVersions(
         await tx`DELETE FROM step_catalogue_event WHERE space_id=${input.spaceId}::uuid AND catalogue_version_id IN (SELECT id FROM step_catalogue_version WHERE space_id=${input.spaceId}::uuid AND catalogue_id=${ownerId}::uuid)`
         await tx`DELETE FROM step_catalogue_version WHERE space_id=${input.spaceId}::uuid AND catalogue_id=${ownerId}::uuid`
       }
-      result.outcomes.push({ kind, slug: owner.slug, outcome: 'replaced seeded built-in' })
-    } else if (hosted.some((row) => text(row.author) !== BUILT_IN_WORKFLOW_AUTHOR)) {
-      draftProductions.add(production.id)
-      result.outcomes.push({
-        kind,
-        slug: owner.slug,
-        outcome: 'local production imported as draft',
-      })
+    } else if (decision.action === 'keep-hosted') {
+      for (const row of imported) keptVersions.add(row.id)
     }
+    if (decision.outcome)
+      result.outcomes.push({ kind, slug: owner.slug, outcome: decision.outcome })
   })
-  return draftProductions
+  return keptVersions
 }
 
 type WorkflowVersionRow = RecordWorkflowImportInput['workflow_version'][number]
@@ -205,15 +209,11 @@ async function insertWorkflowVersion(
   kind: 'workflow' | 'step_catalogue',
   ownerId: string,
   row: WorkflowVersionRow,
-  asDraft: boolean,
 ): Promise<void> {
-  const status = asDraft ? 'draft' : row.status,
-    promotedAt = asDraft ? null : row.promotedAt,
-    retiredAt = asDraft ? null : row.retiredAt
   if (kind === 'workflow')
-    await tx`INSERT INTO workflow_version (id,space_id,workflow_id,n,status,definition,author,reason,created_at,promoted_at,retired_at,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${ownerId}::uuid,${row.n},${status},${row.definition},${row.author},${row.reason},${row.createdAt}::timestamptz,${promotedAt}::timestamptz,${retiredAt}::timestamptz,${row.updatedAt}::timestamptz)`
+    await tx`INSERT INTO workflow_version (id,space_id,workflow_id,n,status,definition,author,reason,created_at,promoted_at,retired_at,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${ownerId}::uuid,${row.n},${row.status},${row.definition},${row.author},${row.reason},${row.createdAt}::timestamptz,${row.promotedAt}::timestamptz,${row.retiredAt}::timestamptz,${row.updatedAt}::timestamptz)`
   else
-    await tx`INSERT INTO step_catalogue_version (id,space_id,catalogue_id,n,status,definition,author,reason,created_at,promoted_at,retired_at,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${ownerId}::uuid,${row.n},${status},${row.definition},${row.author},${row.reason},${row.createdAt}::timestamptz,${promotedAt}::timestamptz,${retiredAt}::timestamptz,${row.updatedAt}::timestamptz)`
+    await tx`INSERT INTO step_catalogue_version (id,space_id,catalogue_id,n,status,definition,author,reason,created_at,promoted_at,retired_at,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${ownerId}::uuid,${row.n},${row.status},${row.definition},${row.author},${row.reason},${row.createdAt}::timestamptz,${row.promotedAt}::timestamptz,${row.retiredAt}::timestamptz,${row.updatedAt}::timestamptz)`
 }
 
 async function importWorkflowVersions(
@@ -221,12 +221,13 @@ async function importWorkflowVersions(
   input: Tenant & RecordWorkflowImportInput,
   kind: 'workflow' | 'step_catalogue',
   owners: ReadonlyMap<string, string>,
-  draftProductions: ReadonlySet<string>,
-  result: Result,
+  keptVersions: ReadonlySet<string>,
+  result: RecordWorkflowImportResult,
 ): Promise<Map<string, string>> {
   const versions = new Map<string, string>(),
     versionTable = `${kind}_version` as 'workflow_version' | 'step_catalogue_version'
   await forEachAsync(input[versionTable], async (row) => {
+    if (keptVersions.has(row.id)) return
     const ownerId = owners.get(row.ownerId)
     if (!ownerId) {
       result.skipped.push({ id: row.id, reason: `${kind} ${row.ownerId} is absent` })
@@ -235,7 +236,7 @@ async function importWorkflowVersions(
     const id = await foundWorkflowVersion(tx, input, kind, ownerId, row)
     if (id) result.alreadyPresent++
     else {
-      await insertWorkflowVersion(tx, input, kind, ownerId, row, draftProductions.has(row.id))
+      await insertWorkflowVersion(tx, input, kind, ownerId, row)
       result.inserted++
     }
     versions.set(row.id, id ?? row.id)
@@ -245,7 +246,7 @@ async function importWorkflowVersions(
 
 export async function importRecordWorkflowCatalogue(input: Tenant & RecordWorkflowImportInput) {
   return tenant(input, async (tx) => {
-    const result = empty()
+    const result = emptyWorkflow()
     await forEachAsync(['step_catalogue', 'workflow'] as const, async (kind) => {
       const owners = new Map<string, string>()
       await forEachAsync(input[kind], async (row) => {
@@ -264,18 +265,12 @@ export async function importRecordWorkflowCatalogue(input: Tenant & RecordWorkfl
         }
         owners.set(row.id, id ?? row.id)
       })
-      const draftProductions = await reconcileWorkflowVersions(tx, input, kind, owners, result)
-      const versions = await importWorkflowVersions(
-          tx,
-          input,
-          kind,
-          owners,
-          draftProductions,
-          result,
-        ),
+      const keptVersions = await reconcileWorkflowVersions(tx, input, kind, owners, result)
+      const versions = await importWorkflowVersions(tx, input, kind, owners, keptVersions, result),
         versionTable = `${kind}_version` as 'workflow_version' | 'step_catalogue_version'
       const eventTable = `${kind}_event` as 'workflow_event' | 'step_catalogue_event'
       await forEachAsync(input[eventTable], async (row) => {
+        if (keptVersions.has(row.ownerVersionId)) return
         const versionId = versions.get(row.ownerVersionId)
         if (!versionId) {
           result.skipped.push({
@@ -290,10 +285,10 @@ export async function importRecordWorkflowCatalogue(input: Tenant & RecordWorkfl
             : await tx`SELECT id FROM step_catalogue_event WHERE space_id=${input.spaceId}::uuid AND id=${row.id}::uuid`
         if (existing[0]) result.alreadyPresent++
         else if (kind === 'workflow') {
-          await tx`INSERT INTO workflow_event (id,space_id,workflow_version_id,event,author,reason,session_id,at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${versionId}::uuid,${row.event},${row.author},${row.reason},${row.sessionId},${row.at}::timestamptz)`
+          await tx`INSERT INTO workflow_event (id,space_id,workflow_version_id,event,author,reason,session_id,at,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${versionId}::uuid,${row.event},${row.author},${row.reason},${row.sessionId},${row.at}::timestamptz,now())`
           result.inserted++
         } else {
-          await tx`INSERT INTO step_catalogue_event (id,space_id,catalogue_version_id,event,author,reason,session_id,at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${versionId}::uuid,${row.event},${row.author},${row.reason},${row.sessionId},${row.at}::timestamptz)`
+          await tx`INSERT INTO step_catalogue_event (id,space_id,catalogue_version_id,event,author,reason,session_id,at,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${versionId}::uuid,${row.event},${row.author},${row.reason},${row.sessionId},${row.at}::timestamptz,now())`
           result.inserted++
         }
       })

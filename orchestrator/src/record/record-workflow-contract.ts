@@ -1,6 +1,7 @@
 // concern: record-workflow-contract
 /** Pure transport contract for the hosted workflow catalogue. */
 import { z } from 'zod'
+import { recordCatalogueImportResultSchema } from './record-catalogue-contract.ts'
 
 export const RECORD_WORKFLOW_TABLES = [
   'step_catalogue',
@@ -65,7 +66,11 @@ const recordWorkflowRowSchemas = {
 export const recordWorkflowTableSchema = z.enum(RECORD_WORKFLOW_TABLES)
 export const recordWorkflowPageSchema = (table: RecordWorkflowTable) =>
   z.object({
-    items: z.array(recordWorkflowRowSchemas[table]),
+    items: z.array(
+      table.endsWith('_event')
+        ? recordWorkflowRowSchemas[table].extend({ updatedAt: iso })
+        : recordWorkflowRowSchemas[table],
+    ),
     nextCursor: z.string().nullable(),
     endCursor: z.string().nullable().optional(),
   })
@@ -79,6 +84,19 @@ export const recordWorkflowImportSchema = z.object({
   workflow_event: z.array(recordWorkflowRowSchemas.workflow_event),
 })
 export type RecordWorkflowImportInput = z.infer<typeof recordWorkflowImportSchema>
+export const recordWorkflowImportResultSchema = recordCatalogueImportResultSchema.extend({
+  outcomes: z.array(
+    z.object({
+      kind: z.enum(['workflow', 'step_catalogue']),
+      slug: z.string(),
+      outcome: z.enum([
+        'replaced seeded built-in',
+        'kept hosted history; local history not imported',
+      ]),
+    }),
+  ),
+})
+export type RecordWorkflowImportResult = z.infer<typeof recordWorkflowImportResultSchema>
 
 const context = {
   author: z.string().trim().min(1),

@@ -92,6 +92,7 @@ export const workflowEvent = pgTable.withRLS(
     reason: text().notNull(),
     sessionId: text('session_id'),
     at: recordedAt('at'),
+    updatedAt: updatedAt(),
   },
   (table) => [
     check(
@@ -101,6 +102,7 @@ export const workflowEvent = pgTable.withRLS(
     check('workflow_event_author_check', sql`length(trim(${table.author})) > 0`),
     check('workflow_event_reason_check', sql`length(trim(${table.reason})) > 0`),
     index('workflow_event_version_idx').on(table.workflowVersionId, table.id),
+    index('workflow_event_space_updated_id_idx').on(table.spaceId, table.updatedAt, table.id),
     foreignKey({
       columns: [table.spaceId, table.workflowVersionId],
       foreignColumns: [workflowVersion.spaceId, workflowVersion.id],
@@ -181,6 +183,7 @@ export const stepCatalogueEvent = pgTable.withRLS(
     reason: text().notNull(),
     sessionId: text('session_id'),
     at: recordedAt('at'),
+    updatedAt: updatedAt(),
   },
   (table) => [
     check(
@@ -190,6 +193,7 @@ export const stepCatalogueEvent = pgTable.withRLS(
     check('step_catalogue_event_author_check', sql`length(trim(${table.author})) > 0`),
     check('step_catalogue_event_reason_check', sql`length(trim(${table.reason})) > 0`),
     index('step_catalogue_event_version_idx').on(table.catalogueVersionId, table.id),
+    index('step_catalogue_event_space_updated_id_idx').on(table.spaceId, table.updatedAt, table.id),
     foreignKey({
       columns: [table.spaceId, table.catalogueVersionId],
       foreignColumns: [stepCatalogueVersion.spaceId, stepCatalogueVersion.id],

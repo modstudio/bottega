@@ -2,15 +2,13 @@
 /** Implements decoded workflow catalogue requests outside the main client file ceiling. */
 import { type RecordRequestDestination, workflowCataloguePath } from './record-api-client-paths.ts'
 import {
-  type RecordCatalogueImportResult,
-  recordCatalogueImportResultSchema,
-} from './record-catalogue-contract.ts'
-import {
   type RecordWorkflowDraftInput,
   type RecordWorkflowImportInput,
+  type RecordWorkflowImportResult,
   type RecordWorkflowTable,
   type RecordWorkflowTransitionInput,
   type RecordWorkflowWriteResponse,
+  recordWorkflowImportResultSchema,
   recordWorkflowPageSchema,
   recordWorkflowWriteResponseSchema,
 } from './record-workflow-contract.ts'
@@ -44,7 +42,7 @@ export type RecordWorkflowClient = {
   importWorkflowCatalogue?(
     input: RecordWorkflowImportInput,
     destination?: RecordRequestDestination,
-  ): Promise<RecordCatalogueImportResult>
+  ): Promise<RecordWorkflowImportResult>
 }
 export const recordWorkflowClient = (request: Request): RecordWorkflowClient => ({
   listWorkflowCatalogue: (table, query, destination) =>
@@ -78,6 +76,6 @@ export const recordWorkflowClient = (request: Request): RecordWorkflowClient => 
       method: 'POST',
       body: JSON.stringify(input),
       ...destination,
-      schema: (body) => recordCatalogueImportResultSchema.parse(body),
+      schema: (body) => recordWorkflowImportResultSchema.parse(body),
     }),
 })

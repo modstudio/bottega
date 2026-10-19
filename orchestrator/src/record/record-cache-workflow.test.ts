@@ -12,6 +12,7 @@ import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
 import { productionWorkflows } from '../workflow/workflows.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { applyWorkflowCatalogueRow, pullWorkflowCatalogue } from './record-cache-workflow.ts'
+import { encodeRecordCursor } from './record-cursor.ts'
 
 afterEach(() => installRecordApiClient(createMemoryRecordApiClient()))
 const at = '2026-10-18T12:00:00.000Z'
@@ -45,6 +46,7 @@ const event = (spaceId: string, ownerVersionId: string, id = newRecordId()) => (
   reason: 'test',
   sessionId: null,
   at,
+  updatedAt: at,
 })
 
 test('workflow pull orders six durable streams, resumes pages, and holds an unresolved child', async () => {
@@ -216,4 +218,69 @@ test('a hosted replacement converges over a cached seeded version by natural key
   expect(
     local.query('SELECT COUNT(*) n FROM workflow_version WHERE space_id=?').get(space),
   ).toEqual({ n: 1 })
+})
+
+test('pull with a persisted cursor replaces a cached seed version and its events', async () => {
+  const local = db(),
+    space = newRecordId(),
+    hostedIdentity = identity(space, 'fix-defect'),
+    seeded = version(space, hostedIdentity.id, { title: 'Seed' }),
+    seededEvent = event(space, seeded.id),
+    replacement = {
+      ...version(space, hostedIdentity.id, { title: 'Machine history' }),
+      id: newRecordId(),
+      updatedAt: '2026-10-19T15:00:00.000Z',
+    },
+    importedEvent = {
+      ...event(space, replacement.id),
+      at: '2026-10-18T11:00:00.000Z',
+      updatedAt: '2026-10-19T15:00:01.000Z',
+    },
+    versionCursor = { at: '2026-10-19T14:00:00.000Z', id: newRecordId() },
+    eventCursor = { at: '2026-10-19T14:00:00.000Z', id: newRecordId() }
+  applyWorkflowCatalogueRow(local, 'workflow', hostedIdentity)
+  applyWorkflowCatalogueRow(local, 'workflow_version', seeded)
+  applyWorkflowCatalogueRow(local, 'workflow_event', seededEvent)
+  local
+    .query('INSERT INTO schema_meta (key,value) VALUES (?,?),(?,?)')
+    .run(
+      `record_workflow_cursor:${space}:workflow_version`,
+      JSON.stringify(versionCursor),
+      `record_workflow_cursor:${space}:workflow_event`,
+      JSON.stringify(eventCursor),
+    )
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    async listWorkflowCatalogue(table, query) {
+      if (table === 'workflow_version') {
+        expect(query.cursor).toBe(encodeRecordCursor(versionCursor))
+        return {
+          items: [replacement],
+          nextCursor: null,
+          endCursor: encodeRecordCursor({ at: replacement.updatedAt, id: replacement.id }),
+        }
+      }
+      if (table === 'workflow_event') {
+        expect(query.cursor).toBe(encodeRecordCursor(eventCursor))
+        return {
+          items: [importedEvent],
+          nextCursor: null,
+          endCursor: encodeRecordCursor({ at: importedEvent.updatedAt, id: importedEvent.id }),
+        }
+      }
+      return { items: [], nextCursor: null }
+    },
+  })
+  expect(await pullWorkflowCatalogue(local, [space])).toEqual({
+    count: 2,
+    completedSpaces: new Set([space]),
+  })
+  expect(
+    local
+      .query('SELECT record_id,definition FROM workflow_version WHERE space_id=? AND n=1')
+      .get(space),
+  ).toEqual({ record_id: replacement.id, definition: replacement.definition })
+  expect(
+    local.query('SELECT record_id FROM workflow_event WHERE space_id=? ORDER BY id').all(space),
+  ).toEqual([{ record_id: importedEvent.id }])
 })
