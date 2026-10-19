@@ -9,8 +9,8 @@ import { projects } from '../project/projects.ts'
 import { activeRecordSpace, effectiveProjectSpace } from '../project-space.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import type { RecordPortImportInput } from '../record/record-port-contract.ts'
-import { normalizePortBaselineScannedAt } from '../record/record-port-date.ts'
 import { noActiveRecordSpaceRefusal } from '../record/record-project-destination.ts'
+import { normalizePortBaselineScannedAt } from './porting-date.ts'
 import { type ImportPlan, ImportRefusalError } from './porting-import-contract.ts'
 
 type HostedImportPlan = Pick<

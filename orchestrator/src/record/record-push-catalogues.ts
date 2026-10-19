@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { db } from '../database/db.ts'
+import { normalizePortBaselineScannedAt } from '../porting/porting-date.ts'
 import { projects } from '../project/projects.ts'
 import { activeRecordSpace } from '../project-space.ts'
 import type { RecordApiClient, RecordRequestDestination } from './record-api-client.ts'
@@ -13,7 +14,6 @@ import type { RecordIdentity } from './record-auth.ts'
 import { pullRecordCache } from './record-cache.ts'
 import type { RecordLensImportInput } from './record-lens-contract.ts'
 import type { RecordPortImportInput } from './record-port-contract.ts'
-import { normalizePortBaselineScannedAt } from './record-port-date.ts'
 import {
   declaredRecordSpace,
   noActiveRecordSpaceRefusal,

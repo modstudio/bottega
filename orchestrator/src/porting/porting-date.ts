@@ -1,4 +1,4 @@
-// concern: record-port-date
+// concern: porting-date
 /** Normalizes legacy date-only port baseline timestamps at hosted import boundaries. */
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
 
