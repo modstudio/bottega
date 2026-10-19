@@ -116,6 +116,12 @@ export const recordModules: RecordModule[] = [
     './record-cursor.ts',
     './record-lens-contract.ts',
   ]),
+  module('orchestrator/src/record/record-cache-catalogues.ts', [
+    'bun:sqlite',
+    './record-cache-lens.ts',
+    './record-cache-port.ts',
+    './record-cache-workflow.ts',
+  ]),
   module('orchestrator/src/record/record-workflow-catalogue.ts', [
     'bun',
     '../../../shared/record/schema.ts',

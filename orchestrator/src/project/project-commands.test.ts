@@ -8,8 +8,10 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
-import { writableDb } from '../database/db.ts'
+import { db, writableDb } from '../database/db.ts'
+import { effectiveProjectSpace } from '../project-space.ts'
 import { readRecordInstallBinding } from '../record/install-binding.ts'
+import { applyLensCatalogueRow } from '../record/record-cache-lens.ts'
 import { fillAbsentProjectSettings, projectCommand } from './project-commands.ts'
 import { projectByName, projects, retireProject, upsertProject } from './projects.ts'
 
@@ -161,6 +163,114 @@ test('project add adopts a matching hosted project without writing it', async ()
       space: 'beta',
     },
   })
+})
+
+test('project add pulls the hosted project space catalogues before lens validation', async () => {
+  const local = db()
+  const targetSpace = newRecordId()
+  const otherSpace = newRecordId()
+  const hostedId = newRecordId()
+  const lensId = newRecordId()
+  local.query('DELETE FROM lens WHERE space_id IS NOT NULL').run()
+  applyLensCatalogueRow(local, 'lens', {
+    id: newRecordId(),
+    spaceId: otherSpace,
+    key: 'other-space-only',
+    title: 'Other space lens',
+    question: 'What belongs elsewhere?',
+    excludes: 'The target space.',
+    slots: '{"type":"object","properties":{},"additionalProperties":false}',
+    version: 1,
+    enabled: true,
+    requiresExecution: false,
+  })
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: otherSpace,
+      personalSpaceId: otherSpace,
+      memberships: [
+        { space_id: otherSpace, slug: 'other', permission: 'write' },
+        { space_id: targetSpace, slug: 'target', permission: 'write' },
+      ],
+    }),
+    listProjects: async (destination) =>
+      destination?.destinationSpaceId === targetSpace
+        ? [
+            {
+              id: hostedId,
+              name: 'catalogue-adoption',
+              spaceId: targetSpace,
+              spaceName: 'Target',
+              keyPrefixes: ['CAT'],
+              stack: 'typescript',
+              managedContext: false,
+              landingBranch: null,
+              color: null,
+              colorDark: null,
+              canon: true,
+              settings: {
+                keyPrefixes: ['CAT'],
+                review: { lenses: [{ lens: 'target-lens' }] },
+              },
+              retiredAt: null,
+            },
+          ]
+        : [],
+    async listLensCatalogue(table, _query, destination) {
+      if (table !== 'lens' || destination?.destinationSpaceId !== targetSpace)
+        return { items: [], nextCursor: null }
+      return {
+        items: [
+          {
+            id: lensId,
+            spaceId: targetSpace,
+            key: 'target-lens',
+            title: 'Target lens',
+            question: 'Does this fit the target?',
+            excludes: 'Other spaces.',
+            slots: '{"type":"object","properties":{},"additionalProperties":false}',
+            version: 1,
+            enabled: true,
+            requiresExecution: false,
+            updatedAt: '2026-10-19T12:00:00.000Z',
+          },
+        ],
+        nextCursor: null,
+      }
+    },
+  })
+  const path = mkdtempSync(join(tmpdir(), 'orch-catalogue-adopt-'))
+
+  await expect(
+    runProject(['project', 'add', path], { name: 'catalogue-adoption' }),
+  ).resolves.toContain('adopted catalogue-adoption from record space target')
+  expect(projectByName('catalogue-adoption')?.recordId).toBe(hostedId)
+  expect(effectiveProjectSpace(db(), 'catalogue-adoption')).toBe(targetSpace)
+})
+
+test('project add refuses a failed catalogue pull with the named stream', async () => {
+  const targetSpace = newRecordId()
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: targetSpace,
+      personalSpaceId: targetSpace,
+      memberships: [{ space_id: targetSpace, slug: 'target', permission: 'write' }],
+    }),
+    listProjects: async () => [],
+    listWorkflowCatalogue: async () => {
+      throw new Error('workflow endpoint unavailable')
+    },
+  })
+  const path = mkdtempSync(join(tmpdir(), 'orch-catalogue-fail-'))
+
+  await expect(runProject(['project', 'add', path], { name: 'catalogue-fail' })).rejects.toThrow(
+    `failed to pull workflow catalogue for record space target: workflow endpoint unavailable`,
+  )
+  expect(projectByName('catalogue-fail')).toBeNull()
 })
 
 test('project add never mints when the hosted project list is unreachable', async () => {

@@ -7,7 +7,7 @@ import {
   BOUND_RECORD_WRITE_REFUSAL,
   currentRecordWriteDecision,
 } from '../record/record-write-authority.ts'
-import { type AddProjectDecision, decideProjectAdd } from './project-add-decision.ts'
+import { decideProjectAdd, type ProjectAddDecisionResult } from './project-add-decision.ts'
 import type { ProjectSettings } from './project-settings.ts'
 
 export async function projectAddDecision(input: {
@@ -16,11 +16,11 @@ export async function projectAddDecision(input: {
   stackWasRequested: boolean
   requestedSettings: ProjectSettings
   selectedSpace?: string
-}): Promise<AddProjectDecision> {
+}): Promise<ProjectAddDecisionResult> {
   const authority = currentRecordWriteDecision()
   if (authority === 'refused') throw new Error(BOUND_RECORD_WRITE_REFUSAL)
   if (authority === 'local-authoritative') {
-    return { kind: 'mint', settings: input.requestedSettings }
+    return { decision: { kind: 'mint', settings: input.requestedSettings } }
   }
   const client = recordApiClient()
   const identity = await client.whoami()
@@ -32,9 +32,11 @@ export async function projectAddDecision(input: {
       ),
     )
   ).flat()
-  return decideProjectAdd({
+  const decision = decideProjectAdd({
     ...input,
     hostedProjects,
     memberships,
+    activeSpaceId: identity.activeSpaceId,
   })
+  return decision
 }

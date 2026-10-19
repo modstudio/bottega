@@ -36,18 +36,22 @@ describe('decideProjectAdd', () => {
         requestedSettings: { checks: { spelling: true } },
         hostedProjects: [hosted()],
         memberships,
+        activeSpaceId: 'space-b',
       }),
     ).toEqual({
-      kind: 'adopt',
-      recordId: 'project-a',
-      stack: 'typescript',
-      settings: {
-        trunk: 'main',
-        keyPrefixes: ['DEV'],
-        checks: { spelling: true },
+      decision: {
+        kind: 'adopt',
+        recordId: 'project-a',
+        stack: 'typescript',
+        settings: {
+          trunk: 'main',
+          keyPrefixes: ['DEV'],
+          checks: { spelling: true },
+          space: 'alpha',
+        },
         space: 'alpha',
       },
-      space: 'alpha',
+      targetSpace: { id: 'space-a', label: 'alpha' },
     })
   })
 
@@ -59,11 +63,12 @@ describe('decideProjectAdd', () => {
       requestedSettings: { trunk: 'develop', keyPrefixes: ['OTHER'] },
       hostedProjects: [hosted()],
       memberships,
+      activeSpaceId: 'space-a',
     })
-    expect(decision.kind).toBe('refuse')
-    if (decision.kind !== 'refuse') return
-    expect(decision.reason).toContain('stack, trunk, keyPrefixes')
-    expect(decision.reason).toContain(`${PLATFORM_SLUG} project set probe`)
+    expect(decision.decision.kind).toBe('refuse')
+    if (decision.decision.kind !== 'refuse') return
+    expect(decision.decision.reason).toContain('stack, trunk, keyPrefixes')
+    expect(decision.decision.reason).toContain(`${PLATFORM_SLUG} project set probe`)
   })
 
   test('refuses adoption from a server response that predates adoption fields', () => {
@@ -79,11 +84,14 @@ describe('decideProjectAdd', () => {
         requestedSettings: {},
         hostedProjects: [previousShape],
         memberships,
+        activeSpaceId: 'space-a',
       }),
     ).toEqual({
-      kind: 'refuse',
-      reason:
-        'the hosted record server predates project adoption; release the record API, then retry',
+      decision: {
+        kind: 'refuse',
+        reason:
+          'the hosted record server predates project adoption; release the record API, then retry',
+      },
     })
   })
 
@@ -96,11 +104,14 @@ describe('decideProjectAdd', () => {
         requestedSettings: {},
         hostedProjects: [hosted(), hosted({ id: 'project-b', spaceId: 'space-b' })],
         memberships,
+        activeSpaceId: 'space-a',
       }),
     ).toEqual({
-      kind: 'refuse',
-      reason:
-        'hosted project "probe" exists in multiple record spaces: alpha, beta; choose one with --space <id-or-slug>',
+      decision: {
+        kind: 'refuse',
+        reason:
+          'hosted project "probe" exists in multiple record spaces: alpha, beta; choose one with --space <id-or-slug>',
+      },
     })
   })
 
@@ -114,8 +125,12 @@ describe('decideProjectAdd', () => {
         selectedSpace: 'beta',
         hostedProjects: [hosted(), hosted({ id: 'project-b', spaceId: 'space-b' })],
         memberships,
+        activeSpaceId: 'space-a',
       }),
-    ).toMatchObject({ kind: 'adopt', recordId: 'project-b', space: 'beta' })
+    ).toMatchObject({
+      decision: { kind: 'adopt', recordId: 'project-b', space: 'beta' },
+      targetSpace: { id: 'space-b', label: 'beta' },
+    })
   })
 
   test('mints unchanged when the name is absent and carries an explicit destination', () => {
@@ -128,10 +143,32 @@ describe('decideProjectAdd', () => {
         selectedSpace: 'space-b',
         hostedProjects: [hosted()],
         memberships,
+        activeSpaceId: 'space-a',
       }),
     ).toEqual({
-      kind: 'mint',
-      settings: { checks: { spelling: true }, space: 'beta' },
+      decision: {
+        kind: 'mint',
+        settings: { checks: { spelling: true }, space: 'beta' },
+      },
+      targetSpace: { id: 'space-b', label: 'beta' },
+    })
+  })
+
+  test('resolves a case-insensitive space id to its membership instead of the active space', () => {
+    expect(
+      decideProjectAdd({
+        name: 'new-project',
+        requestedStack: 'typescript',
+        stackWasRequested: true,
+        requestedSettings: {},
+        selectedSpace: 'SPACE-B',
+        hostedProjects: [hosted()],
+        memberships,
+        activeSpaceId: 'space-a',
+      }),
+    ).toEqual({
+      decision: { kind: 'mint', settings: { space: 'beta' } },
+      targetSpace: { id: 'space-b', label: 'beta' },
     })
   })
 })

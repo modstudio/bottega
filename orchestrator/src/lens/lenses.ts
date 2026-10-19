@@ -205,12 +205,15 @@ const coreSnapshot = (row: CoreRow) =>
 const profileSnapshot = (row: ProfileRow) =>
   JSON.stringify({ body: JSON.parse(row.body), enabled: !!row.enabled })
 
-export function listLenses(database: Database = db()): NonNullable<ReturnType<typeof showLens>>[] {
+export function listLenses(
+  database: Database = db(),
+  spaceId: string | null = null,
+): NonNullable<ReturnType<typeof showLens>>[] {
   return (
-    database.query('SELECT id FROM lens WHERE space_id IS NULL ORDER BY id').all() as {
+    database.query('SELECT id FROM lens WHERE space_id IS ? ORDER BY id').all(spaceId) as {
       id: string
     }[]
-  ).map(({ id }) => showLens(id, database)!)
+  ).map(({ id }) => showLens(id, database, spaceId)!)
 }
 const LENS_COLUMNS =
   'id,title,question,excludes,slots,version,enabled,requires_execution,space_id' as const
