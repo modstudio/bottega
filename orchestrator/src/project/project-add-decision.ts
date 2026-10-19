@@ -137,7 +137,9 @@ function decideMint(
     input.memberships,
   )
   if ('refused' in destination) {
-    throw new Error(`resolved project destination unexpectedly refused ${destination.declaredSpace}`)
+    throw new Error(
+      `resolved project destination unexpectedly refused ${destination.declaredSpace}`,
+    )
   }
   return {
     decision: {

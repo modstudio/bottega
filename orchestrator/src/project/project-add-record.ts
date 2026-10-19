@@ -7,10 +7,7 @@ import {
   BOUND_RECORD_WRITE_REFUSAL,
   currentRecordWriteDecision,
 } from '../record/record-write-authority.ts'
-import {
-  decideProjectAdd,
-  type ProjectAddDecisionResult,
-} from './project-add-decision.ts'
+import { decideProjectAdd, type ProjectAddDecisionResult } from './project-add-decision.ts'
 import type { ProjectSettings } from './project-settings.ts'
 
 export async function projectAddDecision(input: {
