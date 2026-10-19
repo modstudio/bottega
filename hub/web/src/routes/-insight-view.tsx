@@ -1,6 +1,6 @@
+import { setWorkCounts } from '@bottega/hub-data/window'
 import { InsightView as InsightPresentation } from '@bottega/hub-views/insights'
 import type { ComponentProps } from 'react'
-import { setWorkCounts } from '@/lib/window'
 import { WindowControl } from '@/routes/-window-controls'
 
 export function InsightView(

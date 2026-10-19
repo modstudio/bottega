@@ -1,8 +1,8 @@
 import { useRouting } from '@bottega/hub-data/use-routing'
+import { useWindowState } from '@bottega/hub-data/window'
 import { HostedRouting } from '@bottega/hub-views/insights/hosted-insights'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
-import { useWindowState } from '@/lib/window'
 import { InsightView } from '@/routes/-insight-view'
 
 export const Route = createFileRoute('/routing')({

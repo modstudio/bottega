@@ -1,6 +1,6 @@
 import { useRatio } from '@bottega/hub-data/use-ratio'
+import { useWindowState } from '@bottega/hub-data/window'
 import { createFileRoute } from '@tanstack/react-router'
-import { useWindowState } from '@/lib/window'
 import { InsightView } from '@/routes/-insight-view'
 
 export const Route = createFileRoute('/ratio')({ component: RatioRoute })

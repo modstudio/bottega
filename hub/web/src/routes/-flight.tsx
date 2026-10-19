@@ -1,8 +1,8 @@
 import { waitingByRun } from '@bottega/hub-data/operator-waiting'
 import { useOperatorWaiting } from '@bottega/hub-data/use-operator-waiting'
 import { useTaskList } from '@bottega/hub-data/use-task-list'
+import { useWindowState } from '@bottega/hub-data/window'
 import { useState } from 'react'
-import { useWindowState } from '@/lib/window'
 import { TaskView } from '@/routes/-work-view'
 
 export function Flight() {

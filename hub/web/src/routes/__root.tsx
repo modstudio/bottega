@@ -12,6 +12,7 @@ import {
 } from '@bottega/hub-data/hub-mode'
 import { waitingInboxEntries } from '@bottega/hub-data/operator-waiting'
 import { useProjectColors } from '@bottega/hub-data/use-project-colors'
+import { useWindowState } from '@bottega/hub-data/window'
 import { SiteFrame } from '@bottega/hub-site/chrome'
 import { type SiteLinkProps, SiteNavigation } from '@bottega/hub-site/navigation'
 import { AppMark } from '@bottega/hub-ui/app-mark'
@@ -35,7 +36,6 @@ import {
   useRouterState,
 } from '@tanstack/react-router'
 import { useEffect } from 'react'
-import { useWindowState } from '@/lib/window'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 
 const THEME_KEY = 'hub:theme'

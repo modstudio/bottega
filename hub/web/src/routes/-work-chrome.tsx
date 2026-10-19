@@ -1,10 +1,10 @@
+import { setWorkCounts } from '@bottega/hub-data/window'
 import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { ToolbarBand } from '@bottega/hub-ui/toolbar-band'
 import { type ChromeResponse, responseSubtitle } from '@bottega/hub-views/work-summary'
 import { WorkStats } from '@bottega/hub-views/work-summary/work-stats'
 import { type ReactNode, useEffect } from 'react'
-import { setWorkCounts } from '@/lib/window'
 import { useWindowFilters, WindowControl } from '@/routes/-window-controls'
 
 type Facets = { projects: string[]; agents: string[]; sources: string[] }

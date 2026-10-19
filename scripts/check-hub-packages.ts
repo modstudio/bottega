@@ -16,6 +16,7 @@ import {
   HUB_VIEWS_PACKAGE,
   HUB_VIEWS_ROOT,
   hubUtilRuntimeDependencyViolations,
+  hubWebSourcePlacementViolation,
   hubWorkspaceDependencies,
 } from './architecture-hub-packages.ts'
 import { isDeclaredHubUiSourceLocation } from './architecture-ui-layers.ts'
@@ -28,6 +29,11 @@ const dependencyFields = [
   'optionalDependencies',
 ]
 const violations: string[] = []
+
+for (const sourcePath of new Glob('**/*').scanSync({ cwd: join(ROOT, 'hub/web/src') })) {
+  const violation = hubWebSourcePlacementViolation(`hub/web/src/${sourcePath.split(sep).join('/')}`)
+  if (violation) violations.push(violation)
+}
 
 type PackageJson = {
   name?: string

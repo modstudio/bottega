@@ -94,6 +94,13 @@ export function uiArchitectureRules(
 ): UiArchitectureRule[] {
   return [
     {
+      name: 'hub-ui-does-not-import-itself-by-package-subpath',
+      severity: 'error',
+      comment: 'Hub UI source imports its own modules through relative paths.',
+      from: { path: '^hub/ui/src/' },
+      to: { path: '^hub/ui/src/', dependencyTypes: ['undetermined'] },
+    },
+    {
       name: 'hub-ui-stories-import-only-components-and-storybook',
       severity: 'error',
       comment:
@@ -215,6 +222,13 @@ export function viewArchitectureRules(
 ): UiArchitectureRule[] {
   const folders = `^hub/views/src/(?:${hubViewFolders.join('|')})/`
   return [
+    {
+      name: 'hub-views-does-not-import-itself-by-package-subpath',
+      severity: 'error',
+      comment: 'Hub views source imports its own modules through relative paths.',
+      from: { path: '^hub/views/src/' },
+      to: { path: '^hub/views/src/', dependencyTypes: ['undetermined'] },
+    },
     {
       name: hubViewsFolderLayerRuleName,
       severity: 'error',

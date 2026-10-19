@@ -37,7 +37,8 @@
     "./use-task": "./src/use-task.ts",
     "./use-task-list": "./src/use-task-list.ts",
     "./transport": "./src/transport.ts",
-    "./window-input": "./src/window-input.ts"
+    "./window-input": "./src/window-input.ts",
+    "./window": "./src/window.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.100.9",
