@@ -586,7 +586,7 @@ async function sendSyncBatch(input: {
 }
 
 async function ensureActiveSpaceBuiltIns(
-  client: ReturnType<typeof recordApiClient>,
+  client: Pick<ReturnType<typeof recordApiClient>, 'whoami' | 'ensureSpaceBuiltIns'>,
 ): Promise<Awaited<ReturnType<typeof client.whoami>>> {
   const session = await client.whoami()
   if (session.activeSpaceId && client.ensureSpaceBuiltIns)

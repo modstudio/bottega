@@ -79,7 +79,12 @@ export async function ensurePersonalSpace(
 }
 
 type SpaceBuiltInsPort = {
-  ensure(input: { url: string; userId: string; spaceId: string; spaceIds: string[] }): Promise<unknown>
+  ensure(input: {
+    url: string
+    userId: string
+    spaceId: string
+    spaceIds: string[]
+  }): Promise<unknown>
   ensureWithTransaction(tx: SQL, spaceId: string): Promise<unknown>
 }
 

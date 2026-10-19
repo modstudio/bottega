@@ -3,9 +3,9 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
-  BUILT_IN_LENSES,
   BUILT_IN_LENS_DEFAULT_PROFILE,
   BUILT_IN_LENS_SLOTS,
+  BUILT_IN_LENSES,
 } from './lens-built-ins.ts'
 
 export function seedLenses(local: Database): void {
