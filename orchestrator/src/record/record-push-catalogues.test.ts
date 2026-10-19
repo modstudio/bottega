@@ -1,12 +1,13 @@
 import { afterEach, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
-import { resolveLens } from '../lens/lenses.ts'
-import { addPairLocal, pairByProjects, setLedgerRefLocal } from '../porting/porting.ts'
+import { resolveLens, selectProjectProfile, setProfile } from '../lens/lenses.ts'
+import { addPairLocal, ledgerRef, pairByProjects, setLedgerRefLocal } from '../porting/porting.ts'
 import { upsertProject } from '../project/projects.ts'
 import { rememberActiveRecordSpace, rememberProjectSpace } from '../project-space.ts'
 import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
@@ -18,7 +19,18 @@ import type { RecordWorkflowImportInput, RecordWorkflowTable } from './record-wo
 
 const spaceId = newRecordId()
 
-function fakeCatalogueClient(): RecordApiClient {
+function fakeCatalogueClient(
+  memberships = [
+    {
+      space_id: spaceId,
+      slug: 'active',
+      name: 'Active',
+      role: 'owner',
+      permission: 'write',
+    },
+  ],
+  observeLens: (input: RecordLensImportInput, spaceId: string) => void = () => undefined,
+): RecordApiClient {
   const base = createMemoryRecordApiClient()
   const lens = new Map<RecordLensTable, Record<string, unknown>[]>()
   const workflow = new Map<RecordWorkflowTable, Record<string, unknown>[]>()
@@ -51,16 +63,20 @@ function fakeCatalogueClient(): RecordApiClient {
       user: { id: newRecordId() },
       activeSpaceId: spaceId,
       personalSpaceId: null,
-      memberships: [
-        { space_id: spaceId, slug: 'active', name: 'Active', role: 'owner', permission: 'write' },
-      ],
+      memberships,
     }),
     sync: async (request) => ({
-      results: request.rows.map((row) => ({ id: row.id, status: 'synced' as const })),
+      results: request.rows.map((row) => ({
+        id: row.id,
+        status: 'synced' as const,
+      })),
     }),
     ensureSpaceBuiltIns: async () => ({ inserted: 0, alreadyPresent: 0 }),
-    importLensCatalogue: async (input: RecordLensImportInput, target) =>
-      insert(lens, input as unknown as Record<string, unknown>, destination(target)),
+    importLensCatalogue: async (input: RecordLensImportInput, target) => {
+      const space = destination(target)
+      observeLens(input, space)
+      return insert(lens, input as unknown as Record<string, unknown>, space)
+    },
     importWorkflowCatalogue: async (input: RecordWorkflowImportInput, target) =>
       insert(workflow, input as unknown as Record<string, unknown>, destination(target)),
     importPortCatalogue: async (input: RecordPortImportInput, target) =>
@@ -137,33 +153,195 @@ test('dry run logs its local plan without calling hosted methods', async () => {
     { log: (line) => logs.push(line) },
     { local, client: throwingClient },
   )
-  expect(logs[0]).toMatch(
-    /^dry run local counts — lens: \d+; workflow: \d+; port: \d+; skipped: \d+$/,
+  expect(logs).toContainEqual(
+    expect.stringMatching(/^dry run active space — workflow: \d+; skipped: \d+$/),
   )
 })
 
-test('push planning skips a ref and its sources when a source routes to another space', async () => {
+test('dry run names an uncached project route as unknown', async () => {
+  const local = db(),
+    sourceId = newRecordId(),
+    targetId = newRecordId()
+  upsertProject({ recordId: sourceId, name: 'uncached-source', path: '/tmp/source', settings: {} })
+  upsertProject({ recordId: targetId, name: 'uncached-target', path: '/tmp/target', settings: {} })
+  addPairLocal(sourceId, targetId)
+  rememberActiveRecordSpace(local, spaceId)
+  const logs: string[] = []
+  await pushCataloguesCommand({ dryRun: true }, { log: (line) => logs.push(line) }, { local })
+  expect(logs).toContainEqual(
+    expect.stringContaining(`source project route unknown, run \`${PLATFORM_SLUG} record sync\``),
+  )
+  expect(logs.some((line) => line.includes('source project has no hosted space'))).toBeFalse()
+})
+
+test('push and sync expose cross-space pairs, refs, and sources from the target space', async () => {
   const local = db(),
     sourceId = newRecordId(),
     targetId = newRecordId(),
+    sourceSpace = newRecordId(),
     sourceName = `catalogue-ref-source-${sourceId}`,
     targetName = `catalogue-ref-target-${targetId}`
-  upsertProject({ recordId: sourceId, name: sourceName, path: `/tmp/${sourceName}`, settings: {} })
-  upsertProject({ recordId: targetId, name: targetName, path: `/tmp/${targetName}`, settings: {} })
-  rememberProjectSpace(local, sourceName, newRecordId())
-  rememberProjectSpace(local, targetName, spaceId)
-  rememberActiveRecordSpace(local, spaceId)
+  upsertProject({
+    recordId: sourceId,
+    name: sourceName,
+    path: `/tmp/${sourceName}`,
+    settings: { space: 'source' },
+  })
+  upsertProject({
+    recordId: targetId,
+    name: targetName,
+    path: `/tmp/${targetName}`,
+    settings: { space: 'active' },
+  })
+  addPairLocal(sourceId, targetId)
+  const taskKey = `REF-${sourceId.slice(0, 6)}`
   setLedgerRefLocal({
-    taskKey: `REF-${sourceId.slice(0, 6)}`,
+    taskKey,
     targetProjectId: targetId,
     note: 'cross-space',
     sources: [{ source_project_record_id: sourceId, commits: [], paths: [], note: '' }],
   })
-  const logs: string[] = []
-  await pushCataloguesCommand({ dryRun: true }, { log: (line) => logs.push(line) }, { local })
-  expect(logs).toContainEqual(expect.stringContaining(`skipped port_ref`))
-  expect(logs).toContainEqual(
-    expect.stringContaining(`source project ${sourceName} routes to a different space`),
+  const client = fakeCatalogueClient([
+    {
+      space_id: spaceId,
+      slug: 'active',
+      name: 'Active',
+      role: 'owner',
+      permission: 'write',
+    },
+    {
+      space_id: sourceSpace,
+      slug: 'source',
+      name: 'Source',
+      role: 'owner',
+      permission: 'write',
+    },
+  ])
+  installRecordApiClient(client)
+  await pushCataloguesCommand({ dryRun: false }, { log: () => undefined }, { local, client })
+
+  expect(pairByProjects(sourceId, targetId)).not.toBeNull()
+  expect(ledgerRef(targetId, taskKey)?.sources).toEqual([
+    expect.objectContaining({ source_project_record_id: sourceId }),
+  ])
+  expect(
+    local
+      .query('SELECT 1 FROM port_pair WHERE space_id=? AND source_project_record_id=?')
+      .get(spaceId, sourceId),
+  ).not.toBeNull()
+  expect(
+    local
+      .query('SELECT 1 FROM port_ref WHERE space_id=? AND target_project_record_id=?')
+      .get(spaceId, targetId),
+  ).not.toBeNull()
+  expect(
+    local
+      .query('SELECT 1 FROM port_ref_source WHERE space_id=? AND source_project_record_id=?')
+      .get(spaceId, sourceId),
+  ).not.toBeNull()
+})
+
+test('push and sync resolves a non-active project lens from its routed space', async () => {
+  const local = db(),
+    remoteSpace = newRecordId(),
+    projectId = newRecordId(),
+    projectName = `catalogue-remote-${projectId}`
+  upsertProject({
+    recordId: projectId,
+    name: projectName,
+    path: `/tmp/${projectName}`,
+    settings: { space: 'remote' },
+  })
+  rememberActiveRecordSpace(local, spaceId)
+  await setProfile({
+    lensId: 'correctness',
+    axis: 'framework',
+    name: 'project-body',
+    body: '{"framework_guidance":"project","commands":"none"}',
+    enabled: true,
+    reason: 'project body fixture',
+  })
+  await selectProjectProfile({
+    project: projectName,
+    lensId: 'correctness',
+    axis: 'framework',
+    name: 'project-body',
+    reason: 'project selection fixture',
+  })
+  rememberProjectSpace(local, projectName, remoteSpace)
+  const remoteImports: RecordLensImportInput[] = []
+  const client = fakeCatalogueClient(
+    [
+      {
+        space_id: spaceId,
+        slug: 'active',
+        name: 'Active',
+        role: 'owner',
+        permission: 'write',
+      },
+      {
+        space_id: remoteSpace,
+        slug: 'remote',
+        name: 'Remote',
+        role: 'owner',
+        permission: 'write',
+      },
+    ],
+    (input, destination) => {
+      if (destination === remoteSpace) remoteImports.push(input)
+    },
   )
-  expect(logs).toContainEqual(expect.stringContaining('skipped port_ref_source'))
+  installRecordApiClient(client)
+  await pushCataloguesCommand({ dryRun: false }, { log: () => undefined }, { local, client })
+  expect(remoteImports[0]!.project_lens_profile).toHaveLength(1)
+  expect(resolveLens('correctness', projectName, local)).toMatchObject({
+    body: expect.stringContaining('FRAMEWORK GUIDANCE\nproject'),
+    profiles: [expect.objectContaining({ name: 'project-body', source: 'project' })],
+  })
+  expect(
+    local
+      .query(
+        `SELECT 1 FROM project_lens_profile
+         WHERE project_record_id=? AND space_id=? AND profile_name='project-body'`,
+      )
+      .get(projectId, remoteSpace),
+  ).not.toBeNull()
+})
+
+test('push includes a retired project lens selection in its declared space', async () => {
+  const local = db(),
+    remoteSpace = newRecordId(),
+    projectId = newRecordId(),
+    projectName = `catalogue-retired-${projectId}`
+  upsertProject({
+    recordId: projectId,
+    name: projectName,
+    path: `/tmp/${projectName}`,
+    settings: { space: 'remote' },
+  })
+  await selectProjectProfile({
+    project: projectName,
+    lensId: 'correctness',
+    axis: 'framework',
+    name: 'default',
+    reason: 'retired selection fixture',
+  })
+  local
+    .query('UPDATE project SET retired_at=? WHERE record_id=?')
+    .run(new Date().toISOString(), projectId)
+  const remoteImports: RecordLensImportInput[] = []
+  const client = fakeCatalogueClient(
+    [
+      { space_id: spaceId, slug: 'active', name: 'Active', role: 'owner', permission: 'write' },
+      { space_id: remoteSpace, slug: 'remote', name: 'Remote', role: 'owner', permission: 'write' },
+    ],
+    (input, destination) => {
+      if (destination === remoteSpace) remoteImports.push(input)
+    },
+  )
+  installRecordApiClient(client)
+  await pushCataloguesCommand({ dryRun: false }, { log: () => undefined }, { local, client })
+  expect(remoteImports[0]!.project_lens_profile).toEqual([
+    expect.objectContaining({ projectId, profileName: 'default' }),
+  ])
 })

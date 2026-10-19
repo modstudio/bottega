@@ -15,6 +15,7 @@ const postgres = actorUrl && setupUrl ? describe : describe.skip
 postgres('hosted catalogue bulk imports', () => {
   test('each complete import and built-in ensure is idempotent', async () => {
     const spaceId = newRecordId(),
+      sourceSpaceId = newRecordId(),
       userId = newRecordId()
     const sourceProjectId = newRecordId(),
       targetProjectId = newRecordId()
@@ -23,11 +24,12 @@ postgres('hosted catalogue bulk imports', () => {
       await setup`INSERT INTO "user" (id,email,name,email_verified,created_at,updated_at)
         VALUES (${userId}::uuid,${`${userId}@test.invalid`},'Catalogue Import',true,now(),now())`
       await setup`INSERT INTO space (id,name,slug,created_at)
-        VALUES (${spaceId}::uuid,${`Catalogue ${spaceId}`},${`catalogue-${spaceId}`},now())`
+        VALUES (${spaceId}::uuid,${`Catalogue ${spaceId}`},${`catalogue-${spaceId}`},now()),
+          (${sourceSpaceId}::uuid,${`Source ${sourceSpaceId}`},${`source-${sourceSpaceId}`},now())`
       await setup`INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
         VALUES (${newRecordId()}::uuid,${spaceId}::uuid,${userId}::uuid,'owner','write',now())`
       await setup`INSERT INTO project (id,space_id,name,created_at) VALUES
-        (${sourceProjectId}::uuid,${spaceId}::uuid,${`source-${spaceId}`},now()),
+        (${sourceProjectId}::uuid,${sourceSpaceId}::uuid,${`source-${spaceId}`},now()),
         (${targetProjectId}::uuid,${spaceId}::uuid,${`target-${spaceId}`},now())`
     } finally {
       await setup.close()
@@ -100,15 +102,42 @@ postgres('hosted catalogue bulk imports', () => {
       workflow_event: [],
     }
     const pairId = newRecordId(),
-      skipId = newRecordId()
+      skipId = newRecordId(),
+      refId = newRecordId(),
+      sourceId = newRecordId()
     const port = {
       dryRun: false,
       replace: false,
       port_doctrine: [],
       port_pair: [{ id: pairId, spaceId, sourceProjectId, targetProjectId, createdAt: at }],
       port_baseline: [],
-      port_ref: [],
-      port_ref_source: [],
+      port_ref: [
+        {
+          id: refId,
+          spaceId,
+          taskKey: 'TARGET-1',
+          targetProjectId,
+          note: 'cross-space source',
+          createdAt: at,
+          resolvedAt: null,
+          deletedAt: null,
+          version: 1,
+          updatedAt: at,
+        },
+      ],
+      port_ref_source: [
+        {
+          id: sourceId,
+          spaceId,
+          refId,
+          sourceProjectId,
+          commits: '[]',
+          paths: '[]',
+          note: 'source in another space',
+          deletedAt: null,
+          updatedAt: at,
+        },
+      ],
       port_skip: [
         {
           id: skipId,
@@ -128,7 +157,7 @@ postgres('hosted catalogue bulk imports', () => {
         importRecordWorkflowCatalogue({ ...tenant, ...workflow }),
         importRecordPortCatalogue({ ...tenant, ...portInput }),
       ])
-      expect(results.map((result) => result.inserted)).toEqual(run === 1 ? [2, 2, 2] : [0, 0, 0])
+      expect(results.map((result) => result.inserted)).toEqual(run === 1 ? [2, 2, 4] : [0, 0, 0])
     }
     const firstBuiltIns = await ensureSpaceBuiltIns(tenant)
     const secondBuiltIns = await ensureSpaceBuiltIns(tenant)
