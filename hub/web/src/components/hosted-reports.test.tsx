@@ -47,3 +47,11 @@ test('reports page uses the shared agent-token abbreviation', () => {
   expect(html).toContain('Tasks moved to done in this window')
   expect(html).not.toContain('Landed')
 })
+
+test('project hours-running breakdown offers no total row', () => {
+  const html = renderToStaticMarkup(
+    <ProjectBreakdown projects={[{ name: 'alpha' }]} queries={[{ data: measures }]} />,
+  )
+  expect(html).toContain('Hours running')
+  expect(html).not.toContain('Total')
+})

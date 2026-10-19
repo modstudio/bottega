@@ -4,15 +4,15 @@ import { Dialog } from '@bottega/hub-ui/dialog'
 import { Select } from '@bottega/hub-ui/listbox/select'
 import { relativeTime } from '@bottega/hub-util/format'
 import { DocumentSurface } from '@bottega/hub-views/document-surface'
+import { TaskMeasures } from '@bottega/hub-views/measures/task-measures'
 import { taskStatusLook } from '@bottega/hub-views/status-look/task-status'
 import { TaskHistory } from '@bottega/hub-views/task-history'
 import { TaskPage, type TaskPageSave } from '@bottega/hub-views/task-page'
 import type { TaskPageDoc, TaskPageFact } from '@bottega/hub-views/task-page/task-rail'
-import { X } from 'lucide-react'
+import { CalendarDays, UserRound, X } from 'lucide-react'
 import { taskHistoryEntries } from '@/lib/task-history'
 import type { TaskScreenDetail, TaskScreenResult } from '@/routes/-task-screen-data'
 import { ProjectMark, SourceMark } from './design-system'
-import { MeasuresSummary } from './measure-display'
 
 type TaskStatus = 'open' | 'active' | 'review' | 'done' | 'dropped'
 
@@ -23,6 +23,14 @@ function StatusBadge({ task }: { task: TaskScreenDetail['task'] }) {
       {task.source === 'local' ? task.statusCategory : (task.status ?? task.statusCategory)}
     </Badge>
   )
+}
+
+/** The key line names the status as an article's does: its icon and its word, without a badge. */
+function statusKeyItem(task: TaskScreenDetail['task']) {
+  const label = task.source === 'local' ? task.statusCategory : (task.status ?? task.statusCategory)
+  if (!task.statusCategory) return { key: 'status', content: task.status ?? 'unknown' }
+  const Icon = taskStatusLook(task.statusCategory).icon
+  return { key: 'status', icon: <Icon size={14} aria-hidden />, content: label }
 }
 
 function StatusControl({ detail, result }: { detail: TaskScreenDetail; result: TaskScreenResult }) {
@@ -96,7 +104,11 @@ function taskDocs(detail: TaskScreenDetail): TaskPageDoc[] {
       ...(document.role
         ? [{ key: 'role', content: <Badge tone="info">{document.role}</Badge> }]
         : []),
-      { key: 'updated', content: `Updated ${relativeTime(document.updatedAt)}` },
+      {
+        key: 'updated',
+        icon: <CalendarDays size={14} aria-hidden />,
+        content: `Updated ${relativeTime(document.updatedAt)}`,
+      },
     ],
     facts: [
       { label: 'Document', value: document.label },
@@ -149,23 +161,29 @@ function LoadedTask({
       title={task.title ?? task.key}
       body={task.body ?? ''}
       keyLine={[
-        { key: 'status', content: <StatusBadge task={task} /> },
-        { key: 'assignee', content: task.assignee ?? 'Unassigned' },
+        statusKeyItem(task),
+        {
+          key: 'assignee',
+          icon: <UserRound size={14} aria-hidden />,
+          content: task.assignee ?? 'Unassigned',
+        },
         ...(task.updatedAt
-          ? [{ key: 'updated', content: `Updated ${relativeTime(task.updatedAt)}` }]
+          ? [
+              {
+                key: 'updated',
+                icon: <CalendarDays size={14} aria-hidden />,
+                content: `Updated ${relativeTime(task.updatedAt)}`,
+              },
+            ]
           : []),
       ]}
       details={taskFacts(detail, result)}
-      detailsExtra={
+      figures={
         detail.measures ? (
-          <>
-            {detail.measureCoverage && !detail.measureCoverage.hasRecordedTime ? (
-              <p className="mb-3 text-sm text-text-muted">
-                No time was recorded for this task; the zero measures reflect missing coverage.
-              </p>
-            ) : null}
-            <MeasuresSummary measures={detail.measures} showShipped={false} />
-          </>
+          <TaskMeasures
+            measures={detail.measures}
+            hasRecordedTime={detail.measureCoverage?.hasRecordedTime ?? true}
+          />
         ) : undefined
       }
       docs={taskDocs(detail)}

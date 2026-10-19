@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { StatRow, StatTile } from './stat'
 
 const meta: Meta = { title: 'Patterns/Stat', component: StatTile }
@@ -27,5 +27,25 @@ export const States: StoryObj<typeof meta> = {
     codex.focus()
     await userEvent.keyboard('{Tab}{Enter}')
     await expect(claude).toHaveAttribute('aria-pressed', 'true')
+  },
+}
+
+/** A compact row reads as one line of figures; each figure's meaning opens from its (i). */
+export const CompactWithAbout: StoryObj<typeof meta> = {
+  render: () => (
+    <StatRow compact>
+      <StatTile
+        label="in motion"
+        figure="6.4 hours"
+        about="How long any recorded work was in motion."
+      />
+      <StatTile label="agent cost" figure="$18.40" about="What the started agent work cost." />
+    </StatRow>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: 'About agent cost' }))
+    // The browser opens a popover on its own toggle, after the click returns.
+    await waitFor(() => expect(canvas.getByText('What the started agent work cost.')).toBeVisible())
   },
 }

@@ -1,8 +1,6 @@
 import { expect, test } from 'bun:test'
-import type { MeasuresResponse } from '@bottega/hub-data/client'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { ProjectBreakdown } from './hosted-reports'
-import { MeasuresSummary } from './measure-display'
+import { MeasuresSummary, type MeasuresSummaryValue } from './measures-summary'
 
 const shared = {
   hoursRunning: {
@@ -40,11 +38,10 @@ const shared = {
 }
 
 test('session honesty and unknown attribution render beside their numbers', () => {
-  const measures: MeasuresResponse = {
-    scope: 'space',
+  const measures: MeasuresSummaryValue = {
     ...shared,
-    shipped: { count: 2, sample: { taskCount: 2, eventCount: 2 } },
-    cycleTime: { medianMs: 3_600_000, p90Ms: 7_200_000, n: 2 },
+    shipped: { count: 2 },
+    cycleTime: { medianMs: 3_600_000, n: 2 },
   }
   const html = renderToStaticMarkup(<MeasuresSummary measures={measures} />)
   expect(html).toContain('Silences longer than ten minutes are not counted.')
@@ -58,8 +55,7 @@ test('session honesty and unknown attribution render beside their numbers', () =
 })
 
 test('absent cycle time and person-only outcome measures render nothing', () => {
-  const person: MeasuresResponse = {
-    scope: 'person',
+  const person: MeasuresSummaryValue = {
     ...shared,
     agentHours: { ...shared.agentHours, unknownShare: undefined },
     sessionTime: { ...shared.sessionTime, unknownUser: undefined },
@@ -69,17 +65,4 @@ test('absent cycle time and person-only outcome measures render nothing', () => 
   expect(html).not.toContain('Tasks done')
   expect(html).not.toContain('cycle time')
   expect(html).not.toContain('n=')
-})
-
-test('project hours-running breakdown offers no total row', () => {
-  const measures: MeasuresResponse = {
-    scope: 'project',
-    ...shared,
-    shipped: { count: 0, sample: { taskCount: 0, eventCount: 0 } },
-  }
-  const html = renderToStaticMarkup(
-    <ProjectBreakdown projects={[{ name: 'alpha' }]} queries={[{ data: measures }]} />,
-  )
-  expect(html).toContain('Hours running')
-  expect(html).not.toContain('Total')
 })
