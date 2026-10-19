@@ -2,6 +2,8 @@
 /** Selects branch-owned ephemeral run data without filesystem or database access. */
 
 const SHIP_CLEANUP_TERMINAL_STATUSES = new Set(['ok', 'failed', 'stale', 'stopped'])
+// Architect-owned trees, from `tree open` and `tree create`, are released by tree removal, never close-out.
+const ARCHITECT_TREE_JOBS = new Set(['landing-tree', 'hook-tree'])
 
 export type ShipCleanupRunFact = {
   id: number
@@ -34,7 +36,7 @@ function scopeFor(
 ): ShipCleanupRunDecision['scope'] {
   if (!run.launchKey || !run.branch) return 'outside'
   if (!startedByLanding(run.startedAt, landingMergedAt)) return 'outside'
-  if (run.job === 'landing-tree' && run.branch === branch) return 'landing-tree'
+  if (ARCHITECT_TREE_JOBS.has(run.job) && run.branch === branch) return 'landing-tree'
   if (run.job === 'review-lens' && run.branch === branch) return 'review-lens'
   return branchChainRoots.has(run.rootId) ? 'chain' : 'outside'
 }
@@ -53,7 +55,7 @@ export function decideShipCleanup(
           startedByLanding(run.startedAt, landingMergedAt) &&
           run.branch === branch &&
           run.job !== 'review-lens' &&
-          run.job !== 'landing-tree',
+          !ARCHITECT_TREE_JOBS.has(run.job),
       )
       .map((run) => run.rootId),
   )

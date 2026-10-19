@@ -63,6 +63,11 @@ describe('ship cleanup decision', () => {
     })
   })
 
+  test('treats a tree create hook tree like a landing tree, not a chain', () => {
+    expect(decide([run({ job: 'hook-tree' })])[0]).toMatchObject({ scope: 'landing-tree' })
+    expect(decide([run({ job: 'landing-tree' })])[0]).toMatchObject({ scope: 'landing-tree' })
+  })
+
   test('leaves a keyless run alone', () => {
     expect(decide([run({ launchKey: null })])[0]).toMatchObject({
       scope: 'outside',
