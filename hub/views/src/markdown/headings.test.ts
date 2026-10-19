@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { headingId, secondLevelHeadings } from './headings.ts'
+import { headingId, secondLevelHeadingIdsByLine, secondLevelHeadings } from './headings.ts'
 
 test('second-level headings become contents entries with stable ids', () => {
   const body = `# Title\n\n## Open a task\n\ntext\n### Nested\n## Dispatch\n## Open a task\n`
@@ -31,5 +31,15 @@ test('fenced code is ignored and duplicate titles keep the same ids as the rende
 test('indented code is ignored', () => {
   expect(secondLevelHeadings('    ## indented\n\t## tabbed\n## Real\n')).toEqual([
     { id: 'real', title: 'Real' },
+  ])
+})
+
+test('a heading id is keyed by its source line, so in-page links reach every heading', () => {
+  const body =
+    '# doc\n\n- [audit](#workshop-doc-audit)\n\n## workshop doc\n\n```\n## not a heading\n```\n## workshop doc audit\n## workshop doc\n'
+  expect([...secondLevelHeadingIdsByLine(body)]).toEqual([
+    [5, 'workshop-doc'],
+    [10, 'workshop-doc-audit'],
+    [11, 'workshop-doc-2'],
   ])
 })

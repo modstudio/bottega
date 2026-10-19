@@ -506,9 +506,15 @@ function useExpandedToSelected(
   tree: readonly Docs.TreeNode[],
   setCollapsed: (update: (current: ReadonlySet<string>) => ReadonlySet<string>) => void,
 ) {
+  // The ancestors open once per arrival at an article, so a reader may still collapse the branch
+  // they are reading; a refetched tree does not reopen it.
+  const openedFor = useRef<string | null>(null)
   useEffect(() => {
-    if (!selectedId) return
-    const ancestors = treePath(tree, selectedId).slice(0, -1)
+    if (!selectedId || openedFor.current === selectedId) return
+    const path = treePath(tree, selectedId)
+    if (!path.length) return
+    openedFor.current = selectedId
+    const ancestors = path.slice(0, -1)
     if (!ancestors.length) return
     setCollapsed((current) => {
       let changed = false

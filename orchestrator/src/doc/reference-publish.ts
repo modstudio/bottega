@@ -19,6 +19,21 @@ function title(body: string, file: string): string {
   return heading
 }
 
+function pageSlug(file: string, indexFile: string): string {
+  return file === indexFile ? 'cli' : `cli-${basename(file, '.md')}`
+}
+
+/**
+ * The generator links pages by file name; the reader serves each page at its slug beside its
+ * siblings, so every `./<page>.md` link target becomes that page's slug.
+ */
+export function slugLinkedBody(body: string, indexName: string): string {
+  return body.replace(/\]\(\.\/([^/)#]+)\.md(#[^)]*)?\)/g, (_, name: string, anchor = '') => {
+    const slug = `${name}.md` === indexName ? 'cli' : `cli-${name}`
+    return `](${slug}${anchor})`
+  })
+}
+
 function trackedReferenceFiles(root: string): string[] {
   const result = Bun.spawnSync(['git', 'ls-files', 'docs/reference/*.md'], {
     cwd: root,
@@ -66,8 +81,8 @@ export async function publishReferenceDocs(
   const ordered = orderedReferenceFiles(files, indexFile, indexBody)
   const results: ReferencePublishResult[] = []
   for (const [position, file] of ordered.entries()) {
-    const body = readFileSync(join(root, file), 'utf8')
-    const slug = file === indexFile ? 'cli' : `cli-${basename(file, '.md')}`
+    const body = slugLinkedBody(readFileSync(join(root, file), 'utf8'), basename(indexFile))
+    const slug = pageSlug(file, indexFile)
     const parentSlug = file === indexFile ? currentIndex.parent_slug : 'cli'
     const pagePosition = file === indexFile ? currentIndex.position : position - 1
     const existing = getDoc('project', PLATFORM_SLUG, slug)
@@ -100,9 +115,7 @@ export async function publishReferenceDocs(
     })
     results.push({ slug, disposition: existing ? 'updated' : 'created' })
   }
-  const expected = new Set(
-    ordered.map((file) => (file === indexFile ? 'cli' : `cli-${basename(file, '.md')}`)),
-  )
+  const expected = new Set(ordered.map((file) => pageSlug(file, indexFile)))
   const removed = listDocs({ scope: 'project', subject: PLATFORM_SLUG })
     .filter(
       (doc) => doc.form === 'reference' && doc.parent_slug === 'cli' && !expected.has(doc.slug),

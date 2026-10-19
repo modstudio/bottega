@@ -35,9 +35,9 @@ function uniqueHeadingId(title: string, seen: Map<string, number>): string {
   return count === 0 ? base : `${base}-${count + 1}`
 }
 
-function eachProseLine(body: string, visit: (line: string) => void) {
+function eachProseLine(body: string, visit: (line: string, lineNumber: number) => void) {
   let fence: { char: string; length: number } | null = null
-  for (const line of body.split(/\r?\n/)) {
+  for (const [index, line] of body.split(/\r?\n/).entries()) {
     if (fence) {
       if (fenceCloses(line, fence)) fence = null
       continue
@@ -47,8 +47,22 @@ function eachProseLine(body: string, visit: (line: string) => void) {
       fence = open
       continue
     }
-    visit(line)
+    visit(line, index + 1)
   }
+}
+
+/**
+ * The id of each second-level heading keyed by its one-based source line, which the renderer
+ * reads from the heading's position, so the id never depends on how often a render runs.
+ */
+export function secondLevelHeadingIdsByLine(body: string): ReadonlyMap<number, string> {
+  const ids = new Map<number, string>()
+  const seen = new Map<string, number>()
+  eachProseLine(body, (line, lineNumber) => {
+    const title = atxSecondLevelTitle(line)
+    if (title) ids.set(lineNumber, uniqueHeadingId(title, seen))
+  })
+  return ids
 }
 
 /**
