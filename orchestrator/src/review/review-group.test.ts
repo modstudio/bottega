@@ -113,7 +113,6 @@ test('a rebase credits the complete round from the same branch and never another
       branchReviewGroups: [
         {
           reviews: selected.branchReviews,
-          applicableReview: { lenses: ['correctness', 'craft'] },
         },
       ],
       reads: [

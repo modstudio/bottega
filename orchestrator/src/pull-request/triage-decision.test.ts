@@ -20,11 +20,7 @@ const review = (
   }
 }
 
-const branchGroup = (
-  reviews: TriageEvidence['reviews'],
-  applicableLenses: readonly string[] = ['correctness'],
-  secondOpinion?: string,
-) => ({ reviews, applicableReview: { lenses: [...applicableLenses], secondOpinion } })
+const branchGroup = (reviews: TriageEvidence['reviews']) => ({ reviews })
 
 const evidence = (overrides: Partial<TriageEvidence> = {}): TriageEvidence => ({
   patchId: 'patch-a',
@@ -72,7 +68,8 @@ describe('pull-request triage decision', () => {
         evidence({
           tier: 2,
           reviews: [],
-          branchReviewGroups: [branchGroup([earlier], ['correctness', 'craft'])],
+          applicableReview: { lenses: ['correctness', 'craft'] },
+          branchReviewGroups: [branchGroup([earlier])],
           reads: [
             {
               recordId: 'record-9',
@@ -113,7 +110,8 @@ describe('pull-request triage decision', () => {
         evidence({
           tier: 2,
           reviews: [],
-          branchReviewGroups: [branchGroup([secondLens, firstLens], ['correctness', 'craft'])],
+          applicableReview: { lenses: ['correctness', 'craft'] },
+          branchReviewGroups: [branchGroup([secondLens, firstLens])],
           reads: [
             {
               recordId: 'record-9',
@@ -135,6 +133,193 @@ describe('pull-request triage decision', () => {
         readRecordId: 'record-9',
       },
     })
+  })
+
+  test('path b composes five required lenses across two earlier patch groups', () => {
+    const firstPatch = review({
+      reviewId: 3,
+      completedAt: '2026-09-25T01:00:00Z',
+      tier: 3,
+      patchId: 'patch-first',
+      lensIdentities: ['correctness', 'craft', 'safety'],
+      lenses: [
+        { recordId: 'lens-correctness', lens: 'correctness', graded: true },
+        { recordId: 'lens-craft', lens: 'craft', graded: true },
+        { recordId: 'lens-safety', lens: 'safety', graded: true },
+      ],
+    })
+    const secondPatch = review({
+      reviewId: 4,
+      completedAt: '2026-09-25T02:00:00Z',
+      tier: 3,
+      patchId: 'patch-second',
+      lensIdentities: ['boundaries', 'tests'],
+      lenses: [
+        { recordId: 'lens-boundaries', lens: 'boundaries', graded: true },
+        { recordId: 'lens-tests', lens: 'tests', graded: true },
+      ],
+    })
+    expect(
+      decideTriage(
+        evidence({
+          tier: 3,
+          applicableReview: {
+            lenses: ['correctness', 'craft', 'safety', 'boundaries', 'tests'],
+          },
+          reviews: [],
+          branchReviewGroups: [branchGroup([secondPatch]), branchGroup([firstPatch])],
+          reads: [
+            {
+              recordId: 'record-9',
+              tip: 'tip-a',
+              patchId: 'patch-a',
+              pathSet: '["a.ts"]',
+              recordedAt: '2026-09-25T03:00:00Z',
+              sessionId: 'owner-session',
+            },
+          ],
+        }),
+      ),
+    ).toMatchObject({
+      complete: true,
+      snapshot: {
+        admissionPath: 'architect_read',
+        reviewRecordIds: ['review-3', 'review-4'],
+        lensRounds: 5,
+        readRecordId: 'record-9',
+      },
+    })
+  })
+
+  test('path b refuses when the latest completed run of a lens has an undisposed finding', () => {
+    const olderClean = review({
+      reviewId: 3,
+      completedAt: '2026-09-25T01:00:00Z',
+      patchId: 'patch-first',
+      findings: [],
+    })
+    const latestUndisposed = review({
+      reviewId: 4,
+      completedAt: '2026-09-25T02:00:00Z',
+      patchId: 'patch-second',
+      findings: [{ recordId: 'finding-latest', ordinal: 1, disposition: null }],
+    })
+    expect(
+      decideTriage(
+        evidence({
+          reviews: [],
+          branchReviewGroups: [branchGroup([latestUndisposed]), branchGroup([olderClean])],
+          reads: [
+            {
+              recordId: 'record-9',
+              tip: 'tip-a',
+              patchId: 'patch-a',
+              pathSet: '["a.ts"]',
+              recordedAt: '2026-09-25T03:00:00Z',
+              sessionId: 'owner-session',
+            },
+          ],
+        }),
+      ),
+    ).toMatchObject({ complete: false, earlierReviewNumber: null })
+  })
+
+  test('path b refuses and names a required lens never judged on the branch', () => {
+    expect(
+      decideTriage(
+        evidence({
+          applicableReview: { lenses: ['correctness', 'craft'] },
+          reviews: [],
+          branchReviewGroups: [branchGroup([review({ findings: [] })])],
+          // A read that would credit a complete round, so only the missing lens can refuse.
+          reads: [
+            {
+              recordId: 'read-1',
+              tip: 'tip-a',
+              patchId: 'patch-a',
+              pathSet: '["a.ts"]',
+              recordedAt: '2026-09-25T03:00:00Z',
+              sessionId: 'owner-session',
+            },
+          ],
+        }),
+      ),
+    ).toMatchObject({
+      complete: false,
+      earlierReviewNumber: null,
+      missingLenses: expect.arrayContaining(['craft']),
+    })
+  })
+
+  test('path b requires a read after the latest completion in a composed round', () => {
+    const correctness = review({
+      reviewId: 3,
+      completedAt: '2026-09-25T01:00:00Z',
+      lensIdentities: ['correctness'],
+      findings: [],
+    })
+    const craft = review({
+      reviewId: 4,
+      completedAt: '2026-09-25T02:00:00Z',
+      patchId: 'patch-second',
+      lensIdentities: ['craft'],
+      findings: [],
+    })
+    expect(
+      decideTriage(
+        evidence({
+          applicableReview: { lenses: ['correctness', 'craft'] },
+          reviews: [],
+          branchReviewGroups: [branchGroup([craft]), branchGroup([correctness])],
+          reads: [
+            {
+              recordId: 'record-9',
+              tip: 'tip-a',
+              patchId: 'patch-a',
+              pathSet: '["a.ts"]',
+              recordedAt: '2026-09-25T01:30:00Z',
+              sessionId: 'owner-session',
+            },
+          ],
+        }),
+      ),
+    ).toMatchObject({ complete: false, architectReadRequired: true })
+  })
+
+  test('path b refuses when the final tier exceeds a composed round tier', () => {
+    const correctness = review({
+      reviewId: 3,
+      tier: 1,
+      lensIdentities: ['correctness'],
+      findings: [],
+    })
+    const craft = review({
+      reviewId: 4,
+      tier: 1,
+      patchId: 'patch-second',
+      lensIdentities: ['craft'],
+      findings: [],
+    })
+    expect(
+      decideTriage(
+        evidence({
+          tier: 2,
+          applicableReview: { lenses: ['correctness', 'craft'] },
+          reviews: [],
+          branchReviewGroups: [branchGroup([craft]), branchGroup([correctness])],
+          reads: [
+            {
+              recordId: 'record-9',
+              tip: 'tip-a',
+              patchId: 'patch-a',
+              pathSet: '["a.ts"]',
+              recordedAt: '2026-09-25T03:00:00Z',
+              sessionId: 'owner-session',
+            },
+          ],
+        }),
+      ),
+    ).toMatchObject({ complete: false, finalTierRaised: true, earlierReviewTier: 1 })
   })
 
   test('the same lens twice does not satisfy a tier-two exact review', () => {
@@ -393,7 +578,7 @@ describe('pull-request triage decision', () => {
         evidence({
           reviews: [],
           applicableReview: { lenses: ['correctness'], secondOpinion: 'correctness' },
-          branchReviewGroups: [branchGroup([twoModels], ['correctness'], 'correctness')],
+          branchReviewGroups: [branchGroup([twoModels])],
           reads: [
             {
               recordId: 'record-9',
@@ -435,7 +620,7 @@ describe('pull-request triage decision', () => {
         evidence({
           reviews: [],
           applicableReview: { lenses: ['correctness'], secondOpinion: 'correctness' },
-          branchReviewGroups: [branchGroup([sameModel], ['correctness'], 'correctness')],
+          branchReviewGroups: [branchGroup([sameModel])],
           reads: [
             {
               recordId: 'record-9',
@@ -449,5 +634,152 @@ describe('pull-request triage decision', () => {
         }),
       ),
     ).toMatchObject({ complete: false, earlierReviewNumber: null })
+  })
+
+  test('path b snapshots both review records credited for a second opinion', () => {
+    const firstModel = review({
+      reviewId: 3,
+      completedAt: '2026-09-25T01:00:00Z',
+      tier: 2,
+      lenses: [
+        {
+          recordId: 'record-1',
+          runId: '101',
+          lens: 'correctness',
+          model: 'model-a',
+          graded: true,
+        },
+      ],
+    })
+    const secondModel = review({
+      reviewId: 4,
+      completedAt: '2026-09-25T02:00:00Z',
+      tier: 3,
+      patchId: 'patch-second',
+      lenses: [
+        {
+          recordId: 'record-2',
+          runId: '102',
+          lens: 'correctness',
+          model: 'model-b',
+          graded: true,
+        },
+      ],
+    })
+
+    expect(
+      decideTriage(
+        evidence({
+          tier: 3,
+          reviews: [],
+          applicableReview: { lenses: ['correctness'], secondOpinion: 'correctness' },
+          branchReviewGroups: [branchGroup([secondModel]), branchGroup([firstModel])],
+          reads: [
+            {
+              recordId: 'record-9',
+              tip: 'tip-a',
+              patchId: 'patch-a',
+              pathSet: '["a.ts"]',
+              recordedAt: '2026-09-25T03:00:00Z',
+              sessionId: 'owner-session',
+            },
+          ],
+        }),
+      ),
+    ).toEqual({
+      complete: true,
+      snapshot: {
+        reviewRecordIds: ['review-3', 'review-4'],
+        patchId: 'patch-a',
+        tier: 3,
+        lensRounds: 2,
+        findingCount: 2,
+        admissionPath: 'architect_read',
+        readRecordId: 'record-9',
+      },
+    })
+  })
+
+  test('path b refuses an undisposed review needed for the second opinion', () => {
+    const firstModel = review({
+      reviewId: 3,
+      completedAt: '2026-09-25T01:00:00Z',
+      lenses: [
+        {
+          recordId: 'record-1',
+          runId: '101',
+          lens: 'correctness',
+          model: 'model-a',
+          graded: true,
+        },
+      ],
+      findings: [{ recordId: 'finding-1', ordinal: 1, disposition: null }],
+    })
+    const secondModel = review({
+      reviewId: 4,
+      completedAt: '2026-09-25T02:00:00Z',
+      patchId: 'patch-second',
+      lenses: [
+        {
+          recordId: 'record-2',
+          runId: '102',
+          lens: 'correctness',
+          model: 'model-b',
+          graded: true,
+        },
+      ],
+      findings: [],
+    })
+
+    expect(
+      decideTriage(
+        evidence({
+          reviews: [],
+          applicableReview: { lenses: ['correctness'], secondOpinion: 'correctness' },
+          branchReviewGroups: [branchGroup([secondModel]), branchGroup([firstModel])],
+          reads: [
+            {
+              recordId: 'record-9',
+              tip: 'tip-a',
+              patchId: 'patch-a',
+              pathSet: '["a.ts"]',
+              recordedAt: '2026-09-25T03:00:00Z',
+              sessionId: 'owner-session',
+            },
+          ],
+        }),
+      ),
+    ).toMatchObject({ complete: false, earlierReviewNumber: null })
+  })
+
+  test('unfinished exact evidence cannot be bypassed by a creditable round and read', () => {
+    const unfinished = review({
+      reviewId: 5,
+      patchId: 'patch-a',
+      completedAt: null,
+      findings: [{ recordId: 'finding-1', ordinal: 1, disposition: null }],
+    })
+    expect(
+      decideTriage(
+        evidence({
+          reviews: [unfinished],
+          branchReviewGroups: [branchGroup([review({ findings: [] })])],
+          reads: [
+            {
+              recordId: 'record-9',
+              tip: 'tip-a',
+              patchId: 'patch-a',
+              pathSet: '["a.ts"]',
+              recordedAt: '2026-09-25T03:00:00Z',
+              sessionId: 'owner-session',
+            },
+          ],
+        }),
+      ),
+    ).toMatchObject({
+      complete: false,
+      unfinishedReviewNumbers: [5],
+      undisposedFindings: [{ reviewNumber: 5, ordinal: 1 }],
+    })
   })
 })
