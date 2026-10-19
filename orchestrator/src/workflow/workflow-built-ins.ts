@@ -179,13 +179,11 @@ export function builtInWorkflowCatalogue() {
     stepCatalogue: {
       slug: 'shared',
       definition: JSON.stringify(catalogueDefinition()),
-      author: BUILT_IN_WORKFLOW_AUTHOR,
       reason: 'seed r6',
     },
     workflows: workflowSeeds.map((seed) => ({
       slug: seed.slug,
       definition: JSON.stringify(workflowDefinition(seed)),
-      author: BUILT_IN_WORKFLOW_AUTHOR,
       reason: `seed r${seed.revision}`,
     })),
   }
