@@ -1,6 +1,7 @@
 import { Dialog } from '@bottega/hub-ui/dialog'
 import { StatRow, StatTile } from '@bottega/hub-ui/stat'
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { CalendarDays, CircleDotDashed, UserRound } from 'lucide-react'
 import { useState } from 'react'
 import { expect, fn, userEvent, within } from 'storybook/test'
 import type { HistoryEntry } from '../task-history/history-model'
@@ -111,9 +112,13 @@ function Page({
       title="Open a task as a full page"
       body={body}
       keyLine={[
-        { key: 'status', content: 'Active' },
-        { key: 'assignee', content: 'Shmuel' },
-        { key: 'updated', content: 'Updated 2 hours ago' },
+        { key: 'status', icon: <CircleDotDashed size={14} aria-hidden />, content: 'Active' },
+        { key: 'assignee', icon: <UserRound size={14} aria-hidden />, content: 'Shmuel' },
+        {
+          key: 'updated',
+          icon: <CalendarDays size={14} aria-hidden />,
+          content: 'Updated 2 hours ago',
+        },
       ]}
       figures={figures}
       details={[
