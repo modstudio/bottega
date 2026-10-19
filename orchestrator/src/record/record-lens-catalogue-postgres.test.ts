@@ -188,8 +188,10 @@ postgres('hosted lens catalogue compare-and-set writers', () => {
     const settled = await Promise.allSettled([upsertRecordLens(input), upsertRecordLens(input)])
     expect(settled.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
     const rejected = settled.find((result) => result.status === 'rejected')
-    expect(rejected).toMatchObject({ reason: expect.any(RecordLensError) })
-    expect((rejected as PromiseRejectedResult).reason.status).toBe(409)
+    expect(rejected?.status).toBe('rejected')
+    const reason = (rejected as PromiseRejectedResult).reason
+    expect(reason).toBeInstanceOf(RecordLensError)
+    expect(reason.status).toBe(409)
   })
 
   test('selection refuses missing profiles, missing versions, and disabled historical versions without writes', async () => {
