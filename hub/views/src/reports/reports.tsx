@@ -10,14 +10,15 @@ import {
   TableRow,
 } from '@bottega/hub-ui/table'
 import { ToolbarBand } from '@bottega/hub-ui/toolbar-band'
+import type { ReactNode } from 'react'
 import {
   AgentUnknown,
   CostUnknown,
   MeasuresSummary,
   measureFormat,
   SessionDetail,
-} from '@bottega/hub-views/measures/measures-summary'
-import { WindowControl } from '@/components/design-system'
+} from '../measures/measures-summary.tsx'
+import { reportsStyles } from './reports.styles.ts'
 
 type ScopeKind = 'space' | 'project' | 'person'
 type Sampled = { sample: { intervalCount: number } }
@@ -49,6 +50,7 @@ export function HostedReports({
   projectMeasures,
   projectPeople,
   personMeasures,
+  windowControl,
 }: {
   kind: ScopeKind
   onKindChange(kind: ScopeKind): void
@@ -65,11 +67,12 @@ export function HostedReports({
   projectMeasures: readonly MeasureQuery[]
   projectPeople: Person[]
   personMeasures: readonly MeasureQuery[]
+  windowControl: ReactNode
 }) {
   const phone = useMediaQuery(PHONE_QUERY)
   const scope = (
     <>
-      <WindowControl />
+      {windowControl}
       <Select
         size="sm"
         label="Report scope"
@@ -109,14 +112,14 @@ export function HostedReports({
         actions={phone ? <ToolbarBand scope={scope} /> : scope}
       />
       {measuresError ? (
-        <p data-tone="error" className="text-status-text">
+        <p data-tone="error" className={reportsStyles().error()}>
           {measuresError}
         </p>
       ) : null}
       {measures ? (
         <MeasuresSummary measures={measures} />
       ) : (
-        <p className="text-text-muted">Loading measures...</p>
+        <p className={reportsStyles().loading()}>Loading measures...</p>
       )}
       {kind === 'space' ? (
         <ProjectBreakdown projects={sortedProjects} queries={projectMeasures} />
@@ -138,7 +141,7 @@ export function ProjectBreakdown({
   return (
     <>
       <SectionTitle>By project</SectionTitle>
-      <div className="overflow-x-auto border border-border-default">
+      <div className={reportsStyles().tableFrame()}>
         <Table>
           <TableHeader>
             <TableRow>
@@ -161,7 +164,7 @@ export function ProjectBreakdown({
                     {value ? (
                       <>
                         {measureFormat.hour(value.hoursRunning.unionMs)}
-                        <div className="text-xs text-text-muted">
+                        <div className={reportsStyles().detail()}>
                           {value.hoursRunning.sample.intervalCount} intervals; not additive
                         </div>
                       </>
@@ -173,7 +176,7 @@ export function ProjectBreakdown({
                     {value ? (
                       <>
                         {measureFormat.hour(value.agentHours.sumMs)}
-                        <div className="text-xs text-text-muted">
+                        <div className={reportsStyles().detail()}>
                           {value.agentHours.sample.intervalCount} intervals ·{' '}
                           <AgentUnknown measure={value.agentHours} />
                         </div>
@@ -186,7 +189,7 @@ export function ProjectBreakdown({
                     {value ? (
                       <>
                         {measureFormat.hour(value.sessionTime.unionThenSumMs)}
-                        <div className="max-w-xs text-xs text-text-muted">
+                        <div className={reportsStyles().wideDetail()}>
                           {value.sessionTime.sample.intervalCount} intervals ·{' '}
                           <SessionDetail measure={value.sessionTime} />
                         </div>
@@ -199,7 +202,7 @@ export function ProjectBreakdown({
                     {value ? (
                       <>
                         {measureFormat.money(value.cost.vendorCostUsd)}
-                        <div className="text-xs text-text-muted">
+                        <div className={reportsStyles().detail()}>
                           {value.cost.sample.intervalCount} intervals ·{' '}
                           <CostUnknown measure={value.cost} />
                         </div>
@@ -212,7 +215,7 @@ export function ProjectBreakdown({
                     {value?.shipped ? (
                       <>
                         {value.shipped.count}
-                        <div className="text-xs text-text-muted">
+                        <div className={reportsStyles().detail()}>
                           Tasks moved to done in this window · {value.shipped.sample.eventCount}{' '}
                           events
                         </div>
@@ -261,7 +264,7 @@ function PersonBreakdown({
       >
         By person
       </SectionTitle>
-      <div className="overflow-x-auto border border-border-default">
+      <div className={reportsStyles().tableFrame()}>
         <Table>
           <TableHeader>
             <TableRow>
@@ -280,7 +283,7 @@ function PersonBreakdown({
                     {value ? (
                       <>
                         <span>started {measureFormat.hour(value.agentHours.sumMs)}</span>
-                        <div className="text-xs text-text-muted">
+                        <div className={reportsStyles().detail()}>
                           {value.agentHours.sample.intervalCount} intervals
                         </div>
                       </>
@@ -294,7 +297,7 @@ function PersonBreakdown({
                         <span>
                           in session {measureFormat.hour(value.sessionTime.unionThenSumMs)}
                         </span>
-                        <div className="max-w-xs text-xs text-text-muted">
+                        <div className={reportsStyles().wideDetail()}>
                           {value.sessionTime.sample.intervalCount} intervals ·{' '}
                           <SessionDetail measure={value.sessionTime} />
                         </div>

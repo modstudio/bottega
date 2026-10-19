@@ -11,13 +11,13 @@ import { Select } from '@bottega/hub-ui/listbox/select'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { Segmented } from '@bottega/hub-ui/segmented'
 import { ToolbarBand } from '@bottega/hub-ui/toolbar-band'
+import { MachineOverride } from '@bottega/hub-views/machine-permissions/machine-override'
+import { MachinePermissionEditor } from '@bottega/hub-views/machine-permissions/machine-permission-editor'
 import { Markdown } from '@bottega/hub-views/markdown'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { Plus, Save, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { MachineOverride } from '@/components/machine-override'
-import { MachinePermissionEditor } from '@/components/machine-permission-editor'
 import {
   AUTONOMY_PRESETS,
   AUTONOMY_VALUES,

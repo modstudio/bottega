@@ -1,4 +1,4 @@
-import { SnapshotEmpty, SnapshotHeader } from '@/components/hosted-snapshot'
+import { SnapshotEmpty, SnapshotHeader } from '@bottega/hub-views/snapshot'
 import { HealthView, RoutingView } from '@/components/insight-view'
 
 type Machine = { id: string; takenAt: string }

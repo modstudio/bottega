@@ -1,13 +1,13 @@
 import { Badge } from '@bottega/hub-ui/badge'
 import { Button } from '@bottega/hub-ui/button'
+import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
 import { Companion } from '@bottega/hub-ui/companion'
 import { DisplayRow, FieldSection } from '@bottega/hub-ui/form-layout'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { runEasternTime } from '@bottega/hub-util/format'
+import { type ProjectColors, ProjectMark } from '@bottega/hub-views/project-colors'
 import { useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
-import { Collection, type CollectionColumn } from '@/components/collection'
-import { type ProjectColors, ProjectMark } from '@/components/design-system'
 import { useDetailPanel } from '@/lib/detail-panel'
 import type {
   RunDetailReviewFinding,

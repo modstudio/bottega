@@ -2,8 +2,9 @@ import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { StatRow, StatTile } from '@bottega/hub-ui/stat'
 import { ToolbarBand } from '@bottega/hub-ui/toolbar-band'
+import { responseSubtitle } from '@bottega/hub-views/work-summary'
 import { type ReactNode, useEffect } from 'react'
-import { responseSubtitle, useWindowFilters, WindowControl } from '@/components/design-system'
+import { useWindowFilters, WindowControl } from '@/components/design-system'
 import { setWorkCounts } from '@/lib/window'
 
 const number = new Intl.NumberFormat('en-US')

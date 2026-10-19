@@ -1,19 +1,13 @@
-import { CardList, type CardListItem } from '@bottega/hub-ui/card-list'
-import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
-import { EmptyState } from '@bottega/hub-ui/empty-state'
-import { Input } from '@bottega/hub-ui/field/input'
-import { PAGE_SIZES, type PageSize, Pagination } from '@bottega/hub-ui/pagination'
-import { pageSlice } from '@bottega/hub-ui/state/pagination'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@bottega/hub-ui/table'
-import { TableCard } from '@bottega/hub-ui/table-card'
 import { type ReactNode, useState } from 'react'
+import { CardList, type CardListItem } from '../card-list/card-list'
+import { PHONE_QUERY, useMediaQuery } from '../dom/use-media-query'
+import { EmptyState } from '../empty-state/empty-state'
+import { Input } from '../field/input'
+import { PAGE_SIZES, type PageSize, Pagination } from '../pagination/pagination'
+import { pageSlice } from '../state/pagination'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../table/table'
+import { TableCard } from '../table-card/table-card'
+import { collectionStyles } from './collection.styles.ts'
 
 /** A list the server pages: rows arrive as one page and `total` counts every match. */
 export type ServerPaging = {
@@ -76,14 +70,6 @@ function phoneCard<Row>(
     actions,
   }
 }
-
-const columnLayout = <Row,>(column: CollectionColumn<Row>) =>
-  [
-    column.grow ? 'w-full max-w-0' : null,
-    column.priority === 'low' ? 'hidden @5xl/rows:table-cell' : null,
-  ]
-    .filter(Boolean)
-    .join(' ')
 
 type RowsProps<Row> = {
   columns: CollectionColumn<Row>[]
@@ -158,7 +144,14 @@ function CollectionTable<Row>({
       <TableHeader>
         <TableRow>
           {columns.map((column) => (
-            <TableHead key={column.id} numeric={column.numeric} className={columnLayout(column)}>
+            <TableHead
+              key={column.id}
+              numeric={column.numeric}
+              className={collectionStyles().column({
+                grow: column.grow,
+                lowPriority: column.priority === 'low',
+              })}
+            >
               {column.label}
             </TableHead>
           ))}
@@ -184,7 +177,10 @@ function CollectionTable<Row>({
                   key={column.id}
                   numeric={column.numeric}
                   nowrap={!column.grow}
-                  className={columnLayout(column)}
+                  className={collectionStyles().column({
+                    grow: column.grow,
+                    lowPriority: column.priority === 'low',
+                  })}
                 >
                   {column.render(row)}
                 </TableCell>
@@ -206,7 +202,10 @@ function CollectionTable<Row>({
                     key={column.id}
                     numeric={column.numeric}
                     nowrap={!column.grow}
-                    className={columnLayout(column)}
+                    className={collectionStyles().column({
+                      grow: column.grow,
+                      lowPriority: column.priority === 'low',
+                    })}
                   >
                     {child.cells[column.id] ?? null}
                   </TableCell>
@@ -299,8 +298,8 @@ export function Collection<Row>({
     <TableCard
       heading={
         <>
-          <h2 className="font-semibold text-md">{title}</h2>
-          <span className="text-text-muted tabular-nums">{count.toLocaleString()}</span>
+          <h2 className={collectionStyles().heading()}>{title}</h2>
+          <span className={collectionStyles().count()}>{count.toLocaleString()}</span>
         </>
       }
       search={

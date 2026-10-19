@@ -1,7 +1,8 @@
 import { type HostedReportScopeKind, useHostedReports } from '@bottega/hub-data/use-reports'
+import { HostedReports } from '@bottega/hub-views/reports'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
-import { HostedReports } from '@/components/hosted-reports'
+import { WindowControl } from '@/components/design-system'
 import { useWindowState } from '@/lib/window'
 
 export const Route = createFileRoute('/reports')({ component: ReportsRoute })
@@ -23,6 +24,7 @@ function ReportsRoute() {
       onKindChange={setKind}
       onProjectChange={setChosenProject}
       onPersonChange={setChosenPerson}
+      windowControl={<WindowControl />}
     />
   )
 }

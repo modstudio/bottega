@@ -1,9 +1,8 @@
 import { expect, test } from 'bun:test'
-import type { MeasuresResponse } from '@bottega/hub-data/client'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { ProjectBreakdown } from './hosted-reports'
+import { ProjectBreakdown } from './reports'
 
-const measures: MeasuresResponse = {
+const measures = {
   scope: 'project',
   hoursRunning: {
     notAdditive: true,

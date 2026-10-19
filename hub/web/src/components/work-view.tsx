@@ -1,6 +1,11 @@
 import { Badge } from '@bottega/hub-ui/badge'
 import { LiveDot } from '@bottega/hub-ui/badge/live-dot'
 import { TextButton } from '@bottega/hub-ui/button'
+import {
+  Collection,
+  type CollectionChildRow,
+  type CollectionColumn,
+} from '@bottega/hub-ui/collection'
 import { Docked } from '@bottega/hub-ui/companion'
 import { useNow } from '@bottega/hub-ui/dom/clock'
 import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
@@ -17,6 +22,8 @@ import {
   TableRow,
 } from '@bottega/hub-ui/table'
 import { compactTokens, duration, relativeTime, vendorFigures } from '@bottega/hub-util/format'
+import { ProjectColorsContext, ProjectMark, projectVars } from '@bottega/hub-views/project-colors'
+import { SourceMark } from '@bottega/hub-views/source-mark'
 import { taskStatusLook } from '@bottega/hub-views/status-look/task-status'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import {
@@ -29,15 +36,7 @@ import {
   Rows3,
 } from 'lucide-react'
 import { type ReactNode, useContext, useMemo, useState } from 'react'
-import { Collection, type CollectionChildRow, type CollectionColumn } from '@/components/collection'
-import {
-  ProjectColorsContext,
-  ProjectMark,
-  projectVars,
-  SourceMark,
-  useWindowFilters,
-  WindowControl,
-} from '@/components/design-system'
+import { useWindowFilters, WindowControl } from '@/components/design-system'
 import { WaitingBadge } from '@/components/waiting-badge'
 import { type ChromeResponse, type Facets, WindowChrome, WorkStats } from '@/components/work-chrome'
 import { useDetailPanel } from '@/lib/detail-panel'

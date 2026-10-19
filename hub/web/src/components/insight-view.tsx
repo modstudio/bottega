@@ -12,8 +12,9 @@ import {
 } from '@bottega/hub-ui/table'
 import { ToolbarBand } from '@bottega/hub-ui/toolbar-band'
 import { compactTokens, duration } from '@bottega/hub-util/format'
+import { responseSubtitle } from '@bottega/hub-views/work-summary'
 import { useEffect } from 'react'
-import { responseSubtitle, WindowControl } from '@/components/design-system'
+import { WindowControl } from '@/components/design-system'
 import { setWorkCounts } from '@/lib/window'
 
 type InsightName = 'ratio' | 'spend' | 'routing' | 'health'
