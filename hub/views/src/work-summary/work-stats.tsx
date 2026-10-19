@@ -1,12 +1,9 @@
 import { StatRow, StatTile } from '@bottega/hub-ui/stat'
+import type { ChromeResponse } from './work-summary.ts'
 
 const number = new Intl.NumberFormat('en-US')
 
-export type WorkStatsResponse = {
-  engaged: string
-  activeAgents: string[]
-  tasksShipped: number
-}
+export type WorkStatsResponse = Pick<ChromeResponse, 'engaged' | 'activeAgents' | 'tasksShipped'>
 
 /** The window's headline figures. */
 export function WorkStats({ response }: { response: WorkStatsResponse }) {

@@ -129,8 +129,6 @@
     "./work-summary": "./src/work-summary/work-summary.ts",
     "./work-list": "./src/work-list/work-list.tsx",
     "./work-list/work-list.styles": "./src/work-list/work-list.styles.ts",
-    "./waiting-badge": "./src/waiting-badge/waiting-badge.tsx",
-    "./waiting-badge/waiting-badge.styles": "./src/waiting-badge/waiting-badge.styles.ts",
     "./work-summary/work-stats": "./src/work-summary/work-stats.tsx"
   },
   "dependencies": {

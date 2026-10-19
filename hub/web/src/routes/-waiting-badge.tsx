@@ -1,22 +1,13 @@
-import { WaitingBadge as WaitingBadgeView } from '@bottega/hub-views/waiting-badge'
+import { Badge } from '@bottega/hub-ui/badge'
+import type { WaitingRow } from '@bottega/hub-views/work-list'
 import { Link } from '@tanstack/react-router'
-import type { ReactNode } from 'react'
 import { operatorInboxPath } from '../../../../shared/operator-inbox.ts'
 
-export type WaitingBadgeItem = { kind: 'question' | 'workflow'; id: number }
-
-export function WaitingBadge({ item }: { item: WaitingBadgeItem }) {
+/** A run waiting on the operator, linked to whatever it waits on in the inbox. */
+export function WaitingBadge({ item }: { item: WaitingRow }) {
   return (
-    <WaitingBadgeView
-      renderLink={(children: ReactNode, className: string) => (
-        <Link
-          to={operatorInboxPath(item.kind, item.id)}
-          className={className}
-          onClick={(event) => event.stopPropagation()}
-        >
-          {children}
-        </Link>
-      )}
-    />
+    <Link to={operatorInboxPath(item.kind, item.id)} onClick={(event) => event.stopPropagation()}>
+      <Badge tone="warning">waiting on you</Badge>
+    </Link>
   )
 }

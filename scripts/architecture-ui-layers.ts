@@ -203,7 +203,6 @@ const hubViewFolders = [
   'snapshot',
   'sign-in',
   'source-mark',
-  'waiting-badge',
   'work-summary',
   'work-list',
 ]

@@ -38,18 +38,11 @@ import {
 } from '../project-colors/project-colors.tsx'
 import { SourceMark } from '../source-mark/source-mark.tsx'
 import { taskStatusLook } from '../status-look/task-status.ts'
+import type { ChromeResponse } from '../work-summary/work-summary.ts'
 import { workListStyles } from './work-list.styles.ts'
 
 export type WorkName = 'flight' | 'done'
 type Facets = { projects: string[]; agents: string[]; sources: string[] }
-type ChromeResponse = {
-  engaged: string
-  activeAgents: string[]
-  tasksShipped: number
-  collectedAt: string | null
-  servingSince: string
-  counts: { flight: number; done: number; runs: number }
-}
 type TaskRun = {
   id: number | string
   root_id?: number | string
