@@ -93,18 +93,9 @@ function triageDecision(change: PullRequestChange, database: Database): TriageDe
     group.push(review)
     grouped.set(key, group)
   }
-  const branchReviewGroups: TriageReviewGroup[] = [...grouped.values()].map((group) => {
-    const tiers = group.flatMap((review) => (review.tier === null ? [] : [review.tier]))
-    const tier = (tiers.length ? Math.max(...tiers) : 0) as 0 | 1 | 2 | 3
-    return {
-      reviews: group,
-      applicableReview: applicableReview(
-        tier,
-        JSON.parse(group[0]!.pathSet!) as string[],
-        change.project.settings.review,
-      ),
-    }
-  })
+  const branchReviewGroups: TriageReviewGroup[] = [...grouped.values()].map((reviews) => ({
+    reviews,
+  }))
   return decideTriage({
     patchId: change.group.patchId,
     pathSet: serializePathSet(change.group.pathSet),

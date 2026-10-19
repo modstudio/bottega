@@ -9,6 +9,7 @@ import {
   recordTriageIntent,
   triageRefusal,
 } from './pr-admission.ts'
+import { decideTriage, type TriageEvidence } from './triage-decision.ts'
 
 test('refuses a secret-shaped override reason before resolving the checkout', () => {
   expect(() =>
@@ -200,6 +201,55 @@ test('a missing applicable lens refusal names the lens and dispatch command', ()
   expect(message).toContain(
     `${PLATFORM_SLUG} run start review-lens --review DEV-1221-review-lenses --key <task-key> --lens craft`,
   )
+})
+
+test('a creditable composed round refusal names only the architect read', () => {
+  const change = {
+    project: { name: 'fixture' },
+    branch: 'DEV-1405-composed-review',
+    tip: 'tip',
+    group: { patchId: 'patch', pathSet: ['a.ts'] },
+    tier: 2,
+  } as PullRequestChange
+  const completedReview: TriageEvidence['reviews'][number] = {
+    reviewRecordId: 'review-4',
+    reviewNumber: 4,
+    recordedAt: '2026-09-25T00:00:00Z',
+    completedAt: '2026-09-25T01:00:00Z',
+    tier: 2,
+    patchId: 'patch-old',
+    pathSet: '["a.ts"]',
+    lensIdentities: ['correctness', 'craft'],
+    lenses: [
+      { recordId: 'lens-1', lens: 'correctness', graded: true },
+      { recordId: 'lens-2', lens: 'craft', graded: true },
+    ],
+    findings: [],
+  }
+  const decision = decideTriage({
+    patchId: 'patch',
+    pathSet: '["a.ts"]',
+    tip: 'tip',
+    tier: 2,
+    applicableReview: { lenses: ['correctness', 'craft'] },
+    branchOwnerSession: 'owner-session',
+    reviews: [],
+    branchReviewGroups: [{ reviews: [completedReview] }],
+    reads: [],
+  })
+  expect(decision).toMatchObject({
+    complete: false,
+    missingReview: false,
+    missingLenses: [],
+    missingSecondOpinion: null,
+    architectReadRequired: true,
+  })
+  if (decision.complete) throw new Error('expected incomplete triage')
+
+  const message = triageRefusal(change, decision)
+  expect(message).toContain(`${PLATFORM_SLUG} review read --sha tip`)
+  expect(message).not.toContain('run start review-lens')
+  expect(message).not.toContain('run and record the tier 2 review')
 })
 
 test('a missing second opinion refusal names the lens and distinct first run', () => {
