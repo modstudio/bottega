@@ -28,7 +28,7 @@ export function landingsWithPostStepError(database: Database = db()): {
   return database
     .query(
       `SELECT project, branch, error FROM landing
-      WHERE status='install_failed' AND error IS NOT NULL ORDER BY id`,
+      WHERE status='install_failed' AND error IS NOT NULL ORDER BY started_at,record_id`,
     )
     .all() as { project: string; branch: string; error: string }[]
 }

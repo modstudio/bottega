@@ -563,6 +563,14 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/review/review-coverage-match.ts', []),
   module('orchestrator/src/review/review-evidence-sql.ts', ['../evidence/evidence-query.ts']),
+  module('orchestrator/src/review/review-identifier.ts', [
+    '../../../shared/record-id.ts',
+    'bun:sqlite',
+  ]),
+  module('orchestrator/src/review/review-number.ts', [
+    '../database/entity-number.ts',
+    'bun:sqlite',
+  ]),
   module('orchestrator/src/review/review-read.ts', [
     'shared/brand.ts',
     'bun:sqlite',

@@ -27,9 +27,11 @@ function fixture(): Database {
       record_id TEXT PRIMARY KEY, number INTEGER NOT NULL UNIQUE, run_record_id TEXT, question TEXT, options TEXT,
       recommendation TEXT, why TEXT, answer TEXT
     );
-    CREATE TABLE review_lens (id INTEGER PRIMARY KEY, run_record_id TEXT);
+    CREATE TABLE review_lens (record_id TEXT PRIMARY KEY, run_record_id TEXT);
+    CREATE TABLE review (record_id TEXT PRIMARY KEY, number INTEGER NOT NULL UNIQUE);
     CREATE TABLE review_finding (
-      id INTEGER PRIMARY KEY, review_lens_id INTEGER, severity TEXT, location TEXT, evidence TEXT,
+      record_id TEXT PRIMARY KEY, review_lens_record_id TEXT, review_record_id TEXT, ordinal INTEGER,
+      severity TEXT, location TEXT, evidence TEXT,
       proposed_correction TEXT, disposition TEXT, rejection_category TEXT
     );
   `)
@@ -47,8 +49,9 @@ describe('record search', () => {
       INSERT INTO run VALUES ('01990000-0000-7000-8000-000000000001', 1, NULL, 'DEV-203', '2026-09-01T00:00:00Z', '${output}');
       INSERT INTO score VALUES (1, '01990000-0000-7000-8000-000000000001', 'A substantial scoring note that does not repeat its task key.');
       INSERT INTO question VALUES ('01990000-0000-7000-8000-000000000101', 1, '01990000-0000-7000-8000-000000000001', 'Which primitive?', NULL, NULL, NULL, 'Use read-tree.');
-      INSERT INTO review_lens VALUES (1, '01990000-0000-7000-8000-000000000001');
-      INSERT INTO review_finding VALUES (1, 1, 'major', 'file.ts:4', 'The guard is process-local.', 'Move it to the repository hook.', 'accepted', NULL);
+      INSERT INTO review_lens VALUES ('01990000-0000-7000-8000-000000000201', '01990000-0000-7000-8000-000000000001');
+      INSERT INTO review VALUES ('01990000-0000-7000-8000-000000000401', 1);
+      INSERT INTO review_finding VALUES ('01990000-0000-7000-8000-000000000301', '01990000-0000-7000-8000-000000000201', '01990000-0000-7000-8000-000000000401', 1, 'major', 'file.ts:4', 'The guard is process-local.', 'Move it to the repository hook.', 'accepted', NULL);
     `)
 
     const found = searchRecords(d, 'dev-203')
@@ -59,7 +62,7 @@ describe('record search', () => {
       'output',
     ])
     expect(found.results.every((result) => result.match === 'direct task link')).toBe(true)
-    expect(found.results.map((result) => result.id)).toEqual([1, 1, 1, 1])
+    expect(found.results.map((result) => result.id)).toEqual([1, 1, '1/1', 1])
     expect(
       found.results.find((result) => result.source === 'output')!.snippet.length,
     ).toBeLessThanOrEqual(242)

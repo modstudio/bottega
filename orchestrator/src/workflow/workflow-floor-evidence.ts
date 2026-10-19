@@ -15,6 +15,7 @@ import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db } from '../database/db.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { reviewRoundTriageComplete, reviewsForTriage } from '../review/review-group.ts'
+import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import {
   type ArtifactRef,
@@ -43,7 +44,7 @@ export type { FloorEvidencePorts } from './workflow-floor-evidence-replay.ts'
 
 export type WorkflowEvidenceInput = {
   ruling?: number
-  review?: number
+  review?: string
   gate?: number
   run?: string
   artifact?: string
@@ -299,45 +300,46 @@ function gatherRuling(
 }
 
 function gatherReview(
-  id: number,
+  recordId: string,
   identity: CursorIdentity,
   d: Database,
 ): ValidatedEvidence['review'] {
   const review = d
     .query<
       {
-        id: number
+        record_id: string
+        number: number
         project_name: string | null
         patch_id: string | null
         path_set: string | null
       },
-      [number]
+      [string]
     >(
-      `SELECT r.id, p.name AS project_name, r.patch_id, r.path_set
+      `SELECT r.record_id,r.number, p.name AS project_name, r.patch_id, r.path_set
          FROM review r LEFT JOIN project p ON p.record_id=r.project_record_id
-        WHERE r.id=?`,
+        WHERE r.record_id=?`,
     )
-    .get(id)
-  if (!review) throw new Error(`--review ${id} does not exist`)
+    .get(recordId)
+  if (!review) throw new Error(`--review ${recordId} does not exist`)
   if (review.project_name !== identity.project)
     throw new Error(
-      `--review ${id} project is ${review.project_name ?? 'unset'}, not this cursor's ${identity.project}`,
+      `--review ${review.number} project is ${review.project_name ?? 'unset'}, not this cursor's ${identity.project}`,
     )
   const bound = d
     .query<
       { branch: string | null },
-      [number, string | null, string | null, string, string | null]
+      [string, string | null, string | null, string, string | null]
     >(
       `SELECT ru.branch
          FROM review_lens rl JOIN run ru ON ru.record_id=rl.run_record_id
-        WHERE rl.review_id=?
+        WHERE rl.review_record_id=?
           AND ((? IS NOT NULL AND ru.branch=?) OR ru.launch_key=?)
-        ORDER BY CASE WHEN ru.branch=? THEN 0 ELSE 1 END, rl.id LIMIT 1`,
+        ORDER BY CASE WHEN ru.branch=? THEN 0 ELSE 1 END, ru.started_at,rl.record_id LIMIT 1`,
     )
-    .get(id, identity.branch, identity.branch, identity.workflowKey, identity.branch)
+    .get(recordId, identity.branch, identity.branch, identity.workflowKey, identity.branch)
   if (!bound)
     throw new Error(
-      `--review ${id} has no lens run on branch ${identity.branch ?? 'unset'} or launch_key ${identity.workflowKey || 'unset'}`,
+      `--review ${review.number} has no lens run on branch ${identity.branch ?? 'unset'} or launch_key ${identity.workflowKey || 'unset'}`,
     )
   const branch = identity.branch ?? bound.branch
   const grouped = reviewsForTriage(
@@ -348,17 +350,18 @@ function gatherReview(
       patchId: review.patch_id ?? '',
       pathSet: review.path_set === null ? [] : (JSON.parse(review.path_set) as string[]),
     },
-    id,
+    recordId,
   )
   const reviews =
     review.patch_id === null || review.path_set === null
-      ? grouped.branchReviews.filter(({ reviewId }) => reviewId === id)
+      ? grouped.branchReviews.filter(({ reviewRecordId }) => reviewRecordId === recordId)
       : grouped.reviews
   const unfinishedReviewIds = reviews
     .filter((review) => !reviewRoundTriageComplete(review))
-    .map(({ reviewId }) => reviewId)
+    .map(({ reviewNumber }) => reviewNumber)
   return {
-    id,
+    recordId,
+    number: review.number,
     allFindingsDisposed: reviews.every(({ findings }) =>
       findings.every(({ disposition }) => disposition !== null),
     ),
@@ -860,13 +863,13 @@ export function gatherValidatedEvidence(input: {
       : null,
   }
   const ruling = positive(input.evidence.ruling, '--ruling')
-  const review = positive(input.evidence.review, '--review')
+  const review = input.evidence.review
   const gate = positive(input.evidence.gate, '--gate')
   const run = input.evidence.run
   const satisfies = positive(input.evidence.satisfies, '--satisfies')
   if (ruling)
     gathered.ruling = gatherRuling(ruling, input.cursorId, input.stepOrdinal, input.stepSlug, d)
-  if (review) gathered.review = gatherReview(review, input.identity, d)
+  if (review) gathered.review = gatherReview(resolveReviewIdentifier(d, review), input.identity, d)
   if (gate) gathered.gate = gatherGate(gate, input.identity, input.cursorId, resolveCheckout, d)
   if (run) {
     gathered.runOffered = run

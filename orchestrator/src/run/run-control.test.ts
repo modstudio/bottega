@@ -166,8 +166,8 @@ describe('run continuation', () => {
     const reviewId = recordReview(root, reviewReply(1, 'high'), db())
     const before = db()
       .query(
-        `SELECT r.record_id,r.completed_at,rl.id lens_id,rl.run_record_id
-       FROM review r JOIN review_lens rl ON rl.review_id=r.record_id WHERE r.record_id=?`,
+        `SELECT r.record_id,r.completed_at,rl.record_id lens_id,rl.run_record_id
+       FROM review r JOIN review_lens rl ON rl.review_record_id=r.record_id WHERE r.record_id=?`,
       )
       .get(reviewId)
     await expect(continueRun(root, 'review another turn', limit)).rejects.toThrow(
@@ -176,8 +176,8 @@ describe('run continuation', () => {
     expect(
       db()
         .query(
-          `SELECT r.record_id,r.completed_at,rl.id lens_id,rl.run_record_id
-       FROM review r JOIN review_lens rl ON rl.review_id=r.record_id WHERE r.record_id=?`,
+          `SELECT r.record_id,r.completed_at,rl.record_id lens_id,rl.run_record_id
+       FROM review r JOIN review_lens rl ON rl.review_record_id=r.record_id WHERE r.record_id=?`,
         )
         .get(reviewId),
     ).toEqual(before)

@@ -12,8 +12,9 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Copy } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { type ReviewLens, ReviewLensList } from '@/components/review-lenses'
+import { ReviewLensList } from '@/components/review-lenses'
 import { WaitingBadge } from '@/components/waiting-badge'
+import type { RunDetailReviewLens } from '../../../../shared/review-presentation.ts'
 
 const DELIVERIES = ['none', 'partial', 'full'] as const
 const QUALITIES = ['wrong', 'mixed', 'right'] as const
@@ -43,7 +44,7 @@ type RunDetail = {
   note: string | null
   scored_at: string | null
   scoreAxes: readonly ('delivery' | 'quality' | 'fidelity')[]
-  reviews: ReviewLens[]
+  reviews: RunDetailReviewLens[]
 }
 type Verdict = {
   delivery: Delivery

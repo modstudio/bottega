@@ -570,32 +570,32 @@ test('a quarantined parent defers its graph until retry delivers the parent', as
   enqueueScoreRecord(local, RECORD_ID, MACHINE_ID)
   local
     .query(
-      "INSERT INTO review (id,record_id,recorded_at) VALUES (1,'01990000-0000-7000-8000-000000000041',?)",
+      "INSERT INTO review (number,record_id,recorded_at) VALUES (1,'01990000-0000-7000-8000-000000000041',?)",
     )
     .run(STAMP)
   local
     .query(
       `INSERT INTO review_lens
-       (id,record_id,review_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
-       VALUES (1,'01990000-0000-7000-8000-000000000042',1,?,'craft','codex','[]','[]','[]','[]')`,
+       (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+       VALUES ('01990000-0000-7000-8000-000000000042','01990000-0000-7000-8000-000000000041',?,'craft','codex','[]','[]','[]','[]')`,
     )
     .run(RECORD_ID)
   local
     .query(
       `INSERT INTO review_finding
-       (id,record_id,review_id,review_lens_id,ordinal,severity,location,evidence,proposed_correction)
-       VALUES (1,'01990000-0000-7000-8000-000000000043',1,1,1,'major','a.ts:1','evidence','correct it')`,
+       (record_id,review_record_id,review_lens_record_id,ordinal,severity,location,evidence,proposed_correction)
+       VALUES ('01990000-0000-7000-8000-000000000043','01990000-0000-7000-8000-000000000041','01990000-0000-7000-8000-000000000042',1,'major','a.ts:1','evidence','correct it')`,
     )
     .run()
   backfillReviewRecords(local)
   local
     .query(
       `INSERT INTO contention
-       (id,record_id,at,resource_kind,resource_key,event_kind,run_record_id)
-       VALUES (1,'01990000-0000-7000-8000-000000000077',?,'lock','resource','wait',?)`,
+       (record_id,at,resource_kind,resource_key,event_kind,run_record_id)
+       VALUES ('01990000-0000-7000-8000-000000000077',?,'lock','resource','wait',?)`,
     )
     .run(STAMP, RECORD_ID)
-  enqueueContention(local, 1, STAMP)
+  enqueueContention(local, '01990000-0000-7000-8000-000000000077', STAMP)
   const remote = fakePostgres(
     serverError('new row violates row-level security policy for table "run"', 42501),
   )

@@ -9,6 +9,10 @@ import { ChevronRight } from 'lucide-react'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { type ProjectColors, ProjectMark } from '@/components/design-system'
 import { useDetailPanel } from '@/lib/detail-panel'
+import type {
+  RunDetailReviewFinding,
+  RunDetailReviewLens,
+} from '../../../../shared/review-presentation.ts'
 
 type HostedReview = {
   id: string
@@ -21,55 +25,29 @@ type HostedReview = {
   findingCount?: number
 }
 
-export type ReviewLens = {
-  id?: string
-  lens?: string
-  agent?: string
-  findings?: unknown
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {}
-}
-
-function field(record: Record<string, unknown>, camel: string, snake: string) {
-  const value = record[camel] ?? record[snake]
-  return value == null ? '' : String(value)
-}
-
-export function ReviewLensList({ lenses }: { lenses: ReviewLens[] }) {
+export function ReviewLensList({ lenses }: { lenses: RunDetailReviewLens[] }) {
   if (!lenses.length) return <p className="mt-4 text-text-muted">No review lenses.</p>
   return (
     <div className="mt-4 space-y-6">
       {lenses.map((lens, index) => {
-        const findings = Array.isArray(lens.findings) ? lens.findings : []
+        const findings = lens.findings
         return (
           <FieldSection
-            key={lens.id ?? `${lens.lens ?? 'lens'}-${index}`}
-            title={lens.lens ?? `Lens ${index + 1}`}
+            key={lens.id}
+            title={lens.lens || `Lens ${index + 1}`}
             description={lens.agent}
           >
             {findings.length ? (
-              findings.map((item, findingIndex) => {
-                const finding = asRecord(item)
+              findings.map((finding: RunDetailReviewFinding) => {
                 return (
-                  <div
-                    key={field(finding, 'id', 'id') || String(findingIndex)}
-                    className="border border-border-default p-3"
-                  >
+                  <div key={finding.id} className="border border-border-default p-3">
                     <div className="mb-2 flex items-center gap-2">
-                      <Badge>{field(finding, 'severity', 'severity')}</Badge>
-                      <span className="text-text-muted">
-                        {field(finding, 'location', 'location')}
-                      </span>
+                      <Badge>{finding.severity}</Badge>
+                      <span className="text-text-muted">{finding.location}</span>
                     </div>
-                    <p>{field(finding, 'evidence', 'evidence')}</p>
-                    {field(finding, 'proposedCorrection', 'proposed_correction') ? (
-                      <p className="mt-2 text-text-muted">
-                        {field(finding, 'proposedCorrection', 'proposed_correction')}
-                      </p>
+                    <p>{finding.evidence}</p>
+                    {finding.proposedCorrection ? (
+                      <p className="mt-2 text-text-muted">{finding.proposedCorrection}</p>
                     ) : null}
                   </div>
                 )
@@ -174,7 +152,7 @@ export function HostedReviews({
 }
 
 type HostedReviewDetail = {
-  lenses?: unknown[] | null
+  lenses?: RunDetailReviewLens[] | null
   projectName?: string | null
   tier?: number | null
   spaceName: string
@@ -215,7 +193,7 @@ export function HostedReviewDetail({
     )
   }
 
-  const lenses = (review.lenses ?? []) as ReviewLens[]
+  const lenses = review.lenses ?? []
   const projectName = typeof review.projectName === 'string' ? review.projectName : null
   return (
     <Companion

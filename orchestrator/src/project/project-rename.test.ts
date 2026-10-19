@@ -64,31 +64,46 @@ function seedNameMirrors(projectId: string, otherId: string): void {
   ).run(id(), OLD, 'main', 'tip', 'tree', 'reason', 't', projectId)
   const review = d
     .query(
-      `INSERT INTO review (record_id,recorded_at,project_record_id) VALUES (?,?,?) RETURNING id`,
+      `INSERT INTO review (record_id,number,recorded_at,project_record_id) VALUES (?,1,?,?) RETURNING record_id`,
     )
-    .get(id(), 't', projectId) as { id: number }
+    .get(id(), 't', projectId) as { record_id: string }
   d.query(
     `INSERT INTO landing_review_carry
-     (record_id,project,branch,tip,tree,review_id,reviewed_commit,reviewed_tree,patch_id,old_base,new_base,at,project_record_id)
+     (record_id,project,branch,tip,tree,review_record_id,reviewed_commit,reviewed_tree,patch_id,old_base,new_base,at,project_record_id)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-  ).run(id(), OLD, 'main', 'tip', 'tree', review.id, 'c', 't', 'p', 'a', 'b', 't', projectId)
+  ).run(id(), OLD, 'main', 'tip', 'tree', review.record_id, 'c', 't', 'p', 'a', 'b', 't', projectId)
   const read = d
     .query(
       `INSERT INTO review_read (record_id,project,branch,tip,patch_id,path_set,tier,note,recorded_at,project_record_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+       VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
     )
-    .get(id(), OLD, 'main', 'tip', 'p', '[]', 1, 'n', 't', projectId) as { id: number }
+    .get(id(), OLD, 'main', 'tip', 'p', '[]', 1, 'n', 't', projectId) as { record_id: string }
   const override = d
     .query(
       `INSERT INTO landing_override (record_id,project,branch,tip,tree,reason,at,project_record_id)
-       VALUES (?,?,?,?,?,?,?,?) RETURNING id`,
+       VALUES (?,?,?,?,?,?,?,?) RETURNING record_id`,
     )
-    .get(id(), OTHER, 'side', 'tip', 'tree', 'reason', 't', otherId) as { id: number }
+    .get(id(), OTHER, 'side', 'tip', 'tree', 'reason', 't', otherId) as { record_id: string }
   d.query(
     `INSERT INTO landing_triage_snapshot
-     (record_id,project,branch,tip,tree,review_ids,patch_id,tier,lens_rounds,finding_count,at,read_id,override_id,project_record_id)
+     (record_id,project,branch,tip,tree,review_record_ids,patch_id,tier,lens_rounds,finding_count,at,read_record_id,override_record_id,project_record_id)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-  ).run(id(), OLD, 'main', 'tip', 'tree', '[]', 'p', 1, 0, 0, 't', read.id, override.id, projectId)
+  ).run(
+    id(),
+    OLD,
+    'main',
+    'tip',
+    'tree',
+    '[]',
+    'p',
+    1,
+    0,
+    0,
+    't',
+    read.record_id,
+    override.record_id,
+    projectId,
+  )
   d.query(
     `INSERT INTO doc (record_id,scope,subject,slug,title,body,created_at,updated_at,audiences,project_record_id)
      VALUES (?,?,?,?,?,?,?,?,?,?)`,

@@ -46,7 +46,7 @@ export function renderEarlierRoundRejections(input: ReviewFindingMemory): string
     .sort(
       (left, right) =>
         right.completedAt!.localeCompare(left.completedAt!) ||
-        right.reviewId - left.reviewId ||
+        right.reviewNumber - left.reviewNumber ||
         left.ordinal - right.ordinal,
     )
   if (!selected.length) return ''

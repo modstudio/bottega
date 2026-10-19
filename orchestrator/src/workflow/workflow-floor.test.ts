@@ -38,7 +38,7 @@ const answeredRuling: ValidatedEvidence = {
   },
 }
 const gradedReview: ValidatedEvidence = {
-  review: { id: 4, allFindingsDisposed: true, allLensesGraded: true },
+  review: { recordId: 'review-4', number: 4, allFindingsDisposed: true, allLensesGraded: true },
 }
 const passingGate: ValidatedEvidence = {
   gate: { id: 2, finished: true, exitCode: 0, project: 'fixture', commit: 'abc' },
@@ -103,7 +103,8 @@ test('an unfinished review round refusal names every unfinished review id', () =
       floors: [ruling],
       evidence: {
         review: {
-          id: 4,
+          recordId: 'review-4',
+          number: 4,
           allFindingsDisposed: true,
           allLensesGraded: false,
           unfinishedReviewIds: [5, 7],

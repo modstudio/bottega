@@ -17,6 +17,7 @@ import { resolveReviewCommandCwd } from './review-command-cwd.ts'
 import { coverageAudit } from './review-coverage.ts'
 import { REVIEW_WINDOW } from './review-evidence-sql.ts'
 import { serializePathSet } from './review-group.ts'
+import { resolveReviewIdentifier } from './review-identifier.ts'
 import { measureChangeIdentity, reviewPins } from './review-pins.ts'
 import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round-budget.ts'
 import { resolveReviewMergeBase, reviewTrunkRef } from './review-target.ts'
@@ -314,7 +315,7 @@ export function listReviewCommand(flags: ReviewFlags, presentation: ReviewPresen
     )
     for (const row of rows)
       log(
-        `${String(row.id).padEnd(3)} ${row.recorded_at.padEnd(25)} ${row.completed_at ? 'yes' : 'no '}        ` +
+        `${String(row.number).padEnd(3)} ${row.recorded_at.padEnd(25)} ${row.completed_at ? 'yes' : 'no '}        ` +
           `${(row.project ?? '—').padEnd(8)} ${(row.branches.join(',') || '—').padEnd(9)} ` +
           `${`${row.tier ?? '—'}/${row.risk ?? '—'}/${row.size ?? '—'}`.padEnd(14)} ${String(row.lens_count).padEnd(7)} ` +
           `${row.findings.total}/${row.findings.triaged}/${row.findings.accepted}/${row.findings.modified}/${row.findings.rejected}/${row.findings.skipped}              ${row.coverage ?? '—'}`,
@@ -327,14 +328,12 @@ export function showReviewCommand(
   flags: ReviewFlags,
   { log }: ReviewPresentation,
 ): void {
-  const reviewId = Number(argv[2])
-  if (!Number.isInteger(reviewId) || reviewId <= 0)
-    throw new Error(`${PLATFORM_SLUG} review show <id> [--json]`)
-  const review = getReview(reviewId)
+  if (!argv[2]) throw new Error(`${PLATFORM_SLUG} review show <number|uuid> [--json]`)
+  const review = getReview(resolveReviewIdentifier(db(), argv[2]))
   if (flags.has('json')) log(JSON.stringify(review))
   else {
     log(
-      `review ${review.id} recorded=${review.recorded_at} completed=${review.completed_at ?? '—'} projects=${review.projects.join(',') || '—'} tier/risk/size=${review.tier ?? '—'}/${review.risk ?? '—'}/${review.size ?? '—'} current=${review.current_class ?? '—'}`,
+      `review ${review.number} recorded=${review.recorded_at} completed=${review.completed_at ?? '—'} projects=${review.projects.join(',') || '—'} tier/risk/size=${review.tier ?? '—'}/${review.risk ?? '—'}/${review.size ?? '—'} current=${review.current_class ?? '—'}`,
     )
     if (review.outdated_reason) log(`outdated ${review.outdated_at}: ${review.outdated_reason}`)
     for (const lens of review.lenses) {
@@ -403,9 +402,11 @@ export function coverageAuditReviewCommand(flags: ReviewFlags, { log }: ReviewPr
     else
       log(
         `${audit.count} completed review${audit.count === 1 ? '' : 's'} reviewed trunk` +
-          (audit.review_ids.length ? `: ${audit.review_ids.join(', ')}` : '') +
+          (audit.review_record_ids.length ? `: ${audit.review_record_ids.join(', ')}` : '') +
           `\npartial reviews: ${
-            audit.partial_review_ids.length ? audit.partial_review_ids.join(', ') : 'none'
+            audit.partial_review_record_ids.length
+              ? audit.partial_review_record_ids.join(', ')
+              : 'none'
           }`,
       )
   } finally {
@@ -431,7 +432,8 @@ export function recordReviewCommand(
     if (!output) throw new Error(`run ${runId} output does not satisfy the review contract`)
     return { runId, output }
   })
-  const reviewId = recordReviews(entries)
+  const reviewRecordId = recordReviews(entries)
+  const review = getReview(reviewRecordId)
   const mirrorRuns = entries
     .filter(({ runId }) => {
       const row = db()
@@ -444,7 +446,7 @@ export function recordReviewCommand(
     })
     .map(({ runId }) => runId)
   log(
-    `recorded review ${reviewId}` +
+    `recorded review ${review.number}` +
       (mirrorRuns.length
         ? ` — MIRROR lens run${mirrorRuns.length === 1 ? '' : 's'} ${mirrorRuns.join(', ')}`
         : ''),
@@ -456,16 +458,24 @@ export function triageReviewCommand(
   flags: ReviewFlags,
   { log }: ReviewPresentation,
 ): void {
-  const reviewId = Number(argv[2])
+  const reviewInput = argv[2]
   const finding = Number(argv[3])
   const disposition = argv[4] as Disposition
-  if (!reviewId || !finding || !DISPOSITIONS.includes(disposition)) {
+  if (!reviewInput || !finding || !DISPOSITIONS.includes(disposition)) {
     throw new Error(
       `${PLATFORM_SLUG} review triage <review-id> <finding> <accepted|modified|rejected|skipped> [--category X] [--severity ${REVIEW_SEVERITY.join('|')}]`,
     )
   }
-  triageFinding(reviewId, finding, disposition, flags.flag('category'), flags.flag('severity'))
-  log(`triaged review ${reviewId} finding ${finding}: ${disposition}`)
+  const reviewRecordId = resolveReviewIdentifier(db(), reviewInput)
+  triageFinding(
+    reviewRecordId,
+    finding,
+    disposition,
+    flags.flag('category'),
+    flags.flag('severity'),
+  )
+  const reviewNumber = getReview(reviewRecordId).number
+  log(`triaged finding ${reviewNumber}/${finding}: ${disposition}`)
 }
 
 export function completeReviewCommand(
@@ -473,10 +483,11 @@ export function completeReviewCommand(
   _flags: ReviewFlags,
   { log }: ReviewPresentation,
 ): void {
-  const reviewId = Number(argv[2])
-  if (!reviewId) throw new Error(`${PLATFORM_SLUG} review complete <review-id>`)
-  completeReview(reviewId)
-  log(`completed review ${reviewId}`)
+  const reviewInput = argv[2]
+  if (!reviewInput) throw new Error(`${PLATFORM_SLUG} review complete <number|uuid>`)
+  const reviewRecordId = resolveReviewIdentifier(db(), reviewInput)
+  completeReview(reviewRecordId)
+  log(`completed review ${getReview(reviewRecordId).number}`)
 }
 
 export function pinsReviewCommand(flags: ReviewFlags, { log }: ReviewPresentation): void {
@@ -487,7 +498,7 @@ export function pinsReviewCommand(flags: ReviewFlags, { log }: ReviewPresentatio
   }
   for (const pin of pins) {
     log(
-      `${pin.project} review ${pin.reviewId} run ${pin.runId} ${pin.commit} ` +
+      `${pin.project} review ${pin.reviewNumber} run ${pin.runId} ${pin.commit} ` +
         `completed=${pin.completed} superseded=${pin.superseded} landed=${pin.landed}` +
         (pin.deleted ? ' deleted' : ''),
     )

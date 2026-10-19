@@ -6,7 +6,8 @@ export type ReviewFindingMemory = {
   rows: readonly {
     project: string
     branch: string | null
-    reviewId: number
+    reviewRecordId: string
+    reviewNumber: number
     completedAt: string | null
     ordinal: number
     disposition: string | null

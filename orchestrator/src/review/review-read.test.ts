@@ -153,7 +153,7 @@ test('the read command records the branch and tip from --cwd', () => {
     expect(
       db()
         .query<{ branch: string; tip: string }, []>(
-          'SELECT branch,tip FROM review_read ORDER BY id DESC LIMIT 1',
+          'SELECT branch,tip FROM review_read ORDER BY recorded_at,record_id DESC LIMIT 1',
         )
         .get(),
     ).toEqual({ branch: 'DEV-1262-review-read-fixture', tip })

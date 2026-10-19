@@ -121,7 +121,7 @@ function triageDecision(change: PullRequestChange, database: Database): TriageDe
     reads: database
       .query<
         {
-          id: number
+          record_id: string
           tip: string
           patch_id: string
           path_set: string
@@ -130,13 +130,13 @@ function triageDecision(change: PullRequestChange, database: Database): TriageDe
         },
         [string, string]
       >(
-        `SELECT id,tip,patch_id,path_set,recorded_at,session_id FROM review_read
+        `SELECT record_id,tip,patch_id,path_set,recorded_at,session_id FROM review_read
         WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-          AND branch=? ORDER BY id DESC`,
+          AND branch=? ORDER BY recorded_at DESC,record_id DESC`,
       )
       .all(change.project.name, change.branch)
       .map((row) => ({
-        id: row.id,
+        recordId: row.record_id,
         tip: row.tip,
         patchId: row.patch_id,
         pathSet: row.path_set,
@@ -150,7 +150,7 @@ function overridesForChange(change: PullRequestChange, database: Database): Admi
   return database
     .query<
       {
-        id: number
+        recordId: string
         project: string
         branch: string
         tip: string
@@ -160,10 +160,10 @@ function overridesForChange(change: PullRequestChange, database: Database): Admi
       },
       [string, string]
     >(
-      `SELECT id,project,branch,tip,tree,patch_id AS patchId,path_set AS pathSet
+      `SELECT record_id AS recordId,project,branch,tip,tree,patch_id AS patchId,path_set AS pathSet
        FROM landing_override
        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-         AND branch=? ORDER BY id DESC`,
+         AND branch=? ORDER BY at DESC,record_id DESC`,
     )
     .all(change.project.name, change.branch)
 }
@@ -198,14 +198,14 @@ export function triageRefusal(
       `missing review for patch ${change.group.patchId}; cleared by: run and record the tier ${change.tier} review for ${change.branch}`,
     )
   }
-  if (decision.unfinishedReviewIds.length) {
+  if (decision.unfinishedReviewNumbers.length) {
     lines.push(
-      `unfinished review${decision.unfinishedReviewIds.length === 1 ? '' : 's'} ${decision.unfinishedReviewIds.join(', ')}; cleared by: ${decision.unfinishedReviewIds.map((id) => `${PLATFORM_SLUG} review complete ${id}`).join('; ')}`,
+      `unfinished review${decision.unfinishedReviewNumbers.length === 1 ? '' : 's'} ${decision.unfinishedReviewNumbers.join(', ')}; cleared by: ${decision.unfinishedReviewNumbers.map((number) => `${PLATFORM_SLUG} review complete ${number}`).join('; ')}`,
     )
   }
   if (decision.undisposedFindings.length) {
     lines.push(
-      `findings without a disposition: ${decision.undisposedFindings.map((finding) => finding.id).join(', ')}; cleared by: ${decision.undisposedFindings.map((finding) => `${PLATFORM_SLUG} review triage ${finding.reviewId} ${finding.ordinal} <disposition>`).join('; ')}`,
+      `findings without a disposition: ${decision.undisposedFindings.map((finding) => `${finding.reviewNumber}/${finding.ordinal}`).join(', ')}; cleared by: ${decision.undisposedFindings.map((finding) => `${PLATFORM_SLUG} review triage ${finding.reviewNumber} ${finding.ordinal} <disposition>`).join('; ')}`,
     )
   }
   for (const lens of decision.missingLenses) {
@@ -221,13 +221,13 @@ export function triageRefusal(
   }
   if (decision.finalTierRaised) {
     lines.push(
-      `architect-read path failed: final tip tier ${change.tier} exceeds credited review ${decision.earlierReviewId} tier ${decision.earlierReviewTier}; cleared by: run and record a complete tier ${change.tier} review for ${change.branch}`,
+      `architect-read path failed: final tip tier ${change.tier} exceeds credited review ${decision.earlierReviewNumber} tier ${decision.earlierReviewTier}; cleared by: run and record a complete tier ${change.tier} review for ${change.branch}`,
     )
   } else if (decision.architectReadRequired) {
     lines.push(
-      `architect-read path failed: review ${decision.earlierReviewId} can be credited only after an architect reads this exact tip; cleared by: ${PLATFORM_SLUG} review read --sha ${change.tip} --note "<what was read and why it lands>"`,
+      `architect-read path failed: review ${decision.earlierReviewNumber} can be credited only after an architect reads this exact tip; cleared by: ${PLATFORM_SLUG} review read --sha ${change.tip} --note "<what was read and why it lands>"`,
     )
-  } else if (decision.earlierReviewId === null) {
+  } else if (decision.earlierReviewNumber === null) {
     lines.push(
       `architect-read path failed: no earlier complete review round exists on ${change.branch}; cleared by: run and record the tier ${change.tier} review for ${change.branch}`,
     )
@@ -235,10 +235,10 @@ export function triageRefusal(
   return lines.join('\n')
 }
 
-function insertOverride(change: PullRequestChange, reason: string, database: Database): number {
+function insertOverride(change: PullRequestChange, reason: string, database: Database): string {
   const row = database
     .query<
-      { id: number },
+      { record_id: string },
       [
         string,
         string,
@@ -255,7 +255,7 @@ function insertOverride(change: PullRequestChange, reason: string, database: Dat
     >(
       `INSERT INTO landing_override
          (record_id,project,project_record_id,branch,tip,tree,patch_id,path_set,reason,session_id,at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
     )
     .get(
       newRecordId(),
@@ -270,8 +270,8 @@ function insertOverride(change: PullRequestChange, reason: string, database: Dat
       sessionId(),
       nowIso(),
     )!
-  enqueueLandingOverride(database, row.id)
-  return row.id
+  enqueueLandingOverride(database, row.record_id)
+  return row.record_id
 }
 
 function validatedOverrideReason(
@@ -294,7 +294,7 @@ export function recordTriageOverride(
   reason: string | undefined,
   fromOperator: boolean,
   cwd = process.cwd(),
-): number {
+): string {
   const validated = validatedOverrideReason(reason, fromOperator, '--reason')
   if (validated === null)
     throw new Error(`${PLATFORM_SLUG} pr override requires --reason "<reason>"`)
@@ -306,22 +306,22 @@ export function recordTriageOverride(
 export function recordTriageIntent(
   change: PullRequestChange,
   decision: TriageDecision,
-  overrideId: number | null,
+  overrideId: string | null,
   database: Database,
-): number {
+): string {
   const row = database
     .query(
       `INSERT INTO landing_triage_snapshot
-         (record_id,project,project_record_id,branch,tip,tree,pr_number,review_ids,patch_id,tier,
-          lens_rounds,finding_count,admission_path,read_id,override_id,session_id,at)
+         (record_id,project,project_record_id,branch,tip,tree,pr_number,review_record_ids,patch_id,tier,
+          lens_rounds,finding_count,admission_path,read_record_id,override_record_id,session_id,at)
        VALUES (?,?,?,?,?,?,NULL,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(project,branch,tip) DO UPDATE SET
-         tree=excluded.tree,pr_number=NULL,review_ids=excluded.review_ids,patch_id=excluded.patch_id,
+         tree=excluded.tree,pr_number=NULL,review_record_ids=excluded.review_record_ids,patch_id=excluded.patch_id,
          tier=excluded.tier,lens_rounds=excluded.lens_rounds,
          finding_count=excluded.finding_count,admission_path=excluded.admission_path,
-         read_id=excluded.read_id,override_id=excluded.override_id,
+         read_record_id=excluded.read_record_id,override_record_id=excluded.override_record_id,
          session_id=excluded.session_id,at=excluded.at
-       RETURNING id`,
+       RETURNING record_id`,
     )
     .get(
       newRecordId(),
@@ -330,18 +330,18 @@ export function recordTriageIntent(
       change.branch,
       change.tip,
       change.tree,
-      JSON.stringify(decision.snapshot.reviewIds),
+      JSON.stringify(decision.snapshot.reviewRecordIds),
       decision.snapshot.patchId,
       decision.snapshot.tier,
       decision.snapshot.lensRounds,
       decision.snapshot.findingCount,
       decision.snapshot.admissionPath,
-      decision.snapshot.readId,
+      decision.snapshot.readRecordId,
       overrideId,
       sessionId(),
       nowIso(),
-    ) as { id: number }
-  return row.id
+    ) as { record_id: string }
+  return row.record_id
 }
 
 export function finalizeTriageIntent(
@@ -349,7 +349,7 @@ export function finalizeTriageIntent(
   branch: string,
   prNumber: number,
   database: Database = writableDb(),
-): number | null {
+): string | null {
   return writeTransaction(
     () => finalizeTriageIntentWrite(project, branch, prNumber, database),
     database,
@@ -361,18 +361,20 @@ function finalizeTriageIntentWrite(
   branch: string,
   prNumber: number,
   database: Database,
-): number | null {
+): string | null {
   const row = database
-    .query<{ id: number }, [string, string]>(
-      `SELECT id FROM landing_triage_snapshot
+    .query<{ record_id: string }, [string, string]>(
+      `SELECT record_id FROM landing_triage_snapshot
         WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-          AND branch=? AND pr_number IS NULL ORDER BY id DESC LIMIT 1`,
+          AND branch=? AND pr_number IS NULL ORDER BY at DESC,record_id DESC LIMIT 1`,
     )
     .get(project, branch)
   if (!row) return null
-  database.query('UPDATE landing_triage_snapshot SET pr_number=? WHERE id=?').run(prNumber, row.id)
-  enqueueLandingTriageSnapshot(database, row.id)
-  return row.id
+  database
+    .query('UPDATE landing_triage_snapshot SET pr_number=? WHERE record_id=?')
+    .run(prNumber, row.record_id)
+  enqueueLandingTriageSnapshot(database, row.record_id)
+  return row.record_id
 }
 
 export function recordMergeAdmission(
@@ -380,11 +382,11 @@ export function recordMergeAdmission(
   decision: AdmissionDecision,
   prNumber: number,
   database: Database,
-): number | null {
+): string | null {
   return writeTransaction(() => {
     const existing = database
-      .query<{ id: number }, [string, string, string]>(
-        `SELECT id FROM landing_triage_snapshot
+      .query<{ record_id: string }, [string, string, string]>(
+        `SELECT record_id FROM landing_triage_snapshot
           WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
             AND branch=? AND tip=? LIMIT 1`,
       )
@@ -435,7 +437,7 @@ export function createPullRequest(
   args: string[],
   options: { overrideReason?: string; fromOperator?: boolean },
   cwd = process.cwd(),
-): { output: string; overrideId: number | null } {
+): { output: string; overrideId: string | null } {
   const reason = validatedOverrideReason(options.overrideReason, Boolean(options.fromOperator))
   const change = resolvePullRequestChange(cwd)
   const existing = pullRequestForBranch(cwd, change.branch)
@@ -499,7 +501,7 @@ export type PushedTipCheck = {
   infrastructureError: string | null
   refusal: string | null
   pendingIntent: boolean
-  overrideId: number | null
+  overrideId: string | null
 }
 
 export function checkPushedTip(cwd: string, sha: string, remoteRef: string): PushedTipCheck {

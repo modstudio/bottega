@@ -5,7 +5,7 @@ type RecordSource = 'score' | 'ruling' | 'review' | 'output'
 
 type RecordSearchResult = {
   source: RecordSource
-  id: number
+  id: number | string
   run_number: number
   run_record_id: string
   root_run_number: number
@@ -101,7 +101,7 @@ export function searchRecords(
     for (const row of records) {
       rows.push({
         source,
-        id: Number(row.id),
+        id: row.id as number | string,
         run_number: Number(row.run_number),
         run_record_id: String(row.run_record_id),
         root_run_number: Number(row.root_run_number),
@@ -138,14 +138,16 @@ export function searchRecords(
     'review',
     d
       .query(
-        `SELECT rf.id, r.number AS run_number, r.record_id AS run_record_id,
+        `SELECT review.number || '/' || rf.ordinal AS id,
+            r.number AS run_number, r.record_id AS run_record_id,
             root.number AS root_run_number,
             root.record_id AS root_run_record_id,
             root.launch_key AS task_key, r.started_at,
             rf.severity, rf.location, rf.evidence, rf.proposed_correction,
             rf.disposition, rf.rejection_category
        FROM review_finding rf
-       JOIN review_lens rl ON rl.id=rf.review_lens_id
+       JOIN review_lens rl ON rl.record_id=rf.review_lens_record_id
+       JOIN review ON review.record_id=rf.review_record_id
        JOIN run r ON r.record_id=rl.run_record_id
        JOIN run root ON root.record_id=COALESCE(r.parent_run_record_id, r.record_id)`,
       )

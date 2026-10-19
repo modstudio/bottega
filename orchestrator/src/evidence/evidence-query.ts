@@ -128,7 +128,7 @@ export function changeIdentityJoin(
   const lens = sqlAlias(lensAlias)
   const review = sqlAlias(reviewAlias)
   return `LEFT JOIN review_lens ${lens} ON ${lens}.run_record_id = ${run}.record_id
-          LEFT JOIN review ${review} ON ${review}.id = ${lens}.review_id`
+          LEFT JOIN review ${review} ON ${review}.record_id = ${lens}.review_record_id`
 }
 
 export function sameTaskSql(leftRun: string, rightRun: string): string {

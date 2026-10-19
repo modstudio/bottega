@@ -50,6 +50,11 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
   ),
   ...exempt(
     'orchestrator/src/database/migrations.ts',
+    ['efa2cecd133ee061', '18b7c07f41bfcfaa', '61900e2060c08b91'],
+    'review and landing migration orphan preflight reads controlled legacy table, column, and JSON references before the UUID-key rebuild',
+  ),
+  ...exempt(
+    'orchestrator/src/database/migrations.ts',
     ['4ec7c53222c8a758', 'a29c2123a01df1d0'],
     'migration runner executes SQL loaded from journal files',
   ),
@@ -60,7 +65,7 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
   ),
   ...exempt(
     'orchestrator/src/record/landing-outbox.ts',
-    ['8912dcfc2797fca3'],
+    ['1409ac1b2bba234b'],
     'backfill helper interpolates one of its two controlled table identifiers',
   ),
   ...exempt(
@@ -108,7 +113,7 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
   ),
   ...exempt(
     'orchestrator/src/review/review-triage.ts',
-    ['77fca200dc9f22a5'],
+    ['fab77a172a06e251'],
     'triage query interpolates a runtime-sized lens predicate',
   ),
   ...exempt(

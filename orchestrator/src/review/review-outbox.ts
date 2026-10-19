@@ -26,16 +26,19 @@ const enqueue = (
     .run(newRecordId(), kind, recordId, stringifyOutboxPayload(kind, value), at)
 }
 
-export function enqueueReview(database: Database, reviewId: number): void {
+export function enqueueReview(database: Database, reviewRecordId: string): void {
   const at = nowIso()
   const machine = machineId()
   const row = database
-    .query<Record<string, unknown>, [number]>(
-      `SELECT review.*, project.name AS project_name, project.record_id AS project_record_id FROM review
-      LEFT JOIN project ON project.record_id=review.project_record_id WHERE review.id=?`,
+    .query<Record<string, unknown>, [string]>(
+      `SELECT review.record_id,review.number,review.recorded_at,review.completed_at,review.tier,
+              review.tier_risk,review.tier_size,review.tier_reasons,review.tier_reason,review.patch_id,
+              review.path_set,review.commit_message,review.outdated_at,review.outdated_reason,
+              project.name AS project_name, project.record_id AS project_record_id FROM review
+      LEFT JOIN project ON project.record_id=review.project_record_id WHERE review.record_id=?`,
     )
-    .get(reviewId)
-  if (!row) throw new Error(`review ${reviewId} does not exist and cannot be enqueued`)
+    .get(reviewRecordId)
+  if (!row) throw new Error(`review ${reviewRecordId} does not exist and cannot be enqueued`)
   enqueue(
     database,
     'review',
@@ -46,7 +49,7 @@ export function enqueueReview(database: Database, reviewId: number): void {
       projectId: row.project_record_id,
       projectName: row.project_name,
       machineId: machine,
-      localId: row.id,
+      localId: row.number,
       recordedAt: row.recorded_at,
       completedAt: row.completed_at,
       tier: row.tier,
@@ -65,32 +68,40 @@ export function enqueueReview(database: Database, reviewId: number): void {
     at,
   )
   const lenses = database
-    .query<{ id: number }, [number]>('SELECT id FROM review_lens WHERE review_id=? ORDER BY id')
-    .all(reviewId)
-  for (const lens of lenses) enqueueReviewLens(database, lens.id, at, machine)
+    .query<{ record_id: string }, [string]>(
+      'SELECT record_id FROM review_lens WHERE review_record_id=? ORDER BY record_id',
+    )
+    .all(reviewRecordId)
+  for (const lens of lenses) enqueueReviewLens(database, lens.record_id, at, machine)
   const findings = database
-    .query<{ id: number }, [number]>('SELECT id FROM review_finding WHERE review_id=? ORDER BY id')
-    .all(reviewId)
-  for (const finding of findings) enqueueReviewFinding(database, finding.id, at, machine)
+    .query<{ record_id: string }, [string]>(
+      'SELECT record_id FROM review_finding WHERE review_record_id=? ORDER BY ordinal',
+    )
+    .all(reviewRecordId)
+  for (const finding of findings) enqueueReviewFinding(database, finding.record_id, at, machine)
 }
 
 export function enqueueReviewLens(
   database: Database,
-  lensId: number,
+  lensRecordId: string,
   at = nowIso(),
   machine = machineId(),
 ): void {
   const row = database
-    .query<Record<string, unknown>, [number]>(
-      `SELECT lens.*, review.record_id AS review_record_id, run.record_id AS run_record_id,
+    .query<Record<string, unknown>, [string]>(
+      `SELECT lens.record_id,lens.lens,lens.agent,lens.model,lens.tree_inspected,lens.reviewed_tree,
+              lens.standards_read,lens.files_covered,lens.commands_run,lens.could_not_verify,
+              lens.mcp_tools,lens.docs_read,lens.substitutes,lens.reproduced,lens.coverage,lens.limits,lens.overlap,
+              review.record_id AS review_record_id, run.record_id AS run_record_id,
               project.name AS project_name, project.record_id AS project_record_id
-       FROM review_lens lens JOIN review ON review.id=lens.review_id
+       FROM review_lens lens JOIN review ON review.record_id=lens.review_record_id
        JOIN run ON run.record_id=lens.run_record_id
-       LEFT JOIN project ON project.record_id=review.project_record_id WHERE lens.id=?`,
+       LEFT JOIN project ON project.record_id=review.project_record_id WHERE lens.record_id=?`,
     )
-    .get(lensId)
-  if (!row) throw new Error(`review lens ${lensId} does not exist and cannot be enqueued`)
-  if (!row.run_record_id) throw new Error(`review lens ${lensId} has a run without a record id`)
+    .get(lensRecordId)
+  if (!row) throw new Error(`review lens ${lensRecordId} does not exist and cannot be enqueued`)
+  if (!row.run_record_id)
+    throw new Error(`review lens ${lensRecordId} has a run without a record id`)
   enqueue(
     database,
     'review_lens',
@@ -103,7 +114,7 @@ export function enqueueReviewLens(
       reviewId: row.review_record_id,
       runId: row.run_record_id,
       machineId: machine,
-      localId: row.id,
+      localId: null,
       lens: row.lens,
       agent: row.agent,
       model: row.model,
@@ -129,21 +140,24 @@ export function enqueueReviewLens(
 
 export function enqueueReviewFinding(
   database: Database,
-  findingId: number,
+  findingRecordId: string,
   at = nowIso(),
   machine = machineId(),
 ): void {
   const row = database
-    .query<Record<string, unknown>, [number]>(
-      `SELECT finding.*, review.record_id AS review_record_id,
+    .query<Record<string, unknown>, [string]>(
+      `SELECT finding.record_id,finding.ordinal,finding.severity,finding.location,finding.evidence,
+            finding.proposed_correction,finding.disposition,finding.rejection_category,
+            finding.triaged_severity,finding.triaged_at,review.record_id AS review_record_id,
             project.name AS project_name, project.record_id AS project_record_id,
             lens.record_id AS review_lens_record_id
-       FROM review_finding finding JOIN review ON review.id=finding.review_id
-       JOIN review_lens lens ON lens.id=finding.review_lens_id
-       LEFT JOIN project ON project.record_id=review.project_record_id WHERE finding.id=?`,
+       FROM review_finding finding JOIN review ON review.record_id=finding.review_record_id
+       JOIN review_lens lens ON lens.record_id=finding.review_lens_record_id
+       LEFT JOIN project ON project.record_id=review.project_record_id WHERE finding.record_id=?`,
     )
-    .get(findingId)
-  if (!row) throw new Error(`review finding ${findingId} does not exist and cannot be enqueued`)
+    .get(findingRecordId)
+  if (!row)
+    throw new Error(`review finding ${findingRecordId} does not exist and cannot be enqueued`)
   enqueue(
     database,
     'review_finding',
@@ -156,7 +170,7 @@ export function enqueueReviewFinding(
       reviewId: row.review_record_id,
       reviewLensId: row.review_lens_record_id,
       machineId: machine,
-      localId: row.id,
+      localId: null,
       ordinal: row.ordinal,
       severity: row.severity,
       location: row.location,
@@ -173,15 +187,17 @@ export function enqueueReviewFinding(
   )
 }
 
-export function enqueueReviewRead(database: Database, readId: number): void {
+export function enqueueReviewRead(database: Database, readRecordId: string): void {
   const at = nowIso()
   const row = database
-    .query<Record<string, unknown>, [number]>(
-      `SELECT review_read.*, project.name AS project_name, project.record_id AS project_record_id FROM review_read
-     LEFT JOIN project ON project.record_id=review_read.project_record_id WHERE review_read.id=?`,
+    .query<Record<string, unknown>, [string]>(
+      `SELECT review_read.record_id,review_read.branch,review_read.tip,review_read.patch_id,
+              review_read.path_set,review_read.tier,review_read.note,review_read.session_id,review_read.recorded_at,
+              project.name AS project_name, project.record_id AS project_record_id FROM review_read
+     LEFT JOIN project ON project.record_id=review_read.project_record_id WHERE review_read.record_id=?`,
     )
-    .get(readId)
-  if (!row?.record_id) throw new Error(`review read ${readId} does not exist or has no record id`)
+    .get(readRecordId)
+  if (!row?.record_id) throw new Error(`review read ${readRecordId} does not exist`)
   enqueue(
     database,
     'review_read',
@@ -192,7 +208,7 @@ export function enqueueReviewRead(database: Database, readId: number): void {
       projectId: row.project_record_id,
       projectName: row.project_name,
       machineId: machineId(),
-      localId: row.id,
+      localId: null,
       branch: row.branch,
       tip: row.tip,
       patchId: row.patch_id,
@@ -210,19 +226,19 @@ export function enqueueReviewRead(database: Database, readId: number): void {
 
 export function backfillReviewRecords(database: Database): ReviewRecordBackfillResult {
   const reviews = database
-    .query<{ id: number }, []>(
-      `SELECT id FROM review WHERE NOT EXISTS
-       (SELECT 1 FROM outbox WHERE kind='review' AND row_id=review.record_id) ORDER BY id`,
+    .query<{ record_id: string }, []>(
+      `SELECT record_id FROM review WHERE NOT EXISTS
+       (SELECT 1 FROM outbox WHERE kind='review' AND row_id=review.record_id) ORDER BY number`,
     )
     .all()
-  for (const row of reviews) enqueueReview(database, row.id)
+  for (const row of reviews) enqueueReview(database, row.record_id)
   const reads = database
-    .query<{ id: number }, []>(
-      `SELECT id FROM review_read WHERE NOT EXISTS
-     (SELECT 1 FROM outbox WHERE kind='review_read' AND row_id=review_read.record_id) ORDER BY id`,
+    .query<{ record_id: string }, []>(
+      `SELECT record_id FROM review_read WHERE NOT EXISTS
+     (SELECT 1 FROM outbox WHERE kind='review_read' AND row_id=review_read.record_id) ORDER BY recorded_at,record_id`,
     )
     .all()
-  for (const row of reads) enqueueReviewRead(database, row.id)
+  for (const row of reads) enqueueReviewRead(database, row.record_id)
   return {
     enqueuedReviews: reviews.length,
     enqueuedReads: reads.length,

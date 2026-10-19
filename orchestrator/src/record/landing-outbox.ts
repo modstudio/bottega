@@ -2,7 +2,7 @@
 /** Knows how local landing history and operational evidence become hosted-record mutations. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
+import { hasRecordIdShape, newRecordId } from '../../../shared/record-id.ts'
 import { machineId } from './machine-identity.ts'
 
 import { type OutboxSanitizeKind, stringifyOutboxPayload } from './outbox-sanitize.ts'
@@ -42,7 +42,7 @@ function buildLandingRecordPayload(row: LocalRow, machineId: string, at: string)
     projectId: row.project_record_id,
     projectName: row.project_name,
     machineId,
-    localId: row.id,
+    localId: null,
     branch: row.branch,
     tip: row.tip,
     trunkBefore: row.trunk_before,
@@ -67,7 +67,7 @@ function buildLandingOverrideRecordPayload(row: LocalRow, machineId: string, at:
     projectId: row.project_record_id,
     projectName: row.project_name,
     machineId,
-    localId: row.id,
+    localId: null,
     branch: row.branch,
     tip: row.tip,
     tree: row.tree,
@@ -88,7 +88,7 @@ function buildLandingReviewCarryRecordPayload(row: LocalRow, machineId: string, 
     projectId: row.project_record_id,
     projectName: row.project_name,
     machineId,
-    localId: row.id,
+    localId: null,
     branch: row.branch,
     tip: row.tip,
     tree: row.tree,
@@ -106,18 +106,25 @@ function buildLandingReviewCarryRecordPayload(row: LocalRow, machineId: string, 
 }
 
 function buildLandingTriageSnapshotRecordPayload(row: LocalRow, machineId: string, at: string) {
+  const reviewRecordIds = json(row.review_record_ids)
+  if (
+    !Array.isArray(reviewRecordIds) ||
+    reviewRecordIds.some((id) => !hasRecordIdShape(String(id)))
+  ) {
+    throw new Error('landing triage snapshot review_record_ids must be a UUID array')
+  }
   return {
     id: row.record_id,
     spaceId: PLATFORM_SPACE_ID,
     projectId: row.project_record_id,
     projectName: row.project_name,
     machineId,
-    localId: row.id,
+    localId: null,
     branch: row.branch,
     tip: row.tip,
     tree: row.tree,
     prNumber: row.pr_number,
-    reviewIds: json(row.review_ids),
+    reviewIds: reviewRecordIds,
     patchId: row.patch_id,
     tier: row.tier,
     lensRounds: row.lens_rounds,
@@ -137,7 +144,7 @@ function buildContentionRecordPayload(row: LocalRow, machineId: string, at: stri
     id: row.record_id,
     spaceId: PLATFORM_SPACE_ID,
     machineId,
-    localId: row.id,
+    localId: null,
     at: row.at,
     sessionId: row.session_id,
     resourceKind: row.resource_kind,
@@ -158,7 +165,7 @@ function buildTestFlakeRecordPayload(row: LocalRow, machineId: string, at: strin
     spaceId: PLATFORM_SPACE_ID,
     projectName: null,
     machineId,
-    localId: row.id,
+    localId: null,
     test: row.test,
     file: row.file,
     loadAtFailure: json(row.load_at_failure),
@@ -169,53 +176,55 @@ function buildTestFlakeRecordPayload(row: LocalRow, machineId: string, at: strin
   }
 }
 
-function enqueueLanding(database: Database, id: number, at = nowIso()): void {
+function enqueueLanding(database: Database, recordId: string, at = nowIso()): void {
   const row = database
-    .query<LocalRow, [number]>(
-      `SELECT landing.*, project.name AS project_name, project.record_id AS project_record_id,
-              cause.record_id AS causing_landing_record_id
+    .query<LocalRow, [string]>(
+      `SELECT landing.record_id,landing.branch,landing.tip,landing.trunk_before,landing.status,
+              landing.error,landing.session_id,landing.started_at,landing.finished_at,landing.path_set,
+              landing.requested_at,landing.steps,landing.causing_landing_record_id,
+              project.name AS project_name, project.record_id AS project_record_id
        FROM landing LEFT JOIN project ON project.record_id=landing.project_record_id
-       LEFT JOIN landing cause ON cause.id=landing.causing_landing_id WHERE landing.id=?`,
+       WHERE landing.record_id=?`,
     )
-    .get(id)
-  if (!row) throw new Error(`landing ${id} does not exist and cannot be enqueued`)
-  if (row.causing_landing_id != null && row.causing_landing_record_id == null)
-    throw new Error(`landing ${id} has a causing landing without a record id`)
+    .get(recordId)
+  if (!row) throw new Error(`landing ${recordId} does not exist and cannot be enqueued`)
   const value = buildLandingRecordPayload(row, machineId(), at)
   enqueue(database, 'landing', String(row.record_id), value, at)
 }
 
-export function enqueueLandingOverride(database: Database, id: number, at = nowIso()): void {
+export function enqueueLandingOverride(database: Database, recordId: string, at = nowIso()): void {
   const row = database
-    .query<LocalRow, [number]>(
-      `SELECT landing_override.*, project.name AS project_name, project.record_id AS project_record_id FROM landing_override
-       LEFT JOIN project ON project.record_id=landing_override.project_record_id WHERE landing_override.id=?`,
+    .query<LocalRow, [string]>(
+      `SELECT landing_override.record_id,landing_override.branch,landing_override.tip,landing_override.tree,
+              landing_override.patch_id,landing_override.path_set,landing_override.reason,
+              landing_override.session_id,landing_override.at,
+              project.name AS project_name, project.record_id AS project_record_id FROM landing_override
+       LEFT JOIN project ON project.record_id=landing_override.project_record_id WHERE landing_override.record_id=?`,
     )
-    .get(id)
-  if (!row) throw new Error(`landing override ${id} does not exist and cannot be enqueued`)
+    .get(recordId)
+  if (!row) throw new Error(`landing override ${recordId} does not exist and cannot be enqueued`)
   const value = buildLandingOverrideRecordPayload(row, machineId(), at)
   enqueue(database, 'landing_override', String(row.record_id), value, at)
 }
 
-export function enqueueLandingTriageSnapshot(database: Database, id: number, at = nowIso()): void {
+export function enqueueLandingTriageSnapshot(
+  database: Database,
+  recordId: string,
+  at = nowIso(),
+): void {
   const row = database
-    .query<LocalRow, [number]>(
-      `SELECT snapshot.*, project.name AS project_name, project.record_id AS project_record_id, override.record_id AS override_record_id,
-              review_read.record_id AS read_record_id
+    .query<LocalRow, [string]>(
+      `SELECT snapshot.record_id,snapshot.branch,snapshot.tip,snapshot.tree,snapshot.pr_number,
+              snapshot.review_record_ids,snapshot.patch_id,snapshot.tier,snapshot.lens_rounds,
+              snapshot.finding_count,snapshot.admission_path,snapshot.override_record_id,snapshot.at,
+              snapshot.read_record_id,snapshot.session_id,
+              project.name AS project_name, project.record_id AS project_record_id
        FROM landing_triage_snapshot snapshot
        LEFT JOIN project ON project.record_id=snapshot.project_record_id
-       LEFT JOIN landing_override override ON override.id=snapshot.override_id
-       LEFT JOIN review_read ON review_read.id=snapshot.read_id
-       WHERE snapshot.id=?`,
+       WHERE snapshot.record_id=?`,
     )
-    .get(id)
-  if (!row?.record_id) throw new Error(`landing triage snapshot ${id} has no record id`)
-  if (row.override_id != null && row.override_record_id == null) {
-    throw new Error(`landing triage snapshot ${id} has an override without a record id`)
-  }
-  if (row.read_id != null && row.read_record_id == null) {
-    throw new Error(`landing triage snapshot ${id} has a read without a record id`)
-  }
+    .get(recordId)
+  if (!row?.record_id) throw new Error(`landing triage snapshot ${recordId} does not exist`)
   enqueue(
     database,
     'landing_triage_snapshot',
@@ -225,53 +234,57 @@ export function enqueueLandingTriageSnapshot(database: Database, id: number, at 
   )
 }
 
-function enqueueLandingReviewCarry(database: Database, id: number, at = nowIso()): void {
+function enqueueLandingReviewCarry(database: Database, recordId: string, at = nowIso()): void {
   const row = database
-    .query<LocalRow, [number]>(
-      `SELECT carry.*, project.name AS project_name, project.record_id AS project_record_id, review.record_id AS review_record_id
+    .query<LocalRow, [string]>(
+      `SELECT carry.record_id,carry.branch,carry.tip,carry.tree,carry.review_record_id,
+              carry.reviewed_commit,carry.reviewed_tree,carry.patch_id,carry.old_base,carry.new_base,
+              carry.session_id,carry.at,project.name AS project_name, project.record_id AS project_record_id
        FROM landing_review_carry carry LEFT JOIN project ON project.record_id=carry.project_record_id
-       JOIN review ON review.id=carry.review_id WHERE carry.id=?`,
+       WHERE carry.record_id=?`,
     )
-    .get(id)
-  if (!row) throw new Error(`landing review carry ${id} does not exist and cannot be enqueued`)
+    .get(recordId)
+  if (!row)
+    throw new Error(`landing review carry ${recordId} does not exist and cannot be enqueued`)
   const value = buildLandingReviewCarryRecordPayload(row, machineId(), at)
   enqueue(database, 'landing_review_carry', String(row.record_id), value, at)
 }
 
-export function enqueueContention(database: Database, id: number, at = nowIso()): void {
+export function enqueueContention(database: Database, recordId: string, at = nowIso()): void {
   const row = database
-    .query<LocalRow, [number]>(
-      `SELECT contention.*, run.record_id AS run_record_id,
-              landing.record_id AS landing_record_id
+    .query<LocalRow, [string]>(
+      `SELECT contention.record_id,contention.at,contention.session_id,contention.resource_kind,
+              contention.resource_key,contention.event_kind,contention.duration_ms,contention.cause,
+              contention.landing_record_id,run.record_id AS run_record_id
        FROM contention LEFT JOIN run ON run.record_id=contention.run_record_id
-       LEFT JOIN landing ON landing.id=contention.landing_id WHERE contention.id=?`,
+       WHERE contention.record_id=?`,
     )
-    .get(id)
-  if (!row) throw new Error(`contention ${id} does not exist and cannot be enqueued`)
-  if (row.run_record_id != null && row.run_record_id == null)
-    throw new Error(`contention ${id} has a run without a record id`)
-  if (row.landing_id != null && row.landing_record_id == null)
-    throw new Error(`contention ${id} has a landing without a record id`)
+    .get(recordId)
+  if (!row) throw new Error(`contention ${recordId} does not exist and cannot be enqueued`)
   const value = buildContentionRecordPayload(row, machineId(), at)
   enqueue(database, 'contention', String(row.record_id), value, at)
 }
 
-function enqueueTestFlake(database: Database, id: number, at = nowIso()): void {
-  const row = database.query<LocalRow, [number]>('SELECT * FROM test_flake WHERE id=?').get(id)
-  if (!row) throw new Error(`test flake ${id} does not exist and cannot be enqueued`)
+function enqueueTestFlake(database: Database, recordId: string, at = nowIso()): void {
+  const row = database
+    .query<LocalRow, [string]>(
+      'SELECT record_id,test,file,load_at_failure,signal,at FROM test_flake WHERE record_id=?',
+    )
+    .get(recordId)
+  if (!row) throw new Error(`test flake ${recordId} does not exist and cannot be enqueued`)
   const value = buildTestFlakeRecordPayload(row, machineId(), at)
   enqueue(database, 'test_flake', String(row.record_id), value, at)
 }
 
 export function backfillLandingEvidenceRecords(database: Database): LandingEvidenceBackfillResult {
-  const backfill = (table: string, kind: string, enqueueRow: (id: number) => void) => {
+  const backfill = (table: string, kind: string, enqueueRow: (recordId: string) => void) => {
     const rows = database
-      .query<{ id: number }, [string]>(
-        `SELECT id FROM ${table} WHERE NOT EXISTS
-         (SELECT 1 FROM outbox WHERE kind=? AND row_id=${table}.record_id) ORDER BY id`,
+      .query<{ record_id: string }, [string]>(
+        `SELECT record_id FROM ${table} WHERE NOT EXISTS
+         (SELECT 1 FROM outbox WHERE kind=? AND row_id=${table}.record_id) ORDER BY record_id`,
       )
       .all(kind)
-    for (const row of rows) enqueueRow(row.id)
+    for (const row of rows) enqueueRow(row.record_id)
     return rows.length
   }
   return {

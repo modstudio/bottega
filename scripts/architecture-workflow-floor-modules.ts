@@ -74,6 +74,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../database/db.ts',
     '../project/projects.ts',
     '../review/review-group.ts',
+    '../review/review-identifier.ts',
     '../run/run-identifier.ts',
     './workflow-floor.ts',
     './workflow-floor-evidence-replay.ts',

@@ -38,6 +38,7 @@ test('hosted evidence references describe the complete kind and payload parent g
       reviewIds: ['not-a-hosted-record-id'],
     }),
   ).toEqual([
+    { table: 'review', id: 'not-a-hosted-record-id', kind: 'triage review' },
     { table: 'review_read', id: 'read', kind: 'triage read' },
     { table: 'landing_override', id: 'override', kind: 'triage override' },
   ])

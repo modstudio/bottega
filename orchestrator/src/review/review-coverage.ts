@@ -200,7 +200,7 @@ export function reviewCoverageVerdict(
     resolution: resolved.resolution,
     tip,
     tree,
-    reviewId: review.id,
+    reviewRecordId: review.recordId,
     reviewedCommit,
     reviewedTree,
     patchId: candidatePatch,
@@ -231,6 +231,8 @@ export function currentCoverage(
   review: ReviewCoverageInput,
   project: string | null,
   database: Database,
+  knownBranches?: ReadonlySet<string>,
+  commandCache?: Map<string, CoverageGitResult>,
 ): ReviewListRow['coverage'] {
   if (!project) return null
   const registered = projectRecord(database, project)
@@ -239,9 +241,20 @@ export function currentCoverage(
     ...new Set(review.lenses.map((lens) => lens.branch).filter((x): x is string => Boolean(x))),
   ]
   if (!branches.length) return null
+  if (knownBranches && branches.some((branch) => !knownBranches.has(branch))) return null
+  const baseRunner = reviewGit(registered.path)
+  const runner: CoverageGitRunner = commandCache
+    ? (args, stdin) => {
+        const key = `${JSON.stringify(args)}\0${stdin ? Buffer.from(stdin).toString('base64') : ''}`
+        const cached = commandCache.get(key)
+        if (cached) return cached
+        const result = baseRunner(args, stdin)
+        commandCache.set(key, result)
+        return result
+      }
+    : baseRunner
   const verdicts = branches.flatMap((branch) => {
     const ref = `refs/heads/${branch}`
-    const runner = reviewGit(registered.path)
     const tip = runner(['rev-parse', '--verify', ref])
     if (!tip.ok) return [null]
     const verdict = reviewCoverageVerdict(
@@ -268,10 +281,18 @@ export function currentCoverage(
       : 'exact'
 }
 
+/** Read local branch names once for callers evaluating many historical reviews. */
+export function reviewBranchNames(project: string, database: Database): Set<string> | null {
+  const registered = projectRecord(database, project)
+  if (!registered) return null
+  const result = git(registered.path, ['for-each-ref', '--format=%(refname:short)', 'refs/heads'])
+  return result.ok ? new Set(result.out.split('\n').filter(Boolean)) : null
+}
+
 export type CoverageAudit = {
   count: number
-  review_ids: number[]
-  partial_review_ids: number[]
+  review_record_ids: string[]
+  partial_review_record_ids: string[]
 }
 
 /** Find completed reviews whose lenses measured trunk at their own worktree cut. */
@@ -294,22 +315,22 @@ export function coverageAudit(database: Database = db()): CoverageAudit {
   }
   const rows = database
     .query(
-      `SELECT review.id, run.repo, run.started_at, run.base_commit, review_lens.reviewed_tree
+      `SELECT review.record_id AS review_record_id, run.repo, run.started_at, run.base_commit, review_lens.reviewed_tree
        FROM review
-       JOIN review_lens ON review_lens.review_id=review.id
+       JOIN review_lens ON review_lens.review_record_id=review.record_id
        JOIN run ON run.record_id=review_lens.run_record_id
       WHERE review.completed_at IS NOT NULL AND run.review_ref IS NULL
-      ORDER BY review.id, review_lens.id`,
+      ORDER BY review.number, review_lens.record_id`,
     )
     .all() as {
-    id: number
+    review_record_id: string
     repo: string | null
     started_at: string
     base_commit: string | null
     reviewed_tree: string | null
   }[]
   const fallbackTrees = new Map<string, Set<string>>()
-  const matches = new Map<number, boolean[]>()
+  const matches = new Map<string, boolean[]>()
   for (const row of rows) {
     const project = row.repo ? registered.get(row.repo) : null
     let expected: Set<string> | null = null
@@ -332,19 +353,19 @@ export function coverageAudit(database: Database = db()): CoverageAudit {
         fallbackTrees.set(cacheKey, expected)
       }
     }
-    const lensMatches = matches.get(row.id) ?? []
+    const lensMatches = matches.get(row.review_record_id) ?? []
     lensMatches.push(Boolean(row.reviewed_tree && expected?.has(row.reviewed_tree)))
-    matches.set(row.id, lensMatches)
+    matches.set(row.review_record_id, lensMatches)
   }
-  const reviewIds: number[] = []
-  const partialReviewIds: number[] = []
+  const reviewIds: string[] = []
+  const partialReviewIds: string[] = []
   for (const [reviewId, lensMatches] of matches) {
     if (lensMatches.length && lensMatches.every(Boolean)) reviewIds.push(reviewId)
     else if (lensMatches.some(Boolean)) partialReviewIds.push(reviewId)
   }
   return {
     count: reviewIds.length,
-    review_ids: reviewIds,
-    partial_review_ids: partialReviewIds,
+    review_record_ids: reviewIds,
+    partial_review_record_ids: partialReviewIds,
   }
 }

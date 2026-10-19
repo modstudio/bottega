@@ -66,11 +66,11 @@ def main() -> int:
         con = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=2)
         rows = con.execute(
             """SELECT r.record_id, r.agent, r.job, substr(COALESCE(r.label, r.prompt_head), 1, 60),
-                      s.delivery, s.quality, s.fidelity, review.id,
+                      s.delivery, s.quality, s.fidelity, review.record_id,
                       rl.reproduced, rl.coverage, rl.limits, rl.overlap
                  FROM run r LEFT JOIN score s ON s.run_record_id = r.record_id
                  LEFT JOIN review_lens rl ON rl.run_record_id = r.record_id
-                 LEFT JOIN review ON review.id = rl.review_id
+                 LEFT JOIN review ON review.record_id = rl.review_record_id
                 WHERE r.session_id = ? AND r.status = 'ok'
                   AND r.evidence_excluded IS NULL
                   -- A probe is excluded from routing and reporting by design, so
@@ -104,7 +104,7 @@ def main() -> int:
                   AND ((s.delivery IS NULL
                         OR s.scored_at < (SELECT MAX(COALESCE(c.started_at, ''))
                                             FROM run c WHERE c.parent_run_record_id = r.record_id))
-                       OR (review.id IS NOT NULL AND review.completed_at IS NULL))
+                       OR (review.record_id IS NOT NULL AND review.completed_at IS NULL))
                 ORDER BY r.number""",
             (sid,),
         ).fetchall()
@@ -128,7 +128,7 @@ def main() -> int:
                           newer.job, newer_score.delivery, newer_score.quality, newer_score.fidelity
                      FROM run newer
                      LEFT JOIN review_lens newer_lens ON newer_lens.run_record_id = newer.record_id
-                     LEFT JOIN review newer_review ON newer_review.id = newer_lens.review_id
+                     LEFT JOIN review newer_review ON newer_review.record_id = newer_lens.review_record_id
                      JOIN score newer_score ON newer_score.run_record_id = newer.record_id
                      JOIN run older ON older.number < newer.number
                       AND older.parent_run_record_id IS NULL
@@ -137,7 +137,7 @@ def main() -> int:
                       AND COALESCE(older.probe, 0) = 0
                       AND older.evidence_excluded IS NULL
                      LEFT JOIN review_lens older_lens ON older_lens.run_record_id = older.record_id
-                     LEFT JOIN review older_review ON older_review.id = older_lens.review_id
+                     LEFT JOIN review older_review ON older_review.record_id = older_lens.review_record_id
                      JOIN score older_score ON older_score.run_record_id = older.record_id
                      LEFT JOIN compared_pair compared
                        ON compared.run_a_record_id = older.record_id AND compared.run_b_record_id = newer.record_id
@@ -255,7 +255,7 @@ def main() -> int:
                 if value is None:
                     missing.append(f"--{name} <{choices}>")
             ordinals = con.execute(
-                "SELECT ordinal FROM review_finding WHERE review_id=? AND disposition IS NULL ORDER BY ordinal",
+                "SELECT ordinal FROM review_finding WHERE review_record_id=? AND disposition IS NULL ORDER BY ordinal",
                 (review_id,),
             ).fetchall()
             missing.extend(

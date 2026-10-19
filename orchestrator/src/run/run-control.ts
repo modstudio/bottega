@@ -551,8 +551,8 @@ export async function continueRun(
     throw new Error(`run ${id} is ${row.status} and cannot be continued`)
   }
   const recordedReview = db()
-    .query('SELECT review_id FROM review_lens WHERE run_record_id=?')
-    .get(row.record_id) as { review_id: number } | null
+    .query('SELECT review_record_id FROM review_lens WHERE run_record_id=?')
+    .get(row.record_id) as { review_record_id: string } | null
   if (recordedReview) {
     throw new Error(
       `run ${id} has a recorded review and cannot be continued\n` +

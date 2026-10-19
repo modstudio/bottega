@@ -238,24 +238,24 @@ test('enqueue withholds a planted leaf for score, question, review, override, an
   enqueueQuestionRecord(database, question.record_id)
   database
     .query(
-      "INSERT INTO review (id,record_id,recorded_at,commit_message) VALUES (1,'review-record','2026-09-15T00:02:00Z',?)",
+      "INSERT INTO review (number,record_id,recorded_at,commit_message) VALUES (1,'review-record','2026-09-15T00:02:00Z',?)",
     )
     .run(SECRET)
-  enqueueReview(database, 1)
+  enqueueReview(database, 'review-record')
   database
     .query(
-      `INSERT INTO landing_override (id,record_id,project,branch,tip,tree,reason,at)
-       VALUES (1,'override-record','fixture','DEV-1','tip','tree',?,'2026-09-15T00:03:00Z')`,
+      `INSERT INTO landing_override (record_id,project,branch,tip,tree,reason,at)
+       VALUES ('override-record','fixture','DEV-1','tip','tree',?,'2026-09-15T00:03:00Z')`,
     )
     .run(SECRET)
-  enqueueLandingOverride(database, 1)
+  enqueueLandingOverride(database, 'override-record')
   database
     .query(
-      `INSERT INTO contention (id,record_id,at,resource_kind,resource_key,event_kind,cause)
-       VALUES (1,'contention-record','2026-09-15T00:04:00Z','lock','resource','wait',?)`,
+      `INSERT INTO contention (record_id,at,resource_kind,resource_key,event_kind,cause)
+       VALUES ('contention-record','2026-09-15T00:04:00Z','lock','resource','wait',?)`,
     )
     .run(SECRET)
-  enqueueContention(database, 1)
+  enqueueContention(database, 'contention-record')
 
   const byKind = Object.fromEntries(
     database
@@ -285,32 +285,32 @@ test('review finding and read enqueue withhold planted leaves', () => {
     .run()
   database
     .query(
-      "INSERT INTO review (id,record_id,recorded_at) VALUES (1,'review-record','2026-09-15T01:00:00Z')",
+      "INSERT INTO review (number,record_id,recorded_at) VALUES (1,'review-record','2026-09-15T01:00:00Z')",
     )
     .run()
   database
     .query(
       `INSERT INTO review_lens
-       (id,record_id,review_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
-       VALUES (1,'lens-record',1,'run-record','craft','codex','[]','[]',?,'[]')`,
+       (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+       VALUES ('lens-record','review-record','run-record','craft','codex','[]','[]',?,'[]')`,
     )
     .run(JSON.stringify([SECRET]))
   database
     .query(
       `INSERT INTO review_finding
-       (id,record_id,review_id,review_lens_id,ordinal,severity,location,evidence,proposed_correction)
-       VALUES (1,'finding-record',1,1,1,'major','a.ts:1',?,'correct it')`,
+       (record_id,review_record_id,review_lens_record_id,ordinal,severity,location,evidence,proposed_correction)
+       VALUES ('finding-record','review-record','lens-record',1,'major','a.ts:1',?,'correct it')`,
     )
     .run(SECRET)
-  enqueueReviewFinding(database, 1)
+  enqueueReviewFinding(database, 'finding-record')
   database
     .query(
       `INSERT INTO review_read
-       (id,record_id,project,branch,tip,patch_id,path_set,tier,note,recorded_at)
-       VALUES (1,'read-record','fixture','DEV-1','tip','patch','[]',1,?,'2026-09-15T01:02:00Z')`,
+       (record_id,project,branch,tip,patch_id,path_set,tier,note,recorded_at)
+       VALUES ('read-record','fixture','DEV-1','tip','patch','[]',1,?,'2026-09-15T01:02:00Z')`,
     )
     .run(SECRET)
-  enqueueReviewRead(database, 1)
+  enqueueReviewRead(database, 'read-record')
   const rows = Object.fromEntries(
     database
       .query<{ kind: string; payload: string }, []>('SELECT kind,payload FROM outbox')

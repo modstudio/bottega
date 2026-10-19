@@ -57,11 +57,11 @@ test("a contention row binds its run project's declared space", async () => {
   local
     .query(
       `INSERT INTO contention
-       (id,record_id,at,resource_kind,resource_key,event_kind,run_record_id)
-       VALUES (1,'01990000-0000-7000-8000-000000000077',?,'lock','resource','wait',?)`,
+       (record_id,at,resource_kind,resource_key,event_kind,run_record_id)
+       VALUES ('01990000-0000-7000-8000-000000000077',?,'lock','resource','wait',?)`,
     )
     .run(STAMP, RECORD_ID)
-  enqueueContention(local, 1, STAMP)
+  enqueueContention(local, '01990000-0000-7000-8000-000000000077', STAMP)
   const remote = fakePostgres()
   const memberships = [
     { spaceId: declaredSpace, slug: 'team', permission: 'write' },
@@ -89,18 +89,18 @@ test("a contention row binds its landing project's declared space", async () => 
     .run(JSON.stringify({ space: 'team' }))
   local
     .query(
-      `INSERT INTO landing (id,record_id,project,project_record_id,branch,status,started_at)
-       VALUES (42,?,'declared',(SELECT record_id FROM project WHERE name='declared'),'DEV-1367','landed','2026-09-16T00:00:00.000Z')`,
+      `INSERT INTO landing (record_id,project,project_record_id,branch,status,started_at)
+       VALUES (?,'declared',(SELECT record_id FROM project WHERE name='declared'),'DEV-1367','landed','2026-09-16T00:00:00.000Z')`,
     )
     .run(RECORD_ID)
   local
     .query(
       `INSERT INTO contention
-       (id,record_id,at,resource_kind,resource_key,event_kind,landing_id)
-       VALUES (1,'01990000-0000-7000-8000-000000000077',?,'lock','resource','wait',42)`,
+       (record_id,at,resource_kind,resource_key,event_kind,landing_record_id)
+       VALUES ('01990000-0000-7000-8000-000000000077',?,'lock','resource','wait',?)`,
     )
-    .run(STAMP)
-  enqueueContention(local, 1, STAMP)
+    .run(STAMP, RECORD_ID)
+  enqueueContention(local, '01990000-0000-7000-8000-000000000077', STAMP)
   const remote = fakePostgres()
   const memberships = [
     { spaceId: declaredSpace, slug: 'team', permission: 'write' },

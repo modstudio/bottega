@@ -44,6 +44,18 @@ export const reviewModuleSpecs = [
 
 export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
   {
+    name: 'review-identifier-boundary',
+    file: 'orchestrator/src/review/review-identifier.ts',
+    allowed: ['bun:sqlite', '../../../shared/record-id.ts'],
+    reason: 'Keep review number-or-UUID edge resolution inside the review identity concern.',
+  },
+  {
+    name: 'review-number-boundary',
+    file: 'orchestrator/src/review/review-number.ts',
+    allowed: ['bun:sqlite', '../database/entity-number.ts'],
+    reason: 'Keep review number allocation on the shared entity-number counter.',
+  },
+  {
     name: 'review-applicability-boundary',
     file: 'orchestrator/src/review/review-applicability.ts',
     allowed: [],
@@ -53,7 +65,14 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
   {
     name: 'review-finding-amend-command-boundary',
     file: 'orchestrator/src/review/review-finding-amend-command.ts',
-    allowed: ['../../../shared/brand.ts', './review-triage.ts', './review-vocabulary.ts'],
+    allowed: [
+      '../../../shared/brand.ts',
+      '../database/db.ts',
+      './review.ts',
+      './review-identifier.ts',
+      './review-triage.ts',
+      './review-vocabulary.ts',
+    ],
     reason: 'Keep completed-review amendment command parsing inside the review concern.',
   },
   {
@@ -63,6 +82,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../../../shared/record/schema.ts',
       '../database/db.ts',
       './review-outbox.ts',
+      './review-number.ts',
       '../contract/contract.ts',
       '../jobs/jobs.ts',
       './review-coverage.ts',
@@ -91,6 +111,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../project/projects.ts',
       '../run/run-identifier.ts',
       './review.ts',
+      './review-identifier.ts',
       './review-calibration.ts',
       './review-command-cwd.ts',
       './review-applicability.ts',

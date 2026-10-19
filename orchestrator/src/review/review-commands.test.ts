@@ -67,11 +67,11 @@ test('review triage runs through Commander and updates the finding', async () =>
     output,
   )
 
-  expect(output).toEqual([`triaged review ${reviewId} finding 1: accepted`])
+  expect(output).toEqual(['triaged finding 1/1: accepted'])
   expect(
     db()
-      .query<{ disposition: string | null; triaged_severity: string | null }, [number]>(
-        'SELECT disposition,triaged_severity FROM review_finding WHERE review_id=?',
+      .query<{ disposition: string | null; triaged_severity: string | null }, [string]>(
+        'SELECT disposition,triaged_severity FROM review_finding WHERE review_record_id=?',
       )
       .get(reviewId),
   ).toEqual({ disposition: 'accepted', triaged_severity: 'medium' })
@@ -85,11 +85,11 @@ test('review complete runs through Commander and completes a triaged review', as
 
   await runReview(['review', 'complete', String(reviewId)], output)
 
-  expect(output).toEqual([`completed review ${reviewId}`])
+  expect(output).toEqual(['completed review 1'])
   expect(
     db()
-      .query<{ completed_at: string | null }, [number]>(
-        'SELECT completed_at FROM review WHERE id=?',
+      .query<{ completed_at: string | null }, [string]>(
+        'SELECT completed_at FROM review WHERE record_id=?',
       )
       .get(reviewId)?.completed_at,
   ).not.toBeNull()
@@ -117,11 +117,11 @@ test('review amend runs through Commander and records the completed-review amend
     output,
   )
 
-  expect(output).toEqual([`amended review ${reviewId} finding 1: modified`])
+  expect(output).toEqual(['amended finding 1/1: modified'])
   expect(
     db()
-      .query<{ disposition: string; triaged_severity: string }, [number]>(
-        'SELECT disposition,triaged_severity FROM review_finding WHERE review_id=?',
+      .query<{ disposition: string; triaged_severity: string }, [string]>(
+        'SELECT disposition,triaged_severity FROM review_finding WHERE review_record_id=?',
       )
       .get(reviewId),
   ).toEqual({ disposition: 'modified', triaged_severity: 'medium' })
@@ -253,18 +253,18 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
     const output: string[] = []
 
     const review = db()
-      .query<{ id: number }, [string, string]>(
-        `INSERT INTO review (record_id,recorded_at,tier,patch_id,path_set)
-         VALUES ('${newRecordId()}','2026-09-28',0,?,?) RETURNING id`,
+      .query<{ record_id: string }, [string, string]>(
+        `INSERT INTO review (record_id,number,recorded_at,tier,patch_id,path_set)
+         VALUES ('${newRecordId()}',1,'2026-09-28',0,?,?) RETURNING record_id`,
       )
       .get(currentIdentity.patchId, serializePathSet(currentIdentity.paths))!
     db()
       .query(
         `INSERT INTO review_lens
-         (record_id,review_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+         (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
          VALUES ('${newRecordId()}',?,?,'correctness','codex','[]','[]','[]','[]')`,
       )
-      .run(review.id, run.id)
+      .run(review.record_id, run.id)
 
     await runReview(
       ['review', 'tier', 'DEV-992-fixture', '--cwd', relative(process.cwd(), repo)],

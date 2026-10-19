@@ -358,6 +358,19 @@ function recordEvidenceUnvoid(
   })
   presentation.log(`unvoided run ${id}: routing evidence restored; existing verdict unchanged`)
 }
+function storedReviewFindings(reviewRecordId: string) {
+  return db()
+    .query(
+      'SELECT ordinal, disposition FROM review_finding WHERE review_record_id=? ORDER BY ordinal',
+    )
+    .all(reviewRecordId) as { ordinal: number; disposition: string | null }[]
+}
+
+function completeReviewWithoutFindings(reviewRecordId: string, scoredAt: string): void {
+  db().query('UPDATE review SET completed_at=? WHERE record_id=?').run(scoredAt, reviewRecordId)
+  enqueueReview(db(), reviewRecordId)
+}
+
 export async function judgeRun(
   requestedId: string,
   flags: JudgmentFlags,
@@ -418,20 +431,20 @@ export async function judgeRun(
     }
   }
   let parsedOutput: ReturnType<typeof parseReviewOutput> = null
-  let reviewId: number | null = null
+  let reviewRecordId: string | null = null
   let storedGrades: Partial<Record<(typeof gradeNames)[number], string>> = {}
   let reviewFindings: { ordinal: number; disposition: string | null }[] = []
   if (findingsJob) {
     const lens = db()
       .query(
-        'SELECT review_id, reproduced, coverage, limits, overlap FROM review_lens WHERE run_record_id=?',
+        'SELECT review_record_id, reproduced, coverage, limits, overlap FROM review_lens WHERE run_record_id=?',
       )
       .get(id) as
-      | ({ review_id: number } & Record<(typeof gradeNames)[number], string | null>)
+      | ({ review_record_id: string } & Record<(typeof gradeNames)[number], string | null>)
       | null
-    reviewId = lens?.review_id ?? null
+    reviewRecordId = lens?.review_record_id ?? null
     assertRunReviewFindingIntegrity(id)
-    if (delivery !== 'none' && !reviewId) {
+    if (delivery !== 'none' && !reviewRecordId) {
       if (row.output_path && existsSync(row.output_path)) {
         parsedOutput = parseReviewOutput(readFileSync(row.output_path, 'utf8'))
       }
@@ -443,9 +456,7 @@ export async function judgeRun(
       storedGrades = Object.fromEntries(
         gradeNames.flatMap((name) => (lens?.[name] ? [[name, lens[name]]] : [])),
       )
-      reviewFindings = db()
-        .query('SELECT ordinal, disposition FROM review_finding WHERE review_id=? ORDER BY ordinal')
-        .all(reviewId) as { ordinal: number; disposition: string | null }[]
+      reviewFindings = storedReviewFindings(reviewRecordId!)
     }
   }
   const gradeValues = Object.fromEntries(
@@ -484,10 +495,10 @@ export async function judgeRun(
   const comparisonIds = comparison ? parseRunIds(flags.flag(comparison)!, `--${comparison}`) : []
   if (findingsJob && delivery !== 'none') {
     for (const name of gradeNames) if (!gradeValues[name]) missing.push(`--${name}`)
-    const allowed = reviewId
+    const allowed = reviewRecordId
       ? reviewFindings.map((finding) => finding.ordinal)
       : parsedOutput!.findings.map((_, index) => index + 1)
-    const expected = reviewId
+    const expected = reviewRecordId
       ? reviewFindings
           .filter((finding) => finding.disposition === null)
           .map((finding) => finding.ordinal)
@@ -535,25 +546,24 @@ export async function judgeRun(
   writeTransaction(() => {
     if (!(flags.has('force') && !authority.actor)) authority = adoptRunMutation(authority, 'score')
     if (findingsJob && delivery !== 'none') {
-      reviewId = gradeReviewLens(id, parsedOutput, gradeValues as ReviewGrades)
+      reviewRecordId = gradeReviewLens(id, parsedOutput, gradeValues as ReviewGrades)
     }
     recordScoreVerdict(id, delivery!, quality ?? null, scoredFidelity, note, scoredAt, scorer)
     reviveUnjudgedOwnerEvidence(id)
-    if (reviewId) {
+    if (reviewRecordId) {
       if (delivery === 'none') {
-        db().query('UPDATE review SET completed_at=? WHERE id=?').run(scoredAt, reviewId)
-        enqueueReview(db(), reviewId)
+        completeReviewWithoutFindings(reviewRecordId, scoredAt)
       } else {
         for (const finding of parsedFindings) {
           triageFinding(
-            reviewId,
+            reviewRecordId,
             finding.ordinal,
             finding.disposition,
             finding.category,
             finding.severity,
           )
         }
-        completeReview(reviewId)
+        completeReview(reviewRecordId)
       }
     }
     if (comparison === 'better-than')
@@ -566,10 +576,10 @@ export async function judgeRun(
     enqueueScoreRecord(db(), id, machineId())
   })
   presentation.log(
-    `judged run ${id}: score${reviewId ? `, completed review ${reviewId}` : ''}` +
+    `judged run ${id}: score${reviewRecordId ? ', completed review' : ''}` +
       `${comparison ? ', pair recorded' : ''}`,
   )
-  return { id, row, reviewId, comparison }
+  return { id, row, reviewId: reviewRecordId, comparison }
 }
 const REVIEW_GRADE_FLAGS = ['reproduced', 'coverage', 'limits', 'overlap'] as const
 
@@ -803,11 +813,11 @@ export async function scoreRun(
   if (findingsJob && delivery !== 'none') {
     const existing = db()
       .query(
-        `SELECT rl.id, COUNT(rf.id) AS findings
-       FROM review_lens rl LEFT JOIN review_finding rf ON rf.review_lens_id=rl.id
-      WHERE rl.run_record_id=? GROUP BY rl.id`,
+        `SELECT rl.record_id, COUNT(rf.record_id) AS findings
+       FROM review_lens rl LEFT JOIN review_finding rf ON rf.review_lens_record_id=rl.record_id
+      WHERE rl.run_record_id=? GROUP BY rl.record_id`,
       )
-      .get(id) as { id: number; findings: number } | null
+      .get(id) as { record_id: string; findings: number } | null
     let output: ReturnType<typeof parseReviewOutput> = null
     if (!existing) {
       if (!row.output_path || !existsSync(row.output_path)) {

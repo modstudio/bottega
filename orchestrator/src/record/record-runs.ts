@@ -2,9 +2,11 @@
 /** Owns tenant-bound record run reads. Must not know local run phases or CLI presentation. */
 import { SQL } from 'bun'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import type { RunDetailReviewLens } from '../../../shared/review-presentation.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { HOOK_TREE_JOB } from '../hook-tree/hook-tree.ts'
 import type { RecordCursor } from './record-cursor.ts'
+import { recordPresentation, reviewLensPresentation } from './review-presentation.ts'
 
 type RecordScore = {
   runId?: string
@@ -40,7 +42,10 @@ export type RecordRun = {
   probe: boolean
   score: RecordScore | null
 }
-export type RecordRunDetail = RecordRun & Record<string, unknown> & { reviews: unknown[] }
+export type RecordRunDetail = RecordRun &
+  Record<string, unknown> & {
+    reviews: RunDetailReviewLens[]
+  }
 
 type RunListInput = TenantPrincipal & {
   url: string
@@ -77,19 +82,6 @@ export type RecordRunsWindow = {
 
 const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
 const numeric = (value: unknown) => (value == null ? null : Number(value))
-const camel = (key: string) => key.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase())
-const presentation = (row: Record<string, unknown>) =>
-  Object.fromEntries(
-    Object.entries(row).map(([key, value]) => [
-      camel(key),
-      value instanceof Date
-        ? value.toISOString()
-        : typeof value === 'bigint'
-          ? Number(value)
-          : value,
-    ]),
-  )
-
 function runRow(row: Record<string, unknown>): RecordRun {
   return {
     id: String(row.id),
@@ -294,12 +286,13 @@ export async function getRecordRun(input: {
       })
     const lenses = await tx`
       SELECT l.*, rv.project_id AS review_project_id, rv.recorded_at, rv.completed_at,
-        rv.tier, rv.patch_id, rv.commit_message,
+        NULL::integer AS review_number, rv.tier, rv.patch_id, rv.commit_message,
         COALESCE(json_agg(f ORDER BY f.ordinal) FILTER (WHERE f.id IS NOT NULL), '[]') AS findings
       FROM review_lens l JOIN review rv ON rv.id=l.review_id LEFT JOIN review_finding f ON f.review_lens_id=l.id
-      WHERE l.run_id=${input.id}::uuid GROUP BY l.id, rv.id ORDER BY rv.recorded_at DESC, l.id DESC
+      WHERE l.run_id=${input.id}::uuid GROUP BY l.id, rv.id
+      ORDER BY rv.recorded_at DESC, l.created_at DESC, l.lens, l.agent
     `
-    const detail = presentation(row)
+    const detail = recordPresentation(row)
     for (const key of [
       'delivery',
       'quality',
@@ -314,7 +307,7 @@ export async function getRecordRun(input: {
       ...detail,
       ...base,
       score: base.score,
-      reviews: lenses.map((lens: Record<string, unknown>) => presentation(lens)),
+      reviews: lenses.map((lens: Record<string, unknown>) => reviewLensPresentation(lens)),
     } as RecordRunDetail
   })
 }

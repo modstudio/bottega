@@ -110,14 +110,14 @@ function calibrationCell(
   const modelClause = model === undefined ? '' : 'AND rl.model IS ?'
   const reviews = database
     .query(
-      `SELECT DISTINCT r.id FROM review r JOIN review_lens rl ON rl.review_id=r.id
+      `SELECT DISTINCT r.record_id FROM review r JOIN review_lens rl ON rl.review_record_id=r.record_id
       JOIN run ON run.record_id=rl.run_record_id
       WHERE rl.lens=? AND rl.agent=? AND ${completedReviewEvidenceSql('r', 'run', 'rl')} ${modelClause}
-      ORDER BY r.completed_at DESC, r.id DESC LIMIT ?`,
+      ORDER BY r.completed_at DESC, r.number DESC LIMIT ?`,
     )
     .all(
       ...(model === undefined ? [lens, agent, REVIEW_WINDOW] : [lens, agent, model, REVIEW_WINDOW]),
-    ) as { id: number }[]
+    ) as { record_id: string }[]
   const emptyTiers = () =>
     Object.fromEntries(
       ['0', '1', '2', '3', 'unclassified'].map((key) => [
@@ -151,15 +151,15 @@ function calibrationCell(
       mirror_lenses: 0,
       ...emptyGrades(),
     }
-  const ids = reviews.map((r) => r.id)
+  const ids = reviews.map((r) => r.record_id)
   const marks = ids.map(() => '?').join(',')
   const counts = database
     .query(
       `SELECT
        SUM(CASE WHEN disposition IN ('accepted','modified') THEN 1 ELSE 0 END) AS hits,
        SUM(CASE WHEN disposition IN ('accepted','modified','rejected') THEN 1 ELSE 0 END) AS triaged
-     FROM review_finding rf JOIN review_lens rl ON rl.id=rf.review_lens_id
-     WHERE rf.review_id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}`,
+     FROM review_finding rf JOIN review_lens rl ON rl.record_id=rf.review_lens_record_id
+     WHERE rf.review_record_id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}`,
     )
     .get(...ids, lens, agent, ...(model === undefined ? [] : [model])) as {
     hits: number | null
@@ -168,8 +168,8 @@ function calibrationCell(
   const categories = database
     .query(
       `SELECT rejection_category AS category, COUNT(*) AS count
-       FROM review_finding rf JOIN review_lens rl ON rl.id=rf.review_lens_id
-      WHERE rf.review_id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}
+       FROM review_finding rf JOIN review_lens rl ON rl.record_id=rf.review_lens_record_id
+      WHERE rf.review_record_id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}
         AND disposition='rejected' AND rejection_category IS NOT NULL
       GROUP BY rejection_category ORDER BY count DESC, category LIMIT 3`,
     )
@@ -182,21 +182,21 @@ function calibrationCell(
   const mirrorLenses = database
     .query(
       `SELECT COUNT(*) AS count FROM review_lens rl JOIN run ON run.record_id=rl.run_record_id
-      WHERE rl.review_id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}
+      WHERE rl.review_record_id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}
         AND run.mcp_connected=0 AND run.mcp_error LIKE 'mirror:%'`,
     )
     .get(...ids, lens, agent, ...(model === undefined ? [] : [model])) as { count: number }
   const gradeRows = database
     .query(
       `SELECT reproduced, coverage, limits, overlap FROM review_lens rl
-      WHERE rl.review_id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}`,
+      WHERE rl.review_record_id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}`,
     )
     .all(...ids, lens, agent, ...(model === undefined ? [] : [model])) as Record<string, unknown>[]
   const severityRows = database
     .query(
       `SELECT rf.severity, rf.triaged_severity FROM review_finding rf
-      JOIN review_lens rl ON rl.id=rf.review_lens_id
-      WHERE rf.review_id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}
+      JOIN review_lens rl ON rl.record_id=rf.review_lens_record_id
+      WHERE rf.review_record_id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}
         AND rf.disposition IS NOT NULL`,
     )
     .all(...ids, lens, agent, ...(model === undefined ? [] : [model])) as {
@@ -205,27 +205,27 @@ function calibrationCell(
   }[]
   const tierRows = database
     .query(
-      `SELECT r.id AS review_id, r.tier, rl.id AS lens_id, rf.disposition
-       FROM review r JOIN review_lens rl ON rl.review_id=r.id
-       LEFT JOIN review_finding rf ON rf.review_lens_id=rl.id
-      WHERE r.id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}`,
+      `SELECT r.record_id AS review_record_id, r.tier, rl.record_id AS lens_id, rf.disposition
+       FROM review r JOIN review_lens rl ON rl.review_record_id=r.record_id
+       LEFT JOIN review_finding rf ON rf.review_lens_record_id=rl.record_id
+      WHERE r.record_id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}`,
     )
     .all(...ids, lens, agent, ...(model === undefined ? [] : [model])) as {
-    review_id: number
+    review_record_id: string
     tier: number | null
-    lens_id: number
+    lens_id: string
     disposition: string | null
   }[]
   const tiers = emptyTiers()
-  const tierReviews = new Map<string, Set<number>>()
-  const tierLenses = new Map<string, Set<number>>()
+  const tierReviews = new Map<string, Set<string>>()
+  const tierLenses = new Map<string, Set<string>>()
   for (const row of tierRows) {
     const key = row.tier === null ? 'unclassified' : String(row.tier)
     const cell = tiers[key as keyof typeof tiers]
     if (!cell) continue
-    const reviews = tierReviews.get(key) ?? new Set<number>()
-    const lenses = tierLenses.get(key) ?? new Set<number>()
-    reviews.add(row.review_id)
+    const reviews = tierReviews.get(key) ?? new Set<string>()
+    const lenses = tierLenses.get(key) ?? new Set<string>()
+    reviews.add(row.review_record_id)
     lenses.add(row.lens_id)
     tierReviews.set(key, reviews)
     tierLenses.set(key, lenses)
@@ -238,27 +238,27 @@ function calibrationCell(
   }
   const identityRows = database
     .query(
-      `SELECT r.id AS review_id, r.tier, rl.id AS lens_id, run.branch, run.launch_key
-       FROM review r JOIN review_lens rl ON rl.review_id=r.id
+      `SELECT r.record_id AS review_record_id, r.tier, rl.record_id AS lens_id, run.branch, run.launch_key
+       FROM review r JOIN review_lens rl ON rl.review_record_id=r.record_id
        JOIN run ON run.record_id=rl.run_record_id
-      WHERE r.id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}
-      ORDER BY r.id, rl.id`,
+      WHERE r.record_id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}
+      ORDER BY r.number, run.started_at, rl.record_id`,
     )
     .all(...ids, lens, agent, ...(model === undefined ? [] : [model])) as {
-    review_id: number
+    review_record_id: string
     tier: number | null
-    lens_id: number
+    lens_id: string
     branch: string | null
     launch_key: string | null
   }[]
-  const firstIdentity = new Map<number, (typeof identityRows)[number]>()
+  const firstIdentity = new Map<string, (typeof identityRows)[number]>()
   for (const row of identityRows)
-    if (!firstIdentity.has(row.review_id)) firstIdentity.set(row.review_id, row)
+    if (!firstIdentity.has(row.review_record_id)) firstIdentity.set(row.review_record_id, row)
   const roundCounts = new Map<string, Map<string, number>>()
   for (const row of firstIdentity.values()) {
     const tier = row.tier === null ? 'unclassified' : String(row.tier)
     const identities = roundCounts.get(tier) ?? new Map<string, number>()
-    const identity = row.launch_key ?? row.branch ?? `review:${row.review_id}`
+    const identity = row.launch_key ?? row.branch ?? `review:${row.review_record_id}`
     identities.set(identity, (identities.get(identity) ?? 0) + 1)
     roundCounts.set(tier, identities)
   }
@@ -321,7 +321,7 @@ export function reviewCalibrationFleet(database: Database = db()): ReviewCalibra
   const graded = database
     .query(
       `SELECT rl.lens, rl.agent, rl.model, MAX(s.scored_at) AS last_graded_at
-       FROM review_lens rl JOIN review r ON r.id=rl.review_id
+       FROM review_lens rl JOIN review r ON r.record_id=rl.review_record_id
        LEFT JOIN score s ON s.run_record_id=rl.run_record_id
       WHERE r.completed_at IS NOT NULL
         AND (rl.reproduced IS NOT NULL OR rl.coverage IS NOT NULL OR rl.limits IS NOT NULL OR rl.overlap IS NOT NULL)

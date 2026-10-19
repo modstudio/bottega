@@ -13,14 +13,14 @@ export type AdmissionChange = {
 }
 
 export type AdmissionOverride = Omit<AdmissionChange, 'patchId' | 'pathSet'> & {
-  id: number
+  recordId: string
   patchId: string | null
   pathSet: string | null
 }
 
 export type AdmissionDecision = {
   complete: boolean
-  overrideId: number | null
+  overrideId: string | null
   triage: TriageDecision
 }
 
@@ -41,7 +41,7 @@ export function decideAdmission(
   )
   return {
     complete: triage.complete || override !== undefined,
-    overrideId: override?.id ?? null,
+    overrideId: override?.recordId ?? null,
     triage,
   }
 }

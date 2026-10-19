@@ -63,8 +63,8 @@ export type ReviewYieldReport = {
 }
 
 export type ReviewRoundEvidenceRow = {
-  lens_id: number
-  review_id: number
+  lens_id: string
+  review_record_id: string
   recorded_at: string
   completed_at: string | null
   tier: 0 | 1 | 2 | 3 | null
@@ -84,8 +84,8 @@ export type ReviewRoundEvidenceRow = {
 }
 
 type FindingRow = {
-  review_id: number
-  review_lens_id: number
+  review_record_id: string
+  review_lens_record_id: string
   severity: string
   triaged_severity: string | null
   disposition: string | null
@@ -117,8 +117,8 @@ export function reviewRoundIdentity(
 
 function classifyRounds(
   rows: ReviewRoundEvidenceRow[],
-): Map<number, { task: string | null; round: number | null }> {
-  const result = new Map<number, { task: string | null; round: number | null }>()
+): Map<string, { task: string | null; round: number | null }> {
+  const result = new Map<string, { task: string | null; round: number | null }>()
   const ordinal = new Map<string, number>()
   const seen = new Map<string, number>()
   for (const row of rows) {
@@ -144,31 +144,37 @@ export function reviewYield(
 ): ReviewYieldReport {
   const lensRows = database
     .query(
-      `SELECT rl.id AS lens_id, r.id AS review_id, r.recorded_at, r.completed_at, r.tier, r.patch_id, r.path_set, p.name AS project,
+      `SELECT rl.record_id AS lens_id, r.record_id AS review_record_id, r.recorded_at, r.completed_at, r.tier, r.patch_id, r.path_set, p.name AS project,
             run.repo AS run_repo, run.launch_key, run.branch, rl.lens, rl.agent,
             rl.model, run.latency_ms, run.input_tree, run.head_commit, rl.overlap
        FROM review_lens rl
-       JOIN review r ON r.id=rl.review_id
+       JOIN review r ON r.record_id=rl.review_record_id
        JOIN run ON run.record_id=rl.run_record_id
        LEFT JOIN project p ON p.record_id=r.project_record_id
       WHERE ${reviewRunEvidenceSql('run', 'rl')}
-      ORDER BY r.recorded_at,r.record_id,rl.id`,
+      ORDER BY r.recorded_at,r.record_id,rl.record_id`,
     )
     .all() as ReviewRoundEvidenceRow[]
   const findingRows = database
     .query(
-      `SELECT review_id,review_lens_id,severity,triaged_severity,disposition
-       FROM review_finding ORDER BY review_lens_id,ordinal`,
+      `SELECT review_record_id,review_lens_record_id,severity,triaged_severity,disposition
+       FROM review_finding ORDER BY review_lens_record_id,ordinal`,
     )
     .all() as FindingRow[]
-  const findings = new Map<number, FindingRow[]>()
+  const findings = new Map<string, FindingRow[]>()
   for (const row of findingRows)
-    findings.set(row.review_lens_id, [...(findings.get(row.review_lens_id) ?? []), row])
+    findings.set(row.review_lens_record_id, [
+      ...(findings.get(row.review_lens_record_id) ?? []),
+      row,
+    ])
 
   const rounds = classifyRounds(lensRows)
-  const reviewFindings = new Map<number, FindingRow[]>()
+  const reviewFindings = new Map<string, FindingRow[]>()
   for (const row of findingRows)
-    reviewFindings.set(row.review_id, [...(reviewFindings.get(row.review_id) ?? []), row])
+    reviewFindings.set(row.review_record_id, [
+      ...(reviewFindings.get(row.review_record_id) ?? []),
+      row,
+    ])
 
   const wanted = {
     project: normalized(filters.project),
@@ -191,7 +197,9 @@ export function reviewYield(
       findings: findings.get(row.lens_id) ?? [],
       reviewComplete:
         row.completed_at !== null &&
-        (reviewFindings.get(row.review_id) ?? []).every((finding) => finding.disposition !== null),
+        (reviewFindings.get(row.review_record_id) ?? []).every(
+          (finding) => finding.disposition !== null,
+        ),
     }))
 
   const missingPatch = rows.filter((row) => row.patch_id === null).length
@@ -265,8 +273,8 @@ function aggregate(key: string, rows: ComputedLens[]): ReviewYieldRow {
     key,
     runs: rows.length,
     reviews: {
-      recorded: new Set(rows.map((row) => row.review_id)).size,
-      completed: new Set(evidenceRows.map((row) => row.review_id)).size,
+      recorded: new Set(rows.map((row) => row.review_record_id)).size,
+      completed: new Set(evidenceRows.map((row) => row.review_record_id)).size,
     },
     recordedFindings: allFindings.length,
     findings: evidenceFindings.length,

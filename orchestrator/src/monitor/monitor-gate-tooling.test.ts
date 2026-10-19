@@ -85,7 +85,7 @@ test('worker gate tooling admission must be at or after the latest tooling gate 
   insertGate.run(newRecordId(), after)
   const insertSnapshot = database.query(
     `INSERT INTO landing_triage_snapshot
-       (record_id,project,project_record_id,branch,tip,tree,review_ids,patch_id,tier,lens_rounds,
+       (record_id,project,project_record_id,branch,tip,tree,review_record_ids,patch_id,tier,lens_rounds,
         finding_count,at)
      VALUES (?,?,?,?,?,'tree','[]','patch',1,1,0,?)`,
   )

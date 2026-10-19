@@ -9,8 +9,8 @@ import { amendFinding, recordReview } from './review-triage.ts'
 import { restoreReviewTriage } from './review-triage-restore.ts'
 
 type FindingSeed = {
-  findingId: number
-  reviewId: number
+  findingId: string
+  reviewId: string
   originalRecordId: string
   remintedRecordId: string
   payload: Record<string, unknown>
@@ -20,24 +20,26 @@ function seedFinding(name: string, completed = true): FindingSeed {
   const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: name })
   const reviewId = recordReview(runId, reviewReply(1, 'high'), db())
   const finding = db()
-    .query<{ id: number; record_id: string }, [number]>(
-      'SELECT id,record_id FROM review_finding WHERE review_id=?',
+    .query<{ record_id: string }, [string]>(
+      'SELECT record_id FROM review_finding WHERE review_record_id=?',
     )
     .get(reviewId)!
   const outbox = db()
-    .query<{ payload: string }, [number]>(
-      "SELECT payload FROM outbox WHERE kind='review_finding' AND json_extract(payload,'$.localId')=? ORDER BY id DESC LIMIT 1",
+    .query<{ payload: string }, [string]>(
+      "SELECT payload FROM outbox WHERE kind='review_finding' AND json_extract(payload,'$.id')=? ORDER BY id DESC LIMIT 1",
     )
-    .get(finding.id)!
-  const remintedRecordId = `reminted-${name}-${finding.id}`
-  db().query('UPDATE review_finding SET record_id=? WHERE id=?').run(remintedRecordId, finding.id)
+    .get(finding.record_id)!
+  const remintedRecordId = `reminted-${name}-${finding.record_id}`
+  db()
+    .query('UPDATE review_finding SET record_id=? WHERE record_id=?')
+    .run(remintedRecordId, finding.record_id)
   if (completed) {
     db()
-      .query('UPDATE review SET completed_at=? WHERE id=?')
+      .query('UPDATE review SET completed_at=? WHERE record_id=?')
       .run('2026-09-21T00:00:00.000Z', reviewId)
   }
   return {
-    findingId: finding.id,
+    findingId: finding.record_id,
     reviewId,
     originalRecordId: finding.record_id,
     remintedRecordId,
@@ -72,27 +74,27 @@ function seedReview(name: string, findings: number): FindingSeed[] {
   const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: name })
   const reviewId = recordReview(runId, reviewReply(findings, 'high'), db())
   db()
-    .query('UPDATE review SET completed_at=? WHERE id=?')
+    .query('UPDATE review SET completed_at=? WHERE record_id=?')
     .run('2026-09-21T00:00:00.000Z', reviewId)
   return db()
-    .query<{ id: number; record_id: string }, [number]>(
-      'SELECT id,record_id FROM review_finding WHERE review_id=? ORDER BY ordinal',
+    .query<{ record_id: string }, [string]>(
+      'SELECT record_id FROM review_finding WHERE review_record_id=? ORDER BY ordinal',
     )
     .all(reviewId)
     .map((finding) => {
       const outbox = db()
-        .query<{ payload: string }, [number]>(
+        .query<{ payload: string }, [string]>(
           `SELECT payload FROM outbox WHERE kind='review_finding'
-            AND json_valid(payload) AND json_extract(payload,'$.localId')=?
+            AND json_valid(payload) AND json_extract(payload,'$.id')=?
             ORDER BY id DESC LIMIT 1`,
         )
-        .get(finding.id)!
-      const remintedRecordId = `reminted-${name}-${finding.id}`
+        .get(finding.record_id)!
+      const remintedRecordId = `reminted-${name}-${finding.record_id}`
       db()
-        .query('UPDATE review_finding SET record_id=? WHERE id=?')
-        .run(remintedRecordId, finding.id)
+        .query('UPDATE review_finding SET record_id=? WHERE record_id=?')
+        .run(remintedRecordId, finding.record_id)
       return {
-        findingId: finding.id,
+        findingId: finding.record_id,
         reviewId,
         originalRecordId: finding.record_id,
         remintedRecordId,
@@ -112,7 +114,7 @@ test('restores triage through an audited amendment and is idempotent', () => {
     db()
       .query(
         `SELECT record_id,disposition,rejection_category,triaged_severity,triaged_at
-           FROM review_finding WHERE id=?`,
+           FROM review_finding WHERE record_id=?`,
       )
       .get(seed.findingId),
   ).toEqual({
@@ -123,8 +125,10 @@ test('restores triage through an audited amendment and is idempotent', () => {
     triaged_at: '2026-09-20T12:00:00.000Z',
   })
   const amendment = db()
-    .query<{ reason: string; at: string }, [number]>(
-      'SELECT reason,at FROM review_finding_amendment WHERE review_id=?',
+    .query<{ reason: string; at: string }, [string]>(
+      `SELECT reason,at FROM review_finding_amendment amendment
+       JOIN review_finding finding ON finding.record_id=amendment.review_finding_record_id
+       WHERE finding.review_record_id=?`,
     )
     .get(seed.reviewId)!
   expect(amendment).toEqual({
@@ -144,7 +148,7 @@ test('skips null-only, mismatched, open, missing, and hosted-diverged findings',
   appendSource(open)
   const missing = seedFinding('restore-triage-missing')
   db()
-    .query("DELETE FROM outbox WHERE kind='review_finding' AND json_extract(payload,'$.localId')=?")
+    .query("DELETE FROM outbox WHERE kind='review_finding' AND json_extract(payload,'$.id')=?")
     .run(missing.findingId)
   const diverged = seedFinding('restore-triage-diverged')
   appendSource(diverged)
@@ -167,7 +171,7 @@ test('dry-run reports the amendment but writes nothing', () => {
   const seed = seedFinding('restore-triage-dry-run')
   appendSource(seed)
   const before = {
-    finding: db().query('SELECT * FROM review_finding WHERE id=?').get(seed.findingId),
+    finding: db().query('SELECT * FROM review_finding WHERE record_id=?').get(seed.findingId),
     amendments: db().query('SELECT COUNT(*) AS count FROM review_finding_amendment').get(),
     outbox: db().query('SELECT COUNT(*) AS count FROM outbox').get(),
   }
@@ -176,7 +180,7 @@ test('dry-run reports the amendment but writes nothing', () => {
 
   expect(report.applied).toBe(1)
   expect({
-    finding: db().query('SELECT * FROM review_finding WHERE id=?').get(seed.findingId),
+    finding: db().query('SELECT * FROM review_finding WHERE record_id=?').get(seed.findingId),
     amendments: db().query('SELECT COUNT(*) AS count FROM review_finding_amendment').get(),
     outbox: db().query('SELECT COUNT(*) AS count FROM outbox').get(),
   }).toEqual(before)
@@ -199,27 +203,27 @@ test('snapshots and restores every finding identity before amending siblings', (
   expect(report.applied).toBe(2)
   expect(report.byReason).toEqual({ 'latest outbox row has null disposition': 1 })
   const rows = db()
-    .query<{ id: number; record_id: string; disposition: string | null }, [number]>(
-      'SELECT id,record_id,disposition FROM review_finding WHERE review_id=? ORDER BY ordinal',
+    .query<{ record_id: string; disposition: string | null }, [string]>(
+      'SELECT record_id,disposition FROM review_finding WHERE review_record_id=? ORDER BY ordinal',
     )
     .all(first.reviewId)
   expect(rows).toEqual([
-    { id: first.findingId, record_id: first.originalRecordId, disposition: 'accepted' },
-    { id: second.findingId, record_id: second.originalRecordId, disposition: 'rejected' },
-    { id: third.findingId, record_id: third.originalRecordId, disposition: null },
+    { record_id: first.originalRecordId, disposition: 'accepted' },
+    { record_id: second.originalRecordId, disposition: 'rejected' },
+    { record_id: third.originalRecordId, disposition: null },
   ])
   for (const seed of seeds) {
     const latest = db()
-      .query<{ record_id: string; payload: string }, [number]>(
+      .query<{ record_id: string; payload: string }, [string]>(
         `SELECT row_id AS record_id,payload FROM outbox WHERE kind='review_finding'
-            AND json_valid(payload) AND json_extract(payload,'$.localId')=?
+            AND json_valid(payload) AND json_extract(payload,'$.id')=?
             ORDER BY id DESC LIMIT 1`,
       )
       .get(seed.findingId)!
     expect(latest.record_id).toBe(seed.originalRecordId)
     expect(JSON.parse(latest.payload)).toMatchObject({
       id: seed.originalRecordId,
-      disposition: rows.find((row) => row.id === seed.findingId)!.disposition,
+      disposition: rows.find((row) => row.record_id === seed.findingId)!.disposition,
     })
     expect(
       db()
@@ -255,9 +259,9 @@ test('does not overwrite triage that lands after review ids are listed', () => {
   expect(
     db()
       .query(
-        'SELECT disposition,rejection_category,triaged_severity FROM review_finding WHERE id=?',
+        'SELECT disposition,rejection_category,triaged_severity FROM review_finding WHERE record_id=?',
       )
-      .get(seed.findingId),
+      .get(seed.remintedRecordId),
   ).toEqual({ disposition: 'modified', rejection_category: null, triaged_severity: 'medium' })
 })
 
@@ -274,15 +278,15 @@ test('skips refused source triage while applying a sibling', () => {
   })
   expect(
     db()
-      .query<{ disposition: string | null }, [number]>(
-        'SELECT disposition FROM review_finding WHERE id=?',
+      .query<{ disposition: string | null }, [string]>(
+        'SELECT disposition FROM review_finding WHERE record_id=?',
       )
       .get(refused!.findingId)!.disposition,
   ).toBeNull()
   expect(
     db()
-      .query<{ disposition: string | null }, [number]>(
-        'SELECT disposition FROM review_finding WHERE id=?',
+      .query<{ disposition: string | null }, [string]>(
+        'SELECT disposition FROM review_finding WHERE record_id=?',
       )
       .get(applicable!.findingId)!.disposition,
   ).toBe('accepted')
@@ -291,18 +295,20 @@ test('skips refused source triage while applying a sibling', () => {
 test('review command dispatches restore-triage with --dry-run in process', async () => {
   const seed = seedFinding('restore-triage-command-dry-run')
   appendSource(seed)
-  const before = db().query('SELECT * FROM review_finding WHERE id=?').get(seed.findingId)
+  const before = db().query('SELECT * FROM review_finding WHERE record_id=?').get(seed.findingId)
   const program = new Command().exitOverride()
   registerReviewCommand(program)
 
   await program.parseAsync(['node', 'orch', 'review', 'restore-triage', '--dry-run'])
 
-  expect(db().query('SELECT * FROM review_finding WHERE id=?').get(seed.findingId)).toEqual(before)
+  expect(db().query('SELECT * FROM review_finding WHERE record_id=?').get(seed.findingId)).toEqual(
+    before,
+  )
 })
 
 test('review command rejects --dry-run as an unknown option for other verbs before they write', async () => {
   const seed = seedFinding('restore-triage-command-reject-dry-run', false)
-  const before = db().query('SELECT * FROM review_finding WHERE id=?').get(seed.findingId)
+  const before = db().query('SELECT * FROM review_finding WHERE record_id=?').get(seed.findingId)
   const program = new Command().exitOverride()
   registerReviewCommand(program)
 
@@ -319,5 +325,7 @@ test('review command rejects --dry-run as an unknown option for other verbs befo
     ]),
   ).rejects.toThrow("error: unknown option '--dry-run'")
 
-  expect(db().query('SELECT * FROM review_finding WHERE id=?').get(seed.findingId)).toEqual(before)
+  expect(db().query('SELECT * FROM review_finding WHERE record_id=?').get(seed.findingId)).toEqual(
+    before,
+  )
 })

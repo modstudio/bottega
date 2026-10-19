@@ -99,7 +99,7 @@ def live_landing_ids(session_id: str):
         connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)
         try:
             rows = connection.execute(
-                "SELECT id FROM landing WHERE session_id = ? AND status IN ('queued','running')",
+                "SELECT record_id FROM landing WHERE session_id = ? AND status IN ('queued','running')",
                 (session_id,),
             ).fetchall()
         finally:

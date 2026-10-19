@@ -4,7 +4,6 @@ import { Database } from 'bun:sqlite'
 import { realpathSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { z } from 'zod'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { DATABASE_RESOLUTION, DB_PATH, writableDb, writeTransaction } from '../database/db.ts'
 import {
   decideFindingRestores,
@@ -17,9 +16,9 @@ import {
 
 type OutboxRow = { id: number; payload: string }
 type PreparedInsert = {
-  id: number
-  reviewId: number
-  reviewLensId: number
+  recordId: string
+  reviewRecordId: string
+  reviewLensRecordId: string
   ordinal: number
   severity: string
   location: string
@@ -34,7 +33,7 @@ type FindingRestoreReport = {
   rowsWouldRestore: number
   rowsRestored: number
   rowsAlreadyPresent: number
-  unusable: { outboxId: number; localId: number | null; reason: string }[]
+  unusable: { outboxId: number; recordId: string | null; reason: string }[]
   restoredRowsLacking: {
     disposition: number
     rejectionCategory: number
@@ -62,26 +61,27 @@ function sameStore(left: string, right: string): boolean {
 
 function restoreFacts(database: Database): RestoreFindingFacts {
   const findings = database
-    .query<{ id: number; review_id: number; ordinal: number }, []>(
-      'SELECT id, review_id, ordinal FROM review_finding',
+    .query<{ record_id: string; review_record_id: string; ordinal: number }, []>(
+      'SELECT record_id, review_record_id, ordinal FROM review_finding',
     )
     .all()
-  const reviews = database
-    .query<{ id: number; record_id: string }, []>('SELECT id, record_id FROM review')
-    .all()
+  const reviews = database.query<{ record_id: string }, []>('SELECT record_id FROM review').all()
   const lenses = database
-    .query<{ id: number; review_id: number; record_id: string }, []>(
-      'SELECT id, review_id, record_id FROM review_lens',
+    .query<{ review_record_id: string; record_id: string }, []>(
+      'SELECT review_record_id, record_id FROM review_lens',
     )
     .all()
   return {
-    existingFindingIds: new Set(findings.map((row) => row.id)),
+    existingFindingIds: new Set(findings.map((row) => row.record_id)),
     findingIdByReviewOrdinal: new Map(
-      findings.map((row) => [reviewOrdinalKey(row.review_id, row.ordinal), row.id]),
+      findings.map((row) => [reviewOrdinalKey(row.review_record_id, row.ordinal), row.record_id]),
     ),
-    reviewIdByRecordId: new Map(reviews.map((row) => [row.record_id, row.id])),
+    reviewIdByRecordId: new Map(reviews.map((row) => [row.record_id, row.record_id])),
     lensByRecordId: new Map(
-      lenses.map((row) => [row.record_id, { id: row.id, reviewId: row.review_id }]),
+      lenses.map((row) => [
+        row.record_id,
+        { recordId: row.record_id, reviewRecordId: row.review_record_id },
+      ]),
     ),
   }
 }
@@ -90,26 +90,26 @@ function parsePayload(
   row: OutboxRow,
 ):
   | { ok: true; payload: RestoreFindingPayload }
-  | { ok: false; localId: number | null; reason: string } {
+  | { ok: false; recordId: string | null; reason: string } {
   let value: unknown
   try {
     value = JSON.parse(row.payload)
   } catch {
     return {
       ok: false,
-      localId: null,
+      recordId: null,
       reason: `outbox ${row.id} payload is not valid JSON`,
     }
   }
   const parsed = restoreFindingPayloadSchema.safeParse(value)
   if (parsed.success) return { ok: true, payload: parsed.data }
-  const localId =
-    typeof value === 'object' && value !== null && Number.isInteger(Reflect.get(value, 'localId'))
-      ? Number(Reflect.get(value, 'localId'))
+  const recordId =
+    typeof value === 'object' && value !== null && typeof Reflect.get(value, 'id') === 'string'
+      ? String(Reflect.get(value, 'id'))
       : null
   return {
     ok: false,
-    localId,
+    recordId,
     reason: `outbox ${row.id} payload is unusable: ${z.prettifyError(parsed.error)}`,
   }
 }
@@ -123,7 +123,7 @@ function parsePayloads(rows: readonly OutboxRow[]): {
   for (const row of rows) {
     const parsed = parsePayload(row)
     if (parsed.ok) payloads.push({ outboxId: row.id, payload: parsed.payload })
-    else unusable.push({ outboxId: row.id, localId: parsed.localId, reason: parsed.reason })
+    else unusable.push({ outboxId: row.id, recordId: parsed.recordId, reason: parsed.reason })
   }
   return { payloads, unusable }
 }
@@ -141,14 +141,14 @@ function prepareInserts(
     else if (decision.action === 'refuse') {
       unusable.push({
         outboxId: decision.outboxId,
-        localId: decision.payload.localId,
+        recordId: decision.payload.recordId,
         reason: decision.reason,
       })
     } else {
       inserts.push({
-        id: decision.payload.localId,
-        reviewId: decision.reviewId,
-        reviewLensId: decision.reviewLensId,
+        recordId: decision.payload.recordId,
+        reviewRecordId: decision.reviewRecordId,
+        reviewLensRecordId: decision.reviewLensRecordId,
         ordinal: decision.payload.ordinal,
         severity: decision.payload.severity,
         location: decision.payload.location,
@@ -175,16 +175,15 @@ function restoreReviewFindings(
   if (write && !unusable.length) {
     const insert = database.query(
       `INSERT INTO review_finding
-       (id, record_id, review_id, review_lens_id, ordinal, severity, location, evidence, proposed_correction)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (record_id, review_record_id, review_lens_record_id, ordinal, severity, location, evidence, proposed_correction)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     writeTransaction(() => {
       for (const row of inserts) {
         insert.run(
-          row.id,
-          newRecordId(),
-          row.reviewId,
-          row.reviewLensId,
+          row.recordId,
+          row.reviewRecordId,
+          row.reviewLensRecordId,
           row.ordinal,
           row.severity,
           row.location,

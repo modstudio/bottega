@@ -3,19 +3,7 @@
 import { SQL } from 'bun'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import type { RecordCursor } from './record-cursor.ts'
-
-const camel = (key: string) => key.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase())
-const presentation = (row: Record<string, unknown>) =>
-  Object.fromEntries(
-    Object.entries(row).map(([key, value]) => [
-      camel(key),
-      value instanceof Date
-        ? value.toISOString()
-        : typeof value === 'bigint'
-          ? Number(value)
-          : value,
-    ]),
-  )
+import { recordPresentation, reviewLensPresentation } from './review-presentation.ts'
 
 async function tenant<T>(input: { url: string } & TenantPrincipal, read: (tx: SQL) => Promise<T>) {
   const client = new SQL(input.url)
@@ -48,7 +36,7 @@ export async function listRecordReviews(input: {
       GROUP BY rv.id, sp.name, p.name ORDER BY rv.recorded_at DESC, rv.id DESC LIMIT ${input.limit + 1}
     `
     return rows.map((row: Record<string, unknown>) => {
-      const result = presentation(row)
+      const result = recordPresentation(row)
       return result
     })
   })
@@ -68,18 +56,18 @@ export async function getRecordReview(input: {
       WHERE rv.id=${input.id}::uuid`
     if (!reviews[0]) return null
     const lenses = await tx`
-      SELECT l.*, COALESCE(json_agg(f ORDER BY f.ordinal) FILTER (WHERE f.id IS NOT NULL), '[]') AS findings
+      SELECT l.*, NULL::integer AS review_number, rv.project_id AS review_project_id,
+        rv.recorded_at, rv.completed_at, rv.tier, rv.patch_id, rv.commit_message,
+        COALESCE(json_agg(f ORDER BY f.ordinal) FILTER (WHERE f.id IS NOT NULL), '[]') AS findings
       FROM review_lens l LEFT JOIN review_finding f ON f.review_lens_id=l.id
-      WHERE l.review_id=${input.id}::uuid GROUP BY l.id ORDER BY l.id
+      JOIN review rv ON rv.id=l.review_id
+      WHERE l.review_id=${input.id}::uuid GROUP BY l.id,rv.id
+      ORDER BY l.created_at,l.lens,l.agent
     `
-    const result = presentation(reviews[0])
+    const result = recordPresentation(reviews[0])
     return {
       ...result,
-      lenses: lenses.map((row: Record<string, unknown>) => {
-        const lens = presentation(row)
-        delete lens.spaceId
-        return lens
-      }),
+      lenses: lenses.map((row: Record<string, unknown>) => reviewLensPresentation(row)),
     }
   })
 }

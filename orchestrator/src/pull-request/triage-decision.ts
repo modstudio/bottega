@@ -19,7 +19,7 @@ export type TriageEvidence = {
   reviews: readonly TriageReviewRow[]
   branchReviewGroups: readonly TriageReviewGroup[]
   reads: readonly {
-    id: number
+    recordId: string
     tip: string
     patchId: string
     pathSet: string
@@ -29,13 +29,13 @@ export type TriageEvidence = {
 }
 
 type TriageSnapshot = {
-  reviewIds: number[]
+  reviewRecordIds: string[]
   patchId: string
   tier: 0 | 1 | 2 | 3
   lensRounds: number
   findingCount: number
   admissionPath: 'exact_review' | 'architect_read'
-  readId: number | null
+  readRecordId: string | null
 }
 
 export type TriageDecision =
@@ -44,12 +44,12 @@ export type TriageDecision =
       complete: false
       snapshot: TriageSnapshot
       missingReview: boolean
-      unfinishedReviewIds: number[]
-      undisposedFindings: { id: number; reviewId: number; ordinal: number }[]
+      unfinishedReviewNumbers: number[]
+      undisposedFindings: { reviewNumber: number; ordinal: number }[]
       missingLenses: string[]
       missingSecondOpinion: { lens: string; firstRunId: string | null } | null
       architectReadRequired: boolean
-      earlierReviewId: number | null
+      earlierReviewNumber: number | null
       earlierReviewTier: 0 | 1 | 2 | 3 | null
       finalTierRaised: boolean
     }
@@ -78,7 +78,7 @@ export function decideSecondOpinion(
     .filter((review) => review.completedAt !== null)
     .flatMap((review) => review.lenses)
     .filter((opinion) => opinion.graded && opinion.lens === lens)
-    .sort((left, right) => left.id - right.id)
+    .sort((left, right) => left.recordId.localeCompare(right.recordId))
   const models = new Set(opinions.flatMap((opinion) => (opinion.model ? [opinion.model] : [])))
   if (opinions.length >= 2 && models.size >= 2) return { complete: true }
   return { complete: false, lens, firstRunId: opinions[0]?.runId ?? null }
@@ -109,32 +109,32 @@ function mostRecentCompleteRound(
 
 /** One pure decision over the already-selected rows for a patch/path change group. */
 export function decideTriage(evidence: TriageEvidence): TriageDecision {
-  const reviewIds = [...new Set(evidence.reviews.map((row) => row.reviewId))].sort((a, b) => a - b)
+  const reviewRecordIds = [...new Set(evidence.reviews.map((row) => row.reviewRecordId))].sort()
   const lensRounds = recordedLensRounds(evidence.reviews)
   const findings = evidence.reviews.flatMap((review) =>
     review.findings.map((finding) => ({
       ...finding,
-      reviewId: review.reviewId,
+      reviewNumber: review.reviewNumber,
     })),
   )
   const snapshot = {
-    reviewIds,
+    reviewRecordIds,
     patchId: evidence.patchId,
     tier: evidence.tier,
     lensRounds,
     findingCount: findings.length,
     admissionPath: 'exact_review' as const,
-    readId: null,
+    readRecordId: null,
   }
-  const missingReview = evidence.applicableReview.lenses.length > 0 && reviewIds.length === 0
-  const unfinishedReviewIds = evidence.reviews
+  const missingReview = evidence.applicableReview.lenses.length > 0 && reviewRecordIds.length === 0
+  const unfinishedReviewNumbers = evidence.reviews
     .filter((row) => row.completedAt === null)
-    .map((row) => row.reviewId)
-    .sort((a, b) => a - b)
+    .map((row) => row.reviewNumber)
+    .sort((left, right) => left - right)
   const undisposedFindings = findings
     .filter((finding) => finding.disposition === null)
-    .map(({ id, reviewId, ordinal }) => ({ id, reviewId, ordinal }))
-    .sort((a, b) => a.id - b.id)
+    .map(({ reviewNumber, ordinal }) => ({ reviewNumber, ordinal }))
+    .sort((a, b) => a.reviewNumber - b.reviewNumber || a.ordinal - b.ordinal)
   const judgedLenses = new Set(
     evidence.reviews
       .filter((review) => review.completedAt !== null)
@@ -150,7 +150,7 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
     : { lens: secondOpinion.lens, firstRunId: secondOpinion.firstRunId }
   if (
     !missingReview &&
-    !unfinishedReviewIds.length &&
+    !unfinishedReviewNumbers.length &&
     !undisposedFindings.length &&
     !missingLenses.length &&
     missingSecondOpinion === null
@@ -173,13 +173,13 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
     return {
       complete: true,
       snapshot: {
-        reviewIds: earlierRound.reviews.map((review) => review.reviewId).sort((a, b) => a - b),
+        reviewRecordIds: earlierRound.reviews.map((review) => review.reviewRecordId).sort(),
         patchId: evidence.patchId,
         tier: evidence.tier,
         lensRounds: recordedLensRounds(earlierRound.reviews),
         findingCount: earlierRound.reviews.flatMap((review) => review.findings).length,
         admissionPath: 'architect_read',
-        readId: exactRead.id,
+        readRecordId: exactRead.recordId,
       },
     }
   }
@@ -187,12 +187,12 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
     complete: false,
     snapshot,
     missingReview,
-    unfinishedReviewIds,
+    unfinishedReviewNumbers,
     undisposedFindings,
     missingLenses,
     missingSecondOpinion,
     architectReadRequired: Boolean(earlierRound && !finalTierRaised && !exactRead),
-    earlierReviewId: earlierRound?.reviews[0]?.reviewId ?? null,
+    earlierReviewNumber: earlierRound?.reviews[0]?.reviewNumber ?? null,
     earlierReviewTier: earlierRound?.tier ?? null,
     finalTierRaised,
   }

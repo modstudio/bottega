@@ -219,18 +219,20 @@ describe('terminal review evidence', () => {
         failureKind: null,
       }),
     ).toBeNull()
-    expect(db().query('SELECT id FROM review_lens WHERE run_record_id=?').get(probeRun)).toBeNull()
+    expect(
+      db().query('SELECT record_id FROM review_lens WHERE run_record_id=?').get(probeRun),
+    ).toBeNull()
     const reviewId = recordTerminalReviewEvidence(db(), {
       runId: productRun,
       parsedReview,
       status: 'ok',
       failureKind: null,
     })
-    expect(reviewId).toBeGreaterThan(0)
+    expect(reviewId).toMatch(/^[0-9a-f-]{36}$/)
     expect(
-      db().query('SELECT review_id FROM review_lens WHERE run_record_id=?').get(productRun),
+      db().query('SELECT review_record_id FROM review_lens WHERE run_record_id=?').get(productRun),
     ).toEqual({
-      review_id: reviewId,
+      review_record_id: reviewId,
     })
   })
 })

@@ -263,7 +263,7 @@ export function recordTerminalReviewEvidence(
     status: string
     failureKind: ReturnType<typeof classify> | null
   },
-): number | null {
+): string | null {
   if (!input.parsedReview || (input.status !== 'ok' && input.failureKind !== 'escaped')) {
     return null
   }

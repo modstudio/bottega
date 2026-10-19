@@ -182,7 +182,6 @@ test('real natural and undeclared references remain measured', () => {
     )
     expect(inventory.findings).toContain('lens:primary-key')
     expect(inventory.findings).toContain('project_lens_profile.lens_id:reference')
-    expect(inventory.findings).toContain('review_finding_amendment.finding_ordinal:reference')
     expect(inventory.findings).toContain('workflow_cursor.workflow_version:reference')
     expect(inventory.findings).toContain('workflow_cursor.catalogue_version:reference')
   } finally {

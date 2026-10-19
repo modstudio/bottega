@@ -80,7 +80,8 @@ export type ValidatedEvidence = {
     boundToStep: boolean
   }
   review?: {
-    id: number
+    recordId: string
+    number: number
     allFindingsDisposed: boolean
     allLensesGraded: boolean
     unfinishedReviewIds?: number[]
@@ -378,7 +379,7 @@ function unfinishedReviewRefusal(floors: Floor[], evidence: ValidatedEvidence): 
 function evidenceRefs(evidence: ValidatedEvidence): EvidenceRef[] {
   const refs: EvidenceRef[] = []
   if (evidence.ruling) refs.push({ flag: '--ruling', value: String(evidence.ruling.id) })
-  if (evidence.review) refs.push({ flag: '--review', value: String(evidence.review.id) })
+  if (evidence.review) refs.push({ flag: '--review', value: String(evidence.review.number) })
   if (evidence.gate) refs.push({ flag: '--gate', value: String(evidence.gate.id) })
   if (evidence.run) refs.push({ flag: '--run', value: String(evidence.run.id) })
   if (evidence.artifact) refs.push({ flag: '--artifact', value: evidence.artifact.ref })

@@ -14,7 +14,7 @@ import {
 } from './review-triage-restore-policy.ts'
 
 type OutboxRow = { id: number; row_id: string; payload: string }
-type Candidate = TriageRestoreFinding & { reviewId: number }
+type Candidate = TriageRestoreFinding
 type ReviewFinding = Candidate & { disposition: string | null }
 type SourceLookup = {
   row: OutboxRow | null
@@ -22,7 +22,7 @@ type SourceLookup = {
   status: 'missing' | 'invalid' | 'valid'
 }
 type TriageRestoreResult = {
-  findingId: number
+  finding: string
   outboxId: number | null
   action: 'apply' | 'skip'
   disposition?: Disposition
@@ -44,7 +44,7 @@ const sourcePayloadSchema = z.object({
   id: z.string().min(1),
   reviewId: z.string().min(1),
   reviewLensId: z.string().min(1),
-  localId: z.number().int().positive(),
+  localId: z.null(),
   ordinal: z.number().int().nonnegative(),
   severity: z.string().min(1),
   location: z.string(),
@@ -57,65 +57,69 @@ const sourcePayloadSchema = z.object({
   withheldFields: z.array(z.string()).nullable().optional(),
 })
 
-function candidate(database: Database, findingId: number): Candidate | null {
+function candidate(database: Database, findingRecordId: string): Candidate | null {
   return database
-    .query<Candidate, [number]>(
-      `SELECT finding.id, finding.review_id AS reviewId,
-              review.record_id AS reviewRecordId, finding.ordinal, finding.severity,
+    .query<Candidate, [string]>(
+      `SELECT finding.review_record_id AS reviewRecordId, finding.ordinal, finding.severity,
               finding.location, finding.evidence, finding.record_id AS recordId,
+              review.number || '/' || finding.ordinal AS displayHandle,
               review.completed_at AS completedAt
-         FROM review_finding finding JOIN review ON review.id=finding.review_id
-        WHERE finding.id=? AND finding.disposition IS NULL`,
+         FROM review_finding finding JOIN review ON review.record_id=finding.review_record_id
+        WHERE finding.record_id=? AND finding.disposition IS NULL`,
     )
-    .get(findingId)
+    .get(findingRecordId)
 }
 
-function openCandidateIds(database: Database): number[] {
+function openCandidateIds(database: Database): string[] {
   return database
-    .query<{ id: number }, []>(
-      `SELECT finding.id FROM review_finding finding
-         JOIN review ON review.id=finding.review_id
+    .query<{ record_id: string }, []>(
+      `SELECT finding.record_id FROM review_finding finding
+         JOIN review ON review.record_id=finding.review_record_id
         WHERE finding.disposition IS NULL AND review.completed_at IS NULL
-        ORDER BY finding.id`,
+        ORDER BY review.number,finding.ordinal`,
     )
     .all()
-    .map((row) => row.id)
+    .map((row) => row.record_id)
 }
 
-function completedReviewIds(database: Database): number[] {
+function completedReviewIds(database: Database): string[] {
   return database
-    .query<{ id: number }, []>(
-      `SELECT DISTINCT review.id
-         FROM review JOIN review_finding finding ON finding.review_id=review.id
+    .query<{ record_id: string }, []>(
+      `SELECT DISTINCT review.record_id
+         FROM review JOIN review_finding finding ON finding.review_record_id=review.record_id
         WHERE finding.disposition IS NULL AND review.completed_at IS NOT NULL
-        ORDER BY review.id`,
+        ORDER BY review.number`,
     )
     .all()
-    .map((row) => row.id)
+    .map((row) => row.record_id)
 }
 
-function reviewFindings(database: Database, reviewId: number): ReviewFinding[] {
+function reviewFindings(database: Database, reviewRecordId: string): ReviewFinding[] {
   return database
-    .query<ReviewFinding, [number]>(
-      `SELECT finding.id, finding.review_id AS reviewId,
-              review.record_id AS reviewRecordId, finding.ordinal, finding.severity,
+    .query<ReviewFinding, [string]>(
+      `SELECT finding.review_record_id AS reviewRecordId, finding.ordinal, finding.severity,
               finding.location, finding.evidence, finding.record_id AS recordId,
+              review.number || '/' || finding.ordinal AS displayHandle,
               finding.disposition, review.completed_at AS completedAt
-         FROM review_finding finding JOIN review ON review.id=finding.review_id
-        WHERE finding.review_id=? ORDER BY finding.id`,
+         FROM review_finding finding JOIN review ON review.record_id=finding.review_record_id
+        WHERE finding.review_record_id=? ORDER BY finding.ordinal`,
     )
-    .all(reviewId)
+    .all(reviewRecordId)
 }
 
-function latestSource(database: Database, findingId: number): SourceLookup {
+function latestSource(
+  database: Database,
+  finding: Pick<Candidate, 'reviewRecordId' | 'ordinal'>,
+): SourceLookup {
   const row = database
-    .query<OutboxRow, [number]>(
+    .query<OutboxRow, [string, number]>(
       `SELECT id, row_id, payload FROM outbox
         WHERE kind='review_finding' AND json_valid(payload)
-          AND json_extract(payload,'$.localId')=?
+          AND json_extract(payload,'$.reviewId')=?
+          AND json_extract(payload,'$.ordinal')=?
         ORDER BY id DESC LIMIT 1`,
     )
-    .get(findingId)
+    .get(finding.reviewRecordId, finding.ordinal)
   if (!row) return { row: null, source: null, status: 'missing' }
   let value: unknown
   try {
@@ -132,7 +136,6 @@ function latestSource(database: Database, findingId: number): SourceLookup {
       outboxId: row.id,
       recordId: parsed.data.id,
       reviewRecordId: parsed.data.reviewId,
-      localId: parsed.data.localId,
       ordinal: parsed.data.ordinal,
       severity: parsed.data.severity,
       location: parsed.data.location,
@@ -158,15 +161,15 @@ function recordIdReferenced(database: Database, recordId: string): boolean {
 
 function assess(
   database: Database,
-  findingId: number,
+  findingRecordId: string,
 ): {
   finding: Candidate
   decision: TriageRestoreDecision
   outboxId: number | null
 } | null {
-  const finding = candidate(database, findingId)
+  const finding = candidate(database, findingRecordId)
   if (!finding) return null
-  const lookup = latestSource(database, findingId)
+  const lookup = latestSource(database, finding)
   const decision = decideTriageRestore({
     finding,
     source: lookup.source,
@@ -177,7 +180,7 @@ function assess(
 }
 
 type ReviewSnapshot = {
-  reviewId: number
+  reviewRecordId: string
   findings: Array<{ finding: ReviewFinding; lookup: SourceLookup; recordIdReferenced: boolean }>
   candidates: Array<NonNullable<ReturnType<typeof assess>>>
 }
@@ -200,10 +203,10 @@ function invalidTriageReason(source: TriageRestoreSource): string | null {
   }
 }
 
-function snapshotReview(database: Database, reviewId: number): ReviewSnapshot {
-  const findings = reviewFindings(database, reviewId).map((finding) => ({
+function snapshotReview(database: Database, reviewRecordId: string): ReviewSnapshot {
+  const findings = reviewFindings(database, reviewRecordId).map((finding) => ({
     finding,
-    lookup: latestSource(database, finding.id),
+    lookup: latestSource(database, finding),
     recordIdReferenced: recordIdReferenced(database, finding.recordId),
   }))
   const candidates = findings
@@ -223,16 +226,16 @@ function snapshotReview(database: Database, reviewId: number): ReviewSnapshot {
       })(),
       outboxId: lookup.row?.id ?? null,
     }))
-  return { reviewId, findings, candidates }
+  return { reviewRecordId, findings, candidates }
 }
 
 function restoreReview(
   database: Database,
-  reviewId: number,
+  reviewRecordId: string,
   dryRun: boolean,
 ): TriageRestoreResult[] {
   const run = (): TriageRestoreResult[] => {
-    const snapshot = snapshotReview(database, reviewId)
+    const snapshot = snapshotReview(database, reviewRecordId)
     const restorations = snapshot.findings.filter(({ finding, lookup, recordIdReferenced }) => {
       const source = lookup.source
       return (
@@ -245,9 +248,14 @@ function restoreReview(
 
     const results = snapshot.candidates.map(({ finding, decision, outboxId }) =>
       decision.action === 'skip'
-        ? ({ findingId: finding.id, outboxId, action: 'skip', reason: decision.reason } as const)
+        ? ({
+            finding: finding.displayHandle,
+            outboxId,
+            action: 'skip',
+            reason: decision.reason,
+          } as const)
         : ({
-            findingId: finding.id,
+            finding: finding.displayHandle,
             outboxId: decision.source.outboxId,
             action: 'apply',
             disposition: decision.source.disposition!,
@@ -257,14 +265,14 @@ function restoreReview(
 
     for (const { finding, lookup } of restorations) {
       database
-        .query('UPDATE review_finding SET record_id=? WHERE id=?')
-        .run(lookup.source!.recordId, finding.id)
+        .query('UPDATE review_finding SET record_id=? WHERE record_id=?')
+        .run(lookup.source!.recordId, finding.recordId)
     }
     for (const { finding, decision } of snapshot.candidates) {
       if (decision.action === 'apply') {
         const source = decision.source
         amendFinding(
-          finding.reviewId,
+          finding.reviewRecordId,
           finding.ordinal,
           source.disposition!,
           `restored from outbox row ${source.outboxId}`,
@@ -302,27 +310,27 @@ function reportFor(results: TriageRestoreResult[], dryRun: boolean): TriageResto
 
 export function restoreReviewTriage(
   database: Database,
-  options: { dryRun: boolean; beforeReview?: (reviewId: number) => void },
+  options: { dryRun: boolean; beforeReview?: (reviewRecordId: string) => void },
 ): TriageRestoreReport {
   const openResults: TriageRestoreResult[] = []
-  for (const findingId of openCandidateIds(database)) {
-    const assessed = assess(database, findingId)
+  for (const findingRecordId of openCandidateIds(database)) {
+    const assessed = assess(database, findingRecordId)
     if (!assessed) continue
     openResults.push({
-      findingId,
+      finding: assessed.finding.displayHandle,
       outboxId: assessed.outboxId,
       action: 'skip',
       reason: TRIAGE_RESTORE_SKIP_REASONS.openReview,
     })
   }
-  const reviewIds = completedReviewIds(database)
+  const reviewRecordIds = completedReviewIds(database)
   const results = [
     ...openResults,
-    ...reviewIds.flatMap((reviewId) => {
-      options.beforeReview?.(reviewId)
-      return restoreReview(database, reviewId, options.dryRun)
+    ...reviewRecordIds.flatMap((reviewRecordId) => {
+      options.beforeReview?.(reviewRecordId)
+      return restoreReview(database, reviewRecordId, options.dryRun)
     }),
-  ].sort((a, b) => a.findingId - b.findingId)
+  ].sort((a, b) => a.finding.localeCompare(b.finding, undefined, { numeric: true }))
   return reportFor(results, options.dryRun)
 }
 
@@ -336,7 +344,7 @@ function renderReport(report: TriageRestoreReport): string {
     ...Object.entries(report.byReason).map(([reason, count]) => `  ${reason}: ${count}`),
   ]
   for (const row of report.rows.filter((item) => item.action === 'skip')) {
-    lines.push(`finding ${row.findingId}: ${row.reason}`)
+    lines.push(`finding ${row.finding}: ${row.reason}`)
   }
   return lines.join('\n')
 }
