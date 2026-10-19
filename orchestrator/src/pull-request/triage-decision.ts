@@ -67,22 +67,52 @@ export type SecondOpinionDecision =
   | { complete: true }
   | { complete: false; lens: string; firstRunId: string | null }
 
-/** Require two completed, graded runs of the lens with distinct recorded effective models. */
+type SecondOpinionSelection =
+  | { complete: true; credited: readonly TriageReviewRow[] }
+  | { complete: false; lens: string; firstRunId: string | null }
+
+/**
+ * The one rule for a second opinion: two completed, graded runs of the lens with distinct
+ * recorded effective models. A complete selection names the reviews holding the two credited
+ * runs, the earliest run with a model and the earliest with a different one.
+ */
+function selectSecondOpinion(
+  reviews: readonly TriageReviewRow[],
+  lens: string,
+): SecondOpinionSelection {
+  const opinions = reviews
+    .filter((review) => review.completedAt !== null)
+    .flatMap((review) => review.lenses.map((opinion) => ({ opinion, review })))
+    .filter(({ opinion }) => opinion.graded && opinion.lens === lens)
+    .sort((left, right) => left.opinion.recordId.localeCompare(right.opinion.recordId))
+  const first = opinions.find(({ opinion }) => opinion.model)
+  const second = first
+    ? opinions.find(({ opinion }) => opinion.model && opinion.model !== first.opinion.model)
+    : undefined
+  if (!first || !second) {
+    return { complete: false, lens, firstRunId: opinions[0]?.opinion.runId ?? null }
+  }
+  return {
+    complete: true,
+    credited: [
+      ...new Map(
+        [first.review, second.review].map((review) => [review.reviewRecordId, review]),
+      ).values(),
+    ],
+  }
+}
+
+/** Whether the lens's second opinion is satisfied, and if not, which run asks for one. */
 export function decideSecondOpinion(
   reviews: readonly TriageReviewRow[],
   lens: string | undefined,
 ): SecondOpinionDecision {
   if (!lens) return { complete: true }
-  const opinions = reviews
-    .filter((review) => review.completedAt !== null)
-    .flatMap((review) => review.lenses)
-    .filter((opinion) => opinion.graded && opinion.lens === lens)
-    .sort((left, right) => left.recordId.localeCompare(right.recordId))
-  const models = new Set(opinions.flatMap((opinion) => (opinion.model ? [opinion.model] : [])))
-  if (opinions.length >= 2 && models.size >= 2) return { complete: true }
-  return { complete: false, lens, firstRunId: opinions[0]?.runId ?? null }
+  const selection = selectSecondOpinion(reviews, lens)
+  return selection.complete ? { complete: true } : selection
 }
 
+/** The reviews a composed round credits for its second opinion, or null when it is unmet. */
 function creditedSecondOpinionReviews(
   reviews: readonly TriageReviewRow[],
   lens: string | undefined,
@@ -94,23 +124,8 @@ function creditedSecondOpinionReviews(
       review.tier !== null &&
       review.findings.every((finding) => finding.disposition !== null),
   )
-  if (!decideSecondOpinion(eligible, lens).complete) return null
-  const opinions = eligible
-    .flatMap((review) =>
-      review.lenses.map((opinion) => ({
-        opinion,
-        review,
-      })),
-    )
-    .filter(({ opinion }) => opinion.graded && opinion.lens === lens && opinion.model)
-    .sort((left, right) => left.opinion.recordId.localeCompare(right.opinion.recordId))
-  const first = opinions[0]!
-  const second = opinions.find(({ opinion }) => opinion.model !== first.opinion.model)!
-  return [
-    ...new Map(
-      [first.review, second.review].map((review) => [review.reviewRecordId, review]),
-    ).values(),
-  ]
+  const selection = selectSecondOpinion(eligible, lens)
+  return selection.complete ? selection.credited : null
 }
 
 function composedCompleteRound(
