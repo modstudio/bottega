@@ -12,7 +12,7 @@ export function AppMark({ className }: { className?: string }) {
       strokeWidth={2}
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className}
+      className={appMarkStyles({ class: className })}
     >
       <path d="M4 21V10a8 8 0 0 1 16 0v11" />
       <path d="M9 21v-6a3 3 0 0 1 6 0v6" />
@@ -20,3 +20,5 @@ export function AppMark({ className }: { className?: string }) {
     </svg>
   )
 }
+
+import { appMarkStyles } from './app-mark.styles.ts'

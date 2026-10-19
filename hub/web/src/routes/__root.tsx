@@ -14,6 +14,7 @@ import { waitingInboxEntries } from '@bottega/hub-data/operator-waiting'
 import { useProjectColors } from '@bottega/hub-data/use-project-colors'
 import { SiteFrame } from '@bottega/hub-site/chrome'
 import { type SiteLinkProps, SiteNavigation } from '@bottega/hub-site/navigation'
+import { AppMark } from '@bottega/hub-ui/app-mark'
 import {
   AppShell,
   type NavItem,
@@ -22,6 +23,7 @@ import {
 } from '@bottega/hub-ui/shell/app-shell'
 import { UserMenu } from '@bottega/hub-ui/shell/user-menu'
 import { recordSpaces } from '@bottega/hub-util/record-spaces'
+import { ProjectColorsContext } from '@bottega/hub-views/project-colors'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   createRootRoute,
@@ -33,15 +35,13 @@ import {
   useRouterState,
 } from '@tanstack/react-router'
 import { useEffect } from 'react'
-import { AppMark } from '@/components/app-mark'
-import { ProjectColorsContext } from '@/components/design-system'
 import { useWindowState } from '@/lib/window'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 
 const THEME_KEY = 'hub:theme'
 const RAIL_KEY = 'hub:rail'
 
-const mark = <AppMark className="size-5 shrink-0 text-text-primary" />
+const mark = <AppMark className="size-5 shrink-0" />
 
 const renderLink: RenderLink = (item, { className, onClick, children }) => (
   <Link to={item.to as LinkProps['to']} className={className} onClick={onClick}>

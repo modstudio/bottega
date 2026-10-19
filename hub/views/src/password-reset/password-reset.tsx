@@ -2,6 +2,7 @@ import { Button } from '@bottega/hub-ui/button'
 import { Input } from '@bottega/hub-ui/field/input'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { useState } from 'react'
+import { passwordResetStyles } from './password-reset.styles.ts'
 
 const confirmation = 'If an account exists for that email, a password reset link has been sent.'
 
@@ -35,8 +36,8 @@ export function HostedForgotPassword({
   return (
     <section>
       <PageHeader title="Forgot password" subtitle="Request a reset link" />
-      <form className="max-w-sm space-y-4" onSubmit={(event) => void submit(event)}>
-        <label htmlFor="reset-email" className="block space-y-1">
+      <form className={passwordResetStyles().form()} onSubmit={(event) => void submit(event)}>
+        <label htmlFor="reset-email" className={passwordResetStyles().label()}>
           <span>Email</span>
           <Input
             id="reset-email"
@@ -65,10 +66,15 @@ export function HostedResetPassword({
   token,
   invalid = false,
   resetPassword,
+  onResetComplete,
+  requestAnotherHref,
 }: {
   token?: string
   invalid?: boolean
   resetPassword: (token: string, newPassword: string) => Promise<void>
+  onResetComplete: () => void
+  /** Where a reader asks for a new link when this one is unusable; the route owns the address. */
+  requestAnotherHref: string
 }) {
   const [password, setPassword] = useState('')
   const [confirmationValue, setConfirmationValue] = useState('')
@@ -82,7 +88,7 @@ export function HostedResetPassword({
         <PageHeader title="Reset link unavailable" />
         <p>This password reset link is invalid or has expired.</p>
         <p>
-          <a href="/forgot-password" className="text-link hover:underline">
+          <a href={requestAnotherHref} className={passwordResetStyles().link()}>
             Request another reset link
           </a>
         </p>
@@ -97,7 +103,7 @@ export function HostedResetPassword({
     setError(null)
     try {
       await resetPassword(token, password)
-      window.location.assign('/sign-in?reset=success')
+      onResetComplete()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -107,8 +113,8 @@ export function HostedResetPassword({
   return (
     <section>
       <PageHeader title="Set a new password" />
-      <form className="max-w-sm space-y-4" onSubmit={(event) => void submit(event)}>
-        <label htmlFor="new-password" className="block space-y-1">
+      <form className={passwordResetStyles().form()} onSubmit={(event) => void submit(event)}>
+        <label htmlFor="new-password" className={passwordResetStyles().label()}>
           <span>New password</span>
           <Input
             id="new-password"
@@ -119,7 +125,7 @@ export function HostedResetPassword({
             onChange={(event) => setPassword(event.target.value)}
           />
         </label>
-        <label htmlFor="confirm-password" className="block space-y-1">
+        <label htmlFor="confirm-password" className={passwordResetStyles().label()}>
           <span>Confirm new password</span>
           <Input
             id="confirm-password"
@@ -131,7 +137,7 @@ export function HostedResetPassword({
           />
         </label>
         {error ? (
-          <p data-tone="error" className="text-status-text">
+          <p data-tone="error" className={passwordResetStyles().error()}>
             {error}
           </p>
         ) : null}

@@ -2,6 +2,7 @@ import { Badge } from '@bottega/hub-ui/badge'
 import { Button, TextButton } from '@bottega/hub-ui/button'
 import { Select } from '@bottega/hub-ui/listbox/select'
 import { type ReactNode, useState } from 'react'
+import { machineOverrideStyles } from './machine-override.styles.ts'
 
 /**
  * The opt-in every machine override shares: a setting follows the profile until the
@@ -19,7 +20,7 @@ export function MachineOptIn({
   const [open, setOpen] = useState(false)
   if (!active && !open) {
     return (
-      <TextButton className="self-start" onClick={() => setOpen(true)}>
+      <TextButton className={machineOverrideStyles().optIn()} onClick={() => setOpen(true)}>
         Override on this machine
       </TextButton>
     )
@@ -46,7 +47,7 @@ export function MachineOverride({
   return (
     <MachineOptIn active={value !== undefined}>
       {(close) => (
-        <span className="flex flex-wrap items-center gap-2">
+        <span className={machineOverrideStyles().controls()}>
           <Badge tone="info">This machine</Badge>
           <Select
             label={`${label} on this machine`}

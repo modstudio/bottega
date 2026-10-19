@@ -5,6 +5,8 @@ import { Select } from '@bottega/hub-ui/listbox/select'
 import { relativeTime } from '@bottega/hub-util/format'
 import { DocumentSurface } from '@bottega/hub-views/document-surface'
 import { TaskMeasures } from '@bottega/hub-views/measures/task-measures'
+import { ProjectMark } from '@bottega/hub-views/project-colors'
+import { SourceMark } from '@bottega/hub-views/source-mark'
 import { taskStatusLook } from '@bottega/hub-views/status-look/task-status'
 import { TaskHistory } from '@bottega/hub-views/task-history'
 import { TaskPage, type TaskPageSave } from '@bottega/hub-views/task-page'
@@ -12,7 +14,6 @@ import type { TaskPageDoc, TaskPageFact } from '@bottega/hub-views/task-page/tas
 import { CalendarDays, UserRound, X } from 'lucide-react'
 import { taskHistoryEntries } from '@/lib/task-history'
 import type { TaskScreenDetail, TaskScreenResult } from '@/routes/-task-screen-data'
-import { ProjectMark, SourceMark } from './design-system'
 
 type TaskStatus = 'open' | 'active' | 'review' | 'done' | 'dropped'
 

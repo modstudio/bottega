@@ -2,6 +2,7 @@ import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
 import { Select } from '@bottega/hub-ui/listbox/select'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { ToolbarBand } from '@bottega/hub-ui/toolbar-band'
+import { snapshotStyles } from './snapshot.styles.ts'
 
 type Machine = { id: string; takenAt: string }
 
@@ -28,7 +29,7 @@ export function SnapshotHeader({
   const phone = useMediaQuery(PHONE_QUERY)
   const machineControl =
     machines.length > 1 ? (
-      <div className="flex items-center gap-2 text-sm text-text-muted">
+      <div className={snapshotStyles().machineControl()}>
         Machine
         <Select
           label="Machine"
@@ -52,7 +53,7 @@ export function SnapshotEmpty({ title }: { title: string }) {
   return (
     <section>
       <PageHeader title={title} />
-      <p className="text-text-muted">No {title.toLowerCase()} snapshot is available.</p>
+      <p className={snapshotStyles().empty()}>No {title.toLowerCase()} snapshot is available.</p>
     </section>
   )
 }

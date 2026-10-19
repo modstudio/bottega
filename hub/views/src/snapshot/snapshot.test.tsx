@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { SnapshotEmpty } from './hosted-snapshot'
+import { SnapshotEmpty } from './snapshot'
 
 test('a missing snapshot renders its empty state without an error', () => {
   const html = renderToStaticMarkup(<SnapshotEmpty title="Agents" />)

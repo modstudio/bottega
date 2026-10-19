@@ -4,7 +4,8 @@ import { Input } from '@bottega/hub-ui/field/input'
 import { Select } from '@bottega/hub-ui/listbox/select'
 import { X } from 'lucide-react'
 import { useState } from 'react'
-import { MachineOptIn } from '@/components/machine-override'
+import { MachineOptIn } from './machine-override.tsx'
+import { machinePermissionEditorStyles } from './machine-permission-editor.styles.ts'
 
 type PermissionList = 'allow' | 'ask' | 'deny'
 type PermissionLists = Record<PermissionList, string[]>
@@ -42,12 +43,12 @@ function OverlayRules({
   const rows = listsOf(lists).flatMap((list) => lists[list].map((rule) => ({ list, rule })))
   if (rows.length === 0) return null
   return (
-    <div className="space-y-1">
-      <div className="text-sm text-text-muted">{title}</div>
+    <div className={machinePermissionEditorStyles().rules()}>
+      <div className={machinePermissionEditorStyles().ruleTitle()}>{title}</div>
       {rows.map(({ list, rule }) => (
-        <div key={`${list} ${rule}`} className="flex min-w-0 items-center gap-2">
+        <div key={`${list} ${rule}`} className={machinePermissionEditorStyles().ruleRow()}>
           <Badge>{list}</Badge>
-          <code className="min-w-0 flex-1 break-all font-mono">{rule}</code>
+          <code className={machinePermissionEditorStyles().rule()}>{rule}</code>
           <IconButton
             size="sm"
             label={`${undo}: ${rule}`}
@@ -86,10 +87,10 @@ function OverlayEditor({ machine, change }: { machine: Overlay; change: Permissi
   return (
     <MachineOptIn active={!empty}>
       {(close) => (
-        <div className="space-y-3 border-border-subtle border-l-2 pl-4">
-          <div className="flex items-center gap-2">
+        <div className={machinePermissionEditorStyles().editor()}>
+          <div className={machinePermissionEditorStyles().heading()}>
             <Badge tone="info">This machine</Badge>
-            <span className="text-sm text-text-muted">
+            <span className={machinePermissionEditorStyles().explanation()}>
               Applies on this machine only, at the next session start.
             </span>
           </div>
@@ -107,7 +108,7 @@ function OverlayEditor({ machine, change }: { machine: Overlay; change: Permissi
             pending={change.pending}
             onUndo={(name, value) => runChange({ operation: 'undrop', list: name, rule: value })}
           />
-          <div className="grid gap-3 md:grid-cols-[10rem_minmax(0,1fr)]">
+          <div className={machinePermissionEditorStyles().fields()}>
             <Select
               label="Machine permission list"
               value={list}
@@ -122,11 +123,11 @@ function OverlayEditor({ machine, change }: { machine: Overlay; change: Permissi
             />
           </div>
           {change.error ? (
-            <p data-tone="error" className="whitespace-pre-wrap text-status-text">
+            <p data-tone="error" className={machinePermissionEditorStyles().error()}>
               {change.error}
             </p>
           ) : null}
-          <div className="flex flex-wrap gap-2">
+          <div className={machinePermissionEditorStyles().actions()}>
             <Button
               disabled={!rule.trim() || change.pending}
               onClick={() => runChange({ operation: 'add', list, rule })}

@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { HostedResetPassword, validateResetPassword } from './hosted-password-reset'
+import { HostedResetPassword, validateResetPassword } from './password-reset'
 
 test('reset validation rejects a mismatch and a short password', () => {
   expect(validateResetPassword('long-enough-password', 'different-password')).toBe(
@@ -12,8 +12,20 @@ test('reset validation rejects a mismatch and a short password', () => {
 test('an expired, used, or missing token renders the failure state', () => {
   const resetPassword = async () => {}
   for (const page of [
-    <HostedResetPassword key="used" token="used-token" invalid resetPassword={resetPassword} />,
-    <HostedResetPassword key="missing" resetPassword={resetPassword} />,
+    <HostedResetPassword
+      key="used"
+      token="used-token"
+      invalid
+      resetPassword={resetPassword}
+      onResetComplete={() => {}}
+      requestAnotherHref="/forgot-password"
+    />,
+    <HostedResetPassword
+      key="missing"
+      resetPassword={resetPassword}
+      onResetComplete={() => {}}
+      requestAnotherHref="/forgot-password"
+    />,
   ]) {
     const html = renderToStaticMarkup(page)
     expect(html).toContain('This password reset link is invalid or has expired.')

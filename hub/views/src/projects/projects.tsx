@@ -1,8 +1,9 @@
 import { Badge } from '@bottega/hub-ui/badge'
+import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { FolderGit2 } from 'lucide-react'
-import { Collection, type CollectionColumn } from '@/components/collection'
-import { type ProjectColors, ProjectMark } from '@/components/design-system'
+import { type ProjectColors, ProjectMark } from '../project-colors/project-colors.tsx'
+import { projectsStyles } from './projects.styles.ts'
 
 type HostedProject = {
   spaceId: string
@@ -35,7 +36,7 @@ export function HostedProjects({
       label: 'Name',
       phone: 'title',
       render: (project) => (
-        <span className="flex items-center gap-2 font-semibold">
+        <span className={projectsStyles().project()}>
           <FolderGit2 size={14} />
           <ProjectMark name={project.name} colors={colors} />
         </span>
@@ -71,9 +72,9 @@ export function HostedProjects({
   return (
     <section>
       <PageHeader title="Projects" subtitle={`${projects.length} in this space`} />
-      {pending ? <p className="text-text-muted">Loading projects...</p> : null}
+      {pending ? <p className={projectsStyles().loading()}>Loading projects...</p> : null}
       {error ? (
-        <p data-tone="error" className="text-status-text">
+        <p data-tone="error" className={projectsStyles().error()}>
           {error}
         </p>
       ) : null}

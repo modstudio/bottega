@@ -1,11 +1,6 @@
 import { Button } from '@bottega/hub-ui/button'
 import { Select, type SelectOption } from '@bottega/hub-ui/listbox/select'
-import { ProjectName } from '@bottega/hub-ui/project-mark'
 import { Segmented } from '@bottega/hub-ui/segmented'
-import { collectedTime, relativeTime } from '@bottega/hub-util/format'
-import { PROJECT_FALLBACK } from '@bottega/hub-util/project'
-import { Database, GitCommit, RadioTower } from 'lucide-react'
-import { type CSSProperties, createContext, useContext } from 'react'
 import {
   clearFilters,
   setFilter,
@@ -117,79 +112,4 @@ export function useWindowFilters({
       : []),
   ]
   return { controls, active }
-}
-
-export function responseSubtitle(response: {
-  collectedAt: string | null
-  activeAgents: string[]
-  servingSince: string
-}) {
-  const agent = `${response.activeAgents.length} agent${response.activeAgents.length === 1 ? '' : 's'} working`
-  return {
-    text: `${collectedTime(response.collectedAt)} \u00b7 ${agent}`,
-    title: `Serving code from ${relativeTime(response.servingSince)}. ${response.activeAgents.length ? response.activeAgents.join(', ') : 'No agent on a task'}`,
-  }
-}
-
-/**
- * The register's color for a project, as CSS variables the stylesheet reads.
- *
- * The old dashboard drew a 3px bar in the project's color beside every project
- * name and down the edge of every board card, and it was the fastest way to
- * tell whose row you were looking at. Colors live in the register
- * (settings.color / settings.colorDark), so the app reads them from the same
- * project list every screen already loads.
- */
-export type ProjectColors = Record<string, { light: string | null; dark: string | null }>
-export const ProjectColorsContext = createContext<ProjectColors>({})
-
-export function projectVars(
-  colors: ProjectColors,
-  name: string | null | undefined,
-): CSSProperties | undefined {
-  const c = name ? colors[name] : undefined
-  if (!c?.light) return undefined
-  return { '--project-light': c.light, '--project-dark': c.dark ?? c.light } as CSSProperties
-}
-
-/** A project name with its color bar; "elsewhere" when the row has none. */
-export function ProjectMark({
-  name,
-  colors: suppliedColors,
-}: {
-  name: string | null | undefined
-  colors?: ProjectColors
-}) {
-  const contextColors = useContext(ProjectColorsContext)
-  const colors = suppliedColors ?? contextColors
-  const color = name ? colors[name] : undefined
-  return (
-    <ProjectName name={name || PROJECT_FALLBACK} color={color?.light} colorDark={color?.dark} />
-  )
-}
-
-export function SourceMark({
-  source,
-  project,
-  protocol,
-}: {
-  source: string | null | undefined
-  project?: string | null
-  protocol?: string | null
-}) {
-  // Source is a glyph, not a color: project and status colors already carry
-  // facts, and a third color would make two independent facts look like one.
-  const title =
-    source === 'local'
-      ? 'hub'
-      : source === 'git'
-        ? 'git · derived from history'
-        : `${project ?? 'external'} · ${protocol ?? 'tracker protocol unknown'}`
-  const Icon = source === 'local' ? Database : source === 'git' ? GitCommit : RadioTower
-  return (
-    <span className="inline-flex items-center" title={title}>
-      <Icon size={13} aria-hidden />
-      <span className="sr-only">{title}</span>
-    </span>
-  )
 }

@@ -11,6 +11,7 @@ import {
 } from '@bottega/hub-data/hosted-organization'
 import { isHostedMode } from '@bottega/hub-data/hub-mode'
 import { Button } from '@bottega/hub-ui/button'
+import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
 import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
 import { Input } from '@bottega/hub-ui/field/input'
 import { Select } from '@bottega/hub-ui/listbox/select'
@@ -26,7 +27,6 @@ import {
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, Navigate } from '@tanstack/react-router'
 import { useState } from 'react'
-import { Collection, type CollectionColumn } from '@/components/collection'
 
 export const Route = createFileRoute('/members')({ component: MembersRoute })
 const roles: OrganizationRole[] = ['owner', 'admin', 'member']

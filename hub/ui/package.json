@@ -11,6 +11,8 @@
     "typecheck": "tsc --noEmit"
   },
   "exports": {
+    "./app-mark": "./src/app-mark/app-mark.tsx",
+    "./app-mark/app-mark.styles": "./src/app-mark/app-mark.styles.ts",
     "./avatar": "./src/avatar/avatar.tsx",
     "./avatar/avatar.styles": "./src/avatar/avatar.styles.ts",
     "./badge": "./src/badge/badge.tsx",
@@ -29,6 +31,8 @@
     "./checkbox/checkbox.styles": "./src/checkbox/checkbox.styles.ts",
     "./companion": "./src/companion/companion.tsx",
     "./companion/companion.styles": "./src/companion/companion.styles.ts",
+    "./collection": "./src/collection/collection.tsx",
+    "./collection/collection.styles": "./src/collection/collection.styles.ts",
     "./dialog": "./src/dialog/dialog.tsx",
     "./dialog/dialog.styles": "./src/dialog/dialog.styles.ts",
     "./dom/clock": "./src/dom/clock.ts",

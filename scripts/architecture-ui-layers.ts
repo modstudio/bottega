@@ -10,6 +10,7 @@ const uiLayers: { name: string; folders: string[] }[] = [
   {
     name: 'primitives',
     folders: [
+      'app-mark',
       'avatar',
       'badge',
       'identifier',
@@ -53,7 +54,10 @@ const uiLayers: { name: string; folders: string[] }[] = [
       'form-layout',
     ],
   },
-  { name: 'layout', folders: ['shell', 'table-card', 'toolbar-band', 'companion'] },
+  {
+    name: 'layout',
+    folders: ['shell', 'table-card', 'toolbar-band', 'companion', 'collection'],
+  },
 ]
 
 const hubUiLayerFolders = uiLayers.flatMap((layer) => layer.folders)
@@ -189,6 +193,14 @@ const hubViewFolders = [
   'task-history',
   'task-page',
   'measures',
+  'machine-permissions',
+  'password-reset',
+  'project-colors',
+  'projects',
+  'reports',
+  'snapshot',
+  'source-mark',
+  'work-summary',
 ]
 
 const hubViewsFolderLayerRuleName = 'hub-views-folder-has-a-layer'
