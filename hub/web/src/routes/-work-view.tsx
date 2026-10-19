@@ -1,3 +1,4 @@
+import { useWindowState } from '@bottega/hub-data/window'
 import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
 import {
   type BoardCard,
@@ -15,7 +16,6 @@ import {
 import { WorkStats } from '@bottega/hub-views/work-summary/work-stats'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { useState } from 'react'
-import { useWindowState } from '@/lib/window'
 import { useDetailPanel } from '@/routes/-detail-panel'
 import { WaitingBadge } from '@/routes/-waiting-badge'
 import { useWindowFilters, WindowControl } from '@/routes/-window-controls'

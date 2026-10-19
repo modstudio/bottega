@@ -10,6 +10,7 @@ import {
   hubViewsDocsModeLiteralLines,
   hubViewsDocsModeLiteralRuleName,
 } from './architecture-hub-data.ts'
+import { hubWebSourcePlacementViolation } from './architecture-hub-packages.ts'
 import {
   hubUiFolderLayerRuleName,
   isDeclaredHubUiSourceLocation,
@@ -25,12 +26,22 @@ const pathOnly = process.argv.includes('--path-only')
 
 // This must exceed the command's cleanup margin so this process can remove cruise artifacts.
 const ARCHITECTURE_CRUISE_CLEANUP_MARGIN_MS = 1_750
-
 if (!target || !original || deadlineArgument === -1 || !Number.isFinite(deadlineMs)) {
   console.error(
     'usage: bun scripts/check-architecture-file.ts <candidate> [original] [checkout-root] --deadline-ms <epoch-ms>',
   )
   process.exit(2)
+}
+
+const hubWebPlacementViolation = hubWebSourcePlacementViolation(original)
+if (hubWebPlacementViolation) {
+  console.log(
+    JSON.stringify({
+      status: 'refused',
+      findings: [{ rule: 'hub-web-source-placement', dependency: hubWebPlacementViolation }],
+    }),
+  )
+  process.exit(0)
 }
 
 if (

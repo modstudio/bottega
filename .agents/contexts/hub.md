@@ -5,10 +5,12 @@ paths: ["hub/**"]
 
 # Web application
 
-The Vite and React application lives in `hub/web`. Route modules live in
-`hub/web/src/routes`, and TanStack Router generates the route tree. Static paths resolve
-from the built distribution; other non-tRPC paths return the application entry point so
-direct navigation and hard refresh enter the client router.
+The Vite and React application lives in `hub/web`. Its source holds only route modules and
+the router entry; TanStack Router generates the route tree. `scripts/check-hub-packages.ts`
+enforces `hub-web-source-placement`, and `bottega gate hub-import judge` refuses a misplaced
+source file when it is written. Static paths resolve from the built distribution; other
+non-tRPC paths return the application entry point so direct navigation and hard refresh enter
+the client router.
 
 Every screen reads through a procedure in `hub/src/trpc/routers`. Procedures call the
 canonical hub operation rather than duplicating its query or write. A screen therefore
@@ -24,10 +26,10 @@ navigation. `scripts/check-hub-packages.ts` enforces package exports and workspa
 `hub-views-docs-do-not-name-data-modes`; `orchestrator/hooks/hub-import-guard.py` refuses the same
 import and mode-literal violations when a file is written.
 
-The selected window, filters and navigation counts share the external store in
-`hub/web/src/lib/window.ts`. Live-query polling pauses while redrawing would disrupt an
-open control, and it reads only completed collection state because collection has its
-own cadence and lease.
+The selected window, filters and navigation counts live in hub-data's window store,
+`@bottega/hub-data/window`. Live-query polling pauses while redrawing would disrupt an open
+control, and it reads only completed collection state because collection has its own cadence
+and lease.
 
 Serve the current worktree before checking a screen, then verify direct navigation and a
 hard refresh against that server. Filtering happens before any cap, because capping first
@@ -50,15 +52,16 @@ layer folders, and the hub-views data and router boundary; and
 `scripts/check-hub-packages.ts` and `scripts/check-architecture.ts`.
 
 The UI and views packages know nothing of data access, routing or the hub mode, and their
-internal imports stay relative; `scripts/check-architecture.ts` enforces this boundary and the
-layers declared in `scripts/architecture-ui-layers.ts`. UI and views source filenames are
-kebab-case and use named exports without barrels or export-all declarations; the package
-overrides in `biome.jsonc` enforce these rules. `hub/web/lint/layout-only-classname.grit`
-refuses appearance classes passed to UI components: change a component's look through a
-variant it owns and pass it margin, size and placement only. Browser behavior, such as the
-dialog element, the popover attribute and anchor positioning, is used beneath our own
-styling; no component library is added, and a component's keyboard behavior follows its
-WAI-ARIA APG pattern.
+internal imports stay relative; `scripts/check-architecture.ts` enforces this boundary,
+`hub-ui-does-not-import-itself-by-package-subpath`,
+`hub-views-does-not-import-itself-by-package-subpath`, and the layers declared in
+`scripts/architecture-ui-layers.ts`. UI and views source filenames are kebab-case and use named
+exports without barrels or export-all declarations; the package overrides in `biome.jsonc`
+enforce these rules. `hub/web/lint/layout-only-classname.grit` refuses appearance classes passed
+to UI components: change a component's look through a variant it owns and pass it margin, size
+and placement only. Browser behavior, such as the dialog element, the popover attribute and
+anchor positioning, is used beneath our own styling; no component library is added, and a
+component's keyboard behavior follows its WAI-ARIA APG pattern.
 
 Every hub-ui and hub-views component has stories beside it. Each preview fails on accessibility
 violations, with reasoned per-story exceptions only. Story tests run in CI as part of the

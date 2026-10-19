@@ -1,9 +1,21 @@
 import { expect, test } from 'bun:test'
 import {
+  HUB_DATA_PACKAGE,
+  HUB_SITE_PACKAGE,
+  HUB_UI_PACKAGE,
+  HUB_VIEWS_PACKAGE,
   hubSiteArchitectureRules,
   hubUtilArchitectureRules,
   hubUtilRuntimeDependencyViolations,
+  hubWebSourcePlacementViolation,
 } from './architecture-hub-packages.ts'
+
+test('hub web source placement allows routes and refuses presentation elsewhere', () => {
+  expect(hubWebSourcePlacementViolation('hub/web/src/routes/settings/profile.tsx')).toBeNull()
+  expect(hubWebSourcePlacementViolation('hub/web/src/components/profile.tsx')).toBe(
+    `hub/web/src/components/profile.tsx: presentation belongs in ${HUB_UI_PACKAGE}, ${HUB_VIEWS_PACKAGE} or ${HUB_SITE_PACKAGE}, and data in ${HUB_DATA_PACKAGE}`,
+  )
+})
 
 const utilRule = hubUtilArchitectureRules()[0]
 const siteRule = hubSiteArchitectureRules((target) => `node_modules/${target}`)[0]

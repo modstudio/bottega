@@ -1,6 +1,3 @@
-import { Button } from '@bottega/hub-ui/button'
-import { Select, type SelectOption } from '@bottega/hub-ui/listbox/select'
-import { Segmented } from '@bottega/hub-ui/segmented'
 import {
   clearFilters,
   setFilter,
@@ -8,7 +5,10 @@ import {
   useWindowState,
   WINDOWS,
   type WindowHours,
-} from '@/lib/window'
+} from '@bottega/hub-data/window'
+import { Button } from '@bottega/hub-ui/button'
+import { Select, type SelectOption } from '@bottega/hub-ui/listbox/select'
+import { Segmented } from '@bottega/hub-ui/segmented'
 
 function Filter({
   kind,
