@@ -28,9 +28,13 @@ export function createHostedTaskChangeFamily(
     cursorPrefix: HOSTED_CHANGES_CURSOR_KEY,
     tables: HOSTED_TASK_CHANGE_TABLE_QUERY,
     spaces: taskPullSpaces,
-    fullPull: async (options) => {
-      const snapshot = await hostedTaskChanges(null, options)
-      return (conn) => applyHostedTaskRows(conn, snapshot)
+    fullPull: async (cursor, options) => {
+      const snapshot = await hostedTaskChanges(cursor, options)
+      return {
+        cursor: snapshot.cursor,
+        more: snapshot.more ?? false,
+        apply: (conn) => applyHostedTaskRows(conn, snapshot),
+      }
     },
     tableOrder: () => 0,
     accepts: isHostedTaskChangeTable,

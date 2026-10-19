@@ -71,6 +71,7 @@ async function readRoute(ctx: RouteContext): Promise<Response | null> {
         parent: url.searchParams.get('parent') ?? undefined,
         updatedSince: url.searchParams.get('updatedSince') ?? undefined,
         cursor: url.searchParams.get('cursor') ?? undefined,
+        limit: url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined,
         includeDeleted: url.searchParams.get('includeDeleted') === 'true',
       }),
     )

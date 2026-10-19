@@ -14,6 +14,8 @@ import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 import { projectHasRemoteTracker } from './hosted-write-mode.ts'
 import { nextNoteNumber } from './note-number.ts'
 
+export { listHostedNotes } from './hosted-note-list.ts'
+
 export type HostedNote = {
   id: string
   number: number
@@ -52,50 +54,6 @@ export const hostedNotePullSerializers = {
 } as const
 
 const rows = <T>(value: unknown) => value as T[]
-
-export async function listHostedNotes(
-  url: SQL,
-  identity: TaskIdentity,
-  filters: {
-    project?: string
-    stale?: boolean
-    actionable?: boolean
-    updatedSince?: string
-    includeDeleted?: boolean
-    cursor?: string
-  },
-) {
-  return withHostedTenant(url, identity, async (tx) => {
-    const since = filters.updatedSince ?? filters.cursor ?? '1970-01-01T00:00:00.000Z'
-    const notes = rows<HostedNote>(
-      await tx`SELECT hub_note.*,number::int number FROM hub_note
-      WHERE space_id=${identity.spaceId}::uuid
-      AND (${filters.project ?? null}::text IS NULL OR project=${filters.project ?? null})
-      AND (${filters.stale === undefined ? null : filters.stale}::boolean IS NULL
-        OR (${filters.stale ?? false} AND stale_at IS NOT NULL)
-        OR (NOT ${filters.stale ?? false} AND stale_at IS NULL))
-      AND (NOT ${filters.actionable ?? false} OR (stale_at IS NULL AND promoted_task IS NULL))
-      AND updated_at > ${since}::timestamptz
-      AND (${filters.includeDeleted ?? false} OR deleted_at IS NULL)
-      ORDER BY updated_at,hub_note.number`,
-    ).map(hostedNotePullSerializers.hub_note)
-    const acknowledgements = rows<HostedAcknowledgement>(
-      await tx`SELECT * FROM hub_note_acknowledgement
-      WHERE space_id=${identity.spaceId}::uuid AND updated_at > ${since}::timestamptz
-      AND (${filters.includeDeleted ?? false} OR deleted_at IS NULL) ORDER BY updated_at,id`,
-    ).map(hostedNotePullSerializers.hub_note_acknowledgement)
-    const cursor = [...notes, ...acknowledgements].reduce((latest, row) => {
-      const stamp = new Date(row.updated_at).toISOString()
-      return stamp > latest ? stamp : latest
-    }, since)
-    const projectCounters = rows<{ project: string; next: string }>(
-      await tx`SELECT p.name project,s.next::text next FROM seq s JOIN project p
-        ON p.space_id=s.space_id AND p.id=s.project_id
-        WHERE s.space_id=${identity.spaceId}::uuid AND s.name='note' ORDER BY p.name`,
-    ).map((row) => ({ project: row.project, next: Number(row.next) }))
-    return { notes, acknowledgements, projectCounters, cursor }
-  })
-}
 
 export async function getHostedNote(url: SQL, identity: TaskIdentity, recordId: string) {
   return withHostedTenant(

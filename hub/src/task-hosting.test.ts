@@ -147,7 +147,14 @@ describe('hosted-only task safety', () => {
           }),
         list: async (_url, _identity) => {
           reads++
-          return { tasks: [], comments: [], documents: [], statusEvents: [], cursor: '' }
+          return {
+            tasks: [],
+            comments: [],
+            documents: [],
+            statusEvents: [],
+            cursor: '',
+            more: false,
+          }
         },
       },
     )

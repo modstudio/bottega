@@ -87,6 +87,7 @@ export async function hostedNoteChanges(cursor: string | null, options?: Options
     acknowledgements: HostedAcknowledgement[]
     projectCounters: Array<{ project: string; next: number }>
     cursor: string
+    more?: boolean
   }>(`/v1/notes?${query}`, 'GET', undefined, options)
 }
 export const hostedMirrorNotes = async (body: unknown, options?: Options) => {
