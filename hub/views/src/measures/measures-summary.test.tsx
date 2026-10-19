@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { MeasuresSummary, type MeasuresSummaryValue } from './measures-summary'
+import { coreMeasures, MeasuresSummary, type MeasuresSummaryValue } from './measures-summary'
 
 const shared = {
   hoursRunning: {
@@ -36,6 +36,42 @@ const shared = {
     unknownShare: { vendorCostUsd: 3, vendorTokens: 75, intervalCount: 1 },
   },
 }
+
+test('core measures keep one ordered set of summary and task labels', () => {
+  expect(
+    coreMeasures(shared).map(({ key, fullLabel, shortLabel, figure }) => ({
+      key,
+      fullLabel,
+      shortLabel,
+      figure,
+    })),
+  ).toEqual([
+    {
+      key: 'hours-running',
+      fullLabel: 'How long any recorded work was in motion',
+      shortLabel: 'in motion',
+      figure: '1 hours',
+    },
+    {
+      key: 'agent-hours',
+      fullLabel: 'How much agent work was started',
+      shortLabel: 'agent work',
+      figure: '2 hours',
+    },
+    {
+      key: 'session-time',
+      fullLabel: 'How long people were in session',
+      shortLabel: 'in session',
+      figure: '1 hours',
+    },
+    {
+      key: 'cost',
+      fullLabel: 'What the started agent work cost',
+      shortLabel: 'agent cost',
+      figure: '$4.00',
+    },
+  ])
+})
 
 test('session honesty and unknown attribution render beside their numbers', () => {
   const measures: MeasuresSummaryValue = {
