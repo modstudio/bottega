@@ -123,6 +123,10 @@ try {
     CREATE DATABASE public_role_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE board_shared_space_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE board_shared_space_invalid_migration OWNER ${RECORD_OWNER_ROLE};
+    CREATE DATABASE workflow_generation_migration OWNER ${RECORD_OWNER_ROLE};
+    CREATE DATABASE workflow_catalogue OWNER ${RECORD_OWNER_ROLE};
+    CREATE DATABASE lens_catalogue OWNER ${RECORD_OWNER_ROLE};
+    CREATE DATABASE port_catalogue OWNER ${RECORD_OWNER_ROLE};
   `)
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'recipient_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'hosted_task_id_migration')
@@ -135,6 +139,10 @@ try {
     `ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`,
     'board_shared_space_invalid_migration',
   )
+  postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'workflow_generation_migration')
+  postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'workflow_catalogue')
+  postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'lens_catalogue')
+  postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'port_catalogue')
 
   const ownerUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/postgres`
   const actorUrl = `postgres://${RECORD_ACTOR_ROLE}:actor-password@127.0.0.1:${port}/postgres`
@@ -150,6 +158,10 @@ try {
   const publicRoleMigrationSuperuserUrl = `postgres://postgres:postgres@127.0.0.1:${port}/public_role_migration`
   const boardSharedSpaceMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/board_shared_space_migration`
   const boardSharedSpaceInvalidMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/board_shared_space_invalid_migration`
+  const workflowGenerationMigrationUrl = `postgres://postgres:postgres@127.0.0.1:${port}/workflow_generation_migration`
+  const workflowCatalogueUrl = `postgres://postgres:postgres@127.0.0.1:${port}/workflow_catalogue`
+  const lensCatalogueUrl = `postgres://postgres:postgres@127.0.0.1:${port}/lens_catalogue`
+  const portCatalogueUrl = `postgres://postgres:postgres@127.0.0.1:${port}/port_catalogue`
 
   const boardSharedSpaceMigration = await run(
     [
@@ -186,6 +198,18 @@ try {
     { ORCH_TEST_HOSTED_TASK_ID_MIGRATION_URL: hostedTaskIdMigrationUrl },
   )
   if (hostedTaskIdMigration !== 0) process.exit(hostedTaskIdMigration)
+
+  const workflowGenerationMigration = await run(
+    [
+      'bun',
+      'test',
+      '--timeout',
+      '30000',
+      'src/postgres/postgres-migrate-workflow-generation.test.ts',
+    ],
+    { ORCH_TEST_WORKFLOW_GENERATION_MIGRATION_URL: workflowGenerationMigrationUrl },
+  )
+  if (workflowGenerationMigration !== 0) process.exit(workflowGenerationMigration)
 
   const hubProjectIdentityMigration = await run(
     [
@@ -228,6 +252,39 @@ try {
     },
   )
   if (docAuthorMigration !== 0) process.exit(docAuthorMigration)
+
+  const workflowCatalogue = await run(
+    [
+      'bun',
+      'test',
+      '--timeout',
+      '30000',
+      'src/record/record-workflow-catalogue-postgres.test.ts',
+    ],
+    { ORCH_TEST_WORKFLOW_CATALOGUE_URL: workflowCatalogueUrl },
+  )
+  const lensCatalogue = await run(
+    [
+      'bun',
+      'test',
+      '--timeout',
+      '30000',
+      'src/record/record-lens-catalogue-postgres.test.ts',
+    ],
+    { ORCH_TEST_LENS_CATALOGUE_URL: lensCatalogueUrl },
+  )
+  const portCatalogue = await run(
+    [
+      'bun',
+      'test',
+      '--timeout',
+      '30000',
+      'src/record/record-port-catalogue-postgres.test.ts',
+    ],
+    { ORCH_TEST_PORT_CATALOGUE_URL: portCatalogueUrl },
+  )
+  if (workflowCatalogue !== 0 || lensCatalogue !== 0 || portCatalogue !== 0)
+    process.exit(workflowCatalogue || lensCatalogue || portCatalogue)
 
   const rls = await run(
     ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-rls.test.ts'],
@@ -326,6 +383,10 @@ try {
         DROP DATABASE IF EXISTS board_shared_space_migration WITH (FORCE);
         DROP DATABASE IF EXISTS board_shared_space_invalid_migration WITH (FORCE);
         DROP DATABASE IF EXISTS hub_project_identity_migration WITH (FORCE);
+        DROP DATABASE IF EXISTS workflow_generation_migration WITH (FORCE);
+        DROP DATABASE IF EXISTS workflow_catalogue WITH (FORCE);
+        DROP DATABASE IF EXISTS lens_catalogue WITH (FORCE);
+        DROP DATABASE IF EXISTS port_catalogue WITH (FORCE);
         REASSIGN OWNED BY ${RECORD_OWNER_ROLE} TO postgres;
         DROP OWNED BY ${RECORD_OWNER_ROLE};
         DROP OWNED BY ${RECORD_ACTOR_ROLE};

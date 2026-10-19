@@ -7,7 +7,7 @@ import {
   decodeRecordCursor,
   pageRecordItems,
   type RecordCursor,
-  type RecordCursorRow,
+  type RecordListCursorRow,
   recordCursorOf,
 } from './record-cursor.ts'
 import {
@@ -26,7 +26,7 @@ type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[]
 export type RecordPortRouteDeps = {
   listPortCatalogue(
     input: Tenant & { table: RecordPortTable; limit: number; cursor: RecordCursor | null },
-  ): Promise<RecordPortRow[]>
+  ): Promise<(RecordPortRow & RecordListCursorRow)[]>
   writePort(input: Tenant & RecordPortWriteInput): Promise<unknown>
   importPortCatalogue?(input: Tenant & RecordPortImportInput): Promise<unknown>
 }
@@ -61,12 +61,7 @@ export function registerRecordPortRoutes(
       cursor,
     })
     return context.json(
-      pageRecordItems(
-        items,
-        query.data.limit,
-        (item) => recordCursorOf(item as RecordCursorRow),
-        true,
-      ),
+      pageRecordItems(items, query.data.limit, recordCursorOf, true),
     )
   })
   app.post('/v1/port-catalogue/write', async (context) => {

@@ -7,7 +7,7 @@ import {
   decodeRecordCursor,
   pageRecordItems,
   type RecordCursor,
-  type RecordCursorRow,
+  type RecordListCursorRow,
   recordCursorOf,
 } from './record-cursor.ts'
 import {
@@ -34,7 +34,7 @@ export type RecordLensRouteDeps = {
       limit: number
       cursor: RecordCursor | null
     },
-  ): Promise<Record<string, unknown>[]>
+  ): Promise<(Record<string, unknown> & RecordListCursorRow)[]>
   upsertLens(input: Tenant & RecordLensWriteInput): Promise<unknown>
   upsertLensProfile(input: Tenant & RecordLensProfileWriteInput): Promise<unknown>
   selectProjectLensProfile(input: Tenant & RecordProjectLensSelectionInput): Promise<unknown>
@@ -84,12 +84,7 @@ export function registerRecordLensRoutes(
       cursor,
     })
     return context.json(
-      pageRecordItems(
-        items,
-        query.data.limit,
-        (item) => recordCursorOf(item as RecordCursorRow),
-        true,
-      ),
+      pageRecordItems(items, query.data.limit, recordCursorOf, true),
     )
   })
   app.put('/v1/lens-catalogue/lenses', async (context) => {

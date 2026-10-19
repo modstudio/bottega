@@ -3,7 +3,11 @@
 import { SQL } from 'bun'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
-import { type RecordCursor, recordCursorAt } from './record-cursor.ts'
+import {
+  type RecordCursor,
+  type RecordListCursorRow,
+  recordCursorAt,
+} from './record-cursor.ts'
 import {
   type RecordWorkflowDraftInput,
   RecordWorkflowError,
@@ -32,11 +36,7 @@ async function tenant<T>(input: Tenant, use: (tx: SQL) => Promise<T>): Promise<T
 }
 
 function mapped(table: RecordWorkflowTable, row: Record<string, unknown>) {
-  const common = {
-    id: text(row.id),
-    spaceId: text(row.space_id),
-    [recordCursorAt]: text(row.cursor_at),
-  }
+  const common = { id: text(row.id), spaceId: text(row.space_id) }
   if (table === 'workflow' || table === 'step_catalogue')
     return {
       ...common,
@@ -75,7 +75,7 @@ function mapped(table: RecordWorkflowTable, row: Record<string, unknown>) {
 
 export async function listRecordWorkflowCatalogue(
   input: Tenant & { table: RecordWorkflowTable; limit: number; cursor: RecordCursor | null },
-) {
+): Promise<(Record<string, unknown> & RecordListCursorRow)[]> {
   return tenant(input, async (tx) => {
     const at = input.cursor?.at ?? null,
       id = input.cursor?.id ?? null
@@ -106,7 +106,10 @@ export async function listRecordWorkflowCatalogue(
           await tx`SELECT *,to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM workflow_event WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
         break
     }
-    return rows.map((row) => mapped(input.table, row))
+    return rows.map((row) => ({
+      ...mapped(input.table, row),
+      [recordCursorAt]: text(row.cursor_at),
+    }))
   })
 }
 

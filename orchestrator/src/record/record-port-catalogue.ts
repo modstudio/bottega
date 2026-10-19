@@ -3,7 +3,11 @@
 import { SQL } from 'bun'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
-import { type RecordCursor, recordCursorAt } from './record-cursor.ts'
+import {
+  type RecordCursor,
+  type RecordListCursorRow,
+  recordCursorAt,
+} from './record-cursor.ts'
 import {
   RECORD_PORT_CURSORS,
   RecordPortError,
@@ -49,11 +53,7 @@ function mapped(
 function mapped(table: 'port_skip', row: Record<string, unknown>): RecordPortRowByTable['port_skip']
 function mapped(table: RecordPortTable, row: Record<string, unknown>): RecordPortRow
 function mapped(table: RecordPortTable, row: Record<string, unknown>): RecordPortRow {
-  const common = {
-    id: text(row.id),
-    spaceId: text(row.space_id),
-    [recordCursorAt]: text(row.cursor_at),
-  }
+  const common = { id: text(row.id), spaceId: text(row.space_id) }
   switch (table) {
     case 'port_doctrine':
       return {
@@ -118,7 +118,7 @@ function mapped(table: RecordPortTable, row: Record<string, unknown>): RecordPor
 
 export async function listRecordPortCatalogue(
   input: Tenant & { table: RecordPortTable; limit: number; cursor: RecordCursor | null },
-) {
+): Promise<(RecordPortRow & RecordListCursorRow)[]> {
   return tenant(input, async (tx) => {
     const at = input.cursor?.at ?? null
     const id = input.cursor?.id ?? null
@@ -127,7 +127,10 @@ export async function listRecordPortCatalogue(
       `SELECT *,to_char(${column} AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM ${input.table} WHERE space_id=$1::uuid AND ($2::timestamptz IS NULL OR (${column},id)>($2::timestamptz,$3::uuid)) ORDER BY ${column},id LIMIT $4`,
       [input.spaceId, at, id, input.limit + 1],
     )
-    return (rows as Record<string, unknown>[]).map((row) => mapped(input.table, row))
+    return (rows as Record<string, unknown>[]).map((row) => ({
+      ...mapped(input.table, row),
+      [recordCursorAt]: text(row.cursor_at),
+    }))
   })
 }
 

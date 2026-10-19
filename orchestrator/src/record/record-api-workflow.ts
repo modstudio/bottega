@@ -7,7 +7,7 @@ import {
   decodeRecordCursor,
   pageRecordItems,
   type RecordCursor,
-  type RecordCursorRow,
+  type RecordListCursorRow,
   recordCursorOf,
 } from './record-cursor.ts'
 import {
@@ -27,7 +27,7 @@ type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[]
 export type RecordWorkflowRouteDeps = {
   listWorkflowCatalogue(
     input: Tenant & { table: RecordWorkflowTable; limit: number; cursor: RecordCursor | null },
-  ): Promise<Record<string, unknown>[]>
+  ): Promise<(Record<string, unknown> & RecordListCursorRow)[]>
   draftWorkflow(input: Tenant & RecordWorkflowDraftInput): Promise<unknown>
   promoteWorkflow(input: Tenant & RecordWorkflowTransitionInput): Promise<unknown>
   retireWorkflow(input: Tenant & RecordWorkflowTransitionInput): Promise<unknown>
@@ -70,12 +70,7 @@ export function registerRecordWorkflowRoutes(
       cursor,
     })
     return context.json(
-      pageRecordItems(
-        items,
-        query.data.limit,
-        (item) => recordCursorOf(item as RecordCursorRow),
-        true,
-      ),
+      pageRecordItems(items, query.data.limit, recordCursorOf, true),
     )
   })
   app.post('/v1/workflow-catalogue/draft', async (context) => {
