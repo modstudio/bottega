@@ -20,30 +20,33 @@ type Plan = {
   skipped: Array<{ kind: string; id: string; reason: string }>
 }
 const iso = () => new Date().toISOString()
-const rows = <T>(local: Database, statementText: string) => local.query(statementText).all() as T[]
+const forEachValue = <T>(values: readonly T[], use: (value: T) => void) => values.forEach(use)
 
 function lensPlan(local: Database, activeSpaceId: string): RecordLensImportInput {
   const now = iso()
   return {
     dryRun: false,
-    lens: rows<Record<string, unknown>>(local, 'SELECT * FROM lens WHERE space_id IS NULL').map(
-      (r) => ({
-        id: String(r.record_id),
-        spaceId: activeSpaceId,
-        key: String(r.id),
-        title: String(r.title),
-        question: String(r.question),
-        excludes: String(r.excludes),
-        slots: String(r.slots),
-        version: Number(r.version),
-        enabled: Boolean(r.enabled),
-        requiresExecution: Boolean(r.requires_execution),
-        updatedAt: now,
-      }),
-    ),
-    lens_revision: rows<Record<string, unknown>>(
-      local,
-      `SELECT r.*,l.record_id lens_record_id FROM lens_revision r JOIN lens l ON l.id=r.lens_id WHERE r.space_id IS NULL`,
+    lens: (
+      local.query('SELECT * FROM lens WHERE space_id IS NULL').all() as Record<string, unknown>[]
+    ).map((r) => ({
+      id: String(r.record_id),
+      spaceId: activeSpaceId,
+      key: String(r.id),
+      title: String(r.title),
+      question: String(r.question),
+      excludes: String(r.excludes),
+      slots: String(r.slots),
+      version: Number(r.version),
+      enabled: Boolean(r.enabled),
+      requiresExecution: Boolean(r.requires_execution),
+      updatedAt: now,
+    })),
+    lens_revision: (
+      local
+        .query(
+          `SELECT r.*,l.record_id lens_record_id FROM lens_revision r JOIN lens l ON l.id=r.lens_id WHERE r.space_id IS NULL`,
+        )
+        .all() as Record<string, unknown>[]
     ).map((r) => ({
       id: String(r.record_id),
       spaceId: activeSpaceId,
@@ -54,9 +57,12 @@ function lensPlan(local: Database, activeSpaceId: string): RecordLensImportInput
       sessionId: r.session_id == null ? null : String(r.session_id),
       at: String(r.at),
     })),
-    lens_profile: rows<Record<string, unknown>>(
-      local,
-      `SELECT p.*,l.record_id lens_record_id FROM lens_profile p JOIN lens l ON l.id=p.lens_id WHERE p.space_id IS NULL`,
+    lens_profile: (
+      local
+        .query(
+          `SELECT p.*,l.record_id lens_record_id FROM lens_profile p JOIN lens l ON l.id=p.lens_id WHERE p.space_id IS NULL`,
+        )
+        .all() as Record<string, unknown>[]
     ).map((r) => ({
       id: String(r.record_id),
       spaceId: activeSpaceId,
@@ -68,9 +74,12 @@ function lensPlan(local: Database, activeSpaceId: string): RecordLensImportInput
       enabled: Boolean(r.enabled),
       updatedAt: now,
     })),
-    lens_profile_revision: rows<Record<string, unknown>>(
-      local,
-      `SELECT r.*,p.record_id profile_record_id FROM lens_profile_revision r JOIN lens_profile p ON p.id=r.profile_id WHERE r.space_id IS NULL`,
+    lens_profile_revision: (
+      local
+        .query(
+          `SELECT r.*,p.record_id profile_record_id FROM lens_profile_revision r JOIN lens_profile p ON p.id=r.profile_id WHERE r.space_id IS NULL`,
+        )
+        .all() as Record<string, unknown>[]
     ).map((r) => ({
       id: String(r.record_id),
       spaceId: activeSpaceId,
@@ -81,9 +90,12 @@ function lensPlan(local: Database, activeSpaceId: string): RecordLensImportInput
       sessionId: r.session_id == null ? null : String(r.session_id),
       at: String(r.at),
     })),
-    project_lens_profile: rows<Record<string, unknown>>(
-      local,
-      `SELECT s.*,l.record_id lens_record_id FROM project_lens_profile s LEFT JOIN lens l ON l.id=s.lens_id AND l.space_id IS NULL WHERE s.space_id IS NULL`,
+    project_lens_profile: (
+      local
+        .query(
+          `SELECT s.*,l.record_id lens_record_id FROM project_lens_profile s LEFT JOIN lens l ON l.id=s.lens_id AND l.space_id IS NULL WHERE s.space_id IS NULL`,
+        )
+        .all() as Record<string, unknown>[]
     ).map((r) => ({
       id: String(r.record_id),
       spaceId: activeSpaceId,
@@ -95,9 +107,12 @@ function lensPlan(local: Database, activeSpaceId: string): RecordLensImportInput
       selectionVersion: Number(r.selection_version),
       updatedAt: now,
     })),
-    project_lens_profile_revision: rows<Record<string, unknown>>(
-      local,
-      `SELECT r.*,s.record_id selection_record_id FROM project_lens_profile_revision r JOIN project_lens_profile s ON s.id=r.selection_id WHERE r.space_id IS NULL`,
+    project_lens_profile_revision: (
+      local
+        .query(
+          `SELECT r.*,s.record_id selection_record_id FROM project_lens_profile_revision r JOIN project_lens_profile s ON s.id=r.selection_id WHERE r.space_id IS NULL`,
+        )
+        .all() as Record<string, unknown>[]
     ).map((r) => ({
       id: String(r.record_id),
       spaceId: activeSpaceId,
@@ -116,9 +131,8 @@ function workflowPlan(local: Database, activeSpaceId: string): RecordWorkflowImp
   const now = iso()
   const kind = (name: 'workflow' | 'step_catalogue') => {
     const foreign = name === 'workflow' ? 'workflow_id' : 'catalogue_id'
-    const identities = rows<Record<string, unknown>>(
-      local,
-      `SELECT * FROM ${name} WHERE space_id IS NULL`,
+    const identities = (
+      local.query(`SELECT * FROM ${name} WHERE space_id IS NULL`).all() as Record<string, unknown>[]
     ).map((r) => ({
       id: String(r.record_id),
       spaceId: activeSpaceId,
@@ -126,9 +140,12 @@ function workflowPlan(local: Database, activeSpaceId: string): RecordWorkflowImp
       createdAt: String(r.created_at),
       updatedAt: now,
     }))
-    const versions = rows<Record<string, unknown>>(
-      local,
-      `SELECT v.*,i.record_id owner_record_id FROM ${name}_version v JOIN ${name} i ON i.id=v.${foreign} WHERE v.space_id IS NULL`,
+    const versions = (
+      local
+        .query(
+          `SELECT v.*,i.record_id owner_record_id FROM ${name}_version v JOIN ${name} i ON i.id=v.${foreign} WHERE v.space_id IS NULL`,
+        )
+        .all() as Record<string, unknown>[]
     ).map((r) => ({
       id: String(r.record_id),
       spaceId: activeSpaceId,
@@ -143,9 +160,12 @@ function workflowPlan(local: Database, activeSpaceId: string): RecordWorkflowImp
       retiredAt: r.retired_at == null ? null : String(r.retired_at),
       updatedAt: now,
     }))
-    const events = rows<Record<string, unknown>>(
-      local,
-      `SELECT e.*,v.record_id version_record_id FROM ${name}_event e JOIN ${name}_version v ON v.${foreign}=e.${foreign} AND v.n=e.version_n WHERE e.space_id IS NULL`,
+    const events = (
+      local
+        .query(
+          `SELECT e.*,v.record_id version_record_id FROM ${name}_event e JOIN ${name}_version v ON v.${foreign}=e.${foreign} AND v.n=e.version_n WHERE e.space_id IS NULL`,
+        )
+        .all() as Record<string, unknown>[]
     ).map((r) => ({
       id: String(r.record_id),
       spaceId: activeSpaceId,
@@ -189,9 +209,11 @@ function portPlan(local: Database, activeSpaceId: string, skipped: Plan['skipped
     active = emptyPort(),
     now = iso()
   plans.set(activeSpaceId, active)
-  active.port_doctrine = rows<Record<string, unknown>>(
-    local,
-    'SELECT * FROM port_doctrine WHERE space_id IS NULL',
+  active.port_doctrine = (
+    local.query('SELECT * FROM port_doctrine WHERE space_id IS NULL').all() as Record<
+      string,
+      unknown
+    >[]
   ).map((r) => ({
     id: String(r.record_id),
     spaceId: activeSpaceId,
@@ -205,119 +227,145 @@ function portPlan(local: Database, activeSpaceId: string, skipped: Plan['skipped
   }))
   const pairSpace = new Map<string, string>(),
     refSpace = new Map<string, string>()
-  for (const r of rows<Record<string, unknown>>(
-    local,
-    `SELECT pp.*,sp.name source_name,tp.name target_name FROM port_pair pp JOIN project sp ON sp.record_id=pp.source_project_record_id JOIN project tp ON tp.record_id=pp.target_project_record_id WHERE pp.space_id IS NULL`,
-  )) {
-    const source = effectiveProjectSpace(local, String(r.source_name)),
-      target = effectiveProjectSpace(local, String(r.target_name))
-    if (!source || !target || source !== target) {
-      skipped.push({
-        kind: 'port_pair',
+  forEachValue(
+    local
+      .query(
+        `SELECT pp.*,sp.name source_name,tp.name target_name FROM port_pair pp JOIN project sp ON sp.record_id=pp.source_project_record_id JOIN project tp ON tp.record_id=pp.target_project_record_id WHERE pp.space_id IS NULL`,
+      )
+      .all() as Record<string, unknown>[],
+    (r) => {
+      const source = effectiveProjectSpace(local, String(r.source_name)),
+        target = effectiveProjectSpace(local, String(r.target_name))
+      if (!source || !target || source !== target) {
+        skipped.push({
+          kind: 'port_pair',
+          id: String(r.record_id),
+          reason:
+            !source || !target
+              ? 'project has no hosted space'
+              : 'projects route to different spaces',
+        })
+        return
+      }
+      const plan = plans.get(target) ?? emptyPort()
+      plans.set(target, plan)
+      pairSpace.set(String(r.record_id), target)
+      plan.port_pair.push({
         id: String(r.record_id),
-        reason:
-          !source || !target ? 'project has no hosted space' : 'projects route to different spaces',
+        spaceId: target,
+        sourceProjectId: String(r.source_project_record_id),
+        targetProjectId: String(r.target_project_record_id),
+        createdAt: String(r.created_at),
       })
-      continue
-    }
-    const plan = plans.get(target) ?? emptyPort()
-    plans.set(target, plan)
-    pairSpace.set(String(r.record_id), target)
-    plan.port_pair.push({
-      id: String(r.record_id),
-      spaceId: target,
-      sourceProjectId: String(r.source_project_record_id),
-      targetProjectId: String(r.target_project_record_id),
-      createdAt: String(r.created_at),
-    })
-  }
-  for (const r of rows<Record<string, unknown>>(
-    local,
-    `SELECT b.*,p.record_id pair_record_id FROM port_baseline b JOIN port_pair p ON p.id=b.pair_id WHERE b.space_id IS NULL`,
-  )) {
-    const space = pairSpace.get(String(r.pair_record_id))
-    if (!space) {
-      skipped.push({ kind: 'port_baseline', id: String(r.record_id), reason: 'pair was skipped' })
-      continue
-    }
-    plans.get(space)!.port_baseline.push({
-      id: String(r.record_id),
-      spaceId: space,
-      pairId: String(r.pair_record_id),
-      sourceCommit: r.source_commit == null ? null : String(r.source_commit),
-      scannedAt: r.scanned_at == null ? null : String(r.scanned_at),
-      version: Number(r.version),
-      updatedAt: now,
-    })
-  }
-  for (const r of rows<Record<string, unknown>>(
-    local,
-    `SELECT pr.*,p.name project_name FROM port_ref pr JOIN project p ON p.record_id=pr.target_project_record_id WHERE pr.space_id IS NULL`,
-  )) {
-    const space = effectiveProjectSpace(local, String(r.project_name))
-    if (!space) {
-      skipped.push({
-        kind: 'port_ref',
+    },
+  )
+  forEachValue(
+    local
+      .query(
+        `SELECT b.*,p.record_id pair_record_id FROM port_baseline b JOIN port_pair p ON p.id=b.pair_id WHERE b.space_id IS NULL`,
+      )
+      .all() as Record<string, unknown>[],
+    (r) => {
+      const space = pairSpace.get(String(r.pair_record_id))
+      if (!space) {
+        skipped.push({ kind: 'port_baseline', id: String(r.record_id), reason: 'pair was skipped' })
+        return
+      }
+      plans.get(space)!.port_baseline.push({
         id: String(r.record_id),
-        reason: 'project has no hosted space',
+        spaceId: space,
+        pairId: String(r.pair_record_id),
+        sourceCommit: r.source_commit == null ? null : String(r.source_commit),
+        scannedAt: r.scanned_at == null ? null : String(r.scanned_at),
+        version: Number(r.version),
+        updatedAt: now,
       })
-      continue
-    }
-    const plan = plans.get(space) ?? emptyPort()
-    plans.set(space, plan)
-    refSpace.set(String(r.record_id), space)
-    plan.port_ref.push({
-      id: String(r.record_id),
-      spaceId: space,
-      taskKey: String(r.task_key),
-      targetProjectId: String(r.target_project_record_id),
-      note: String(r.note),
-      createdAt: String(r.created_at),
-      resolvedAt: r.resolved_at == null ? null : String(r.resolved_at),
-      deletedAt: null,
-      version: Number(r.version),
-      updatedAt: now,
-    })
-  }
-  for (const r of rows<Record<string, unknown>>(
-    local,
-    `SELECT s.*,r.record_id ref_record_id FROM port_ref_source s JOIN port_ref r ON r.target_project_record_id=s.target_project_record_id AND r.task_key=s.task_key AND r.space_id IS NULL WHERE s.space_id IS NULL`,
-  )) {
-    const space = refSpace.get(String(r.ref_record_id))
-    if (!space) {
-      skipped.push({ kind: 'port_ref_source', id: String(r.record_id), reason: 'ref was skipped' })
-      continue
-    }
-    plans.get(space)!.port_ref_source.push({
-      id: String(r.record_id),
-      spaceId: space,
-      refId: String(r.ref_record_id),
-      sourceProjectId: String(r.source_project_record_id),
-      commits: String(r.commits),
-      paths: String(r.paths),
-      note: String(r.note),
-      deletedAt: null,
-      updatedAt: now,
-    })
-  }
-  for (const r of rows<Record<string, unknown>>(
-    local,
-    `SELECT s.*,p.record_id pair_record_id FROM port_skip s JOIN port_pair p ON p.id=s.pair_id WHERE s.space_id IS NULL`,
-  )) {
-    const space = pairSpace.get(String(r.pair_record_id))
-    if (!space) {
-      skipped.push({ kind: 'port_skip', id: String(r.record_id), reason: 'pair was skipped' })
-      continue
-    }
-    plans.get(space)!.port_skip.push({
-      id: String(r.record_id),
-      spaceId: space,
-      pairId: String(r.pair_record_id),
-      candidate: String(r.candidate),
-      reason: String(r.reason),
-      skippedAt: String(r.skipped_at),
-    })
-  }
+    },
+  )
+  forEachValue(
+    local
+      .query(
+        `SELECT pr.*,p.name project_name FROM port_ref pr JOIN project p ON p.record_id=pr.target_project_record_id WHERE pr.space_id IS NULL`,
+      )
+      .all() as Record<string, unknown>[],
+    (r) => {
+      const space = effectiveProjectSpace(local, String(r.project_name))
+      if (!space) {
+        skipped.push({
+          kind: 'port_ref',
+          id: String(r.record_id),
+          reason: 'project has no hosted space',
+        })
+        return
+      }
+      const plan = plans.get(space) ?? emptyPort()
+      plans.set(space, plan)
+      refSpace.set(String(r.record_id), space)
+      plan.port_ref.push({
+        id: String(r.record_id),
+        spaceId: space,
+        taskKey: String(r.task_key),
+        targetProjectId: String(r.target_project_record_id),
+        note: String(r.note),
+        createdAt: String(r.created_at),
+        resolvedAt: r.resolved_at == null ? null : String(r.resolved_at),
+        deletedAt: null,
+        version: Number(r.version),
+        updatedAt: now,
+      })
+    },
+  )
+  forEachValue(
+    local
+      .query(
+        `SELECT s.*,r.record_id ref_record_id FROM port_ref_source s JOIN port_ref r ON r.target_project_record_id=s.target_project_record_id AND r.task_key=s.task_key AND r.space_id IS NULL WHERE s.space_id IS NULL`,
+      )
+      .all() as Record<string, unknown>[],
+    (r) => {
+      const space = refSpace.get(String(r.ref_record_id))
+      if (!space) {
+        skipped.push({
+          kind: 'port_ref_source',
+          id: String(r.record_id),
+          reason: 'ref was skipped',
+        })
+        return
+      }
+      plans.get(space)!.port_ref_source.push({
+        id: String(r.record_id),
+        spaceId: space,
+        refId: String(r.ref_record_id),
+        sourceProjectId: String(r.source_project_record_id),
+        commits: String(r.commits),
+        paths: String(r.paths),
+        note: String(r.note),
+        deletedAt: null,
+        updatedAt: now,
+      })
+    },
+  )
+  forEachValue(
+    local
+      .query(
+        `SELECT s.*,p.record_id pair_record_id FROM port_skip s JOIN port_pair p ON p.id=s.pair_id WHERE s.space_id IS NULL`,
+      )
+      .all() as Record<string, unknown>[],
+    (r) => {
+      const space = pairSpace.get(String(r.pair_record_id))
+      if (!space) {
+        skipped.push({ kind: 'port_skip', id: String(r.record_id), reason: 'pair was skipped' })
+        return
+      }
+      plans.get(space)!.port_skip.push({
+        id: String(r.record_id),
+        spaceId: space,
+        pairId: String(r.pair_record_id),
+        candidate: String(r.candidate),
+        reason: String(r.reason),
+        skippedAt: String(r.skipped_at),
+      })
+    },
+  )
   return plans
 }
 
@@ -338,10 +386,21 @@ export async function pushCataloguesCommand(
   presentation: Presentation,
   dependencies: { local?: Database; client?: RecordApiClient; sync?: typeof syncRecord } = {},
 ): Promise<void> {
-  const local = dependencies.local ?? db(),
-    client = dependencies.client ?? recordApiClient()
+  const local = dependencies.local ?? db()
+  const localActive = activeRecordSpace(local)
+  if (options.dryRun) {
+    if (!localActive) throw new Error(noActiveRecordSpaceRefusal())
+    const plan = planCataloguePush(local, localActive)
+    presentation.log(
+      `dry run local counts — lens: ${count(plan.lens)}; workflow: ${count(plan.workflow)}; port: ${[...plan.ports.values()].reduce((n, p) => n + count(p), 0)}; skipped: ${plan.skipped.length}`,
+    )
+    for (const skip of plan.skipped)
+      presentation.log(`skipped ${skip.kind} ${skip.id}: ${skip.reason}`)
+    return
+  }
+  const client = dependencies.client ?? recordApiClient()
   const identity = await client.whoami(),
-    active = identity.activeSpaceId ?? activeRecordSpace(local)
+    active = identity.activeSpaceId ?? localActive
   if (!active) throw new Error(noActiveRecordSpaceRefusal())
   const plan = planCataloguePush(local, active)
   presentation.log(
@@ -368,28 +427,15 @@ export async function pushCataloguesCommand(
   presentation.log(
     `workflow: inserted ${workflow.inserted}, already present ${workflow.alreadyPresent}, skipped ${workflow.skipped.length}`,
   )
-  let portInserted = 0,
-    portPresent = 0,
-    portSkipped = 0
   for (const [spaceId, port] of plan.ports) {
     const result = await client.importPortCatalogue(
       { ...port, dryRun: options.dryRun },
       { destinationSpaceId: spaceId },
     )
-    portInserted += result.inserted
-    portPresent += result.alreadyPresent
-    portSkipped += result.skipped.length
     for (const skip of result.skipped) presentation.log(`skipped port ${skip.id}: ${skip.reason}`)
-    if (options.dryRun) continue
     presentation.log(
       `port ${spaceId}: inserted ${result.inserted}, already present ${result.alreadyPresent}, skipped ${result.skipped.length}`,
     )
-  }
-  if (options.dryRun) {
-    presentation.log(
-      `dry run port: would insert ${portInserted}, already present ${portPresent}, skipped ${portSkipped + plan.skipped.length}`,
-    )
-    return
   }
   if (!client.sync)
     throw new Error('record API does not support sync; deploy the matching record API, then retry')

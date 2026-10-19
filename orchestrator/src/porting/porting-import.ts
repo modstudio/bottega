@@ -1,14 +1,13 @@
 import { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { importDoc, listDocs, removeDoc } from '../doc/docs.ts'
-import { type Project, projects } from '../project/projects.ts'
-import { activeRecordSpace, effectiveProjectSpace } from '../project-space.ts'
-import { recordApiClient } from '../record/record-api-client.ts'
-import type { RecordPortImportInput } from '../record/record-port-contract.ts'
-import { noActiveRecordSpaceRefusal } from '../record/record-project-destination.ts'
+import type { Project } from '../project/projects.ts'
 import { portImportAuthority } from './port-import-authority.ts'
+import { applyHostedPortImport, ImportRefusalError } from './porting-hosted-import.ts'
+
+export { ImportRefusalError } from './porting-hosted-import.ts'
+
 import * as porting from './porting.ts'
 
 type ImportIssue = {
@@ -956,15 +955,6 @@ export function projectsForDryRun(path: string): Project[] {
   }
 }
 
-export class ImportRefusalError extends Error {
-  public refusals: ImportRefusal[]
-
-  constructor(refusals: ImportRefusal[]) {
-    super(`port import refused with ${refusals.length} refusal(s)`)
-    this.refusals = refusals
-  }
-}
-
 const GLOBAL_PORT_DOC_SLUGS = [
   'port-doctrine-preface',
   'port-stack-mapping',
@@ -978,165 +968,13 @@ const GLOBAL_PORT_DOC_SLUGS = [
 ]
 const PROJECT_PORT_DOC_SLUGS = ['port-differences', 'port-backports']
 
-const emptyHostedPortImport = (): RecordPortImportInput => ({
-  dryRun: false,
-  replace: false,
-  port_doctrine: [],
-  port_pair: [],
-  port_baseline: [],
-  port_ref: [],
-  port_ref_source: [],
-  port_skip: [],
-})
-
-async function applyHostedImport(
-  plan: ImportPlan,
-  options: { sourceLabel?: string },
-): Promise<void> {
-  if (plan.refusals.length) throw new ImportRefusalError(plan.refusals)
-  const local = db(),
-    client = recordApiClient(),
-    identity = await client.whoami()
-  const active = identity.activeSpaceId ?? activeRecordSpace(local)
-  if (!active) throw new Error(noActiveRecordSpaceRefusal())
-  if (!client.importPortCatalogue)
-    throw new Error(
-      'record API does not support port imports; deploy the matching record API, then retry',
-    )
-  const registered = projects(),
-    byId = new Map(registered.map((project) => [project.recordId, project]))
-  const imports = new Map<string, RecordPortImportInput>([[active, emptyHostedPortImport()]])
-  const now = new Date().toISOString(),
-    pairs = new Map<string, { id: string; spaceId: string }>()
-  for (const row of plan.doctrine)
-    imports.get(active)!.port_doctrine.push({
-      id: newRecordId(),
-      spaceId: active,
-      number: row.number,
-      title: row.title,
-      body: row.body,
-      createdAt: now,
-      retiredAt: null,
-      version: 1,
-      updatedAt: now,
-    })
-  for (const row of plan.pairs) {
-    const source = byId.get(row.sourceId),
-      target = byId.get(row.targetId)
-    const sourceSpace = source ? effectiveProjectSpace(local, source.name) : null
-    const targetSpace = target ? effectiveProjectSpace(local, target.name) : null
-    if (!sourceSpace || !targetSpace || sourceSpace !== targetSpace) {
-      throw new ImportRefusalError([
-        {
-          kind: 'refusal',
-          what: 'hosted port pair',
-          where: `${row.source} -> ${row.target}`,
-          why:
-            !sourceSpace || !targetSpace
-              ? 'a project has no hosted space'
-              : 'the projects route to different spaces',
-        },
-      ])
-    }
-    const payload = imports.get(targetSpace) ?? emptyHostedPortImport()
-    imports.set(targetSpace, payload)
-    const id = newRecordId()
-    pairs.set(`${row.source}->${row.target}`, { id, spaceId: targetSpace })
-    payload.port_pair.push({
-      id,
-      spaceId: targetSpace,
-      sourceProjectId: row.sourceId,
-      targetProjectId: row.targetId,
-      createdAt: now,
-    })
-  }
-  for (const row of plan.baselines) {
-    const pair = pairs.get(row.pairKey)
-    if (!pair) continue
-    imports.get(pair.spaceId)!.port_baseline.push({
-      id: newRecordId(),
-      spaceId: pair.spaceId,
-      pairId: pair.id,
-      sourceCommit: row.sourceCommit,
-      scannedAt: row.scannedAt,
-      version: 1,
-      updatedAt: now,
-    })
-  }
-  for (const row of plan.skips) {
-    const pair = pairs.get(row.pairKey)
-    if (!pair) continue
-    imports.get(pair.spaceId)!.port_skip.push({
-      id: newRecordId(),
-      spaceId: pair.spaceId,
-      pairId: pair.id,
-      candidate: row.candidate,
-      reason: row.reason,
-      skippedAt: now,
-    })
-  }
-  for (const row of plan.refs) {
-    const target = byId.get(row.targetProjectId),
-      spaceId = target ? effectiveProjectSpace(local, target.name) : null
-    if (!spaceId)
-      throw new ImportRefusalError([
-        {
-          kind: 'refusal',
-          what: 'hosted port ref',
-          where: row.taskKey,
-          why: 'the target project has no hosted space',
-        },
-      ])
-    const payload = imports.get(spaceId) ?? emptyHostedPortImport()
-    imports.set(spaceId, payload)
-    const id = newRecordId()
-    payload.port_ref.push({
-      id,
-      spaceId,
-      taskKey: row.taskKey,
-      targetProjectId: row.targetProjectId,
-      note: row.note,
-      createdAt: now,
-      resolvedAt: null,
-      deletedAt: null,
-      version: 1,
-      updatedAt: now,
-    })
-    for (const source of row.sources)
-      payload.port_ref_source.push({
-        id: newRecordId(),
-        spaceId,
-        refId: id,
-        sourceProjectId: source.source_project_record_id,
-        commits: JSON.stringify(source.commits),
-        paths: JSON.stringify(source.paths),
-        note: source.note,
-        deletedAt: null,
-        updatedAt: now,
-      })
-  }
-  for (const [spaceId, payload] of imports)
-    await client.importPortCatalogue(payload, { destinationSpaceId: spaceId })
-  const context = {
-    author: 'port-import',
-    reason: `port import from ${options.sourceLabel ?? 'source corpus'}`,
-  }
-  for (const row of plan.docs)
-    await importDoc({
-      ...row,
-      body: fencedSourceArtifact(row.body),
-      delivery: 'demand',
-      ...context,
-    })
-}
-
 export async function applyImport(
   plan: ImportPlan,
   options: { replace?: boolean; sourceLabel?: string } = {},
 ): Promise<void> {
   const authority = portImportAuthority(Boolean(options.replace))
   if (authority === 'hosted') {
-    await applyHostedImport(plan, options)
+    await applyHostedPortImport(plan, options)
     return
   }
   writableDb()

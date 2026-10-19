@@ -11,6 +11,12 @@ type Tenant = { url: string } & TenantPrincipal
 type Result = RecordCatalogueImportResult
 const text = (value: unknown) => String(value)
 const empty = (): Result => ({ inserted: 0, alreadyPresent: 0, skipped: [] })
+async function forEachAsync<T>(
+  values: readonly T[],
+  use: (value: T) => Promise<void>,
+): Promise<void> {
+  for (const value of values) await use(value)
+}
 
 async function tenant<T>(input: Tenant, use: (tx: SQL) => Promise<T>): Promise<T> {
   const client = new SQL(input.url)
@@ -42,7 +48,7 @@ export async function importRecordLensCatalogue(input: Tenant & RecordLensImport
       lenses = new Map<string, string>(),
       profiles = new Map<string, string>(),
       selections = new Map<string, string>()
-    for (const row of input.lens) {
+    await forEachAsync(input.lens, async (row) => {
       const existing =
         await tx`SELECT id FROM lens WHERE space_id=${input.spaceId}::uuid AND (id=${row.id}::uuid OR key=${row.key}) ORDER BY id=${row.id}::uuid DESC LIMIT 1`
       const id = foundId(existing)
@@ -52,12 +58,12 @@ export async function importRecordLensCatalogue(input: Tenant & RecordLensImport
         result.inserted++
       }
       lenses.set(row.id, id ?? row.id)
-    }
-    for (const row of input.lens_revision) {
+    })
+    await forEachAsync(input.lens_revision, async (row) => {
       const lensId = lenses.get(row.lensId)
       if (!lensId) {
         result.skipped.push({ id: row.id, reason: `lens ${row.lensId} is absent` })
-        continue
+        return
       }
       const existing =
         await tx`SELECT id FROM lens_revision WHERE space_id=${input.spaceId}::uuid AND (id=${row.id}::uuid OR (lens_id=${lensId}::uuid AND version=${row.version})) LIMIT 1`
@@ -66,12 +72,12 @@ export async function importRecordLensCatalogue(input: Tenant & RecordLensImport
         await tx`INSERT INTO lens_revision (id,space_id,lens_id,version,prior_body,reason,session_id,at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${lensId}::uuid,${row.version},${row.priorBody},${row.reason},${row.sessionId},${row.at}::timestamptz)`
         result.inserted++
       }
-    }
-    for (const row of input.lens_profile) {
+    })
+    await forEachAsync(input.lens_profile, async (row) => {
       const lensId = lenses.get(row.lensId)
       if (!lensId) {
         result.skipped.push({ id: row.id, reason: `lens ${row.lensId} is absent` })
-        continue
+        return
       }
       const existing =
         await tx`SELECT id FROM lens_profile WHERE space_id=${input.spaceId}::uuid AND (id=${row.id}::uuid OR (lens_id=${lensId}::uuid AND axis=${row.axis} AND name=${row.name})) ORDER BY id=${row.id}::uuid DESC LIMIT 1`
@@ -82,12 +88,12 @@ export async function importRecordLensCatalogue(input: Tenant & RecordLensImport
         result.inserted++
       }
       profiles.set(row.id, id ?? row.id)
-    }
-    for (const row of input.lens_profile_revision) {
+    })
+    await forEachAsync(input.lens_profile_revision, async (row) => {
       const profileId = profiles.get(row.profileId)
       if (!profileId) {
         result.skipped.push({ id: row.id, reason: `profile ${row.profileId} is absent` })
-        continue
+        return
       }
       const existing =
         await tx`SELECT id FROM lens_profile_revision WHERE space_id=${input.spaceId}::uuid AND (id=${row.id}::uuid OR (profile_id=${profileId}::uuid AND version=${row.version})) LIMIT 1`
@@ -96,12 +102,12 @@ export async function importRecordLensCatalogue(input: Tenant & RecordLensImport
         await tx`INSERT INTO lens_profile_revision (id,space_id,profile_id,version,prior_body,reason,session_id,at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${profileId}::uuid,${row.version},${row.priorBody},${row.reason},${row.sessionId},${row.at}::timestamptz)`
         result.inserted++
       }
-    }
-    for (const row of input.project_lens_profile) {
+    })
+    await forEachAsync(input.project_lens_profile, async (row) => {
       const lensId = row.lensId ? lenses.get(row.lensId) : null
       if (row.lensId && !lensId) {
         result.skipped.push({ id: row.id, reason: `lens ${row.lensId} is absent` })
-        continue
+        return
       }
       const existing = lensId
         ? await tx`SELECT id FROM project_lens_profile WHERE space_id=${input.spaceId}::uuid AND (id=${row.id}::uuid OR (project_id=${row.projectId}::uuid AND lens_id=${lensId}::uuid AND axis=${row.axis})) ORDER BY id=${row.id}::uuid DESC LIMIT 1`
@@ -113,12 +119,12 @@ export async function importRecordLensCatalogue(input: Tenant & RecordLensImport
         result.inserted++
       }
       selections.set(row.id, id ?? row.id)
-    }
-    for (const row of input.project_lens_profile_revision) {
+    })
+    await forEachAsync(input.project_lens_profile_revision, async (row) => {
       const selectionId = selections.get(row.selectionId)
       if (!selectionId) {
         result.skipped.push({ id: row.id, reason: `selection ${row.selectionId} is absent` })
-        continue
+        return
       }
       const existing =
         await tx`SELECT id FROM project_lens_profile_revision WHERE space_id=${input.spaceId}::uuid AND id=${row.id}::uuid LIMIT 1`
@@ -127,7 +133,7 @@ export async function importRecordLensCatalogue(input: Tenant & RecordLensImport
         await tx`INSERT INTO project_lens_profile_revision (id,space_id,selection_id,prior_profile_name,prior_selected_version,reason,session_id,at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${selectionId}::uuid,${row.priorProfileName},${row.priorSelectedVersion},${row.reason},${row.sessionId},${row.at}::timestamptz)`
         result.inserted++
       }
-    }
+    })
     return result
   })
 }
@@ -135,9 +141,9 @@ export async function importRecordLensCatalogue(input: Tenant & RecordLensImport
 export async function importRecordWorkflowCatalogue(input: Tenant & RecordWorkflowImportInput) {
   return tenant(input, async (tx) => {
     const result = empty()
-    for (const kind of ['step_catalogue', 'workflow'] as const) {
+    await forEachAsync(['step_catalogue', 'workflow'] as const, async (kind) => {
       const owners = new Map<string, string>()
-      for (const row of input[kind]) {
+      await forEachAsync(input[kind], async (row) => {
         const existing =
           kind === 'workflow'
             ? await tx`SELECT id FROM workflow WHERE space_id=${input.spaceId}::uuid AND (id=${row.id}::uuid OR slug=${row.slug}) ORDER BY id=${row.id}::uuid DESC LIMIT 1`
@@ -152,14 +158,14 @@ export async function importRecordWorkflowCatalogue(input: Tenant & RecordWorkfl
           result.inserted++
         }
         owners.set(row.id, id ?? row.id)
-      }
+      })
       const versions = new Map<string, string>(),
         versionTable = `${kind}_version` as 'workflow_version' | 'step_catalogue_version'
-      for (const row of input[versionTable]) {
+      await forEachAsync(input[versionTable], async (row) => {
         const ownerId = owners.get(row.ownerId)
         if (!ownerId) {
           result.skipped.push({ id: row.id, reason: `${kind} ${row.ownerId} is absent` })
-          continue
+          return
         }
         const existing =
           kind === 'workflow'
@@ -175,16 +181,16 @@ export async function importRecordWorkflowCatalogue(input: Tenant & RecordWorkfl
           result.inserted++
         }
         versions.set(row.id, id ?? row.id)
-      }
+      })
       const eventTable = `${kind}_event` as 'workflow_event' | 'step_catalogue_event'
-      for (const row of input[eventTable]) {
+      await forEachAsync(input[eventTable], async (row) => {
         const versionId = versions.get(row.ownerVersionId)
         if (!versionId) {
           result.skipped.push({
             id: row.id,
             reason: `${versionTable} ${row.ownerVersionId} is absent`,
           })
-          continue
+          return
         }
         const existing =
           kind === 'workflow'
@@ -198,8 +204,8 @@ export async function importRecordWorkflowCatalogue(input: Tenant & RecordWorkfl
           await tx`INSERT INTO step_catalogue_event (id,space_id,catalogue_version_id,event,author,reason,session_id,at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${versionId}::uuid,${row.event},${row.author},${row.reason},${row.sessionId},${row.at}::timestamptz)`
           result.inserted++
         }
-      }
-    }
+      })
+    })
     return result
   })
 }
@@ -209,7 +215,7 @@ export async function importRecordPortCatalogue(input: Tenant & RecordPortImport
     const result = empty(),
       pairs = new Map<string, string>(),
       refs = new Map<string, string>()
-    for (const row of input.port_doctrine) {
+    await forEachAsync(input.port_doctrine, async (row) => {
       const existing =
         await tx`SELECT id FROM port_doctrine WHERE space_id=${input.spaceId}::uuid AND (id=${row.id}::uuid OR number=${row.number}) ORDER BY id=${row.id}::uuid DESC LIMIT 1`
       if (existing[0]) result.alreadyPresent++
@@ -217,8 +223,8 @@ export async function importRecordPortCatalogue(input: Tenant & RecordPortImport
         await tx`INSERT INTO port_doctrine (id,space_id,number,title,body,created_at,retired_at,version,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${row.number},${row.title},${row.body},${row.createdAt}::timestamptz,${row.retiredAt}::timestamptz,${row.version},${row.updatedAt}::timestamptz)`
         result.inserted++
       }
-    }
-    for (const row of input.port_pair) {
+    })
+    await forEachAsync(input.port_pair, async (row) => {
       const existing =
         await tx`SELECT id FROM port_pair WHERE space_id=${input.spaceId}::uuid AND (id=${row.id}::uuid OR (source_project_id=${row.sourceProjectId}::uuid AND target_project_id=${row.targetProjectId}::uuid)) ORDER BY id=${row.id}::uuid DESC LIMIT 1`
       const id = foundId(existing)
@@ -228,12 +234,12 @@ export async function importRecordPortCatalogue(input: Tenant & RecordPortImport
         result.inserted++
       }
       pairs.set(row.id, id ?? row.id)
-    }
-    for (const row of input.port_baseline) {
+    })
+    await forEachAsync(input.port_baseline, async (row) => {
       const pairId = pairs.get(row.pairId)
       if (!pairId) {
         result.skipped.push({ id: row.id, reason: `pair ${row.pairId} is absent` })
-        continue
+        return
       }
       const existing =
         await tx`SELECT id FROM port_baseline WHERE space_id=${input.spaceId}::uuid AND (id=${row.id}::uuid OR pair_id=${pairId}::uuid) LIMIT 1`
@@ -242,8 +248,8 @@ export async function importRecordPortCatalogue(input: Tenant & RecordPortImport
         await tx`INSERT INTO port_baseline (id,space_id,pair_id,source_commit,scanned_at,version,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${pairId}::uuid,${row.sourceCommit},${row.scannedAt}::timestamptz,${row.version},${row.updatedAt}::timestamptz)`
         result.inserted++
       }
-    }
-    for (const row of input.port_ref) {
+    })
+    await forEachAsync(input.port_ref, async (row) => {
       const existing =
         await tx`SELECT id FROM port_ref WHERE space_id=${input.spaceId}::uuid AND (id=${row.id}::uuid OR (target_project_id=${row.targetProjectId}::uuid AND task_key=${row.taskKey})) ORDER BY id=${row.id}::uuid DESC LIMIT 1`
       const id = foundId(existing)
@@ -253,12 +259,12 @@ export async function importRecordPortCatalogue(input: Tenant & RecordPortImport
         result.inserted++
       }
       refs.set(row.id, id ?? row.id)
-    }
-    for (const row of input.port_ref_source) {
+    })
+    await forEachAsync(input.port_ref_source, async (row) => {
       const refId = refs.get(row.refId)
       if (!refId) {
         result.skipped.push({ id: row.id, reason: `ref ${row.refId} is absent` })
-        continue
+        return
       }
       const existing =
         await tx`SELECT id FROM port_ref_source WHERE space_id=${input.spaceId}::uuid AND (id=${row.id}::uuid OR (ref_id=${refId}::uuid AND source_project_id=${row.sourceProjectId}::uuid)) LIMIT 1`
@@ -267,12 +273,12 @@ export async function importRecordPortCatalogue(input: Tenant & RecordPortImport
         await tx`INSERT INTO port_ref_source (id,space_id,ref_id,source_project_id,commits,paths,note,deleted_at,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${refId}::uuid,${row.sourceProjectId}::uuid,${row.commits},${row.paths},${row.note},${row.deletedAt}::timestamptz,${row.updatedAt}::timestamptz)`
         result.inserted++
       }
-    }
-    for (const row of input.port_skip) {
+    })
+    await forEachAsync(input.port_skip, async (row) => {
       const pairId = pairs.get(row.pairId)
       if (!pairId) {
         result.skipped.push({ id: row.id, reason: `pair ${row.pairId} is absent` })
-        continue
+        return
       }
       const existing =
         await tx`SELECT id FROM port_skip WHERE space_id=${input.spaceId}::uuid AND id=${row.id}::uuid`
@@ -281,7 +287,7 @@ export async function importRecordPortCatalogue(input: Tenant & RecordPortImport
         await tx`INSERT INTO port_skip (id,space_id,pair_id,candidate,reason,skipped_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${pairId}::uuid,${row.candidate},${row.reason},${row.skippedAt}::timestamptz)`
         result.inserted++
       }
-    }
+    })
     return result
   })
 }

@@ -2,16 +2,23 @@
 /** Knows the built-in workflow definitions and advances them by seed revision.
  * Must not know workflow commands, adapters, execution, or project state. */
 import type { Database } from 'bun:sqlite'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, writeTransaction } from '../database/db.ts'
-import type { AutonomyStage, AutonomyValue } from './autonomy.ts'
-import { type FloorKind, validateStepCatalogue } from './step-catalogue.ts'
-import { expandWorkflowSteps } from './workflow-step-sequences.ts'
+import { validateStepCatalogue } from './step-catalogue.ts'
+import {
+  catalogueDefinition,
+  mergeSeededSteps,
+  type SeedCatalogueStep,
+  seedMayPromote,
+  workflowSeeds as seeds,
+  workflowDefinition,
+} from './workflow-built-ins.ts'
 
-const seedDefinition = (definition: unknown) => JSON.stringify(definition)
+export { builtInWorkflowCatalogue, mergeSeededSteps, seedMayPromote } from './workflow-built-ins.ts'
 
-const seeds = [
+const seedDefinition = JSON.stringify
+/*
+const removedSeeds = [
   {
     slug: 'fix-defect',
     revision: 5,
@@ -189,7 +196,8 @@ function workflowDefinition(seed: LegacySeed) {
 }
 
 /** The hosted built-in installer consumes the exact definitions used by local seeding. */
-export function builtInWorkflowCatalogue() {
+/*
+export function removedBuiltInWorkflowCatalogue() {
   return {
     stepCatalogue: {
       slug: 'shared',
@@ -204,7 +212,7 @@ export function builtInWorkflowCatalogue() {
       reason: `seed r${seed.revision}`,
     })),
   }
-}
+}*/
 
 function seedCatalogue(d: Database, now: string): void {
   const seeded = catalogueDefinition(),

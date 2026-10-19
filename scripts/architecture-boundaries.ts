@@ -623,13 +623,26 @@ export const importBoundaries: ImportBoundary[] = [
     'Keep the local-only bulk import refusal separate from import application.',
   ),
   boundary(
+    'porting-hosted-import-boundary',
+    'orchestrator/src/porting/porting-hosted-import.ts',
+    [
+      'bun:sqlite',
+      '../../../shared/record-id.ts',
+      '../database/db.ts',
+      '../doc/docs.ts',
+      '../project/projects.ts',
+      '../project-space.ts',
+      '../record/record-api-client.ts',
+      '../record/record-port-contract.ts',
+      '../record/record-project-destination.ts',
+    ],
+    'Keep hosted port payload construction separate from source parsing and import application.',
+    [],
+  ),
+  boundary(
     'record-api-client-port-boundary',
     'orchestrator/src/record/record-api-client-port.ts',
-    [
-      './record-api-client-paths.ts',
-      './record-catalogue-contract.ts',
-      './record-port-contract.ts',
-    ],
+    ['./record-api-client-paths.ts', './record-catalogue-contract.ts', './record-port-contract.ts'],
     'Keep the port HTTP client dependent only on its transport contract.',
   ),
   boundary(
@@ -968,6 +981,13 @@ export const importBoundaries: ImportBoundary[] = [
     ['../run/run-types.ts'],
   ),
   boundary(
+    'workflow-built-ins-boundary',
+    'orchestrator/src/workflow/workflow-built-ins.ts',
+    ['../../../shared/brand.ts', './workflow-floor.ts', './workflow-step-sequences.ts'],
+    'Keep shared built-in workflow definitions independent of stores and hosted transports.',
+    ['./autonomy.ts'],
+  ),
+  boundary(
     'workflows-boundary',
     'orchestrator/src/workflow/workflow-seeds.ts',
     [
@@ -977,6 +997,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../review/review-vocabulary.ts',
       './step-catalogue.ts',
       './workflow-step-sequences.ts',
+      './workflow-built-ins.ts',
       'bun:sqlite',
     ],
     'Keep workflow seeds dependent only on database transactions, review vocabulary, and catalogue validation.',

@@ -24,6 +24,17 @@ export const recordModules: RecordModule[] = [
     '../record/record-write-authority.ts',
     '../worker-store-write.ts',
   ]),
+  module('orchestrator/src/porting/porting-hosted-import.ts', [
+    'bun:sqlite',
+    '../../../shared/record-id.ts',
+    '../database/db.ts',
+    '../doc/docs.ts',
+    '../project/projects.ts',
+    '../project-space.ts',
+    '../record/record-api-client.ts',
+    '../record/record-port-contract.ts',
+    '../record/record-project-destination.ts',
+  ]),
   module('orchestrator/src/record/record-lens-catalogue.ts', [
     'bun',
     '../../../shared/record/schema.ts',
@@ -44,7 +55,13 @@ export const recordModules: RecordModule[] = [
     '../../../shared/record/schema.ts',
     '../../../shared/record/tenant.ts',
     '../lens/lens-built-ins.ts',
-    '../workflow/workflow-seeds.ts',
+    '../workflow/workflow-built-ins.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-built-ins.ts', [
+    '../../../shared/brand.ts',
+    './autonomy.ts',
+    './workflow-floor.ts',
+    './workflow-step-sequences.ts',
   ]),
   module('orchestrator/src/record/record-push-catalogues.ts', [
     'bun:sqlite',

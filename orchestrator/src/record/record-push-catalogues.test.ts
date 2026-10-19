@@ -111,7 +111,9 @@ test('pushes a seeded local store through bulk routes and sync resolves routed c
   installRecordApiClient(client)
   await pushCataloguesCommand({ dryRun: false }, { log: () => undefined }, { local, client })
   expect(resolveLens('correctness', 'catalogue-target', local)?.title).toBe('Correctness')
-  expect(local.query("SELECT 1 FROM lens WHERE id='correctness' AND space_id=?").get(spaceId)).not.toBeNull()
+  expect(
+    local.query("SELECT 1 FROM lens WHERE id='correctness' AND space_id=?").get(spaceId),
+  ).not.toBeNull()
   expect(
     productionWorkflowTree(local, 'catalogue-target').workflows.some(
       (row) => row.slug === 'fix-defect',
