@@ -69,9 +69,7 @@ export function registerRecordWorkflowRoutes(
       limit: query.data.limit,
       cursor,
     })
-    return context.json(
-      pageRecordItems(items, query.data.limit, recordCursorOf, true),
-    )
+    return context.json(pageRecordItems(items, query.data.limit, recordCursorOf, true))
   })
   app.post('/v1/workflow-catalogue/draft', async (context) => {
     const active = ports.scope(context)

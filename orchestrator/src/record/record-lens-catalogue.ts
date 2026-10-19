@@ -3,11 +3,7 @@
 import { SQL } from 'bun'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
-import {
-  type RecordCursor,
-  type RecordListCursorRow,
-  recordCursorAt,
-} from './record-cursor.ts'
+import { type RecordCursor, type RecordListCursorRow, recordCursorAt } from './record-cursor.ts'
 import type {
   RecordLensProfileWriteInput,
   RecordLensTable,

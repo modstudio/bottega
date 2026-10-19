@@ -254,33 +254,15 @@ try {
   if (docAuthorMigration !== 0) process.exit(docAuthorMigration)
 
   const workflowCatalogue = await run(
-    [
-      'bun',
-      'test',
-      '--timeout',
-      '30000',
-      'src/record/record-workflow-catalogue-postgres.test.ts',
-    ],
+    ['bun', 'test', '--timeout', '30000', 'src/record/record-workflow-catalogue-postgres.test.ts'],
     { ORCH_TEST_WORKFLOW_CATALOGUE_URL: workflowCatalogueUrl },
   )
   const lensCatalogue = await run(
-    [
-      'bun',
-      'test',
-      '--timeout',
-      '30000',
-      'src/record/record-lens-catalogue-postgres.test.ts',
-    ],
+    ['bun', 'test', '--timeout', '30000', 'src/record/record-lens-catalogue-postgres.test.ts'],
     { ORCH_TEST_LENS_CATALOGUE_URL: lensCatalogueUrl },
   )
   const portCatalogue = await run(
-    [
-      'bun',
-      'test',
-      '--timeout',
-      '30000',
-      'src/record/record-port-catalogue-postgres.test.ts',
-    ],
+    ['bun', 'test', '--timeout', '30000', 'src/record/record-port-catalogue-postgres.test.ts'],
     { ORCH_TEST_PORT_CATALOGUE_URL: portCatalogueUrl },
   )
   if (workflowCatalogue !== 0 || lensCatalogue !== 0 || portCatalogue !== 0)

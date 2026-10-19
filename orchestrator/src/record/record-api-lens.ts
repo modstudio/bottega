@@ -83,9 +83,7 @@ export function registerRecordLensRoutes(
       limit: query.data.limit,
       cursor,
     })
-    return context.json(
-      pageRecordItems(items, query.data.limit, recordCursorOf, true),
-    )
+    return context.json(pageRecordItems(items, query.data.limit, recordCursorOf, true))
   })
   app.put('/v1/lens-catalogue/lenses', async (context) => {
     const active = ports.scope(context)
