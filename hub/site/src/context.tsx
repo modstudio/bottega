@@ -1,4 +1,4 @@
-import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { Cards, Cta, PageHero, Panel } from './shared'
 
 const cards = [

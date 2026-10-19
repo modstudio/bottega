@@ -9,6 +9,7 @@
     "hub",
     "hub/deploy/site",
     "hub/data",
+    "hub/site",
     "hub/ui",
     "hub/util",
     "hub/views",

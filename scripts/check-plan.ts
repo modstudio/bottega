@@ -14,6 +14,7 @@ export const CHECK_LEGS = [
     suite: [
       ['bun', 'run', 'test'],
       ['bun', 'run', '--cwd', 'data', 'test'],
+      ['bun', 'run', '--cwd', 'site', 'test'],
       ['bun', 'run', '--cwd', 'util', 'test'],
     ],
   },

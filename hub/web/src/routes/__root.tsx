@@ -12,6 +12,8 @@ import {
 } from '@bottega/hub-data/hub-mode'
 import { waitingInboxEntries } from '@bottega/hub-data/operator-waiting'
 import { useProjectColors } from '@bottega/hub-data/use-project-colors'
+import { SiteFrame } from '@bottega/hub-site/chrome'
+import { type SiteLinkProps, SiteNavigation } from '@bottega/hub-site/navigation'
 import {
   AppShell,
   type NavItem,
@@ -34,7 +36,6 @@ import { useEffect } from 'react'
 import { AppMark } from '@/components/app-mark'
 import { ProjectColorsContext } from '@/components/design-system'
 import { useWindowState } from '@/lib/window'
-import { SiteFrame } from '@/site/chrome'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 
 const THEME_KEY = 'hub:theme'
@@ -119,12 +120,17 @@ export const Route = createRootRoute({
 })
 
 function RootShell() {
+  const currentPath = useRouterState({ select: (state) => state.location.pathname })
   return (
-    <>
+    <SiteNavigation link={RouterSiteLink} currentPath={currentPath}>
       <HeadContent />
       <ShellContent />
-    </>
+    </SiteNavigation>
   )
+}
+
+function RouterSiteLink({ to, ...props }: SiteLinkProps) {
+  return <Link to={to as LinkProps['to']} {...props} />
 }
 
 function ShellContent() {

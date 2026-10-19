@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { Cards, Cta, PageHero, Section } from './shared'
 
 const tabs = [

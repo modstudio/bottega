@@ -1,6 +1,6 @@
-import { Link } from '@tanstack/react-router'
 import { Fragment } from 'react'
-import { PLATFORM_NAME } from '../../../../shared/brand.ts'
+import { PLATFORM_NAME } from '../../../shared/brand.ts'
+import { SiteLink as Link } from './navigation.tsx'
 import { RunShowcase } from './run-showcase'
 import { Actions, Cta, installCommand, Section } from './shared'
 

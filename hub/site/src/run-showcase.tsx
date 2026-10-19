@@ -1,5 +1,5 @@
-import { Link } from '@tanstack/react-router'
-import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { SiteLink as Link } from './navigation.tsx'
 
 const rows = [
   ['r-4f19', 'implement', 'codex', 'ATL-412 webhook retries', 'running', '—', 'run'],

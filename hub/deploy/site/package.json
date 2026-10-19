@@ -1,5 +1,5 @@
 {
-  "name": "@bottega/hub-site",
+  "name": "@bottega/hub-deploy-site",
   "version": "0.1.0",
   "private": true,
   "type": "module",

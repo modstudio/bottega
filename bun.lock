@@ -80,11 +80,25 @@
       },
     },
     "hub/deploy/site": {
-      "name": "@bottega/hub-site",
+      "name": "@bottega/hub-deploy-site",
       "version": "0.1.0",
       "devDependencies": {
         "@types/bun": "latest",
         "typescript": "^5",
+      },
+    },
+    "hub/site": {
+      "name": "@bottega/hub-site",
+      "version": "0.1.0",
+      "dependencies": {
+        "react": "^19.2.6",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "@types/react": "^19.2.14",
+        "@types/react-dom": "^19.2.3",
+        "react-dom": "^19.2.6",
+        "typescript": "^6.0.3",
       },
     },
     "hub/ui": {
@@ -178,6 +192,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@bottega/hub-data": "workspace:*",
+        "@bottega/hub-site": "workspace:*",
         "@bottega/hub-ui": "workspace:*",
         "@bottega/hub-util": "workspace:*",
         "@bottega/hub-views": "workspace:*",
@@ -399,7 +414,9 @@
 
     "@bottega/hub-data": ["@bottega/hub-data@workspace:hub/data"],
 
-    "@bottega/hub-site": ["@bottega/hub-site@workspace:hub/deploy/site"],
+    "@bottega/hub-deploy-site": ["@bottega/hub-deploy-site@workspace:hub/deploy/site"],
+
+    "@bottega/hub-site": ["@bottega/hub-site@workspace:hub/site"],
 
     "@bottega/hub-ui": ["@bottega/hub-ui@workspace:hub/ui"],
 
@@ -2125,6 +2142,12 @@
 
     "@bottega/hub-data/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
 
+    "@bottega/hub-deploy-site/@types/bun": ["@types/bun@1.4.3", "", { "dependencies": { "bun-types": "1.4.3" } }, "sha512-N67Pqy8JXbAY/j0tNraS3V5mubGvc6rrrNDmDCtZLlFzccbUJPDb0tvgUBC5q4m8ybkP93Jcn1QB+RYQ6PvBhw=="],
+
+    "@bottega/hub-site/@types/bun": ["@types/bun@1.4.3", "", { "dependencies": { "bun-types": "1.4.3" } }, "sha512-N67Pqy8JXbAY/j0tNraS3V5mubGvc6rrrNDmDCtZLlFzccbUJPDb0tvgUBC5q4m8ybkP93Jcn1QB+RYQ6PvBhw=="],
+
+    "@bottega/hub-site/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
+
     "@bottega/hub-ui/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
 
     "@bottega/hub-util/@types/bun": ["@types/bun@1.4.3", "", { "dependencies": { "bun-types": "1.4.3" } }, "sha512-N67Pqy8JXbAY/j0tNraS3V5mubGvc6rrrNDmDCtZLlFzccbUJPDb0tvgUBC5q4m8ybkP93Jcn1QB+RYQ6PvBhw=="],
@@ -2250,6 +2273,10 @@
     "@agentclientprotocol/codex-acp/open/wsl-utils": ["wsl-utils@1.0.0", "", { "dependencies": { "is-wsl": "^3.1.0", "powershell-utils": "^0.1.0" } }, "sha512-Hl0ZOAs672vg+06kfujwRhoS6/jehvULrlFkuF2dRu6pHgA8U06h3xqNIqNNU1LTXPcedxByAR4GS6pwQK0mgA=="],
 
     "@bottega/hub-data/@types/bun/bun-types": ["bun-types@1.4.3", "", { "dependencies": { "@types/node": "*", "undici-types": "*" } }, "sha512-tinRJNGOmUN+tEAsn2y2e942n9JHRHR42iUYzDH75NmhJqVBokGSQkkfSFdNWwsANIdrK6ACH9t01M452YyTwg=="],
+
+    "@bottega/hub-deploy-site/@types/bun/bun-types": ["bun-types@1.4.3", "", { "dependencies": { "@types/node": "*", "undici-types": "*" } }, "sha512-tinRJNGOmUN+tEAsn2y2e942n9JHRHR42iUYzDH75NmhJqVBokGSQkkfSFdNWwsANIdrK6ACH9t01M452YyTwg=="],
+
+    "@bottega/hub-site/@types/bun/bun-types": ["bun-types@1.4.3", "", { "dependencies": { "@types/node": "*", "undici-types": "*" } }, "sha512-tinRJNGOmUN+tEAsn2y2e942n9JHRHR42iUYzDH75NmhJqVBokGSQkkfSFdNWwsANIdrK6ACH9t01M452YyTwg=="],
 
     "@bottega/hub-util/@types/bun/bun-types": ["bun-types@1.4.3", "", { "dependencies": { "@types/node": "*", "undici-types": "*" } }, "sha512-tinRJNGOmUN+tEAsn2y2e942n9JHRHR42iUYzDH75NmhJqVBokGSQkkfSFdNWwsANIdrK6ACH9t01M452YyTwg=="],
 

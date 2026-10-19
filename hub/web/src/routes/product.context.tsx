@@ -1,5 +1,5 @@
+import { ContextPage } from '@bottega/hub-site/context'
 import { createFileRoute } from '@tanstack/react-router'
-import { ContextPage } from '@/site/context'
 import { requireHostedSite, siteHead } from './-site'
 export const Route = createFileRoute('/product/context')({
   beforeLoad: requireHostedSite,

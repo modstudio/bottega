@@ -7,6 +7,8 @@ import {
   HUB_DATA_PACKAGE,
   HUB_DATA_ROOT,
   HUB_PACKAGE_PREFIX,
+  HUB_SITE_PACKAGE,
+  HUB_SITE_ROOT,
   HUB_UI_PACKAGE,
   HUB_UI_ROOT,
   HUB_UTIL_PACKAGE,
@@ -249,11 +251,38 @@ if (utilPackage.name !== HUB_UTIL_PACKAGE) {
 }
 violations.push(...hubUtilRuntimeDependencyViolations(utilPackage))
 
+const sitePackagePath = join(ROOT, HUB_SITE_ROOT, 'package.json')
+const sitePackage = readPackage(sitePackagePath)
+const expectedSiteExports = Object.fromEntries(
+  [...new Glob('**/*.{ts,tsx,css}').scanSync({ cwd: join(ROOT, HUB_SITE_ROOT, 'src') })]
+    .filter((path) => !/\.(?:test|spec)\.[cm]?tsx?$/.test(path))
+    .map((path) => {
+      const normalized = path.split(sep).join('/')
+      return [exportSubpath(normalized), `./src/${normalized}`]
+    })
+    .sort(([left], [right]) => left.localeCompare(right)),
+)
+for (const [subpath, source] of Object.entries(expectedSiteExports)) {
+  if (sitePackage.exports?.[subpath] !== source) {
+    violations.push(`${relative(ROOT, sitePackagePath)}: export ${subpath} must point to ${source}`)
+  }
+}
+for (const subpath of Object.keys(sitePackage.exports ?? {})) {
+  if (!(subpath in expectedSiteExports)) {
+    violations.push(
+      `${relative(ROOT, sitePackagePath)}: export ${subpath} has no public source file`,
+    )
+  }
+}
+if (sitePackage.name !== HUB_SITE_PACKAGE) {
+  violations.push(`${relative(ROOT, sitePackagePath)}: package name must be ${HUB_SITE_PACKAGE}`)
+}
+
 if (violations.length) {
   for (const violation of violations) console.error(violation)
   process.exit(1)
 }
 
 console.log(
-  `check-hub-packages: ok (${checkedPackages.sort().join(', ')}; ${Object.keys(expectedExports).length} ui exports; ${Object.keys(expectedDataExports).length} data exports; ${Object.keys(expectedUtilExports).length} util exports)`,
+  `check-hub-packages: ok (${checkedPackages.sort().join(', ')}; ${Object.keys(expectedExports).length} ui exports; ${Object.keys(expectedDataExports).length} data exports; ${Object.keys(expectedSiteExports).length} site exports; ${Object.keys(expectedUtilExports).length} util exports)`,
 )
