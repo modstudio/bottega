@@ -16,6 +16,8 @@ export const appShellStyles = variant({
     mobileFooter: 'border-border-default border-t p-4',
     collapsedBrandName: 'sr-only',
     mobileBrand: 'flex items-center gap-3 whitespace-nowrap font-serif text-xl lowercase',
+    pageTitle: 'flex min-w-0 items-center gap-2.5 truncate font-serif text-xl',
+    pageIcon: 'size-5 shrink-0 text-text-secondary',
     shell: 'flex min-h-dvh bg-surface-page text-text-primary',
     railNav: 'min-h-0 flex-1 overflow-y-auto overflow-x-hidden',
     railFooter: 'border-border-default border-t py-3',

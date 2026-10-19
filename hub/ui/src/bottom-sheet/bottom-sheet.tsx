@@ -75,7 +75,9 @@ export function BottomSheet({
             <X />
           </IconButton>
         </header>
-        <div className={bottomSheetStyles().body()}>{children}</div>
+        <div data-density="touch" className={bottomSheetStyles().body()}>
+          {children}
+        </div>
       </div>
     </dialog>
   )

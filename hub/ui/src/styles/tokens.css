@@ -299,6 +299,12 @@
   --control-h-md: 2rem;
   --row-h: 2.25rem;
 }
+/* Fingers, not pointers: a phone sheet's controls all take the touch height. */
+[data-density="touch"] {
+  --control-h-sm: var(--control-h-lg);
+  --control-h-md: var(--control-h-lg);
+  --row-h: 3rem;
+}
 
 @media (prefers-reduced-motion: reduce) {
   :root {

@@ -9,6 +9,8 @@ export const toolbarBandStyles = variant({
     searchTrigger: 'flex h-full w-full items-center justify-center gap-1.5',
     activeIndicator: 'absolute top-2 right-3 size-1.5 rounded-full bg-status-fill',
     activeLabel: 'sr-only',
+    sheetTabs: 'sticky top-0 z-10 -mt-1 bg-surface-overlay',
+    sheetBody: 'flex flex-col gap-3 pt-4',
   },
   variants: {
     search: { true: { cell: 'grow' } },

@@ -7,5 +7,8 @@ export const taskPageStyles = variant({
     description: 'doc-measure mt-6',
     empty: 'doc-measure mt-6 text-md text-text-muted',
     history: 'doc-measure mt-8',
+    phoneTabs: '-mx-6 md:-mx-15 sticky top-0 z-10 mb-5 bg-surface-page px-6 md:px-15',
+    phonePanel: 'doc-measure',
+    back: 'mb-4 flex cursor-pointer items-center gap-1.5 text-sm text-text-muted hover:text-text-primary',
   },
 })

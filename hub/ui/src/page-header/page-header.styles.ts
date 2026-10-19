@@ -2,6 +2,8 @@ import { variant } from '../text/variant.ts'
 
 export const pageHeaderStyles = variant({
   slots: {
+    phoneTitle: 'sr-only',
+    phoneHeader: 'pt-4 pb-4',
     portalRoot: 'flex min-w-0 flex-1 items-center gap-4',
     portalHeading: 'flex min-w-0 items-baseline gap-3',
     portalTitle: 'shrink-0 font-normal font-serif text-xl',
@@ -15,5 +17,9 @@ export const pageHeaderStyles = variant({
     sectionHeader: 'mt-8 mb-3 flex items-baseline justify-between gap-4',
     sectionHeading: 'font-normal font-serif text-md',
     sectionDetail: 'text-right text-sm text-text-muted',
+  },
+  variants: {
+    // A phone header with no controls keeps only its hidden name and the gap above the page.
+    bare: { true: { phoneHeader: 'pb-0' } },
   },
 })

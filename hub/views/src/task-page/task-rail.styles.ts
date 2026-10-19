@@ -2,7 +2,7 @@ import { variant } from '@bottega/hub-ui/text/variant'
 
 export const taskRailStyles = variant({
   slots: {
-    rail: 'hidden bg-surface-page lg:block',
+    rail: 'bg-surface-page',
     back: 'flex w-full cursor-pointer items-center gap-1.5 text-sm text-text-muted hover:text-text-primary',
     facts: 'grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-4 gap-y-2.5 text-sm',
     fact: 'contents',
@@ -14,6 +14,5 @@ export const taskRailStyles = variant({
     docIcon: 'shrink-0',
     docTitle: 'truncate',
     nothing: 'text-sm text-text-muted',
-    narrow: 'doc-measure mt-6 space-y-6 border-border-default border-y py-5 lg:hidden',
   },
 })

@@ -14,13 +14,17 @@ export function Tabs({
   value,
   onChange,
   items,
+  id: givenId,
 }: {
   label: string
   value: string
   onChange: (value: string) => void
   items: readonly TabItem[]
+  /** Names the tabs so the owner of the panel can label it: `${id}-panel`, `${id}-tab-${value}`. */
+  id?: string
 }) {
-  const id = useId()
+  const ownId = useId()
+  const id = givenId ?? ownId
   const move = (event: KeyboardEvent<HTMLDivElement>) => {
     const index = items.findIndex((item) => item.value === value)
     const next =

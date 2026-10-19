@@ -3,12 +3,11 @@ import { LiveDot } from '@bottega/hub-ui/badge/live-dot'
 import { TextButton } from '@bottega/hub-ui/button'
 import { Docked } from '@bottega/hub-ui/companion'
 import { useNow } from '@bottega/hub-ui/dom/clock'
+import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
 import { EmptyState } from '@bottega/hub-ui/empty-state'
 import { Input } from '@bottega/hub-ui/field/input'
 import { Identifier } from '@bottega/hub-ui/identifier'
-import { PageHeader } from '@bottega/hub-ui/page-header'
 import { Segmented } from '@bottega/hub-ui/segmented'
-import { StatRow, StatTile } from '@bottega/hub-ui/stat'
 import {
   Table,
   TableBody,
@@ -29,30 +28,22 @@ import {
   LayoutGrid,
   Rows3,
 } from 'lucide-react'
-import { type ReactNode, useContext, useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useContext, useMemo, useState } from 'react'
 import { Collection, type CollectionChildRow, type CollectionColumn } from '@/components/collection'
 import {
   ProjectColorsContext,
   ProjectMark,
   projectVars,
-  responseSubtitle,
   SourceMark,
   useWindowFilters,
   WindowControl,
 } from '@/components/design-system'
 import { WaitingBadge } from '@/components/waiting-badge'
+import { type ChromeResponse, type Facets, WindowChrome, WorkStats } from '@/components/work-chrome'
 import { useDetailPanel } from '@/lib/detail-panel'
-import { setWorkCounts, useWindowState } from '@/lib/window'
+import { useWindowState } from '@/lib/window'
 
 type WorkName = 'flight' | 'done'
-type ChromeResponse = {
-  engaged: string
-  activeAgents: string[]
-  tasksShipped: number
-  collectedAt: string | null
-  servingSince: string
-  counts: { flight: number; done: number; runs: number }
-}
 type TaskRun = {
   id: number | string
   root_id?: number | string
@@ -91,7 +82,6 @@ type TaskData = {
 }
 type TaskResponse = ChromeResponse & { data: TaskData }
 type Run = TaskRow['runs'][number]
-type Facets = { projects: string[]; agents: string[]; sources: string[] }
 type WaitingRow = { kind: 'question' | 'workflow'; id: number; run_id: number | null }
 type WaitingByRun = ReadonlyMap<string, WaitingRow>
 const EMPTY_WAITING_BY_RUN: WaitingByRun = new Map()
@@ -120,8 +110,6 @@ type BoardResponse = ChromeResponse & {
   }
 }
 
-const number = new Intl.NumberFormat('en-US')
-
 const compact = compactTokens
 const formatMs = duration
 const ago = relativeTime
@@ -147,81 +135,78 @@ function Status({ row }: { row: Pick<TaskRow, 'key' | 'status' | 'statusCategory
   )
 }
 
-function WindowChrome({
-  title,
-  response,
-  facets,
-  onDropdown,
-  headerFilters = false,
-}: {
-  title: string
-  response: Pick<
-    ChromeResponse,
-    'engaged' | 'activeAgents' | 'tasksShipped' | 'collectedAt' | 'servingSince' | 'counts'
-  >
-  facets: Facets
-  onDropdown: (open: boolean) => void
-  /** A page without a TableCard shows its filters beside the window instead. */
-  headerFilters?: boolean
-}) {
-  useEffect(() => setWorkCounts(response.counts), [response.counts])
-  const filters = useWindowFilters({ ...facets, onOpenChange: onDropdown })
-  const subtitle = responseSubtitle(response)
-  return (
-    <>
-      <PageHeader
-        title={title}
-        subtitle={subtitle.text}
-        subtitleTitle={subtitle.title}
-        actions={
-          <>
-            {headerFilters ? filters.controls : null}
-            <WindowControl />
-          </>
-        }
-      />
-      <StatRow>
-        <StatTile
-          figure={response.engaged}
-          label="Engaged"
-          live={response.activeAgents.length > 0}
-        />
-        <StatTile
-          figure={response.activeAgents.length}
-          label="Agents working"
-          hint={response.activeAgents.join(', ') || 'No agent on a task'}
-        />
-        <StatTile
-          figure={number.format(response.tasksShipped)}
-          label="Tasks shipped"
-          hint="Last 14 days"
-        />
-      </StatRow>
-    </>
-  )
-}
-
+/** The task table's columns; `phone` says where each goes when a phone shows the row as a card. */
 const columns = [
-  { id: 'space', label: 'Space', numeric: false, get: (row: TaskRow) => row.spaceName || '' },
-  { id: 'project', label: 'Project', numeric: false, get: (row: TaskRow) => row.project || '' },
-  { id: 'task', label: 'Task', numeric: false, get: (row: TaskRow) => row.key || '' },
-  { id: 'title', label: 'Title', numeric: false, get: (row: TaskRow) => row.title || '' },
+  {
+    id: 'space',
+    label: 'Space',
+    numeric: false,
+    phone: 'line' as const,
+    get: (row: TaskRow) => row.spaceName || '',
+  },
+  {
+    id: 'project',
+    label: 'Project',
+    numeric: false,
+    phone: 'line' as const,
+    get: (row: TaskRow) => row.project || '',
+  },
+  {
+    id: 'task',
+    label: 'Task',
+    numeric: false,
+    phone: 'title' as const,
+    get: (row: TaskRow) => row.key || '',
+  },
+  {
+    id: 'title',
+    label: 'Title',
+    numeric: false,
+    phone: 'title' as const,
+    get: (row: TaskRow) => row.title || '',
+  },
   {
     id: 'status',
     label: 'Status',
     numeric: false,
+    phone: 'aside' as const,
     get: (row: TaskRow) => row.statusCategory || '',
   },
-  { id: 'updated', label: 'Updated', numeric: true, get: (row: TaskRow) => row.lastAt },
-  { id: 'engaged', label: 'Engaged', numeric: true, get: (row: TaskRow) => row.engagedMs },
-  { id: 'claude', label: 'Claude', numeric: true, get: (row: TaskRow) => row.claudeTokens },
+  {
+    id: 'updated',
+    label: 'Updated',
+    numeric: true,
+    phone: 'line' as const,
+    get: (row: TaskRow) => row.lastAt,
+  },
+  {
+    id: 'engaged',
+    label: 'Engaged',
+    numeric: true,
+    phone: 'line' as const,
+    get: (row: TaskRow) => row.engagedMs,
+  },
+  {
+    id: 'claude',
+    label: 'Claude',
+    numeric: true,
+    phone: 'more' as const,
+    get: (row: TaskRow) => row.claudeTokens,
+  },
   {
     id: 'vendor',
     label: 'Vendor',
     numeric: true,
+    phone: 'more' as const,
     get: (row: TaskRow) => row.vendors[0]?.tokens ?? 0,
   },
-  { id: 'runs', label: 'Runs', numeric: true, get: (row: TaskRow) => row.runs.length },
+  {
+    id: 'runs',
+    label: 'Runs',
+    numeric: true,
+    phone: 'more' as const,
+    get: (row: TaskRow) => row.runs.length,
+  },
 ] as const
 
 type Sort = { col: (typeof columns)[number]['id']; dir: 1 | -1 }
@@ -302,6 +287,43 @@ function taskCell(column: Sort['col'], row: TaskRow, now: number, fetchedAt: num
   return cells[column]()
 }
 
+/** The task table's columns: sortable headers, and how each field reads on a phone card. */
+function taskCollectionColumns(
+  sort: Sort,
+  changeSort: (col: Sort['col']) => void,
+  now: number,
+  fetchedAt: number,
+): CollectionColumn<TaskRow>[] {
+  return columns.slice(0, -1).map((column) => ({
+    id: column.id,
+    label: (
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 whitespace-nowrap"
+        onClick={() => changeSort(column.id)}
+      >
+        {column.label}
+        {sort.col === column.id ? (
+          sort.dir < 0 ? (
+            <ArrowDown size={12} aria-label="descending" />
+          ) : (
+            <ArrowUp size={12} aria-label="ascending" />
+          )
+        ) : null}
+      </button>
+    ),
+    priority: column.id === 'claude' || column.id === 'vendor' ? ('low' as const) : undefined,
+    phone: column.phone,
+    phoneRender:
+      column.id === 'title'
+        ? (row: TaskRow) => row.title || 'No title from its tracker'
+        : undefined,
+    numeric: column.numeric,
+    grow: column.id === 'title',
+    render: (row) => taskCell(column.id, row, now, fetchedAt),
+  }))
+}
+
 function TaskTable({
   rows,
   from,
@@ -310,6 +332,7 @@ function TaskTable({
   onDropdown,
   panel,
   waitingByRun,
+  phoneChrome,
 }: {
   rows: TaskRow[]
   from: WorkName
@@ -318,6 +341,8 @@ function TaskTable({
   onDropdown: (open: boolean) => void
   panel?: ReactNode
   waitingByRun: WaitingByRun
+  /** On a phone, the window and figures that join the card's band. */
+  phoneChrome?: { scope: ReactNode; summary: ReactNode }
 }) {
   const navigate = useNavigate()
   const filters = useWindowFilters({ ...facets, onOpenChange: onDropdown })
@@ -338,35 +363,15 @@ function TaskTable({
     setSort((current) =>
       current.col === col ? { col, dir: current.dir === -1 ? 1 : -1 } : { col, dir: -1 },
     )
-  const collectionColumns: CollectionColumn<TaskRow>[] = columns.slice(0, -1).map((column) => ({
-    id: column.id,
-    label: (
-      <button
-        type="button"
-        className="inline-flex items-center gap-1 whitespace-nowrap"
-        onClick={() => changeSort(column.id)}
-      >
-        {column.label}
-        {sort.col === column.id ? (
-          sort.dir < 0 ? (
-            <ArrowDown size={12} aria-label="descending" />
-          ) : (
-            <ArrowUp size={12} aria-label="ascending" />
-          )
-        ) : null}
-      </button>
-    ),
-    priority: column.id === 'claude' || column.id === 'vendor' ? ('low' as const) : undefined,
-    numeric: column.numeric,
-    grow: column.id === 'title',
-    render: (row) => taskCell(column.id, row, now, fetchedAt),
-  }))
+  const collectionColumns = taskCollectionColumns(sort, changeSort, now, fetchedAt)
   return (
     <Collection
       title="Tasks"
       count={sorted.length}
       filters={filters.controls}
       filtersActive={filters.active}
+      scope={phoneChrome?.scope}
+      summary={phoneChrome?.summary}
       panel={panel}
       selectedKey={openKey}
       columns={collectionColumns}
@@ -397,7 +402,7 @@ function TaskTable({
               })
             }
           >
-            {isOpen ? 'hide' : runs.length}
+            {isOpen ? 'Hide runs' : `${runs.length} ${runs.length === 1 ? 'run' : 'runs'}`}
             <ChevronRight className={isOpen ? 'rotate-90' : ''} size={13} />
           </button>
         ) : (
@@ -466,6 +471,7 @@ function TaskContent({
   onDropdown,
   panel,
   waitingByRun,
+  phoneChrome,
 }: {
   name: WorkName
   data: TaskData
@@ -473,6 +479,7 @@ function TaskContent({
   onDropdown: (open: boolean) => void
   panel?: ReactNode
   waitingByRun: WaitingByRun
+  phoneChrome?: { scope: ReactNode; summary: ReactNode }
 }) {
   const window = useWindowState()
   const tasks = data.rows.filter((row) => row.key)
@@ -490,6 +497,7 @@ function TaskContent({
           onDropdown={onDropdown}
           panel={panel}
           waitingByRun={waitingByRun}
+          phoneChrome={phoneChrome}
         />
       ) : (
         <EmptyState
@@ -579,6 +587,7 @@ export function TaskView({
   onDropdown(open: boolean): void
 }) {
   const panel = useDetailPanel()
+  const phone = useMediaQuery(PHONE_QUERY)
   if (pending) return <p className="text-text-muted">Loading {name}...</p>
   if (error)
     return (
@@ -602,6 +611,11 @@ export function TaskView({
         onDropdown={onDropdown}
         panel={panel}
         waitingByRun={waitingByRun}
+        phoneChrome={
+          phone
+            ? { scope: <WindowControl />, summary: <WorkStats response={response} /> }
+            : undefined
+        }
       />
     </section>
   )
@@ -660,6 +674,48 @@ function BoardCardView({ card }: { card: BoardCard }) {
   )
 }
 
+/** The board's own search and view controls, beside the window's on a desk or in the band on a phone. */
+function boardControls(
+  search: string,
+  setSearch: (search: string) => void,
+  settings: { layout: BoardLayout; group: BoardGroup },
+  remember: (next: Partial<{ layout: BoardLayout; group: BoardGroup }>) => void,
+) {
+  const searchField = (
+    <Input
+      size="sm"
+      type="search"
+      aria-label="Search key or title"
+      placeholder="Search key or title"
+      value={search}
+      onChange={(event) => setSearch(event.target.value)}
+    />
+  )
+  const view = (
+    <>
+      <Segmented
+        label="Board layout"
+        value={settings.layout}
+        options={[
+          { value: 'cards', label: 'Cards', icon: LayoutGrid },
+          { value: 'table', label: 'Table', icon: Rows3 },
+        ]}
+        onChange={(value) => remember({ layout: value as BoardLayout })}
+      />
+      <Segmented
+        label="Board grouping"
+        value={settings.group}
+        options={[
+          { value: 'status', label: 'By status', icon: CircleDot },
+          { value: 'project', label: 'By project', icon: FolderGit2 },
+        ]}
+        onChange={(value) => remember({ group: value as BoardGroup })}
+      />
+    </>
+  )
+  return { search: searchField, view }
+}
+
 export function BoardView({
   response,
   pending,
@@ -676,6 +732,7 @@ export function BoardView({
   const [settings, setSettings] = useState(readBoardSettings)
   const [search, setSearch] = useState('')
   const [why, setWhy] = useState(false)
+  const phone = useMediaQuery(PHONE_QUERY)
   const remember = (next: Partial<typeof settings>) =>
     setSettings((current) => {
       const value = { ...current, ...next }
@@ -732,6 +789,12 @@ export function BoardView({
       : key === 'open'
         ? (response.data.totals.status.open || 0) + (response.data.totals.status.unknown || 0)
         : response.data.totals.status[key] || 0
+  const { search: boardSearch, view: boardView } = boardControls(
+    search,
+    setSearch,
+    settings,
+    remember,
+  )
   return (
     <section>
       <WindowChrome
@@ -740,38 +803,15 @@ export function BoardView({
         facets={response.data.facets}
         onDropdown={onDropdown}
         headerFilters
+        phoneBand={{ search: boardSearch, view: boardView }}
       />
       <Docked panel={boardPanel}>
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <div className="w-56 shrink-0">
-            <Input
-              size="sm"
-              type="search"
-              aria-label="Search key or title"
-              placeholder="Search key or title"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
+        {phone ? null : (
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <div className="w-56 shrink-0">{boardSearch}</div>
+            {boardView}
           </div>
-          <Segmented
-            label="Board layout"
-            value={settings.layout}
-            options={[
-              { value: 'cards', label: 'Cards', icon: LayoutGrid },
-              { value: 'table', label: 'Table', icon: Rows3 },
-            ]}
-            onChange={(value) => remember({ layout: value as BoardLayout })}
-          />
-          <Segmented
-            label="Board grouping"
-            value={settings.group}
-            options={[
-              { value: 'status', label: 'By status', icon: CircleDot },
-              { value: 'project', label: 'By project', icon: FolderGit2 },
-            ]}
-            onChange={(value) => remember({ group: value as BoardGroup })}
-          />
-        </div>
+        )}
         {settings.layout === 'cards' ? (
           <div className="grid gap-4 xl:grid-cols-4">
             {groups.map((group) => {
@@ -820,11 +860,13 @@ export function BoardView({
                     {
                       id: 'space',
                       label: 'Space',
+                      phone: 'line',
                       render: (card) => card.spaceName,
                     },
                     {
                       id: 'task',
                       label: 'Task',
+                      phone: 'title',
                       render: (card) => (
                         <>
                           <Identifier className="block">{card.key}</Identifier>
@@ -838,6 +880,7 @@ export function BoardView({
                     },
                     {
                       id: 'group',
+                      phone: 'line',
                       label: settings.group === 'project' ? 'Status' : 'Project',
                       render: (card) =>
                         settings.group === 'project' ? (
@@ -852,12 +895,14 @@ export function BoardView({
                     {
                       id: 'assignee',
                       label: 'Assignee',
+                      phone: 'line',
                       render: (card) =>
                         card.assignee || <span className="text-text-muted">unknown</span>,
                     },
                     {
                       id: 'live',
                       label: '',
+                      phone: 'aside',
                       render: (card) =>
                         card.workingNow ? (
                           <Badge tone="progress" dot>

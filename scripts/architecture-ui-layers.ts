@@ -25,7 +25,17 @@ const uiLayers: { name: string; folders: string[] }[] = [
   },
   {
     name: 'overlays',
-    folders: ['popover', 'tooltip', 'menu', 'listbox', 'dialog', 'sheet', 'bottom-sheet', 'toast'],
+    folders: [
+      'popover',
+      'tooltip',
+      'menu',
+      'listbox',
+      'dialog',
+      'sheet',
+      'bottom-sheet',
+      'drawer',
+      'toast',
+    ],
   },
   {
     name: 'patterns',
@@ -36,6 +46,7 @@ const uiLayers: { name: string; folders: string[] }[] = [
       'callout',
       'stat',
       'table',
+      'card-list',
       'page-header',
       'project-mark',
       'pagination',

@@ -17,7 +17,7 @@ export type TaskPageDoc = {
   keyLine: { key: string; icon?: ReactNode; content: ReactNode }[]
 }
 
-function Facts({ facts, extra }: { facts: TaskPageFact[]; extra?: ReactNode }) {
+export function TaskFacts({ facts, extra }: { facts: TaskPageFact[]; extra?: ReactNode }) {
   return (
     <>
       <dl className={taskRailStyles().facts()}>
@@ -33,10 +33,10 @@ function Facts({ facts, extra }: { facts: TaskPageFact[]; extra?: ReactNode }) {
   )
 }
 
-function headingItems(body: string) {
+function headingItems(body: string, onHeading?: (id: string) => void) {
   return secondLevelHeadings(body).map((heading) => ({
     id: heading.id,
-    href: `#${heading.id}`,
+    ...(onHeading ? { onSelect: () => onHeading(heading.id) } : { href: `#${heading.id}` }),
     label: heading.title.replace(/[`*]/g, ''),
   }))
 }
@@ -68,19 +68,24 @@ function DocumentList({
   )
 }
 
-/** The open page's sections, then every task document, with the open one marked. */
-function TaskContents({
+/**
+ * The open page's sections, then every task document, with the open one marked. Where the page
+ * is not beside it, `onHeading` brings it back before going to a section.
+ */
+export function TaskContents({
   body,
   docs,
   current,
   onOpenDoc,
+  onHeading,
 }: {
   body: string
   docs: TaskPageDoc[]
   current?: string
   onOpenDoc: (id: string) => void
+  onHeading?: (id: string) => void
 }) {
-  const headings = headingItems(body)
+  const headings = headingItems(body, onHeading)
   return (
     <div className={taskRailStyles().contents()}>
       <ContentsList items={headings} />
@@ -143,47 +148,13 @@ export function TaskRail({
             value: 'details',
             label: 'Details',
             content: doc ? (
-              <Facts facts={doc.facts} />
+              <TaskFacts facts={doc.facts} />
             ) : (
-              <Facts facts={details} extra={detailsExtra} />
+              <TaskFacts facts={details} extra={detailsExtra} />
             ),
           },
         ]}
       />
-    </div>
-  )
-}
-
-/** Below the rail's breakpoint the rail is hidden, so its facts and documents sit in the page. */
-export function NarrowFacts({
-  doc,
-  docs,
-  details,
-  detailsExtra,
-  onOpenDoc,
-}: {
-  doc: TaskPageDoc | null
-  docs: TaskPageDoc[]
-  details: TaskPageFact[]
-  detailsExtra?: ReactNode
-  onOpenDoc: (id: string | null) => void
-}) {
-  return (
-    <div className={taskRailStyles().narrow()}>
-      {doc ? (
-        <>
-          <button type="button" className={taskRailStyles().back()} onClick={() => onOpenDoc(null)}>
-            <ArrowLeft size={14} />
-            Back to task
-          </button>
-          <Facts facts={doc.facts} />
-        </>
-      ) : (
-        <>
-          <Facts facts={details} extra={detailsExtra} />
-          <DocumentList docs={docs} onOpenDoc={onOpenDoc} />
-        </>
-      )}
     </div>
   )
 }

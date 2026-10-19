@@ -5,7 +5,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { TaskScreen } from './task-screen'
 
-test('a hosted task renders its history, documents and measures without edit controls', () => {
+test('a hosted task renders its history and its rail tabs without edit controls', () => {
   const detail: NonNullable<UseTaskResult['detail']> = {
     task: {
       key: 'DEV-701',
@@ -156,12 +156,12 @@ test('a hosted task renders its history, documents and measures without edit con
     </QueryClientProvider>,
   )
   expect(html).toContain('A comment')
-  expect(html).toContain('Plan')
+  // Static markup renders the narrow layout: the task tab, with Contents and Details as tabs.
+  expect(html).toContain('>Contents</button>')
+  expect(html).toContain('>Details</button>')
   expect(html).toContain('aria-label="History"')
   expect(html).toContain(' · orch</span> · implementation')
   expect(html).toContain('Read only')
-  expect(html).toContain('No time was recorded for this task')
-  expect(html).toContain('100 agent tokens')
   expect(html).not.toContain('Edit</button>')
   expect(html).not.toContain('Add a comment')
   expect(html).not.toContain('Task status')

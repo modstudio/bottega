@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
-import { NarrowFacts, type TaskPageDoc, TaskRail } from './task-rail'
+import { TaskContents, TaskFacts, type TaskPageDoc, TaskRail } from './task-rail'
 
 const docs: TaskPageDoc[] = [
   {
@@ -31,18 +31,28 @@ const details = [
   { label: 'Assignee', value: 'Unassigned' },
 ]
 
+const body = '## Objective\n\nText.\n\n## Context\n\nMore.'
+
 const meta: Meta = {
   title: 'Views/TaskRail',
   component: TaskRail,
   parameters: { layout: 'padded' },
-  args: { openDoc: null, onOpenDoc: fn() },
+  args: { openDoc: null, onOpenDoc: fn(), onHeading: fn() },
   render: (args) => {
     const doc = docs.find((candidate) => candidate.id === args.openDoc) ?? null
     const rail = { doc, docs, details, onOpenDoc: args.onOpenDoc }
     return (
       <>
-        <TaskRail {...rail} body={'## Objective\n\nText.\n\n## Context\n\nMore.'} />
-        <NarrowFacts {...rail} />
+        <TaskRail {...rail} body={body} />
+        {/* The phone tabs show the rail's two panels on their own. */}
+        <TaskContents
+          body={body}
+          docs={docs}
+          current={doc?.id}
+          onOpenDoc={args.onOpenDoc}
+          onHeading={args.onHeading}
+        />
+        <TaskFacts facts={doc ? doc.facts : details} />
       </>
     )
   },
@@ -58,12 +68,12 @@ export const Task: Story = {
   },
 }
 
-export const OpenDocument: Story = {
-  args: { openDoc: 'd1' },
+/** Where the page is not beside the contents, a section asks to bring it back. */
+export const PhoneSections: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getAllByRole('button', { name: 'Back to task' })[0]!)
-    await expect(args.onOpenDoc).toHaveBeenCalledWith(null)
+    await userEvent.click(canvas.getAllByRole('button', { name: 'Context' })[0]!)
+    await expect(args.onHeading).toHaveBeenCalledWith('context')
   },
 }
 

@@ -47,6 +47,18 @@ export type NavSection = { id: string; entries: readonly NavEntry[] }
 
 const isGroup = (entry: NavEntry): entry is NavGroup => 'items' in entry
 
+/** The destination the reader is on, which a phone's top bar names in place of the product. */
+function currentPage(nav: readonly NavSection[], isActive: (to: string) => boolean) {
+  for (const section of nav) {
+    for (const entry of section.entries) {
+      const items = isGroup(entry) ? entry.items : [entry]
+      const found = items.find((item) => isActive(item.to))
+      if (found) return found
+    }
+  }
+  return null
+}
+
 /** Renders one navigation link; the router marks the current one `data-status="active"`. */
 export type RenderLink = (
   item: NavItem,
@@ -286,6 +298,18 @@ function BrandCell({
   )
 }
 
+/** On a phone the top bar says where the reader is: the page's icon and its name. */
+function PageTitle({ page, fallback }: { page: NavItem | null; fallback: ReactNode }) {
+  if (!page) return <>{fallback}</>
+  const Icon = page.icon
+  return (
+    <div className={appShellStyles().pageTitle()}>
+      <Icon aria-hidden className={appShellStyles().pageIcon()} />
+      {page.label}
+    </div>
+  )
+}
+
 /**
  * The application frame. On a desk: a rail that is open with labels or
  * collapsed to icons, toggled from its brand cell and remembered per browser,
@@ -325,6 +349,10 @@ export function AppShell({
 }) {
   const mobile = useMediaQuery(PHONE_QUERY)
   const [menuOpen, setMenuOpen] = useState(false)
+  // The menu is a phone overlay; leaving the phone width closes it rather than keeping it for later.
+  useEffect(() => {
+    if (!mobile) setMenuOpen(false)
+  }, [mobile])
   const [rail, setRail] = useStoredState(storageKey, 'open', ['open', 'collapsed'] as const)
   const [docked, setDocked] = useState(0)
   const [topbarSlot, setTopbarSlot] = useState<HTMLDivElement | null>(null)
@@ -372,7 +400,7 @@ export function AppShell({
                 <IconButton label="Open menu" onClick={() => setMenuOpen(true)}>
                   <MenuIcon />
                 </IconButton>
-                {mark}
+                <PageTitle page={currentPage(nav, isActive)} fallback={mark} />
               </>
             ) : null}
             <div ref={setTopbarSlot} className={appShellStyles().topbarPortal()} />
