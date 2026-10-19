@@ -15,20 +15,19 @@ export const HUB_SITE_ROOT = 'hub/site'
 export const HUB_UTIL_ROOT = 'hub/util'
 
 const HUB_WEB_SOURCE_PREFIX = 'hub/web/src/'
-const HUB_WEB_ENTRY_FILES = new Set(['main.tsx', 'router.tsx', 'routeTree.gen.ts'])
+const HUB_WEB_ENTRY_FILES = new Set([
+  'main.tsx',
+  'router.tsx',
+  'routeTree.gen.ts',
+  'styles/index.css',
+])
 
 /** Return the refusal for a source path that puts presentation or data inside hub-web. */
 export function hubWebSourcePlacementViolation(path: string): string | null {
   const normalized = path.replaceAll('\\', '/')
   if (!normalized.startsWith(HUB_WEB_SOURCE_PREFIX)) return null
   const sourcePath = normalized.slice(HUB_WEB_SOURCE_PREFIX.length)
-  if (
-    sourcePath.startsWith('routes/') ||
-    sourcePath.startsWith('styles/') ||
-    HUB_WEB_ENTRY_FILES.has(sourcePath)
-  ) {
-    return null
-  }
+  if (sourcePath.startsWith('routes/') || HUB_WEB_ENTRY_FILES.has(sourcePath)) return null
   return `${normalized}: presentation belongs in ${HUB_UI_PACKAGE}, ${HUB_VIEWS_PACKAGE} or ${HUB_SITE_PACKAGE}, and data in ${HUB_DATA_PACKAGE}`
 }
 

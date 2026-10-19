@@ -12,6 +12,8 @@ import {
 
 test('hub web source placement allows routes and refuses presentation elsewhere', () => {
   expect(hubWebSourcePlacementViolation('hub/web/src/routes/settings/profile.tsx')).toBeNull()
+  expect(hubWebSourcePlacementViolation('hub/web/src/styles/index.css')).toBeNull()
+  expect(hubWebSourcePlacementViolation('hub/web/src/styles/board.css')).not.toBeNull()
   expect(hubWebSourcePlacementViolation('hub/web/src/components/profile.tsx')).toBe(
     `hub/web/src/components/profile.tsx: presentation belongs in ${HUB_UI_PACKAGE}, ${HUB_VIEWS_PACKAGE} or ${HUB_SITE_PACKAGE}, and data in ${HUB_DATA_PACKAGE}`,
   )

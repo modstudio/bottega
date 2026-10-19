@@ -5,8 +5,8 @@ paths: ["hub/**"]
 
 # Web application
 
-The Vite and React application lives in `hub/web`. Its source holds only route modules and
-the router entry; TanStack Router generates the route tree. `scripts/check-hub-packages.ts`
+The Vite and React application lives in `hub/web`. Its source holds only route modules, the
+router entry and the application stylesheet; TanStack Router generates the route tree. `scripts/check-hub-packages.ts`
 enforces `hub-web-source-placement`, and `bottega gate hub-import judge` refuses a misplaced
 source file when it is written. Static paths resolve from the built distribution; other
 non-tRPC paths return the application entry point so direct navigation and hard refresh enter
