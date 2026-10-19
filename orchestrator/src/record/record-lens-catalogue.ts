@@ -161,7 +161,7 @@ export async function upsertRecordLens(input: Tenant & RecordLensWriteInput) {
     const prior = rows[0] as Record<string, unknown> | undefined
     assertRecordLensVersion('lens', input.expectedVersion, prior ? number(prior.version) : null)
     const now = new Date().toISOString()
-    const id = prior ? text(prior.record_id) : newRecordId()
+    const id = prior ? text(prior.id) : newRecordId()
     let revision: Record<string, unknown> | null = null
     if (prior) {
       const revisionId = newRecordId()
@@ -204,7 +204,7 @@ export async function upsertRecordLensProfile(input: Tenant & RecordLensProfileW
       prior ? number(prior.version) : null,
     )
     const now = new Date().toISOString(),
-      id = prior ? text(prior.record_id) : newRecordId()
+      id = prior ? text(prior.id) : newRecordId()
     let revision: Record<string, unknown> | null = null
     if (prior) {
       const revisionId = newRecordId(),
@@ -317,7 +317,7 @@ export async function selectRecordProjectLensProfile(
       prior ? number(prior.selection_version) : null,
     )
     const now = new Date().toISOString(),
-      id = prior ? text(prior.record_id) : newRecordId(),
+      id = prior ? text(prior.id) : newRecordId(),
       revisionId = newRecordId()
     if (prior)
       await tx`UPDATE project_lens_profile SET profile_name=${input.profileName},selected_version=${input.selectedVersion},selection_version=selection_version+1,updated_at=${now}::timestamptz WHERE id=${id}::uuid`
