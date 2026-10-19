@@ -1,6 +1,7 @@
 // concern: record-push-catalogues
 /** Plans and performs the one-time null-space catalogue backfill. */
 import type { Database } from 'bun:sqlite'
+import { createHash } from 'node:crypto'
 import { db } from '../database/db.ts'
 import { activeRecordSpace, effectiveProjectSpace } from '../project-space.ts'
 import type { RecordApiClient, RecordRequestDestination } from './record-api-client.ts'
@@ -14,7 +15,7 @@ import type { RecordWorkflowImportInput } from './record-workflow-contract.ts'
 
 type Presentation = { log(value: string): void }
 type Plan = {
-  lens: RecordLensImportInput
+  lens: Map<string, RecordLensImportInput>
   workflow: RecordWorkflowImportInput
   ports: Map<string, RecordPortImportInput>
   skipped: Array<{ kind: string; id: string; reason: string }>
@@ -22,115 +23,155 @@ type Plan = {
 const iso = () => new Date().toISOString()
 const forEachValue = <T>(values: readonly T[], use: (value: T) => void) => values.forEach(use)
 
-function lensSelectionPlan(local: Database, spaceId: string, now: string) {
-  return {
-    project_lens_profile: (
-      local
-        .query(
-          `SELECT s.*,l.record_id lens_record_id FROM project_lens_profile s LEFT JOIN lens l ON l.id=s.lens_id AND l.space_id IS NULL WHERE s.space_id IS NULL`,
-        )
-        .all() as Record<string, unknown>[]
-    ).map((r) => ({
-      id: String(r.record_id),
-      spaceId,
-      projectId: String(r.project_record_id),
-      lensId: r.lens_record_id == null ? null : String(r.lens_record_id),
-      axis: r.axis as 'framework' | 'architecture',
-      profileName: String(r.profile_name),
-      selectedVersion: r.selected_version == null ? null : Number(r.selected_version),
-      selectionVersion: Number(r.selection_version),
-      updatedAt: now,
-    })),
-    project_lens_profile_revision: (
-      local
-        .query(
-          `SELECT r.*,s.record_id selection_record_id FROM project_lens_profile_revision r JOIN project_lens_profile s ON s.id=r.selection_id WHERE r.space_id IS NULL`,
-        )
-        .all() as Record<string, unknown>[]
-    ).map((r) => ({
-      id: String(r.record_id),
-      spaceId,
-      selectionId: String(r.selection_record_id),
-      priorProfileName: r.prior_profile_name == null ? null : String(r.prior_profile_name),
-      priorSelectedVersion:
-        r.prior_selected_version == null ? null : Number(r.prior_selected_version),
-      reason: String(r.reason),
-      sessionId: r.session_id == null ? null : String(r.session_id),
-      at: String(r.at),
-    })),
-  }
+function replicatedId(spaceId: string, kind: string, sourceId: string): string {
+  const hex = createHash('sha256')
+    .update(`${spaceId}\0${kind}\0${sourceId}`)
+    .digest('hex')
+    .slice(0, 32)
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20)}`
 }
 
-function lensPlan(local: Database, activeSpaceId: string): RecordLensImportInput {
+function routedProjects(local: Database): Map<string, Set<string>> {
+  const routed = new Map<string, Set<string>>()
+  const rows = local
+    .query('SELECT record_id,name FROM project WHERE retired_at IS NULL ORDER BY name')
+    .all() as { record_id: string; name: string }[]
+  for (const row of rows) {
+    const space = effectiveProjectSpace(local, row.name)
+    if (!space) continue
+    const projectIds = routed.get(space) ?? new Set<string>()
+    projectIds.add(row.record_id)
+    routed.set(space, projectIds)
+  }
+  return routed
+}
+
+function lensPlan(
+  local: Database,
+  routed: Map<string, Set<string>>,
+): Map<string, RecordLensImportInput> {
   const now = iso()
-  return {
-    dryRun: false,
-    lens: (
-      local.query('SELECT * FROM lens WHERE space_id IS NULL').all() as Record<string, unknown>[]
-    ).map((r) => ({
-      id: String(r.record_id),
-      spaceId: activeSpaceId,
-      key: String(r.id),
-      title: String(r.title),
-      question: String(r.question),
-      excludes: String(r.excludes),
-      slots: String(r.slots),
-      version: Number(r.version),
-      enabled: Boolean(r.enabled),
-      requiresExecution: Boolean(r.requires_execution),
-      updatedAt: now,
-    })),
-    lens_revision: (
-      local
-        .query(
-          `SELECT r.*,l.record_id lens_record_id FROM lens_revision r JOIN lens l ON l.id=r.lens_id WHERE r.space_id IS NULL`,
-        )
-        .all() as Record<string, unknown>[]
-    ).map((r) => ({
-      id: String(r.record_id),
-      spaceId: activeSpaceId,
-      lensId: String(r.lens_record_id),
-      version: Number(r.version),
-      priorBody: String(r.prior_body),
-      reason: String(r.reason),
-      sessionId: r.session_id == null ? null : String(r.session_id),
-      at: String(r.at),
-    })),
-    lens_profile: (
+  const lenses = local.query('SELECT * FROM lens WHERE space_id IS NULL').all() as Record<
+      string,
+      unknown
+    >[],
+    revisions = local
+      .query(
+        `SELECT r.*,l.record_id lens_record_id FROM lens_revision r JOIN lens l ON l.id=r.lens_id WHERE r.space_id IS NULL`,
+      )
+      .all() as Record<string, unknown>[],
+    selections = local
+      .query(
+        `SELECT s.*,l.record_id lens_record_id FROM project_lens_profile s LEFT JOIN lens l ON l.id=s.lens_id AND l.space_id IS NULL WHERE s.space_id IS NULL`,
+      )
+      .all() as Record<string, unknown>[],
+    selectionRevisions = local
+      .query(
+        `SELECT r.*,s.record_id selection_record_id,s.project_record_id FROM project_lens_profile_revision r JOIN project_lens_profile s ON s.id=r.selection_id WHERE r.space_id IS NULL`,
+      )
+      .all() as Record<string, unknown>[],
+    profiles = (
       local
         .query(
           `SELECT p.*,l.record_id lens_record_id FROM lens_profile p JOIN lens l ON l.id=p.lens_id WHERE p.space_id IS NULL`,
         )
         .all() as Record<string, unknown>[]
-    ).map((r) => ({
-      id: String(r.record_id),
-      spaceId: activeSpaceId,
-      lensId: String(r.lens_record_id),
-      axis: r.axis as 'framework' | 'architecture',
-      name: String(r.name),
-      version: Number(r.version),
-      body: String(r.body),
-      enabled: Boolean(r.enabled),
-      updatedAt: now,
-    })),
-    lens_profile_revision: (
+    ).filter(
+      (profile) =>
+        Boolean(profile.enabled) ||
+        selections.some(
+          (selection) =>
+            selection.axis === profile.axis &&
+            selection.profile_name === profile.name &&
+            (selection.lens_id == null || selection.lens_id === profile.lens_id),
+        ),
+    ),
+    profileIds = new Set(profiles.map((profile) => String(profile.record_id))),
+    profileRevisions = (
       local
         .query(
           `SELECT r.*,p.record_id profile_record_id FROM lens_profile_revision r JOIN lens_profile p ON p.id=r.profile_id WHERE r.space_id IS NULL`,
         )
         .all() as Record<string, unknown>[]
-    ).map((r) => ({
-      id: String(r.record_id),
-      spaceId: activeSpaceId,
-      profileId: String(r.profile_record_id),
-      version: Number(r.version),
-      priorBody: String(r.prior_body),
-      reason: String(r.reason),
-      sessionId: r.session_id == null ? null : String(r.session_id),
-      at: String(r.at),
-    })),
-    ...lensSelectionPlan(local, activeSpaceId, now),
+    ).filter((revision) => profileIds.has(String(revision.profile_record_id)))
+  const plans = new Map<string, RecordLensImportInput>()
+  for (const [spaceId, projectIds] of routed) {
+    const inSpace = selections.filter((row) => projectIds.has(String(row.project_record_id)))
+    const selectionIds = new Set(inSpace.map((row) => String(row.record_id)))
+    plans.set(spaceId, {
+      dryRun: false,
+      lens: lenses.map((r) => ({
+        id: replicatedId(spaceId, 'lens', String(r.record_id)),
+        spaceId,
+        key: String(r.id),
+        title: String(r.title),
+        question: String(r.question),
+        excludes: String(r.excludes),
+        slots: String(r.slots),
+        version: Number(r.version),
+        enabled: Boolean(r.enabled),
+        requiresExecution: Boolean(r.requires_execution),
+        updatedAt: now,
+      })),
+      lens_revision: revisions.map((r) => ({
+        id: replicatedId(spaceId, 'lens_revision', String(r.record_id)),
+        spaceId,
+        lensId: replicatedId(spaceId, 'lens', String(r.lens_record_id)),
+        version: Number(r.version),
+        priorBody: String(r.prior_body),
+        reason: String(r.reason),
+        sessionId: r.session_id == null ? null : String(r.session_id),
+        at: String(r.at),
+      })),
+      lens_profile: profiles.map((r) => ({
+        id: replicatedId(spaceId, 'lens_profile', String(r.record_id)),
+        spaceId,
+        lensId: replicatedId(spaceId, 'lens', String(r.lens_record_id)),
+        axis: r.axis as 'framework' | 'architecture',
+        name: String(r.name),
+        version: Number(r.version),
+        body: String(r.body),
+        enabled: Boolean(r.enabled),
+        updatedAt: now,
+      })),
+      lens_profile_revision: profileRevisions.map((r) => ({
+        id: replicatedId(spaceId, 'lens_profile_revision', String(r.record_id)),
+        spaceId,
+        profileId: replicatedId(spaceId, 'lens_profile', String(r.profile_record_id)),
+        version: Number(r.version),
+        priorBody: String(r.prior_body),
+        reason: String(r.reason),
+        sessionId: r.session_id == null ? null : String(r.session_id),
+        at: String(r.at),
+      })),
+      project_lens_profile: inSpace.map((r) => ({
+        id: replicatedId(spaceId, 'project_lens_profile', String(r.record_id)),
+        spaceId,
+        projectId: String(r.project_record_id),
+        lensId:
+          r.lens_record_id == null ? null : replicatedId(spaceId, 'lens', String(r.lens_record_id)),
+        axis: r.axis as 'framework' | 'architecture',
+        profileName: String(r.profile_name),
+        selectedVersion: r.selected_version == null ? null : Number(r.selected_version),
+        selectionVersion: Number(r.selection_version),
+        updatedAt: now,
+      })),
+      project_lens_profile_revision: selectionRevisions
+        .filter((r) => selectionIds.has(String(r.selection_record_id)))
+        .map((r) => ({
+          id: replicatedId(spaceId, 'project_lens_profile_revision', String(r.record_id)),
+          spaceId,
+          selectionId: replicatedId(spaceId, 'project_lens_profile', String(r.selection_record_id)),
+          priorProfileName: r.prior_profile_name == null ? null : String(r.prior_profile_name),
+          priorSelectedVersion:
+            r.prior_selected_version == null ? null : Number(r.prior_selected_version),
+          reason: String(r.reason),
+          sessionId: r.session_id == null ? null : String(r.session_id),
+          at: String(r.at),
+        })),
+    })
   }
+  return plans
 }
 
 function workflowPlan(local: Database, activeSpaceId: string): RecordWorkflowImportInput {
@@ -215,20 +256,17 @@ type PortPlanContext = {
   plans: Map<string, RecordPortImportInput>
   pairSpace: Map<string, string>
   refSpace: Map<string, string>
-  refSkipReason: Map<string, string>
   skipped: Plan['skipped']
   now: string
 }
 
 function addPortPair(r: Record<string, unknown>, context: PortPlanContext): void {
-  const source = effectiveProjectSpace(context.local, String(r.source_name))
   const target = effectiveProjectSpace(context.local, String(r.target_name))
-  if (!source || !target || source !== target) {
+  if (!target) {
     context.skipped.push({
       kind: 'port_pair',
       id: String(r.record_id),
-      reason:
-        !source || !target ? 'project has no hosted space' : 'projects route to different spaces',
+      reason: 'target project has no hosted space',
     })
     return
   }
@@ -271,36 +309,8 @@ function addPortRef(r: Record<string, unknown>, context: PortPlanContext): void 
     context.skipped.push({
       kind: 'port_ref',
       id: String(r.record_id),
-      reason: 'project has no hosted space',
+      reason: 'target project has no hosted space',
     })
-    return
-  }
-  const sources = context.local
-    .query(
-      `SELECT s.source_project_record_id,p.name project_name
-       FROM port_ref_source s
-       LEFT JOIN project p ON p.record_id=s.source_project_record_id
-       WHERE s.space_id IS NULL AND s.target_project_record_id=? AND s.task_key=?`,
-    )
-    .all(String(r.target_project_record_id), String(r.task_key)) as Record<string, unknown>[]
-  const invalidSource = sources.find((source) => {
-    const sourceSpace = source.project_name
-      ? effectiveProjectSpace(context.local, String(source.project_name))
-      : null
-    return !sourceSpace || sourceSpace !== space
-  })
-  if (invalidSource) {
-    const sourceName = invalidSource.project_name
-      ? String(invalidSource.project_name)
-      : String(invalidSource.source_project_record_id)
-    const sourceSpace = invalidSource.project_name
-      ? effectiveProjectSpace(context.local, String(invalidSource.project_name))
-      : null
-    const reason = sourceSpace
-      ? `source project ${sourceName} routes to a different space`
-      : `source project ${sourceName} has no hosted space`
-    context.refSkipReason.set(String(r.record_id), reason)
-    context.skipped.push({ kind: 'port_ref', id: String(r.record_id), reason })
     return
   }
   const plan = context.plans.get(space) ?? emptyPort()
@@ -326,7 +336,7 @@ function addPortRefSource(r: Record<string, unknown>, context: PortPlanContext):
     context.skipped.push({
       kind: 'port_ref_source',
       id: String(r.record_id),
-      reason: context.refSkipReason.get(String(r.ref_record_id)) ?? 'ref was skipped',
+      reason: 'ref was skipped',
     })
     return
   }
@@ -381,21 +391,19 @@ function portPlan(local: Database, activeSpaceId: string, skipped: Plan['skipped
     updatedAt: String(r.created_at),
   }))
   const pairSpace = new Map<string, string>(),
-    refSpace = new Map<string, string>(),
-    refSkipReason = new Map<string, string>()
+    refSpace = new Map<string, string>()
   const context: PortPlanContext = {
     local,
     plans,
     pairSpace,
     refSpace,
-    refSkipReason,
     skipped,
     now,
   }
   forEachValue(
     local
       .query(
-        `SELECT pp.*,sp.name source_name,tp.name target_name FROM port_pair pp JOIN project sp ON sp.record_id=pp.source_project_record_id JOIN project tp ON tp.record_id=pp.target_project_record_id WHERE pp.space_id IS NULL`,
+        `SELECT pp.*,tp.name target_name FROM port_pair pp JOIN project tp ON tp.record_id=pp.target_project_record_id WHERE pp.space_id IS NULL`,
       )
       .all() as Record<string, unknown>[],
     (r) => addPortPair(r, context),
@@ -438,7 +446,7 @@ function portPlan(local: Database, activeSpaceId: string, skipped: Plan['skipped
 function planCataloguePush(local: Database, activeSpaceId: string): Plan {
   const skipped: Plan['skipped'] = []
   return {
-    lens: lensPlan(local, activeSpaceId),
+    lens: lensPlan(local, routedProjects(local)),
     workflow: workflowPlan(local, activeSpaceId),
     ports: portPlan(local, activeSpaceId, skipped),
     skipped,
@@ -447,6 +455,18 @@ function planCataloguePush(local: Database, activeSpaceId: string): Plan {
 
 const count = (value: object) =>
   Object.values(value).reduce((n, rows) => n + (Array.isArray(rows) ? rows.length : 0), 0)
+function logPlan(plan: Plan, presentation: Presentation, prefix = ''): void {
+  const spaces = new Set([...plan.lens.keys(), ...plan.ports.keys()])
+  for (const spaceId of spaces) {
+    presentation.log(
+      `${prefix}space ${spaceId} — lens: ${count(plan.lens.get(spaceId) ?? {})}; port: ${count(plan.ports.get(spaceId) ?? {})}`,
+    )
+  }
+  presentation.log(
+    `${prefix}active space — workflow: ${count(plan.workflow)}; skipped: ${plan.skipped.length}`,
+  )
+}
+
 export async function pushCataloguesCommand(
   options: { dryRun: boolean },
   presentation: Presentation,
@@ -457,9 +477,7 @@ export async function pushCataloguesCommand(
   if (options.dryRun) {
     if (!localActive) throw new Error(noActiveRecordSpaceRefusal())
     const plan = planCataloguePush(local, localActive)
-    presentation.log(
-      `dry run local counts — lens: ${count(plan.lens)}; workflow: ${count(plan.workflow)}; port: ${[...plan.ports.values()].reduce((n, p) => n + count(p), 0)}; skipped: ${plan.skipped.length}`,
-    )
+    logPlan(plan, presentation, 'dry run ')
     for (const skip of plan.skipped)
       presentation.log(`skipped ${skip.kind} ${skip.id}: ${skip.reason}`)
     return
@@ -469,9 +487,7 @@ export async function pushCataloguesCommand(
     active = identity.activeSpaceId ?? localActive
   if (!active) throw new Error(noActiveRecordSpaceRefusal())
   const plan = planCataloguePush(local, active)
-  presentation.log(
-    `lens: ${count(plan.lens)} planned; workflow: ${count(plan.workflow)} planned; port: ${[...plan.ports.values()].reduce((n, p) => n + count(p), 0)} planned; skipped: ${plan.skipped.length}`,
-  )
+  logPlan(plan, presentation)
   for (const skip of plan.skipped)
     presentation.log(`skipped ${skip.kind} ${skip.id}: ${skip.reason}`)
   if (!client.importLensCatalogue || !client.importWorkflowCatalogue || !client.importPortCatalogue)
@@ -479,16 +495,18 @@ export async function pushCataloguesCommand(
       'record API does not support catalogue imports; deploy the matching record API, then retry',
     )
   const destination: RecordRequestDestination = { destinationSpaceId: active }
-  const lens = await client.importLensCatalogue(
-      { ...plan.lens, dryRun: options.dryRun },
-      destination,
-    ),
-    workflow = await client.importWorkflowCatalogue(
-      { ...plan.workflow, dryRun: options.dryRun },
-      destination,
+  for (const [spaceId, lens] of plan.lens) {
+    const result = await client.importLensCatalogue(
+      { ...lens, dryRun: options.dryRun },
+      { destinationSpaceId: spaceId },
     )
-  presentation.log(
-    `lens: inserted ${lens.inserted}, already present ${lens.alreadyPresent}, skipped ${lens.skipped.length}`,
+    presentation.log(
+      `lens ${spaceId}: inserted ${result.inserted}, already present ${result.alreadyPresent}, skipped ${result.skipped.length}`,
+    )
+  }
+  const workflow = await client.importWorkflowCatalogue(
+    { ...plan.workflow, dryRun: options.dryRun },
+    destination,
   )
   presentation.log(
     `workflow: inserted ${workflow.inserted}, already present ${workflow.alreadyPresent}, skipped ${workflow.skipped.length}`,

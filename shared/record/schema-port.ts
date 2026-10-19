@@ -68,9 +68,9 @@ export const portPair = pgTable.withRLS(
     sameSpaceIdentity('port_pair_space_id_unique', table),
     index('port_pair_target_idx').on(table.targetProjectId),
     foreignKey({
-      columns: [table.spaceId, table.sourceProjectId],
-      foreignColumns: [project.spaceId, project.id],
-      name: 'port_pair_same_space_source_project_fk',
+      columns: [table.sourceProjectId],
+      foreignColumns: [project.id],
+      name: 'port_pair_source_project_fk',
     }).onDelete('restrict'),
     foreignKey({
       columns: [table.spaceId, table.targetProjectId],
@@ -166,9 +166,9 @@ export const portRefSource = pgTable.withRLS(
       name: 'port_ref_source_same_space_ref_fk',
     }).onDelete('cascade'),
     foreignKey({
-      columns: [table.spaceId, table.sourceProjectId],
-      foreignColumns: [project.spaceId, project.id],
-      name: 'port_ref_source_same_space_source_project_fk',
+      columns: [table.sourceProjectId],
+      foreignColumns: [project.id],
+      name: 'port_ref_source_source_project_fk',
     }).onDelete('restrict'),
     ...tenantPolicies('port_ref_source', table.spaceId),
   ],

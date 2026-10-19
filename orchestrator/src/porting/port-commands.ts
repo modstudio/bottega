@@ -35,11 +35,8 @@ function refusePortUsage(usage: string): never {
   throw new Error(`${PLATFORM_SLUG} doc port ${usage}`)
 }
 
-function registeredProject(recordId: string, taskKey: string) {
-  const project = projects().find((candidate) => candidate.recordId === recordId)
-  if (!project) throw new Error(`ledger ref ${taskKey} names unregistered project id ${recordId}`)
-  return project
-}
+export const portSourceProjectLabel = (recordId: string) =>
+  projects().find((candidate) => candidate.recordId === recordId)?.name ?? `project:${recordId}`
 
 export async function portCommand(
   group: string | undefined,
@@ -323,9 +320,8 @@ export async function portCommand(
     }
     log(`${ref.task_key}  ${ref.resolved_at ?? 'unresolved'}\n${ref.note}`)
     for (const source of ref.sources) {
-      const project = registeredProject(source.source_project_record_id, taskKey)
       log(
-        `  ${project.name}  commits=${source.commits.join(',')}  paths=${source.paths.join(',')}  ${source.note}`,
+        `  ${portSourceProjectLabel(source.source_project_record_id)}  commits=${source.commits.join(',')}  paths=${source.paths.join(',')}  ${source.note}`,
       )
     }
     return
