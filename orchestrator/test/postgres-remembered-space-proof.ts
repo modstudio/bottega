@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
 import {
   bearerHeaders,
+  noSpaceBuiltIns,
   recordAuth,
   setActiveRecordSpaceForSession,
 } from '../src/record/record-auth.ts'
@@ -21,7 +22,14 @@ async function proveRememberedSpace(input: {
        (SELECT id FROM "user" ORDER BY created_at LIMIT 1),'member','pending',
        now() + interval '1 day',now());`,
   )
-  const auth = recordAuth(input.actorUrl)
+  const auth = recordAuth(
+    input.actorUrl,
+    process.env,
+    undefined,
+    undefined,
+    undefined,
+    noSpaceBuiltIns,
+  )
   const signup = await auth.api.signUpEmail({
     body: { email, name: 'Auth Remembered', password: input.password },
   })
@@ -69,7 +77,14 @@ async function proveCliSwitchIsRemembered(input: {
        (SELECT id FROM "user" ORDER BY created_at LIMIT 1),'member','pending',
        now() + interval '1 day',now());`,
   )
-  const auth = recordAuth(input.actorUrl)
+  const auth = recordAuth(
+    input.actorUrl,
+    process.env,
+    undefined,
+    undefined,
+    undefined,
+    noSpaceBuiltIns,
+  )
   const signup = await auth.api.signUpEmail({
     body: { email, name: 'CLI Remembered', password: input.password },
   })

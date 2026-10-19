@@ -3,6 +3,7 @@ import { RECORD_AUTH_ROLE } from '../../../shared/record/schema.ts'
 import type { RecordApiClient } from '../../src/record/record-api-client.ts'
 import {
   bearerHeaders,
+  noSpaceBuiltIns,
   RECORD_SIGN_UP_INVITATION_REQUIRED,
   recordAuth,
 } from '../../src/record/record-auth.ts'
@@ -103,7 +104,14 @@ async function proveInvitationOnlySignUp(
 ): Promise<void> {
   const rejectedMessage = async (email: string, candidate = password): Promise<string> => {
     try {
-      await recordAuth(actorUrl).api.signUpEmail({
+      await recordAuth(
+        actorUrl,
+        process.env,
+        undefined,
+        undefined,
+        undefined,
+        noSpaceBuiltIns,
+      ).api.signUpEmail({
         body: { email, name: 'Rejected sign-up', password: candidate },
       })
       return 'sign-up unexpectedly succeeded'
@@ -132,7 +140,14 @@ async function proveInvitationOnlySignUp(
     )
   expect(accountCounts(SIGN_UP_AUTH.noInvitationEmail)).toBe('0|0')
   await expect(
-    recordAuth(actorUrl).api.signUpEmail({
+    recordAuth(
+      actorUrl,
+      process.env,
+      undefined,
+      undefined,
+      undefined,
+      noSpaceBuiltIns,
+    ).api.signUpEmail({
       body: { email: SIGN_UP_AUTH.caseEmail, name: 'Case Match', password },
     }),
   ).resolves.toMatchObject({ user: { email: SIGN_UP_AUTH.caseEmail } })
@@ -169,6 +184,7 @@ function registerNewInviteeInvitationProofs(actorUrl: string, password: string):
       process.env.RECORD_AUTH_DATABASE_URL,
       noMail,
       noMail,
+      noSpaceBuiltIns,
     )
     const owner = await auth.api.signInEmail({ body: { email: SIGN_UP_AUTH.emailA, password } })
     if (!owner.token) throw new Error('owner sign-in has no bearer token')

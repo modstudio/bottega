@@ -13,9 +13,9 @@ import { DATABASE_RESOLUTION, db, writeTransaction } from '../database/db.ts'
 import {
   activeMembershipSpace,
   bearerHeaders,
+  noSpaceBuiltIns,
   RECORD_SESSION_KEY,
   RECORD_SIGN_IN_REMEDY,
-  noSpaceBuiltIns,
   recordAuth,
 } from './record-auth.ts'
 

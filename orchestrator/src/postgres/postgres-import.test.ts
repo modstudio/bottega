@@ -15,6 +15,7 @@ import { backfillLandingEvidenceRecords } from '../record/landing-outbox.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
 import {
   bearerHeaders,
+  noSpaceBuiltIns,
   RECORD_SESSION_KEY,
   recordAuth,
   setActiveRecordSpaceForSession,
@@ -129,7 +130,14 @@ realPostgres('project import against copied live SQLite data', () => {
         'member', 'pending', now() + interval '1 day', now()
       FROM "user" ORDER BY created_at LIMIT 1
     `
-    const signedUp = await recordAuth(actorUrl!).api.signUpEmail({
+    const signedUp = await recordAuth(
+      actorUrl!,
+      process.env,
+      undefined,
+      undefined,
+      undefined,
+      noSpaceBuiltIns,
+    ).api.signUpEmail({
       body: {
         email: 'live-copy@example.test',
         name: 'Live Copy',

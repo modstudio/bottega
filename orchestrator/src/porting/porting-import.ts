@@ -2,54 +2,16 @@ import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { importDoc, listDocs, removeDoc } from '../doc/docs.ts'
 import type { Project } from '../project/projects.ts'
 import { portImportAuthority } from './port-import-authority.ts'
-import { applyHostedPortImport, ImportRefusalError } from './porting-hosted-import.ts'
-
-export { ImportRefusalError } from './porting-hosted-import.ts'
-export { projectsForDryRun } from './porting-import-projects.ts'
-
 import * as porting from './porting.ts'
-
-type ImportIssue = {
-  kind: 'refusal' | 'exclusion'
-  what: string
-  where: string
-  why: string
-  value?: string
-}
-type ImportRefusal = ImportIssue & { kind: 'refusal' }
-type ImportExclusion = ImportIssue & { kind: 'exclusion' }
-
-export type ImportPlan = {
-  pairs: { source: string; target: string; sourceId: string; targetId: string }[]
-  baselines: { pairKey: string; sourceCommit: string | null; scannedAt: string | null }[]
-  skips: { pairKey: string; candidate: string; reason: string }[]
-  refs: {
-    taskKey: string
-    targetProjectId: string
-    note: string
-    sources: {
-      source_project_record_id: string
-      commits: string[]
-      paths: string[]
-      note: string
-    }[]
-  }[]
-  doctrine: { number: number; title: string; body: string }[]
-  docs: { scope: string; subject: string | null; slug: string; title: string; body: string }[]
-  refusals: ImportRefusal[]
-  exclusions: ImportExclusion[]
-}
-
-export type ImportFiles = {
-  doctrine: string
-  differences: string
-  backports: string
-  refs: string
-  state: string
-  projects: string
-}
-
-export type SourceCoverageGap = { file: string; offset: number; text: string }
+import { applyHostedPortImport } from './porting-hosted-import.ts'
+import {
+  type ImportExclusion,
+  type ImportFiles,
+  type ImportPlan,
+  type ImportRefusal,
+  ImportRefusalError,
+  type SourceCoverageGap,
+} from './porting-import-contract.ts'
 
 function fencedSourceArtifact(body: string): string {
   const longestTildeRun = Math.max(0, ...[...body.matchAll(/~+/g)].map((match) => match[0].length))

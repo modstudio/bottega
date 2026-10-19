@@ -10,42 +10,12 @@ import { activeRecordSpace, effectiveProjectSpace } from '../project-space.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import type { RecordPortImportInput } from '../record/record-port-contract.ts'
 import { noActiveRecordSpaceRefusal } from '../record/record-project-destination.ts'
+import { type ImportPlan, ImportRefusalError } from './porting-import-contract.ts'
 
-type HostedImportPlan = {
-  pairs: { source: string; target: string; sourceId: string; targetId: string }[]
-  baselines: { pairKey: string; sourceCommit: string | null; scannedAt: string | null }[]
-  skips: { pairKey: string; candidate: string; reason: string }[]
-  refs: {
-    taskKey: string
-    targetProjectId: string
-    note: string
-    sources: {
-      source_project_record_id: string
-      commits: string[]
-      paths: string[]
-      note: string
-    }[]
-  }[]
-  doctrine: { number: number; title: string; body: string }[]
-  docs: { scope: string; subject: string | null; slug: string; title: string; body: string }[]
-  refusals: HostedImportRefusal[]
-}
-type HostedImportRefusal = {
-  kind: 'refusal'
-  what: string
-  where: string
-  why: string
-  value?: string
-}
-
-export class ImportRefusalError extends Error {
-  public refusals: HostedImportRefusal[]
-
-  constructor(refusals: HostedImportRefusal[]) {
-    super(`port import refused with ${refusals.length} refusal(s)`)
-    this.refusals = refusals
-  }
-}
+type HostedImportPlan = Pick<
+  ImportPlan,
+  'pairs' | 'baselines' | 'skips' | 'refs' | 'doctrine' | 'docs' | 'refusals' | 'exclusions'
+>
 
 const emptyImport = (): RecordPortImportInput => ({
   dryRun: false,
@@ -93,7 +63,70 @@ function addDoctrine(
     })
 }
 
-function buildHostedPortImports(
+function addHostedRef(
+  local: Database,
+  byId: Map<string, Project>,
+  plan: HostedImportPlan,
+  imports: Map<string, RecordPortImportInput>,
+  row: HostedImportPlan['refs'][number],
+  now: string,
+): void {
+  const spaceId = routedSpace(local, byId.get(row.targetProjectId))
+  if (!spaceId)
+    throw new ImportRefusalError([
+      {
+        kind: 'refusal',
+        what: 'hosted port ref',
+        where: row.taskKey,
+        why: 'the target project has no hosted space',
+      },
+    ])
+  const invalidSource = row.sources.find((source) => {
+    const sourceSpace = routedSpace(local, byId.get(source.source_project_record_id))
+    return !sourceSpace || sourceSpace !== spaceId
+  })
+  if (invalidSource) {
+    const source = byId.get(invalidSource.source_project_record_id)
+    plan.exclusions.push({
+      kind: 'exclusion',
+      what: `hosted port ref ${row.taskKey}`,
+      where: source?.name ?? invalidSource.source_project_record_id,
+      why: routedSpace(local, source)
+        ? 'a source project routes to a different space from the target'
+        : 'a source project has no hosted space',
+    })
+    return
+  }
+  const payload = imports.get(spaceId) ?? emptyImport()
+  imports.set(spaceId, payload)
+  const id = newRecordId()
+  payload.port_ref.push({
+    id,
+    spaceId,
+    taskKey: row.taskKey,
+    targetProjectId: row.targetProjectId,
+    note: row.note,
+    createdAt: now,
+    resolvedAt: null,
+    deletedAt: null,
+    version: 1,
+    updatedAt: now,
+  })
+  for (const source of row.sources)
+    payload.port_ref_source.push({
+      id: newRecordId(),
+      spaceId,
+      refId: id,
+      sourceProjectId: source.source_project_record_id,
+      commits: JSON.stringify(source.commits),
+      paths: JSON.stringify(source.paths),
+      note: source.note,
+      deletedAt: null,
+      updatedAt: now,
+    })
+}
+
+export function buildHostedPortImports(
   local: Database,
   registered: Project[],
   plan: HostedImportPlan,
@@ -146,45 +179,7 @@ function buildHostedPortImports(
       skippedAt: now,
     })
   }
-  for (const row of plan.refs) {
-    const spaceId = routedSpace(local, byId.get(row.targetProjectId))
-    if (!spaceId)
-      throw new ImportRefusalError([
-        {
-          kind: 'refusal',
-          what: 'hosted port ref',
-          where: row.taskKey,
-          why: 'the target project has no hosted space',
-        },
-      ])
-    const payload = imports.get(spaceId) ?? emptyImport()
-    imports.set(spaceId, payload)
-    const id = newRecordId()
-    payload.port_ref.push({
-      id,
-      spaceId,
-      taskKey: row.taskKey,
-      targetProjectId: row.targetProjectId,
-      note: row.note,
-      createdAt: now,
-      resolvedAt: null,
-      deletedAt: null,
-      version: 1,
-      updatedAt: now,
-    })
-    for (const source of row.sources)
-      payload.port_ref_source.push({
-        id: newRecordId(),
-        spaceId,
-        refId: id,
-        sourceProjectId: source.source_project_record_id,
-        commits: JSON.stringify(source.commits),
-        paths: JSON.stringify(source.paths),
-        note: source.note,
-        deletedAt: null,
-        updatedAt: now,
-      })
-  }
+  for (const row of plan.refs) addHostedRef(local, byId, plan, imports, row, now)
   return imports
 }
 

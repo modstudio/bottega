@@ -6,9 +6,9 @@ import {
 } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { resolveLens } from '../lens/lenses.ts'
-import { addPairLocal, pairByProjects } from '../porting/porting.ts'
+import { addPairLocal, pairByProjects, setLedgerRefLocal } from '../porting/porting.ts'
 import { upsertProject } from '../project/projects.ts'
-import { rememberProjectSpace } from '../project-space.ts'
+import { rememberActiveRecordSpace, rememberProjectSpace } from '../project-space.ts'
 import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
 import type { RecordApiClient, RecordRequestDestination } from './record-api-client.ts'
 import type { RecordLensImportInput, RecordLensTable } from './record-lens-contract.ts'
@@ -121,4 +121,49 @@ test('pushes a seeded local store through bulk routes and sync resolves routed c
   ).toBeTrue()
   expect(pairByProjects(sourceId, targetId)).not.toBeNull()
   expect(local.query('SELECT 1 FROM port_pair WHERE space_id=?').get(spaceId)).not.toBeNull()
+})
+
+test('dry run logs its local plan without calling hosted methods', async () => {
+  const local = db()
+  rememberActiveRecordSpace(local, spaceId)
+  const logs: string[] = []
+  const throwingClient = new Proxy({} as RecordApiClient, {
+    get: (_target, property) => {
+      throw new Error(`hosted method ${String(property)} must not be read during dry run`)
+    },
+  })
+  await pushCataloguesCommand(
+    { dryRun: true },
+    { log: (line) => logs.push(line) },
+    { local, client: throwingClient },
+  )
+  expect(logs[0]).toMatch(
+    /^dry run local counts — lens: \d+; workflow: \d+; port: \d+; skipped: \d+$/,
+  )
+})
+
+test('push planning skips a ref and its sources when a source routes to another space', async () => {
+  const local = db(),
+    sourceId = newRecordId(),
+    targetId = newRecordId(),
+    sourceName = `catalogue-ref-source-${sourceId}`,
+    targetName = `catalogue-ref-target-${targetId}`
+  upsertProject({ recordId: sourceId, name: sourceName, path: `/tmp/${sourceName}`, settings: {} })
+  upsertProject({ recordId: targetId, name: targetName, path: `/tmp/${targetName}`, settings: {} })
+  rememberProjectSpace(local, sourceName, newRecordId())
+  rememberProjectSpace(local, targetName, spaceId)
+  rememberActiveRecordSpace(local, spaceId)
+  setLedgerRefLocal({
+    taskKey: `REF-${sourceId.slice(0, 6)}`,
+    targetProjectId: targetId,
+    note: 'cross-space',
+    sources: [{ source_project_record_id: sourceId, commits: [], paths: [], note: '' }],
+  })
+  const logs: string[] = []
+  await pushCataloguesCommand({ dryRun: true }, { log: (line) => logs.push(line) }, { local })
+  expect(logs).toContainEqual(expect.stringContaining(`skipped port_ref`))
+  expect(logs).toContainEqual(
+    expect.stringContaining(`source project ${sourceName} routes to a different space`),
+  )
+  expect(logs).toContainEqual(expect.stringContaining('skipped port_ref_source'))
 })

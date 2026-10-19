@@ -4,6 +4,7 @@ import { setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
 import { getDoc, listDocRevisions, listDocs } from '../doc/docs.ts'
 import { projects, upsertProject } from '../project/projects.ts'
+import { rememberProjectSpace } from '../project-space.ts'
 import {
   baselineForPair,
   ledgerRef,
@@ -11,7 +12,9 @@ import {
   listSkips,
   type PortPair,
 } from './porting.ts'
-import { applyImport, ImportRefusalError, planImport, sourceCoverage } from './porting-import.ts'
+import { buildHostedPortImports } from './porting-hosted-import.ts'
+import { applyImport, planImport, sourceCoverage } from './porting-import.ts'
+import { ImportRefusalError } from './porting-import-contract.ts'
 
 const listPairs = () =>
   db()
@@ -218,6 +221,27 @@ describe('port importer', () => {
     )
     expect(nonStringSource.refusals.find((issue) => issue.where === 'refs.json ALP-4')?.why).toBe(
       'source must name registered projects',
+    )
+  })
+  test('hosted planning skips a ref when a source routes outside its target space', () => {
+    const registeredProjects = registered()
+    const alpha = registeredProjects.find((project) => project.name === 'alpha-invented')!
+    const beta = registeredProjects.find((project) => project.name === 'beta-invented')!
+    rememberProjectSpace(db(), alpha.name, 'space-alpha')
+    rememberProjectSpace(db(), beta.name, 'space-beta')
+    const plan = planImport(fixture(), registeredProjects)
+    plan.pairs = []
+    plan.baselines = []
+    plan.skips = []
+    const imports = buildHostedPortImports(db(), registeredProjects, plan, 'space-beta')
+    expect([...imports.values()].flatMap((payload) => payload.port_ref)).toEqual([])
+    expect([...imports.values()].flatMap((payload) => payload.port_ref_source)).toEqual([])
+    expect(plan.exclusions).toContainEqual(
+      expect.objectContaining({
+        what: 'hosted port ref BET-7',
+        where: 'alpha-invented',
+        why: 'a source project routes to a different space from the target',
+      }),
     )
   })
   test('records the deliberately unimported register-derived sections as one exclusion', () => {

@@ -260,12 +260,14 @@ function invitationOnlySignUp(client: SQL) {
 
 export function recordAuth(
   url: string,
-  environment: RecordAuthEnvironment = process.env,
-  authDatabaseUrl?: string,
-  sendReset: ResetPasswordSender = sendPasswordResetEmail,
-  sendInvitation: InvitationSender = sendRecordInvitationEmail,
+  environment: RecordAuthEnvironment,
+  authDatabaseUrl: string | undefined,
+  sendReset: ResetPasswordSender | undefined,
+  sendInvitation: InvitationSender | undefined,
   builtIns: SpaceBuiltInsPort,
 ) {
+  sendReset ??= sendPasswordResetEmail
+  sendInvitation ??= sendRecordInvitationEmail
   const secret = environment.BETTER_AUTH_SECRET
   if (!secret) throw new Error('BETTER_AUTH_SECRET is required for record authentication')
   const trustedOrigins = recordAllowedOrigins(environment)

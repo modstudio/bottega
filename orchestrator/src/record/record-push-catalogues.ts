@@ -215,6 +215,7 @@ type PortPlanContext = {
   plans: Map<string, RecordPortImportInput>
   pairSpace: Map<string, string>
   refSpace: Map<string, string>
+  refSkipReason: Map<string, string>
   skipped: Plan['skipped']
   now: string
 }
@@ -274,6 +275,34 @@ function addPortRef(r: Record<string, unknown>, context: PortPlanContext): void 
     })
     return
   }
+  const sources = context.local
+    .query(
+      `SELECT s.source_project_record_id,p.name project_name
+       FROM port_ref_source s
+       LEFT JOIN project p ON p.record_id=s.source_project_record_id
+       WHERE s.space_id IS NULL AND s.target_project_record_id=? AND s.task_key=?`,
+    )
+    .all(String(r.target_project_record_id), String(r.task_key)) as Record<string, unknown>[]
+  const invalidSource = sources.find((source) => {
+    const sourceSpace = source.project_name
+      ? effectiveProjectSpace(context.local, String(source.project_name))
+      : null
+    return !sourceSpace || sourceSpace !== space
+  })
+  if (invalidSource) {
+    const sourceName = invalidSource.project_name
+      ? String(invalidSource.project_name)
+      : String(invalidSource.source_project_record_id)
+    const sourceSpace = invalidSource.project_name
+      ? effectiveProjectSpace(context.local, String(invalidSource.project_name))
+      : null
+    const reason = sourceSpace
+      ? `source project ${sourceName} routes to a different space`
+      : `source project ${sourceName} has no hosted space`
+    context.refSkipReason.set(String(r.record_id), reason)
+    context.skipped.push({ kind: 'port_ref', id: String(r.record_id), reason })
+    return
+  }
   const plan = context.plans.get(space) ?? emptyPort()
   context.plans.set(space, plan)
   context.refSpace.set(String(r.record_id), space)
@@ -297,7 +326,7 @@ function addPortRefSource(r: Record<string, unknown>, context: PortPlanContext):
     context.skipped.push({
       kind: 'port_ref_source',
       id: String(r.record_id),
-      reason: 'ref was skipped',
+      reason: context.refSkipReason.get(String(r.ref_record_id)) ?? 'ref was skipped',
     })
     return
   }
@@ -352,8 +381,17 @@ function portPlan(local: Database, activeSpaceId: string, skipped: Plan['skipped
     updatedAt: String(r.created_at),
   }))
   const pairSpace = new Map<string, string>(),
-    refSpace = new Map<string, string>()
-  const context: PortPlanContext = { local, plans, pairSpace, refSpace, skipped, now }
+    refSpace = new Map<string, string>(),
+    refSkipReason = new Map<string, string>()
+  const context: PortPlanContext = {
+    local,
+    plans,
+    pairSpace,
+    refSpace,
+    refSkipReason,
+    skipped,
+    now,
+  }
   forEachValue(
     local
       .query(

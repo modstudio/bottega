@@ -99,7 +99,8 @@ postgres('hosted catalogue bulk imports', () => {
       ],
       workflow_event: [],
     }
-    const pairId = newRecordId()
+    const pairId = newRecordId(),
+      skipId = newRecordId()
     const port = {
       dryRun: false,
       replace: false,
@@ -108,19 +109,207 @@ postgres('hosted catalogue bulk imports', () => {
       port_baseline: [],
       port_ref: [],
       port_ref_source: [],
-      port_skip: [],
+      port_skip: [
+        {
+          id: skipId,
+          spaceId,
+          pairId,
+          candidate: 'candidate-one',
+          reason: 'test',
+          skippedAt: at,
+        },
+      ],
     }
     for (const run of [1, 2]) {
+      const portInput =
+        run === 1 ? port : { ...port, port_skip: [{ ...port.port_skip[0]!, id: newRecordId() }] }
       const results = await Promise.all([
         importRecordLensCatalogue({ ...tenant, ...lens }),
         importRecordWorkflowCatalogue({ ...tenant, ...workflow }),
-        importRecordPortCatalogue({ ...tenant, ...port }),
+        importRecordPortCatalogue({ ...tenant, ...portInput }),
       ])
-      expect(results.map((result) => result.inserted)).toEqual(run === 1 ? [2, 2, 1] : [0, 0, 0])
+      expect(results.map((result) => result.inserted)).toEqual(run === 1 ? [2, 2, 2] : [0, 0, 0])
     }
     const firstBuiltIns = await ensureSpaceBuiltIns(tenant)
     const secondBuiltIns = await ensureSpaceBuiltIns(tenant)
     expect(firstBuiltIns.inserted).toBeGreaterThan(0)
     expect(secondBuiltIns.inserted).toBe(0)
+  })
+
+  test('newer natural-key matches stay unchanged and imported children use hosted parents', async () => {
+    const spaceId = newRecordId(),
+      userId = newRecordId(),
+      sourceProjectId = newRecordId(),
+      targetProjectId = newRecordId(),
+      hostedLensId = newRecordId(),
+      hostedWorkflowId = newRecordId(),
+      hostedWorkflowVersionId = newRecordId(),
+      hostedPairId = newRecordId(),
+      hostedBaselineId = newRecordId(),
+      importedLensId = newRecordId(),
+      importedWorkflowId = newRecordId(),
+      importedWorkflowVersionId = newRecordId(),
+      importedPairId = newRecordId(),
+      at = new Date().toISOString()
+    const setup = new SQL(setupUrl!)
+    try {
+      await setup`INSERT INTO "user" (id,email,name,email_verified,created_at,updated_at)
+        VALUES (${userId}::uuid,${`${userId}@test.invalid`},'Natural Match',true,now(),now())`
+      await setup`INSERT INTO space (id,name,slug,created_at)
+        VALUES (${spaceId}::uuid,${`Natural ${spaceId}`},${`natural-${spaceId}`},now())`
+      await setup`INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+        VALUES (${newRecordId()}::uuid,${spaceId}::uuid,${userId}::uuid,'owner','write',now())`
+      await setup`INSERT INTO project (id,space_id,name,created_at) VALUES
+        (${sourceProjectId}::uuid,${spaceId}::uuid,${`source-${spaceId}`},now()),
+        (${targetProjectId}::uuid,${spaceId}::uuid,${`target-${spaceId}`},now())`
+      await setup`INSERT INTO lens
+        (id,space_id,key,title,question,excludes,slots,version,enabled,requires_execution,updated_at)
+        VALUES (${hostedLensId}::uuid,${spaceId}::uuid,'natural-lens','hosted newer','hosted?',
+          'nothing','{}',9,true,false,now())`
+      await setup`INSERT INTO workflow (id,space_id,slug,created_at,updated_at)
+        VALUES (${hostedWorkflowId}::uuid,${spaceId}::uuid,'natural-workflow',now(),now())`
+      await setup`INSERT INTO workflow_version
+        (id,space_id,workflow_id,n,status,definition,author,reason,created_at,promoted_at,updated_at)
+        VALUES (${hostedWorkflowVersionId}::uuid,${spaceId}::uuid,${hostedWorkflowId}::uuid,1,
+          'production','{"hosted":true}','hosted','newer',now(),now(),now())`
+      await setup`INSERT INTO port_pair (id,space_id,source_project_id,target_project_id,created_at)
+        VALUES (${hostedPairId}::uuid,${spaceId}::uuid,${sourceProjectId}::uuid,${targetProjectId}::uuid,now())`
+      await setup`INSERT INTO port_baseline
+        (id,space_id,pair_id,source_commit,scanned_at,version,updated_at)
+        VALUES (${hostedBaselineId}::uuid,${spaceId}::uuid,${hostedPairId}::uuid,'hosted-newer',now(),9,now())`
+    } finally {
+      await setup.close()
+    }
+    const tenant = { url: actorUrl!, spaceId, spaceIds: [spaceId], userId }
+    const profileId = newRecordId(),
+      workflowEventId = newRecordId(),
+      skipId = newRecordId()
+    await importRecordLensCatalogue({
+      ...tenant,
+      dryRun: false,
+      lens: [
+        {
+          id: importedLensId,
+          spaceId,
+          key: 'natural-lens',
+          title: 'old',
+          question: 'old?',
+          excludes: 'old',
+          slots: '{}',
+          version: 1,
+          enabled: true,
+          requiresExecution: false,
+          updatedAt: at,
+        },
+      ],
+      lens_revision: [],
+      lens_profile: [
+        {
+          id: profileId,
+          spaceId,
+          lensId: importedLensId,
+          axis: 'framework',
+          name: 'imported',
+          version: 1,
+          body: '{}',
+          enabled: true,
+          updatedAt: at,
+        },
+      ],
+      lens_profile_revision: [],
+      project_lens_profile: [],
+      project_lens_profile_revision: [],
+    })
+    await importRecordWorkflowCatalogue({
+      ...tenant,
+      dryRun: false,
+      step_catalogue: [],
+      step_catalogue_version: [],
+      step_catalogue_event: [],
+      workflow: [
+        { id: importedWorkflowId, spaceId, slug: 'natural-workflow', createdAt: at, updatedAt: at },
+      ],
+      workflow_version: [
+        {
+          id: importedWorkflowVersionId,
+          spaceId,
+          ownerId: importedWorkflowId,
+          n: 1,
+          status: 'production',
+          definition: '{"hosted":false}',
+          author: 'import',
+          reason: 'old',
+          createdAt: at,
+          promotedAt: at,
+          retiredAt: null,
+          updatedAt: at,
+        },
+      ],
+      workflow_event: [
+        {
+          id: workflowEventId,
+          spaceId,
+          ownerVersionId: importedWorkflowVersionId,
+          event: 'set',
+          author: 'import',
+          reason: 'child',
+          sessionId: null,
+          at,
+        },
+      ],
+    })
+    await importRecordPortCatalogue({
+      ...tenant,
+      dryRun: false,
+      replace: false,
+      port_doctrine: [],
+      port_pair: [{ id: importedPairId, spaceId, sourceProjectId, targetProjectId, createdAt: at }],
+      port_baseline: [
+        {
+          id: newRecordId(),
+          spaceId,
+          pairId: importedPairId,
+          sourceCommit: 'old',
+          scannedAt: at,
+          version: 1,
+          updatedAt: at,
+        },
+      ],
+      port_ref: [],
+      port_ref_source: [],
+      port_skip: [
+        {
+          id: skipId,
+          spaceId,
+          pairId: importedPairId,
+          candidate: 'child',
+          reason: 'child',
+          skippedAt: at,
+        },
+      ],
+    })
+    const verify = new SQL(setupUrl!)
+    try {
+      expect([
+        ...(await verify`SELECT id,title,version FROM lens WHERE space_id=${spaceId}::uuid AND key='natural-lens'`),
+      ]).toEqual([{ id: hostedLensId, title: 'hosted newer', version: 9 }])
+      expect([
+        ...(await verify`SELECT lens_id FROM lens_profile WHERE id=${profileId}::uuid`),
+      ]).toEqual([{ lens_id: hostedLensId }])
+      expect([
+        ...(await verify`SELECT id,definition,author FROM workflow_version WHERE space_id=${spaceId}::uuid AND workflow_id=${hostedWorkflowId}::uuid AND n=1`),
+      ]).toEqual([{ id: hostedWorkflowVersionId, definition: '{"hosted":true}', author: 'hosted' }])
+      expect([
+        ...(await verify`SELECT workflow_version_id FROM workflow_event WHERE id=${workflowEventId}::uuid`),
+      ]).toEqual([{ workflow_version_id: hostedWorkflowVersionId }])
+      expect([
+        ...(await verify`SELECT id,source_commit,version FROM port_baseline WHERE space_id=${spaceId}::uuid AND pair_id=${hostedPairId}::uuid`),
+      ]).toEqual([{ id: hostedBaselineId, source_commit: 'hosted-newer', version: 9 }])
+      expect([...(await verify`SELECT pair_id FROM port_skip WHERE id=${skipId}::uuid`)]).toEqual([
+        { pair_id: hostedPairId },
+      ])
+    } finally {
+      await verify.close()
+    }
   })
 })

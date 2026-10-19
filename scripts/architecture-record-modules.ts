@@ -29,6 +29,7 @@ export const recordModules: RecordModule[] = [
     'node:fs',
     '../project/projects.ts',
   ]),
+  module('orchestrator/src/porting/porting-import-contract.ts', []),
   module('orchestrator/src/porting/porting-hosted-import.ts', [
     'bun:sqlite',
     '../../../shared/record-id.ts',
@@ -39,6 +40,7 @@ export const recordModules: RecordModule[] = [
     '../record/record-api-client.ts',
     '../record/record-port-contract.ts',
     '../record/record-project-destination.ts',
+    './porting-import-contract.ts',
   ]),
   module('orchestrator/src/record/record-lens-catalogue.ts', [
     'bun',

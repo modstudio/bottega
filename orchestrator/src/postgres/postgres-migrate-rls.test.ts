@@ -33,7 +33,12 @@ import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-
 import { proveHostedDocs, registerScoreRecordSyncProof } from '../../test/postgres-score-proof.ts'
 import { registerStaleMembershipProof } from '../../test/postgres-stale-membership-proof.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
-import { bearerHeaders, recordAuth, setActiveRecordSpaceForSession } from '../record/record-auth.ts'
+import {
+  bearerHeaders,
+  noSpaceBuiltIns,
+  recordAuth,
+  setActiveRecordSpaceForSession,
+} from '../record/record-auth.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
 import { diagnoseRecord, recordDoctorExitCode } from '../record/record-doctor.ts'
 import {
@@ -96,9 +101,16 @@ realPostgres('RLS proof against real Postgres', () => {
     process.env.BETTER_AUTH_SECRET = 'postgres-harness-secret-at-least-thirty-two-characters'
     process.env.BETTER_AUTH_URL = 'http://127.0.0.1'
     process.env.RECORD_HUB_URL = 'https://hub.example.test'
-    invitationAuth = recordAuth(actorUrl!, process.env, authUrl, undefined, async (input) => {
-      invitationEmails.push(input)
-    })
+    invitationAuth = recordAuth(
+      actorUrl!,
+      process.env,
+      authUrl,
+      undefined,
+      async (input) => {
+        invitationEmails.push(input)
+      },
+      noSpaceBuiltIns,
+    )
     invitationClient = invitationApiClient(invitationAuth, recordSession.token)
     await migratePostgres()
 
@@ -212,7 +224,14 @@ realPostgres('RLS proof against real Postgres', () => {
       log: (value) => cliOutput.push(value),
     })
     tokenA = storedToken()
-    const first = await recordAuth(actorUrl!).api.getSession({ headers: bearerHeaders(tokenA) })
+    const first = await recordAuth(
+      actorUrl!,
+      process.env,
+      undefined,
+      undefined,
+      undefined,
+      noSpaceBuiltIns,
+    ).api.getSession({ headers: bearerHeaders(tokenA) })
     if (!first?.session.activeOrganizationId) throw new Error('first signup has no active space')
     authUserA = first.user.id
     authSpaceA = first.session.activeOrganizationId
@@ -221,17 +240,38 @@ realPostgres('RLS proof against real Postgres', () => {
       log: (value) => cliOutput.push(value),
     })
     tokenB = storedToken()
-    const second = await recordAuth(actorUrl!).api.getSession({ headers: bearerHeaders(tokenB) })
+    const second = await recordAuth(
+      actorUrl!,
+      process.env,
+      undefined,
+      undefined,
+      undefined,
+      noSpaceBuiltIns,
+    ).api.getSession({ headers: bearerHeaders(tokenB) })
     if (!second?.session.activeOrganizationId) throw new Error('second signup has no active space')
     authUserB = second.user.id
     authSpaceB = second.session.activeOrganizationId
 
-    const repair = await recordAuth(actorUrl!).api.signUpEmail({
+    const repair = await recordAuth(
+      actorUrl!,
+      process.env,
+      undefined,
+      undefined,
+      undefined,
+      noSpaceBuiltIns,
+    ).api.signUpEmail({
       body: SIGN_UP_AUTH.repairBody,
     })
     if (!repair.token) throw new Error('repair signup has no bearer token')
     repairToken = repair.token
-    const repairSession = await recordAuth(actorUrl!).api.getSession({
+    const repairSession = await recordAuth(
+      actorUrl!,
+      process.env,
+      undefined,
+      undefined,
+      undefined,
+      noSpaceBuiltIns,
+    ).api.getSession({
       headers: bearerHeaders(repair.token),
     })
     if (!repairSession?.session.activeOrganizationId)
@@ -329,7 +369,14 @@ realPostgres('RLS proof against real Postgres', () => {
       `${SIGN_UP_AUTH.emailA}|1|owner|write`,
       `${SIGN_UP_AUTH.emailB}|1|owner|write`,
     ])
-    const auth = recordAuth(actorUrl!)
+    const auth = recordAuth(
+      actorUrl!,
+      process.env,
+      undefined,
+      undefined,
+      undefined,
+      noSpaceBuiltIns,
+    )
     expect((await auth.api.getSession({ headers: bearerHeaders(tokenA) }))?.user.id).toBe(authUserA)
     expect((await auth.api.getSession({ headers: bearerHeaders(tokenB) }))?.user.id).toBe(authUserB)
   })
@@ -558,7 +605,14 @@ realPostgres('RLS proof against real Postgres', () => {
     await expect(acceptRecordInvitation(ACCEPTED_INVITATION)).rejects.toThrow()
 
     expect(await acceptRecordInvitation(pendingInvitation)).toBe(authSpaceA)
-    const session = await recordAuth(actorUrl!).api.getSession({ headers: bearerHeaders(tokenB) })
+    const session = await recordAuth(
+      actorUrl!,
+      process.env,
+      undefined,
+      undefined,
+      undefined,
+      noSpaceBuiltIns,
+    ).api.getSession({ headers: bearerHeaders(tokenB) })
     expect(session?.session.activeOrganizationId).toBe(authSpaceA)
     const joined = psql(
       RECORD_ACTOR_ROLE,
