@@ -1,0 +1,52 @@
+export const portBoundarySpecs = [
+  {
+    name: 'port-commands-boundary',
+    file: 'orchestrator/src/porting/port-commands.ts',
+    allowed: [
+      '../../../shared/brand.ts',
+      'node:fs',
+      'node:path',
+      '../database/db.ts',
+      './porting.ts',
+      './porting-import-contract.ts',
+      './porting-import-projects.ts',
+      './porting-import.ts',
+      '../project/projects.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason: 'Keep port commands independent of runs, routing, transports, the CLI, and worktrees.',
+  },
+  {
+    name: 'port-overlay-boundary',
+    file: 'orchestrator/src/porting/port-overlay.ts',
+    allowed: [],
+    typeOnlyAllowed: [],
+    reason: 'Keep port overlay selection pure and independent of stores and transports.',
+  },
+  {
+    name: 'port-import-authority-boundary',
+    file: 'orchestrator/src/porting/port-import-authority.ts',
+    allowed: ['../record/record-write-authority.ts', '../worker-store-write.ts'],
+    typeOnlyAllowed: [],
+    reason: 'Keep the local-only bulk import refusal separate from import application.',
+  },
+  {
+    name: 'porting-hosted-import-boundary',
+    file: 'orchestrator/src/porting/porting-hosted-import.ts',
+    allowed: [
+      'bun:sqlite',
+      '../../../shared/record-id.ts',
+      '../database/db.ts',
+      '../doc/docs.ts',
+      '../project/projects.ts',
+      '../project-space.ts',
+      '../record/record-api-client.ts',
+      '../record/record-port-contract.ts',
+      '../record/record-project-destination.ts',
+      './porting-import-contract.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep hosted port payload construction separate from source parsing and import application.',
+  },
+] as const

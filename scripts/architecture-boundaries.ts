@@ -4,6 +4,7 @@ import { canonBoundarySpecs } from './architecture-canon-boundaries.ts'
 import { cleanupBoundarySpecs } from './architecture-cleanup-boundaries.ts'
 import { databaseBoundarySpecs } from './architecture-database-boundaries.ts'
 import { mcpBoundarySpecs } from './architecture-mcp-boundaries.ts'
+import { portBoundarySpecs } from './architecture-port-boundaries.ts'
 import {
   recordApiBoundaries,
   recordReadBoundariesAfterPublish,
@@ -596,51 +597,8 @@ export const importBoundaries: ImportBoundary[] = [
     ['../../shared/brand.ts'],
     'Keep outcome decisions and interpretation independent of lifecycle concerns.',
   ),
-  boundary(
-    'port-commands-boundary',
-    'orchestrator/src/porting/port-commands.ts',
-    [
-      '../../../shared/brand.ts',
-      'node:fs',
-      'node:path',
-      '../database/db.ts',
-      './porting.ts',
-      './porting-import-contract.ts',
-      './porting-import-projects.ts',
-      './porting-import.ts',
-      '../project/projects.ts',
-    ],
-    'Keep port commands independent of runs, routing, transports, the CLI, and worktrees.',
-  ),
-  boundary(
-    'port-overlay-boundary',
-    'orchestrator/src/porting/port-overlay.ts',
-    [],
-    'Keep port overlay selection pure and independent of stores and transports.',
-  ),
-  boundary(
-    'port-import-authority-boundary',
-    'orchestrator/src/porting/port-import-authority.ts',
-    ['../record/record-write-authority.ts', '../worker-store-write.ts'],
-    'Keep the local-only bulk import refusal separate from import application.',
-  ),
-  boundary(
-    'porting-hosted-import-boundary',
-    'orchestrator/src/porting/porting-hosted-import.ts',
-    [
-      'bun:sqlite',
-      '../../../shared/record-id.ts',
-      '../database/db.ts',
-      '../doc/docs.ts',
-      '../project/projects.ts',
-      '../project-space.ts',
-      '../record/record-api-client.ts',
-      '../record/record-port-contract.ts',
-      '../record/record-project-destination.ts',
-      './porting-import-contract.ts',
-    ],
-    'Keep hosted port payload construction separate from source parsing and import application.',
-    [],
+  ...portBoundarySpecs.map((spec) =>
+    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
   ),
   boundary(
     'record-api-client-port-boundary',

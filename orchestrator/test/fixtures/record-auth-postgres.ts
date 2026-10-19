@@ -62,6 +62,12 @@ export function invitationApiClient(
   }
 }
 
+export const testRecordAuth = (
+  url: string,
+  authDatabaseUrl?: string,
+  sendInvitation?: Parameters<typeof recordAuth>[4],
+) => recordAuth(url, process.env, authDatabaseUrl, undefined, sendInvitation, noSpaceBuiltIns)
+
 export function signUpInvitationFixtures(spaceId: string, inviterId: string): string {
   return `
     ('${SIGN_UP_AUTH.invitationA}','${spaceId}','${SIGN_UP_AUTH.emailA}','${inviterId}','member','pending',now() + interval '1 day',now()),
