@@ -18,10 +18,10 @@ import { keepPreviousData, type UseQueryOptions, useQuery } from '@tanstack/reac
 import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
-import { useWindowFilters, WindowControl } from '@/components/design-system'
-import { WaitingBadge } from '@/components/waiting-badge'
-import { useDetailPanel } from '@/lib/detail-panel'
 import { useWindowState, type WindowHours } from '@/lib/window'
+import { useDetailPanel } from '@/routes/-detail-panel'
+import { WaitingBadge } from '@/routes/-waiting-badge'
+import { useWindowFilters, WindowControl } from '@/routes/-window-controls'
 
 /** The strings the server prints for a run; search on the server matches exactly these. */
 type RunDisplay = {

@@ -1,5 +1,6 @@
-import { SnapshotEmpty, SnapshotHeader } from '@bottega/hub-views/snapshot'
-import { HealthView, RoutingView } from '@/components/insight-view'
+import { SnapshotEmpty, SnapshotHeader } from '../snapshot/snapshot.tsx'
+import { hostedInsightStyles } from './hosted-insights.styles.ts'
+import { HealthView, RoutingView } from './insights'
 
 type Machine = { id: string; takenAt: string }
 type Snapshot<Data> = {
@@ -24,10 +25,10 @@ export function HostedRouting({
   machineId,
   onMachineChange,
 }: HostedInsightProps<Parameters<typeof RoutingView>[0]['data']>) {
-  if (pending) return <p className="text-text-muted">Loading routing...</p>
+  if (pending) return <p className={hostedInsightStyles().muted()}>Loading routing...</p>
   if (error)
     return (
-      <p data-tone="error" className="text-status-text">
+      <p data-tone="error" className={hostedInsightStyles().status()}>
         could not load: {error}
       </p>
     )
@@ -53,10 +54,10 @@ export function HostedHealth({
   machineId,
   onMachineChange,
 }: HostedInsightProps<Parameters<typeof HealthView>[0]['data']>) {
-  if (pending) return <p className="text-text-muted">Loading health...</p>
+  if (pending) return <p className={hostedInsightStyles().muted()}>Loading health...</p>
   if (error)
     return (
-      <p data-tone="error" className="text-status-text">
+      <p data-tone="error" className={hostedInsightStyles().status()}>
         could not load: {error}
       </p>
     )

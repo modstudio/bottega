@@ -1,5 +1,15 @@
 import { collectedTime, relativeTime } from '@bottega/hub-util/format'
 
+/** What every work page's response carries for its header and headline figures. */
+export type ChromeResponse = {
+  engaged: string
+  activeAgents: string[]
+  tasksShipped: number
+  collectedAt: string | null
+  servingSince: string
+  counts: { flight: number; done: number; runs: number }
+}
+
 export function responseSubtitle(response: {
   collectedAt: string | null
   activeAgents: string[]

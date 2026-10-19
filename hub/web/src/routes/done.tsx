@@ -1,8 +1,8 @@
 import { useTaskList } from '@bottega/hub-data/use-task-list'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
-import { TaskView } from '@/components/work-view'
 import { useWindowState } from '@/lib/window'
+import { TaskView } from '@/routes/-work-view'
 
 export const Route = createFileRoute('/done')({
   component: DoneRoute,

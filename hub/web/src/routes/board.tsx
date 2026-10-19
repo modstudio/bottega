@@ -1,8 +1,8 @@
 import { useBoard } from '@bottega/hub-data/use-board'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
-import { BoardView } from '@/components/work-view'
 import { useWindowState } from '@/lib/window'
+import { BoardView } from '@/routes/-work-view'
 
 export const Route = createFileRoute('/board')({
   component: BoardRoute,

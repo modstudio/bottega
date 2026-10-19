@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import type { TaskScreenDetail } from '@/routes/-task-screen-data'
-import { taskHistoryEntries } from './task-history'
+import { taskHistoryEntries } from './-task-history'
 
 const run = (id: string | null, job: string): TaskScreenDetail['runs'][number] => ({
   id,

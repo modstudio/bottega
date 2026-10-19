@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { HealthView } from './insight-view'
+import { HealthView } from './insights'
 
 test('Health view renders rows and a last-seen sparkline from a stubbed client payload', () => {
   const data = {

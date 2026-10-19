@@ -1,7 +1,7 @@
 import { useSpend } from '@bottega/hub-data/use-spend'
 import { createFileRoute } from '@tanstack/react-router'
-import { InsightView } from '@/components/insight-view'
 import { useWindowState } from '@/lib/window'
+import { InsightView } from '@/routes/-insight-view'
 
 export const Route = createFileRoute('/spend')({ component: SpendRoute })
 

@@ -18,7 +18,7 @@ import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router'
 import type { inferRouterOutputs } from '@trpc/server'
 import { ChevronRight, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
-import { useDetailPanel } from '@/lib/detail-panel'
+import { useDetailPanel } from '@/routes/-detail-panel'
 import {
   BOARD_PURPOSES,
   type BoardPurpose,
