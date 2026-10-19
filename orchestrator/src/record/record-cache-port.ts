@@ -95,8 +95,6 @@ async function pullTable(
   }
 }
 
-const hasProject = (local: Database, id: unknown) =>
-  Boolean(local.query('SELECT 1 FROM project WHERE record_id=?').get(String(id)))
 const hasPair = (local: Database, id: unknown, spaceId: unknown) =>
   Boolean(
     local
@@ -112,8 +110,7 @@ const hasRef = (local: Database, id: unknown, spaceId: unknown) =>
 function parentPresent(local: Database, table: RecordPortTable, item: RecordPortRow) {
   switch (table) {
     case 'port_pair': {
-      const row = item as RecordPortRowByTable['port_pair']
-      return hasProject(local, row.sourceProjectId) && hasProject(local, row.targetProjectId)
+      return true
     }
     case 'port_baseline':
     case 'port_skip': {
@@ -121,15 +118,11 @@ function parentPresent(local: Database, table: RecordPortTable, item: RecordPort
       return hasPair(local, row.pairId, row.spaceId)
     }
     case 'port_ref': {
-      const row = item as RecordPortRowByTable['port_ref']
-      return hasProject(local, row.targetProjectId)
+      return true
     }
     case 'port_ref_source': {
       const row = item as RecordPortRowByTable['port_ref_source']
-      return (
-        (row.deletedAt != null || hasRef(local, row.refId, row.spaceId)) &&
-        hasProject(local, row.sourceProjectId)
-      )
+      return row.deletedAt != null || hasRef(local, row.refId, row.spaceId)
     }
     default:
       return true

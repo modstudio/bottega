@@ -232,7 +232,11 @@ export function ledgerRef(targetProjectId: string, taskKey: string): LedgerRef |
 export function listLedgerRefs(includeResolved = false): LedgerRef[] {
   const keys = db()
     .query(
-      `SELECT target_project_record_id,task_key FROM port_ref${includeResolved ? '' : ' WHERE resolved_at IS NULL'} ORDER BY target_project_record_id,task_key`,
+      `SELECT r.target_project_record_id,r.task_key
+       FROM port_ref r
+       JOIN project p ON p.record_id=r.target_project_record_id
+       ${includeResolved ? '' : 'WHERE r.resolved_at IS NULL'}
+       ORDER BY r.target_project_record_id,r.task_key`,
     )
     .all() as { target_project_record_id: string; task_key: string }[]
   const unique = new Map<string, { target_project_record_id: string; task_key: string }>()

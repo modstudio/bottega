@@ -9,7 +9,7 @@ import { resolveLens } from '../lens/lenses.ts'
 import { upsertProject } from '../project/projects.ts'
 import { rememberProjectSpace } from '../project-space.ts'
 import { pullRecordCache } from './record-cache.ts'
-import { applyLensCatalogueRow } from './record-cache-lens.ts'
+import { applyLensCatalogueRow, pullLensCatalogue } from './record-cache-lens.ts'
 import { encodeRecordCursor } from './record-cursor.ts'
 
 afterEach(() => installRecordApiClient(createMemoryRecordApiClient()))
@@ -187,6 +187,73 @@ test('two spaces keep the same lens key isolated after later hosted revisions', 
     title: 'Space B later',
     body: 'GUIDANCE\nB later',
   })
+})
+
+test('lens pull caches an unregistered project selection and revision from a persisted cursor', async () => {
+  const local = db()
+  local.query('DELETE FROM project').run()
+  const space = newRecordId()
+  const project = newRecordId()
+  const selection = newRecordId()
+  const revision = newRecordId()
+  const pulledAt = '2026-10-19T12:00:00.000Z'
+  const cursorKey = `record_lens_cursor:${space}:project_lens_profile`
+  local
+    .query('INSERT INTO schema_meta (key,value) VALUES (?,?)')
+    .run(cursorKey, JSON.stringify({ at: '2026-10-18T00:00:00.000Z', id: newRecordId() }))
+  let selectionCursor: string | undefined
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    async listLensCatalogue(table, query) {
+      if (table === 'project_lens_profile') {
+        selectionCursor = query.cursor
+        return {
+          items: [
+            {
+              id: selection,
+              spaceId: space,
+              projectId: project,
+              lensId: null,
+              axis: 'framework',
+              profileName: 'default',
+              selectedVersion: null,
+              selectionVersion: 1,
+              updatedAt: pulledAt,
+            },
+          ],
+          nextCursor: null,
+        }
+      }
+      if (table === 'project_lens_profile_revision')
+        return {
+          items: [
+            {
+              id: revision,
+              spaceId: space,
+              selectionId: selection,
+              priorProfileName: null,
+              priorSelectedVersion: null,
+              reason: 'pull',
+              sessionId: null,
+              at: pulledAt,
+            },
+          ],
+          nextCursor: null,
+        }
+      return { items: [], nextCursor: null }
+    },
+  })
+
+  expect(await pullLensCatalogue(local, [space])).toBe(2)
+  expect(selectionCursor).toBeDefined()
+  expect(
+    local
+      .query('SELECT project_record_id FROM project_lens_profile WHERE record_id=?')
+      .get(selection),
+  ).toEqual({ project_record_id: project })
+  expect(
+    local.query('SELECT 1 FROM project_lens_profile_revision WHERE record_id=?').get(revision),
+  ).not.toBeNull()
 })
 
 test('pullRecordCache pages six parent-first streams with independent space and table cursors', async () => {
