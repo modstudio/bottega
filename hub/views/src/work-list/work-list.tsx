@@ -21,9 +21,6 @@ import {
   TableRow,
 } from '@bottega/hub-ui/table'
 import { compactTokens, duration, relativeTime, vendorFigures } from '@bottega/hub-util/format'
-import { ProjectColorsContext, ProjectMark, projectVars } from '@bottega/hub-views/project-colors'
-import { SourceMark } from '@bottega/hub-views/source-mark'
-import { taskStatusLook } from '@bottega/hub-views/status-look/task-status'
 import {
   ArrowDown,
   ArrowUp,
@@ -34,6 +31,13 @@ import {
   Rows3,
 } from 'lucide-react'
 import { type ReactNode, useContext, useMemo, useState } from 'react'
+import {
+  ProjectColorsContext,
+  ProjectMark,
+  projectVars,
+} from '../project-colors/project-colors.tsx'
+import { SourceMark } from '../source-mark/source-mark.tsx'
+import { taskStatusLook } from '../status-look/task-status.ts'
 import { workListStyles } from './work-list.styles.ts'
 
 export type WorkName = 'flight' | 'done'

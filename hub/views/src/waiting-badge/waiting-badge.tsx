@@ -2,15 +2,11 @@ import { Badge } from '@bottega/hub-ui/badge'
 import type { ReactNode } from 'react'
 import { waitingBadgeStyles } from './waiting-badge.styles.ts'
 
-export type WaitingBadgeItem = { kind: 'question' | 'workflow'; id: number }
-
+/** The badge a waiting run wears; the route renders the link to whatever is waiting. */
 export function WaitingBadge({
-  item,
   renderLink,
 }: {
-  item: WaitingBadgeItem
   renderLink(children: ReactNode, className: string): ReactNode
 }) {
-  void item
   return renderLink(<Badge tone="warning">waiting on you</Badge>, waitingBadgeStyles())
 }

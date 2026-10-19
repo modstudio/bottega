@@ -1,4 +1,4 @@
-import { SnapshotEmpty, SnapshotHeader } from '@bottega/hub-views/snapshot'
+import { SnapshotEmpty, SnapshotHeader } from '../snapshot/snapshot.tsx'
 import { hostedInsightStyles } from './hosted-insights.styles.ts'
 import { HealthView, RoutingView } from './insights'
 

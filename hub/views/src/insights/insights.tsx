@@ -12,8 +12,8 @@ import {
 } from '@bottega/hub-ui/table'
 import { ToolbarBand } from '@bottega/hub-ui/toolbar-band'
 import { compactTokens, duration } from '@bottega/hub-util/format'
-import { responseSubtitle } from '@bottega/hub-views/work-summary'
 import { type ReactNode, useEffect } from 'react'
+import { responseSubtitle } from '../work-summary/work-summary.ts'
 import { insightStyles } from './insights.styles.ts'
 
 type InsightName = 'ratio' | 'spend' | 'routing' | 'health'

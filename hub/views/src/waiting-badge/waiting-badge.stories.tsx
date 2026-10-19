@@ -5,7 +5,6 @@ const meta = {
   title: 'Views/Waiting badge',
   component: WaitingBadge,
   args: {
-    item: { kind: 'question', id: 42 },
     renderLink: (children) => <a href="#waiting">{children}</a>,
   },
 } satisfies Meta<typeof WaitingBadge>
