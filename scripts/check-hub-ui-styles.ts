@@ -539,41 +539,6 @@ function componentInventory(
   return { classNameComponents, violations }
 }
 
-export function analyzeHubViewDomainTerms(sourceText: string, path: string) {
-  const source = ts.createSourceFile(
-    path,
-    sourceText,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX,
-  )
-  const violations: string[] = []
-  const visit = (node: ts.Node) => {
-    const text =
-      ts.isIdentifier(node) || ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)
-        ? node.text
-        : undefined
-    if (text && /articles?/i.test(text)) {
-      violations.push(
-        `${relative(ROOT, path)}:${lineOf(source, node)}: hub-views production source may not name the docs domain`,
-      )
-    }
-    ts.forEachChild(node, visit)
-  }
-  visit(source)
-  return violations
-}
-
-function viewDomainTermInventory() {
-  const violations: string[] = []
-  for (const relativePath of new Glob('**/*.{ts,tsx}').scanSync({ cwd: VIEWS_SOURCE })) {
-    if (/\.(?:stories|test|spec)\.[cm]?tsx?$/.test(relativePath)) continue
-    const path = join(VIEWS_SOURCE, relativePath)
-    violations.push(...analyzeHubViewDomainTerms(readFileSync(path, 'utf8'), path))
-  }
-  return violations
-}
-
 function checkHubUiStyles() {
   const theme = themeInventory()
   const styles = styleInventory()
@@ -586,7 +551,6 @@ function checkHubUiStyles() {
     ...components.violations,
     ...viewStyles.violations,
     ...viewComponents.violations,
-    ...viewDomainTermInventory(),
   ]
   const classNameComponents = components.classNameComponents
   const names = [...classNameComponents].sort().join('|')

@@ -13,6 +13,7 @@
     "./docs/edit-permission": "./src/docs/edit-permission.ts",
     "./docs/field-write": "./src/docs/field-write.ts",
     "./docs/location": "./src/docs/location.ts",
+    "./docs/map": "./src/docs/map.ts",
     "./docs/mode": "./src/docs/mode.ts",
     "./docs/search-input": "./src/docs/search-input.ts",
     "./docs/use-doc-reorder": "./src/docs/use-doc-reorder.ts",

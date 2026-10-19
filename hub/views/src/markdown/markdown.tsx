@@ -12,7 +12,7 @@ import {
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkDirective from 'remark-directive'
 import remarkGfm from 'remark-gfm'
-import { secondLevelHeadings } from './headings.ts'
+import { secondLevelHeadingIdsByLine } from './headings.ts'
 import { markdownStyles } from './markdown.styles.ts'
 import { githubAlertPlugin, isTone } from './markdown-alerts'
 import { docDirectives } from './markdown-directives.ts'
@@ -155,7 +155,7 @@ function useHighlight(needed: boolean) {
 
 // Raw HTML in a doc is NOT rendered (react-markdown's default).
 export function Markdown({ content }: { content: string }) {
-  const headings = secondLevelHeadings(content)
+  const headingIds = secondLevelHeadingIdsByLine(content)
   const [highlightNeeded, setHighlightNeeded] = useState(false)
   const requestHighlight = useCallback(() => setHighlightNeeded(true), [])
   const highlight = useHighlight(highlightNeeded)
@@ -163,7 +163,6 @@ export function Markdown({ content }: { content: string }) {
     () => (props) => <DocPre {...props} onHighlightNeeded={requestHighlight} />,
     [requestHighlight],
   )
-  let heading = 0
   return (
     <div className={markdownStyles().root()}>
       <ReactMarkdown
@@ -175,10 +174,9 @@ export function Markdown({ content }: { content: string }) {
             : []),
         ]}
         components={{
-          h2: ({ children }) => {
-            const id = headings[heading++]?.id
-            return <h2 id={id}>{children}</h2>
-          },
+          h2: ({ node, children }) => (
+            <h2 id={headingIds.get(node?.position?.start.line ?? 0)}>{children}</h2>
+          ),
           table: DocTable,
           pre: Pre,
           div: DocCallout,

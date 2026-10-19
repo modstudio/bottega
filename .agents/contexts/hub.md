@@ -21,7 +21,7 @@ an optional refusal reason. Components never select a data adapter and never own
 navigation. `scripts/check-hub-packages.ts` enforces package exports and workspace dependencies.
 `scripts/check-architecture.ts` enforces `hub-web-views-do-not-fetch-data-or-read-hub-mode`,
 `hub-data-imports-no-ui-or-web`, `hub-data-router-is-type-only`, and
-`hub-web-docs-do-not-name-data-modes`; `orchestrator/hooks/hub-import-guard.py` refuses the same
+`hub-views-docs-do-not-name-data-modes`; `orchestrator/hooks/hub-import-guard.py` refuses the same
 import and mode-literal violations when a file is written.
 
 The selected window, filters and navigation counts share the external store in

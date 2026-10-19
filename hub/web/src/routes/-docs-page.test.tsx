@@ -1,7 +1,9 @@
-import { afterAll, afterEach, beforeAll, describe, expect, mock, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test'
 import { queryClient, trpc } from '@bottega/hub-data/client'
 import { useArticleSave, useCurrentArticle } from '@bottega/hub-data/docs/actions'
 import { useStoredDocument } from '@bottega/hub-data/docs/use-docs'
+import { isScope } from '@bottega/hub-views/docs/scope'
+import type { DocsDoc } from '@bottega/hub-views/docs/types'
 import { GlobalRegistrator } from '@happy-dom/global-registrator'
 import { QueryClientProvider } from '@tanstack/react-query'
 import {
@@ -15,19 +17,7 @@ import {
 import type * as TestingLibrary from '@testing-library/react/pure'
 import type userEventLibrary from '@testing-library/user-event'
 import { useMemo } from 'react'
-import { isScope } from '../docs/scope.ts'
-import type { DocsDoc } from '../docs/types.ts'
 import { DocsPage } from './-docs-page.tsx'
-
-mock.module('../docs/markdown-editor.tsx', () => ({
-  MarkdownEditor: ({ value, onChange }: { value: string; onChange: (value: string) => void }) => (
-    <textarea
-      aria-label="Article body"
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-    />
-  ),
-}))
 
 let testing: typeof TestingLibrary
 let userEvent: typeof userEventLibrary

@@ -18,11 +18,11 @@ type RouterException = {
   reason: string
 }
 
-export const hubWebDocsModeLiteralRuleName = 'hub-web-docs-do-not-name-data-modes'
+export const hubViewsDocsModeLiteralRuleName = 'hub-views-docs-do-not-name-data-modes'
 const HUB_DATA_MODES = new Set(['local', 'hosted', 'public'])
 
 /** Lines where a production docs component names a data adapter mode. */
-export function hubWebDocsModeLiteralLines(source: string): number[] {
+export function hubViewsDocsModeLiteralLines(source: string): number[] {
   const file = ts.createSourceFile(
     'candidate.tsx',
     source,

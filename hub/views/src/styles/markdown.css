@@ -124,6 +124,13 @@
   font-size: 0.84375rem;
   color: var(--text-secondary);
 }
+/* A quote's padding alone spaces its text from its border, so its content sits centered. */
+.markdown blockquote > :first-child {
+  margin-top: 0;
+}
+.markdown blockquote > :last-child {
+  margin-bottom: 0;
+}
 .markdown [role="note"] {
   margin: 1.125rem 0 0;
 }

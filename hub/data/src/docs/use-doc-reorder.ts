@@ -1,18 +1,22 @@
+import type { DocsTreeItem } from '@bottega/hub-views/docs/types'
 import { useMutation } from '@tanstack/react-query'
 import { useCallback, useMemo, useState } from 'react'
 import type { DocScope } from '../../../../shared/docs.ts'
 import { queryClient, trpc } from '../client.ts'
 import { canEditDoc } from './edit-permission.ts'
-import { type DataTreeItem, type DocsSource, useDocsTree } from './use-docs.ts'
+import { type DocsSource, useDocsTree } from './use-docs.ts'
 
-export function useReorderableDocsTree<T extends DataTreeItem & { kind: string; position: number }>(
+export function useReorderableDocsTree(
   source: DocsSource,
   memberships: readonly Record<string, unknown>[] | undefined,
-  mapTreeItem: (row: Record<string, unknown>) => T,
-  siblingKey: (item: T) => string,
-  orderedIdsAfterDrag: (items: readonly T[], activeId: string, overId: string) => string[],
+  siblingKey: (item: DocsTreeItem) => string,
+  orderedIdsAfterDrag: (
+    items: readonly DocsTreeItem[],
+    activeId: string,
+    overId: string,
+  ) => string[],
 ) {
-  const catalog = useDocsTree(source, mapTreeItem)
+  const catalog = useDocsTree(source)
   const [orders, setOrders] = useState<ReadonlyMap<string, readonly string[]>>(new Map())
   const [error, setError] = useState<unknown>(null)
   const local = useMutation(trpc.doc.reorder.mutationOptions())
@@ -25,7 +29,7 @@ export function useReorderableDocsTree<T extends DataTreeItem & { kind: string; 
     })
   }, [catalog.items, orders, siblingKey])
   const canReorder = useCallback(
-    (item: T) =>
+    (item: DocsTreeItem) =>
       !local.isPending &&
       !hosted.isPending &&
       item.kind === 'article' &&
