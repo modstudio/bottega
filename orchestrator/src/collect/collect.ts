@@ -90,6 +90,8 @@ type CollectedRunRow = {
   review_provenance: string | null
   provenance_status: string | null
   worktree: string | null
+  branch: string | null
+  minted_branch: string | null
 }
 
 type AskingResolution =
@@ -550,7 +552,8 @@ export function collectResult(
   argv: string[],
   scoreSuffix: (job: string) => string = () => '',
   presentation: CollectResultPresentation = consoleCollectResultPresentation,
-  writingJob: (job: string) => boolean = () => false,
+  writingJob: (job: string, branch: string | null, mintedBranch: string | null) => boolean = () =>
+    false,
 ): void {
   const unknown = argv.slice(2).find((arg) => arg !== '--quiet' && arg !== '--artifacts')
   if (unknown) {
@@ -567,7 +570,7 @@ export function collectResult(
       `SELECT record_id, number, agent, job, status, latency_ms, vendor_tokens, output_path, error,
             failure_kind, exit_code, parent_run_record_id, evidence_excluded, base_commit,
             cwd, mcp, mcp_server, mcp_connected, mcp_error, mcp_probe,
-            review_provenance, provenance_status, worktree
+            review_provenance, provenance_status, worktree, branch, minted_branch
        FROM run WHERE record_id = ?`,
     )
     .get(chain.finalId) as CollectedRunRow | null
@@ -632,7 +635,10 @@ export function collectResult(
         `\n  score it:  ${scoreHint(row.record_id, row.job, row.parent_run_record_id, scoreSuffix)}` +
         branchNote(database, row.record_id) +
         releasedWritingTreeNote(
-          { writingRun: writingJob(row.job), worktree: row.worktree },
+          {
+            writingRun: writingJob(row.job, row.branch, row.minted_branch),
+            worktree: row.worktree,
+          },
           row.record_id,
         ) +
         baseNote +

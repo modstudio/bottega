@@ -53,19 +53,23 @@ type RunListingFlags = {
   flag(name: string): string | undefined
   values(name: string): string[]
 }
+type RunListingWarningRow = {
+  job: string
+  branch: string | null
+  minted_branch: string | null
+  status: string
+  latency_ms: number | null
+  probe: number
+  output_path: string | null
+  writesRepo: boolean
+}
+
 type RunListingPresentation = {
   log(...values: unknown[]): void
   dur(ms: number | null | undefined): string
   chainIsStranded(rootId: string): boolean
   strandedRecovery(rootId: string): string
-  thinOutputWarning(row: {
-    job: string
-    status: string
-    latency_ms: number | null
-    probe: number
-    output_path: string | null
-    writesRepo: boolean
-  }): string | null
+  thinOutputWarning(row: RunListingWarningRow): string | null
   processObservation: {
     sampleProcesses(): ProcessSample[]
     processStartTime(pid: number): string | null
@@ -84,6 +88,19 @@ function withRetryRecordId(row: Record<string, unknown>): Record<string, unknown
   row.retry_record_id = row.retry_of_record_id ?? null
   delete row.retry_of_record_id
   return row
+}
+
+function runListingWarningRow(row: Record<string, unknown>): RunListingWarningRow {
+  return {
+    job: String(row.job),
+    status: String(row.status),
+    latency_ms: row.latency_ms as number | null,
+    probe: Number(row.probe),
+    output_path: row.output_path as string | null,
+    writesRepo: false,
+    branch: row.branch as string | null,
+    minted_branch: row.minted_branch as string | null,
+  }
 }
 
 function resolveRequestedRunIds(values: string[]): { ids: string[]; unknown: string[] } {
@@ -272,7 +289,7 @@ export async function runListingCommand(
       ? {}
       : (db()
           .query(
-            `SELECT status, latency_ms, vendor_tokens, route_reason, probe, output_path
+            `SELECT status, latency_ms, vendor_tokens, route_reason, probe, output_path, branch, minted_branch
          FROM run WHERE record_id=?`,
           )
           .get(final.record_id) as {
@@ -282,6 +299,8 @@ export async function runListingCommand(
           route_reason: string | null
           probe: number
           output_path: string | null
+          branch: string | null
+          minted_branch: string | null
         })
     const turns = json
       ? db()
@@ -501,16 +520,7 @@ export async function runListingCommand(
     }
     // Keep the reason where a fan-out says its exclusions ran out so the command stays honest.
     if (r.route_reason) log(`      route: ${String(r.route_reason)}`)
-    const warning = agentWorkValue(String(r.job), () =>
-      thinOutputWarning({
-        job: String(r.job),
-        status: String(r.status),
-        latency_ms: r.latency_ms as number | null,
-        probe: Number(r.probe),
-        output_path: r.output_path as string | null,
-        writesRepo: false,
-      }),
-    )
+    const warning = agentWorkValue(String(r.job), () => thinOutputWarning(runListingWarningRow(r)))
     if (warning) log(`      ${warning}`)
   }
   for (const id of [...unknownIds, ...unknownRecordIds])

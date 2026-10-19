@@ -1,5 +1,10 @@
 import { expect, test } from 'bun:test'
-import { JOBS, jobTimeoutCeilingMinutes, resolveJobTimeoutMs } from './jobs.ts'
+import {
+  JOBS,
+  jobTimeoutCeilingMinutes,
+  resolveJobTimeoutMs,
+  resolveRecordedRunJob,
+} from './jobs.ts'
 
 test('jobs exposes fidelity only for writing jobs', () => {
   expect(JOBS.implement!.needs.writesRepo).toBe(true)
@@ -15,4 +20,23 @@ test('the timeout override respects the ceiling', () => {
   )
   expect(resolveJobTimeoutMs(fileQuestion, 25 * 60_000, 20)).toBe(20 * 60_000)
   expect(() => resolveJobTimeoutMs(JOBS.diagnose!, 20 * 60_000, 60)).toThrow('stale cutoff')
+})
+
+test('recorded run job uses declarations while they exist', () => {
+  expect(resolveRecordedRunJob({ job: 'implement', branch: null, minted_branch: null })).toEqual({
+    writesRepo: true,
+    declared: true,
+  })
+  expect(
+    resolveRecordedRunJob({ job: 'review-lens', branch: 'unexpected', minted_branch: null }),
+  ).toEqual({ writesRepo: false, declared: true })
+})
+
+test('recorded run job infers retired writers from their recorded branch', () => {
+  expect(
+    resolveRecordedRunJob({ job: 'retired-writer', branch: null, minted_branch: 'DEV-1400-old' }),
+  ).toEqual({ writesRepo: true, declared: false })
+  expect(
+    resolveRecordedRunJob({ job: 'retired-reader', branch: null, minted_branch: null }),
+  ).toEqual({ writesRepo: false, declared: false })
 })

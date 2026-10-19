@@ -6,7 +6,7 @@ import { processStartTime } from '../../../shared/process-identity.ts'
 import { thinOutputWarning } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
 import { sampleProcesses } from '../idle-kill.ts'
-import { job } from '../jobs/jobs.ts'
+import { resolveRecordedRunJob } from '../jobs/jobs.ts'
 import {
   classifyRunIdentifier,
   resolveRunIdentifier,
@@ -87,8 +87,15 @@ export function register(program: Command): void {
         dur: duration,
         chainIsStranded: chainHasPendingDelivery,
         strandedRecovery,
-        thinOutputWarning: (row) =>
-          thinOutputWarning({ ...row, writesRepo: Boolean(job(row.job).needs.writesRepo) }),
+        thinOutputWarning: (row) => {
+          const recordedJob = resolveRecordedRunJob(row)
+          return !recordedJob.declared && !recordedJob.writesRepo
+            ? null
+            : thinOutputWarning({
+                ...row,
+                writesRepo: recordedJob.writesRepo,
+              })
+        },
         processObservation: { sampleProcesses, processStartTime },
         clock: Date.now,
       })
