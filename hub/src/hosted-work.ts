@@ -648,11 +648,7 @@ export async function hostedSpend(
   return projectSpendGrid(summary, vendors, facts.intervals, facts.now)
 }
 
-export async function hostedSettings(
-  databaseUrl: SQL,
-  identity: TaskIdentity,
-  projects: string[],
-) {
+export async function hostedSettings(databaseUrl: SQL, identity: TaskIdentity, projects: string[]) {
   return withHostedTenant(databaseUrl, identity, async (tx) => {
     const sends = rows<{
       at: SqlTime

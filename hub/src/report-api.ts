@@ -46,28 +46,16 @@ async function sendRoute(
     return json(await call(dependencies.counts, hostedReportCounts)(database(config), who))
   if (request.method === 'GET' && url.pathname === '/v1/sends')
     return json(
-      await call(dependencies.listSends, listHostedSends)(
-        database(config),
-        who,
-        sendFilters(url),
-      ),
+      await call(dependencies.listSends, listHostedSends)(database(config), who, sendFilters(url)),
     )
   if (request.method === 'POST' && url.pathname === '/v1/sends')
     return json(
-      await call(dependencies.appendSend, appendHostedSend)(
-        database(config),
-        who,
-        body as never,
-      ),
+      await call(dependencies.appendSend, appendHostedSend)(database(config), who, body as never),
       201,
     )
   if (request.method === 'PUT' && url.pathname === '/v1/sends/mirror')
     return json(
-      await call(dependencies.mirror, mirrorHostedReports)(
-        database(config),
-        who,
-        body as never,
-      ),
+      await call(dependencies.mirror, mirrorHostedReports)(database(config), who, body as never),
     )
   return null
 }

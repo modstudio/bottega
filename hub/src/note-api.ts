@@ -83,11 +83,7 @@ async function readRoute(context: RouteContext): Promise<Response | null> {
     return json(await call(dependencies.counts, hostedNoteCounts)(database(config), who))
   const match = /^\/v1\/notes\/([0-9a-f-]{36})$/i.exec(url.pathname)
   if (!match) return null
-  const value = await call(dependencies.get, getHostedNote)(
-    database(config),
-    who,
-    match[1]!,
-  )
+  const value = await call(dependencies.get, getHostedNote)(database(config), who, match[1]!)
   return value ? json(value) : json({ error: 'note not found' }, 404)
 }
 
@@ -132,11 +128,7 @@ async function batchRoute(context: RouteContext): Promise<Response | null> {
   }
   if (request.method === 'PUT' && url.pathname === '/v1/notes/mirror')
     return json(
-      await call(dependencies.mirror, mirrorHostedNotes)(
-        database(config),
-        who,
-        body as never,
-      ),
+      await call(dependencies.mirror, mirrorHostedNotes)(database(config), who, body as never),
     )
   return null
 }

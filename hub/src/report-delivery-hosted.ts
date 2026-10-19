@@ -127,14 +127,14 @@ function loadedScopeName(
   return loaded.space_name
 }
 
-export function hostedDeliveryRepository(databaseUrl: SQL): DeliveryRepository {
-  async function insertFinal(
-    value: DeliveryCandidate,
-    period: DeliveryPeriod,
-    input: { status: DeliveryStatus; reason: string; recipients?: string; items?: number },
-  ) {
-    await withHostedTenant(databaseUrl, identity(value), async (tx) => {
-      await tx`INSERT INTO hub_send
+async function insertFinal(
+  database: SQL,
+  value: DeliveryCandidate,
+  period: DeliveryPeriod,
+  input: { status: DeliveryStatus; reason: string; recipients?: string; items?: number },
+) {
+  await withHostedTenant(database, identity(value), async (tx) => {
+    await tx`INSERT INTO hub_send
         (id,space_id,at,"window",recipients,projects,items,status,error,test,created_at,machine,
          subscription_id,period_start,period_end)
         VALUES (${newRecordId()}::uuid,${value.spaceId}::uuid,now(),
@@ -142,52 +142,131 @@ export function hostedDeliveryRepository(databaseUrl: SQL): DeliveryRepository {
         ${input.items ?? 0},${input.status},${input.reason},0,now(),${hostname()},
         ${value.subscriptionId}::uuid,${period.from}::timestamptz,${period.to}::timestamptz)
         ON CONFLICT(subscription_id,period_end) WHERE test=0 DO NOTHING`
-    })
-  }
+  })
+}
 
+async function recordIntent(
+  database: SQL,
+  value: DeliveryCandidate,
+  period: DeliveryPeriod,
+  input: Parameters<DeliveryRepository['recordIntent']>[2],
+) {
+  return withHostedTenant(database, identity(value), async (tx) => {
+    const id = newRecordId()
+    const inserted = rows<{ id: string }>(
+      await tx`INSERT INTO hub_send
+        (id,space_id,at,"window",recipients,projects,items,status,error,test,created_at,machine,
+         subscription_id,period_start,period_end)
+        VALUES (${id}::uuid,${value.spaceId}::uuid,now(),${`${period.from}/${period.to}`},
+        ${input.recipients.map((recipient) => recipient.email).join(', ')},'subscription',${input.items},'pending',NULL,0,now(),${hostname()},
+        ${value.subscriptionId}::uuid,${period.from}::timestamptz,${period.to}::timestamptz)
+        ON CONFLICT(subscription_id,period_end) WHERE test=0 DO NOTHING RETURNING id`,
+    )[0]
+    if (!inserted) return null
+    for (const recipient of input.recipients)
+      await tx`INSERT INTO hub_send_recipient
+        (id,space_id,send_id,user_id,name,email,created_at)
+        VALUES (${newRecordId()}::uuid,${value.spaceId}::uuid,${inserted.id}::uuid,
+        ${recipient.userId}::uuid,${recipient.name},${recipient.email},now())`
+    return inserted.id
+  })
+}
+
+async function recordOutcome(
+  database: SQL,
+  value: DeliveryCandidate,
+  intentId: string,
+  status: 'sent' | 'failed',
+  reason?: string,
+) {
+  await withHostedTenant(database, identity(value), async (tx) => {
+    const updated = rows<{ id: string }>(
+      await tx`UPDATE hub_send SET status=${status},error=${reason ?? null},at=now()
+        WHERE id=${intentId}::uuid AND subscription_id=${value.subscriptionId}::uuid
+        RETURNING id`,
+    )[0]
+    if (!updated) throw new Error(`send intent ${intentId} was not found`)
+  })
+}
+
+async function recipientsAreMembers(
+  database: SQL,
+  value: DeliveryCandidate,
+  recipientUserIds: string[],
+) {
+  if (!recipientUserIds.length) return true
+  return withHostedTenant(database, identity(value, recipientUserIds[0]), async (tx) => {
+    const member = rows<{ count: number }>(
+      await tx`SELECT count(*)::int AS count FROM membership
+        WHERE space_id=${value.spaceId}::uuid
+          AND user_id = ANY(${tx.array(recipientUserIds, 'uuid')})`,
+    )[0]!
+    return Number(member.count) === recipientUserIds.length
+  })
+}
+
+type LoadedDeliverySubscription = {
+  scope_kind: 'space' | 'project' | 'members' | 'projects'
+  project_name: string | null
+  member_ids: string[]
+  member_names: string[]
+  space_name: string
+  owner_user_id: string | null
+}
+
+async function loadDeliverySubscription(
+  database: SQL,
+  value: DeliveryCandidate,
+  includeDisabled: boolean,
+) {
+  const loaded = await withHostedTenant(database, identity(value), async (tx) => {
+    return rows<LoadedDeliverySubscription>(
+      await tx`SELECT s.scope_kind,s.project_name,sp.name AS space_name,owner.id AS owner_user_id,
+        COALESCE(array_agg(m.user_id ORDER BY m.created_at,m.id)
+          FILTER (WHERE m.user_id IS NOT NULL),'{}') AS member_ids,
+        COALESCE(array_agg(COALESCE(NULLIF(u.name,''),u.email) ORDER BY m.created_at,m.id)
+          FILTER (WHERE m.user_id IS NOT NULL),'{}') AS member_names
+      FROM hub_report_subscription s
+      JOIN space sp ON sp.id=s.space_id
+      LEFT JOIN "user" owner ON owner.personal_space_id=s.space_id
+      LEFT JOIN hub_report_subscription_member m ON m.subscription_id=s.id AND m.space_id=s.space_id
+      LEFT JOIN "user" u ON u.id=m.user_id
+      WHERE s.id=${value.subscriptionId}::uuid AND s.space_id=${value.spaceId}::uuid
+        AND (${includeDisabled} OR s.enabled=1) AND s.deleted_at IS NULL
+      GROUP BY s.id,sp.name,owner.id`,
+    )[0]
+  })
+  if (!loaded) throw new Error('report subscription is no longer enabled')
+  return loaded
+}
+
+async function discoverDeliveries(database: SQL) {
+  return rows<RawCandidate>(await database`SELECT * FROM hub_report_delivery_candidates()`).map(
+    candidate,
+  )
+}
+
+async function deliveryOwnerSpaces(database: SQL, value: DeliveryCandidate, ownerUserId: string) {
+  return withHostedTenant(database, identity(value, ownerUserId), async (tx) =>
+    rows<{ space_id: string }>(
+      await tx`SELECT DISTINCT project_space_id AS space_id
+        FROM hub_report_subscription_project
+        WHERE subscription_id=${value.subscriptionId}::uuid AND space_id=${value.spaceId}::uuid`,
+    ).map((row) => row.space_id),
+  )
+}
+
+export function hostedDeliveryRepository(databaseUrl: SQL): DeliveryRepository {
   return {
-    async discover() {
-      return rows<RawCandidate>(
-        await databaseUrl`SELECT * FROM hub_report_delivery_candidates()`,
-      ).map(candidate)
-    },
+    discover: () => discoverDeliveries(databaseUrl),
     async load(value, period, options) {
-      const loaded = await withHostedTenant(databaseUrl, identity(value), async (tx) => {
-        return rows<{
-          scope_kind: 'space' | 'project' | 'members' | 'projects'
-          project_name: string | null
-          member_ids: string[]
-          member_names: string[]
-          space_name: string
-          owner_user_id: string | null
-        }>(
-          await tx`SELECT s.scope_kind,s.project_name,sp.name AS space_name,owner.id AS owner_user_id,
-            COALESCE(array_agg(m.user_id ORDER BY m.created_at,m.id)
-              FILTER (WHERE m.user_id IS NOT NULL),'{}') AS member_ids,
-            COALESCE(array_agg(COALESCE(NULLIF(u.name,''),u.email) ORDER BY m.created_at,m.id)
-              FILTER (WHERE m.user_id IS NOT NULL),'{}') AS member_names
-          FROM hub_report_subscription s
-          JOIN space sp ON sp.id=s.space_id
-          LEFT JOIN "user" owner ON owner.personal_space_id=s.space_id
-          LEFT JOIN hub_report_subscription_member m ON m.subscription_id=s.id AND m.space_id=s.space_id
-          LEFT JOIN "user" u ON u.id=m.user_id
-          WHERE s.id=${value.subscriptionId}::uuid AND s.space_id=${value.spaceId}::uuid
-            AND (${options?.includeDisabled ?? false} OR s.enabled=1) AND s.deleted_at IS NULL
-          GROUP BY s.id,sp.name,owner.id`,
-        )[0]
-      })
-      if (!loaded) throw new Error('report subscription is no longer enabled')
-      const ownerUserId = loaded.owner_user_id ?? identity(value).userId
-      const ownerSpaces = await withHostedTenant(
+      const loaded = await loadDeliverySubscription(
         databaseUrl,
-        identity(value, ownerUserId),
-        async (tx) =>
-          rows<{ space_id: string }>(
-            await tx`SELECT DISTINCT project_space_id AS space_id
-              FROM hub_report_subscription_project
-              WHERE subscription_id=${value.subscriptionId}::uuid AND space_id=${value.spaceId}::uuid`,
-          ).map((row) => row.space_id),
+        value,
+        options?.includeDisabled ?? false,
       )
+      const ownerUserId = loaded.owner_user_id ?? identity(value).userId
+      const ownerSpaces = await deliveryOwnerSpaces(databaseUrl, value, ownerUserId)
       const deliveryIdentity = {
         spaceId: value.spaceId,
         userId: ownerUserId,
@@ -270,49 +349,12 @@ export function hostedDeliveryRepository(databaseUrl: SQL): DeliveryRepository {
         exclusions,
       }
     },
-    async recipientsAreMembers(value, recipientUserIds) {
-      if (!recipientUserIds.length) return true
-      return withHostedTenant(databaseUrl, identity(value, recipientUserIds[0]), async (tx) => {
-        const member = rows<{ count: number }>(
-          await tx`SELECT count(*)::int AS count FROM membership
-          WHERE space_id=${value.spaceId}::uuid
-            AND user_id = ANY(${tx.array(recipientUserIds, 'uuid')})`,
-        )[0]!
-        return Number(member.count) === recipientUserIds.length
-      })
-    },
-    recordFinal: insertFinal,
-    async recordIntent(value, period, input) {
-      return withHostedTenant(databaseUrl, identity(value), async (tx) => {
-        const id = newRecordId()
-        const inserted = rows<{ id: string }>(
-          await tx`INSERT INTO hub_send
-          (id,space_id,at,"window",recipients,projects,items,status,error,test,created_at,machine,
-           subscription_id,period_start,period_end)
-          VALUES (${id}::uuid,${value.spaceId}::uuid,now(),${`${period.from}/${period.to}`},
-          ${input.recipients.map((recipient) => recipient.email).join(', ')},'subscription',${input.items},'pending',NULL,0,now(),${hostname()},
-          ${value.subscriptionId}::uuid,${period.from}::timestamptz,${period.to}::timestamptz)
-          ON CONFLICT(subscription_id,period_end) WHERE test=0 DO NOTHING RETURNING id`,
-        )[0]
-        if (!inserted) return null
-        for (const recipient of input.recipients)
-          await tx`INSERT INTO hub_send_recipient
-            (id,space_id,send_id,user_id,name,email,created_at)
-            VALUES (${newRecordId()}::uuid,${value.spaceId}::uuid,${inserted.id}::uuid,
-            ${recipient.userId}::uuid,${recipient.name},${recipient.email},now())`
-        return inserted.id
-      })
-    },
-    async recordOutcome(value, intentId, status, reason) {
-      await withHostedTenant(databaseUrl, identity(value), async (tx) => {
-        const updated = rows<{ id: string }>(
-          await tx`UPDATE hub_send SET status=${status},error=${reason ?? null},at=now()
-          WHERE id=${intentId}::uuid AND subscription_id=${value.subscriptionId}::uuid
-          RETURNING id`,
-        )[0]
-        if (!updated) throw new Error(`send intent ${intentId} was not found`)
-      })
-    },
+    recipientsAreMembers: (value, recipientUserIds) =>
+      recipientsAreMembers(databaseUrl, value, recipientUserIds),
+    recordFinal: (value, period, input) => insertFinal(databaseUrl, value, period, input),
+    recordIntent: (value, period, input) => recordIntent(databaseUrl, value, period, input),
+    recordOutcome: (value, intentId, status, reason) =>
+      recordOutcome(databaseUrl, value, intentId, status, reason),
   }
 }
 

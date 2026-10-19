@@ -74,12 +74,12 @@ export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
   },
   {
     path: 'hub/src/hosted.ts',
-    line: 60,
+    line: 68,
     reason: 'the hosted deployment entry serves its separately built checkout web bundle',
   },
   {
     path: 'hub/src/hosted.ts',
-    line: 67,
+    line: 75,
     reason: 'the hosted deployment entry serves its separately built checkout web bundle',
   },
 ]

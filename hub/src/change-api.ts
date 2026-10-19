@@ -157,9 +157,7 @@ async function identitySetResponse(
     return json({ error: (error as Error).message }, 400)
   }
   try {
-    return json(
-      await (dependencies.ids ?? listHostedIdentitySet)(database(config), who, input),
-    )
+    return json(await (dependencies.ids ?? listHostedIdentitySet)(database(config), who, input))
   } catch (error) {
     return json({ error: (error as Error).message }, 409)
   }
@@ -184,9 +182,7 @@ async function changeLogResponse(
     return json({ error: (error as Error).message }, 400)
   }
   try {
-    return json(
-      await (dependencies.list ?? listHostedChanges)(database(config), who, input),
-    )
+    return json(await (dependencies.list ?? listHostedChanges)(database(config), who, input))
   } catch (error) {
     return json({ error: (error as Error).message }, 409)
   }

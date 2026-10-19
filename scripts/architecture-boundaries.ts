@@ -478,6 +478,7 @@ export const importBoundaries: ImportBoundary[] = [
     [
       'node:fs',
       'node:url',
+      'bun',
       '@trpc/server/adapters/fetch',
       '../../shared/built-commit.ts',
       './app-static.ts',
