@@ -133,4 +133,58 @@ export function MeasuresSummary({
   )
 }
 
+/**
+ * A task's measures as one compact line of figures under its key line; each figure's meaning and
+ * bounds open from its (i). A task with no recorded time says so in place of zero figures.
+ */
+export function TaskMeasures({
+  measures,
+  hasRecordedTime,
+}: {
+  measures: MeasuresSummaryValue
+  hasRecordedTime: boolean
+}) {
+  if (!hasRecordedTime) {
+    return <p className="mt-3 text-sm text-text-muted">No time was recorded for this task.</p>
+  }
+  return (
+    <div className="mt-4">
+      <StatRow compact>
+        <StatTile
+          label="in motion"
+          figure={hour(measures.hoursRunning.unionMs)}
+          about="How long any recorded work was in motion. Work was running; this figure is not additive."
+        />
+        <StatTile
+          label="agent work"
+          figure={hour(measures.agentHours.sumMs)}
+          about={
+            <>
+              How much agent work was started. <AgentUnknown measure={measures.agentHours} />
+            </>
+          }
+        />
+        <StatTile
+          label="in session"
+          figure={hour(measures.sessionTime.unionThenSumMs)}
+          about={
+            <>
+              How long people were in session. <SessionDetail measure={measures.sessionTime} />
+            </>
+          }
+        />
+        <StatTile
+          label="agent cost"
+          figure={money(measures.cost.vendorCostUsd)}
+          about={
+            <>
+              What the started agent work cost. <CostUnknown measure={measures.cost} />
+            </>
+          }
+        />
+      </StatRow>
+    </div>
+  )
+}
+
 export const measureFormat = { hour, money }

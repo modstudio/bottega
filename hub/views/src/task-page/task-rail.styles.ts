@@ -8,7 +8,6 @@ export const taskRailStyles = variant({
     fact: 'contents',
     factLabel: 'text-text-muted',
     factValue: 'min-w-0 text-text-primary',
-    extra: 'mt-6 border-border-default border-t pt-5',
     contents: 'space-y-6',
     doc: 'flex min-w-0 items-center gap-1.5',
     docIcon: 'shrink-0',

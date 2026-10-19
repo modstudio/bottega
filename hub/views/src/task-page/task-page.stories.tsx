@@ -1,4 +1,5 @@
 import { Dialog } from '@bottega/hub-ui/dialog'
+import { StatRow, StatTile } from '@bottega/hub-ui/stat'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useState } from 'react'
 import { expect, fn, userEvent, within } from 'storybook/test'
@@ -114,6 +115,7 @@ function Page({
         { key: 'assignee', content: 'Shmuel' },
         { key: 'updated', content: 'Updated 2 hours ago' },
       ]}
+      figures={figures}
       details={[
         { label: 'Status', value: 'Active' },
         { label: 'Assignee', value: 'Shmuel' },
@@ -167,6 +169,25 @@ async function showContents(canvas: ReturnType<typeof within>) {
   const tabs = canvas.queryAllByRole('tab', { name: 'Contents' })
   if (tabs[0]) await userEvent.click(tabs[0])
 }
+
+const figures = (
+  <div className="mt-4">
+    <StatRow compact>
+      <StatTile
+        label="in motion"
+        figure="6.4 hours"
+        about="How long any recorded work was in motion. Work was running; this figure is not additive."
+      />
+      <StatTile label="agent work" figure="11.2 hours" about="How much agent work was started." />
+      <StatTile
+        label="in session"
+        figure="4.1 hours"
+        about="How long people were in session. Silence over 20 minutes is not counted; 1.3 hours uncounted silence."
+      />
+      <StatTile label="agent cost" figure="$18.40" about="What the started agent work cost." />
+    </StatRow>
+  </div>
+)
 
 const meta: Meta = {
   title: 'Views/TaskPage',

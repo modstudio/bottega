@@ -1,6 +1,8 @@
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronDown, ChevronUp, Info } from 'lucide-react'
 import { Children, createContext, type ReactNode, useContext, useState } from 'react'
+import { IconButton } from '../button/button.tsx'
 import { PHONE_QUERY, useMediaQuery } from '../dom/use-media-query'
+import { Popover } from '../popover/popover.tsx'
 import { statStyles } from './stat.styles.ts'
 
 type Breakdown = readonly { label: string; value: string }[]
@@ -43,6 +45,24 @@ function BreakdownFigure({ items }: { items: Breakdown }) {
   )
 }
 
+/** What a figure measures and what bounds it, kept out of the way until asked for. */
+function About({ label, children }: { label: ReactNode; children: ReactNode }) {
+  const name = typeof label === 'string' ? label : 'this figure'
+  return (
+    <Popover
+      label={`About ${name}`}
+      align="end"
+      trigger={
+        <IconButton size="sm" label={`About ${name}`} className={statStyles().aboutTrigger()}>
+          <Info aria-hidden />
+        </IconButton>
+      }
+    >
+      <div className={statStyles().about()}>{children}</div>
+    </Popover>
+  )
+}
+
 /**
  * One headline figure: what it measures, the figure, and what bounds it. A
  * `breakdown` shows figures that are separate currencies one at a time.
@@ -54,11 +74,14 @@ export function StatTile({
   hint,
   live = false,
   wrapHint = false,
+  about,
 }: {
   figure?: ReactNode
   breakdown?: Breakdown
   label: ReactNode
   hint?: ReactNode
+  /** What the figure measures and what bounds it, opened from an (i) beside the label. */
+  about?: ReactNode
   /** The figure is still moving, as while agents are working. */
   live?: boolean
   /** Honesty text that must remain visible rather than collapsing to one line. */
@@ -66,7 +89,7 @@ export function StatTile({
 }) {
   if (useContext(Compact)) {
     return (
-      <div className={statStyles().chip()}>
+      <div className={statStyles({ about: Boolean(about) }).chip()}>
         <span
           data-tone={live ? 'success' : undefined}
           className={statStyles({ live }).chipFigure()}
@@ -74,12 +97,16 @@ export function StatTile({
           {breakdown ? (breakdown[0]?.value ?? '-') : figure}
         </span>
         <span className={statStyles().chipLabel()}>{label}</span>
+        {about ? <About label={label}>{about}</About> : null}
       </div>
     )
   }
   return (
     <div className={statStyles().card()}>
-      <div className={statStyles().cardLabel()}>{label}</div>
+      <div className={statStyles().cardLabel()}>
+        {label}
+        {about ? <About label={label}>{about}</About> : null}
+      </div>
       {breakdown ? (
         <BreakdownFigure items={breakdown} />
       ) : (
@@ -99,12 +126,22 @@ export function StatTile({
 /**
  * Headline figures side by side, separated by hairlines, reflowing by the row's
  * own width rather than the window's. On a phone they read as one line that
- * scrolls sideways, and open into the full tiles, one per row.
+ * scrolls sideways, and open into the full tiles. A `compact` row is always that
+ * one line, for figures whose meaning opens from each one's (i) rather than a tile.
  */
-export function StatRow({ children }: { children: ReactNode }) {
+export function StatRow({ children, compact = false }: { children: ReactNode; compact?: boolean }) {
   const count = Children.toArray(children).length
   const phone = useMediaQuery(PHONE_QUERY)
   const [open, setOpen] = useState(false)
+  if (compact) {
+    return (
+      <div className={statStyles().band()}>
+        <Compact.Provider value>
+          <div className={statStyles().bandFigures()}>{children}</div>
+        </Compact.Provider>
+      </div>
+    )
+  }
   if (phone && !open) {
     return (
       <div className={statStyles().band()}>

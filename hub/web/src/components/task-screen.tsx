@@ -12,7 +12,7 @@ import { X } from 'lucide-react'
 import { taskHistoryEntries } from '@/lib/task-history'
 import type { TaskScreenDetail, TaskScreenResult } from '@/routes/-task-screen-data'
 import { ProjectMark, SourceMark } from './design-system'
-import { MeasuresSummary } from './measure-display'
+import { TaskMeasures } from './measure-display'
 
 type TaskStatus = 'open' | 'active' | 'review' | 'done' | 'dropped'
 
@@ -156,16 +156,12 @@ function LoadedTask({
           : []),
       ]}
       details={taskFacts(detail, result)}
-      detailsExtra={
+      figures={
         detail.measures ? (
-          <>
-            {detail.measureCoverage && !detail.measureCoverage.hasRecordedTime ? (
-              <p className="mb-3 text-sm text-text-muted">
-                No time was recorded for this task; the zero measures reflect missing coverage.
-              </p>
-            ) : null}
-            <MeasuresSummary measures={detail.measures} showShipped={false} />
-          </>
+          <TaskMeasures
+            measures={detail.measures}
+            hasRecordedTime={detail.measureCoverage?.hasRecordedTime ?? true}
+          />
         ) : undefined
       }
       docs={taskDocs(detail)}

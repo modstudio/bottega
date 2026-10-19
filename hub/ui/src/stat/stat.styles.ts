@@ -13,7 +13,9 @@ export const statStyles = variant({
     figurePickerOption:
       'size-2 rounded-full bg-border-strong hover:bg-text-muted aria-pressed:bg-accent-fill',
     card: '-mr-px -mb-px flex min-w-0 flex-col gap-1 border-border-default border-r border-b p-4 @lg/stats:p-5',
-    cardLabel: 'text-sm text-text-secondary',
+    cardLabel: 'flex items-center gap-1 text-sm text-text-secondary',
+    about: 'w-72 whitespace-normal text-sm text-text-secondary',
+    aboutTrigger: '-my-1',
     group: '@container/stats mb-6',
     band: 'mb-4 flex items-stretch border border-border-default',
     bandFigures:
@@ -29,6 +31,8 @@ export const statStyles = variant({
     live: { true: { figure: 'text-status-text', chipFigure: 'text-status-text' } },
     phone: { true: { row: 'grid-cols-1' } },
     wrapHint: { false: { hint: 'truncate' } },
+    // The (i) carries its own padding, so the chip's edge beside it closes in.
+    about: { true: { chip: 'pr-1.5' } },
     three: { true: { row: '@3xl/stats:grid-cols-3' } },
     four: { true: { row: '@5xl/stats:grid-cols-4' } },
   },

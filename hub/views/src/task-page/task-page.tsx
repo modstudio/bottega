@@ -189,8 +189,8 @@ type TaskPageProps = {
   body: string
   keyLine: { key: string; icon?: ReactNode; content: ReactNode }[]
   details: TaskPageFact[]
-  /** Shown under the details, such as the task's measures. */
-  detailsExtra?: ReactNode
+  /** Figures shown under the task's key line, such as its measures. */
+  figures?: ReactNode
   docs: TaskPageDoc[]
   /** The task document shown in place of the task, chosen by the screen. */
   openDoc: string | null
@@ -221,7 +221,10 @@ function usePageParts(props: TaskPageProps) {
     keyLine: editing ? (
       <EditorBand toolbar={edit.rich.toolbar} mode={edit.mode} onModeChange={edit.setMode} />
     ) : (
-      <KeyLine items={doc ? doc.keyLine : keyLine} />
+      <>
+        <KeyLine items={doc ? doc.keyLine : keyLine} />
+        {doc ? null : props.figures}
+      </>
     ),
     editorBanner: editing ? (
       <EditorBanner
@@ -300,11 +303,7 @@ function usePhoneTabs({
         onHeading={toSection}
       />
     ),
-    details: doc ? (
-      <TaskFacts facts={doc.facts} />
-    ) : (
-      <TaskFacts facts={props.details} extra={props.detailsExtra} />
-    ),
+    details: doc ? <TaskFacts facts={doc.facts} /> : <TaskFacts facts={props.details} />,
   }
 }
 
@@ -355,7 +354,6 @@ export function TaskPage(props: TaskPageProps) {
     doc: parts.doc,
     docs: props.docs,
     details: props.details,
-    detailsExtra: props.detailsExtra,
     onOpenDoc: parts.openOther,
   }
   const [root, setRoot] = useState<HTMLDivElement | null>(null)

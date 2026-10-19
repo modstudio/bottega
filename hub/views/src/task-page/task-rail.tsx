@@ -17,19 +17,16 @@ export type TaskPageDoc = {
   keyLine: { key: string; icon?: ReactNode; content: ReactNode }[]
 }
 
-export function TaskFacts({ facts, extra }: { facts: TaskPageFact[]; extra?: ReactNode }) {
+export function TaskFacts({ facts }: { facts: TaskPageFact[] }) {
   return (
-    <>
-      <dl className={taskRailStyles().facts()}>
-        {facts.map((fact) => (
-          <div key={fact.label} className={taskRailStyles().fact()}>
-            <dt className={taskRailStyles().factLabel()}>{fact.label}</dt>
-            <dd className={taskRailStyles().factValue()}>{fact.value}</dd>
-          </div>
-        ))}
-      </dl>
-      {extra ? <div className={taskRailStyles().extra()}>{extra}</div> : null}
-    </>
+    <dl className={taskRailStyles().facts()}>
+      {facts.map((fact) => (
+        <div key={fact.label} className={taskRailStyles().fact()}>
+          <dt className={taskRailStyles().factLabel()}>{fact.label}</dt>
+          <dd className={taskRailStyles().factValue()}>{fact.value}</dd>
+        </div>
+      ))}
+    </dl>
   )
 }
 
@@ -103,14 +100,12 @@ export function TaskRail({
   body,
   docs,
   details,
-  detailsExtra,
   onOpenDoc,
 }: {
   doc: TaskPageDoc | null
   body: string
   docs: TaskPageDoc[]
   details: TaskPageFact[]
-  detailsExtra?: ReactNode
   onOpenDoc: (id: string | null) => void
 }) {
   return (
@@ -147,11 +142,7 @@ export function TaskRail({
           {
             value: 'details',
             label: 'Details',
-            content: doc ? (
-              <TaskFacts facts={doc.facts} />
-            ) : (
-              <TaskFacts facts={details} extra={detailsExtra} />
-            ),
+            content: <TaskFacts facts={doc ? doc.facts : details} />,
           },
         ]}
       />
