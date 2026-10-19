@@ -6,13 +6,9 @@ import {
 } from '../../shared/record-space-request.ts'
 import type { HostedRouteConfig } from './hosted-route-config.ts'
 import { taskSpaceIdentity } from './hosted-route-identity.ts'
+import { listHostedTasks } from './hosted-task-list.ts'
 import { hostedTaskPresence, softDeleteHostedTasks } from './hosted-task-prune.ts'
-import {
-  createHostedDocument,
-  createHostedTask,
-  getHostedTask,
-  listHostedTasks,
-} from './hosted-tasks.ts'
+import { createHostedDocument, createHostedTask, getHostedTask } from './hosted-tasks.ts'
 import { PUSHABLE_HUB_CHANGE_TABLES } from './push-contract.ts'
 
 const TEST_REFUSAL = `${PLATFORM_SLUG} task API refuses real identity and database clients unless stubs are injected in tests`

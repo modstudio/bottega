@@ -14,8 +14,6 @@ import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 import { projectHasRemoteTracker } from './hosted-write-mode.ts'
 import { nextNoteNumber } from './note-number.ts'
 
-export { listHostedNotes } from './hosted-note-list.ts'
-
 export type HostedNote = {
   id: string
   number: number

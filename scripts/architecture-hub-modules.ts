@@ -115,6 +115,7 @@ export const hubModuleSpecs = [
       '../../shared/record-space-request.ts',
       './hosted-route-identity.ts',
       './hosted-route-config.ts',
+      './hosted-task-list.ts',
       './hosted-task-prune.ts',
       './hosted-tasks.ts',
       './push-contract.ts',

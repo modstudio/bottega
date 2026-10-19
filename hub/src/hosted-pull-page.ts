@@ -50,4 +50,35 @@ export function decodeHostedPullCursor<Stream extends string>(
   throw new Error('hosted pull cursor is malformed')
 }
 
-export const hostedPullCursorAt = (value: unknown) => String(value)
+const hostedPullCursorAt = (value: unknown) => String(value)
+
+export function hostedPullPage<
+  Stream extends string,
+  Row extends { id: string; cursor_at: string },
+>(
+  streams: readonly Stream[],
+  cursor: HostedPullCursor<Stream>,
+  candidates: readonly Row[],
+  limit: number,
+) {
+  const position = streams.indexOf(cursor.stream)
+  if (!candidates.length && position < streams.length - 1)
+    return {
+      kind: 'advance' as const,
+      cursor: {
+        ...cursor,
+        stream: streams[position + 1]!,
+        at: cursor.since,
+        id: FIRST_ID,
+      },
+    }
+
+  const rows = candidates.slice(0, limit)
+  const last = rows.at(-1)
+  return {
+    kind: 'page' as const,
+    rows,
+    cursor: last ? { ...cursor, at: hostedPullCursorAt(last.cursor_at), id: last.id } : cursor,
+    more: candidates.length > limit || position < streams.length - 1,
+  }
+}

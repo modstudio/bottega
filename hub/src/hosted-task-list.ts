@@ -3,8 +3,8 @@ import {
   decodeHostedPullCursor,
   encodeHostedPullCursor,
   type HostedPullCursor,
-  hostedPullCursorAt,
   hostedPullLimit,
+  hostedPullPage,
 } from './hosted-pull-page.ts'
 import { taskIdFor } from './hosted-task-reference.ts'
 import {
@@ -39,8 +39,8 @@ const emptyPage = () => ({
 })
 
 function serializeRow<T extends { id: string }>(row: CursorRow<T>, serialize: (value: T) => T) {
-  const { cursor_at: cursorAt, ...value } = row
-  return { value: serialize(value as unknown as T), cursorAt: hostedPullCursorAt(cursorAt) }
+  const { cursor_at: _, ...value } = row
+  return serialize(value as unknown as T)
 }
 
 async function taskCandidates(
@@ -91,28 +91,23 @@ async function taskCandidates(
 function taskPage(stream: TaskStream, selected: TaskCursorRow[]) {
   const page = emptyPage()
   if (stream === 'tasks')
-    page.tasks = selected.map(
-      (row) => serializeRow(row as CursorRow<HostedTask>, hostedTaskPullSerializers.hub_task).value,
+    page.tasks = selected.map((row) =>
+      serializeRow(row as CursorRow<HostedTask>, hostedTaskPullSerializers.hub_task),
     )
   if (stream === 'comments')
-    page.comments = selected.map(
-      (row) =>
-        serializeRow(row as CursorRow<HostedComment>, hostedTaskPullSerializers.hub_task_comment)
-          .value,
+    page.comments = selected.map((row) =>
+      serializeRow(row as CursorRow<HostedComment>, hostedTaskPullSerializers.hub_task_comment),
     )
   if (stream === 'documents')
-    page.documents = selected.map(
-      (row) =>
-        serializeRow(row as CursorRow<HostedDocument>, hostedTaskPullSerializers.hub_task_document)
-          .value,
+    page.documents = selected.map((row) =>
+      serializeRow(row as CursorRow<HostedDocument>, hostedTaskPullSerializers.hub_task_document),
     )
   if (stream === 'statusEvents')
-    page.statusEvents = selected.map(
-      (row) =>
-        serializeRow(
-          row as CursorRow<HostedStatusEvent>,
-          hostedTaskPullSerializers.hub_task_status_event,
-        ).value,
+    page.statusEvents = selected.map((row) =>
+      serializeRow(
+        row as CursorRow<HostedStatusEvent>,
+        hostedTaskPullSerializers.hub_task_status_event,
+      ),
     )
   return page
 }
@@ -128,27 +123,16 @@ export async function listHostedTasks(
     const parentId = filters.parent ? await taskIdFor(tx, identity.spaceId, filters.parent) : null
 
     for (;;) {
-      const position = streams.indexOf(cursor.stream)
       const candidates = await taskCandidates(tx, identity, filters, cursor, parentId, limit)
-      if (!candidates.length && position < streams.length - 1) {
-        cursor = {
-          ...cursor,
-          stream: streams[position + 1]!,
-          at: cursor.since,
-          id: '00000000-0000-0000-0000-000000000000',
-        }
+      const result = hostedPullPage(streams, cursor, candidates, limit)
+      if (result.kind === 'advance') {
+        cursor = result.cursor
         continue
       }
-
-      const selected = candidates.slice(0, limit)
-      const last = selected.at(-1)
-      const next = last
-        ? { ...cursor, at: hostedPullCursorAt(last.cursor_at), id: last.id }
-        : cursor
       return {
-        ...taskPage(cursor.stream, selected),
-        cursor: encodeHostedPullCursor(next),
-        more: candidates.length > limit || position < streams.length - 1,
+        ...taskPage(cursor.stream, result.rows),
+        cursor: encodeHostedPullCursor(result.cursor),
+        more: result.more,
       }
     }
   })

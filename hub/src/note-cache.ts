@@ -3,7 +3,12 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db } from './db.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import { persistInstallBinding } from './install-binding.ts'
-import { hostedGetNote, hostedNoteChanges, type NoteClientOptions } from './note-client.ts'
+import {
+  hostedGetNote,
+  hostedNoteChanges,
+  isMissingHostedNote,
+  type NoteClientOptions,
+} from './note-client.ts'
 import { adoptPendingHostedRow } from './outbox.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
 import { taskRecordIdFor } from './task-identity.ts'
@@ -121,6 +126,7 @@ export async function completeAcknowledgementNotes(
   noteChanges: readonly NoteParentChange[],
   acknowledgements: readonly HostedAcknowledgement[],
   options: NoteClientOptions,
+  skipMissingParents = false,
 ) {
   const finalNoteChanges = new Map<string, NoteParentBatchState>(
     noteChanges.map((note) => [note.id, note.deleted ? 'deleted' : 'live']),
@@ -133,7 +139,12 @@ export async function completeAcknowledgementNotes(
     const batchState = finalNoteChanges.get(acknowledgement.note_id)
     if (batchState !== undefined) continue
     if (db().query('SELECT 1 FROM note WHERE record_id=?').get(acknowledgement.note_id)) continue
-    fetched.unshift(await hostedGetNote(acknowledgement.note_id, options))
+    try {
+      fetched.unshift(await hostedGetNote(acknowledgement.note_id, options))
+    } catch (cause) {
+      if (!skipMissingParents || !isMissingHostedNote(cause)) throw cause
+      continue
+    }
     completed.add(acknowledgement.note_id)
   }
   return fetched
@@ -146,6 +157,7 @@ export async function hostedNotePullRows(cursor: string | null, options: NoteCli
       changes.notes.map((note) => ({ id: note.id, deleted: Boolean(note.deleted_at) })),
       changes.acknowledgements,
       options,
+      true,
     )),
   )
   return changes

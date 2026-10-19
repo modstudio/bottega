@@ -8,8 +8,8 @@ import {
   decodeHostedPullCursor,
   encodeHostedPullCursor,
   type HostedPullCursor,
-  hostedPullCursorAt,
   hostedPullLimit,
+  hostedPullPage,
 } from './hosted-pull-page.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 
@@ -97,26 +97,16 @@ export async function listHostedNotes(
     const limit = hostedPullLimit(filters.limit)
     let cursor = decodeHostedPullCursor(filters.cursor, streams, filters.updatedSince)
     for (;;) {
-      const position = streams.indexOf(cursor.stream)
       const candidates = await noteCandidates(tx, identity, filters, cursor, limit)
-      if (!candidates.length && position < streams.length - 1) {
-        cursor = {
-          ...cursor,
-          stream: streams[position + 1]!,
-          at: cursor.since,
-          id: '00000000-0000-0000-0000-000000000000',
-        }
+      const result = hostedPullPage(streams, cursor, candidates, limit)
+      if (result.kind === 'advance') {
+        cursor = result.cursor
         continue
       }
-      const selected = candidates.slice(0, limit)
-      const last = selected.at(-1)
-      const next = last
-        ? { ...cursor, at: hostedPullCursorAt(last.cursor_at), id: last.id }
-        : cursor
       return {
-        ...notePage(cursor.stream, selected),
-        cursor: encodeHostedPullCursor(next),
-        more: candidates.length > limit || position < streams.length - 1,
+        ...notePage(cursor.stream, result.rows),
+        cursor: encodeHostedPullCursor(result.cursor),
+        more: result.more,
       }
     }
   })

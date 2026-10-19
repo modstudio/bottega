@@ -15,8 +15,6 @@ import type {
 import { isSameStatusEvent, statusEventIdentity } from './status-event-identity.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
 
-export { listHostedTasks } from './hosted-task-list.ts'
-
 export type HostedTask = PushedTask & { newly_assigned?: boolean }
 export type HostedComment = PushedComment
 export type HostedDocument = PushedDocument

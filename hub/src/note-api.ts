@@ -8,11 +8,11 @@ import {
   recordSpaceAccessDecision,
   recordSpaceRequestDecision,
 } from '../../shared/record-space-request.ts'
+import { listHostedNotes } from './hosted-note-list.ts'
 import {
   createHostedNote,
   getHostedNote,
   hostedNoteCounts,
-  listHostedNotes,
   mirrorHostedNotes,
   promoteHostedNote,
   reapHostedNotes,

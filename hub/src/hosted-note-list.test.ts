@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import { PLATFORM_NAME } from '../../shared/brand.ts'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
-import { listHostedNotes } from './hosted-notes.ts'
+import { listHostedNotes } from './hosted-note-list.ts'
 
 const spaceId = '01990000-0000-7000-8000-000000001610'
 const userId = '01990000-0000-7000-8000-000000001611'
