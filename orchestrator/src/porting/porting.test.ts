@@ -185,6 +185,48 @@ describe('porting data model', () => {
       '2026-09-04T00:00:00.000Z',
     )
   })
+  test('ledger listings omit cached refs for projects not registered locally', () => {
+    const space = newRecordId()
+    const registeredTargetId = newRecordId()
+    upsertProject({
+      recordId: registeredTargetId,
+      name: 'registered-ledger-target',
+      path: '/w/registered-ledger-target',
+      settings: {},
+    })
+    rememberProjectSpace(db(), 'registered-ledger-target', space)
+    applyPortCatalogueRow(db(), 'port_ref', {
+      id: newRecordId(),
+      spaceId: space,
+      taskKey: 'REG-1',
+      targetProjectId: registeredTargetId,
+      note: 'registered target',
+      createdAt: '2026-09-03T00:00:00.000Z',
+      resolvedAt: null,
+      deletedAt: null,
+      version: 1,
+      updatedAt: '2026-09-03T00:00:00.000Z',
+    })
+    applyPortCatalogueRow(db(), 'port_ref', {
+      id: newRecordId(),
+      spaceId: space,
+      taskKey: 'UNREGISTERED-1',
+      targetProjectId: newRecordId(),
+      note: 'unregistered target',
+      createdAt: '2026-09-03T00:00:00.000Z',
+      resolvedAt: null,
+      deletedAt: null,
+      version: 1,
+      updatedAt: '2026-09-03T00:00:00.000Z',
+    })
+
+    expect(listLedgerRefs()).toEqual([
+      expect.objectContaining({
+        task_key: 'REG-1',
+        target_project_record_id: registeredTargetId,
+      }),
+    ])
+  })
   test('retires doctrine without freeing its stable number', () => {
     addDoctrineRuleLocal(
       7,
