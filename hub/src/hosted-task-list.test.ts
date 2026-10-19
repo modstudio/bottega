@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
+import { PLATFORM_NAME } from '../../shared/brand.ts'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
 import { listHostedTasks } from './hosted-tasks.ts'
 
@@ -14,7 +15,7 @@ beforeAll(async () => {
   database = await createHostedRecordFixture({ spaceId, userId })
   const tasks = Array.from({ length: 5 }, (_, index) => {
     const taskId = id(1512 + index)
-    return `('${taskId}','${spaceId}','bottega','DEV-${index + 1}','bottega','Task ${index + 1}',
+    return `('${taskId}','${spaceId}','${PLATFORM_NAME}','DEV-${index + 1}','${PLATFORM_NAME}','Task ${index + 1}',
       'local','${at}','${at}','${at}','${at}')`
   }).join(',')
   await database.exec(`
@@ -25,13 +26,13 @@ beforeAll(async () => {
     INSERT INTO hub_task_comment
       (id,space_id,project_name,task_key,task_id,body,created_at,updated_at)
     VALUES
-      ('${id(1520)}','${spaceId}','bottega','DEV-1','${id(1512)}','Comment 1','${at}','${at}'),
-      ('${id(1521)}','${spaceId}','bottega','DEV-2','${id(1513)}','Comment 2','${at}','${at}');
+      ('${id(1520)}','${spaceId}','${PLATFORM_NAME}','DEV-1','${id(1512)}','Comment 1','${at}','${at}'),
+      ('${id(1521)}','${spaceId}','${PLATFORM_NAME}','DEV-2','${id(1513)}','Comment 2','${at}','${at}');
     INSERT INTO hub_task_document
       (id,space_id,project_name,task_key,task_id,number,role,title,body,version,created_at,updated_at)
     VALUES
-      ('${id(1530)}','${spaceId}','bottega','DEV-1','${id(1512)}',1,'handoff','Doc 1','Body','v1','${at}','${at}'),
-      ('${id(1531)}','${spaceId}','bottega','DEV-2','${id(1513)}',1,'handoff','Doc 2','Body','v1','${at}','${at}');
+      ('${id(1530)}','${spaceId}','${PLATFORM_NAME}','DEV-1','${id(1512)}',1,'handoff','Doc 1','Body','v1','${at}','${at}'),
+      ('${id(1531)}','${spaceId}','${PLATFORM_NAME}','DEV-2','${id(1513)}',1,'handoff','Doc 2','Body','v1','${at}','${at}');
     SET ROLE record_actor;
   `)
 })

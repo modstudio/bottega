@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
+import { PLATFORM_NAME } from '../../shared/brand.ts'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
 import { listHostedNotes } from './hosted-notes.ts'
 
@@ -15,16 +16,16 @@ beforeAll(async () => {
   await database.exec(`
     RESET ROLE;
     INSERT INTO project(id,space_id,name,created_at)
-    VALUES ('${projectId}','${spaceId}','bottega','${at}');
+    VALUES ('${projectId}','${spaceId}','${PLATFORM_NAME}','${at}');
     INSERT INTO hub_note
       (id,space_id,project_name,project_id,number,project,text,anchors,sightings,created_at,last_seen_at,updated_at)
     VALUES
-      ('${id(1613)}','${spaceId}','bottega','${projectId}',1,'bottega','One','[]',1,'${at}','${at}','${at}'),
-      ('${id(1614)}','${spaceId}','bottega','${projectId}',2,'bottega','Two','[]',1,'${at}','${at}','${at}'),
-      ('${id(1615)}','${spaceId}','bottega','${projectId}',3,'bottega','Three','[]',1,'${at}','${at}','${at}');
+      ('${id(1613)}','${spaceId}','${PLATFORM_NAME}','${projectId}',1,'${PLATFORM_NAME}','One','[]',1,'${at}','${at}','${at}'),
+      ('${id(1614)}','${spaceId}','${PLATFORM_NAME}','${projectId}',2,'${PLATFORM_NAME}','Two','[]',1,'${at}','${at}','${at}'),
+      ('${id(1615)}','${spaceId}','${PLATFORM_NAME}','${projectId}',3,'${PLATFORM_NAME}','Three','[]',1,'${at}','${at}','${at}');
     INSERT INTO hub_note_acknowledgement
       (id,space_id,project_name,project_id,note_id,session_id,acknowledged_at,sightings,created_at,updated_at)
-    VALUES ('${id(1616)}','${spaceId}','bottega','${projectId}','${id(1613)}','session','${at}',1,'${at}','${at}');
+    VALUES ('${id(1616)}','${spaceId}','${PLATFORM_NAME}','${projectId}','${id(1613)}','session','${at}',1,'${at}','${at}');
     INSERT INTO seq(space_id,project_id,name,next)
     VALUES ('${spaceId}','${projectId}','note',4);
     SET ROLE record_actor;
@@ -63,5 +64,7 @@ test('a first note pull bounds notes, acknowledgements, and counters in ordered 
     id(1615),
   ])
   expect(pages.flatMap((page) => page.acknowledgements)).toHaveLength(1)
-  expect(pages.flatMap((page) => page.projectCounters)).toEqual([{ project: 'bottega', next: 4 }])
+  expect(pages.flatMap((page) => page.projectCounters)).toEqual([
+    { project: PLATFORM_NAME, next: 4 },
+  ])
 })
