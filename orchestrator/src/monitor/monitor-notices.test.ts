@@ -99,7 +99,7 @@ test('heartbeat delivery emits ordinary hosted beside local once with a failed-r
   })
   const delivery = await claimMonitorNoticesWithHosted(session)
   expect(delivery.notices.map((row) => row.noticeId)).toEqual([
-    `board:${local.id}`,
+    `board:${local.number}`,
     `board:${hosted.id}`,
   ])
   expect(delivery.warning).toContain('monitor refresh offline')
@@ -201,11 +201,11 @@ test('an unadopted mixed condition and local-board acknowledgement succeeds with
   })
 
   await expect(
-    markMonitorNoticesDeliveredWithHosted(session, [
-      `condition:${condition}`,
-      `board:${local.id}`,
-      'board:not-an-id',
-    ]),
+    markMonitorNoticesDeliveredWithHosted(
+      session,
+      [`condition:${condition}`, `board:${local.number}`, 'board:not-an-id'],
+      new Date().toISOString(),
+    ),
   ).resolves.toBeUndefined()
   expect(hostedCalls).toBe(0)
   expect(
@@ -215,7 +215,9 @@ test('an unadopted mixed condition and local-board acknowledgement succeeds with
   })
   expect(
     db()
-      .query('SELECT delivered_at FROM board_receipt WHERE message_id=? AND reader_session=?')
-      .get(local.id, session),
+      .query(
+        'SELECT delivered_at FROM board_receipt WHERE message_record_id=? AND reader_session=?',
+      )
+      .get(local.recordId, session),
   ).toEqual({ delivered_at: expect.any(String) })
 })

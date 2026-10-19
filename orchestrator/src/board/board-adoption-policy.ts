@@ -2,7 +2,7 @@
 /** Pure candidate selection, ordering, and completion decisions for hosted adoption. */
 export type LocalKind = 'notice' | 'question' | 'reply' | 'claim'
 export type LedgerState = 'pending' | 'uploaded' | 'refused'
-export type AdoptionCandidate = { kind: LocalKind; id: number; createdAt: string }
+export type AdoptionCandidate = { kind: LocalKind; recordId: string; createdAt: string }
 export type AdoptionCandidateFact = {
   candidate: AdoptionCandidate
   live: boolean
@@ -18,7 +18,7 @@ function orderCandidates(rows: AdoptionCandidate[]): AdoptionCandidate[] {
     (left, right) =>
       phase(left) - phase(right) ||
       left.createdAt.localeCompare(right.createdAt) ||
-      left.id - right.id,
+      left.recordId.localeCompare(right.recordId),
   )
 }
 

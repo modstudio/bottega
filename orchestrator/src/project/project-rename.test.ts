@@ -168,20 +168,33 @@ function seedNameMirrors(projectId: string, otherId: string): void {
      (record_id,project,project_record_id,subject_kind,subject_value,holder_kind,duration_ms,taken_at,renewed_at,lapses_at)
      VALUES (?,?,?,?,?,?,?,?,?,?)`,
   ).run(id(), OLD, projectId, 'task', 'DEV-1', 'operator', 1, 't', 't', 't')
+  const messageRecordId = id()
   d.query(
     `INSERT INTO board_message
-     (record_id,kind,author_kind,body,ack_required,created_at,expires_at,audience,title,author_project)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`,
-  ).run(id(), 'notice', 'operator', 'body', 0, 't', 'later', 'architects', 'title', OLD)
+     (record_id,number,kind,author_kind,body,ack_required,created_at,expires_at,audience,title,author_project)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+  ).run(
+    messageRecordId,
+    1,
+    'notice',
+    'operator',
+    'body',
+    0,
+    't',
+    'later',
+    'architects',
+    'title',
+    OLD,
+  )
   d.query(
     `INSERT INTO board_reach_delivery
-     (record_id,message_source,message_id,reader_session,reader_project,delivery_point,blocked_stop,
+     (record_id,message_source,message_record_id,reader_session,reader_project,delivery_point,blocked_stop,
       audience,acknowledgement_required,posted_at,session_started_at,posting_timing,concern,recorded_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   ).run(
     id(),
     'local',
-    '1',
+    messageRecordId,
     'sess',
     OLD,
     'session-start',

@@ -8,17 +8,20 @@ import { db } from '../database/db.ts'
 import { projects } from '../project/projects.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
 import { type Audience, parseAudience } from './board-policy.ts'
-import type { MessageRow } from './board-store.ts'
+import { BOARD_MESSAGE_COLUMNS, type MessageRow } from './board-store.ts'
 
 export const BOARD_REACH_DEFAULT_HOURS = 24
 export const BOARD_REACH_MAX_HOURS = 7 * 24
 export const BOARD_REACH_RETENTION_HOURS = 30 * 24
 
+const BOARD_REACH_DELIVERY_COLUMNS =
+  'record_id,message_source,message_record_id,reader_session,reader_project,delivery_point,blocked_stop,audience,acknowledgement_required,purpose,posted_at,expires_at,session_started_at,posting_timing,concern,recorded_at'
+
 export type BoardDeliveryPoint = 'session-start' | 'after-tool-call' | 'stop' | 'heartbeat-monitor'
 type BoardReachConcern = 'concerned' | 'not-concerned' | 'unqualified'
 
 export type BoardReachRow = {
-  id: number
+  recordId: string
   messageSource: 'local' | 'hosted'
   messageId: string
   readerSession: string
@@ -113,13 +116,13 @@ function projectConcern(project: string | null, readerProject: string): BoardRea
 
 function localMessageFacts(id: string, database: Database): MessageFacts | null {
   const row = database
-    .query('SELECT * FROM board_message WHERE id=?')
-    .get(Number(id)) as MessageRow | null
+    .query(`SELECT ${BOARD_MESSAGE_COLUMNS} FROM board_message WHERE record_id=?`)
+    .get(id) as MessageRow | null
   const root =
-    row?.kind === 'reply' && row.thread_root_id !== null
+    row?.kind === 'reply' && row.thread_root_record_id !== null
       ? (database
-          .query('SELECT * FROM board_message WHERE id=?')
-          .get(row.thread_root_id) as MessageRow | null)
+          .query(`SELECT ${BOARD_MESSAGE_COLUMNS} FROM board_message WHERE record_id=?`)
+          .get(row.thread_root_record_id) as MessageRow | null)
       : row
   return row && root?.audience
     ? {
@@ -193,11 +196,11 @@ export function recordBoardReach(input: PreparedBoardReach, database: Database):
   database
     .query(
       `INSERT INTO board_reach_delivery
-       (emission_id,message_source,message_id,reader_session,reader_project,delivery_point,blocked_stop,
+       (emission_id,message_source,message_record_id,reader_session,reader_project,delivery_point,blocked_stop,
         audience,acknowledgement_required,purpose,posted_at,expires_at,session_started_at,posting_timing,
         concern,recorded_at,record_id)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-       ON CONFLICT(emission_id,message_source,message_id) WHERE emission_id IS NOT NULL DO NOTHING`,
+       ON CONFLICT(emission_id,message_source,message_record_id) WHERE emission_id IS NOT NULL DO NOTHING`,
     )
     .run(
       input.emissionId,
@@ -310,14 +313,16 @@ function boardMessageTitle(
 ): string | null {
   if (source === 'local') {
     const row = database
-      .query('SELECT title,thread_root_id FROM board_message WHERE id=?')
-      .get(Number(id)) as { title: string | null; thread_root_id: number | null } | null
+      .query('SELECT title,thread_root_record_id FROM board_message WHERE record_id=?')
+      .get(id) as { title: string | null; thread_root_record_id: string | null } | null
     if (!row) return null
     if (row.title) return row.title
-    if (row.thread_root_id === null) return null
+    if (row.thread_root_record_id === null) return null
     return (
       (
-        database.query('SELECT title FROM board_message WHERE id=?').get(row.thread_root_id) as {
+        database
+          .query('SELECT title FROM board_message WHERE record_id=?')
+          .get(row.thread_root_record_id) as {
           title: string | null
         } | null
       )?.title ?? null
@@ -337,9 +342,9 @@ function boardMessageTitle(
 }
 
 const reachRow = (row: Record<string, unknown>): BoardReachRow => ({
-  id: Number(row.id),
+  recordId: String(row.record_id),
   messageSource: row.message_source as 'local' | 'hosted',
-  messageId: String(row.message_id),
+  messageId: String(row.message_record_id),
   readerSession: String(row.reader_session),
   readerProject: String(row.reader_project),
   deliveryPoint: row.delivery_point as BoardDeliveryPoint,
@@ -369,7 +374,9 @@ export function boardReachReport(
     .get(windowStart) as { count: number }
   const rows = (
     database
-      .query('SELECT * FROM board_reach_delivery WHERE recorded_at>=? ORDER BY recorded_at,id')
+      .query(
+        `SELECT ${BOARD_REACH_DELIVERY_COLUMNS} FROM board_reach_delivery WHERE recorded_at>=? ORDER BY recorded_at,record_id`,
+      )
       .all(windowStart) as Record<string, unknown>[]
   ).map(reachRow)
   const totals = countBoardReach(rows)

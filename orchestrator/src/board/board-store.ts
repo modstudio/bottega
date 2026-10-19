@@ -8,6 +8,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { classifyCaller } from '../caller-classification.ts'
 import { db, SESSION_LIVE_MS, type writableDb } from '../database/db.ts'
+import { nextEntityNumber } from '../database/entity-number.ts'
 import { projectAt, projects } from '../project/projects.ts'
 import { claimIsLive } from './board-claim-policy.ts'
 import { boardContext, boardRunContext } from './board-context.ts'
@@ -47,7 +48,13 @@ export type BoardOrigin = {
   project: string | null
   runId: string | null
 }
-export type PostNoticeResult = { id: number; dropped: boolean; reached: number; warning?: string }
+export type PostNoticeResult = {
+  recordId: string
+  number: number
+  dropped: boolean
+  reached: number
+  warning?: string
+}
 export class BoardPostRateLimitError extends Error {
   constructor() {
     super('board post rate limit reached; retry after the ten-minute author window')
@@ -65,7 +72,8 @@ export type PostNoticeInput = SenderBoardTags & {
   suggestingRunId?: string
 }
 export type MessageRow = {
-  id: number
+  record_id: string
+  number: number
   kind: string
   purpose: BoardPurpose | null
   author_kind: string
@@ -81,17 +89,19 @@ export type MessageRow = {
   author_harness: string | null
   author_project: string | null
   author_run_record_id: string | null
-  thread_root_id: number | null
-  accepted_reply_id: number | null
+  thread_root_record_id: string | null
+  accepted_reply_record_id: string | null
   accepted_by: string | null
   accepted_at: string | null
   note_record_id: string | null
   note_label: string | null
   note_pending_error: string | null
   note_filing_started_at: string | null
-  claim_id: number | null
-  record_id: string
+  claim_record_id: string | null
 }
+
+export const BOARD_MESSAGE_COLUMNS =
+  'record_id,number,kind,purpose,author_kind,author_session,audience,title,body,ack_required,ack_deadline,expires_at,created_at,withdrawn_at,author_harness,author_project,author_run_record_id,thread_root_record_id,accepted_reply_record_id,accepted_by,accepted_at,note_record_id,note_label,note_pending_error,note_filing_started_at,claim_record_id'
 
 function rootPurpose(
   kind: 'notice' | 'question',
@@ -396,8 +406,19 @@ function runOwnerSession(runId: string, database: ReturnType<typeof writableDb>)
   return row?.session_id ?? null
 }
 
-function postNoticeResult(id: number, dropped: boolean, reached: number): PostNoticeResult {
-  return { id, dropped, reached, ...(reached === 0 ? { warning: NO_REACH_WARNING } : {}) }
+function postNoticeResult(
+  recordId: string,
+  number: number,
+  dropped: boolean,
+  reached: number,
+): PostNoticeResult {
+  return {
+    recordId,
+    number,
+    dropped,
+    reached,
+    ...(reached === 0 ? { warning: NO_REACH_WARNING } : {}),
+  }
 }
 
 function refreshPostingPresence(
@@ -458,7 +479,7 @@ export function authorWindowDecision(
 }
 
 function recordRecipients(
-  messageId: number,
+  messageRecordId: string,
   audience: string,
   kind: 'notice' | 'question',
   clock: number,
@@ -476,11 +497,57 @@ function recordRecipients(
   ).filter((reader) => kind !== 'question' || !reader.startsWith('run:'))
   const add = database.query(
     `INSERT OR IGNORE INTO board_receipt
-     (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
-     VALUES (?,?,1,NULL,NULL,?)`,
+     (record_id,message_record_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
+     VALUES (?,?,?,1,NULL,NULL)`,
   )
-  for (const reader of readers) add.run(messageId, reader, newRecordId())
+  for (const reader of readers) add.run(newRecordId(), messageRecordId, reader)
   return readers.length
+}
+
+function duplicateRoot(
+  database: ReturnType<typeof writableDb>,
+  input: {
+    kind: 'notice' | 'question'
+    purpose: BoardPurpose
+    actor: BoardActor
+    suggestingRunId: string | null
+    project: string | null
+    audience: string
+    title: string
+    body: string
+    clock: number
+    senderTags: BoardTag[]
+  },
+): { record_id: string; number: number } | undefined {
+  const candidates = database
+    .query(
+      `SELECT record_id,number FROM board_message
+       WHERE kind=? AND purpose=? AND author_kind=? AND author_session IS ? AND author_run_record_id IS ?
+         AND author_project_record_id IS (SELECT record_id FROM project WHERE name IS ?)
+         AND audience=? AND title=? AND body=? AND created_at>=?
+       ORDER BY created_at DESC,number DESC`,
+    )
+    .all(
+      input.kind,
+      input.purpose,
+      input.actor.kind,
+      input.actor.session,
+      input.suggestingRunId,
+      input.project,
+      input.audience,
+      input.title,
+      input.body,
+      new Date(input.clock - BOARD_DUPLICATE_WINDOW_MS).toISOString(),
+    ) as { record_id: string; number: number }[]
+  const senderTagsKey = senderTagKey(input.senderTags)
+  return candidates.find((candidate) => {
+    const storedTags = database
+      .query(
+        `SELECT kind,value FROM board_message_tag WHERE message_record_id=? AND origin='sender'`,
+      )
+      .all(candidate.record_id) as Pick<BoardTag, 'kind' | 'value'>[]
+    return senderTagKey(storedTags) === senderTagsKey
+  })
 }
 
 export function insertRootMessage(
@@ -509,44 +576,28 @@ export function insertRootMessage(
     throw new Error(
       `ack deadline ${deadlineMs}ms is later than expiry ${expiresMs}ms; set --deadline no later than --expires`,
     )
-  const duplicateCandidates = database
-    .query(
-      `SELECT id FROM board_message
-       WHERE kind=? AND purpose=? AND author_kind=? AND author_session IS ? AND author_run_record_id IS ?
-         AND author_project_record_id IS
-             (SELECT record_id FROM project WHERE name IS ?)
-         AND audience=? AND title=? AND body=?
-         AND created_at>=? ORDER BY id DESC`,
-    )
-    .all(
-      kind,
-      purpose,
-      actor.kind,
-      actor.session,
-      input.suggestingRunId ?? null,
-      origin.project,
-      audienceExpression,
-      input.title,
-      input.body,
-      new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString(),
-    ) as { id: number }[]
-  const senderTagsKey = senderTagKey(senderTags)
-  const duplicate = duplicateCandidates.find((candidate) => {
-    const storedTags = database
-      .query(`SELECT kind,value FROM board_message_tag WHERE message_id=? AND origin='sender'`)
-      .all(candidate.id) as Pick<BoardTag, 'kind' | 'value'>[]
-    return senderTagKey(storedTags) === senderTagsKey
+  const duplicate = duplicateRoot(database, {
+    kind,
+    purpose,
+    actor,
+    suggestingRunId: input.suggestingRunId ?? null,
+    project: origin.project,
+    audience: audienceExpression,
+    title: input.title,
+    body: input.body,
+    clock,
+    senderTags,
   })
   const decision = authorWindowDecision(actor, clock, Boolean(duplicate), database)
   if (decision === 'drop-duplicate') {
     const reached = (
       database
         .query(
-          'SELECT COUNT(*) count FROM board_receipt WHERE message_id=? AND audience_at_posting=1',
+          'SELECT COUNT(*) count FROM board_receipt WHERE message_record_id=? AND audience_at_posting=1',
         )
-        .get(duplicate!.id) as { count: number }
+        .get(duplicate!.record_id) as { count: number }
     ).count
-    return postNoticeResult(duplicate!.id, true, reached)
+    return postNoticeResult(duplicate!.record_id, duplicate!.number, true, reached)
   }
   if (decision === 'rate-limited') throw new BoardPostRateLimitError()
   const createdAt = new Date(clock).toISOString()
@@ -562,7 +613,7 @@ export function insertRootMessage(
       )?.current_task_key ?? null)
     : null
   const tags = [...senderTags, ...inferredBoardTags(input.body, senderTags, currentTaskKey)]
-  const id = insertRootRow(
+  const inserted = insertRootRow(
     kind,
     purpose,
     actor,
@@ -577,7 +628,7 @@ export function insertRootMessage(
     database,
   )
   const reached = recordRecipients(
-    id,
+    inserted.recordId,
     audienceExpression,
     kind,
     clock,
@@ -585,7 +636,7 @@ export function insertRootMessage(
     origin.project,
     database,
   )
-  return postNoticeResult(id, false, reached)
+  return postNoticeResult(inserted.recordId, inserted.number, false, reached)
 }
 
 function insertRootRow(
@@ -601,50 +652,55 @@ function insertRootRow(
   createdAt: string,
   tags: BoardTag[],
   database: ReturnType<typeof writableDb>,
-): number {
-  const id = Number(
-    database
-      .query(
-        `INSERT INTO board_message
-         (kind,purpose,author_kind,author_session,author_run_record_id,author_harness,author_project,
+): { recordId: string; number: number } {
+  const recordId = newRecordId()
+  const number = nextEntityNumber(database, 'board_message')
+  database
+    .query(
+      `INSERT INTO board_message
+         (record_id,number,kind,purpose,author_kind,author_session,author_run_record_id,author_harness,author_project,
           author_project_record_id,audience,title,body,
-          ack_required,ack_deadline,expires_at,created_at,withdrawn_at,record_id)
-         VALUES (?,?,?,?,?,?,?,(SELECT record_id FROM project WHERE name IS ?),?,?,?,?,?,?,?,NULL,?)`,
-      )
-      .run(
-        kind,
-        purpose,
-        actor.kind,
-        actor.session,
-        input.suggestingRunId ?? null,
-        origin.harness,
-        origin.project,
-        origin.project,
-        audienceExpression,
-        input.title,
-        input.body,
-        ackRequired ? 1 : 0,
-        deadline,
-        expiresAt,
-        createdAt,
-        newRecordId(),
-      ).lastInsertRowid,
-  )
+          ack_required,ack_deadline,expires_at,created_at,withdrawn_at)
+         VALUES (?,?,?,?,?,?,?,?,?,(SELECT record_id FROM project WHERE name IS ?),?,?,?,?,?,?,?,NULL)`,
+    )
+    .run(
+      recordId,
+      number,
+      kind,
+      purpose,
+      actor.kind,
+      actor.session,
+      input.suggestingRunId ?? null,
+      origin.harness,
+      origin.project,
+      origin.project,
+      audienceExpression,
+      input.title,
+      input.body,
+      ackRequired ? 1 : 0,
+      deadline,
+      expiresAt,
+      createdAt,
+    )
   const addTag = database.query(
-    `INSERT OR IGNORE INTO board_message_tag (message_id,kind,value,origin,record_id) VALUES (?,?,?,?,?)`,
+    `INSERT OR IGNORE INTO board_message_tag (record_id,message_record_id,kind,value,origin) VALUES (?,?,?,?,?)`,
   )
-  for (const tag of tags) addTag.run(id, tag.kind, tag.value, tag.origin, newRecordId())
-  return id
+  for (const tag of tags) addTag.run(newRecordId(), recordId, tag.kind, tag.value, tag.origin)
+  return { recordId, number }
 }
 
 export function messageRows(database = db()): MessageRow[] {
-  return database.query('SELECT * FROM board_message ORDER BY id').all() as MessageRow[]
+  return database
+    .query(`SELECT ${BOARD_MESSAGE_COLUMNS} FROM board_message ORDER BY number`)
+    .all() as MessageRow[]
 }
 
-export function messageTags(messageId: number, database = db()): BoardTag[] {
+export function messageTags(messageRecordId: string, database = db()): BoardTag[] {
   return database
-    .query('SELECT kind,value,origin FROM board_message_tag WHERE message_id=? ORDER BY rowid')
-    .all(messageId) as BoardTag[]
+    .query(
+      'SELECT kind,value,origin FROM board_message_tag WHERE message_record_id=? ORDER BY rowid',
+    )
+    .all(messageRecordId) as BoardTag[]
 }
 
 export function addressed(
@@ -658,7 +714,7 @@ export function addressed(
     recipients(
       message.audience,
       clock,
-      messageTags(message.id, database),
+      messageTags(message.record_id, database),
       database,
       presenceFacts(database, clock),
       message.author_project,
@@ -668,7 +724,9 @@ export function addressed(
 
 export function rowIsLive(message: MessageRow, clock: number, database = db()): boolean {
   if (message.kind === 'reply') {
-    const root = messageRows(database).find((candidate) => candidate.id === message.thread_root_id)
+    const root = messageRows(database).find(
+      (candidate) => candidate.record_id === message.thread_root_record_id,
+    )
     return root ? rowIsLive(root, clock, database) : false
   }
   if (message.expires_at === null) return false
@@ -681,11 +739,11 @@ export function rowIsLive(message: MessageRow, clock: number, database = db()): 
   )
 }
 
-export function hasReceipt(messageId: number, reader: string, database = db()): boolean {
+export function hasReceipt(messageRecordId: string, reader: string, database = db()): boolean {
   return Boolean(
     database
-      .query('SELECT 1 FROM board_receipt WHERE message_id=? AND reader_session=?')
-      .get(messageId, reader),
+      .query('SELECT 1 FROM board_receipt WHERE message_record_id=? AND reader_session=?')
+      .get(messageRecordId, reader),
   )
 }
 

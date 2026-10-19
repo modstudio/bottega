@@ -113,7 +113,7 @@ test('board purpose migration backfills existing questions as requests and notic
     insert.run('notice', 'Notice')
     insert.run('question', 'Question')
     expect(applyMigrations(database)).toEqual(pendingMigrationsFrom('0103_board_message_purpose'))
-    expect(database.query('SELECT kind,purpose FROM board_message ORDER BY id').all()).toEqual([
+    expect(database.query('SELECT kind,purpose FROM board_message ORDER BY number').all()).toEqual([
       { kind: 'notice', purpose: 'information' },
       { kind: 'question', purpose: 'request' },
     ])
@@ -457,7 +457,9 @@ test('board worker suggestion migration preserves messages, receipts, and tags',
     )
     expect(
       database
-        .query('SELECT kind,author_kind,author_run_record_id,title FROM board_message WHERE id=?')
+        .query(
+          'SELECT kind,author_kind,author_run_record_id,title FROM board_message WHERE number=?',
+        )
         .get(message.id),
     ).toEqual({
       kind: 'notice',
@@ -520,7 +522,7 @@ test('board thread migration preserves existing messages, receipts, and tags', (
     expect(
       database
         .query(
-          `SELECT kind,title,thread_root_id,accepted_reply_id,note_record_id,note_label,
+          `SELECT kind,title,thread_root_record_id,accepted_reply_record_id,note_record_id,note_label,
                   note_filing_started_at
            FROM board_message`,
         )
@@ -528,8 +530,8 @@ test('board thread migration preserves existing messages, receipts, and tags', (
     ).toEqual({
       kind: 'notice',
       title: 'Title',
-      thread_root_id: null,
-      accepted_reply_id: null,
+      thread_root_record_id: null,
+      accepted_reply_record_id: null,
       note_record_id: null,
       note_label: null,
       note_filing_started_at: null,
@@ -571,10 +573,10 @@ test('board claim migration preserves existing board rows and adds their nullabl
       )
       .run()
     expect(applyMigrations(database)).toEqual(pendingMigrationsFrom('0078_board_claims'))
-    expect(database.query('SELECT title,body,claim_id FROM board_message').get()).toEqual({
+    expect(database.query('SELECT title,body,claim_record_id FROM board_message').get()).toEqual({
       title: 'Title',
       body: 'Body',
-      claim_id: null,
+      claim_record_id: null,
     })
     expect(
       database

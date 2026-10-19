@@ -47,7 +47,7 @@ test('board status CLI refuses worker callers', async () => {
   process.env.ORCH_RUN_ID = 'cli-board-worker'
   try {
     await expect(
-      program.parseAsync(['node', 'orch', 'board', 'status', String(posted.id)]),
+      program.parseAsync(['node', 'orch', 'board', 'status', String(posted.recordId)]),
     ).rejects.toThrow(/workers cannot use the architect notice board/)
   } finally {
     delete process.env.ORCH_RUN_ID
@@ -99,7 +99,7 @@ test('suggestion post CLI collects path overrides and preserves omitted suggesti
       'board',
       'suggestion',
       'post',
-      String(overridden.id),
+      String(overridden.recordId),
       '--audience',
       'operator',
       '--path',
@@ -109,7 +109,7 @@ test('suggestion post CLI collects path overrides and preserves omitted suggesti
       db()
         .query(
           `SELECT value FROM board_message_tag
-           WHERE message_id=(SELECT id FROM board_message WHERE kind='notice' AND author_run_record_id=?)
+           WHERE message_record_id=(SELECT record_id FROM board_message WHERE kind='notice' AND author_run_record_id=?)
              AND kind='path' AND origin='sender'`,
         )
         .all(overriddenRun.id),
@@ -129,7 +129,7 @@ test('suggestion post CLI collects path overrides and preserves omitted suggesti
       'board',
       'suggestion',
       'post',
-      String(inherited.id),
+      String(inherited.recordId),
       '--audience',
       'operator',
     ])
@@ -137,7 +137,7 @@ test('suggestion post CLI collects path overrides and preserves omitted suggesti
       db()
         .query(
           `SELECT value FROM board_message_tag
-           WHERE message_id=(SELECT id FROM board_message WHERE kind='notice' AND author_run_record_id=?)
+           WHERE message_record_id=(SELECT record_id FROM board_message WHERE kind='notice' AND author_run_record_id=?)
              AND kind='path' AND origin='sender'`,
         )
         .all(inheritedRun.id),

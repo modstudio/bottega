@@ -2,6 +2,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
+import { nextEntityNumber } from '../database/entity-number.ts'
 import { projectAt } from '../project/projects.ts'
 import {
   type AnswerNoteFiler,
@@ -18,6 +19,7 @@ import {
 import {
   addressed,
   authorWindowDecision,
+  BOARD_MESSAGE_COLUMNS,
   boardActor,
   boardOrigin,
   hasReceipt,
@@ -42,15 +44,15 @@ type Environment = Record<string, string | undefined>
 
 const authorReader = (row: MessageRow) => row.author_session ?? OPERATOR_READER
 
-function message(id: number): MessageRow {
-  const row = messageRows().find((candidate) => candidate.id === id)
-  if (!row) throw new Error(`no board message ${id}; choose an existing board message id`)
+function message(recordId: string): MessageRow {
+  const row = messageRows().find((candidate) => candidate.record_id === recordId)
+  if (!row) throw new Error(`no board message ${recordId}; choose an existing board message UUID`)
   return row
 }
 
-function threadRoot(id: number): MessageRow {
-  const row = message(id)
-  return row.kind === 'reply' ? message(row.thread_root_id!) : row
+function threadRoot(recordId: string): MessageRow {
+  const row = message(recordId)
+  return row.kind === 'reply' ? message(row.thread_root_record_id!) : row
 }
 
 function replyingProject(actor: ReturnType<typeof boardActor>, cwd: string) {
@@ -75,13 +77,50 @@ export function askQuestion(
   )
 }
 
+type ReplyResult = {
+  recordId: string
+  number: number
+  rootRecordId: string
+  dropped: boolean
+  reached: number
+}
+
+function addReplyReceipts(
+  root: MessageRow,
+  replyRecordId: string,
+  reader: string,
+  database: ReturnType<typeof writableDb>,
+): number {
+  const earlierAuthors = database
+    .query(
+      `SELECT author_session,author_kind FROM board_message
+       WHERE thread_root_record_id=? AND record_id<>? ORDER BY created_at,number`,
+    )
+    .all(root.record_id, replyRecordId) as {
+    author_session: string | null
+    author_kind: string
+  }[]
+  const participants = threadParticipants(
+    authorReader(root),
+    earlierAuthors.map((row) => row.author_session ?? OPERATOR_READER),
+    reader,
+  )
+  const addReceipt = database.query(
+    `INSERT INTO board_receipt
+     (message_record_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
+     VALUES (?,?,1,NULL,NULL,?)`,
+  )
+  for (const participant of participants) addReceipt.run(replyRecordId, participant, newRecordId())
+  return participants.length
+}
+
 export function replyToThread(
-  id: number,
+  recordId: string,
   body: string,
   env: Environment = process.env,
   clock = Date.now(),
   cwd = process.cwd(),
-): { id: number; rootId: number; dropped: boolean; reached: number } {
+): ReplyResult {
   if (!body.trim()) throw new Error('board reply body is required; provide --body')
   if (body.length > BOARD_BODY_MAX_CHARS)
     throw new Error(`board reply body exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`)
@@ -91,58 +130,68 @@ export function replyToThread(
   const reader = actor.session ?? OPERATOR_READER
   const database = writableDb()
   return writeTransaction(() => {
-    const root = threadRoot(id)
+    const root = threadRoot(recordId)
     const refusal = replyRefusal({
       actor: { kind: actor.kind, reader },
       root: {
-        id: root.id,
+        id: root.number,
         kind: root.kind,
         authorReader: authorReader(root),
         audienceKind: root.audience ? parseAudience(root.audience).kind : 'operator',
         live: rowIsLive(root, clock),
-        accepted: root.accepted_reply_id !== null,
+        accepted: root.accepted_reply_record_id !== null,
       },
       addressed: addressed(root, reader, clock),
-      hasReceipt: hasReceipt(root.id, reader),
+      hasReceipt: hasReceipt(root.record_id, reader),
     })
     if (refusal) throw new Error(refusal)
     const duplicate = database
       .query(
-        `SELECT id FROM board_message
+        `SELECT record_id,number FROM board_message
          WHERE kind='reply' AND author_kind=? AND author_session IS ?
-           AND thread_root_id=? AND body=? AND created_at>=?
-         ORDER BY id DESC LIMIT 1`,
+           AND thread_root_record_id=? AND body=? AND created_at>=?
+         ORDER BY created_at DESC,number DESC LIMIT 1`,
       )
       .get(
         actor.kind,
         actor.session,
-        root.id,
+        root.record_id,
         body,
         new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString(),
-      ) as { id: number } | null
+      ) as { record_id: string; number: number } | null
     const decision = authorWindowDecision(actor, clock, Boolean(duplicate), database)
     if (decision === 'drop-duplicate') {
       const reached = (
         database
-          .query('SELECT COUNT(*) n FROM board_receipt WHERE message_id=?')
-          .get(duplicate!.id) as { n: number }
+          .query('SELECT COUNT(*) n FROM board_receipt WHERE message_record_id=?')
+          .get(duplicate!.record_id) as { n: number }
       ).n
-      return { id: duplicate!.id, rootId: root.id, dropped: true, reached }
+      return {
+        recordId: duplicate!.record_id,
+        number: duplicate!.number,
+        rootRecordId: root.record_id,
+        dropped: true,
+        reached,
+      }
     }
     if (decision === 'rate-limited')
       throw new Error('board post rate limit reached; retry after the ten-minute author window')
     const identity = actor.kind === 'architect' ? architectIdentity(env) : null
     const project = replyingProject(actor, cwd)
     const createdAt = new Date(clock).toISOString()
-    const inserted = database
+    const replyRecordId = newRecordId()
+    const replyNumber = nextEntityNumber(database, 'board_message')
+    database
       .query(
         `INSERT INTO board_message
-         (kind,author_kind,author_session,author_run_record_id,author_harness,author_project,author_project_record_id,
+         (record_id,number,kind,author_kind,author_session,author_run_record_id,author_harness,author_project,author_project_record_id,
           audience,title,body,ack_required,ack_deadline,expires_at,created_at,withdrawn_at,
-          thread_root_id,record_id)
-         VALUES ('reply',?,?,NULL,?,?,?,NULL,NULL,?,0,NULL,NULL,?,NULL,?,?)`,
+          thread_root_record_id)
+         VALUES (?,?,'reply',?,?,NULL,?,?,?,NULL,NULL,?,0,NULL,NULL,?,NULL,?)`,
       )
       .run(
+        replyRecordId,
+        replyNumber,
         actor.kind,
         actor.session,
         identity?.harness ?? null,
@@ -150,68 +199,59 @@ export function replyToThread(
         project?.recordId ?? null,
         body,
         createdAt,
-        root.id,
-        newRecordId(),
+        root.record_id,
       )
-    const replyId = Number(inserted.lastInsertRowid)
-    const earlierAuthors = database
-      .query(
-        `SELECT author_session,author_kind FROM board_message
-         WHERE thread_root_id=? AND id<>? ORDER BY created_at,id`,
-      )
-      .all(root.id, replyId) as { author_session: string | null; author_kind: string }[]
-    const participants = threadParticipants(
-      authorReader(root),
-      earlierAuthors.map((row) => row.author_session ?? OPERATOR_READER),
-      reader,
-    )
-    const addReceipt = database.query(
-      `INSERT INTO board_receipt
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
-       VALUES (?,?,1,NULL,NULL,?)`,
-    )
-    for (const participant of participants) addReceipt.run(replyId, participant, newRecordId())
-    return { id: replyId, rootId: root.id, dropped: false, reached: participants.length }
+    const reached = addReplyReceipts(root, replyRecordId, reader, database)
+    return {
+      recordId: replyRecordId,
+      number: replyNumber,
+      rootRecordId: root.record_id,
+      dropped: false,
+      reached,
+    }
   }, database)
 }
 
-export function readThread(id: number, env: Environment = process.env, clock = Date.now()) {
+export function readThread(recordId: string, env: Environment = process.env, clock = Date.now()) {
   const actor = boardActor(env)
   const reader = actor.session ?? OPERATOR_READER
-  const root = threadRoot(id)
+  const root = threadRoot(recordId)
   if (
     actor.kind !== 'operator' &&
     authorReader(root) !== reader &&
     !addressed(root, reader, clock) &&
-    !hasReceipt(root.id, reader)
+    !hasReceipt(root.record_id, reader)
   )
-    throw new Error(`board thread ${root.id} is not readable by this session`)
+    throw new Error(`board thread ${root.number} is not readable by this session`)
   const replies = db()
-    .query('SELECT * FROM board_message WHERE thread_root_id=? ORDER BY created_at,id')
-    .all(root.id) as MessageRow[]
+    .query(
+      `SELECT ${BOARD_MESSAGE_COLUMNS} FROM board_message WHERE thread_root_record_id=? ORDER BY created_at,number`,
+    )
+    .all(root.record_id) as MessageRow[]
   const state = boardThreadState({
-    acceptedReplyId: root.accepted_reply_id,
+    acceptedReplyId: root.accepted_reply_record_id,
     withdrawnAt: root.withdrawn_at,
     expiresAt: root.expires_at,
     clock,
   })
   return {
     root: {
-      id: root.id,
+      recordId: root.record_id,
+      number: root.number,
       kind: root.kind,
       purpose: root.purpose,
       title: root.title,
       body: root.body,
       audience: root.audience,
       origin: boardOrigin(root),
-      senderTags: messageTags(root.id)
+      senderTags: messageTags(root.record_id)
         .filter((tag) => tag.origin === 'sender')
         .map(({ kind, value }) => ({ kind, value })),
       createdAt: root.created_at,
       expiresAt: root.expires_at,
       withdrawnAt: root.withdrawn_at,
       state,
-      acceptedReplyId: root.accepted_reply_id,
+      acceptedReplyId: root.accepted_reply_record_id,
       acceptedBy: root.accepted_by,
       acceptedAt: root.accepted_at,
       noteRecordId: root.note_record_id,
@@ -219,7 +259,8 @@ export function readThread(id: number, env: Environment = process.env, clock = D
       notePendingError: root.note_pending_error,
     },
     replies: replies.map((reply) => ({
-      id: reply.id,
+      recordId: reply.record_id,
+      number: reply.number,
       body: reply.body,
       origin: boardOrigin(reply),
       createdAt: reply.created_at,
@@ -238,14 +279,14 @@ function filingLeaseRefusal(question: MessageRow, clock: number): string | null 
     clock,
   )
   if (decision.kind === 'filed')
-    return `board question ${question.id} already filed note ${question.note_label}`
+    return `board question ${question.number} already filed note ${question.note_label}`
   if (decision.kind === 'in-progress')
-    return `board question ${question.id} note filing is in progress; retry with ${PLATFORM_SLUG} board file-note ${question.id} after ${new Date(decision.retryAt).toISOString()}`
+    return `board question ${question.number} note filing is in progress; retry with ${PLATFORM_SLUG} board file-note ${question.number} after ${new Date(decision.retryAt).toISOString()}`
   return null
 }
 
 function takeFilingLease(
-  questionId: number,
+  questionId: string,
   clock: number,
 ): { question: MessageRow; reply: MessageRow; startedAt: string } {
   const database = writableDb()
@@ -258,7 +299,7 @@ function takeFilingLease(
     const taken = database
       .query(
         `UPDATE board_message SET note_filing_started_at=?
-         WHERE id=? AND note_record_id IS NULL AND note_label IS NULL
+         WHERE record_id=? AND note_record_id IS NULL AND note_label IS NULL
            AND (note_filing_started_at IS NULL OR note_filing_started_at<=?)`,
       )
       .run(startedAt, questionId, staleBefore)
@@ -270,12 +311,12 @@ function takeFilingLease(
       )
     }
     const question = message(questionId)
-    return { question, reply: message(question.accepted_reply_id!), startedAt }
+    return { question, reply: message(question.accepted_reply_record_id!), startedAt }
   }, database)
 }
 
 async function filePendingNote(
-  questionId: number,
+  questionId: string,
   cwd: string,
   filer: AnswerNoteFiler,
   clock: number,
@@ -307,9 +348,9 @@ async function filePendingNote(
         .query(
           `UPDATE board_message
            SET note_record_id=?,note_label=?,note_pending_error=NULL,note_filing_started_at=NULL
-           WHERE id=? AND note_filing_started_at=?`,
+           WHERE record_id=? AND note_filing_started_at=?`,
         )
-        .run(filed.noteRecordId, filed.noteLabel, question.id, startedAt)
+        .run(filed.noteRecordId, filed.noteLabel, question.record_id, startedAt)
     }, database)
     return {
       noteRecordId: filed.noteRecordId,
@@ -325,22 +366,22 @@ async function filePendingNote(
         .query(
           `UPDATE board_message
            SET note_pending_error=?,note_filing_started_at=NULL
-           WHERE id=? AND note_filing_started_at=?`,
+           WHERE record_id=? AND note_filing_started_at=?`,
         )
-        .run(detail, question.id, startedAt)
+        .run(detail, question.record_id, startedAt)
     }, database)
     return {
       noteRecordId: null,
       noteLabel: null,
       notePendingError: detail,
-      retry: retryHint(question.id, detail),
+      retry: retryHint(question.number, detail),
     }
   }
 }
 
 export async function acceptAnswer(
-  questionId: number,
-  replyId: number,
+  questionId: string,
+  replyId: string,
   env: Environment = process.env,
   clock = Date.now(),
   cwd = process.cwd(),
@@ -353,36 +394,36 @@ export async function acceptAnswer(
     const question = message(questionId)
     const refusal = acceptRefusal({
       actor: { kind: actor.kind, reader },
-      questionId,
+      questionId: question.number,
       questionKind: question.kind,
       authorReader: authorReader(question),
-      accepted: question.accepted_reply_id !== null,
+      accepted: question.accepted_reply_record_id !== null,
       live: rowIsLive(question, clock),
     })
     if (refusal) throw new Error(refusal)
     const reply = message(replyId)
-    if (reply.kind !== 'reply' || reply.thread_root_id !== question.id)
+    if (reply.kind !== 'reply' || reply.thread_root_record_id !== question.record_id)
       throw new Error(`board reply ${replyId} does not belong to board question ${questionId}`)
     database
       .query(
         `UPDATE board_message
-         SET accepted_reply_id=?,accepted_by=?,accepted_at=?,note_pending_error=? WHERE id=?`,
+         SET accepted_reply_record_id=?,accepted_by=?,accepted_at=?,note_pending_error=? WHERE record_id=?`,
       )
       .run(
-        reply.id,
+        reply.record_id,
         reader,
         new Date(clock).toISOString(),
-        `note filing has not completed; retry with ${PLATFORM_SLUG} board file-note ${question.id}`,
-        question.id,
+        `note filing has not completed; retry with ${PLATFORM_SLUG} board file-note ${question.number}`,
+        question.record_id,
       )
-    return { question: message(question.id), reply }
+    return { question: message(question.record_id), reply }
   }, database)
-  const note = await filePendingNote(question.id, cwd, filer, clock)
-  return { accepted: reply.id, questionId: question.id, ...note }
+  const note = await filePendingNote(question.record_id, cwd, filer, clock)
+  return { accepted: reply.record_id, questionId: question.record_id, ...note }
 }
 
 export async function fileAnswerNote(
-  questionId: number,
+  questionId: string,
   env: Environment = process.env,
   cwd = process.cwd(),
   filer: AnswerNoteFiler = fileAcceptedAnswerNote,
@@ -390,7 +431,7 @@ export async function fileAnswerNote(
 ) {
   const actor = boardActor(env)
   const question = message(questionId)
-  if (question.kind !== 'question' || question.accepted_reply_id === null)
+  if (question.kind !== 'question' || question.accepted_reply_record_id === null)
     throw new Error(`board question ${questionId} has no accepted answer to file`)
   if (actor.kind !== 'operator' && actor.session !== question.author_session)
     throw new Error(
@@ -398,6 +439,6 @@ export async function fileAnswerNote(
     )
   const refusal = filingLeaseRefusal(question, clock)
   if (refusal) throw new Error(refusal)
-  const note = await filePendingNote(question.id, cwd, filer, clock)
+  const note = await filePendingNote(question.record_id, cwd, filer, clock)
   return { questionId, ...note }
 }

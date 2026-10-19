@@ -1,6 +1,7 @@
 import type { Command } from 'commander'
 import { parseBoardDuration } from '../../../shared/board-duration.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { db } from '../database/db.ts'
 import { adoptHostedBoard } from './board-adoption.ts'
 import { registerBoardClaimCommands } from './board-claim-commands.ts'
 import {
@@ -9,6 +10,7 @@ import {
   markBoardNoticesDelivered,
   readBoardNotices,
 } from './board-delivery.ts'
+import { resolveLocalBoardMessageIdentifier } from './board-message-identifier.ts'
 import {
   boardAccept,
   boardAcknowledge,
@@ -71,14 +73,6 @@ function registerBoardWatchCommand(board: Command): void {
 }
 
 const collect = (value: string, values: string[] = []) => [...values, value]
-const localBoardId = (value: string): number => {
-  const id = Number(value)
-  if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(id))
-    throw new Error(
-      'board id must be a positive integer string because this operation is machine-local',
-    )
-  return id
-}
 const deliveryPoint = (value: string): BoardDeliveryPoint => {
   if (!['session-start', 'after-tool-call', 'stop', 'heartbeat-monitor'].includes(value))
     throw new Error('--point must be session-start, after-tool-call, stop, or heartbeat-monitor')
@@ -211,15 +205,18 @@ function registerBoardSuggestionCommands(board: Command): void {
       console.log(
         JSON.stringify(
           (() => {
-            const posted = postBoardSuggestion(localBoardId(String(id)), {
-              audience: options.audience,
-              title: options.title,
-              body: options.body,
-              task: options.task,
-              paths: options.path,
-              topics: options.topic,
-            })
-            return { ...posted, id: String(posted.id) }
+            const posted = postBoardSuggestion(
+              resolveLocalBoardMessageIdentifier(db(), String(id)),
+              {
+                audience: options.audience,
+                title: options.title,
+                body: options.body,
+                task: options.task,
+                paths: options.path,
+                topics: options.topic,
+              },
+            )
+            return posted
           })(),
         ),
       )
@@ -227,7 +224,7 @@ function registerBoardSuggestionCommands(board: Command): void {
   suggestion
     .command('decline <id>')
     .description(BOARD_DESCRIPTIONS.suggestionDecline)
-    .action((id) => declineBoardSuggestion(localBoardId(String(id))))
+    .action((id) => declineBoardSuggestion(resolveLocalBoardMessageIdentifier(db(), String(id))))
 }
 
 export function registerBoardCommands(program: Command): void {
@@ -255,7 +252,7 @@ export function registerBoardCommands(program: Command): void {
         console.log(`${kind}: ${result.counts[kind]} will be uploaded`)
       console.log(`receipt: ${result.receipts} will be uploaded`)
       for (const row of result.stays)
-        console.log(`${row.kind} ${row.id} stays local: ${row.reason}`)
+        console.log(`${row.kind} ${row.recordId} stays local: ${row.reason}`)
       if (result.status === 'plan')
         console.log(`rerun with: ${PLATFORM_SLUG} board adopt --confirm ${result.total}`)
       else {

@@ -3,6 +3,7 @@ import { BOARD_REQUEST_DEFAULT_EXPIRY_MS } from '../../../shared/board-duration.
 import { newRecordId } from '../../../shared/record-id.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
+import { nextEntityNumber } from '../database/entity-number.ts'
 import {
   BOARD_BODY_MAX_CHARS,
   BOARD_DUPLICATE_WINDOW_MS,
@@ -18,7 +19,8 @@ export type SuggestBoardPostInput = SenderBoardTags & { title: string; body: str
 export type DisposeSuggestionInput = Partial<SuggestBoardPostInput> & { audience: string }
 
 type SuggestionRow = {
-  id: number
+  record_id: string
+  number: number
   author_run_record_id: string
   audience: string
   title: string
@@ -61,7 +63,7 @@ export function suggestBoardPost(
   runId: string,
   input: SuggestBoardPostInput,
   clock = Date.now(),
-): { id: number; dropped: boolean } {
+): { recordId: string; number: number; dropped: boolean } {
   validateText(input)
   const senderTags = senderBoardTags(input)
   const run = rootRun(runId)
@@ -83,67 +85,75 @@ export function suggestBoardPost(
   ).n
   const candidates = db()
     .query(
-      `SELECT id FROM board_message
+      `SELECT record_id,number FROM board_message
        WHERE kind='suggestion' AND author_kind='worker' AND author_run_record_id=?
-         AND audience=? AND title=? AND body=? AND created_at>=? ORDER BY id DESC`,
+         AND audience=? AND title=? AND body=? AND created_at>=? ORDER BY created_at DESC,number DESC`,
     )
-    .all(run.record_id, audience, input.title, input.body, duplicateSince) as { id: number }[]
+    .all(run.record_id, audience, input.title, input.body, duplicateSince) as {
+    record_id: string
+    number: number
+  }[]
   const key = senderTagKey(senderTags)
   const duplicate = candidates.find((candidate) => {
     const tags = db()
       .query(
         `SELECT kind,value FROM board_message_tag
-         WHERE message_id=? AND origin='sender'`,
+         WHERE message_record_id=? AND origin='sender'`,
       )
-      .all(candidate.id) as Pick<BoardTag, 'kind' | 'value'>[]
+      .all(candidate.record_id) as Pick<BoardTag, 'kind' | 'value'>[]
     return senderTagKey(tags) === key
   })
   const decision = postDecision({ recentPosts, duplicate: Boolean(duplicate) })
-  if (decision === 'drop-duplicate') return { id: duplicate!.id, dropped: true }
+  if (decision === 'drop-duplicate')
+    return { recordId: duplicate!.record_id, number: duplicate!.number, dropped: true }
   if (decision === 'rate-limited')
     throw new Error('board suggestion rate limit reached; retry after the ten-minute author window')
   const createdAt = new Date(clock).toISOString()
   const expiresAt = new Date(clock + BOARD_REQUEST_DEFAULT_EXPIRY_MS).toISOString()
   const database = writableDb()
-  let id = 0
+  const recordId = newRecordId()
+  let number = 0
   writeTransaction(() => {
-    id = Number(
-      database
-        .query(
-          `INSERT INTO board_message
-           (kind,purpose,author_kind,author_session,author_run_record_id,author_harness,author_project,
+    number = nextEntityNumber(database, 'board_message')
+    database
+      .query(
+        `INSERT INTO board_message
+           (record_id,number,kind,purpose,author_kind,author_session,author_run_record_id,author_harness,author_project,
             author_project_record_id,
-            audience,title,body,ack_required,ack_deadline,expires_at,created_at,withdrawn_at,record_id)
-           VALUES ('suggestion','request','worker',NULL,?,NULL,?,
-                   (SELECT project_record_id FROM run WHERE record_id=?),?,?,?,0,NULL,?,?,NULL,?)`,
-        )
-        .run(
-          run.record_id,
-          run.repo,
-          run.record_id,
-          audience,
-          input.title,
-          input.body,
-          expiresAt,
-          createdAt,
-          newRecordId(),
-        ).lastInsertRowid,
-    )
+            audience,title,body,ack_required,ack_deadline,expires_at,created_at,withdrawn_at)
+           VALUES (?,?,'suggestion','request','worker',NULL,?,NULL,?,
+                   (SELECT project_record_id FROM run WHERE record_id=?),?,?,?,0,NULL,?,?,NULL)`,
+      )
+      .run(
+        recordId,
+        number,
+        run.record_id,
+        run.repo,
+        run.record_id,
+        audience,
+        input.title,
+        input.body,
+        expiresAt,
+        createdAt,
+      )
     const addTag = database.query(
-      `INSERT INTO board_message_tag (message_id,kind,value,origin,record_id) VALUES (?,?,?,'sender',?)`,
+      `INSERT INTO board_message_tag (record_id,message_record_id,kind,value,origin) VALUES (?,?,?,?,'sender')`,
     )
-    for (const tag of senderTags) addTag.run(id, tag.kind, tag.value, newRecordId())
+    for (const tag of senderTags) addTag.run(newRecordId(), recordId, tag.kind, tag.value)
   }, database)
-  return { id, dropped: false }
+  return { recordId, number, dropped: false }
 }
 
-function suggestion(id: number, database = db()): SuggestionRow {
+function suggestion(recordId: string, database = db()): SuggestionRow {
   const row = database
-    .query(`SELECT * FROM board_message WHERE id=? AND kind='suggestion'`)
-    .get(id) as SuggestionRow | null
-  if (!row) throw new Error(`no board suggestion ${id}; choose an existing suggestion id`)
+    .query(
+      `SELECT record_id,number,author_run_record_id,audience,title,body,withdrawn_at
+       FROM board_message WHERE record_id=? AND kind='suggestion'`,
+    )
+    .get(recordId) as SuggestionRow | null
+  if (!row) throw new Error(`no board suggestion ${recordId}; choose an existing suggestion UUID`)
   if (row.withdrawn_at)
-    throw new Error(`board suggestion ${id} is already withdrawn; choose a live suggestion`)
+    throw new Error(`board suggestion ${row.number} is already withdrawn; choose a live suggestion`)
   return row
 }
 
@@ -152,18 +162,18 @@ function authorizeDisposal(row: SuggestionRow, env: Environment) {
   const addressee = row.audience.slice('session:'.length)
   if (actor.kind !== 'operator' && actor.session !== addressee)
     throw new Error(
-      `only session ${addressee} or the operator may dispose of board suggestion ${row.id}; use that session or an operator terminal`,
+      `only session ${addressee} or the operator may dispose of board suggestion ${row.number}; use that session or an operator terminal`,
     )
   return actor
 }
 
-function senderDefaults(id: number, database = db()): SenderBoardTags {
+function senderDefaults(recordId: string, database = db()): SenderBoardTags {
   const tags = database
     .query(
       `SELECT kind,value FROM board_message_tag
-       WHERE message_id=? AND origin='sender' ORDER BY rowid`,
+       WHERE message_record_id=? AND origin='sender' ORDER BY rowid`,
     )
-    .all(id) as Pick<BoardTag, 'kind' | 'value'>[]
+    .all(recordId) as Pick<BoardTag, 'kind' | 'value'>[]
   return {
     task: tags.find((tag) => tag.kind === 'task')?.value,
     paths: tags.filter((tag) => tag.kind === 'path').map((tag) => tag.value),
@@ -172,7 +182,7 @@ function senderDefaults(id: number, database = db()): SenderBoardTags {
 }
 
 export function postBoardSuggestion(
-  id: number,
+  id: string,
   input: DisposeSuggestionInput,
   env: Environment = process.env,
   clock = Date.now(),
@@ -182,7 +192,7 @@ export function postBoardSuggestion(
   return writeTransaction(() => {
     const row = suggestion(id, database)
     authorizeDisposal(row, env)
-    const defaults = senderDefaults(id, database)
+    const defaults = senderDefaults(row.record_id, database)
     const notice: PostNoticeInput = {
       audience: input.audience,
       title: input.title ?? row.title,
@@ -194,14 +204,14 @@ export function postBoardSuggestion(
     }
     const posted = postNoticeInTransaction(notice, env, clock, cwd, database)
     database
-      .query('UPDATE board_message SET withdrawn_at=COALESCE(withdrawn_at,?) WHERE id=?')
-      .run(new Date(clock).toISOString(), id)
+      .query('UPDATE board_message SET withdrawn_at=COALESCE(withdrawn_at,?) WHERE record_id=?')
+      .run(new Date(clock).toISOString(), row.record_id)
     return posted
   }, database)
 }
 
 export function declineBoardSuggestion(
-  id: number,
+  id: string,
   env: Environment = process.env,
   clock = Date.now(),
 ): void {
@@ -210,7 +220,7 @@ export function declineBoardSuggestion(
     const row = suggestion(id, database)
     authorizeDisposal(row, env)
     database
-      .query('UPDATE board_message SET withdrawn_at=? WHERE id=?')
-      .run(new Date(clock).toISOString(), id)
+      .query('UPDATE board_message SET withdrawn_at=? WHERE record_id=?')
+      .run(new Date(clock).toISOString(), row.record_id)
   }, database)
 }

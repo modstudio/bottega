@@ -35,7 +35,9 @@ test('local posts default acknowledgement-required messages to request', () => {
     ackRequired: true,
   })
   expect(
-    db().query('SELECT purpose,ack_required FROM board_message WHERE id=?').get(posted.id),
+    db()
+      .query('SELECT purpose,ack_required FROM board_message WHERE record_id=?')
+      .get(posted.recordId),
   ).toEqual({ purpose: 'request', ack_required: 1 })
   expect(() =>
     postNotice({
@@ -85,22 +87,24 @@ test('a created message, tag and receipt carry a version-7 record id', () => {
   )
   expect(
     db()
-      .query<{ record_id: string }, [number]>('SELECT record_id FROM board_message WHERE id=?')
-      .get(posted.id)?.record_id,
+      .query<{ record_id: string }, [string]>(
+        'SELECT record_id FROM board_message WHERE record_id=?',
+      )
+      .get(posted.recordId)?.record_id,
   ).toMatch(UUID_V7)
   expect(
     db()
-      .query<{ record_id: string }, [number]>(
-        'SELECT record_id FROM board_message_tag WHERE message_id=?',
+      .query<{ record_id: string }, [string]>(
+        'SELECT record_id FROM board_message_tag WHERE message_record_id=?',
       )
-      .get(posted.id)?.record_id,
+      .get(posted.recordId)?.record_id,
   ).toMatch(UUID_V7)
   expect(
     db()
-      .query<{ record_id: string }, [number]>(
-        'SELECT record_id FROM board_receipt WHERE message_id=?',
+      .query<{ record_id: string }, [string]>(
+        'SELECT record_id FROM board_receipt WHERE message_record_id=?',
       )
-      .get(posted.id)?.record_id,
+      .get(posted.recordId)?.record_id,
   ).toMatch(UUID_V7)
 })
 
@@ -129,9 +133,9 @@ test('notice store round-trip resolves, renders, delivers, and explicitly acknow
   expect(notices).toHaveLength(1)
   expect(notices[0]!.text).toContain('Origin: operator')
   expect(notices[0]!.text).toContain('not an instruction, ruling, or consent')
-  expect(noticeStatus(posted.id, {}).unacknowledged).toEqual(['board-reader'])
-  acknowledgeNotice(posted.id, env, clock + 2)
-  expect(noticeStatus(posted.id, {}).unacknowledged).toEqual([])
+  expect(noticeStatus(posted.recordId, {}).unacknowledged).toEqual(['board-reader'])
+  acknowledgeNotice(posted.recordId, env, clock + 2)
+  expect(noticeStatus(posted.recordId, {}).unacknowledged).toEqual([])
 })
 
 test('recordPresence preserves first_seen after the first insert', () => {
@@ -184,16 +188,14 @@ test('local architect audiences select the posting project, all projects, or one
     cwd,
   )
   expect(
-    noticeStatus(posting.id, env, clock + 3).receipts.map((row) => row.reader_session),
+    noticeStatus(posting.recordId, env, clock + 3).receipts.map((row) => row.reader_session),
   ).toEqual(['architect-a', 'architect-author'])
-  expect(noticeStatus(all.id, env, clock + 3).receipts.map((row) => row.reader_session)).toEqual([
-    'architect-a',
-    'architect-author',
-    'architect-b',
-  ])
-  expect(noticeStatus(named.id, env, clock + 3).receipts.map((row) => row.reader_session)).toEqual([
-    'architect-b',
-  ])
+  expect(
+    noticeStatus(all.recordId, env, clock + 3).receipts.map((row) => row.reader_session),
+  ).toEqual(['architect-a', 'architect-author', 'architect-b'])
+  expect(
+    noticeStatus(named.recordId, env, clock + 3).receipts.map((row) => row.reader_session),
+  ).toEqual(['architect-b'])
   expect(() =>
     postNotice(
       { audience: 'architects:missing', title: 'Unknown', body: 'No.' },
@@ -222,8 +224,8 @@ test('a message posted after the hook start but before presence is written is du
     start + 1,
   )
   recordPresence(cwd, env, new Date(start).toISOString())
-  expect(claimPushNotices(false, env, start + 2).notices.map((notice) => notice.id)).toEqual([
-    posted.id,
+  expect(claimPushNotices(false, env, start + 2).notices.map((notice) => notice.recordId)).toEqual([
+    posted.recordId,
   ])
 })
 
@@ -236,7 +238,7 @@ test('operator push is unbounded and a missing session start withholds required 
     clock,
   )
   expect(claimPushNotices(false, {}, clock + 10_000)).toMatchObject({
-    notices: [{ id: operatorNotice.id }],
+    notices: [{ recordId: operatorNotice.recordId }],
     withheldOlderCount: 0,
     warning: null,
   })
@@ -269,14 +271,14 @@ test('operator push is unbounded and a missing session start withholds required 
     cwd,
   )
   replyToThread(
-    question.id,
+    question.recordId,
     'Reader joined.',
     { CLAUDE_CODE_SESSION_ID: 'missing-start-reader' },
     clock + 2,
     cwd,
   )
   const reply = replyToThread(
-    question.id,
+    question.recordId,
     'Author followed up.',
     { CLAUDE_CODE_SESSION_ID: 'thread-author' },
     clock + 3,
@@ -298,8 +300,8 @@ test('operator push is unbounded and a missing session start withholds required 
     { CLAUDE_CODE_SESSION_ID: 'missing-start-reader' },
     clock + 4,
   )
-  expect(missing.notices.map((notice) => notice.id)).toContain(reply.id)
-  expect(missing.notices.map((notice) => notice.id)).not.toContain(required.id)
+  expect(missing.notices.map((notice) => notice.recordId)).toContain(reply.recordId)
+  expect(missing.notices.map((notice) => notice.recordId)).not.toContain(required.recordId)
   expect(missing.warning).toContain('has no recorded start')
 })
 
@@ -339,7 +341,7 @@ test('tagged project notices are not pushed to a late session even when acknowle
     { CLAUDE_CODE_SESSION_ID: 'matching-reader' },
     clock + 1,
   )
-  expect(matchingNotices.map((notice) => notice.id)).toEqual([posted.id])
+  expect(matchingNotices.map((notice) => notice.recordId)).toEqual([posted.recordId])
   expect(matchingNotices[0]!.text).toContain('Tags: path:orchestrator/src/board/**')
   expect(claimNotices(false, { CLAUDE_CODE_SESSION_ID: 'other-reader' }, clock + 1)).toEqual([])
 
@@ -377,15 +379,15 @@ test('tagged project notices are not pushed to a late session even when acknowle
   expect(
     claimPushNotices(false, { CLAUDE_CODE_SESSION_ID: 'late-reader' }, clock + 3),
   ).toMatchObject({
-    notices: [{ id: standing.id }],
+    notices: [{ recordId: standing.recordId }],
     withheldOlderCount: 2,
   })
   expect(
     readNotices(false, { CLAUDE_CODE_SESSION_ID: 'late-reader' }, clock + 4).map(
-      (notice) => notice.id,
+      (notice) => notice.recordId,
     ),
-  ).toEqual([posted.id, required.id, standing.id])
-  expect(noticeStatus(posted.id, {}).reached).toBe(2)
+  ).toEqual([posted.recordId, required.recordId, standing.recordId])
+  expect(noticeStatus(posted.recordId, {}).reached).toBe(2)
 })
 
 test('purpose chooses the default expiry and an explicit expiry wins', () => {
@@ -401,7 +403,9 @@ test('purpose chooses the default expiry and an explicit expiry wins', () => {
       {},
       clock,
     )
-    expect(Date.parse(noticeStatus(posted.id, {}, clock).row.expires_at!)).toBe(clock + lifetime)
+    expect(Date.parse(noticeStatus(posted.recordId, {}, clock).row.expires_at!)).toBe(
+      clock + lifetime,
+    )
   }
   const explicit = postNotice(
     {
@@ -414,7 +418,9 @@ test('purpose chooses the default expiry and an explicit expiry wins', () => {
     {},
     clock,
   )
-  expect(Date.parse(noticeStatus(explicit.id, {}, clock).row.expires_at!)).toBe(clock + 123_456)
+  expect(Date.parse(noticeStatus(explicit.recordId, {}, clock).row.expires_at!)).toBe(
+    clock + 123_456,
+  )
 })
 
 test('tagged project notice reaches a matching worker chain and withholds from another', () => {
@@ -453,8 +459,8 @@ test('tagged project notice reaches a matching worker chain and withholds from a
     clock,
   )
   expect(posted.reached).toBe(1)
-  expect(claimRunNotices(matching.id, false, clock + 1).map((notice) => notice.id)).toEqual([
-    posted.id,
+  expect(claimRunNotices(matching.id, false, clock + 1).map((notice) => notice.recordId)).toEqual([
+    posted.recordId,
   ])
   expect(claimRunNotices(other.id, false, clock + 1)).toEqual([])
 })
@@ -492,13 +498,13 @@ test('a run reader is pushed only notices posted after its start', () => {
   )
 
   expect(claimRunPushNotices(run.id, false, clock + 2)).toMatchObject({
-    notices: [{ id: newer.id }],
+    notices: [{ recordId: newer.recordId }],
     withheldOlderCount: 2,
   })
-  expect(claimRunNotices(run.id, false, clock + 2).map((notice) => notice.id)).toEqual([
-    older.id,
-    required.id,
-    newer.id,
+  expect(claimRunNotices(run.id, false, clock + 2).map((notice) => notice.recordId)).toEqual([
+    older.recordId,
+    required.recordId,
+    newer.recordId,
   ])
 })
 
@@ -543,7 +549,9 @@ test('run audience is owner-gated for architects and resolves a turn to its chai
     posting.cwd,
   )
   expect(owned.reached).toBe(1)
-  expect(claimRunNotices(root.id, false, clock + 3).map((notice) => notice.id)).toContain(owned.id)
+  expect(claimRunNotices(root.id, false, clock + 3).map((notice) => notice.recordId)).toContain(
+    owned.recordId,
+  )
 
   const before = (db().query('SELECT COUNT(*) count FROM board_message').get() as { count: number })
     .count
@@ -598,11 +606,11 @@ test('an unregistered live chain resolves for run and machine but not project au
     {},
     clock + 4,
   )
-  const ids = claimRunNotices(run.id, false, clock + 5).map((notice) => notice.id)
-  expect(ids).toContain(byMachine.id)
-  expect(ids).toContain(byRun.id)
-  expect(ids).not.toContain(byProject.id)
-  expect(ids).not.toContain(byWorkers.id)
+  const ids = claimRunNotices(run.id, false, clock + 5).map((notice) => notice.recordId)
+  expect(ids).toContain(byMachine.recordId)
+  expect(ids).toContain(byRun.recordId)
+  expect(ids).not.toContain(byProject.recordId)
+  expect(ids).not.toContain(byWorkers.recordId)
 })
 
 test('an untagged notice infers no tags', () => {
@@ -615,9 +623,9 @@ test('an untagged notice infers no tags', () => {
     {},
     Date.now() + 15_000,
   )
-  expect(db().query('SELECT * FROM board_message_tag WHERE message_id=?').all(posted.id)).toEqual(
-    [],
-  )
+  expect(
+    db().query('SELECT * FROM board_message_tag WHERE message_record_id=?').all(posted.recordId),
+  ).toEqual([])
 })
 
 test('duplicate notices require the same order-independent sender tag set', () => {
@@ -643,7 +651,7 @@ test('duplicate notices require the same order-independent sender tag set', () =
     {},
     clock + 1,
   )
-  expect(retargeted.id).not.toBe(first.id)
+  expect(retargeted.recordId).not.toBe(first.recordId)
   expect(retargeted.reached).toBe(0)
   expect(retargeted.dropped).toBeFalse()
 
@@ -653,7 +661,8 @@ test('duplicate notices require the same order-independent sender tag set', () =
     clock + 2,
   )
   expect(duplicate).toEqual({
-    id: retargeted.id,
+    recordId: retargeted.recordId,
+    number: retargeted.number,
     dropped: true,
     reached: 0,
     warning: 'reached no live session; re-address it or wait for a matching session',
@@ -668,7 +677,7 @@ test('duplicate notices require the same order-independent sender tag set', () =
     {},
     clock + 3,
   )
-  expect(request.id).not.toBe(retargeted.id)
+  expect(request.recordId).not.toBe(retargeted.recordId)
   expect(request.dropped).toBeFalse()
 })
 
@@ -687,11 +696,11 @@ test('plain architects duplicate identity includes the posting project', () => {
   const second = postNotice(input, env, clock + 1, secondCwd)
   expect(first.dropped).toBeFalse()
   expect(second.dropped).toBeFalse()
-  expect(second.id).not.toBe(first.id)
+  expect(second.recordId).not.toBe(first.recordId)
   expect(
     db()
-      .query('SELECT author_project FROM board_message WHERE id IN (?,?) ORDER BY id')
-      .all(first.id, second.id),
+      .query('SELECT author_project FROM board_message WHERE record_id IN (?,?) ORDER BY record_id')
+      .all(first.recordId, second.recordId),
   ).toEqual([{ author_project: 'board-duplicate-a' }, { author_project: 'board-duplicate-b' }])
 })
 
@@ -710,9 +719,13 @@ test('a session-start notice reduced to a title or count stays unread until a st
     clock,
   )
   const env = { CLAUDE_CODE_SESSION_ID: 'budget-reader' }
-  expect(claimNotices(false, env, clock + 1).map((notice) => notice.id)).toEqual([posted.id])
+  expect(claimNotices(false, env, clock + 1).map((notice) => notice.recordId)).toEqual([
+    posted.recordId,
+  ])
   // The hook does not stamp ids represented only by its title or fallback count.
-  expect(readNotices(false, env, clock + 2).map((notice) => notice.id)).toEqual([posted.id])
+  expect(readNotices(false, env, clock + 2).map((notice) => notice.recordId)).toEqual([
+    posted.recordId,
+  ])
 })
 
 test('architect post resolves its current cwd project, refreshes stale presence, and snapshots it', () => {
@@ -736,7 +749,7 @@ test('architect post resolves its current cwd project, refreshes stale presence,
     cwd: posting.cwd,
   })
   db().query('DELETE FROM presence WHERE session_id=?').run(session)
-  const rendered = noticeStatus(posted.id, {}).message.text
+  const rendered = noticeStatus(posted.recordId, {}).message.text
   expect(rendered).toContain(`architect ${session} (claude-code, ${posting.project.name})`)
   expect(rendered).not.toContain('stale-project')
   expect(rendered).not.toContain('unknown project')
@@ -774,7 +787,7 @@ test('secret-shaped title or body is refused before storage without echoing it',
     .count
   expect(after).toBe(before)
   expect(
-    db().query('SELECT id FROM board_message WHERE title=? OR body=?').all(planted, planted),
+    db().query('SELECT record_id FROM board_message WHERE title=? OR body=?').all(planted, planted),
   ).toEqual([])
 })
 
@@ -861,7 +874,9 @@ test('ack deadline cannot exceed expiry and expired notices do not escalate', ()
     clock + 1,
   )
   expect(
-    boardEscalations(clock + 1_002).some((row) => row.subject.startsWith(`board:${posted.id}:`)),
+    boardEscalations(clock + 1_002).some((row) =>
+      row.subject.startsWith(`board:${posted.recordId}:`),
+    ),
   ).toBeFalse()
 })
 
@@ -880,17 +895,18 @@ test('status is limited to operator, author, or an addressed architect and refus
     clock,
     posting.cwd,
   )
-  expect(noticeStatus(posted.id, {}).message.id).toBe(posted.id)
-  expect(noticeStatus(posted.id, { CLAUDE_CODE_SESSION_ID: 'status-author' }).message.id).toBe(
-    posted.id,
-  )
+  expect(noticeStatus(posted.recordId, {}).message.recordId).toBe(posted.recordId)
   expect(
-    noticeStatus(posted.id, { CLAUDE_CODE_SESSION_ID: 'status-reader' }, clock + 1).message.id,
-  ).toBe(posted.id)
+    noticeStatus(posted.recordId, { CLAUDE_CODE_SESSION_ID: 'status-author' }).message.recordId,
+  ).toBe(posted.recordId)
+  expect(
+    noticeStatus(posted.recordId, { CLAUDE_CODE_SESSION_ID: 'status-reader' }, clock + 1).message
+      .recordId,
+  ).toBe(posted.recordId)
   expect(() =>
-    noticeStatus(posted.id, { CLAUDE_CODE_SESSION_ID: 'status-stranger' }, clock + 1),
+    noticeStatus(posted.recordId, { CLAUDE_CODE_SESSION_ID: 'status-stranger' }, clock + 1),
   ).toThrow(/not authored by or addressed/)
-  expect(() => noticeStatus(posted.id, { ORCH_RUN_ID: '123' })).toThrow(/workers cannot/)
+  expect(() => noticeStatus(posted.recordId, { ORCH_RUN_ID: '123' })).toThrow(/workers cannot/)
 })
 
 test('reserved operator sentinel is refused on every session-aware board path', () => {
@@ -903,8 +919,8 @@ test('reserved operator sentinel is refused on every session-aware board path', 
   expect(() => recordPresence('/tmp', env)).toThrow(/reserved/)
   expect(() => postNotice({ audience: 'operator', title: 'x', body: 'y' }, env)).toThrow(/reserved/)
   expect(() => readNotices(false, env)).toThrow(/reserved/)
-  expect(() => acknowledgeNotice(posted.id, env)).toThrow(/reserved/)
-  expect(() => noticeStatus(posted.id, env)).toThrow(/reserved/)
+  expect(() => acknowledgeNotice(posted.recordId, env)).toThrow(/reserved/)
+  expect(() => noticeStatus(posted.recordId, env)).toThrow(/reserved/)
 })
 
 test('delivery entry point refuses the operator sentinel before changing its receipt', () => {
@@ -914,14 +930,18 @@ test('delivery entry point refuses the operator sentinel before changing its rec
     {},
     clock,
   )
-  expect(() => markSessionMessagesDelivered('operator', [posted.id])).toThrow(/real session id/)
-  expect(() => markMonitorNoticesDelivered('operator', [`board:${posted.id}`])).toThrow(
+  expect(() => markSessionMessagesDelivered('operator', [posted.recordId])).toThrow(
+    /real session id/,
+  )
+  expect(() => markMonitorNoticesDelivered('operator', [`board:${posted.recordId}`])).toThrow(
     /real session id/,
   )
   expect(
     db()
-      .query('SELECT delivered_at FROM board_receipt WHERE message_id=? AND reader_session=?')
-      .get(posted.id, 'operator'),
+      .query(
+        'SELECT delivered_at FROM board_receipt WHERE message_record_id=? AND reader_session=?',
+      )
+      .get(posted.recordId, 'operator'),
   ).toEqual({ delivered_at: null })
 })
 
@@ -955,22 +975,22 @@ test('machine:this resolves to the posting machine, interrupts, and reports unac
   )
   expect(
     (
-      db().query('SELECT audience FROM board_message WHERE id=?').get(posted.id) as {
+      db().query('SELECT audience FROM board_message WHERE record_id=?').get(posted.recordId) as {
         audience: string
       }
     ).audience,
   ).toBe(`machine:${machine}`)
   expect(
     claimNotices(false, { CLAUDE_CODE_SESSION_ID: 'machine-one' }, clock + 1).map(
-      (notice) => notice.id,
+      (notice) => notice.recordId,
     ),
-  ).toEqual([posted.id])
-  expect(noticeStatus(posted.id, {}, clock + 1).unacknowledged).toEqual([
+  ).toEqual([posted.recordId])
+  expect(noticeStatus(posted.recordId, {}, clock + 1).unacknowledged).toEqual([
     'machine-one',
     'machine-two',
   ])
-  acknowledgeNotice(posted.id, { CLAUDE_CODE_SESSION_ID: 'machine-one' }, clock + 2)
-  expect(noticeStatus(posted.id, {}, clock + 2).unacknowledged).toEqual(['machine-two'])
+  acknowledgeNotice(posted.recordId, { CLAUDE_CODE_SESSION_ID: 'machine-one' }, clock + 2)
+  expect(noticeStatus(posted.recordId, {}, clock + 2).unacknowledged).toEqual(['machine-two'])
 })
 
 test('ack escalation keeps the posting-time audience snapshot across presence refreshes', () => {
@@ -998,7 +1018,7 @@ test('ack escalation keeps the posting-time audience snapshot across presence re
   readNotices(false, { CLAUDE_CODE_SESSION_ID: 'late-reader' }, clock + 500)
   expect(
     boardEscalations(clock + 1_001)
-      .filter((row) => row.subject.startsWith(`board:${posted.id}:`))
+      .filter((row) => row.subject.startsWith(`board:${posted.number}:`))
       .map((row) => row.subject),
-  ).toEqual([`board:${posted.id}:posting-reader`])
+  ).toEqual([`board:${posted.number}:posting-reader`])
 })

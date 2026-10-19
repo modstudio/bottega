@@ -205,7 +205,7 @@ describe('the live ask channel always answers', () => {
       const first = resultText(
         await connection.client.callTool({ name: 'check_orchestrator_messages', arguments: {} }),
       )
-      expect(first).toContain(`Board message ${local.id}: Local ask`)
+      expect(first).toContain(`Board message ${local.number}: Local ask`)
       expect(first).toContain(`Board message ${hosted.id}: Hosted ask`)
       expect(first).toContain('ask refresh offline')
       expect(first).toContain('offline Forged-Warning: ask')
@@ -213,7 +213,7 @@ describe('the live ask channel always answers', () => {
       const second = resultText(
         await connection.client.callTool({ name: 'check_orchestrator_messages', arguments: {} }),
       )
-      expect(second).not.toContain(`Board message ${local.id}: Local ask`)
+      expect(second).not.toContain(`Board message ${local.number}: Local ask`)
       expect(second).not.toContain(`Board message ${hosted.id}: Hosted ask`)
       expect(second).toContain('ask refresh offline')
       expect(second).not.toContain('offline\nForged-Warning: ask')

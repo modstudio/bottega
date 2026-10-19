@@ -28,7 +28,7 @@ import {
 } from './board-store.ts'
 
 type ClaimRow = {
-  id: number
+  record_id: string
   project: string
   subject_kind: ClaimSubject['kind']
   subject_value: string
@@ -42,11 +42,14 @@ type ClaimRow = {
   lapses_at: string
   closed_at: string | null
   close_reason: ClaimCloseReason | null
-  superseded_by_claim_id: number | null
+  superseded_by_claim_record_id: string | null
 }
 
+const CLAIM_COLUMNS =
+  'record_id,project,subject_kind,subject_value,holder_kind,holder_session,note,run_record_id,duration_ms,taken_at,renewed_at,lapses_at,closed_at,close_reason,superseded_by_claim_record_id'
+
 export type ClaimView = {
-  id: number
+  recordId: string
   project: string
   subject: { kind: ClaimSubject['kind']; value: string }
   holder: string
@@ -58,8 +61,8 @@ export type ClaimView = {
   live: boolean
   closedAt: string | null
   closeReason: ClaimCloseReason | null
-  previousClaimIds: number[]
-  supersededByClaimId: number | null
+  previousClaimRecordIds: string[]
+  supersededByClaimRecordId: string | null
 }
 export type TakeClaimResult = ClaimView & { action: 'taken' | 'renewed' | 'taken-over' }
 export type TakeClaimInput = {
@@ -113,7 +116,7 @@ function rowLive(row: ClaimRow, clock: number, database = db()): boolean {
 
 function view(row: ClaimRow, clock: number, database = db()): ClaimView {
   return {
-    id: row.id,
+    recordId: row.record_id,
     project: row.project,
     subject: { kind: row.subject_kind, value: row.subject_value },
     holder: row.holder_kind === 'operator' ? 'operator' : row.holder_session!,
@@ -125,18 +128,22 @@ function view(row: ClaimRow, clock: number, database = db()): ClaimView {
     live: rowLive(row, clock, database),
     closedAt: row.closed_at,
     closeReason: row.close_reason,
-    previousClaimIds: (
+    previousClaimRecordIds: (
       database
-        .query('SELECT id FROM board_claim WHERE superseded_by_claim_id=? ORDER BY id')
-        .all(row.id) as { id: number }[]
-    ).map(({ id }) => id),
-    supersededByClaimId: row.superseded_by_claim_id,
+        .query(
+          'SELECT record_id FROM board_claim WHERE superseded_by_claim_record_id=? ORDER BY taken_at,record_id',
+        )
+        .all(row.record_id) as { record_id: string }[]
+    ).map(({ record_id }) => record_id),
+    supersededByClaimRecordId: row.superseded_by_claim_record_id,
   }
 }
 
-function claimById(id: number, database = db()): ClaimRow {
-  const row = database.query('SELECT * FROM board_claim WHERE id=?').get(id) as ClaimRow | null
-  if (!row) throw new Error(`no board claim ${id}; choose an existing claim id`)
+function claimByRecordId(recordId: string, database = db()): ClaimRow {
+  const row = database
+    .query(`SELECT ${CLAIM_COLUMNS} FROM board_claim WHERE record_id=?`)
+    .get(recordId) as ClaimRow | null
+  if (!row) throw new Error(`no board claim ${recordId}; choose an existing claim UUID`)
   return row
 }
 
@@ -154,7 +161,7 @@ function validateRunTie(runId: string | undefined, actor: ClaimActor, database =
 }
 
 function linkClaimNotice(
-  claimId: number,
+  claimRecordId: string,
   audience: string,
   title: string,
   body: string,
@@ -172,7 +179,9 @@ function linkClaimNotice(
     }
   })()
   if (!notice) return
-  database.query('UPDATE board_message SET claim_id=? WHERE id=?').run(claimId, notice.id)
+  database
+    .query('UPDATE board_message SET claim_record_id=? WHERE record_id=?')
+    .run(claimRecordId, notice.recordId)
 }
 
 type TakeTransaction = {
@@ -201,7 +210,7 @@ function conflictingClaims(context: TakeTransaction): {
 } {
   const candidates = context.database
     .query(
-      'SELECT * FROM board_claim WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND closed_at IS NULL ORDER BY id',
+      `SELECT ${CLAIM_COLUMNS} FROM board_claim WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND closed_at IS NULL ORDER BY taken_at,record_id`,
     )
     .all(context.project) as ClaimRow[]
   const overlaps = candidates.filter((row) =>
@@ -229,23 +238,23 @@ function renewTakenClaim(row: ClaimRow, context: TakeTransaction): TakeTransacti
     (context.note !== undefined && context.note !== row.note)
   )
     throw new Error(
-      `claim ${row.id} already holds this subject with different terms; release it and take it again`,
+      `claim ${row.record_id} (${row.subject_kind}:${row.subject_value}) already holds this subject with different terms; release it and take it again`,
     )
   const renewedAt = new Date(context.clock).toISOString()
   context.database
-    .query('UPDATE board_claim SET renewed_at=?,lapses_at=? WHERE id=?')
-    .run(renewedAt, new Date(context.clock + row.duration_ms).toISOString(), row.id)
-  return { row: claimById(row.id, context.database), action: 'renewed', refusal: null }
+    .query('UPDATE board_claim SET renewed_at=?,lapses_at=? WHERE record_id=?')
+    .run(renewedAt, new Date(context.clock + row.duration_ms).toISOString(), row.record_id)
+  return { row: claimByRecordId(row.record_id, context.database), action: 'renewed', refusal: null }
 }
 
 function tellConflictingHolders(conflicts: ClaimRow[], context: TakeTransaction): void {
   for (const conflict of conflicts) {
     if (conflict.holder_kind !== 'architect') continue
     linkClaimNotice(
-      conflict.id,
+      conflict.record_id,
       `session:${conflict.holder_session}`,
       'Conflicting claim attempt',
-      `${context.actor.kind === 'operator' ? 'The operator' : `Session ${context.actor.session}`} attempted to claim ${context.input.subject} in ${context.project}; it conflicts with claim ${conflict.id}.`,
+      `${context.actor.kind === 'operator' ? 'The operator' : `Session ${context.actor.session}`} attempted to claim ${context.input.subject} in ${context.project}; it conflicts with claim ${conflict.record_id} (${conflict.subject_kind}:${conflict.subject_value}).`,
       context.env,
       context.clock,
       context.cwd,
@@ -275,10 +284,10 @@ function refusedTake(conflicts: ClaimRow[], context: TakeTransaction): TakeTrans
 function tellTakenOverHolder(claim: ClaimRow, context: TakeTransaction): void {
   if (claim.holder_kind !== 'architect') return
   linkClaimNotice(
-    claim.id,
+    claim.record_id,
     `session:${claim.holder_session}`,
     'Claim taken over',
-    `${context.actor.kind === 'operator' ? 'The operator' : `Session ${context.actor.session}`} took over claim ${claim.id} with ${context.input.subject} in ${context.project}.`,
+    `${context.actor.kind === 'operator' ? 'The operator' : `Session ${context.actor.session}`} took over claim ${claim.record_id} (${claim.subject_kind}:${claim.subject_value}) with ${context.input.subject} in ${context.project}.`,
     context.env,
     context.clock,
     context.cwd,
@@ -288,14 +297,16 @@ function tellTakenOverHolder(claim: ClaimRow, context: TakeTransaction): void {
 
 function insertTakenClaim(conflicts: ClaimRow[], context: TakeTransaction): TakeTransactionResult {
   const now = new Date(context.clock).toISOString()
-  const inserted = context.database
+  const recordId = newRecordId()
+  context.database
     .query(
       `INSERT INTO board_claim
-       (project,project_record_id,subject_kind,subject_value,holder_kind,holder_session,note,run_record_id,duration_ms,
-        taken_at,renewed_at,lapses_at,closed_at,close_reason,superseded_by_claim_id,record_id)
-       VALUES (?,(SELECT record_id FROM project WHERE name=?),?,?,?,?,?,?,?,?,?,?,NULL,NULL,NULL,?)`,
+       (record_id,project,project_record_id,subject_kind,subject_value,holder_kind,holder_session,note,run_record_id,duration_ms,
+        taken_at,renewed_at,lapses_at,closed_at,close_reason,superseded_by_claim_record_id)
+       VALUES (?,?,(SELECT record_id FROM project WHERE name=?),?,?,?,?,?,?,?,?,?,?,NULL,NULL,NULL)`,
     )
     .run(
+      recordId,
       context.project,
       context.project,
       context.subject.kind,
@@ -308,11 +319,10 @@ function insertTakenClaim(conflicts: ClaimRow[], context: TakeTransaction): Take
       now,
       now,
       new Date(context.clock + context.duration).toISOString(),
-      newRecordId(),
     )
-  const row = claimById(Number(inserted.lastInsertRowid), context.database)
+  const row = claimByRecordId(recordId, context.database)
   const close = context.database.query(
-    'UPDATE board_claim SET closed_at=?,close_reason=?,superseded_by_claim_id=? WHERE id=?',
+    'UPDATE board_claim SET closed_at=?,close_reason=?,superseded_by_claim_record_id=? WHERE record_id=?',
   )
   for (const conflict of conflicts) {
     const endedReason = claimCloseReason({
@@ -321,7 +331,7 @@ function insertTakenClaim(conflicts: ClaimRow[], context: TakeTransaction): Take
       runStatus: latestRunStatus(conflict.run_record_id, context.database),
       now: context.clock,
     })
-    close.run(now, endedReason ?? 'taken-over', row.id, conflict.id)
+    close.run(now, endedReason ?? 'taken-over', row.record_id, conflict.record_id)
     tellTakenOverHolder(conflict, context)
   }
   return { row, action: conflicts.length ? 'taken-over' : 'taken', refusal: null }
@@ -378,42 +388,51 @@ export function takeClaim(
 }
 
 export function renewClaim(
-  id: number,
+  recordId: string,
   env: Environment = process.env,
   clock = Date.now(),
 ): ClaimView {
   const actor = claimActor(env)
   const database = writableDb()
   return writeTransaction(() => {
-    const row = claimById(id, database)
+    const row = claimByRecordId(recordId, database)
     if (!rowLive(row, clock, database))
-      throw new Error(`claim ${id} is no longer live; take the subject again`)
+      throw new Error(
+        `claim ${recordId} (${row.subject_kind}:${row.subject_value}) is no longer live; take the subject again`,
+      )
     if (!mayRenewClaim(actor, holder(row)))
-      throw new Error(`only the claim holder may renew claim ${id}`)
+      throw new Error(
+        `only the claim holder may renew claim ${recordId} (${row.subject_kind}:${row.subject_value})`,
+      )
     const at = new Date(clock).toISOString()
     database
-      .query('UPDATE board_claim SET renewed_at=?,lapses_at=? WHERE id=?')
-      .run(at, new Date(clock + row.duration_ms).toISOString(), id)
-    return view(claimById(id, database), clock, database)
+      .query('UPDATE board_claim SET renewed_at=?,lapses_at=? WHERE record_id=?')
+      .run(at, new Date(clock + row.duration_ms).toISOString(), recordId)
+    return view(claimByRecordId(recordId, database), clock, database)
   }, database)
 }
 
 export function releaseClaim(
-  id: number,
+  recordId: string,
   env: Environment = process.env,
   clock = Date.now(),
 ): ClaimView {
   const actor = claimActor(env)
   const database = writableDb()
   return writeTransaction(() => {
-    const row = claimById(id, database)
-    if (!rowLive(row, clock, database)) throw new Error(`claim ${id} is no longer live`)
+    const row = claimByRecordId(recordId, database)
+    if (!rowLive(row, clock, database))
+      throw new Error(
+        `claim ${recordId} (${row.subject_kind}:${row.subject_value}) is no longer live`,
+      )
     if (!mayReleaseClaim(actor, holder(row)))
-      throw new Error(`only the claim holder or operator may release claim ${id}`)
+      throw new Error(
+        `only the claim holder or operator may release claim ${recordId} (${row.subject_kind}:${row.subject_value})`,
+      )
     database
-      .query("UPDATE board_claim SET closed_at=?,close_reason='released' WHERE id=?")
-      .run(new Date(clock).toISOString(), id)
-    return view(claimById(id, database), clock, database)
+      .query("UPDATE board_claim SET closed_at=?,close_reason='released' WHERE record_id=?")
+      .run(new Date(clock).toISOString(), recordId)
+    return view(claimByRecordId(recordId, database), clock, database)
   }, database)
 }
 
@@ -427,7 +446,7 @@ export function listClaims(
   const name = claimProject(project, env, cwd)
   const rows = db()
     .query(
-      'SELECT * FROM board_claim WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) ORDER BY id',
+      `SELECT ${CLAIM_COLUMNS} FROM board_claim WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) ORDER BY taken_at,record_id`,
     )
     .all(name) as ClaimRow[]
   const claims = rows.map((row) => view(row, clock)).filter((row) => all || row.live)
@@ -447,12 +466,12 @@ export function releaseTaskClaims(
   return writeTransaction(() => {
     const rows = database
       .query(
-        "SELECT * FROM board_claim WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND subject_kind='task' AND subject_value=? AND closed_at IS NULL",
+        `SELECT ${CLAIM_COLUMNS} FROM board_claim WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND subject_kind='task' AND subject_value=? AND closed_at IS NULL`,
       )
       .all(project, key) as ClaimRow[]
-    const ids = rows.filter((row) => rowLive(row, clock, database)).map((row) => row.id)
+    const ids = rows.filter((row) => rowLive(row, clock, database)).map((row) => row.record_id)
     const close = database.query(
-      "UPDATE board_claim SET closed_at=?,close_reason='task-closed' WHERE id=?",
+      "UPDATE board_claim SET closed_at=?,close_reason='task-closed' WHERE record_id=?",
     )
     for (const id of ids) close.run(new Date(clock).toISOString(), id)
     return { released: ids.length }
@@ -463,9 +482,11 @@ export function stampEndedClaims(clock = Date.now()): number {
   const database = writableDb()
   return writeTransaction(() => {
     const rows = database
-      .query('SELECT * FROM board_claim WHERE closed_at IS NULL')
+      .query(`SELECT ${CLAIM_COLUMNS} FROM board_claim WHERE closed_at IS NULL`)
       .all() as ClaimRow[]
-    const close = database.query('UPDATE board_claim SET closed_at=?,close_reason=? WHERE id=?')
+    const close = database.query(
+      'UPDATE board_claim SET closed_at=?,close_reason=? WHERE record_id=?',
+    )
     let count = 0
     for (const row of rows) {
       const reason = claimCloseReason({
@@ -475,7 +496,7 @@ export function stampEndedClaims(clock = Date.now()): number {
         now: clock,
       })
       if (!reason) continue
-      close.run(new Date(clock).toISOString(), reason, row.id)
+      close.run(new Date(clock).toISOString(), reason, row.record_id)
       count++
     }
     return count

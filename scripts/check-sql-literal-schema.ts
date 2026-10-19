@@ -55,6 +55,11 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
   ),
   ...exempt(
     'orchestrator/src/database/migrations.ts',
+    ['8df06207a3c2e335'],
+    'board migration orphan preflight reads controlled legacy table and column references before the UUID-key rebuild',
+  ),
+  ...exempt(
+    'orchestrator/src/database/migrations.ts',
     ['4ec7c53222c8a758', 'a29c2123a01df1d0'],
     'migration runner executes SQL loaded from journal files',
   ),
@@ -80,11 +85,6 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
       '79a0d188e8e480f4',
     ],
     'workflow plan queries interpolate only the controlled workflow or step-catalogue table and foreign-key identifiers',
-  ),
-  ...exempt(
-    'orchestrator/src/board/board-push-service.ts',
-    ['449a46c2afd31570'],
-    'board push query interpolates a runtime-sized VALUES list',
   ),
   ...exempt(
     'orchestrator/src/project/project-record-identity.ts',

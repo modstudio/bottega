@@ -1,8 +1,8 @@
 // concern: board-delivery-seams
 /** Refreshes hosted state within each caller's budget, then combines it with local delivery. */
 
-import { classifyBoardId } from '../../../shared/board-mode.ts'
 import type { BoardPurpose } from '../../../shared/board-purpose.ts'
+import { db } from '../database/db.ts'
 
 import {
   claimCachedHosted,
@@ -11,6 +11,7 @@ import {
   markCachedHostedDelivered,
   refreshHostedBoard,
 } from './board-hosted-cache.ts'
+import { resolveBoardDeliveryIdentifier } from './board-message-identifier.ts'
 import { architectIdentity, OPERATOR_READER } from './board-policy.ts'
 import { boardDeliveryForm } from './board-render.ts'
 import {
@@ -44,27 +45,32 @@ type BoardDeliveryNotice = {
   purpose?: BoardPurpose
 }
 
-const splitBoardIds = (sourceIds: Array<string | number>) => {
-  const local: number[] = []
+const splitBoardIds = (
+  sourceIds: Array<string | number>,
+  env: Record<string, string | undefined> = process.env,
+) => {
+  const local: string[] = []
   const hosted: string[] = []
   for (const sourceId of sourceIds) {
-    const id = String(sourceId)
-    const shape = classifyBoardId(id)
-    if (shape === 'local') local.push(Number(id))
-    if (shape === 'hosted') hosted.push(id)
+    const resolved = resolveBoardDeliveryIdentifier(db(), sourceId, env)
+    if (!resolved) continue
+    if (resolved.source === 'local') local.push(resolved.recordId)
+    else hosted.push(resolved.recordId)
   }
   return { local, hosted }
 }
 
 const deliveryNotice = (notice: {
-  id: number | string
+  id?: number | string
+  number?: number
+  recordId?: string
   text: string
   oneLine: string
   ackRequired: boolean
   createdAt: string
   purpose?: BoardPurpose
 }): BoardDeliveryNotice => ({
-  id: String(notice.id),
+  id: String(notice.number ?? notice.id ?? notice.recordId),
   text: notice.text,
   oneLine: notice.oneLine,
   ackRequired: notice.ackRequired,
@@ -177,7 +183,7 @@ export async function markBoardNoticesDelivered(
   sourceIds: Array<string | number>,
   env: Record<string, string | undefined> = process.env,
 ): Promise<void> {
-  const ids = splitBoardIds(sourceIds)
+  const ids = splitBoardIds(sourceIds, env)
   markNoticesDelivered(ids.local, env)
   if (ids.hosted.length) await markCachedHostedDelivered(sessionReader(env), ids.hosted)
 }
