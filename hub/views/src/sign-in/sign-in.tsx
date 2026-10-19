@@ -1,17 +1,20 @@
 import { Button } from '@bottega/hub-ui/button'
 import { Input } from '@bottega/hub-ui/field/input'
 import { PageHeader } from '@bottega/hub-ui/page-header'
-import { Link, useNavigate } from '@tanstack/react-router'
-import { useState } from 'react'
+import { type ReactNode, useState } from 'react'
+import { signInStyles } from './sign-in.styles.ts'
 
 export function HostedSignIn({
   passwordChanged = false,
   signInWithEmail,
+  onSuccess,
+  renderForgotLink,
 }: {
   passwordChanged?: boolean
   signInWithEmail: (email: string, password: string) => Promise<void>
+  onSuccess(): void | Promise<void>
+  renderForgotLink(children: ReactNode, className: string): ReactNode
 }) {
-  const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -23,7 +26,7 @@ export function HostedSignIn({
     setPending(true)
     try {
       await signInWithEmail(email, password)
-      await navigate({ to: '/runs' })
+      await onSuccess()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -35,10 +38,12 @@ export function HostedSignIn({
     <section>
       <PageHeader title="Sign in" subtitle="Record session" />
       {passwordChanged ? (
-        <p className="mb-4">Your password has been changed. Sign in with your new password.</p>
+        <p className={signInStyles().notice()}>
+          Your password has been changed. Sign in with your new password.
+        </p>
       ) : null}
-      <form className="max-w-sm space-y-4" onSubmit={(event) => void submit(event)}>
-        <label htmlFor="hosted-email" className="block space-y-1">
+      <form className={signInStyles().form()} onSubmit={(event) => void submit(event)}>
+        <label htmlFor="hosted-email" className={signInStyles().label()}>
           <span>Email</span>
           <Input
             id="hosted-email"
@@ -49,7 +54,7 @@ export function HostedSignIn({
             onChange={(event) => setEmail(event.target.value)}
           />
         </label>
-        <label htmlFor="hosted-password" className="block space-y-1">
+        <label htmlFor="hosted-password" className={signInStyles().label()}>
           <span>Password</span>
           <Input
             id="hosted-password"
@@ -61,18 +66,14 @@ export function HostedSignIn({
           />
         </label>
         {error ? (
-          <p data-tone="error" className="text-status-text">
+          <p data-tone="error" className={signInStyles().error()}>
             {error}
           </p>
         ) : null}
         <Button variant="primary" type="submit" disabled={pending}>
           {pending ? 'Signing in...' : 'Sign in'}
         </Button>
-        <p>
-          <Link to="/forgot-password" className="text-link hover:underline">
-            Forgot password?
-          </Link>
-        </p>
+        <p>{renderForgotLink('Forgot password?', signInStyles().link())}</p>
       </form>
     </section>
   )

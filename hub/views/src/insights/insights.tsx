@@ -13,9 +13,8 @@ import {
 import { ToolbarBand } from '@bottega/hub-ui/toolbar-band'
 import { compactTokens, duration } from '@bottega/hub-util/format'
 import { responseSubtitle } from '@bottega/hub-views/work-summary'
-import { useEffect } from 'react'
-import { WindowControl } from '@/components/design-system'
-import { setWorkCounts } from '@/lib/window'
+import { type ReactNode, useEffect } from 'react'
+import { insightStyles } from './insights.styles.ts'
 
 type InsightName = 'ratio' | 'spend' | 'routing' | 'health'
 type Strip = {
@@ -118,9 +117,19 @@ function SectionHead({ title, detail }: { title: string; detail?: string }) {
   return <SectionTitle detail={detail}>{title}</SectionTitle>
 }
 
-function InsightChrome({ title, response }: { title: string; response: Strip }) {
+function InsightChrome({
+  title,
+  response,
+  windowControl,
+  onCountsChange,
+}: {
+  title: string
+  response: Strip
+  windowControl: ReactNode
+  onCountsChange(counts: Strip['counts']): void
+}) {
   const phone = useMediaQuery(PHONE_QUERY)
-  useEffect(() => setWorkCounts(response.counts), [response.counts])
+  useEffect(() => onCountsChange(response.counts), [onCountsChange, response.counts])
   const subtitle = responseSubtitle(response)
   return (
     <>
@@ -128,7 +137,7 @@ function InsightChrome({ title, response }: { title: string; response: Strip }) 
         title={title}
         subtitle={subtitle.text}
         subtitleTitle={subtitle.title}
-        actions={phone ? <ToolbarBand scope={<WindowControl />} /> : <WindowControl />}
+        actions={phone ? <ToolbarBand scope={windowControl} /> : windowControl}
       />
       <StatRow>
         <StatTile
@@ -151,13 +160,15 @@ function InsightChrome({ title, response }: { title: string; response: Strip }) 
   )
 }
 
-function RatioView({ data }: { data: RatioData }) {
+export function RatioView({ data }: { data: RatioData }) {
   const drawn = data.days.filter((day) => day.ratio != null || day.excluded)
   const top = Math.ceil(Math.max(1, ...drawn.map((day) => day.ratio || 0)) / 25e6) * 25e6 || 25e6
   const ticks = [1, 0.75, 0.5, 0.25, 0]
   return (
     <>
-      <p className="mb-3 text-text-muted">The one number every routing decision exists to move.</p>
+      <p className={insightStyles().intro()}>
+        The one number every routing decision exists to move.
+      </p>
       <StatRow>
         <StatTile
           figure={compact(data.perTask)}
@@ -175,13 +186,13 @@ function RatioView({ data }: { data: RatioData }) {
         />
         <StatTile figure="Lower" label="Direction" hint="A fall means less spend, or more tasks" />
       </StatRow>
-      <div className="mt-5 flex h-[280px] min-w-0 border border-border-default p-3">
-        <div className="flex w-16 shrink-0 flex-col justify-between pb-7 text-right text-xs text-text-muted">
+      <div className={insightStyles().chart()}>
+        <div className={insightStyles().axis()}>
           {ticks.map((tick) => (
             <span key={tick}>{compact(top * tick)}</span>
           ))}
         </div>
-        <div className="ml-3 flex min-w-0 flex-1 items-end gap-2 overflow-x-auto border-b border-l border-border-default px-2">
+        <div className={insightStyles().bars()}>
           {drawn.map((day) => {
             const height =
               day.excluded === 'gap'
@@ -194,22 +205,26 @@ function RatioView({ data }: { data: RatioData }) {
                   ? 'partial'
                   : compact(day.ratio)
             return (
-              <div
-                key={day.day}
-                className="flex h-full min-w-10 flex-1 flex-col items-center justify-end"
-              >
-                <span className="mb-1 whitespace-nowrap text-xs text-text-muted">{label}</span>
+              <div key={day.day} className={insightStyles().barColumn()}>
+                <span className={insightStyles().barValue()}>{label}</span>
                 <div
-                  className={`w-7 border border-chart-1 ${day.excluded === 'gap' ? 'bg-[repeating-linear-gradient(135deg,transparent,transparent_3px,var(--border-default)_3px,var(--border-default)_5px)]' : day.excluded === 'today' ? 'bg-surface-sunken' : 'bg-chart-1'}`}
+                  className={insightStyles({
+                    barKind:
+                      day.excluded === 'gap'
+                        ? 'gap'
+                        : day.excluded === 'today'
+                          ? 'today'
+                          : 'complete',
+                  }).bar()}
                   style={{ height }}
                 />
-                <span className="mt-1 text-xs text-text-muted">{day.day.slice(5)}</span>
+                <span className={insightStyles().barLabel()}>{day.day.slice(5)}</span>
               </div>
             )
           })}
         </div>
       </div>
-      <p className="max-w-[72ch] mt-4 text-text-muted">
+      <p className={insightStyles().ratioNote()}>
         Hatched days are drawn but not counted. A day carrying tasks with almost no tokens is a gap,
         not efficiency - work done on the other machine, whose transcripts are not here - and today
         is still accruing spend against commits that have not landed. Reading either as a ratio
@@ -224,10 +239,10 @@ function SpendView({ data }: { data: SpendData }) {
   const mix = Object.entries(data.lineMix).sort((a, b) => b[1] - a[1])
   return (
     <>
-      <p className="mb-3 text-text-muted">
+      <p className={insightStyles().intro()}>
         Each currency against five denominators, {data.days} usable days from {data.from}.
       </p>
-      <div className="overflow-x-auto border border-border-default">
+      <div className={insightStyles().tableFrame()}>
         <Table>
           <TableHeader>
             <TableRow>
@@ -245,9 +260,11 @@ function SpendView({ data }: { data: SpendData }) {
             {Object.entries(data.denominators).map(([name, denominator]) => (
               <TableRow key={name}>
                 <TableCell>
-                  <span className="font-semibold">
+                  <span className={insightStyles().strong()}>
                     {name}
-                    {name === 'engaged hour' ? <Badge className="ml-2">new</Badge> : null}
+                    {name === 'engaged hour' ? (
+                      <Badge className={insightStyles().badgeSpace()}>new</Badge>
+                    ) : null}
                   </span>
                 </TableCell>
                 {data.numerators.map((item) => {
@@ -260,9 +277,7 @@ function SpendView({ data }: { data: SpendData }) {
                   const value = item.total / denominator
                   return (
                     <TableCell key={`${name}:${item.name}`} numeric>
-                      <span
-                        className={item.name === 'claude' ? 'font-semibold' : 'text-text-muted'}
-                      >
+                      <span className={insightStyles({ emphasis: item.name === 'claude' }).value()}>
                         {item.kind === 'usd'
                           ? `$${value.toFixed(value < 1 ? 4 : 2)}`
                           : compact(value)}
@@ -275,40 +290,42 @@ function SpendView({ data }: { data: SpendData }) {
           </TableBody>
         </Table>
       </div>
-      <div className="mt-5 grid gap-8 md:grid-cols-2">
-        <p className="max-w-[72ch] text-text-muted">
-          <strong className="text-text-primary">No denominator here is trustworthy alone</strong>,
-          and the signal is whether they agree. Tasks miss work carrying no ticket; lines reward
+      <div className={insightStyles().split()}>
+        <p className={insightStyles().measure()}>
+          <strong className={insightStyles().primary()}>
+            No denominator here is trustworthy alone
+          </strong>
+          , and the signal is whether they agree. Tasks miss work carrying no ticket; lines reward
           verbosity; commits follow habit; files say nothing about depth. Engaged hour is the only
           one that depends on none of those.
           <br />
           <br />
-          <strong className="text-text-primary">
+          <strong className={insightStyles().primary()}>
             Columns are separate currencies and are never summed.
           </strong>{' '}
           Two runs doing comparable work on the same question reported 452,860 tokens and 91,996.
           That gap is about how each vendor counts.
         </p>
         <div>
-          <div className="mb-2 font-semibold text-text-muted">Line churn</div>
+          <div className={insightStyles().subhead()}>Line churn</div>
           {mix.map(([name, value]) => {
             const percentage = Math.round((value / mixTotal) * 100)
             return (
-              <div key={name} className="mb-2">
-                <div className="flex justify-between">
-                  <span className="text-text-muted">{name}</span>
+              <div key={name} className={insightStyles().lineItem()}>
+                <div className={insightStyles().lineHead()}>
+                  <span className={insightStyles().muted()}>{name}</span>
                   <span>{percentage}%</span>
                 </div>
-                <div className="h-1 bg-surface-sunken">
+                <div className={insightStyles().lineTrack()}>
                   <div
-                    className="h-full bg-chart-1"
+                    className={insightStyles().lineFill()}
                     style={{ width: `${Math.max(2, percentage)}%` }}
                   />
                 </div>
               </div>
             )
           })}
-          <div className="mt-3 text-text-muted">
+          <div className={insightStyles().detail()}>
             Generated output is excluded from the line denominator: one migration rewrites a
             25k-line snapshot, so a one-column change reads as a 23,000-line day.
           </div>
@@ -326,14 +343,14 @@ type GuideCandidate = {
 }
 
 function GuideCell({ candidate, lead }: { candidate: unknown; lead: 'score' | 'time' }) {
-  if (!candidate) return <span className="text-text-muted">-</span>
+  if (!candidate) return <span className={insightStyles().muted()}>-</span>
   const value = candidate as GuideCandidate
   const score = `${pct(value.score)} of ${value.evidence}`
   const time = value.latencyMs != null ? formatMs(value.latencyMs) : '-'
   return (
     <>
       <strong>{value.agent}</strong>{' '}
-      <span className="text-text-muted">
+      <span className={insightStyles().muted()}>
         {lead === 'time' ? `${time} - ${score}` : `${score} - ${time}`}
       </span>
     </>
@@ -358,7 +375,7 @@ export function RoutingView({ data }: { data: RoutingData }) {
         title="What to use for what"
         detail={`${data.unscored} runs unscored - an unscored run teaches the router nothing`}
       />
-      <div className="overflow-x-auto border border-border-default">
+      <div className={insightStyles().tableFrame()}>
         <Table>
           <TableHeader>
             <TableRow>
@@ -372,14 +389,16 @@ export function RoutingView({ data }: { data: RoutingData }) {
             {data.guide.map((row) => (
               <TableRow key={`${row.job}:${row.promptBucket ?? 'empty'}`}>
                 <TableCell>
-                  <span className="font-semibold">
+                  <span className={insightStyles().strong()}>
                     {row.job}
                     {bucketLabel(row.promptBucket) ? ` [${bucketLabel(row.promptBucket)}]` : ''}
                   </span>
                 </TableCell>
                 <TableCell>
                   <GuideCell candidate={row.best} lead="score" />
-                  {row.provisional ? <Badge className="ml-2">provisional</Badge> : null}
+                  {row.provisional ? (
+                    <Badge className={insightStyles().badgeSpace()}>provisional</Badge>
+                  ) : null}
                 </TableCell>
                 <TableCell>
                   <GuideCell candidate={row.quickest} lead="time" />
@@ -395,7 +414,7 @@ export function RoutingView({ data }: { data: RoutingData }) {
         title="Score by agent, job and prompt bucket"
         detail="the router's own scoreboard, over judgments not runs"
       />
-      <div className="overflow-x-auto border border-border-default">
+      <div className={insightStyles().tableFrame()}>
         <Table>
           <TableHeader>
             <TableRow>
@@ -411,7 +430,7 @@ export function RoutingView({ data }: { data: RoutingData }) {
             {jobs.map((jobBucket) => (
               <TableRow key={jobBucket}>
                 <TableCell>
-                  <span className="font-semibold">
+                  <span className={insightStyles().strong()}>
                     {jobBucket.replace(':small', ' [<16 KiB]').replace(':large', ' [>=16 KiB]')}
                   </span>
                 </TableCell>
@@ -427,7 +446,7 @@ export function RoutingView({ data }: { data: RoutingData }) {
                   const title = `${cell.runs} runs, ${cell.failures} failed${cell.lat != null ? `, median ${formatMs(cell.lat)}` : ''}`
                   return (
                     <TableCell key={agent} numeric title={title}>
-                      {pct(score)} <span className="text-text-muted">/{cell.judged}</span>
+                      {pct(score)} <span className={insightStyles().muted()}>/{cell.judged}</span>
                     </TableCell>
                   )
                 })}
@@ -437,13 +456,13 @@ export function RoutingView({ data }: { data: RoutingData }) {
         </Table>
       </div>
 
-      <div className="grid gap-8 lg:grid-cols-2">
+      <div className={insightStyles().grid()}>
         <div>
           <SectionHead
             title="Agents"
             detail={`${data.totals.runs} runs, ${data.totals.failed} failed, ${data.stale} stale`}
           />
-          <div className="overflow-x-auto border border-border-default">
+          <div className={insightStyles().tableFrame()}>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -458,7 +477,7 @@ export function RoutingView({ data }: { data: RoutingData }) {
                 {data.health.map((row) => (
                   <TableRow key={row.agent}>
                     <TableCell>
-                      <span className="font-semibold">{row.agent}</span>
+                      <span className={insightStyles().strong()}>{row.agent}</span>
                     </TableCell>
                     <TableCell muted>{row.billing}</TableCell>
                     <TableCell>
@@ -469,7 +488,7 @@ export function RoutingView({ data }: { data: RoutingData }) {
                       ) : row.lastStatus ? (
                         <Badge tone="error">{row.lastStatus}</Badge>
                       ) : (
-                        <span className="text-text-muted">no runs</span>
+                        <span className={insightStyles().muted()}>no runs</span>
                       )}
                     </TableCell>
                     <TableCell muted>{row.lastKind || '-'}</TableCell>
@@ -486,13 +505,13 @@ export function RoutingView({ data }: { data: RoutingData }) {
             title="Recurring blockers"
             detail={`last ${data.blockerDays} day${data.blockerDays === 1 ? '' : 's'}`}
           />
-          <div className="overflow-x-auto border border-border-default">
+          <div className={insightStyles().tableFrame()}>
             {data.blockers == null ? (
-              <div className="p-6 text-center text-text-muted">
+              <div className={insightStyles().empty()}>
                 Blocker data is unavailable. Agent health and routing are still available.
               </div>
             ) : data.blockers.length === 0 ? (
-              <div className="p-6 text-center text-text-muted">
+              <div className={insightStyles().empty()}>
                 No environment blockers were reported in this window.
               </div>
             ) : (
@@ -513,7 +532,9 @@ export function RoutingView({ data }: { data: RoutingData }) {
                     return (
                       <TableRow key={`${row.source}:${row.kind ?? row.example ?? 'unknown'}`}>
                         <TableCell>
-                          <span className="font-semibold">{row.kind ?? example ?? '-'}</span>
+                          <span className={insightStyles().strong()}>
+                            {row.kind ?? example ?? '-'}
+                          </span>
                         </TableCell>
                         <TableCell>
                           <Badge>{row.source === 'detected' ? 'detected' : 'declared'}</Badge>
@@ -531,8 +552,8 @@ export function RoutingView({ data }: { data: RoutingData }) {
               </Table>
             )}
           </div>
-          <p className="mt-4 text-text-muted">
-            <strong className="text-text-primary">
+          <p className={insightStyles().secondaryNote()}>
+            <strong className={insightStyles().primary()}>
               These are environment problems, not agent failures.
             </strong>{' '}
             An agent that hit one carried on and reported it. They are ordered by runs affected, so
@@ -544,7 +565,7 @@ export function RoutingView({ data }: { data: RoutingData }) {
           {data.spawns?.length ? (
             <>
               <SectionHead title="Subagent gate" detail="what it allowed and denied, and why" />
-              <div className="overflow-x-auto border border-border-default">
+              <div className={insightStyles().tableFrame()}>
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -573,7 +594,7 @@ export function RoutingView({ data }: { data: RoutingData }) {
           {data.byRepo?.length ? (
             <>
               <SectionHead title="Vendor spend by project" detail="successful runs only" />
-              <div className="overflow-x-auto border border-border-default">
+              <div className={insightStyles().tableFrame()}>
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -601,8 +622,8 @@ export function RoutingView({ data }: { data: RoutingData }) {
           ) : null}
         </div>
       </div>
-      <p className="mt-5 max-w-4xl text-text-muted">
-        <strong className="text-text-primary">
+      <p className={insightStyles().note()}>
+        <strong className={insightStyles().primary()}>
           A run that produced nothing counts against the agent.
         </strong>{' '}
         Reading only successful runs made failure invisible: an agent that fails most of the time
@@ -623,8 +644,8 @@ export function HealthView({ data }: { data: HealthData }) {
         : `${(ms / 3_600_000).toFixed(1)}h`
   return (
     <>
-      <p className="mb-3 text-text-muted">{data.header}</p>
-      <div className="overflow-x-auto border border-border-default">
+      <p className={insightStyles().intro()}>{data.header}</p>
+      <div className={insightStyles().tableFrame()}>
         <Table>
           <TableHeader>
             <TableRow>
@@ -642,7 +663,7 @@ export function HealthView({ data }: { data: HealthData }) {
               return (
                 <TableRow key={row.kind}>
                   <TableCell>
-                    <span className="font-semibold">{row.kind}</span>
+                    <span className={insightStyles().strong()}>{row.kind}</span>
                   </TableCell>
                   <TableCell numeric>{row.count}</TableCell>
                   <TableCell numeric>{formatTime(row.totalTimeMs)}</TableCell>
@@ -652,7 +673,7 @@ export function HealthView({ data }: { data: HealthData }) {
                   <TableCell muted>{row.lastSeen ? row.lastSeen.slice(0, 10) : '-'}</TableCell>
                   <TableCell>
                     <div
-                      className="flex h-6 items-end gap-px"
+                      className={insightStyles().sparkline()}
                       title={row.sparkline
                         .map((point) => `${point.day}: ${point.count}`)
                         .join('\n')}
@@ -660,7 +681,7 @@ export function HealthView({ data }: { data: HealthData }) {
                       {row.sparkline.map((point) => (
                         <span
                           key={point.day}
-                          className="w-1.5 bg-chart-1"
+                          className={insightStyles().sparkBar()}
                           style={{
                             height: point.count
                               ? `${Math.max(3, Math.round((point.count / peak) * 24))}px`
@@ -681,7 +702,7 @@ export function HealthView({ data }: { data: HealthData }) {
         title="False harness verdicts"
         detail={`${data.landingRefusals} landing refusal${data.landingRefusals === 1 ? '' : 's'} reported separately`}
       />
-      <div className="overflow-x-auto border border-border-default">
+      <div className={insightStyles().tableFrame()}>
         <Table>
           <TableHeader>
             <TableRow>
@@ -697,7 +718,7 @@ export function HealthView({ data }: { data: HealthData }) {
               .map((row) => (
                 <TableRow key={row.kind}>
                   <TableCell>
-                    <span className="font-semibold">{row.kind}</span>
+                    <span className={insightStyles().strong()}>{row.kind}</span>
                   </TableCell>
                   <TableCell numeric>{row.falseVerdicts}</TableCell>
                   <TableCell numeric>{row.verdicts}</TableCell>
@@ -713,7 +734,7 @@ export function HealthView({ data }: { data: HealthData }) {
             title="Lens provenance"
             detail="substituted sources and silent negative space by agent"
           />
-          <div className="overflow-x-auto border border-border-default">
+          <div className={insightStyles().tableFrame()}>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -744,23 +765,32 @@ export function InsightView({
   response,
   pending,
   error,
+  windowControl,
+  onCountsChange,
 }: {
   name: InsightName
   response: InsightResponse | undefined
   pending: boolean
   error: string | null
+  windowControl: ReactNode
+  onCountsChange(counts: Strip['counts']): void
 }) {
-  if (pending) return <p className="text-text-muted">Loading {name}...</p>
+  if (pending) return <p className={insightStyles().muted()}>Loading {name}...</p>
   if (error)
     return (
-      <p data-tone="error" className="text-status-text">
+      <p data-tone="error" className={insightStyles().status()}>
         could not load: {error}
       </p>
     )
   if (!response) return null
   return (
     <section>
-      <InsightChrome title={name.charAt(0).toUpperCase() + name.slice(1)} response={response} />
+      <InsightChrome
+        title={name.charAt(0).toUpperCase() + name.slice(1)}
+        response={response}
+        windowControl={windowControl}
+        onCountsChange={onCountsChange}
+      />
       {name === 'health' ? (
         <HealthView data={response.data as HealthData} />
       ) : name === 'ratio' ? (

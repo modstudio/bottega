@@ -3,7 +3,7 @@ import { queryClient } from '@bottega/hub-data/client'
 import type { UseTaskResult } from '@bottega/hub-data/use-task'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { TaskScreen } from './task-screen'
+import { TaskScreen } from './-task-screen'
 
 test('a hosted task renders its history and its rail tabs without edit controls', () => {
   const detail: NonNullable<UseTaskResult['detail']> = {

@@ -12,7 +12,7 @@ import { TaskHistory } from '@bottega/hub-views/task-history'
 import { TaskPage, type TaskPageSave } from '@bottega/hub-views/task-page'
 import type { TaskPageDoc, TaskPageFact } from '@bottega/hub-views/task-page/task-rail'
 import { CalendarDays, UserRound, X } from 'lucide-react'
-import { taskHistoryEntries } from '@/lib/task-history'
+import { taskHistoryEntries } from '@/routes/-task-history'
 import type { TaskScreenDetail, TaskScreenResult } from '@/routes/-task-screen-data'
 
 type TaskStatus = 'open' | 'active' | 'review' | 'done' | 'dropped'

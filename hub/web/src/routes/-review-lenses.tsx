@@ -2,17 +2,15 @@ import { Badge } from '@bottega/hub-ui/badge'
 import { Button } from '@bottega/hub-ui/button'
 import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
 import { Companion } from '@bottega/hub-ui/companion'
-import { DisplayRow, FieldSection } from '@bottega/hub-ui/form-layout'
+import { DisplayRow } from '@bottega/hub-ui/form-layout'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { runEasternTime } from '@bottega/hub-util/format'
 import { type ProjectColors, ProjectMark } from '@bottega/hub-views/project-colors'
+import { ReviewLensList } from '@bottega/hub-views/reviews'
 import { useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
-import { useDetailPanel } from '@/lib/detail-panel'
-import type {
-  RunDetailReviewFinding,
-  RunDetailReviewLens,
-} from '../../../../shared/review-presentation.ts'
+import { useDetailPanel } from '@/routes/-detail-panel'
+import type { RunDetailReviewLens } from '../../../../shared/review-presentation.ts'
 
 type HostedReview = {
   id: string
@@ -23,43 +21,6 @@ type HostedReview = {
   tier?: number | null
   lensCount?: number
   findingCount?: number
-}
-
-export function ReviewLensList({ lenses }: { lenses: RunDetailReviewLens[] }) {
-  if (!lenses.length) return <p className="mt-4 text-text-muted">No review lenses.</p>
-  return (
-    <div className="mt-4 space-y-6">
-      {lenses.map((lens, index) => {
-        const findings = lens.findings
-        return (
-          <FieldSection
-            key={lens.id}
-            title={lens.lens || `Lens ${index + 1}`}
-            description={lens.agent}
-          >
-            {findings.length ? (
-              findings.map((finding: RunDetailReviewFinding) => {
-                return (
-                  <div key={finding.id} className="border border-border-default p-3">
-                    <div className="mb-2 flex items-center gap-2">
-                      <Badge>{finding.severity}</Badge>
-                      <span className="text-text-muted">{finding.location}</span>
-                    </div>
-                    <p>{finding.evidence}</p>
-                    {finding.proposedCorrection ? (
-                      <p className="mt-2 text-text-muted">{finding.proposedCorrection}</p>
-                    ) : null}
-                  </div>
-                )
-              })
-            ) : (
-              <p className="text-text-muted">No findings.</p>
-            )}
-          </FieldSection>
-        )
-      })}
-    </div>
-  )
 }
 
 export function HostedReviews({

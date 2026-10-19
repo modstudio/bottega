@@ -1,7 +1,7 @@
 import { isHostedMode } from '@bottega/hub-data/hub-mode'
 import { useHostedReview } from '@bottega/hub-data/use-reviews'
 import { createFileRoute, Navigate } from '@tanstack/react-router'
-import { HostedReviewDetail } from '@/components/review-lenses'
+import { HostedReviewDetail } from '@/routes/-review-lenses'
 
 export const Route = createFileRoute('/reviews/$id')({
   component: function ReviewDetailPage() {

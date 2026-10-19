@@ -1,6 +1,6 @@
 import { useTask } from '@bottega/hub-data/use-task'
 import { useNavigate } from '@tanstack/react-router'
-import { TaskScreen } from '@/components/task-screen'
+import { TaskScreen } from '@/routes/-task-screen'
 
 /** A task route's search: which stored task a key names, and which of its documents is open. */
 export function taskSearch(search: Record<string, unknown>): { id?: string; doc?: string } {

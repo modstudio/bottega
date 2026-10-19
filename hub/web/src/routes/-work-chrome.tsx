@@ -1,16 +1,14 @@
 import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
 import { PageHeader } from '@bottega/hub-ui/page-header'
-import { StatRow, StatTile } from '@bottega/hub-ui/stat'
 import { ToolbarBand } from '@bottega/hub-ui/toolbar-band'
 import { responseSubtitle } from '@bottega/hub-views/work-summary'
+import { WorkStats } from '@bottega/hub-views/work-summary/work-stats'
 import { type ReactNode, useEffect } from 'react'
-import { useWindowFilters, WindowControl } from '@/components/design-system'
 import { setWorkCounts } from '@/lib/window'
-
-const number = new Intl.NumberFormat('en-US')
+import { useWindowFilters, WindowControl } from '@/routes/-window-controls'
 
 /** What every work page's response carries for its header and figures. */
-export type ChromeResponse = {
+type ChromeResponse = {
   engaged: string
   activeAgents: string[]
   tasksShipped: number
@@ -19,7 +17,7 @@ export type ChromeResponse = {
   counts: { flight: number; done: number; runs: number }
 }
 
-export type Facets = { projects: string[]; agents: string[]; sources: string[] }
+type Facets = { projects: string[]; agents: string[]; sources: string[] }
 
 type ChromeFigures = Pick<
   ChromeResponse,
@@ -27,24 +25,6 @@ type ChromeFigures = Pick<
 >
 
 /** The window's headline figures. */
-export function WorkStats({ response }: { response: ChromeFigures }) {
-  return (
-    <StatRow>
-      <StatTile figure={response.engaged} label="Engaged" live={response.activeAgents.length > 0} />
-      <StatTile
-        figure={response.activeAgents.length}
-        label="Agents working"
-        hint={response.activeAgents.join(', ') || 'No agent on a task'}
-      />
-      <StatTile
-        figure={number.format(response.tasksShipped)}
-        label="Tasks shipped"
-        hint="Last 14 days"
-      />
-    </StatRow>
-  )
-}
-
 /**
  * The page's header and figures. On a phone every control joins one band: a page with a
  * TableCard hands the window and figures to the card's band (`inCard`); a page without one

@@ -185,6 +185,7 @@ const hubViewFolders = [
   'markdown',
   'document-surface',
   'key-line',
+  'insights',
   'detail-rail',
   'rail-section',
   'contents-list',
@@ -198,9 +199,13 @@ const hubViewFolders = [
   'project-colors',
   'projects',
   'reports',
+  'reviews',
   'snapshot',
+  'sign-in',
   'source-mark',
+  'waiting-badge',
   'work-summary',
+  'work-list',
 ]
 
 const hubViewsFolderLayerRuleName = 'hub-views-folder-has-a-layer'
