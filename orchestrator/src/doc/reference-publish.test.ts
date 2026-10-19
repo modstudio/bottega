@@ -108,7 +108,7 @@ test('reference publishing is the only write path and is idempotent and removing
       consumeDoc('project', PLATFORM_SLUG, existing.slug, { reason: 'hand consume' }),
     ).rejects.toThrow(`${PLATFORM_SLUG} doc reference publish`)
     await expect(
-      restoreDoc('project', PLATFORM_SLUG, existing.slug, revision.id, {
+      restoreDoc('project', PLATFORM_SLUG, existing.slug, revision.record_id, {
         reason: 'hand restore',
       }),
     ).rejects.toThrow(`${PLATFORM_SLUG} doc reference publish`)

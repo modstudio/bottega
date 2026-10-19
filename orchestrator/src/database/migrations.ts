@@ -636,6 +636,65 @@ function boardReferenceOrphanCounts(d: Database): string[] {
   return findings
 }
 
+function docReferenceOrphanCounts(d: Database): string[] {
+  const findings: string[] = []
+  for (const [table, column, label] of [
+    ['doc', 'parent_id', 'doc.parent_record_id'],
+    ['doc_revision', 'parent_id', 'doc_revision.parent_record_id'],
+  ] as const) {
+    const count = (
+      d
+        .query(
+          `SELECT COUNT(*) n FROM ${table} child WHERE child.${column} IS NOT NULL AND NOT EXISTS (SELECT 1 FROM doc parent WHERE parent.id=child.${column})`,
+        )
+        .get() as { n: number }
+    ).n
+    if (count) findings.push(`${label}=${count}`)
+  }
+  const runCount = (
+    d
+      .query(
+        `SELECT COUNT(*) n FROM run row,json_each(row.doc_revisions) item WHERE row.doc_revisions IS NOT NULL AND (item.type<>'integer' OR NOT EXISTS (SELECT 1 FROM doc_revision revision WHERE revision.id=item.value))`,
+      )
+      .get() as { n: number }
+  ).n
+  if (runCount) findings.push(`run.doc_revisions=${runCount}`)
+  const packCount = (
+    d
+      .query(
+        `SELECT COUNT(*) n FROM canon_pack row,json_each(row.doc_revisions) item WHERE json_type(item.value)<>'object' OR json_type(item.value,'$.revisionId')<>'integer' OR NOT EXISTS (SELECT 1 FROM doc_revision revision WHERE revision.id=json_extract(item.value,'$.revisionId'))`,
+      )
+      .get() as { n: number }
+  ).n
+  if (packCount) findings.push(`canon_pack.doc_revisions=${packCount}`)
+  const filingCount = (
+    d
+      .query(
+        `SELECT COUNT(*) n FROM question row WHERE row.filed_as='doc' AND (row.filed_ref IS NULL OR instr(row.filed_ref,'@')=0 OR NOT EXISTS (SELECT 1 FROM doc_revision revision WHERE revision.record_id=substr(row.filed_ref,instr(row.filed_ref,'@')+1)))`,
+      )
+      .get() as { n: number }
+  ).n
+  if (filingCount) findings.push(`question.filed_ref=${filingCount}`)
+  const ambiguousArtifactCount = (
+    d
+      .query(
+        `SELECT COUNT(*) n FROM workflow_obligation row,json_each(row.satisfied_evidence) item JOIN doc document ON document.id=CAST(json_extract(item.value,'$.value') AS INTEGER) JOIN run parent ON parent.number=CAST(json_extract(item.value,'$.value') AS INTEGER) WHERE row.satisfied_evidence IS NOT NULL AND json_extract(item.value,'$.flag')='--artifact' AND json_extract(item.value,'$.value') NOT LIKE 'doc:%'`,
+      )
+      .get() as { n: number }
+  ).n
+  if (ambiguousArtifactCount)
+    findings.push(`workflow_obligation.satisfied_evidence.ambiguous=${ambiguousArtifactCount}`)
+  const artifactCount = (
+    d
+      .query(
+        `SELECT COUNT(*) n FROM workflow_obligation row,json_each(row.satisfied_evidence) item WHERE row.satisfied_evidence IS NOT NULL AND json_extract(item.value,'$.flag')='--artifact' AND NOT EXISTS (SELECT 1 FROM doc document WHERE document.id=CAST(CASE WHEN json_extract(item.value,'$.value') LIKE 'doc:%' THEN substr(json_extract(item.value,'$.value'),5) ELSE json_extract(item.value,'$.value') END AS INTEGER)) AND NOT EXISTS (SELECT 1 FROM doc_revision revision WHERE revision.doc_id=CAST(CASE WHEN json_extract(item.value,'$.value') LIKE 'doc:%' THEN substr(json_extract(item.value,'$.value'),5) ELSE json_extract(item.value,'$.value') END AS INTEGER)) AND ((json_extract(item.value,'$.value') GLOB 'doc:[0-9]*' AND substr(json_extract(item.value,'$.value'),5) NOT GLOB '*[^0-9]*') OR (json_extract(item.value,'$.value') GLOB '[0-9]*' AND json_extract(item.value,'$.value') NOT GLOB '*[^0-9]*' AND NOT EXISTS (SELECT 1 FROM run parent WHERE parent.number=CAST(json_extract(item.value,'$.value') AS INTEGER))))`,
+      )
+      .get() as { n: number }
+  ).n
+  if (artifactCount) findings.push(`workflow_obligation.satisfied_evidence=${artifactCount}`)
+  return findings
+}
+
 function applyBackfills(d: Database, entries: JournalEntry[], folder: string): void {
   for (const entry of entries) {
     const backfill = splitMigrationSource(migrationSource(entry, folder)).backfill
@@ -812,6 +871,7 @@ function migrationOrphanCounts(d: Database, tag: string): string[] {
   if (tag === '0125_question_uuid_key') return questionReferenceOrphanCounts(d)
   if (tag === '0126_review_landing_uuid_key') return reviewLandingReferenceOrphanCounts(d)
   if (tag === '0127_board_uuid_key') return boardReferenceOrphanCounts(d)
+  if (tag === '0130_doc_uuid_key') return docReferenceOrphanCounts(d)
   return []
 }
 
@@ -820,6 +880,7 @@ function migrationEntityLabel(tag: string): { migration: string; parent: string 
   if (tag === '0125_question_uuid_key') return { migration: 'question', parent: 'question' }
   if (tag === '0126_review_landing_uuid_key')
     return { migration: 'review/landing', parent: 'review/landing row' }
+  if (tag === '0130_doc_uuid_key') return { migration: 'document', parent: 'document row' }
   return { migration: 'board', parent: 'board row' }
 }
 

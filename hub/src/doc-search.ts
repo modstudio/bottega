@@ -81,7 +81,7 @@ export async function searchLocalDocs(
     )
     .slice(0, LOCAL_DOC_SEARCH_LIMIT)
     .map((row) => ({
-      id: String(row.id),
+      id: row.record_id,
       slug: row.slug,
       title: row.title,
       audiences: row.audiences,

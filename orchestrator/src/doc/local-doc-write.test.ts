@@ -37,14 +37,18 @@ test('latest revision follows its sequence when record ids sort in the opposite 
     expectedRevision: created.revision!,
   })
   const revisions = db()
-    .query<{ id: number; record_id: string }, [number]>(
-      'SELECT id,record_id FROM doc_revision WHERE doc_id=? ORDER BY id',
+    .query<{ number: number; record_id: string }, [string]>(
+      'SELECT number,record_id FROM doc_revision WHERE doc_record_id=? ORDER BY number',
     )
-    .all(created.id)
+    .all(created.record_id)
   const olderRecordId = 'ffffffff-ffff-4fff-8fff-ffffffffffff'
   const newerRecordId = '00000000-0000-4000-8000-000000000001'
-  db().query('UPDATE doc_revision SET record_id=? WHERE id=?').run(olderRecordId, revisions[0]!.id)
-  db().query('UPDATE doc_revision SET record_id=? WHERE id=?').run(newerRecordId, revisions[1]!.id)
+  db()
+    .query('UPDATE doc_revision SET record_id=? WHERE number=?')
+    .run(olderRecordId, revisions[0]!.number)
+  db()
+    .query('UPDATE doc_revision SET record_id=? WHERE number=?')
+    .run(newerRecordId, revisions[1]!.number)
 
   expect((await import('./docs.ts')).getDoc('global', null, created.slug)?.revision).toBe(
     newerRecordId,
@@ -262,15 +266,19 @@ test('set and restore repair the project id on an existing document', () => {
   }
   const created = commitDocSet({ ...input, revisionId: newRecordId() })
 
-  db().query('UPDATE doc SET project_record_id=NULL WHERE id=?').run(created.id)
+  db().query('UPDATE doc SET project_record_id=NULL WHERE record_id=?').run(created.record_id)
   commitDocSet({ ...input, revisionId: newRecordId() })
-  expect(db().query('SELECT project_record_id FROM doc WHERE id=?').get(created.id)).toEqual({
+  expect(
+    db().query('SELECT project_record_id FROM doc WHERE record_id=?').get(created.record_id),
+  ).toEqual({
     project_record_id: project.record_id,
   })
 
-  db().query('UPDATE doc SET project_record_id=NULL WHERE id=?').run(created.id)
+  db().query('UPDATE doc SET project_record_id=NULL WHERE record_id=?').run(created.record_id)
   commitDocRestore({ ...input, revisionId: newRecordId() })
-  expect(db().query('SELECT project_record_id FROM doc WHERE id=?').get(created.id)).toEqual({
+  expect(
+    db().query('SELECT project_record_id FROM doc WHERE record_id=?').get(created.record_id),
+  ).toEqual({
     project_record_id: project.record_id,
   })
 })
@@ -414,7 +422,7 @@ test('article fields validate, keep omitted values, clear explicitly, and restor
     checkedAgainstCommit: null,
   })
   const firstRevision = listDocRevisions('project', 'articles', 'fields').at(-1)!
-  const restored = await restoreDoc('project', 'articles', 'fields', firstRevision.id, {
+  const restored = await restoreDoc('project', 'articles', 'fields', firstRevision.record_id, {
     reason: 'restore fields',
     expectedRevision: cleared.revision!,
   })
@@ -425,8 +433,8 @@ test('article fields validate, keep omitted values, clear explicitly, and restor
     sourceFiles: ['src/one.ts'],
     checkedAgainstCommit: '1111111111111111111111111111111111111111',
   })
-  expect(getDocRevision(firstRevision.id)?.sourceFiles).toEqual(['src/one.ts'])
-  expect(getDocRevision(firstRevision.id)?.checkedAgainstCommit).toBe(
+  expect(getDocRevision(firstRevision.record_id)?.sourceFiles).toEqual(['src/one.ts'])
+  expect(getDocRevision(firstRevision.record_id)?.checkedAgainstCommit).toBe(
     '1111111111111111111111111111111111111111',
   )
 })

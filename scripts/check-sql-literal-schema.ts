@@ -50,6 +50,17 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
   ),
   ...exempt(
     'orchestrator/src/database/migrations.ts',
+    [
+      '8761a82c297b0919',
+      'eafbbae5662e0614',
+      '49517e4b901184a6',
+      '1c0a8b50ea323b0f',
+      '3867bb819315f03c',
+    ],
+    'document migration orphan preflight reads controlled legacy columns before the UUID-key rebuild',
+  ),
+  ...exempt(
+    'orchestrator/src/database/migrations.ts',
     ['efa2cecd133ee061', '18b7c07f41bfcfaa', '61900e2060c08b91'],
     'review and landing migration orphan preflight reads controlled legacy table, column, and JSON references before the UUID-key rebuild',
   ),
@@ -156,13 +167,13 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
   ...exempt(
     'orchestrator/src/doc/doc-read-store.ts',
     [
-      '90c2a8465e321cd2',
-      'a883cd7a0d8bfa18',
-      '4e7a9e18a9862cc2',
-      'e1114bf9618d87ea',
-      'c58d1b61ac2b330c',
-      '4602f140a79603fb',
-      'f0d2bc614a72d5f4',
+      'f8888ced32de32c0',
+      '05f81e19badd9e47',
+      'e656228abf466e19',
+      '8fe195c1c889a2e8',
+      '4293f027793c01fe',
+      'da08d7d0f2a56296',
+      'e168fab9f7f4d16d',
     ],
     'document reader composes scope-dependent select and join clauses',
   ),

@@ -109,17 +109,17 @@ function seedNameMirrors(projectId: string, otherId: string): void {
      VALUES (?,?,?,?,?,?,?,?,?,?)`,
   ).run(id(), 'project', OLD, 'slug', 'title', 'body', 't', 't', '["technical"]', projectId)
   const doc = d
-    .query(`SELECT id FROM doc WHERE subject=? AND project_record_id=?`)
+    .query(`SELECT record_id FROM doc WHERE subject=? AND project_record_id=?`)
     .get(OLD, projectId) as {
-    id: number
+    record_id: string
   }
   d.query(
     `INSERT INTO doc_revision
-     (record_id,doc_id,scope,subject,slug,op,title,body,author,reason,at,audiences,project_record_id)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+     (record_id,number,doc_record_id,scope,subject,slug,op,title,body,author,reason,at,audiences,project_record_id)
+     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM doc_revision),?,?,?,?,?,?,?,?,?,?,?,?)`,
   ).run(
     id(),
-    doc.id,
+    doc.record_id,
     'project',
     OLD,
     'slug',
@@ -142,14 +142,13 @@ function seedNameMirrors(projectId: string, otherId: string): void {
       `INSERT INTO doc (record_id,scope,subject,slug,title,body,created_at,updated_at,audiences,project_record_id)
        VALUES (?,?,?,?,?,?,?,?,?,?)`,
     ).run(recordId, scope, OLD, slug, 'title', 'body', 't', 't', '["technical"]', owner)
-    const inserted = d.query('SELECT id FROM doc WHERE record_id=?').get(recordId) as { id: number }
     d.query(
       `INSERT INTO doc_revision
-       (record_id,doc_id,scope,subject,slug,op,title,body,author,reason,at,audiences,project_record_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (record_id,number,doc_record_id,scope,subject,slug,op,title,body,author,reason,at,audiences,project_record_id)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM doc_revision),?,?,?,?,?,?,?,?,?,?,?,?)`,
     ).run(
       id(),
-      inserted.id,
+      recordId,
       scope,
       OLD,
       slug,

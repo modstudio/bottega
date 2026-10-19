@@ -142,13 +142,15 @@ describe('canon drift branch gate', () => {
         record_id TEXT NOT NULL UNIQUE
       );
       CREATE TABLE doc (
-        id INTEGER PRIMARY KEY, scope TEXT NOT NULL, subject TEXT, owner TEXT,
+        record_id TEXT NOT NULL PRIMARY KEY, scope TEXT NOT NULL, subject TEXT, owner TEXT,
         project_id INTEGER, slug TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL,
         delivery TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-        record_id TEXT, revision TEXT, audience TEXT NOT NULL DEFAULT 'technical',
-        parent_id INTEGER, position INTEGER NOT NULL DEFAULT 0
+        revision TEXT, audience TEXT NOT NULL DEFAULT 'technical',
+        parent_record_id TEXT, position INTEGER NOT NULL DEFAULT 0
       );
-      CREATE TABLE doc_revision (id INTEGER PRIMARY KEY, doc_id INTEGER, record_id TEXT);
+      CREATE TABLE doc_revision (
+        record_id TEXT NOT NULL PRIMARY KEY, doc_record_id TEXT, number INTEGER NOT NULL UNIQUE
+      );
     `)
     writable
       .query('INSERT INTO project (record_id,name,path,canon,settings) VALUES (?,?,?,1,?)')

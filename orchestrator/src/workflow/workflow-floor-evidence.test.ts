@@ -632,37 +632,54 @@ test("exec evidence recognizes only a cursor's recorded adopting session", () =>
 
 test('a foreign doc is refused and a matching doc is allowed', () => {
   const d = database()
+  const foreignId = newRecordId()
   d.query(
     `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_record_id,record_id)
      VALUES ('project','other','note','t','b','inject','["technical"]','t','t',?,?)`,
-  ).run(projectId(d, 'other'), newRecordId())
-  expect(() => gather(d, { artifact: 'doc:1' })).toThrow(
-    "--artifact doc:1 is scoped to other, not this cursor's fixture",
+  ).run(projectId(d, 'other'), foreignId)
+  expect(() => gather(d, { artifact: `doc:${foreignId}` })).toThrow(
+    `--artifact doc:${foreignId} is scoped to other, not this cursor's fixture`,
   )
+  const matchingId = newRecordId()
   d.query(
     `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_record_id,record_id)
      VALUES ('project','fixture','note','t','b','inject','["technical"]','t','t',?,?)`,
-  ).run(projectId(d, 'fixture'), newRecordId())
-  expect(gather(d, { artifact: 'doc:2' }).artifact).toEqual({
-    ref: 'doc:2',
+  ).run(projectId(d, 'fixture'), matchingId)
+  expect(gather(d, { artifact: `doc:${matchingId}` }).artifact).toEqual({
+    ref: 'doc:project/fixture/note',
+    exists: true,
+  })
+})
+
+test('a path-shaped canon slug resolves as the whole address remainder', () => {
+  const d = database()
+  const id = newRecordId()
+  d.query(
+    `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_record_id,record_id)
+     VALUES ('canon','fixture','.agents/rules/10-code.md','t','b','inject','["technical"]','t','t',?,?)`,
+  ).run(projectId(d, 'fixture'), id)
+  expect(gather(d, { artifact: 'doc:canon/fixture/.agents/rules/10-code.md' }).artifact).toEqual({
+    ref: 'doc:canon/fixture/.agents/rules/10-code.md',
     exists: true,
   })
 })
 
 test('a legacy resume doc without a project id is scoped by its project subject', () => {
   const d = database()
+  const matchingId = newRecordId()
+  const foreignId = newRecordId()
   d.query(
     `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_record_id,record_id)
      VALUES ('resume','fixture','brief','t','b','demand','["technical"]','t','t',NULL,?),
             ('resume','other','foreign-brief','t','b','demand','["technical"]','t','t',NULL,?)`,
-  ).run(newRecordId(), newRecordId())
+  ).run(matchingId, foreignId)
 
-  expect(gather(d, { artifact: 'doc:1' }).artifact).toEqual({
-    ref: 'doc:1',
+  expect(gather(d, { artifact: `doc:${matchingId}` }).artifact).toEqual({
+    ref: 'doc:resume/fixture/brief',
     exists: true,
   })
-  expect(() => gather(d, { artifact: 'doc:2' })).toThrow(
-    "--artifact doc:2 is scoped to other, not this cursor's fixture",
+  expect(() => gather(d, { artifact: `doc:${foreignId}` })).toThrow(
+    `--artifact doc:${foreignId} is scoped to other, not this cursor's fixture`,
   )
 })
 

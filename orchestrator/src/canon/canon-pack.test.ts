@@ -23,28 +23,30 @@ function putCanon(
   body: string,
   status: 'draft' | 'current' = 'current',
 ): void {
-  const projectId = subject
+  const projectRecordId = subject
     ? (
-        db().query('SELECT record_id AS id FROM project WHERE name=?').get(subject) as {
-          id: number
+        db().query('SELECT record_id FROM project WHERE name=?').get(subject) as {
+          record_id: string
         }
-      ).id
+      ).record_id
     : null
-  const id = (
+  const recordId = (
     db()
       .query(
         `INSERT INTO doc (scope, subject, project_record_id, slug, title, body, delivery, audiences, status, created_at, updated_at, record_id)
-         VALUES ('canon', ?, ?, ?, ?, ?, 'demand', '["technical"]', ?, ?, ?, ?) RETURNING id`,
+         VALUES ('canon', ?, ?, ?, ?, ?, 'demand', '["technical"]', ?, ?, ?, ?) RETURNING record_id`,
       )
-      .get(subject, projectId, slug, slug, body, status, AT, AT, newRecordId()) as { id: number }
-  ).id
+      .get(subject, projectRecordId, slug, slug, body, status, AT, AT, newRecordId()) as {
+      record_id: string
+    }
+  ).record_id
   db()
     .query(
       `INSERT INTO doc_revision
-       (doc_id, scope, subject, project_record_id, slug, op, title, body, delivery, audiences, status, author, reason, at, record_id)
-       VALUES (?, 'canon', ?, ?, ?, 'create', ?, ?, 'demand', '["technical"]', ?, 'test', 'test write', ?, ?)`,
+       (record_id, number, doc_record_id, scope, subject, project_record_id, slug, op, title, body, delivery, audiences, status, author, reason, at)
+       VALUES (?, (SELECT COALESCE(MAX(number),0)+1 FROM doc_revision), ?, 'canon', ?, ?, ?, 'create', ?, ?, 'demand', '["technical"]', ?, 'test', 'test write', ?)`,
     )
-    .run(id, subject, projectId, slug, slug, body, status, AT, newRecordId())
+    .run(newRecordId(), recordId, subject, projectRecordId, slug, slug, body, status, AT)
 }
 
 function operatorPack(cwd: string): string {

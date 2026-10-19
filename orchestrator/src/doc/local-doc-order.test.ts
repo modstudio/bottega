@@ -6,7 +6,6 @@ import { setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { REFERENCE_GENERATOR } from './doc-generator.ts'
-import { hostedDocOrder } from './doc-order.ts'
 import { reorderDocs } from './docs.ts'
 
 test('reorder refuses an id list that is not the complete current sibling set', async () => {
@@ -44,8 +43,8 @@ test('reorder refuses an id list that is not the complete current sibling set', 
     reorderDocs({
       scope: 'global',
       subject: null,
-      parentId: String(parent.id),
-      orderedIds: [String(first.id)],
+      parentId: parent.record_id,
+      orderedIds: [first.record_id],
     }),
   ).rejects.toThrow('missing ids')
 })
@@ -81,81 +80,45 @@ test('reorder changes only live positions', async () => {
     audiences: ['technical'],
   })
   const before = db()
-    .query<{ id: number; updated_at: string }, [number, number]>(
-      'SELECT id, updated_at FROM doc WHERE id IN (?, ?) ORDER BY id',
+    .query<{ record_id: string; updated_at: string }, [string, string]>(
+      'SELECT record_id, updated_at FROM doc WHERE record_id IN (?, ?) ORDER BY record_id',
     )
-    .all(first.id, second.id)
+    .all(first.record_id, second.record_id)
   const revisionsBefore = db()
-    .query<{ count: number }, [number, number]>(
-      'SELECT count(*) AS count FROM doc_revision WHERE doc_id IN (?, ?)',
+    .query<{ count: number }, [string, string]>(
+      'SELECT count(*) AS count FROM doc_revision WHERE doc_record_id IN (?, ?)',
     )
-    .get(first.id, second.id)!.count
+    .get(first.record_id, second.record_id)!.count
 
   await reorderDocs({
     scope: 'global',
     subject: null,
-    parentId: String(parent.id),
-    orderedIds: [String(second.id), String(first.id)],
+    parentId: parent.record_id,
+    orderedIds: [second.record_id, first.record_id],
   })
 
   expect(
     db()
-      .query<{ id: number }, [number]>('SELECT id FROM doc WHERE parent_id=? ORDER BY position')
-      .all(parent.id)
-      .map((row) => row.id),
-  ).toEqual([second.id, first.id])
+      .query<{ record_id: string }, [string]>(
+        'SELECT record_id FROM doc WHERE parent_record_id=? ORDER BY position',
+      )
+      .all(parent.record_id)
+      .map((row) => row.record_id),
+  ).toEqual([second.record_id, first.record_id])
   expect(
     db()
-      .query<{ id: number; updated_at: string }, [number, number]>(
-        'SELECT id, updated_at FROM doc WHERE id IN (?, ?) ORDER BY id',
+      .query<{ record_id: string; updated_at: string }, [string, string]>(
+        'SELECT record_id, updated_at FROM doc WHERE record_id IN (?, ?) ORDER BY record_id',
       )
-      .all(first.id, second.id),
+      .all(first.record_id, second.record_id),
   ).toEqual(before)
   expect(
     db()
-      .query<{ count: number }, [number, number]>(
-        'SELECT count(*) AS count FROM doc_revision WHERE doc_id IN (?, ?)',
+      .query<{ count: number }, [string, string]>(
+        'SELECT count(*) AS count FROM doc_revision WHERE doc_record_id IN (?, ?)',
       )
-      .get(first.id, second.id)!.count,
+      .get(first.record_id, second.record_id)!.count,
   ).toBe(revisionsBefore)
-})
-
-test('hosted order translates local ids and names a document without a record id', () => {
-  const input = {
-    scope: 'global',
-    subject: null,
-    parentId: '10',
-    orderedIds: ['12', '11'],
-  }
-  const parent = { id: 10, slug: 'parent', record_id: 'record-parent' }
-  expect(
-    hostedDocOrder(
-      input,
-      [
-        { id: 11, slug: 'first', record_id: 'record-first' },
-        { id: 12, slug: 'second', record_id: 'record-second' },
-      ],
-      parent,
-      `run ${PLATFORM_SLUG} record push-docs before reordering documents`,
-    ),
-  ).toEqual({
-    ...input,
-    parentId: 'record-parent',
-    orderedIds: ['record-second', 'record-first'],
-  })
-  expect(() =>
-    hostedDocOrder(
-      input,
-      [
-        { id: 11, slug: 'first', record_id: null },
-        { id: 12, slug: 'second', record_id: 'record-second' },
-      ],
-      parent,
-      `run ${PLATFORM_SLUG} record push-docs before reordering documents`,
-    ),
-  ).toThrow(
-    `document "first" has no hosted record id; cleared by: run ${PLATFORM_SLUG} record push-docs`,
-  )
 })
 
 test('reorder refuses the children of a generated reference page', async () => {
@@ -198,8 +161,8 @@ test('reorder refuses the children of a generated reference page', async () => {
     reorderDocs({
       scope: 'project',
       subject: PLATFORM_SLUG,
-      parentId: String(parent.id),
-      orderedIds: [String(second.id), String(first.id)],
+      parentId: parent.record_id,
+      orderedIds: [second.record_id, first.record_id],
     }),
   ).rejects.toThrow(`cleared by: ${PLATFORM_SLUG} doc reference publish`)
 })

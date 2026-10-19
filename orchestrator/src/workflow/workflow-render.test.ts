@@ -48,6 +48,11 @@ describe('workflow rendering', () => {
     ).toContain(
       `Evidence for command-exit: run it with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass \`--artifact exec:<id>\`.`,
     )
+    expect(
+      renderWorkflowStep(getWorkflowStep('flow', 'fixture', 'lens', args, d, { mode: 'default' })),
+    ).toContain(
+      'Evidence for recorded-artifact: record or attach the artifact and pass `--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number | probe:<id> | exec:<id> | attached-text:<id>>`.',
+    )
   })
 
   test('a composed mode tells the agent how to fetch and finish every step', () => {

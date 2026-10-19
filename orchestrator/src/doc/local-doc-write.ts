@@ -31,12 +31,12 @@ type Address = {
 }
 
 const LATEST_REVISION_SQL =
-  '(SELECT r.record_id FROM doc_revision r WHERE r.doc_id=d.id ORDER BY r.id DESC LIMIT 1)'
+  '(SELECT r.record_id FROM doc_revision r WHERE r.doc_record_id=d.record_id ORDER BY r.number DESC LIMIT 1)'
 
 function getDoc(input: Address): Doc | null {
   const row = db()
     .query(
-      `SELECT d.*, p.slug AS parent_slug, ${LATEST_REVISION_SQL} AS revision FROM doc d LEFT JOIN doc p ON p.id=d.parent_id WHERE d.scope=? AND d.subject IS ? AND d.owner IS ? AND d.slug=?`,
+      `SELECT d.*, p.slug AS parent_slug, ${LATEST_REVISION_SQL} AS revision FROM doc d LEFT JOIN doc p ON p.record_id=d.parent_record_id WHERE d.scope=? AND d.subject IS ? AND d.owner IS ? AND d.slug=?`,
     )
     .get(input.scope, input.subject, input.owner, input.slug) as
     | (Omit<
@@ -87,7 +87,7 @@ type SetInput = Address & {
   body: string
   delivery: 'inject' | 'demand'
   audiences: DocAudiences
-  parentId: number | null
+  parentId: string | null
   position: number
   featured?: boolean
   status?: DocStatus
@@ -120,7 +120,7 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
     if (existing) {
       db()
         .query(
-          'UPDATE doc SET project_record_id=?, title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, checked_against_commit=?, summary=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
+          'UPDATE doc SET project_record_id=?, title=?, body=?, delivery=?, audiences=?, parent_record_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, checked_against_commit=?, summary=?, replacement_slug=?, updated_at=? WHERE record_id=?',
         )
         .run(
           input.projectId,
@@ -140,16 +140,16 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
           input.summary ?? null,
           input.replacementSlug ?? null,
           at,
-          input.recordId,
-          existing.id,
+          existing.record_id,
         )
     } else {
       db()
         .query(
-          `INSERT INTO doc (scope, subject, owner, project_record_id, slug, title, body, delivery, audiences, parent_id, position, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, created_at, updated_at, record_id)
+          `INSERT INTO doc (record_id, scope, subject, owner, project_record_id, slug, title, body, delivery, audiences, parent_record_id, position, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, created_at, updated_at)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
+          input.recordId,
           input.scope,
           input.subject,
           input.owner,
@@ -172,7 +172,6 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
           input.replacementSlug ?? null,
           at,
           at,
-          input.recordId,
         )
     }
     db().query('DELETE FROM doc_related_subject WHERE doc_record_id=?').run(input.recordId)
@@ -208,8 +207,10 @@ export function commitDocRemove(input: RemoveInput & { revisionId: string }): bo
     if (!existing) throw new Error(`no ${input.scope} doc "${input.slug}"`)
     assertLocalRevisionWrite(input, existing.revision, false)
     const at = nowIso()
-    db().query('DELETE FROM doc WHERE id=?').run(existing.id)
     insertLocalRevision(existing, 'delete', input.identity, at, input.revisionId)
+    // Preserve the deletion snapshot before removing its live parent. The declared SET NULL
+    // action then records that this historical revision no longer has a live document row.
+    db().query('DELETE FROM doc WHERE record_id=?').run(existing.record_id)
     return true
   })
 }
@@ -239,8 +240,8 @@ export function commitDocConsume(
     if (!existing) throw new Error(`no ${input.scope} doc "${input.slug}"`)
     assertLocalRevisionWrite(input, existing.revision, false)
     db()
-      .query('UPDATE doc SET body=?, updated_at=?, record_id=? WHERE id=?')
-      .run(input.body, input.consumedAt, input.recordId, existing.id)
+      .query('UPDATE doc SET body=?, updated_at=? WHERE record_id=?')
+      .run(input.body, input.consumedAt, existing.record_id)
     const result = getDoc(input)!
     insertLocalRevision(result, 'consume', input.identity, input.consumedAt, input.revisionId)
     return { ...getDoc(input)!, already_consumed: false }
@@ -253,7 +254,7 @@ type RestoreInput = Address & {
   body: string
   delivery: 'inject' | 'demand'
   audiences: DocAudiences
-  parentId: number | null
+  parentId: string | null
   position: number
   featured?: boolean
   status?: DocStatus
@@ -293,7 +294,7 @@ export function commitDocRestore(
     if (existing) {
       db()
         .query(
-          'UPDATE doc SET project_record_id=?, title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, checked_against_commit=?, summary=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
+          'UPDATE doc SET project_record_id=?, title=?, body=?, delivery=?, audiences=?, parent_record_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, checked_against_commit=?, summary=?, replacement_slug=?, updated_at=? WHERE record_id=?',
         )
         .run(
           input.projectId,
@@ -313,16 +314,16 @@ export function commitDocRestore(
           input.summary ?? null,
           input.replacementSlug ?? null,
           at,
-          input.recordId,
-          existing.id,
+          existing.record_id,
         )
     } else {
       db()
         .query(
-          `INSERT INTO doc (scope, subject, owner, project_record_id, slug, title, body, delivery, audiences, parent_id, position, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, created_at, updated_at, record_id)
+          `INSERT INTO doc (record_id, scope, subject, owner, project_record_id, slug, title, body, delivery, audiences, parent_record_id, position, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, created_at, updated_at)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
+          input.recordId,
           input.scope,
           input.subject,
           input.owner,
@@ -345,7 +346,6 @@ export function commitDocRestore(
           input.replacementSlug ?? null,
           at,
           at,
-          input.recordId,
         )
     }
     db().query('DELETE FROM doc_related_subject WHERE doc_record_id=?').run(input.recordId)

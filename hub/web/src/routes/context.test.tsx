@@ -7,7 +7,7 @@ import { ManagedContextPage, UserCanonSection } from '@/routes/context'
 import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 
 const doc = {
-  id: 1,
+  record_id: '00000000-0000-4000-8000-000000000001',
   scope: 'canon' as const,
   subject: null,
   slug: 'preferences',
@@ -15,7 +15,7 @@ const doc = {
   body: '# Prefer concise reports',
   delivery: 'inject' as const,
   audiences: ['technical'] as ['technical'],
-  parent_id: null,
+  parent_record_id: null,
   parent_slug: null,
   position: 0,
   kind: 'working' as const,

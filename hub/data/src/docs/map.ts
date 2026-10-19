@@ -62,11 +62,14 @@ export function mapTreeItem(row: Record<string, unknown>): DocsTreeItem {
   const scope = String(row.scope ?? '')
   const subject = row.subject == null ? null : String(row.subject)
   return {
-    id: String(row.id),
+    id: String(row.recordId ?? row.id),
     ...(typeof row.spaceId === 'string' ? { spaceId: row.spaceId } : {}),
     slug: String(row.slug ?? ''),
     title: String(row.title ?? ''),
-    parentId: row.parentId == null ? null : String(row.parentId),
+    parentId:
+      (row.parentRecordId ?? row.parentId) == null
+        ? null
+        : String(row.parentRecordId ?? row.parentId),
     position: typeof row.position === 'number' ? row.position : 0,
     updatedAt: String(row.updatedAt ?? ''),
     scope,

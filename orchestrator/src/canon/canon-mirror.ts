@@ -312,7 +312,7 @@ export function revisionRows(
       .query(
         `SELECT record_id revision,op,reason FROM doc_revision
        WHERE scope='canon' AND slug=? AND owner IS NULL AND (subject=? OR subject IS NULL)
-       ORDER BY CASE WHEN subject=? THEN 0 ELSE 1 END,id DESC LIMIT 1`,
+       ORDER BY CASE WHEN subject=? THEN 0 ELSE 1 END,number DESC LIMIT 1`,
       )
       .get(path, project, project) as { revision: string | null; op: string; reason: string } | null
     return {

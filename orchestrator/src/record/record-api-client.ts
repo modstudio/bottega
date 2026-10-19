@@ -144,6 +144,7 @@ export type RecordDocImportInput = {
     deletedAt: string | null
   }
   revisions: Array<{
+    id: string
     scope: string
     subject: string | null
     owner?: string | null

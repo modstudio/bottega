@@ -494,15 +494,23 @@ describe('orch MCP', () => {
 
   test('get_doc_revision resolves user canon only when user is true', async () => {
     const owner = '01990000-0000-7000-8000-000000000001'
-    const revision = db()
-      .query<{ id: number }, [string]>(
-        `INSERT INTO doc_revision
-          (doc_id,scope,subject,owner,slug,op,title,body,delivery,audiences,author,reason,at,record_id)
-         VALUES (1,'canon',NULL,?1,'.agents/rules/private.md','create','Private','body',
-           'demand','["technical"]','operator','mcp owner proof','2026-01-01','${newRecordId()}')
-         RETURNING id`,
+    const docRecordId = newRecordId()
+    db()
+      .query(
+        `INSERT INTO doc
+          (record_id,scope,subject,owner,slug,title,body,delivery,audiences,created_at,updated_at)
+         VALUES (?,'canon',NULL,?,'.agents/rules/private.md','Private','body','demand','["technical"]','2026-01-01','2026-01-01')`,
       )
-      .get(owner)!
+      .run(docRecordId, owner)
+    const revision = db()
+      .query<{ record_id: string }, [string, string, string]>(
+        `INSERT INTO doc_revision
+          (record_id,number,doc_record_id,scope,subject,owner,slug,op,title,body,delivery,audiences,author,reason,at)
+         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM doc_revision),?,'canon',NULL,?,'.agents/rules/private.md','create','Private','body',
+           'demand','["technical"]','operator','mcp owner proof','2026-01-01')
+         RETURNING record_id`,
+      )
+      .get(newRecordId(), docRecordId, owner)!
     const session = memoryRecordSession()
     const priorApiUrl = process.env.ORCH_RECORD_API_URL
     process.env.ORCH_RECORD_API_URL = 'https://record-api.example.test'
@@ -516,17 +524,17 @@ describe('orch MCP', () => {
     try {
       const ordinary = await client.callTool({
         name: 'get_doc_revision',
-        arguments: { id: revision.id },
+        arguments: { id: revision.record_id },
       })
       expect(ordinary.isError).toBe(true)
 
       const owned = await client.callTool({
         name: 'get_doc_revision',
-        arguments: { id: revision.id, user: true },
+        arguments: { id: revision.record_id, user: true },
       })
       expect(owned.isError).not.toBe(true)
       expect(JSON.parse((owned.content as { text: string }[])[0]!.text)).toMatchObject({
-        id: revision.id,
+        record_id: revision.record_id,
         owner,
       })
     } finally {

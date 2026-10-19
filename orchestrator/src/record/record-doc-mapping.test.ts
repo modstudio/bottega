@@ -25,6 +25,7 @@ test('an older import keeps populated live article fields and defaults revision 
       },
       revisions: [
         {
+          id: newRecordId(),
           scope: 'project',
           subject: PLATFORM_NAME,
           slug: 'article',

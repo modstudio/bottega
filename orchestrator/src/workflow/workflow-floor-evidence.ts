@@ -13,6 +13,7 @@ import { viewPullRequest } from '../branch/merged-pull-request.ts'
 import { branchForTaskKey, pullRequestNumberForBranch } from '../branch/task-key-pull-request.ts'
 import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db } from '../database/db.ts'
+import { resolveDocReference } from '../doc/doc-reference-read.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { reviewRoundTriageComplete, reviewsForTriage } from '../review/review-group.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
@@ -552,22 +553,21 @@ function gatherRun(
   }
 }
 
-function requireDoc(flag: string, docId: number, identity: CursorIdentity, d: Database): void {
-  const row = d
-    .query<{ scope: string; subject: string | null; project_name: string | null }, [number]>(
-      `SELECT doc.scope, doc.subject, p.name AS project_name
-         FROM doc LEFT JOIN project p ON p.record_id=doc.project_record_id
-        WHERE doc.id=?`,
+function resolveDocArtifact(value: string, identity: CursorIdentity, d: Database): string {
+  const row = resolveDocReference(value, d)
+  const flag = `--artifact doc:${value}`
+  if (!row)
+    throw new Error(
+      `${flag} does not exist; use doc:<scope>/<subject-or-_>/<slug> or doc:<document-UUID>`,
     )
-    .get(docId)
-  if (!row) throw new Error(`${flag} does not exist`)
   const scoped =
-    row.project_name === identity.project ||
+    row.projectName === identity.project ||
     (docScopeHasProjectSubject(row.scope) && row.subject === identity.project)
   if (!scoped)
     throw new Error(
-      `${flag} is scoped to ${row.project_name ?? row.subject ?? row.scope}, not this cursor's ${identity.project}`,
+      `${flag} is scoped to ${row.projectName ?? row.subject ?? row.scope}, not this cursor's ${identity.project}`,
     )
+  return row.address
 }
 
 function resolveNumericArtifact(
@@ -577,25 +577,17 @@ function resolveNumericArtifact(
   d: Database,
   runHasArtifacts: (runId: string) => boolean,
 ): { ref: string; exists: boolean } {
-  const doc = d.query('SELECT record_id FROM doc WHERE id=?').get(id)
   const run = d.query('SELECT record_id FROM run WHERE number=?').get(id) as {
     record_id: string
   } | null
   const runOk = run !== null && runHasArtifacts(run.record_id)
-  if (doc && runOk)
-    throw new Error(`--artifact ${id} matches both a doc and a run; pass doc:${id} or run:${id}`)
-  if (doc) {
-    requireDoc(`--artifact ${id}`, id, identity, d)
-    return { ref: String(id), exists: true }
-  }
   if (run) {
     const binding = loadRunBinding(run.record_id, d)
-    if (!binding)
-      throw new Error(`--artifact ${id} is not a recorded doc or a run with artifacts or a reply`)
+    if (!binding) throw new Error(`--artifact ${id} is not a run with artifacts or a reply`)
     requireRunBinding(`--artifact ${id}`, binding, identity, cursorId, d)
     return { ref: String(id), exists: runOk }
   }
-  throw new Error(`--artifact ${id} is not a recorded doc or a run with artifacts or a reply`)
+  throw new Error(`--artifact ${id} is not a run with artifacts or a reply`)
 }
 
 function resolveTaskArtifact(
@@ -674,8 +666,7 @@ function resolveArtifact(
       ports.runHasArtifacts ?? runHasRecordedArtifacts,
     )
   if (ref.kind === 'doc') {
-    requireDoc(`--artifact doc:${ref.id}`, ref.id, identity, d)
-    return { ref: raw, exists: true }
+    return { ref: `doc:${resolveDocArtifact(ref.address, identity, d)}`, exists: true }
   }
   if (ref.kind === 'probe' || ref.kind === 'exec') {
     const row = d

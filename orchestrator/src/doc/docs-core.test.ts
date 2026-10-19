@@ -101,7 +101,7 @@ describe('scoped operator docs', () => {
       expectedRevision: consumed.revision!,
     })
     const history = listDocRevisions('global', null, created.slug)
-    const restored = await restoreDoc('global', null, created.slug, history.at(-1)!.id, {
+    const restored = await restoreDoc('global', null, created.slug, history.at(-1)!.record_id, {
       reason: 'restore local document',
       expectedRevision: history[0]!.record_id!,
     })
@@ -145,11 +145,13 @@ describe('scoped operator docs', () => {
       reason: 'prove settings owner visibility',
     })
     expect(
-      listDocs({ scope: 'settings', subject: null }).some((row) => row.id === created.id),
+      listDocs({ scope: 'settings', subject: null }).some(
+        (row) => row.record_id === created.record_id,
+      ),
     ).toBe(false)
     expect(listDocs({ scope: 'settings', subject: null, owner })).toContainEqual(created)
     expect(getDoc('settings', null, 'settings')).toBeNull()
-    expect(getDoc('settings', null, 'settings', owner)?.id).toBe(created.id)
+    expect(getDoc('settings', null, 'settings', owner)?.record_id).toBe(created.record_id)
   })
 
   test('settings updates require the exposed current revision locally', async () => {
@@ -188,12 +190,14 @@ describe('scoped operator docs', () => {
       reason: 'prove owner visibility',
       allowCanonBootstrap: true,
     })
-    expect(listDocs({ scope: 'canon', subject: null }).some((row) => row.id === created.id)).toBe(
-      false,
-    )
+    expect(
+      listDocs({ scope: 'canon', subject: null }).some(
+        (row) => row.record_id === created.record_id,
+      ),
+    ).toBe(false)
     expect(listDocs({ scope: 'canon', subject: null, owner })).toContainEqual(created)
     expect(getDoc('canon', null, created.slug)).toBeNull()
-    expect(getDoc('canon', null, created.slug, owner)?.id).toBe(created.id)
+    expect(getDoc('canon', null, created.slug, owner)?.record_id).toBe(created.record_id)
     expect(listDocRevisions('canon', null, created.slug)).toEqual([])
     expect(listDocRevisions('canon', null, created.slug, owner)).toHaveLength(1)
   })
@@ -256,7 +260,7 @@ describe('scoped operator docs', () => {
       delivery: 'demand',
       reason: 'create stale verb fixture',
     })
-    const target = listDocRevisions('global', null, created.slug)[0]!.id
+    const target = listDocRevisions('global', null, created.slug)[0]!.record_id
     const updated = await writeDoc({
       scope: 'global',
       subject: null,
@@ -300,7 +304,7 @@ describe('scoped operator docs', () => {
       reason: 'create missing revision fixture',
       allowCanonBootstrap: true,
     })
-    db().query('DELETE FROM doc_revision WHERE doc_id=?').run(created.id)
+    db().query('DELETE FROM doc_revision WHERE doc_record_id=?').run(created.record_id)
     await expect(
       deleteDoc('canon', null, created.slug, { reason: 'remove broken fixture' }),
     ).rejects.toThrow(
@@ -330,7 +334,9 @@ describe('scoped operator docs', () => {
       title: 'Legacy prose',
       body: 'Current.',
     })
-    db().query('UPDATE doc SET body=? WHERE id=?').run('This was formerly different.', stored.id)
+    db()
+      .query('UPDATE doc SET body=? WHERE record_id=?')
+      .run('This was formerly different.', stored.record_id)
     await expect(
       setDoc({
         scope: 'global',
@@ -356,15 +362,17 @@ describe('scoped operator docs', () => {
     })
     const revision = listDocRevisions('canon', null, created.slug, owner)[0]!
     const legacyBody = '---\ndescription: Legacy user canon\n---\n\nThis was formerly different.\n'
-    db().query('UPDATE doc SET body=? WHERE id=?').run(legacyBody, created.id)
-    db().query('UPDATE doc_revision SET body=? WHERE id=?').run(legacyBody, revision.id)
+    db().query('UPDATE doc SET body=? WHERE record_id=?').run(legacyBody, created.record_id)
+    db()
+      .query('UPDATE doc_revision SET body=? WHERE record_id=?')
+      .run(legacyBody, revision.record_id)
 
     await expect(
       restoreDoc(
         'canon',
         null,
         created.slug,
-        revision.id,
+        revision.record_id,
         { reason: 'restore owned legacy revision', expectedRevision: created.revision! },
         owner,
       ),
@@ -379,7 +387,9 @@ describe('scoped operator docs', () => {
       title: 'Legacy edit',
       body: 'Current.',
     })
-    db().query('UPDATE doc SET body=? WHERE id=?').run('This was formerly different.', stored.id)
+    db()
+      .query('UPDATE doc SET body=? WHERE record_id=?')
+      .run('This was formerly different.', stored.record_id)
     await expect(
       setDoc({
         scope: 'global',
@@ -421,7 +431,7 @@ describe('scoped operator docs', () => {
       title: 'Hello again',
       body: 'two',
     })
-    expect(second.id).toBe(first.id)
+    expect(second.record_id).toBe(first.record_id)
     expect(listDocs()).toHaveLength(1)
     expect(second.created_at).toBe(first.created_at)
     expect(second.body).toBe('two')
@@ -458,7 +468,7 @@ describe('scoped operator docs', () => {
       'global',
       null,
       'revision-life',
-      listDocRevisions('global', null, 'revision-life').at(-1)!.id,
+      listDocRevisions('global', null, 'revision-life').at(-1)!.record_id,
       { author: 'restorer', reason: 'bring it back' },
     )
     expect(restored.record_id).not.toBe(beforeDelete.record_id)
@@ -484,9 +494,9 @@ describe('scoped operator docs', () => {
       'remove it',
       'bring it back',
     ])
-    expect(getDocRevision(revisions[2]!.id)?.body).toContain('status: consumed')
-    expect(getDocRevision(revisions[3]!.id)?.body).toBe(beforeDelete.body)
-    expect(getDocRevision(revisions[1]!.id)?.delivery).toBe('demand')
+    expect(getDocRevision(revisions[2]!.record_id)?.body).toContain('status: consumed')
+    expect(getDocRevision(revisions[3]!.record_id)?.body).toBe(beforeDelete.body)
+    expect(getDocRevision(revisions[1]!.record_id)?.delivery).toBe('demand')
     expect(restored.body).toBe('---\nstatus: open\n---\n\none')
     expect(restored.delivery).toBe('demand')
     expect(restored.updated_at).not.toBe(created.updated_at)
@@ -502,11 +512,15 @@ describe('scoped operator docs', () => {
       delivery: 'demand',
       reason: 'create revision shell',
     })
-    db().query("UPDATE doc_revision SET delivery='inject' WHERE doc_id=?").run(legacy.id)
+    db()
+      .query("UPDATE doc_revision SET delivery='inject' WHERE doc_record_id=?")
+      .run(legacy.record_id)
     const revision = listDocRevisions('global', null, 'legacy-inject')[0]!
 
     await expect(
-      restoreDoc('global', null, 'legacy-inject', revision.id, { reason: 'restore legacy state' }),
+      restoreDoc('global', null, 'legacy-inject', revision.record_id, {
+        reason: 'restore legacy state',
+      }),
     ).rejects.toThrow(
       'make the instruction canon, or write the operator document with delivery demand',
     )
@@ -530,7 +544,7 @@ describe('scoped operator docs', () => {
       reason: 'make the historic row restorable',
       expectedRevision: projectDoc.revision!,
     })
-    const deletedRevision = getDocRevision(listDocRevisions('canon', 'known', slug)[0]!.id)
+    const deletedRevision = getDocRevision(listDocRevisions('canon', 'known', slug)[0]!.record_id)
     await writeDoc({
       scope: 'canon',
       subject: null,
@@ -542,7 +556,7 @@ describe('scoped operator docs', () => {
     })
 
     await expect(
-      restoreDoc('canon', 'known', projectDoc.slug, revision.id, {
+      restoreDoc('canon', 'known', projectDoc.slug, revision.record_id, {
         reason: 'restore colliding project rule',
         expectedRevision: deletedRevision!.record_id!,
       }),
@@ -672,7 +686,7 @@ describe('scoped operator docs', () => {
       reason: 'second',
     })
     const [latest, previous] = listDocRevisions('global', null, 'diffed')
-    expect(diffDocRevisions(previous!.id, latest!.id)).toContain('-one\n+two')
+    expect(diffDocRevisions(previous!.record_id, latest!.record_id)).toContain('-one\n+two')
   })
 
   test('history and restore survive retirement of the addressed project', async () => {
@@ -697,11 +711,11 @@ describe('scoped operator docs', () => {
         'historic',
         listDocRevisions('project', 'former', 'historic').find(
           (revision) => revision.op === 'create',
-        )!.id,
+        )!.record_id,
         { reason: 'restore after retiring' },
       ),
     ).toMatchObject({
-      id: expect.any(Number),
+      record_id: expect.any(String),
       scope: 'project',
       subject: 'former',
       slug: 'historic',
@@ -810,7 +824,7 @@ describe('scoped operator docs', () => {
     })
     const pack = compilePack({ job: 'understand', cwd: dir })
     expect(pack.docs.map((doc) => doc.title)).toEqual(['Job'])
-    expect(pack.docs.every((doc) => doc.revisionId > 0)).toBe(true)
+    expect(pack.docs.every((doc) => doc.revisionId.length > 0)).toBe(true)
     expect(pack.bytes).toBe(Buffer.byteLength(pack.markdown))
     expect(pack.sha256).toHaveLength(64)
     expect(getDoc('global', null, 'demand')?.delivery).toBe('demand')

@@ -14,15 +14,15 @@ const OLD = '2026-01-01T00:00:00.000Z'
 const MID = '2026-01-01T12:00:00.000Z'
 const NEW = '2026-01-02T00:00:00.000Z'
 
-function insertProject(name: string): number {
+function insertProject(name: string): string {
   writableDb()
   return (
     db()
-      .query<{ id: number }, [string]>(
-        "INSERT INTO project (record_id,name, path, canon, settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?, '/tmp/p', 1, '{}') RETURNING record_id AS id",
+      .query<{ record_id: string }, [string]>(
+        "INSERT INTO project (record_id,name, path, canon, settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?, '/tmp/p', 1, '{}') RETURNING record_id",
       )
-      .get(name) as { id: number }
-  ).id
+      .get(name) as { record_id: string }
+  ).record_id
 }
 
 function insertDoc(row: {
@@ -32,17 +32,17 @@ function insertDoc(row: {
   title: string
   body: string
   delivery: 'inject' | 'demand'
-  projectId?: number | null
+  projectId?: string | null
   createdAt: string
   updatedAt: string
-  parentId?: number | null
-}): number {
+  parentId?: string | null
+}): string {
   writableDb()
   return (
     db()
       .query(
-        `INSERT INTO doc (scope, subject, project_record_id, slug, title, body, delivery, audiences, created_at, updated_at, parent_id, record_id)
-         VALUES (?,?,?,?,?,?,?,'["technical"]',?,?,?,?) RETURNING id`,
+        `INSERT INTO doc (scope, subject, project_record_id, slug, title, body, delivery, audiences, created_at, updated_at, parent_record_id, record_id)
+         VALUES (?,?,?,?,?,?,?,'["technical"]',?,?,?,?) RETURNING record_id`,
       )
       .get(
         row.scope,
@@ -56,12 +56,12 @@ function insertDoc(row: {
         row.updatedAt,
         row.parentId ?? null,
         newRecordId(),
-      ) as { id: number }
-  ).id
+      ) as { record_id: string }
+  ).record_id
 }
 
 function insertRevision(row: {
-  docId: number
+  docId: string
   scope: string
   subject: string | null
   slug: string
@@ -73,18 +73,19 @@ function insertRevision(row: {
   reason: string
   sessionId?: string | null
   at: string
-  projectId?: number | null
-  parentId?: number | null
-}): number {
+  projectId?: string | null
+  parentId?: string | null
+}): string {
   writableDb()
   return (
     db()
       .query(
         `INSERT INTO doc_revision
-         (doc_id, scope, subject, project_record_id, slug, op, title, body, delivery, audiences, author, reason, session_id, at, parent_id, record_id)
-         VALUES (?,?,?,?,?,?,?,?,?,'["technical"]',?,?,?,?,?,?) RETURNING id`,
+         (record_id, number, doc_record_id, scope, subject, project_record_id, slug, op, title, body, delivery, audiences, author, reason, session_id, at, parent_record_id)
+         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM doc_revision),?,?,?,?,?,?,?,?,?,'["technical"]',?,?,?,?,?) RETURNING record_id`,
       )
       .get(
+        newRecordId(),
         row.docId,
         row.scope,
         row.subject,
@@ -99,9 +100,8 @@ function insertRevision(row: {
         row.sessionId ?? null,
         row.at,
         row.parentId ?? null,
-        newRecordId(),
-      ) as { id: number }
-  ).id
+      ) as { record_id: string }
+  ).record_id
 }
 
 function unused(): Promise<never> {
@@ -122,19 +122,26 @@ function capturingClient(overrides: Partial<RecordApiClient> = {}): {
     inviteMember: unused,
     putSnapshot: unused,
     listSnapshots: unused,
-    listDocs: unused,
+    listDocs: async () => ({
+      items: [...hosted.entries()].map(([id, row]) => ({ id, ...row })),
+      nextCursor: null,
+    }),
     getDoc: async (id) => {
       const doc = hosted.get(id)
       if (!doc) throw new Error('doc not found')
       return doc
     },
-    listRevisions: unused,
+    listRevisions: async (id) =>
+      imports
+        .filter((row) => row.doc.id === id)
+        .flatMap((row) => row.revisions)
+        .map((row) => ({ ...row })),
     upsertDoc: unused,
     reorderDocs: unused,
     importDoc: async (input) => {
       imports.push(structuredClone(input))
       const id = input.doc.id!
-      const revisionIds = input.revisions.map(() => newRecordId())
+      const revisionIds = input.revisions.map((revision) => revision.id)
       hosted.set(id, {
         ...input.doc,
         ...effectiveDocSummary(input.doc.summary, input.doc.body),
@@ -255,7 +262,7 @@ describe('record push-docs grouping', () => {
       at: NEW,
       projectId,
     })
-    db().query('DELETE FROM doc WHERE id=?').run(goneId)
+    db().query('DELETE FROM doc WHERE record_id=?').run(goneId)
 
     const groups = groupLocalDocsForImport()
     const live = groups.find((group) => group.payload.doc.slug === 'live')
@@ -286,12 +293,12 @@ describe('record push-docs command', () => {
       updatedAt: NEW,
     })
     db()
-      .query("UPDATE doc SET kind='article', source_files='[\"src/article.ts\"]' WHERE id=?")
+      .query("UPDATE doc SET kind='article', source_files='[\"src/article.ts\"]' WHERE record_id=?")
       .run(docId)
     const { client } = capturingClient({
       importDoc: async (input) => ({
         id: input.doc.id!,
-        revisionIds: input.revisions.map(() => newRecordId()),
+        revisionIds: input.revisions.map((revision) => revision.id),
       }),
     })
     installRecordApiClient(client)
@@ -371,7 +378,7 @@ describe('record push-docs command', () => {
       at: OLD,
     })
     db()
-      .query("UPDATE doc SET status='superseded', replacement_slug='new-parent' WHERE id=?")
+      .query("UPDATE doc SET status='superseded', replacement_slug='new-parent' WHERE record_id=?")
       .run(parentId)
 
     const { client, imports } = capturingClient()
@@ -428,13 +435,13 @@ describe('record push-docs command', () => {
       at: OLD,
       parentId,
     })
-    const returnedParentId = newRecordId()
+    const returnedParentId = parentId
     const { client, imports } = capturingClient({
       importDoc: async (input) => {
         imports.push(structuredClone(input))
         return {
           id: input.doc.slug === 'parent' ? returnedParentId : input.doc.id!,
-          revisionIds: input.revisions.map(() => newRecordId()),
+          revisionIds: input.revisions.map((revision) => revision.id),
           form: null,
           articleSubject: null,
           relatedSubjects: [],
@@ -508,7 +515,7 @@ describe('record push-docs command', () => {
       reason: 'remove it',
       at: NEW,
     })
-    db().query('DELETE FROM doc WHERE id=?').run(goneId)
+    db().query('DELETE FROM doc WHERE record_id=?').run(goneId)
     const { client, imports } = capturingClient()
     installRecordApiClient(client)
     const lines: string[] = []
@@ -562,7 +569,7 @@ describe('record push-docs command', () => {
       reason: 'remove gone',
       at: NEW,
     })
-    db().query('DELETE FROM doc WHERE id=?').run(goneId)
+    db().query('DELETE FROM doc WHERE record_id=?').run(goneId)
     const { client, imports } = capturingClient()
     installRecordApiClient(client)
     await pushDocsCommand({ dryRun: false }, { log: () => undefined })
@@ -573,10 +580,82 @@ describe('record push-docs command', () => {
     expect(live?.revisions[0]?.body).toBe('old')
     expect(gone?.doc.deletedAt).toBe(NEW)
     expect(gone?.doc.body).toBe('before-delete')
+    const firstDeletedId = gone?.doc.id
+    await pushDocsCommand({ dryRun: false }, { log: () => undefined })
+    const replayedGone = imports.slice(2).find((row) => row.doc.slug === 'gone')
+    expect(replayedGone?.doc.id).toBe(firstDeletedId)
+    expect(replayedGone?.revisions.map((row) => row.id)).toEqual(
+      gone?.revisions.map((row) => row.id),
+    )
     const stored = db()
       .query<{ record_id: string | null }, []>("SELECT record_id FROM doc WHERE slug='live'")
       .get()
     expect(stored?.record_id).toBeString()
+  })
+
+  test('finds a deleted document identity on a later hosted page', async () => {
+    const goneId = insertDoc({
+      scope: 'machine',
+      subject: null,
+      slug: 'paged-gone',
+      title: 'Paged gone',
+      body: 'before-delete',
+      delivery: 'inject',
+      createdAt: OLD,
+      updatedAt: NEW,
+    })
+    const revisionId = insertRevision({
+      docId: goneId,
+      scope: 'machine',
+      subject: null,
+      slug: 'paged-gone',
+      op: 'delete',
+      title: 'Paged gone',
+      body: 'before-delete',
+      delivery: 'inject',
+      reason: 'remove paged doc',
+      at: NEW,
+    })
+    db().query('DELETE FROM doc WHERE record_id=?').run(goneId)
+
+    const retainedId = newRecordId()
+    const cursors: Array<string | null | undefined> = []
+    const { client, imports } = capturingClient({
+      listDocs: async (query) => {
+        cursors.push(query.cursor)
+        if (query.cursor == null)
+          return {
+            items: Array.from({ length: 100 }, (_, index) => ({
+              id: newRecordId(),
+              scope: 'machine',
+              subject: null,
+              owner: null,
+              slug: `other-${index}`,
+            })),
+            nextCursor: 'page-2',
+          }
+        return {
+          items: [
+            {
+              id: retainedId,
+              scope: 'machine',
+              subject: null,
+              owner: null,
+              slug: 'paged-gone',
+            },
+          ],
+          nextCursor: null,
+        }
+      },
+      listRevisions: async (id) => (id === retainedId ? [{ id: revisionId }] : []),
+    })
+    installRecordApiClient(client)
+
+    await pushDocsCommand({ dryRun: false }, { log: () => undefined })
+
+    expect(cursors).toEqual([null, 'page-2'])
+    expect(imports).toHaveLength(1)
+    expect(imports[0]?.doc.id).toBe(retainedId)
   })
 
   test('a featured document and its revision keep the flag in the import', async () => {
@@ -602,10 +681,10 @@ describe('record push-docs command', () => {
       reason: 'create guide',
       at: OLD,
     })
-    db().query('UPDATE doc SET featured=1 WHERE id=?').run(id)
-    db().query('UPDATE doc_revision SET featured=1 WHERE id=?').run(revision)
-    db().query("UPDATE doc SET kind='article' WHERE id=?").run(id)
-    db().query("UPDATE doc_revision SET kind='article' WHERE id=?").run(revision)
+    db().query('UPDATE doc SET featured=1 WHERE record_id=?').run(id)
+    db().query('UPDATE doc_revision SET featured=1 WHERE record_id=?').run(revision)
+    db().query("UPDATE doc SET kind='article' WHERE record_id=?").run(id)
+    db().query("UPDATE doc_revision SET kind='article' WHERE record_id=?").run(revision)
     const { client, imports } = capturingClient()
     installRecordApiClient(client)
     await pushDocsCommand({ dryRun: false }, { log: () => undefined })
@@ -661,13 +740,15 @@ describe('record push-docs command', () => {
       at: NEW,
     })
     db()
-      .query("UPDATE doc SET status='superseded', replacement_slug='z-new' WHERE id=?")
+      .query("UPDATE doc SET status='superseded', replacement_slug='z-new' WHERE record_id=?")
       .run(supersededId)
     db()
-      .query("UPDATE doc_revision SET status='superseded', replacement_slug='z-new' WHERE id=?")
+      .query(
+        "UPDATE doc_revision SET status='superseded', replacement_slug='z-new' WHERE record_id=?",
+      )
       .run(supersededRevision)
-    db().query("UPDATE doc SET status='draft' WHERE id=?").run(replacementId)
-    db().query("UPDATE doc_revision SET status='draft' WHERE id=?").run(draftRevision)
+    db().query("UPDATE doc SET status='draft' WHERE record_id=?").run(replacementId)
+    db().query("UPDATE doc_revision SET status='draft' WHERE record_id=?").run(draftRevision)
     const { client, imports } = capturingClient()
     installRecordApiClient(client)
 
@@ -750,9 +831,7 @@ describe('record push-docs command', () => {
       reason: 'clear summary locally',
       at: NEW,
     })
-    const recordId = db()
-      .query<{ record_id: string }, [number]>('SELECT record_id FROM doc WHERE id=?')
-      .get(liveId)!.record_id
+    const recordId = liveId
     const { client, imports, hosted } = capturingClient()
     hosted.set(recordId, {
       id: recordId,

@@ -28,16 +28,16 @@ test('audience, parent, position, and featured round trip through set, list, and
   })
   expect(getDoc('global', null, child.slug)).toMatchObject({
     audiences: ['technical'],
-    parent_id: parent.id,
+    parent_record_id: parent.record_id,
     parent_slug: parent.slug,
     position: 7,
     featured: true,
   })
   expect(listDocs({ scope: 'global', audience: 'internal' })).toContainEqual(parent)
   expect(listDocs({ scope: 'global', audience: 'technical' })).toContainEqual(parent)
-  expect(getDocRevision(listDocRevisions('global', null, child.slug)[0]!.id)).toMatchObject({
+  expect(getDocRevision(listDocRevisions('global', null, child.slug)[0]!.record_id)).toMatchObject({
     audiences: ['technical'],
-    parent_id: parent.id,
+    parent_record_id: parent.record_id,
     position: 7,
     featured: true,
   })

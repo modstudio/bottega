@@ -3,7 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 
-export type NumberedEntity = 'run' | 'question' | 'review' | 'board_message'
+export type NumberedEntity = 'run' | 'question' | 'review' | 'board_message' | 'doc_revision'
 
 /** Allocate a display number once. Deleting its eventual row never returns it. */
 export function nextEntityNumber(database: Database, entity: NumberedEntity): number {
@@ -14,7 +14,8 @@ export function nextEntityNumber(database: Database, entity: NumberedEntity): nu
             CASE ? WHEN 'run' THEN COALESCE((SELECT MAX(number) FROM run),0)
                    WHEN 'question' THEN COALESCE((SELECT MAX(number) FROM question),0)
                    WHEN 'review' THEN COALESCE((SELECT MAX(number) FROM review),0)
-                   WHEN 'board_message' THEN COALESCE((SELECT MAX(number) FROM board_message),0) END)+1
+                   WHEN 'board_message' THEN COALESCE((SELECT MAX(number) FROM board_message),0)
+                   WHEN 'doc_revision' THEN COALESCE((SELECT MAX(number) FROM doc_revision),0) END)+1
         WHERE entity=? RETURNING last_number`,
     )
     .get(entity, entity)

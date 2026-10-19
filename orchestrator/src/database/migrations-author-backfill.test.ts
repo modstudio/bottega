@@ -79,7 +79,7 @@ test('author backfill uses the cached person before the cutoff and is repeatable
     expect(applyMigrations(populated.database)).toEqual([])
     expect(
       populated.database
-        .query('SELECT reason,author,session_id FROM doc_revision ORDER BY id')
+        .query('SELECT reason,author,session_id FROM doc_revision ORDER BY number')
         .all(),
     ).toEqual(
       cases.map(([reason, , sessionId, , author]) => ({

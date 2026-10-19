@@ -88,6 +88,6 @@ export function rulingFileOfferLines(input: {
   return input.questionIds.map(rulingFileHint)
 }
 
-export function filedDocRef(id: number, revision: string | null): string {
-  return revision ? `${id}@${revision}` : String(id)
+export function filedDocRef(address: string, revisionNumber: number): string {
+  return `${address}@${revisionNumber}`
 }

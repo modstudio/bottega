@@ -551,7 +551,9 @@ describe('scoped operator docs', () => {
       title: 'Lint me',
       body: 'Current.',
     })
-    db().query('UPDATE doc SET body=? WHERE id=?').run('This was called legacy.', stored.id)
+    db()
+      .query('UPDATE doc SET body=? WHERE record_id=?')
+      .run('This was called legacy.', stored.record_id)
     const result = await command(['doc', 'lint', '--scope', 'global', '--json'])
     expect(result.code).toBe(1)
     expect(JSON.parse(result.out)).toEqual([
@@ -572,7 +574,9 @@ describe('scoped operator docs', () => {
       title: 'Lint warning',
       body: 'Current.',
     })
-    db().query('UPDATE doc SET body=? WHERE id=?').run('This is no longer required.', stored.id)
+    db()
+      .query('UPDATE doc SET body=? WHERE record_id=?')
+      .run('This is no longer required.', stored.record_id)
     const result = await command(['doc', 'lint', '--scope', 'global'])
     expect(result.code).toBe(0)
     expect(result.out).toContain('doc/history warning')
@@ -630,11 +634,12 @@ describe('scoped operator docs', () => {
       reason: 'second',
     })
     const rows = listDocRevisions('global', null, 'cli-history')
-    const newerId = rows[0]!.id
-    const originalId = rows[1]!.id
+    const newerId = rows[0]!.record_id
+    const originalId = rows[1]!.record_id
     expect(rows.map((row) => row.reason)).toEqual(['second', 'first'])
     expect(rows[0]).toMatchObject({
-      id: expect.any(Number),
+      number: expect.any(Number),
+      record_id: expect.any(String),
       op: 'set',
       author: expect.any(String),
       reason: 'second',

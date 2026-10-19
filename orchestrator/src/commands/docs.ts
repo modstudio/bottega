@@ -223,7 +223,7 @@ const docSpecs: readonly Spec[] = [
   [
     'reorder',
     'replace one document sibling order',
-    [...address, o('--parent-id <value>'), o('--id <value>', true), ...json],
+    [...address, o('--parent <value>'), o('--slug <value>', true), ...json],
   ],
   ['consume [slug]', 'mark a resume document consumed', [...address, ...revision, ...json]],
   ['rm [slug]', 'remove a document', [...address, o('--cwd <value>'), ...revision, ...json]],

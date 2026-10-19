@@ -3,7 +3,7 @@ import { jsonDocument } from './orch.ts'
 import type { DocRevisionMetadata } from './orch-doc-argv.ts'
 
 export type DocRevision = DocRevisionMetadata & {
-  doc_id: number
+  doc_record_id: string | null
   scope: DocScope
   subject: string | null
   slug: string
@@ -17,7 +17,7 @@ export const docRevision = (
   scope: string,
   subject: string | null,
   slug: string,
-  revisionId: number,
+  revisionId: string | number,
   audience?: DocAudience,
 ) =>
   jsonDocument<DocRevision>([

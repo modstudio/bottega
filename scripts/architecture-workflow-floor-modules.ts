@@ -72,6 +72,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../branch/task-key-pull-request.ts',
     '../database/database-location.ts',
     '../database/db.ts',
+    '../doc/doc-reference-read.ts',
     '../project/projects.ts',
     '../review/review-group.ts',
     '../review/review-identifier.ts',

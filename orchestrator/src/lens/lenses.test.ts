@@ -363,8 +363,8 @@ describe('lens catalogue', () => {
     live.query('UPDATE run SET project_record_id=NULL WHERE record_id=?').run(runId)
     live.query('UPDATE run SET project_record_id=NULL WHERE record_id=?').run(renamedRunId)
     live
-      .query(`INSERT INTO canon_pack (id,record_id,job,project,sha256,bytes,doc_count,doc_revisions,compiled_at,findings,project_record_id)
-      VALUES (8001,?,'review-lens','one','sha',1,1,'[]','now',0,NULL)`)
+      .query(`INSERT INTO canon_pack (record_id,job,project,sha256,bytes,doc_count,doc_revisions,compiled_at,findings,project_record_id)
+      VALUES (?,'review-lens','one','sha',1,1,'[]','now',0,NULL)`)
       .run(newRecordId())
     live
       .query(
@@ -390,14 +390,14 @@ describe('lens catalogue', () => {
       VALUES (?,'one','branch','tip','tree','01990000-0000-7000-8000-000000008002','commit','tree','patch','old','new','now',NULL)`)
       .run(newRecordId())
     live
-      .query(`INSERT INTO doc (id,scope,subject,slug,title,body,audiences,created_at,updated_at,project_record_id,record_id)
-      VALUES (8006,'project','one','probe','Probe','body','["technical"]','now','now',NULL,?)`)
-      .run(newRecordId())
+      .query(`INSERT INTO doc (record_id,scope,subject,slug,title,body,audiences,created_at,updated_at,project_record_id)
+      VALUES (?,'project','one','probe','Probe','body','["technical"]','now','now',NULL)`)
+      .run('01990000-0000-7000-8000-000000008006')
     live
       .query(`INSERT INTO doc_revision
-      (id,doc_id,scope,subject,slug,op,title,body,audiences,author,reason,at,project_record_id,record_id)
-      VALUES (8007,8006,'project','one','probe','create','Probe','body','["technical"]','test','test','now',NULL,?)`)
-      .run(newRecordId())
+      (record_id,number,doc_record_id,scope,subject,slug,op,title,body,audiences,author,reason,at,project_record_id)
+      VALUES (?,8007,'01990000-0000-7000-8000-000000008006','project','one','probe','create','Probe','body','["technical"]','test','test','now',NULL)`)
+      .run('01990000-0000-7000-8000-000000008007')
 
     expect(applyMigrations(live)).toEqual([])
     expect(
