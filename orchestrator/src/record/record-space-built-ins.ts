@@ -124,10 +124,6 @@ export async function ensureSpaceBuiltIns(input: Tenant): Promise<SpaceBuiltInsR
   }
 }
 
-export async function ensureSpaceBuiltInsWithTransaction(tx: SQL, spaceId: string) {
-  return ensureInTransaction(tx, spaceId)
-}
-
 /** The migration owner performs the release backfill because tenant RLS cannot enumerate spaces. */
 export async function ensureAllSpaceBuiltIns(url: string): Promise<SpaceBuiltInsResult> {
   const client = new SQL(url)

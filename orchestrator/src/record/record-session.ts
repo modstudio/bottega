@@ -15,6 +15,7 @@ import {
   bearerHeaders,
   RECORD_SESSION_KEY,
   RECORD_SIGN_IN_REMEDY,
+  noSpaceBuiltIns,
   recordAuth,
 } from './record-auth.ts'
 
@@ -116,7 +117,14 @@ export async function currentRecordUserSession(
 ) {
   const token = storedRecordToken(local, runner)
   if (!token) throw new Error(RECORD_SIGN_IN_REMEDY)
-  const current = await recordAuth(url).api.getSession({ headers: bearerHeaders(token) })
+  const current = await recordAuth(
+    url,
+    process.env,
+    undefined,
+    undefined,
+    undefined,
+    noSpaceBuiltIns,
+  ).api.getSession({ headers: bearerHeaders(token) })
   if (!current) throw new Error(RECORD_SIGN_IN_REMEDY)
   const client = new SQL(url)
   try {

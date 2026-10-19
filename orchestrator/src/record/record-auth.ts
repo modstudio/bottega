@@ -78,25 +78,31 @@ export async function ensurePersonalSpace(
   })
 }
 
-type SpaceBuiltInsPort = {
+export type SpaceBuiltInsPort = {
   ensure(input: {
     url: string
     userId: string
     spaceId: string
     spaceIds: string[]
   }): Promise<unknown>
-  ensureWithTransaction(tx: SQL, spaceId: string): Promise<unknown>
 }
 
-const noSpaceBuiltIns: SpaceBuiltInsPort = {
+export const noSpaceBuiltIns: SpaceBuiltInsPort = {
   ensure: async () => {},
-  ensureWithTransaction: async () => {},
 }
 
-function personalSpacePort(client: SQL, builtIns: SpaceBuiltInsPort): PersonalSpacePort {
+function personalSpacePort(
+  url: string,
+  client: SQL,
+  builtIns: SpaceBuiltInsPort,
+): PersonalSpacePort {
+  const install = async (userId: string, personal: PersonalSpace) => {
+    await builtIns.ensure({ url, userId, spaceId: personal.id, spaceIds: [personal.id] })
+    return personal
+  }
   return {
     async find(userId) {
-      return client.begin(async (tx) => {
+      const personal = await client.begin(async (tx) => {
         await tx`SELECT set_config('app.user_id', ${userId}, true)`
         const rows = await tx`
           SELECT s.id, s.name, s.slug
@@ -108,14 +114,12 @@ function personalSpacePort(client: SQL, builtIns: SpaceBuiltInsPort): PersonalSp
         `
         const row = rows[0]
         if (!row?.id) return null
-        const id = String(row.id)
-        await tx`SELECT set_config('app.space_id', ${id}, true)`
-        await builtIns.ensureWithTransaction(tx, id)
-        return { id, name: String(row.name), slug: String(row.slug) }
+        return { id: String(row.id), name: String(row.name), slug: String(row.slug) }
       })
+      return personal ? install(userId, personal) : null
     },
     async create(input) {
-      return client.begin(async (tx) => {
+      const personal = await client.begin(async (tx) => {
         const users = await tx`
           SELECT name, personal_space_id FROM "user" WHERE id=${input.userId}::uuid FOR UPDATE
         `
@@ -155,9 +159,9 @@ function personalSpacePort(client: SQL, builtIns: SpaceBuiltInsPort): PersonalSp
           UPDATE "user" SET personal_space_id=${input.id}::uuid, updated_at=now()
           WHERE id=${input.userId}::uuid
         `
-        await builtIns.ensureWithTransaction(tx, input.id)
         return { id: input.id, name: String(owner.name), slug: input.slug }
       })
+      return install(input.userId, personal)
     },
   }
 }
@@ -260,7 +264,7 @@ export function recordAuth(
   authDatabaseUrl?: string,
   sendReset: ResetPasswordSender = sendPasswordResetEmail,
   sendInvitation: InvitationSender = sendRecordInvitationEmail,
-  builtIns: SpaceBuiltInsPort = noSpaceBuiltIns,
+  builtIns: SpaceBuiltInsPort,
 ) {
   const secret = environment.BETTER_AUTH_SECRET
   if (!secret) throw new Error('BETTER_AUTH_SECRET is required for record authentication')
@@ -271,7 +275,7 @@ export function recordAuth(
   // commands from reserving the database's entire connection budget before garbage collection.
   const client = new SQL(url, { max: 1 })
   const authClient = authDatabaseUrl ? new SQL(authDatabaseUrl, { max: 1 }) : client
-  const personalSpaces = personalSpacePort(client, builtIns)
+  const personalSpaces = personalSpacePort(url, client, builtIns)
   return betterAuth({
     secret,
     ...(trustedOrigins.length ? { trustedOrigins } : {}),
@@ -425,7 +429,7 @@ export async function setActiveRecordSpaceForSession(
   headers: Headers,
   spaceId: string,
 ): Promise<void> {
-  const auth = recordAuth(url)
+  const auth = recordAuth(url, process.env, undefined, undefined, undefined, noSpaceBuiltIns)
   const current = await auth.api.getSession({ headers })
   if (!current) throw new Error(RECORD_SIGN_IN_REMEDY)
   const sql = new SQL(url)

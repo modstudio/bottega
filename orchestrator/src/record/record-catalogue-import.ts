@@ -281,7 +281,7 @@ export async function importRecordPortCatalogue(input: Tenant & RecordPortImport
         return
       }
       const existing =
-        await tx`SELECT id FROM port_skip WHERE space_id=${input.spaceId}::uuid AND id=${row.id}::uuid`
+        await tx`SELECT id FROM port_skip WHERE space_id=${input.spaceId}::uuid AND (id=${row.id}::uuid OR (pair_id=${pairId}::uuid AND candidate=${row.candidate})) LIMIT 1`
       if (existing[0]) result.alreadyPresent++
       else {
         await tx`INSERT INTO port_skip (id,space_id,pair_id,candidate,reason,skipped_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${pairId}::uuid,${row.candidate},${row.reason},${row.skippedAt}::timestamptz)`
