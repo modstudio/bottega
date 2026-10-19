@@ -236,6 +236,24 @@ function recordDatabaseHooks(client: SQL, personalSpaces: ReturnType<typeof pers
 type ResetPasswordSender = typeof sendPasswordResetEmail
 type InvitationSender = typeof sendRecordInvitationEmail
 
+function invitationOnlySignUp(client: SQL) {
+  return Object.assign(
+    async (input: unknown) => {
+      const context = input as { path?: string; body?: Record<string, unknown> }
+      if (context.path !== '/sign-up/email') return
+      const candidateEmail =
+        typeof context.body?.email === 'string' ? context.body.email.trim().toLowerCase() : ''
+      const rows = await client`SELECT public.invitation_open_for(${candidateEmail}) AS invited`
+      if (rows[0]?.invited !== true)
+        throw APIError.from('FORBIDDEN', {
+          code: 'SIGN_UP_REQUIRES_INVITATION',
+          message: RECORD_SIGN_UP_INVITATION_REQUIRED,
+        })
+    },
+    { options: {} },
+  )
+}
+
 export function recordAuth(
   url: string,
   environment: RecordAuthEnvironment = process.env,
@@ -254,24 +272,6 @@ export function recordAuth(
   const client = new SQL(url, { max: 1 })
   const authClient = authDatabaseUrl ? new SQL(authDatabaseUrl, { max: 1 }) : client
   const personalSpaces = personalSpacePort(client, builtIns)
-  const invitationOnlySignUp = Object.assign(
-    async (input: unknown) => {
-      const context = input as { path?: string; body?: Record<string, unknown> }
-      if (context.path !== '/sign-up/email') return
-      const candidateEmail =
-        typeof context.body?.email === 'string' ? context.body.email.trim().toLowerCase() : ''
-      const rows = await client`
-        SELECT public.invitation_open_for(${candidateEmail}) AS invited
-      `
-      if (rows[0]?.invited !== true) {
-        throw APIError.from('FORBIDDEN', {
-          code: 'SIGN_UP_REQUIRES_INVITATION',
-          message: RECORD_SIGN_UP_INVITATION_REQUIRED,
-        })
-      }
-    },
-    { options: {} },
-  )
   return betterAuth({
     secret,
     ...(trustedOrigins.length ? { trustedOrigins } : {}),
@@ -298,7 +298,7 @@ export function recordAuth(
       max: 100,
       customRules: { '/request-password-reset': { window: 60 * 60, max: 5 } },
     },
-    hooks: { before: invitationOnlySignUp },
+    hooks: { before: invitationOnlySignUp(client) },
     user: { modelName: 'user' },
     session: { modelName: 'session' },
     account: { modelName: 'account' },

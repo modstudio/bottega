@@ -73,7 +73,27 @@ function pairRefusal(row: HostedImportPlan['pairs'][number], missing: boolean): 
   ])
 }
 
-export function buildHostedPortImports(
+function addDoctrine(
+  payload: RecordPortImportInput,
+  rows: HostedImportPlan['doctrine'],
+  spaceId: string,
+  now: string,
+): void {
+  for (const row of rows)
+    payload.port_doctrine.push({
+      id: newRecordId(),
+      spaceId,
+      number: row.number,
+      title: row.title,
+      body: row.body,
+      createdAt: now,
+      retiredAt: null,
+      version: 1,
+      updatedAt: now,
+    })
+}
+
+function buildHostedPortImports(
   local: Database,
   registered: Project[],
   plan: HostedImportPlan,
@@ -83,18 +103,7 @@ export function buildHostedPortImports(
   const byId = new Map(registered.map((project) => [project.recordId, project]))
   const imports = new Map<string, RecordPortImportInput>([[active, emptyImport()]])
   const pairs = new Map<string, { id: string; spaceId: string }>()
-  for (const row of plan.doctrine)
-    imports.get(active)!.port_doctrine.push({
-      id: newRecordId(),
-      spaceId: active,
-      number: row.number,
-      title: row.title,
-      body: row.body,
-      createdAt: now,
-      retiredAt: null,
-      version: 1,
-      updatedAt: now,
-    })
+  addDoctrine(imports.get(active)!, plan.doctrine, active, now)
   for (const row of plan.pairs) {
     const sourceSpace = routedSpace(local, byId.get(row.sourceId))
     const targetSpace = routedSpace(local, byId.get(row.targetId))

@@ -226,19 +226,19 @@ function recordLensDependencies() {
   }
 }
 
+function recordServerAuth(
+  config: ReturnType<typeof recordApiServerConfig>,
+  environment: ServerEnvironment,
+) {
+  return recordAuth(config.recordUrl, environment, config.authDatabaseUrl, undefined, undefined, {
+    ensure: ensureSpaceBuiltIns,
+    ensureWithTransaction: ensureSpaceBuiltInsWithTransaction,
+  })
+}
+
 export async function startRecordApiServer(environment: ServerEnvironment = process.env) {
   const config = recordApiServerConfig(environment)
-  const auth = recordAuth(
-    config.recordUrl,
-    environment,
-    config.authDatabaseUrl,
-    undefined,
-    undefined,
-    {
-      ensure: ensureSpaceBuiltIns,
-      ensureWithTransaction: ensureSpaceBuiltInsWithTransaction,
-    },
-  )
+  const auth = recordServerAuth(config, environment)
   const boardWakeSource = await createBoardWakeSource(config.recordUrl)
   const boardStreamRegistry = createBoardStreamRegistry()
   const migrations = recordMigrationCount()

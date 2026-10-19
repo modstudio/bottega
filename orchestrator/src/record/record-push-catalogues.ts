@@ -22,6 +22,45 @@ type Plan = {
 const iso = () => new Date().toISOString()
 const forEachValue = <T>(values: readonly T[], use: (value: T) => void) => values.forEach(use)
 
+function lensSelectionPlan(local: Database, spaceId: string, now: string) {
+  return {
+    project_lens_profile: (
+      local
+        .query(
+          `SELECT s.*,l.record_id lens_record_id FROM project_lens_profile s LEFT JOIN lens l ON l.id=s.lens_id AND l.space_id IS NULL WHERE s.space_id IS NULL`,
+        )
+        .all() as Record<string, unknown>[]
+    ).map((r) => ({
+      id: String(r.record_id),
+      spaceId,
+      projectId: String(r.project_record_id),
+      lensId: r.lens_record_id == null ? null : String(r.lens_record_id),
+      axis: r.axis as 'framework' | 'architecture',
+      profileName: String(r.profile_name),
+      selectedVersion: r.selected_version == null ? null : Number(r.selected_version),
+      selectionVersion: Number(r.selection_version),
+      updatedAt: now,
+    })),
+    project_lens_profile_revision: (
+      local
+        .query(
+          `SELECT r.*,s.record_id selection_record_id FROM project_lens_profile_revision r JOIN project_lens_profile s ON s.id=r.selection_id WHERE r.space_id IS NULL`,
+        )
+        .all() as Record<string, unknown>[]
+    ).map((r) => ({
+      id: String(r.record_id),
+      spaceId,
+      selectionId: String(r.selection_record_id),
+      priorProfileName: r.prior_profile_name == null ? null : String(r.prior_profile_name),
+      priorSelectedVersion:
+        r.prior_selected_version == null ? null : Number(r.prior_selected_version),
+      reason: String(r.reason),
+      sessionId: r.session_id == null ? null : String(r.session_id),
+      at: String(r.at),
+    })),
+  }
+}
+
 function lensPlan(local: Database, activeSpaceId: string): RecordLensImportInput {
   const now = iso()
   return {
@@ -90,40 +129,7 @@ function lensPlan(local: Database, activeSpaceId: string): RecordLensImportInput
       sessionId: r.session_id == null ? null : String(r.session_id),
       at: String(r.at),
     })),
-    project_lens_profile: (
-      local
-        .query(
-          `SELECT s.*,l.record_id lens_record_id FROM project_lens_profile s LEFT JOIN lens l ON l.id=s.lens_id AND l.space_id IS NULL WHERE s.space_id IS NULL`,
-        )
-        .all() as Record<string, unknown>[]
-    ).map((r) => ({
-      id: String(r.record_id),
-      spaceId: activeSpaceId,
-      projectId: String(r.project_record_id),
-      lensId: r.lens_record_id == null ? null : String(r.lens_record_id),
-      axis: r.axis as 'framework' | 'architecture',
-      profileName: String(r.profile_name),
-      selectedVersion: r.selected_version == null ? null : Number(r.selected_version),
-      selectionVersion: Number(r.selection_version),
-      updatedAt: now,
-    })),
-    project_lens_profile_revision: (
-      local
-        .query(
-          `SELECT r.*,s.record_id selection_record_id FROM project_lens_profile_revision r JOIN project_lens_profile s ON s.id=r.selection_id WHERE r.space_id IS NULL`,
-        )
-        .all() as Record<string, unknown>[]
-    ).map((r) => ({
-      id: String(r.record_id),
-      spaceId: activeSpaceId,
-      selectionId: String(r.selection_record_id),
-      priorProfileName: r.prior_profile_name == null ? null : String(r.prior_profile_name),
-      priorSelectedVersion:
-        r.prior_selected_version == null ? null : Number(r.prior_selected_version),
-      reason: String(r.reason),
-      sessionId: r.session_id == null ? null : String(r.session_id),
-      at: String(r.at),
-    })),
+    ...lensSelectionPlan(local, activeSpaceId, now),
   }
 }
 
@@ -204,6 +210,132 @@ function emptyPort(): RecordPortImportInput {
   }
 }
 
+type PortPlanContext = {
+  local: Database
+  plans: Map<string, RecordPortImportInput>
+  pairSpace: Map<string, string>
+  refSpace: Map<string, string>
+  skipped: Plan['skipped']
+  now: string
+}
+
+function addPortPair(r: Record<string, unknown>, context: PortPlanContext): void {
+  const source = effectiveProjectSpace(context.local, String(r.source_name))
+  const target = effectiveProjectSpace(context.local, String(r.target_name))
+  if (!source || !target || source !== target) {
+    context.skipped.push({
+      kind: 'port_pair',
+      id: String(r.record_id),
+      reason:
+        !source || !target ? 'project has no hosted space' : 'projects route to different spaces',
+    })
+    return
+  }
+  const plan = context.plans.get(target) ?? emptyPort()
+  context.plans.set(target, plan)
+  context.pairSpace.set(String(r.record_id), target)
+  plan.port_pair.push({
+    id: String(r.record_id),
+    spaceId: target,
+    sourceProjectId: String(r.source_project_record_id),
+    targetProjectId: String(r.target_project_record_id),
+    createdAt: String(r.created_at),
+  })
+}
+
+function addPortBaseline(r: Record<string, unknown>, context: PortPlanContext): void {
+  const space = context.pairSpace.get(String(r.pair_record_id))
+  if (!space) {
+    context.skipped.push({
+      kind: 'port_baseline',
+      id: String(r.record_id),
+      reason: 'pair was skipped',
+    })
+    return
+  }
+  context.plans
+    .get(space)!
+    .port_baseline.push({
+      id: String(r.record_id),
+      spaceId: space,
+      pairId: String(r.pair_record_id),
+      sourceCommit: r.source_commit == null ? null : String(r.source_commit),
+      scannedAt: r.scanned_at == null ? null : String(r.scanned_at),
+      version: Number(r.version),
+      updatedAt: context.now,
+    })
+}
+
+function addPortRef(r: Record<string, unknown>, context: PortPlanContext): void {
+  const space = effectiveProjectSpace(context.local, String(r.project_name))
+  if (!space) {
+    context.skipped.push({
+      kind: 'port_ref',
+      id: String(r.record_id),
+      reason: 'project has no hosted space',
+    })
+    return
+  }
+  const plan = context.plans.get(space) ?? emptyPort()
+  context.plans.set(space, plan)
+  context.refSpace.set(String(r.record_id), space)
+  plan.port_ref.push({
+    id: String(r.record_id),
+    spaceId: space,
+    taskKey: String(r.task_key),
+    targetProjectId: String(r.target_project_record_id),
+    note: String(r.note),
+    createdAt: String(r.created_at),
+    resolvedAt: r.resolved_at == null ? null : String(r.resolved_at),
+    deletedAt: null,
+    version: Number(r.version),
+    updatedAt: context.now,
+  })
+}
+
+function addPortRefSource(r: Record<string, unknown>, context: PortPlanContext): void {
+  const space = context.refSpace.get(String(r.ref_record_id))
+  if (!space) {
+    context.skipped.push({
+      kind: 'port_ref_source',
+      id: String(r.record_id),
+      reason: 'ref was skipped',
+    })
+    return
+  }
+  context.plans
+    .get(space)!
+    .port_ref_source.push({
+      id: String(r.record_id),
+      spaceId: space,
+      refId: String(r.ref_record_id),
+      sourceProjectId: String(r.source_project_record_id),
+      commits: String(r.commits),
+      paths: String(r.paths),
+      note: String(r.note),
+      deletedAt: null,
+      updatedAt: context.now,
+    })
+}
+
+function addPortSkip(r: Record<string, unknown>, context: PortPlanContext): void {
+  const space = context.pairSpace.get(String(r.pair_record_id))
+  if (!space) {
+    context.skipped.push({ kind: 'port_skip', id: String(r.record_id), reason: 'pair was skipped' })
+    return
+  }
+  context.plans
+    .get(space)!
+    .port_skip.push({
+      id: String(r.record_id),
+      spaceId: space,
+      pairId: String(r.pair_record_id),
+      candidate: String(r.candidate),
+      reason: String(r.reason),
+      skippedAt: String(r.skipped_at),
+    })
+}
+
 function portPlan(local: Database, activeSpaceId: string, skipped: Plan['skipped']) {
   const plans = new Map<string, RecordPortImportInput>(),
     active = emptyPort(),
@@ -227,37 +359,14 @@ function portPlan(local: Database, activeSpaceId: string, skipped: Plan['skipped
   }))
   const pairSpace = new Map<string, string>(),
     refSpace = new Map<string, string>()
+  const context: PortPlanContext = { local, plans, pairSpace, refSpace, skipped, now }
   forEachValue(
     local
       .query(
         `SELECT pp.*,sp.name source_name,tp.name target_name FROM port_pair pp JOIN project sp ON sp.record_id=pp.source_project_record_id JOIN project tp ON tp.record_id=pp.target_project_record_id WHERE pp.space_id IS NULL`,
       )
       .all() as Record<string, unknown>[],
-    (r) => {
-      const source = effectiveProjectSpace(local, String(r.source_name)),
-        target = effectiveProjectSpace(local, String(r.target_name))
-      if (!source || !target || source !== target) {
-        skipped.push({
-          kind: 'port_pair',
-          id: String(r.record_id),
-          reason:
-            !source || !target
-              ? 'project has no hosted space'
-              : 'projects route to different spaces',
-        })
-        return
-      }
-      const plan = plans.get(target) ?? emptyPort()
-      plans.set(target, plan)
-      pairSpace.set(String(r.record_id), target)
-      plan.port_pair.push({
-        id: String(r.record_id),
-        spaceId: target,
-        sourceProjectId: String(r.source_project_record_id),
-        targetProjectId: String(r.target_project_record_id),
-        createdAt: String(r.created_at),
-      })
-    },
+    (r) => addPortPair(r, context),
   )
   forEachValue(
     local
@@ -265,22 +374,7 @@ function portPlan(local: Database, activeSpaceId: string, skipped: Plan['skipped
         `SELECT b.*,p.record_id pair_record_id FROM port_baseline b JOIN port_pair p ON p.id=b.pair_id WHERE b.space_id IS NULL`,
       )
       .all() as Record<string, unknown>[],
-    (r) => {
-      const space = pairSpace.get(String(r.pair_record_id))
-      if (!space) {
-        skipped.push({ kind: 'port_baseline', id: String(r.record_id), reason: 'pair was skipped' })
-        return
-      }
-      plans.get(space)!.port_baseline.push({
-        id: String(r.record_id),
-        spaceId: space,
-        pairId: String(r.pair_record_id),
-        sourceCommit: r.source_commit == null ? null : String(r.source_commit),
-        scannedAt: r.scanned_at == null ? null : String(r.scanned_at),
-        version: Number(r.version),
-        updatedAt: now,
-      })
-    },
+    (r) => addPortBaseline(r, context),
   )
   forEachValue(
     local
@@ -288,32 +382,7 @@ function portPlan(local: Database, activeSpaceId: string, skipped: Plan['skipped
         `SELECT pr.*,p.name project_name FROM port_ref pr JOIN project p ON p.record_id=pr.target_project_record_id WHERE pr.space_id IS NULL`,
       )
       .all() as Record<string, unknown>[],
-    (r) => {
-      const space = effectiveProjectSpace(local, String(r.project_name))
-      if (!space) {
-        skipped.push({
-          kind: 'port_ref',
-          id: String(r.record_id),
-          reason: 'project has no hosted space',
-        })
-        return
-      }
-      const plan = plans.get(space) ?? emptyPort()
-      plans.set(space, plan)
-      refSpace.set(String(r.record_id), space)
-      plan.port_ref.push({
-        id: String(r.record_id),
-        spaceId: space,
-        taskKey: String(r.task_key),
-        targetProjectId: String(r.target_project_record_id),
-        note: String(r.note),
-        createdAt: String(r.created_at),
-        resolvedAt: r.resolved_at == null ? null : String(r.resolved_at),
-        deletedAt: null,
-        version: Number(r.version),
-        updatedAt: now,
-      })
-    },
+    (r) => addPortRef(r, context),
   )
   forEachValue(
     local
@@ -321,28 +390,7 @@ function portPlan(local: Database, activeSpaceId: string, skipped: Plan['skipped
         `SELECT s.*,r.record_id ref_record_id FROM port_ref_source s JOIN port_ref r ON r.target_project_record_id=s.target_project_record_id AND r.task_key=s.task_key AND r.space_id IS NULL WHERE s.space_id IS NULL`,
       )
       .all() as Record<string, unknown>[],
-    (r) => {
-      const space = refSpace.get(String(r.ref_record_id))
-      if (!space) {
-        skipped.push({
-          kind: 'port_ref_source',
-          id: String(r.record_id),
-          reason: 'ref was skipped',
-        })
-        return
-      }
-      plans.get(space)!.port_ref_source.push({
-        id: String(r.record_id),
-        spaceId: space,
-        refId: String(r.ref_record_id),
-        sourceProjectId: String(r.source_project_record_id),
-        commits: String(r.commits),
-        paths: String(r.paths),
-        note: String(r.note),
-        deletedAt: null,
-        updatedAt: now,
-      })
-    },
+    (r) => addPortRefSource(r, context),
   )
   forEachValue(
     local
@@ -350,21 +398,7 @@ function portPlan(local: Database, activeSpaceId: string, skipped: Plan['skipped
         `SELECT s.*,p.record_id pair_record_id FROM port_skip s JOIN port_pair p ON p.id=s.pair_id WHERE s.space_id IS NULL`,
       )
       .all() as Record<string, unknown>[],
-    (r) => {
-      const space = pairSpace.get(String(r.pair_record_id))
-      if (!space) {
-        skipped.push({ kind: 'port_skip', id: String(r.record_id), reason: 'pair was skipped' })
-        return
-      }
-      plans.get(space)!.port_skip.push({
-        id: String(r.record_id),
-        spaceId: space,
-        pairId: String(r.pair_record_id),
-        candidate: String(r.candidate),
-        reason: String(r.reason),
-        skippedAt: String(r.skipped_at),
-      })
-    },
+    (r) => addPortSkip(r, context),
   )
   return plans
 }

@@ -17,6 +17,7 @@ const text = (value: unknown) => String(value)
 const number = (value: unknown) => Number(value)
 const nullable = (value: unknown) => (value == null ? null : String(value))
 const iso = (value: unknown) => (value instanceof Date ? value.toISOString() : String(value))
+const nullableIso = (value: unknown) => (value == null ? null : iso(value))
 
 async function tenant<T>(input: Tenant, use: (tx: SQL) => Promise<T>): Promise<T> {
   const client = new SQL(input.url)
@@ -49,8 +50,8 @@ function mapped(table: RecordWorkflowTable, row: Record<string, unknown>) {
       author: text(row.author),
       reason: text(row.reason),
       createdAt: iso(row.created_at),
-      promotedAt: nullable(row.promoted_at),
-      retiredAt: nullable(row.retired_at),
+      promotedAt: nullableIso(row.promoted_at),
+      retiredAt: nullableIso(row.retired_at),
       updatedAt: iso(row.updated_at),
     }
   return {
