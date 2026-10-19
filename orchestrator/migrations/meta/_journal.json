@@ -904,6 +904,13 @@
       "when": 1792886400000,
       "tag": "0128_workflow_catalogue_generation",
       "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "6",
+      "when": 1792972800000,
+      "tag": "0129_catalogue_projects_without_local_parent",
+      "breakpoints": true
     }
   ]
 }

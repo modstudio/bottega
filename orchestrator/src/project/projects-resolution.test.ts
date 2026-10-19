@@ -331,6 +331,79 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
     expect(projectByName('ephemeral')).toBeNull()
   })
 
+  test('local-only lens selections and port rows still refuse removal', () => {
+    upsertProject({ recordId: newRecordId(), name: 'local-catalogue', path: '/w/local-catalogue' })
+    const project = projectByName('local-catalogue')!
+    writableDb()
+    db()
+      .query(
+        `INSERT INTO project_lens_profile
+         (record_id,project_record_id,lens_id,axis,profile_name,selection_version,space_id)
+         VALUES (?,?,NULL,'framework','default',1,NULL)`,
+      )
+      .run(newRecordId(), project.recordId)
+    db()
+      .query(
+        `INSERT INTO port_ref
+         (record_id,task_key,target_project_record_id,note,created_at,version,space_id)
+         VALUES (?,'DEV-1404',?,'local','2026-10-19T00:00:00.000Z',1,NULL)`,
+      )
+      .run(newRecordId(), project.recordId)
+
+    expect(() => removeProject('local-catalogue')).toThrow(
+      '1 port_ref(s), 1 project_lens_profile(s)',
+    )
+    expect(projectByName('local-catalogue')).not.toBeNull()
+  })
+
+  test('hosted catalogue rows neither block removal nor disappear with the local project', () => {
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'hosted-catalogue',
+      path: '/w/hosted-catalogue',
+    })
+    const project = projectByName('hosted-catalogue')!
+    const space = newRecordId()
+    const pair = newRecordId()
+    const ref = newRecordId()
+    writableDb()
+    db()
+      .query(
+        `INSERT INTO project_lens_profile
+         (record_id,project_record_id,lens_id,axis,profile_name,selection_version,space_id)
+         VALUES (?,?,NULL,'framework','default',1,?)`,
+      )
+      .run(newRecordId(), project.recordId, space)
+    db()
+      .query(
+        `INSERT INTO port_pair
+         (record_id,source_project_record_id,target_project_record_id,created_at,space_id)
+         VALUES (?,?,?,'2026-10-19T00:00:00.000Z',?)`,
+      )
+      .run(pair, project.recordId, newRecordId(), space)
+    db()
+      .query(
+        `INSERT INTO port_ref
+         (record_id,task_key,target_project_record_id,note,created_at,version,space_id)
+         VALUES (?,'DEV-1404',?,'hosted','2026-10-19T00:00:00.000Z',1,?)`,
+      )
+      .run(ref, project.recordId, space)
+    db()
+      .query(
+        `INSERT INTO port_ref_source
+         (record_id,task_key,target_project_record_id,source_project_record_id,commits,paths,note,space_id)
+         VALUES (?,'DEV-1404',?,?, '[]','[]','hosted',?)`,
+      )
+      .run(newRecordId(), project.recordId, project.recordId, space)
+
+    expect(removeProject('hosted-catalogue')).toBe(true)
+    expect(projectByName('hosted-catalogue')).toBeNull()
+    for (const table of ['project_lens_profile', 'port_pair', 'port_ref', 'port_ref_source'])
+      expect(db().query(`SELECT COUNT(*) AS n FROM ${table} WHERE space_id=?`).get(space)).toEqual({
+        n: 1,
+      })
+  })
+
   test('retire stamps retired_at and hides the row from acting reads', () => {
     const path = repository('tombstoned')
     upsertProject({ recordId: newRecordId(), name: 'tombstoned', path })

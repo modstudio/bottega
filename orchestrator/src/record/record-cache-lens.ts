@@ -281,11 +281,7 @@ function applyLensProfileRevisionRow(local: Database, item: Record<string, unkno
 function applyProjectLensProfileRow(local: Database, item: Record<string, unknown>): void {
   const recordId = String(item.id)
   const spaceId = String(item.spaceId)
-  const project = local
-    .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE record_id=?')
-    .get(String(item.projectId))
-  if (!project)
-    throw new Error(`record cache could not resolve project parent ${String(item.projectId)}`)
+  const projectRecordId = String(item.projectId)
   const lens =
     item.lensId == null
       ? null
@@ -306,7 +302,7 @@ function applyProjectLensProfileRow(local: Database, item: Record<string, unknow
       .query<{ id: number }, [string, string, string | null, string]>(
         'SELECT id FROM project_lens_profile WHERE space_id=? AND project_record_id=? AND lens_id IS ? AND axis=?',
       )
-      .get(spaceId, project.record_id, lens?.id ?? null, String(item.axis))
+      .get(spaceId, projectRecordId, lens?.id ?? null, String(item.axis))
   if (found)
     local
       .query(
@@ -328,7 +324,7 @@ function applyProjectLensProfileRow(local: Database, item: Record<string, unknow
       .run(
         recordId,
         spaceId,
-        project.record_id,
+        projectRecordId,
         lens?.id ?? null,
         String(item.axis),
         String(item.profileName),

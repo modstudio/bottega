@@ -32,6 +32,15 @@ export const PROJECT_REFERENCES = [
 type ProjectReferenceKey = (typeof PROJECT_REFERENCES)[number][0]
 export type ProjectReferenceCounts = Record<ProjectReferenceKey, number>
 
+const LOCAL_CATALOGUE_REFERENCES = new Set<ProjectReferenceKey>([
+  'port_pair_source',
+  'port_pair_target',
+  'port_ref',
+  'port_ref_source',
+  'port_ref_target',
+  'project_lens_profile',
+])
+
 export function projectReferenceCounts(
   database: Database,
   projectRecordId: string,
@@ -39,8 +48,9 @@ export function projectReferenceCounts(
   return Object.fromEntries(
     PROJECT_REFERENCES.map(([key, , column, explicitTable]) => {
       const table = explicitTable ?? key
+      const localOnly = LOCAL_CATALOGUE_REFERENCES.has(key) ? ' AND space_id IS NULL' : ''
       const row = database
-        .query(`SELECT COUNT(*) AS n FROM ${table} WHERE ${column}=?`)
+        .query(`SELECT COUNT(*) AS n FROM ${table} WHERE ${column}=?${localOnly}`)
         .get(projectRecordId) as { n: number }
       return [key, row.n]
     }),
