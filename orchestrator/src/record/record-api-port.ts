@@ -3,9 +3,14 @@
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
 import type { RecordIdentity } from './record-auth.ts'
-import { decodeRecordCursor, pageRecordItems, type RecordCursor } from './record-cursor.ts'
 import {
-  RECORD_PORT_CURSORS,
+  decodeRecordCursor,
+  pageRecordItems,
+  type RecordCursor,
+  type RecordCursorRow,
+  recordCursorOf,
+} from './record-cursor.ts'
+import {
   RecordPortError,
   type RecordPortImportInput,
   type RecordPortRow,
@@ -55,15 +60,11 @@ export function registerRecordPortRoutes(
       limit: query.data.limit,
       cursor,
     })
-    const timestamp = RECORD_PORT_CURSORS[table.data].field
     return context.json(
       pageRecordItems(
         items,
         query.data.limit,
-        (item) => ({
-          at: String((item as RecordPortRow & Record<string, unknown>)[timestamp]),
-          id: item.id,
-        }),
+        (item) => recordCursorOf(item as RecordCursorRow),
         true,
       ),
     )

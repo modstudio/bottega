@@ -1,8 +1,12 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { SQL } from 'bun'
+import { Hono } from 'hono'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { migratePostgres } from '../postgres/postgres-migrate.ts'
+import { registerRecordLensRoutes } from './record-api-lens.ts'
+import type { RecordIdentity } from './record-auth.ts'
 import {
+  listRecordLensCatalogue,
   selectRecordProjectLensProfile,
   upsertRecordLens,
   upsertRecordLensProfile,
@@ -12,6 +16,7 @@ import { RecordLensError } from './record-lens-contract.ts'
 const url = process.env.ORCH_TEST_LENS_CATALOGUE_URL
 const postgres = url ? describe : describe.skip
 const spaceId = newRecordId()
+const pagingSpaceId = newRecordId()
 const projectId = newRecordId()
 const userId = newRecordId()
 const tenant = () => ({ url: url!, spaceId, spaceIds: [spaceId], userId })
@@ -22,10 +27,58 @@ postgres('hosted lens catalogue compare-and-set writers', () => {
     const sql = new SQL(url!)
     try {
       await sql`INSERT INTO space (id,name,slug,created_at) VALUES (${spaceId}::uuid,${`Lens CAS ${spaceId}`},${`lens-${spaceId}`},now())`
-      await sql`INSERT INTO project (id,space_id,name) VALUES (${projectId}::uuid,${spaceId}::uuid,'lens-cas-project')`
+      await sql`INSERT INTO space (id,name,slug,created_at) VALUES (${pagingSpaceId}::uuid,${`Lens paging ${pagingSpaceId}`},${`lens-paging-${pagingSpaceId}`},now())`
+      await sql`INSERT INTO project (id,space_id,name,created_at) VALUES (${projectId}::uuid,${spaceId}::uuid,'lens-cas-project',now())`
     } finally {
       await sql.close()
     }
+  })
+
+  test('pages lens rows sharing one transaction timestamp exactly once and terminates', async () => {
+    const ids = Array.from({ length: 5 }, () => newRecordId())
+    const sql = new SQL(url!)
+    try {
+      await sql.begin(async (tx) => {
+        for (const [index, id] of ids.entries())
+          await tx`INSERT INTO lens (id,space_id,key,title,question,excludes,slots,version,enabled,requires_execution,updated_at) VALUES (${id}::uuid,${pagingSpaceId}::uuid,${`page-${index}`},'Paging','Question?','Nothing.','{}',1,true,false,now())`
+      })
+    } finally {
+      await sql.close()
+    }
+
+    const seen: string[] = []
+    const app = new Hono<{
+      Variables: { identity: RecordIdentity; destinationSpaceId?: string }
+    }>()
+    registerRecordLensRoutes(
+      app,
+      {
+        listLensCatalogue: listRecordLensCatalogue,
+        upsertLens: async () => null,
+        upsertLensProfile: async () => null,
+        selectProjectLensProfile: async () => null,
+      },
+      { scope: () => ({ ...tenant(), spaceId: pagingSpaceId }), noSpace: () => new Response() },
+    )
+    let cursor: string | null = null
+    let pages = 0
+    for (;;) {
+      const response = await app.request(
+        `/v1/lens-catalogue/lens?limit=2${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
+      )
+      const page = (await response.json()) as {
+        items: { id: string }[]
+        nextCursor: string | null
+      }
+      pages++
+      seen.push(...page.items.map((item) => String(item.id)))
+      if (!page.nextCursor) break
+      cursor = page.nextCursor
+      expect(pages).toBeLessThan(4)
+    }
+    expect(pages).toBe(3)
+    expect(new Set(seen)).toEqual(new Set(ids))
+    expect(seen).toHaveLength(ids.length)
   })
 
   test('lens, profile and selection refuse stale updates without changing live or revision state', async () => {

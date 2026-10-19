@@ -203,32 +203,43 @@ const catalogueKinds = [
 ] as const
 
 test.each(catalogueKinds)(
-  'pull with persisted cursors replaces a cached %s seed version and its events',
+  'pull with persisted cursors replaces a cached %s seed with the complete paged history',
   async (_kind, identityTable, versionTable, eventTable, slug) => {
     const local = db(),
       space = newRecordId(),
       hostedIdentity = identity(space, slug),
       seeded = version(space, hostedIdentity.id, { title: 'Seed' }),
       seededEvent = event(space, seeded.id),
+      sharedUpdatedAt = '2026-10-19T15:00:00.123456Z',
       replacementIdentity = {
         ...hostedIdentity,
         generation: 2,
         updatedAt: '2026-10-19T14:30:00.000Z',
       },
-      replacement = {
-        ...version(space, hostedIdentity.id, { title: 'Machine history' }),
+      replacements = Array.from({ length: 101 }, (_, index) => ({
+        ...version(space, hostedIdentity.id, { title: `Hosted ${index + 2}` }),
         id: newRecordId(),
-        n: 2,
-        updatedAt: '2026-10-19T15:00:00.000Z',
-      },
-      importedEvent = {
-        ...event(space, replacement.id),
-        at: '2026-10-18T11:00:00.000Z',
-        updatedAt: '2026-10-19T15:00:01.000Z',
-      },
+        n: index + 2,
+        status: index + 2 === 69 ? 'production' : 'retired',
+        promotedAt: index + 2 === 69 ? at : null,
+        retiredAt: index + 2 === 69 ? null : at,
+        updatedAt: sharedUpdatedAt,
+      })),
       identityCursor = { at: '2026-10-19T14:00:00.000Z', id: newRecordId() },
       versionCursor = { at: '2026-10-19T14:00:00.000Z', id: newRecordId() },
-      eventCursor = { at: '2026-10-19T14:00:00.000Z', id: newRecordId() }
+      eventCursor = { at: '2026-10-19T14:00:00.000Z', id: newRecordId() },
+      importedEvents = replacements.map((replacement) => ({
+        ...event(space, replacement.id),
+        updatedAt: sharedUpdatedAt,
+      })),
+      versionPageCursor = {
+        at: sharedUpdatedAt,
+        id: replacements[99]!.id,
+      },
+      eventPageCursor = {
+        at: sharedUpdatedAt,
+        id: importedEvents[99]!.id,
+      }
     applyWorkflowCatalogueRow(local, identityTable, hostedIdentity)
     applyWorkflowCatalogueRow(local, versionTable, seeded)
     applyWorkflowCatalogueRow(local, eventTable, seededEvent)
@@ -242,9 +253,12 @@ test.each(catalogueKinds)(
         `record_workflow_cursor:${space}:${eventTable}`,
         JSON.stringify(eventCursor),
       )
+    const calls = new Map<string, number>()
     installRecordApiClient({
       ...createMemoryRecordApiClient(),
       async listWorkflowCatalogue(table, query) {
+        const call = calls.get(table) ?? 0
+        calls.set(table, call + 1)
         if (table === identityTable) {
           expect(query.cursor).toBe(encodeRecordCursor(identityCursor))
           return {
@@ -257,34 +271,68 @@ test.each(catalogueKinds)(
           }
         }
         if (table === versionTable) {
-          expect(query.cursor).toBe(encodeRecordCursor(versionCursor))
+          expect(query.cursor).toBe(
+            encodeRecordCursor(call === 0 ? versionCursor : versionPageCursor),
+          )
+          const items = call === 0 ? replacements.slice(0, 100) : replacements.slice(100)
           return {
-            items: [replacement],
-            nextCursor: null,
-            endCursor: encodeRecordCursor({ at: replacement.updatedAt, id: replacement.id }),
+            items,
+            nextCursor: call === 0 ? encodeRecordCursor(versionPageCursor) : null,
+            endCursor: encodeRecordCursor({
+              at: sharedUpdatedAt,
+              id: items.at(-1)!.id,
+            }),
           }
         }
         if (table === eventTable) {
-          expect(query.cursor).toBe(encodeRecordCursor(eventCursor))
+          expect(query.cursor).toBe(encodeRecordCursor(call === 0 ? eventCursor : eventPageCursor))
+          const items = call === 0 ? importedEvents.slice(0, 100) : importedEvents.slice(100)
           return {
-            items: [importedEvent],
-            nextCursor: null,
-            endCursor: encodeRecordCursor({ at: importedEvent.updatedAt, id: importedEvent.id }),
+            items,
+            nextCursor: call === 0 ? encodeRecordCursor(eventPageCursor) : null,
+            endCursor: encodeRecordCursor({
+              at: sharedUpdatedAt,
+              id: items.at(-1)!.id,
+            }),
           }
         }
         return { items: [], nextCursor: null }
       },
     })
     expect(await pullWorkflowCatalogue(local, [space])).toEqual({
-      count: 3,
+      count: 203,
       completedSpaces: new Set([space]),
     })
     expect(
-      local.query(`SELECT record_id,n,definition FROM ${versionTable} WHERE space_id=?`).get(space),
-    ).toEqual({ record_id: replacement.id, n: 2, definition: replacement.definition })
+      local.query(`SELECT COUNT(*) n FROM ${versionTable} WHERE space_id=?`).get(space),
+    ).toEqual({ n: replacements.length })
     expect(
-      local.query(`SELECT record_id FROM ${eventTable} WHERE space_id=? ORDER BY id`).all(space),
-    ).toEqual([{ record_id: importedEvent.id }])
+      local
+        .query(`SELECT n FROM ${versionTable} WHERE space_id=? AND status='production'`)
+        .all(space),
+    ).toEqual([{ n: 69 }])
+    expect(local.query(`SELECT COUNT(*) n FROM ${eventTable} WHERE space_id=?`).get(space)).toEqual(
+      {
+        n: importedEvents.length,
+      },
+    )
+    expect(
+      local
+        .query(`SELECT record_id FROM ${versionTable} WHERE space_id=? ORDER BY record_id`)
+        .all(space)
+        .map((row) => (row as { record_id: string }).record_id),
+    ).toEqual(replacements.map((row) => row.id).sort())
+    expect(
+      local
+        .query(`SELECT record_id FROM ${eventTable} WHERE space_id=? ORDER BY record_id`)
+        .all(space)
+        .map((row) => (row as { record_id: string }).record_id),
+    ).toEqual(importedEvents.map((row) => row.id).sort())
+    expect(
+      local.query(`SELECT COUNT(*) n FROM ${versionTable} WHERE space_id=? AND n=1`).get(space),
+    ).toEqual({ n: 0 })
+    expect(calls.get(versionTable)).toBe(2)
+    expect(calls.get(eventTable)).toBe(2)
   },
 )
 

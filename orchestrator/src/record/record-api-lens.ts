@@ -3,7 +3,13 @@
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
 import type { RecordIdentity } from './record-auth.ts'
-import { decodeRecordCursor, pageRecordItems, type RecordCursor } from './record-cursor.ts'
+import {
+  decodeRecordCursor,
+  pageRecordItems,
+  type RecordCursor,
+  type RecordCursorRow,
+  recordCursorOf,
+} from './record-cursor.ts'
 import {
   RecordLensError,
   type RecordLensImportInput,
@@ -81,10 +87,7 @@ export function registerRecordLensRoutes(
       pageRecordItems(
         items,
         query.data.limit,
-        (item) => ({
-          at: String(item[table.data.includes('revision') ? 'at' : 'updatedAt']),
-          id: String(item.id),
-        }),
+        (item) => recordCursorOf(item as RecordCursorRow),
         true,
       ),
     )

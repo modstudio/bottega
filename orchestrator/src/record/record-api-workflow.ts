@@ -3,7 +3,13 @@
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
 import type { RecordIdentity } from './record-auth.ts'
-import { decodeRecordCursor, pageRecordItems, type RecordCursor } from './record-cursor.ts'
+import {
+  decodeRecordCursor,
+  pageRecordItems,
+  type RecordCursor,
+  type RecordCursorRow,
+  recordCursorOf,
+} from './record-cursor.ts'
 import {
   type RecordWorkflowDraftInput,
   RecordWorkflowError,
@@ -67,10 +73,7 @@ export function registerRecordWorkflowRoutes(
       pageRecordItems(
         items,
         query.data.limit,
-        (item) => ({
-          at: String(item.updatedAt),
-          id: String(item.id),
-        }),
+        (item) => recordCursorOf(item as RecordCursorRow),
         true,
       ),
     )
