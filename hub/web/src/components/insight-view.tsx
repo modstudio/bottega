@@ -1,4 +1,5 @@
 import { Badge } from '@bottega/hub-ui/badge'
+import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
 import { PageHeader, SectionTitle } from '@bottega/hub-ui/page-header'
 import { StatRow, StatTile } from '@bottega/hub-ui/stat'
 import {
@@ -9,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from '@bottega/hub-ui/table'
+import { ToolbarBand } from '@bottega/hub-ui/toolbar-band'
 import { compactTokens, duration } from '@bottega/hub-util/format'
 import { useEffect } from 'react'
 import { responseSubtitle, WindowControl } from '@/components/design-system'
@@ -116,6 +118,7 @@ function SectionHead({ title, detail }: { title: string; detail?: string }) {
 }
 
 function InsightChrome({ title, response }: { title: string; response: Strip }) {
+  const phone = useMediaQuery(PHONE_QUERY)
   useEffect(() => setWorkCounts(response.counts), [response.counts])
   const subtitle = responseSubtitle(response)
   return (
@@ -124,7 +127,7 @@ function InsightChrome({ title, response }: { title: string; response: Strip }) 
         title={title}
         subtitle={subtitle.text}
         subtitleTitle={subtitle.title}
-        actions={<WindowControl />}
+        actions={phone ? <ToolbarBand scope={<WindowControl />} /> : <WindowControl />}
       />
       <StatRow>
         <StatTile

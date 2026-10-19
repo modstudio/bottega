@@ -17,10 +17,20 @@ export const Route = createFileRoute('/jobs')({
 })
 
 const columns: CollectionColumn<JobRow>[] = [
-  { id: 'name', label: 'Job', render: (row) => <strong>{row.name}</strong> },
-  { id: 'what', label: 'What', render: (row) => <span className="">{row.what}</span> },
-  { id: 'needs', label: 'Needs', render: (row) => Object.keys(row.needs).join(', ') || '-' },
-  { id: 'prefer', label: 'Prefers', render: (row) => row.prefer.join(', ') },
+  { id: 'name', label: 'Job', phone: 'title', render: (row) => <strong>{row.name}</strong> },
+  {
+    id: 'what',
+    label: 'What',
+    phone: 'line',
+    render: (row) => <span className="">{row.what}</span>,
+  },
+  {
+    id: 'needs',
+    label: 'Needs',
+    phone: 'aside',
+    render: (row) => Object.keys(row.needs).join(', ') || '-',
+  },
+  { id: 'prefer', label: 'Prefers', phone: 'more', render: (row) => row.prefer.join(', ') },
 ]
 
 function JobsPage() {

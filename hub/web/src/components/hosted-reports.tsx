@@ -1,3 +1,4 @@
+import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
 import { Select } from '@bottega/hub-ui/listbox/select'
 import { PageHeader, SectionTitle } from '@bottega/hub-ui/page-header'
 import {
@@ -8,6 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from '@bottega/hub-ui/table'
+import { ToolbarBand } from '@bottega/hub-ui/toolbar-band'
 import { WindowControl } from '@/components/design-system'
 import {
   AgentUnknown,
@@ -64,45 +66,47 @@ export function HostedReports({
   projectPeople: Person[]
   personMeasures: readonly MeasureQuery[]
 }) {
+  const phone = useMediaQuery(PHONE_QUERY)
+  const scope = (
+    <>
+      <WindowControl />
+      <Select
+        size="sm"
+        label="Report scope"
+        value={kind}
+        options={[
+          { value: 'space', label: 'This space' },
+          { value: 'project', label: 'One project', disabled: !projects.length },
+          { value: 'person', label: 'One person', disabled: !people.length },
+        ]}
+        onChange={(value) => onKindChange(value as ScopeKind)}
+      />
+      {kind === 'project' ? (
+        <Select
+          size="sm"
+          label="Project"
+          value={project}
+          options={projects.map((row) => ({ value: row.name, label: row.name }))}
+          onChange={onProjectChange}
+        />
+      ) : null}
+      {kind === 'person' ? (
+        <Select
+          size="sm"
+          label="Person"
+          value={person}
+          options={people.map((row) => ({ value: row.userId, label: row.name }))}
+          onChange={onPersonChange}
+        />
+      ) : null}
+    </>
+  )
   return (
     <section>
       <PageHeader
         title="Reports"
         subtitle={title || 'Choose a scope'}
-        actions={
-          <>
-            <WindowControl />
-            <Select
-              size="sm"
-              label="Report scope"
-              value={kind}
-              options={[
-                { value: 'space', label: 'This space' },
-                { value: 'project', label: 'One project', disabled: !projects.length },
-                { value: 'person', label: 'One person', disabled: !people.length },
-              ]}
-              onChange={(value) => onKindChange(value as ScopeKind)}
-            />
-            {kind === 'project' ? (
-              <Select
-                size="sm"
-                label="Project"
-                value={project}
-                options={projects.map((row) => ({ value: row.name, label: row.name }))}
-                onChange={onProjectChange}
-              />
-            ) : null}
-            {kind === 'person' ? (
-              <Select
-                size="sm"
-                label="Person"
-                value={person}
-                options={people.map((row) => ({ value: row.userId, label: row.name }))}
-                onChange={onPersonChange}
-              />
-            ) : null}
-          </>
-        }
+        actions={phone ? <ToolbarBand scope={scope} /> : scope}
       />
       {measuresError ? (
         <p data-tone="error" className="text-status-text">

@@ -3,12 +3,14 @@ import { isHostedMode } from '@bottega/hub-data/hub-mode'
 import { useMachinePermissionChange } from '@bottega/hub-data/use-machine-permission'
 import { Badge } from '@bottega/hub-ui/badge'
 import { Button, TextButton } from '@bottega/hub-ui/button'
+import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
 import { Input } from '@bottega/hub-ui/field/input'
 import { Textarea } from '@bottega/hub-ui/field/textarea'
 import { Copyable, DisplayRow, FieldSection, SettingBlock } from '@bottega/hub-ui/form-layout'
 import { Select } from '@bottega/hub-ui/listbox/select'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { Segmented } from '@bottega/hub-ui/segmented'
+import { ToolbarBand } from '@bottega/hub-ui/toolbar-band'
 import { Markdown } from '@bottega/hub-views/markdown'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
@@ -80,6 +82,7 @@ function RemoveCanonButton({
 }
 
 export function ManagedContextPage() {
+  const phone = useMediaQuery(PHONE_QUERY)
   const localProjects = useQuery({ ...trpc.context.projects.queryOptions(), enabled: !hosted })
   const hostedProjects = useQuery({
     ...hostedTrpc.context.projects.queryOptions(),
@@ -110,18 +113,42 @@ export function ManagedContextPage() {
       <PageHeader
         title="Agent settings"
         subtitle="Autonomy, user canon and permissions, the same on every machine"
+        actions={
+          phone ? (
+            <ToolbarBand
+              filters={
+                <>
+                  <Select
+                    label="Project"
+                    value={selectedProject}
+                    options={projectOptions}
+                    onChange={setProjectChoice}
+                  />
+                  <Select
+                    label="Settings target"
+                    value={settingsChoice}
+                    options={settingsOptions}
+                    onChange={setSettingsChoice}
+                  />
+                </>
+              }
+            />
+          ) : undefined
+        }
       />
       {hosted ? (
         <HostedAutonomySection
           project={selectedProject}
           options={projectOptions}
           onProject={setProjectChoice}
+          showChooser={!phone}
         />
       ) : (
         <AutonomySection
           project={selectedProject}
           options={projectOptions}
           onProject={setProjectChoice}
+          showChooser={!phone}
         />
       )}
       <UserCanonSection rows={canon.data} pending={canon.isPending} error={canon.error?.message} />
@@ -130,6 +157,7 @@ export function ManagedContextPage() {
         options={settingsOptions}
         projects={managedProjects}
         onTarget={setSettingsChoice}
+        showChooser={!phone}
       />
     </div>
   )
@@ -323,15 +351,25 @@ export function UserCanonSection({
   )
 }
 
-function AutonomySection({
-  project,
-  options,
-  onProject,
-}: {
+type AutonomySectionProps = {
   project: string
   options: { value: string; label: string }[]
   onProject(value: string): void
-}) {
+  showChooser: boolean
+}
+
+function ProjectChooser(props: AutonomySectionProps) {
+  return props.showChooser ? (
+    <Select
+      label="Project"
+      value={props.project}
+      options={props.options}
+      onChange={props.onProject}
+    />
+  ) : null
+}
+
+function AutonomySection({ project, options, onProject, showChooser }: AutonomySectionProps) {
   const autonomy = useQuery({
     ...trpc.context.autonomy.get.queryOptions({ project: project || '_' }),
     enabled: Boolean(project),
@@ -377,7 +415,7 @@ function AutonomySection({
       title="Autonomy"
       description="How much each workflow stage runs on its own, resolved for this machine. Your preset and overrides live in your hosted profile; a row can also be overridden on this machine alone."
     >
-      <Select label="Project" value={project} options={options} onChange={onProject} />
+      <ProjectChooser {...{ project, options, onProject, showChooser }} />
       {autonomy.error ? <ErrorText message={autonomy.error.message} /> : null}
       {update.error ? <ErrorText message={update.error.message} /> : null}
       {updateShipTo.error ? <ErrorText message={updateShipTo.error.message} /> : null}
@@ -529,15 +567,7 @@ function AutonomySection({
 }
 
 /** Your hosted profile's autonomy; every signed-in machine resolves it below its own overrides. */
-function HostedAutonomySection({
-  project,
-  options,
-  onProject,
-}: {
-  project: string
-  options: { value: string; label: string }[]
-  onProject(value: string): void
-}) {
+function HostedAutonomySection({ project, options, onProject, showChooser }: AutonomySectionProps) {
   const api = hostedTrpc.context.autonomy
   const autonomy = useQuery({
     ...api.get.queryOptions({ project: project || '_' }),
@@ -557,7 +587,7 @@ function HostedAutonomySection({
       title="Autonomy"
       description="How much each workflow stage runs on its own. These values are your profile and apply on every machine you sign in from."
     >
-      <Select label="Project" value={project} options={options} onChange={onProject} />
+      <ProjectChooser {...{ project, options, onProject, showChooser }} />
       {error ? <ErrorText message={error.message} /> : null}
       {user ? (
         <div className="space-y-3">
@@ -661,11 +691,13 @@ function ManagedSettingsSection({
   options,
   projects,
   onTarget,
+  showChooser,
 }: {
   target: string
   options: { value: string; label: string }[]
   projects: ManagedProject[]
   onTarget(value: string): void
+  showChooser: boolean
 }) {
   const machinePermissionChange = useMachinePermissionChange()
   const address = target === 'user' ? ({ user: true } as const) : { project: target }
@@ -683,7 +715,9 @@ function ManagedSettingsSection({
       title="Managed settings"
       description={`Stored permissions, hook fingerprints and environment names. ${APPLY_NOTE}`}
     >
-      <Select label="Settings target" value={target} options={options} onChange={onTarget} />
+      {showChooser ? (
+        <Select label="Settings target" value={target} options={options} onChange={onTarget} />
+      ) : null}
       {settings.error ? <ErrorText message={settings.error.message} /> : null}
       {settings.data ? (
         <div className="space-y-5">

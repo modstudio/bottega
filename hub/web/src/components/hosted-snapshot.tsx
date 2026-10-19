@@ -1,5 +1,7 @@
+import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
 import { Select } from '@bottega/hub-ui/listbox/select'
 import { PageHeader } from '@bottega/hub-ui/page-header'
+import { ToolbarBand } from '@bottega/hub-ui/toolbar-band'
 
 type Machine = { id: string; takenAt: string }
 
@@ -23,24 +25,25 @@ export function SnapshotHeader({
   machines: Machine[]
   onMachineChange: (machineId: string) => void
 }) {
+  const phone = useMediaQuery(PHONE_QUERY)
+  const machineControl =
+    machines.length > 1 ? (
+      <div className="flex items-center gap-2 text-sm text-text-muted">
+        Machine
+        <Select
+          label="Machine"
+          size="sm"
+          value={machineId}
+          options={machines.map((machine) => ({ value: machine.id, label: machine.id }))}
+          onChange={onMachineChange}
+        />
+      </div>
+    ) : null
   return (
     <PageHeader
       title={title}
       subtitle={`as of ${asOf(takenAt)}`}
-      actions={
-        machines.length > 1 ? (
-          <div className="flex items-center gap-2 text-sm text-text-muted">
-            Machine
-            <Select
-              label="Machine"
-              size="sm"
-              value={machineId}
-              options={machines.map((machine) => ({ value: machine.id, label: machine.id }))}
-              onChange={onMachineChange}
-            />
-          </div>
-        ) : null
-      }
+      actions={phone ? <ToolbarBand scope={machineControl} /> : machineControl}
     />
   )
 }

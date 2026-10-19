@@ -29,10 +29,11 @@ export function HostedProjects({
   error: string | null
 }) {
   const columns: CollectionColumn<HostedProject>[] = [
-    { id: 'space', label: 'Space', render: (project) => project.spaceName },
+    { id: 'space', label: 'Space', phone: 'line', render: (project) => project.spaceName },
     {
       id: 'name',
       label: 'Name',
+      phone: 'title',
       render: (project) => (
         <span className="flex items-center gap-2 font-semibold">
           <FolderGit2 size={14} />
@@ -40,25 +41,29 @@ export function HostedProjects({
         </span>
       ),
     },
-    { id: 'stack', label: 'Stack', render: (project) => project.stack ?? '-' },
+    { id: 'stack', label: 'Stack', phone: 'line', render: (project) => project.stack ?? '-' },
     {
       id: 'context',
       label: 'Context',
+      phone: 'aside',
       render: (project) => (project.managedContext ? <Badge tone="success">managed</Badge> : '-'),
     },
     {
       id: 'landing',
       label: 'Landing',
+      phone: 'more',
       render: (project) => project.landingBranch ?? '-',
     },
     {
       id: 'keys',
       label: 'Keys',
+      phone: 'more',
       render: (project) => project.keyPrefixes.join(', ') || '-',
     },
     {
       id: 'retired',
-      label: '',
+      label: 'Retired',
+      phone: 'more',
       render: (project) => (project.retiredAt ? <Badge>retired</Badge> : null),
     },
   ]
