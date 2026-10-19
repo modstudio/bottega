@@ -40,8 +40,10 @@ export const recordModules: RecordModule[] = [
     '../record/record-api-client.ts',
     '../record/record-port-contract.ts',
     '../record/record-project-destination.ts',
+    './porting-date.ts',
     './porting-import-contract.ts',
   ]),
+  module('orchestrator/src/porting/porting-date.ts', []),
   module('orchestrator/src/record/record-lens-catalogue.ts', [
     'bun',
     '../../../shared/record/schema.ts',
@@ -52,11 +54,14 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-catalogue-import.ts', [
     'bun',
     '../../../shared/record/tenant.ts',
+    '../workflow/workflow-built-ins.ts',
+    './record-catalogue-reconciliation.ts',
     './record-catalogue-contract.ts',
     './record-lens-contract.ts',
     './record-port-contract.ts',
     './record-workflow-contract.ts',
   ]),
+  module('orchestrator/src/record/record-catalogue-reconciliation.ts', []),
   module('orchestrator/src/record/record-space-built-ins.ts', [
     'bun',
     '../../../shared/record/schema.ts',
@@ -82,6 +87,7 @@ export const recordModules: RecordModule[] = [
     './record-cache.ts',
     './record-lens-contract.ts',
     './record-port-contract.ts',
+    '../porting/porting-date.ts',
     './record-project-destination.ts',
     './record-sync.ts',
     './record-workflow-contract.ts',

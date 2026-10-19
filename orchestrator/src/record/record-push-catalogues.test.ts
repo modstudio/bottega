@@ -7,7 +7,13 @@ import {
 } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { resolveLens, selectProjectProfile, setProfile } from '../lens/lenses.ts'
-import { addPairLocal, ledgerRef, pairByProjects, setLedgerRefLocal } from '../porting/porting.ts'
+import {
+  addPairLocal,
+  ledgerRef,
+  pairByProjects,
+  setBaselineLocal,
+  setLedgerRefLocal,
+} from '../porting/porting.ts'
 import { upsertProject } from '../project/projects.ts'
 import { rememberActiveRecordSpace, rememberProjectSpace } from '../project-space.ts'
 import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
@@ -35,6 +41,7 @@ function fakeCatalogueClient(
     slug: string
     outcome: 'replaced seeded built-in' | 'kept hosted history; local history not imported'
   }> = [],
+  observePort: (input: RecordPortImportInput, spaceId: string) => void = () => undefined,
 ): RecordApiClient {
   const base = createMemoryRecordApiClient()
   const lens = new Map<RecordLensTable, Record<string, unknown>[]>()
@@ -86,12 +93,11 @@ function fakeCatalogueClient(
       ...insert(workflow, input as unknown as Record<string, unknown>, destination(target)),
       outcomes: workflowOutcomes,
     }),
-    importPortCatalogue: async (input: RecordPortImportInput, target) =>
-      insert(
-        port,
-        input as unknown as Record<string, Record<string, unknown>[]>,
-        destination(target),
-      ),
+    importPortCatalogue: async (input: RecordPortImportInput, target) => {
+      const space = destination(target)
+      observePort(input, space)
+      return insert(port, input as unknown as Record<string, Record<string, unknown>[]>, space)
+    },
     listLensCatalogue: async (table, _query, target) => ({
       items: (lens.get(table) ?? []).filter((row) => row.spaceId === destination(target)),
       nextCursor: null,
@@ -163,6 +169,40 @@ test('dry run logs its local plan without calling hosted methods', async () => {
   expect(logs).toContainEqual(
     expect.stringMatching(/^dry run active space — workflow: \d+; skipped: \d+$/),
   )
+})
+
+test('push planner normalizes a date-only baseline without changing the local value', async () => {
+  const local = db(),
+    sourceId = newRecordId(),
+    targetId = newRecordId()
+  upsertProject({
+    recordId: sourceId,
+    name: 'dated-source',
+    path: '/tmp/dated-source',
+    settings: {},
+  })
+  upsertProject({
+    recordId: targetId,
+    name: 'dated-target',
+    path: '/tmp/dated-target',
+    settings: {},
+  })
+  rememberProjectSpace(local, 'dated-source', spaceId)
+  rememberProjectSpace(local, 'dated-target', spaceId)
+  const pair = addPairLocal(sourceId, targetId)
+  setBaselineLocal(pair.id, 'abc123', '2026-08-24')
+  const imports: RecordPortImportInput[] = []
+  const client = fakeCatalogueClient(undefined, undefined, [], (input) => imports.push(input))
+  installRecordApiClient(client)
+
+  await pushCataloguesCommand({ dryRun: false }, { log: () => undefined }, { local, client })
+
+  expect(imports.flatMap((input) => input.port_baseline)).toEqual([
+    expect.objectContaining({ scannedAt: '2026-08-24T00:00:00.000Z' }),
+  ])
+  expect(local.query('SELECT scanned_at FROM port_baseline WHERE pair_id=?').get(pair.id)).toEqual({
+    scanned_at: '2026-08-24',
+  })
 })
 
 test('prints workflow import reconciliation outcomes', async () => {

@@ -255,6 +255,7 @@ describe('port importer', () => {
     const target = imports.get('space-beta')!
     expect(target.port_pair).toHaveLength(1)
     expect(target.port_baseline).toHaveLength(1)
+    expect(target.port_baseline[0]!.scannedAt).toBe('2026-01-01T00:00:00.000Z')
     expect(target.port_skip).toHaveLength(1)
     expect(target.port_ref).toHaveLength(1)
     expect(target.port_ref_source).toEqual([

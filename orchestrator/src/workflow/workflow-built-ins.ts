@@ -5,6 +5,8 @@ import type { AutonomyStage, AutonomyValue } from './autonomy.ts'
 import type { FloorKind } from './workflow-floor.ts'
 import { expandWorkflowSteps } from './workflow-step-sequences.ts'
 
+export const BUILT_IN_WORKFLOW_AUTHOR = 'seed'
+
 export const workflowSeeds = [
   {
     slug: 'fix-defect',
@@ -177,13 +179,11 @@ export function builtInWorkflowCatalogue() {
     stepCatalogue: {
       slug: 'shared',
       definition: JSON.stringify(catalogueDefinition()),
-      author: 'seed',
       reason: 'seed r6',
     },
     workflows: workflowSeeds.map((seed) => ({
       slug: seed.slug,
       definition: JSON.stringify(workflowDefinition(seed)),
-      author: 'seed',
       reason: `seed r${seed.revision}`,
     })),
   }

@@ -10,6 +10,7 @@ import { activeRecordSpace, effectiveProjectSpace } from '../project-space.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import type { RecordPortImportInput } from '../record/record-port-contract.ts'
 import { noActiveRecordSpaceRefusal } from '../record/record-project-destination.ts'
+import { normalizePortBaselineScannedAt } from './porting-date.ts'
 import { type ImportPlan, ImportRefusalError } from './porting-import-contract.ts'
 
 type HostedImportPlan = Pick<
@@ -162,7 +163,7 @@ export function buildHostedPortImports(
       spaceId: pair.spaceId,
       pairId: pair.id,
       sourceCommit: row.sourceCommit,
-      scannedAt: row.scannedAt,
+      scannedAt: normalizePortBaselineScannedAt(row.scannedAt),
       version: 1,
       updatedAt: now,
     })

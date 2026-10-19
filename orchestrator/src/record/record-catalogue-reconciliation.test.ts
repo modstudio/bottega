@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import {
   type CatalogueVersionMetadata,
   reconcileCatalogueHistory,
-} from './record-catalogue-import.ts'
+} from './record-catalogue-reconciliation.ts'
 
 const version = (id: string, author: string): CatalogueVersionMetadata => ({ id, author })
 

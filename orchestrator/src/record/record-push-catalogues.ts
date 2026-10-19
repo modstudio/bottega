@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { db } from '../database/db.ts'
+import { normalizePortBaselineScannedAt } from '../porting/porting-date.ts'
 import { projects } from '../project/projects.ts'
 import { activeRecordSpace } from '../project-space.ts'
 import type { RecordApiClient, RecordRequestDestination } from './record-api-client.ts'
@@ -263,6 +264,7 @@ function workflowPlan(local: Database, activeSpaceId: string): RecordWorkflowImp
       id: String(r.record_id),
       spaceId: activeSpaceId,
       slug: String(r.slug),
+      generation: 1,
       createdAt: String(r.created_at),
       updatedAt: now,
     }))
@@ -391,7 +393,7 @@ function addPortBaseline(r: Record<string, unknown>, context: PortPlanContext): 
     spaceId: space,
     pairId: String(r.pair_record_id),
     sourceCommit: r.source_commit == null ? null : String(r.source_commit),
-    scannedAt: r.scanned_at == null ? null : String(r.scanned_at),
+    scannedAt: normalizePortBaselineScannedAt(r.scanned_at == null ? null : String(r.scanned_at)),
     version: Number(r.version),
     updatedAt: context.now,
   })

@@ -120,9 +120,10 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
     'orchestrator/src/record/record-cache-workflow.ts',
     [
       'b70c6fa955ff9bab',
-      'a0ebd3328f25bb73',
-      'f2b8ed0c221e684d',
-      '45fddbb749a00b64',
+      '5c7f7fa1d16b5c2f',
+      'e80ba02884c78ef6',
+      '8d393de6efaf76c4',
+      '56b2a34b8ba485c3',
       '65005f0cb73524de',
       '9ccd6eb4ef6004cf',
       '9fffbcd033474363',

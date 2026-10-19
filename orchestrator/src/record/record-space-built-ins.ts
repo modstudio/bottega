@@ -8,7 +8,10 @@ import {
   BUILT_IN_LENS_SLOTS,
   BUILT_IN_LENSES,
 } from '../lens/lens-built-ins.ts'
-import { builtInWorkflowCatalogue } from '../workflow/workflow-built-ins.ts'
+import {
+  BUILT_IN_WORKFLOW_AUTHOR,
+  builtInWorkflowCatalogue,
+} from '../workflow/workflow-built-ins.ts'
 
 type Tenant = { url: string } & TenantPrincipal
 export type SpaceBuiltInsResult = { inserted: number; alreadyPresent: number }
@@ -81,11 +84,11 @@ async function ensureInTransaction(tx: SQL, spaceId: string): Promise<SpaceBuilt
             ? await tx`INSERT INTO workflow_version
             (id,space_id,workflow_id,n,status,definition,author,reason,created_at,promoted_at,updated_at)
             VALUES (${id}::uuid,${spaceId}::uuid,${ownerId}::uuid,1,'production',${item.definition},
-              ${item.author},${item.reason},now(),now(),now()) RETURNING id`
+              ${BUILT_IN_WORKFLOW_AUTHOR},${item.reason},now(),now(),now()) RETURNING id`
             : await tx`INSERT INTO step_catalogue_version
             (id,space_id,catalogue_id,n,status,definition,author,reason,created_at,promoted_at,updated_at)
             VALUES (${id}::uuid,${spaceId}::uuid,${ownerId}::uuid,1,'production',${item.definition},
-              ${item.author},${item.reason},now(),now(),now()) RETURNING id`
+              ${BUILT_IN_WORKFLOW_AUTHOR},${item.reason},now(),now(),now()) RETURNING id`
         result.inserted++
       }
       const versionId = String(versions[0]!.id)
@@ -98,13 +101,13 @@ async function ensureInTransaction(tx: SQL, spaceId: string): Promise<SpaceBuilt
         await tx`INSERT INTO workflow_event
         (id,space_id,workflow_version_id,event,author,reason,at,updated_at)
         VALUES (${newRecordId()}::uuid,${spaceId}::uuid,${versionId}::uuid,'set',
-          ${item.author},${item.reason},now(),now())`
+          ${BUILT_IN_WORKFLOW_AUTHOR},${item.reason},now(),now())`
         result.inserted++
       } else {
         await tx`INSERT INTO step_catalogue_event
         (id,space_id,catalogue_version_id,event,author,reason,at,updated_at)
         VALUES (${newRecordId()}::uuid,${spaceId}::uuid,${versionId}::uuid,'set',
-          ${item.author},${item.reason},now(),now())`
+          ${BUILT_IN_WORKFLOW_AUTHOR},${item.reason},now(),now())`
         result.inserted++
       }
     },

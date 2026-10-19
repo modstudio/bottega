@@ -37,6 +37,7 @@ function mapped(table: RecordWorkflowTable, row: Record<string, unknown>) {
     return {
       ...common,
       slug: text(row.slug),
+      generation: number(row.generation),
       createdAt: iso(row.created_at),
       updatedAt: iso(row.updated_at),
     }
@@ -119,9 +120,9 @@ async function identity(
     const id = newRecordId(),
       now = new Date().toISOString()
     if (input.kind === 'workflow')
-      await tx`INSERT INTO workflow (id,space_id,slug,created_at,updated_at) VALUES (${id}::uuid,${input.spaceId}::uuid,${input.slug},${now}::timestamptz,${now}::timestamptz)`
+      await tx`INSERT INTO workflow (id,space_id,slug,generation,created_at,updated_at) VALUES (${id}::uuid,${input.spaceId}::uuid,${input.slug},1,${now}::timestamptz,${now}::timestamptz)`
     else
-      await tx`INSERT INTO step_catalogue (id,space_id,slug,created_at,updated_at) VALUES (${id}::uuid,${input.spaceId}::uuid,${input.slug},${now}::timestamptz,${now}::timestamptz)`
+      await tx`INSERT INTO step_catalogue (id,space_id,slug,generation,created_at,updated_at) VALUES (${id}::uuid,${input.spaceId}::uuid,${input.slug},1,${now}::timestamptz,${now}::timestamptz)`
     rows =
       input.kind === 'workflow'
         ? await tx`SELECT * FROM workflow WHERE id=${id}::uuid`

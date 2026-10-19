@@ -1,3 +1,4 @@
+import { Database } from 'bun:sqlite'
 import { afterEach, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import {
@@ -5,6 +6,7 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
+import { applyMigrations, applyMigrationsBefore } from '../database/migrations.ts'
 import { upsertProject } from '../project/projects.ts'
 import { effectiveProjectSpace, rememberProjectSpace } from '../project-space.ts'
 import { productionStepCatalogue } from '../workflow/step-catalogue.ts'
@@ -20,6 +22,7 @@ const identity = (spaceId: string, slug: string, id = newRecordId()) => ({
   id,
   spaceId,
   slug,
+  generation: 1,
   createdAt: at,
   updatedAt: at,
 })
@@ -194,67 +197,181 @@ test('the same workflow slug resolves through each project space without consumi
   expect(productionWorkflows(local)[0]!.definition.title).not.toMatch(/^Space /)
 })
 
-test('pull with a persisted cursor replaces a cached seed version and its events', async () => {
-  const local = db(),
-    space = newRecordId(),
-    hostedIdentity = identity(space, 'fix-defect'),
-    seeded = version(space, hostedIdentity.id, { title: 'Seed' }),
-    seededEvent = event(space, seeded.id),
-    replacement = {
-      ...version(space, hostedIdentity.id, { title: 'Machine history' }),
-      id: newRecordId(),
-      updatedAt: '2026-10-19T15:00:00.000Z',
-    },
-    importedEvent = {
-      ...event(space, replacement.id),
-      at: '2026-10-18T11:00:00.000Z',
-      updatedAt: '2026-10-19T15:00:01.000Z',
-    },
-    versionCursor = { at: '2026-10-19T14:00:00.000Z', id: newRecordId() },
-    eventCursor = { at: '2026-10-19T14:00:00.000Z', id: newRecordId() }
-  applyWorkflowCatalogueRow(local, 'workflow', hostedIdentity)
-  applyWorkflowCatalogueRow(local, 'workflow_version', seeded)
-  applyWorkflowCatalogueRow(local, 'workflow_event', seededEvent)
-  local
-    .query('INSERT INTO schema_meta (key,value) VALUES (?,?),(?,?)')
-    .run(
-      `record_workflow_cursor:${space}:workflow_version`,
-      JSON.stringify(versionCursor),
-      `record_workflow_cursor:${space}:workflow_event`,
-      JSON.stringify(eventCursor),
-    )
-  installRecordApiClient({
-    ...createMemoryRecordApiClient(),
-    async listWorkflowCatalogue(table, query) {
-      if (table === 'workflow_version') {
-        expect(query.cursor).toBe(encodeRecordCursor(versionCursor))
-        return {
-          items: [replacement],
-          nextCursor: null,
-          endCursor: encodeRecordCursor({ at: replacement.updatedAt, id: replacement.id }),
-        }
-      }
-      if (table === 'workflow_event') {
-        expect(query.cursor).toBe(encodeRecordCursor(eventCursor))
-        return {
-          items: [importedEvent],
-          nextCursor: null,
-          endCursor: encodeRecordCursor({ at: importedEvent.updatedAt, id: importedEvent.id }),
-        }
-      }
-      return { items: [], nextCursor: null }
-    },
-  })
-  expect(await pullWorkflowCatalogue(local, [space])).toEqual({
-    count: 2,
-    completedSpaces: new Set([space]),
-  })
-  expect(
+const catalogueKinds = [
+  ['workflow', 'workflow', 'workflow_version', 'workflow_event', 'fix-defect'],
+  ['step catalogue', 'step_catalogue', 'step_catalogue_version', 'step_catalogue_event', 'shared'],
+] as const
+
+test.each(catalogueKinds)(
+  'pull with persisted cursors replaces a cached %s seed version and its events',
+  async (_kind, identityTable, versionTable, eventTable, slug) => {
+    const local = db(),
+      space = newRecordId(),
+      hostedIdentity = identity(space, slug),
+      seeded = version(space, hostedIdentity.id, { title: 'Seed' }),
+      seededEvent = event(space, seeded.id),
+      replacementIdentity = {
+        ...hostedIdentity,
+        generation: 2,
+        updatedAt: '2026-10-19T14:30:00.000Z',
+      },
+      replacement = {
+        ...version(space, hostedIdentity.id, { title: 'Machine history' }),
+        id: newRecordId(),
+        n: 2,
+        updatedAt: '2026-10-19T15:00:00.000Z',
+      },
+      importedEvent = {
+        ...event(space, replacement.id),
+        at: '2026-10-18T11:00:00.000Z',
+        updatedAt: '2026-10-19T15:00:01.000Z',
+      },
+      identityCursor = { at: '2026-10-19T14:00:00.000Z', id: newRecordId() },
+      versionCursor = { at: '2026-10-19T14:00:00.000Z', id: newRecordId() },
+      eventCursor = { at: '2026-10-19T14:00:00.000Z', id: newRecordId() }
+    applyWorkflowCatalogueRow(local, identityTable, hostedIdentity)
+    applyWorkflowCatalogueRow(local, versionTable, seeded)
+    applyWorkflowCatalogueRow(local, eventTable, seededEvent)
     local
-      .query('SELECT record_id,definition FROM workflow_version WHERE space_id=? AND n=1')
-      .get(space),
-  ).toEqual({ record_id: replacement.id, definition: replacement.definition })
-  expect(
-    local.query('SELECT record_id FROM workflow_event WHERE space_id=? ORDER BY id').all(space),
-  ).toEqual([{ record_id: importedEvent.id }])
+      .query('INSERT INTO schema_meta (key,value) VALUES (?,?),(?,?),(?,?)')
+      .run(
+        `record_workflow_cursor:${space}:${identityTable}`,
+        JSON.stringify(identityCursor),
+        `record_workflow_cursor:${space}:${versionTable}`,
+        JSON.stringify(versionCursor),
+        `record_workflow_cursor:${space}:${eventTable}`,
+        JSON.stringify(eventCursor),
+      )
+    installRecordApiClient({
+      ...createMemoryRecordApiClient(),
+      async listWorkflowCatalogue(table, query) {
+        if (table === identityTable) {
+          expect(query.cursor).toBe(encodeRecordCursor(identityCursor))
+          return {
+            items: [replacementIdentity],
+            nextCursor: null,
+            endCursor: encodeRecordCursor({
+              at: replacementIdentity.updatedAt,
+              id: replacementIdentity.id,
+            }),
+          }
+        }
+        if (table === versionTable) {
+          expect(query.cursor).toBe(encodeRecordCursor(versionCursor))
+          return {
+            items: [replacement],
+            nextCursor: null,
+            endCursor: encodeRecordCursor({ at: replacement.updatedAt, id: replacement.id }),
+          }
+        }
+        if (table === eventTable) {
+          expect(query.cursor).toBe(encodeRecordCursor(eventCursor))
+          return {
+            items: [importedEvent],
+            nextCursor: null,
+            endCursor: encodeRecordCursor({ at: importedEvent.updatedAt, id: importedEvent.id }),
+          }
+        }
+        return { items: [], nextCursor: null }
+      },
+    })
+    expect(await pullWorkflowCatalogue(local, [space])).toEqual({
+      count: 3,
+      completedSpaces: new Set([space]),
+    })
+    expect(
+      local.query(`SELECT record_id,n,definition FROM ${versionTable} WHERE space_id=?`).get(space),
+    ).toEqual({ record_id: replacement.id, n: 2, definition: replacement.definition })
+    expect(
+      local.query(`SELECT record_id FROM ${eventTable} WHERE space_id=? ORDER BY id`).all(space),
+    ).toEqual([{ record_id: importedEvent.id }])
+  },
+)
+
+test('generation migration resets old-client cursors so replacement history replays', async () => {
+  const local = new Database(':memory:')
+  try {
+    applyMigrationsBefore(local, '0128_workflow_catalogue_generation')
+    const space = newRecordId(),
+      workflowId = newRecordId(),
+      seedVersionId = newRecordId(),
+      replacementIdentity = {
+        ...identity(space, 'fix-defect', workflowId),
+        generation: 2,
+        updatedAt: '2026-10-19T14:30:00.000Z',
+      },
+      replacement = {
+        ...version(space, workflowId, { title: 'Machine history' }),
+        id: newRecordId(),
+        n: 2,
+        updatedAt: '2026-10-19T15:00:00.000Z',
+      },
+      importedEvent = {
+        ...event(space, replacement.id),
+        at: '2026-10-18T11:00:00.000Z',
+        updatedAt: '2026-10-19T15:00:01.000Z',
+      }
+    const parent = local
+      .query(
+        `INSERT INTO workflow (record_id,space_id,slug,created_at)
+         VALUES (?,?,?,?) RETURNING id`,
+      )
+      .get(workflowId, space, 'fix-defect', at) as { id: number }
+    local
+      .query(
+        `INSERT INTO workflow_version
+         (record_id,space_id,workflow_id,n,status,definition,author,reason,created_at,promoted_at)
+         VALUES (?,?,?,1,'production',?,'seed','seed r1',?,?)`,
+      )
+      .run(seedVersionId, space, parent.id, JSON.stringify({ title: 'Seed' }), at, at)
+    local
+      .query(
+        `INSERT INTO workflow_event
+         (record_id,space_id,workflow_id,version_n,event,author,reason,at)
+         VALUES (?,?,?,1,'promote','seed','seed r1',?)`,
+      )
+      .run(newRecordId(), space, parent.id, at)
+    const consumed = JSON.stringify({ at: '2026-10-19T16:00:00.000Z', id: newRecordId() })
+    for (const table of [
+      'step_catalogue',
+      'step_catalogue_version',
+      'step_catalogue_event',
+      'workflow',
+      'workflow_version',
+      'workflow_event',
+    ])
+      local
+        .query('INSERT INTO schema_meta (key,value) VALUES (?,?)')
+        .run(`record_workflow_cursor:${space}:${table}`, consumed)
+
+    expect(applyMigrations(local)).toEqual(['0128_workflow_catalogue_generation'])
+    expect(
+      local
+        .query("SELECT COUNT(*) AS n FROM schema_meta WHERE key GLOB 'record_workflow_cursor:*'")
+        .get(),
+    ).toEqual({ n: 0 })
+
+    installRecordApiClient({
+      ...createMemoryRecordApiClient(),
+      async listWorkflowCatalogue(table, query) {
+        expect(query.cursor).toBeUndefined()
+        if (table === 'workflow') return { items: [replacementIdentity], nextCursor: null }
+        if (table === 'workflow_version') return { items: [replacement], nextCursor: null }
+        if (table === 'workflow_event') return { items: [importedEvent], nextCursor: null }
+        return { items: [], nextCursor: null }
+      },
+    })
+    expect(await pullWorkflowCatalogue(local, [space])).toEqual({
+      count: 3,
+      completedSpaces: new Set([space]),
+    })
+    expect(
+      local.query('SELECT record_id,n FROM workflow_version WHERE space_id=?').all(space),
+    ).toEqual([{ record_id: replacement.id, n: 2 }])
+    expect(local.query('SELECT record_id FROM workflow_event WHERE space_id=?').all(space)).toEqual(
+      [{ record_id: importedEvent.id }],
+    )
+  } finally {
+    local.close()
+  }
 })

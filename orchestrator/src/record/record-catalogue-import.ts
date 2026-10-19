@@ -2,7 +2,9 @@
 /** Atomically imports complete catalogue snapshots without changing matched hosted rows. */
 import { SQL } from 'bun'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { BUILT_IN_WORKFLOW_AUTHOR } from '../workflow/workflow-built-ins.ts'
 import type { RecordCatalogueImportResult } from './record-catalogue-contract.ts'
+import { reconcileCatalogueHistory } from './record-catalogue-reconciliation.ts'
 import type { RecordLensImportInput } from './record-lens-contract.ts'
 import type { RecordPortImportInput } from './record-port-contract.ts'
 import type {
@@ -11,40 +13,10 @@ import type {
 } from './record-workflow-contract.ts'
 
 type Tenant = { url: string } & TenantPrincipal
-const BUILT_IN_WORKFLOW_AUTHOR = 'seed'
 const text = (value: unknown) => String(value)
 const empty = (): RecordCatalogueImportResult => ({ inserted: 0, alreadyPresent: 0, skipped: [] })
 const emptyWorkflow = (): RecordWorkflowImportResult => ({ ...empty(), outcomes: [] })
 
-/** Only identity and authorship decide reconciliation; production status deliberately does not. */
-export type CatalogueVersionMetadata = {
-  id: string
-  author: string
-}
-export type CatalogueReconciliation =
-  | { action: 'unchanged'; outcome: null }
-  | { action: 'replace-seed'; outcome: 'replaced seeded built-in' }
-  | {
-      action: 'keep-hosted'
-      outcome: 'kept hosted history; local history not imported'
-    }
-
-export function reconcileCatalogueHistory(
-  imported: readonly CatalogueVersionMetadata[],
-  hosted: readonly CatalogueVersionMetadata[],
-  seedAuthor: string,
-): CatalogueReconciliation {
-  if (!hosted.length) return { action: 'unchanged', outcome: null }
-  const hostedIds = new Set(hosted.map((version) => version.id))
-  if (imported.every((version) => hostedIds.has(version.id)))
-    return { action: 'unchanged', outcome: null }
-  if (hosted.some((version) => version.author !== seedAuthor))
-    return {
-      action: 'keep-hosted',
-      outcome: 'kept hosted history; local history not imported',
-    }
-  return { action: 'replace-seed', outcome: 'replaced seeded built-in' }
-}
 async function forEachAsync<T>(
   values: readonly T[],
   use: (value: T) => Promise<void>,
@@ -196,9 +168,11 @@ async function reconcileWorkflowVersions(
     )
     if (decision.action === 'replace-seed') {
       if (kind === 'workflow') {
+        await tx`UPDATE workflow SET generation=generation+1,updated_at=now() WHERE space_id=${input.spaceId}::uuid AND id=${ownerId}::uuid`
         await tx`DELETE FROM workflow_event WHERE space_id=${input.spaceId}::uuid AND workflow_version_id IN (SELECT id FROM workflow_version WHERE space_id=${input.spaceId}::uuid AND workflow_id=${ownerId}::uuid)`
         await tx`DELETE FROM workflow_version WHERE space_id=${input.spaceId}::uuid AND workflow_id=${ownerId}::uuid`
       } else {
+        await tx`UPDATE step_catalogue SET generation=generation+1,updated_at=now() WHERE space_id=${input.spaceId}::uuid AND id=${ownerId}::uuid`
         await tx`DELETE FROM step_catalogue_event WHERE space_id=${input.spaceId}::uuid AND catalogue_version_id IN (SELECT id FROM step_catalogue_version WHERE space_id=${input.spaceId}::uuid AND catalogue_id=${ownerId}::uuid)`
         await tx`DELETE FROM step_catalogue_version WHERE space_id=${input.spaceId}::uuid AND catalogue_id=${ownerId}::uuid`
       }

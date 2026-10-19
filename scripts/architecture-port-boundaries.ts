@@ -43,6 +43,7 @@ export const portBoundarySpecs = [
       '../record/record-api-client.ts',
       '../record/record-port-contract.ts',
       '../record/record-project-destination.ts',
+      './porting-date.ts',
       './porting-import-contract.ts',
     ],
     typeOnlyAllowed: [],
