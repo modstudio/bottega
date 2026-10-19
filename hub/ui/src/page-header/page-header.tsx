@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useTopbarSlot } from '../dom/topbar-slot'
+import { PHONE_QUERY, useMediaQuery } from '../dom/use-media-query'
 import { pageHeaderStyles } from './page-header.styles.ts'
 
 type PageHeaderProps = {
@@ -13,11 +14,13 @@ type PageHeaderProps = {
 
 /**
  * The page's name, a line of standing context, and the page's own controls.
- * On a desk they sit in the app's top bar, so the page opens on its content; on
- * a phone, where the bar holds the menu, they open the page.
+ * On a desk they sit in the app's top bar, so the page opens on its content. On
+ * a phone the top bar already names the page beside the menu, so the name is
+ * kept for assistive technology only and the controls open the page.
  */
 export function PageHeader({ title, subtitle, subtitleTitle, actions }: PageHeaderProps) {
   const slot = useTopbarSlot()
+  const phone = useMediaQuery(PHONE_QUERY)
   if (slot) {
     return createPortal(
       <div className={pageHeaderStyles().portalRoot()}>
@@ -32,6 +35,14 @@ export function PageHeader({ title, subtitle, subtitleTitle, actions }: PageHead
         {actions ? <div className={pageHeaderStyles().portalActions()}>{actions}</div> : null}
       </div>,
       slot,
+    )
+  }
+  if (phone) {
+    return (
+      <header className={pageHeaderStyles({ bare: !actions }).phoneHeader()}>
+        <h1 className={pageHeaderStyles().phoneTitle()}>{title}</h1>
+        {actions}
+      </header>
     )
   }
   return (

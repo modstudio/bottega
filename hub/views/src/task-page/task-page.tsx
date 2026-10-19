@@ -1,7 +1,9 @@
 import { Button, IconButton } from '@bottega/hub-ui/button'
+import { useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
+import { Tabs } from '@bottega/hub-ui/tabs'
 import type { Editor } from '@tiptap/core'
-import { Pencil, X } from 'lucide-react'
-import { type ReactNode, type Ref, useEffect, useState } from 'react'
+import { ArrowLeft, Pencil, X } from 'lucide-react'
+import { type ReactNode, type Ref, useEffect, useId, useState } from 'react'
 import {
   type DocumentEditorMode,
   EditableTitle,
@@ -15,7 +17,13 @@ import { DocumentSurface, DocumentTitle } from '../document-surface/document-sur
 import { KeyLine } from '../key-line/key-line.tsx'
 import { Markdown } from '../markdown/markdown.tsx'
 import { taskPageStyles } from './task-page.styles.ts'
-import { NarrowFacts, type TaskPageDoc, type TaskPageFact, TaskRail } from './task-rail.tsx'
+import {
+  TaskContents,
+  TaskFacts,
+  type TaskPageDoc,
+  type TaskPageFact,
+  TaskRail,
+} from './task-rail.tsx'
 
 /** Saving the task's title and description together; refused when the tracker will not take it. */
 export type TaskPageSave = {
@@ -170,20 +178,12 @@ function EditingBody({ edit }: { edit: Draft }) {
   )
 }
 
-export function TaskPage({
-  crumbs,
-  title,
-  body,
-  keyLine,
-  details,
-  detailsExtra,
-  docs,
-  openDoc,
-  onOpenDoc,
-  history,
-  save,
-  onClose,
-}: {
+/** At this width the rail sits beside the page; below it, the rail's tabs join the page's. */
+const RAIL_QUERY = '(min-width: 64rem)'
+
+type PhoneTab = 'task' | 'contents' | 'details'
+
+type TaskPageProps = {
   crumbs: { key: string; label: ReactNode }[]
   title: string
   body: string
@@ -198,72 +198,195 @@ export function TaskPage({
   history: ReactNode
   save: TaskPageSave
   onClose: () => void
-}) {
+}
+
+/** The parts of the page every layout shares, built once for the current task or document. */
+function usePageParts(props: TaskPageProps) {
+  const { docs, openDoc, title, body, keyLine, save, onOpenDoc, onClose } = props
   const doc = docs.find((candidate) => candidate.id === openDoc) ?? null
   const edit = useDraft(title, body)
   const editing = edit.editing && !doc
   const shownTitle = doc ? doc.title : title
-  const openOther = (id: string | null) => edit.leave(() => onOpenDoc(id))
-  const rail = { doc, docs, details, detailsExtra, onOpenDoc: openOther }
+  return {
+    doc,
+    edit,
+    editing,
+    shownTitle,
+    heading: (ref: Ref<HTMLElement | null>) =>
+      editing ? (
+        <EditableTitle title={edit.draft.title} onChange={edit.setTitle} headingRef={ref} />
+      ) : (
+        <DocumentTitle title={shownTitle} ref={ref} />
+      ),
+    keyLine: editing ? (
+      <EditorBand toolbar={edit.rich.toolbar} mode={edit.mode} onModeChange={edit.setMode} />
+    ) : (
+      <KeyLine items={doc ? doc.keyLine : keyLine} />
+    ),
+    editorBanner: editing ? (
+      <EditorBanner
+        conflict={save.conflict}
+        message={save.error}
+        onReload={() => void save.reload().then((fresh) => edit.start(fresh))}
+        subject="task"
+      />
+    ) : null,
+    headerActions: (
+      <HeaderActions
+        edit={edit}
+        editing={editing}
+        canEdit={!doc && !save.refused}
+        save={save}
+        onClose={onClose}
+      />
+    ),
+    main: editing ? <EditingBody edit={edit} /> : <ReadingBody body={doc ? doc.body : body} />,
+    history: doc ? null : <section className={taskPageStyles().history()}>{props.history}</section>,
+    openOther: (id: string | null) => edit.leave(() => onOpenDoc(id)),
+  }
+}
+
+type PageParts = ReturnType<typeof usePageParts>
+
+/** On a phone the task, its contents and its details are three tabs of one page. */
+function usePhoneTabs({
+  parts,
+  props,
+  tab,
+  onTab,
+}: {
+  parts: PageParts
+  props: TaskPageProps
+  tab: PhoneTab
+  onTab: (tab: PhoneTab) => void
+}) {
+  const id = useId()
+  const { doc } = parts
+  const toSection = (section: string) => {
+    onTab('task')
+    // The section exists again once the task tab has rendered.
+    requestAnimationFrame(() => document.getElementById(section)?.scrollIntoView())
+  }
+  return {
+    bar: (
+      <div className={taskPageStyles().phoneTabs()}>
+        <Tabs
+          id={id}
+          label={doc ? 'Document' : 'Task'}
+          value={tab}
+          onChange={(value) => onTab(value as PhoneTab)}
+          items={[
+            { value: 'task', label: doc ? 'Document' : 'Task' },
+            { value: 'contents', label: 'Contents' },
+            { value: 'details', label: 'Details' },
+          ]}
+        />
+      </div>
+    ),
+    panel: (children: ReactNode) => (
+      <div role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-tab-${tab}`}>
+        {children}
+      </div>
+    ),
+    contents: (
+      <TaskContents
+        body={doc ? doc.body : props.body}
+        docs={props.docs}
+        current={doc?.id}
+        onOpenDoc={(next) => {
+          onTab('task')
+          parts.openOther(next)
+        }}
+        onHeading={toSection}
+      />
+    ),
+    details: doc ? (
+      <TaskFacts facts={doc.facts} />
+    ) : (
+      <TaskFacts facts={props.details} extra={props.detailsExtra} />
+    ),
+  }
+}
+
+function PhonePage({ parts, props }: { parts: PageParts; props: TaskPageProps }) {
+  const [tab, setTab] = useState<PhoneTab>('task')
+  const tabs = usePhoneTabs({ parts, props, tab, onTab: setTab })
+  const { doc } = parts
+  const onTask = tab === 'task'
+  return (
+    <DocumentSurface
+      crumbs={doc ? [...props.crumbs, { key: `doc:${doc.id}`, label: doc.label }] : props.crumbs}
+      title={parts.shownTitle}
+      heading={() => tabs.bar}
+      headerActions={parts.headerActions}
+      body={tabs.panel(
+        onTask ? (
+          <>
+            {doc ? (
+              <button
+                type="button"
+                className={taskPageStyles().back()}
+                onClick={() => parts.openOther(null)}
+              >
+                <ArrowLeft size={14} />
+                Back to task
+              </button>
+            ) : null}
+            {parts.editorBanner}
+            {parts.heading(() => {})}
+            {parts.keyLine}
+            {parts.main}
+            {parts.history}
+          </>
+        ) : (
+          <div className={taskPageStyles().phonePanel()}>
+            {tab === 'contents' ? tabs.contents : tabs.details}
+          </div>
+        ),
+      )}
+    />
+  )
+}
+
+export function TaskPage(props: TaskPageProps) {
+  const parts = usePageParts(props)
+  const wide = useMediaQuery(RAIL_QUERY)
+  const rail = {
+    doc: parts.doc,
+    docs: props.docs,
+    details: props.details,
+    detailsExtra: props.detailsExtra,
+    onOpenDoc: parts.openOther,
+  }
   const [root, setRoot] = useState<HTMLDivElement | null>(null)
-  useEscapeLeaves(root, editing, edit.leave)
+  useEscapeLeaves(root, parts.editing, parts.edit.leave)
   return (
     <div ref={setRoot} className={taskPageStyles().root()}>
       <div className={taskPageStyles().grid()}>
-        <DocumentSurface
-          crumbs={doc ? [...crumbs, { key: `doc:${doc.id}`, label: doc.label }] : crumbs}
-          title={shownTitle}
-          heading={(ref: Ref<HTMLElement | null>) =>
-            editing ? (
-              <EditableTitle title={edit.draft.title} onChange={edit.setTitle} headingRef={ref} />
-            ) : (
-              <DocumentTitle title={shownTitle} ref={ref} />
-            )
-          }
-          keyLine={
-            editing ? (
-              <EditorBand
-                toolbar={edit.rich.toolbar}
-                mode={edit.mode}
-                onModeChange={edit.setMode}
-              />
-            ) : (
-              <KeyLine items={doc ? doc.keyLine : keyLine} />
-            )
-          }
-          banner={
-            editing ? (
-              <EditorBanner
-                conflict={save.conflict}
-                message={save.error}
-                onReload={() => void save.reload().then((fresh) => edit.start(fresh))}
-                subject="task"
-              />
-            ) : null
-          }
-          headerActions={
-            <HeaderActions
-              edit={edit}
-              editing={editing}
-              canEdit={!doc && !save.refused}
-              save={save}
-              onClose={onClose}
-            />
-          }
-          body={
-            <>
-              <NarrowFacts {...rail} />
-              {editing ? <EditingBody edit={edit} /> : <ReadingBody body={doc ? doc.body : body} />}
-            </>
-          }
-          footer={doc ? null : <section className={taskPageStyles().history()}>{history}</section>}
-        />
-        <TaskRail {...rail} body={body} />
+        {wide ? (
+          <DocumentSurface
+            crumbs={
+              parts.doc
+                ? [...props.crumbs, { key: `doc:${parts.doc.id}`, label: parts.doc.label }]
+                : props.crumbs
+            }
+            title={parts.shownTitle}
+            heading={parts.heading}
+            keyLine={parts.keyLine}
+            banner={parts.editorBanner}
+            headerActions={parts.headerActions}
+            body={parts.main}
+            footer={parts.history}
+          />
+        ) : (
+          <PhonePage parts={parts} props={props} />
+        )}
+        {wide ? <TaskRail {...rail} body={props.body} /> : null}
       </div>
       <LeaveConfirmationDialog
-        open={edit.leaving !== null}
-        onKeep={edit.keep}
-        onDiscard={edit.discard}
+        open={parts.edit.leaving !== null}
+        onKeep={parts.edit.keep}
+        onDiscard={parts.edit.discard}
         subject="task"
       />
     </div>

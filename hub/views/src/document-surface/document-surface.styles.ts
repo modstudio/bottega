@@ -6,6 +6,7 @@ export const documentSurfaceStyles = variant({
     top: '-mx-6 md:-mx-15 z-10 flex lg:sticky lg:top-(--docs-stick) items-center justify-between gap-4 border-b bg-surface-page px-6 py-2.5 md:px-15',
     crumbs:
       'font-mono text-text-muted text-xs tracking-[0.14em] uppercase flex min-w-0 items-baseline gap-2 overflow-hidden whitespace-nowrap',
+    start: 'flex min-w-0 items-center gap-3',
     actions: 'flex shrink-0 items-center gap-2',
     crumb: 'contents',
     goneTitle: 'min-w-0 truncate text-text-primary',

@@ -28,6 +28,13 @@ type ToolbarProps = {
   actions?: ReactNode
   meta?: ReactNode
   pageActions?: ReactNode
+  /**
+   * What the page header scopes the collection by, such as its time window. The desk shows it in
+   * the header; a phone folds it into the band beside the collection's own controls.
+   */
+  scope?: ReactNode
+  /** On a phone, the page's figures in one line under the band, before the rows. */
+  summary?: ReactNode
 }
 
 function FiltersTrigger({ filters, active }: { filters: ReactNode; active: number }) {
@@ -87,7 +94,7 @@ function DeskToolbar({
   )
 }
 
-/** The phone toolbar: the heading, then one band of cells; page actions join it. */
+/** The phone toolbar: one band of cells that page actions join, the page's figures, then the heading. */
 function PhoneToolbar({
   heading,
   tabs,
@@ -97,6 +104,8 @@ function PhoneToolbar({
   view,
   actions,
   pageActions,
+  scope,
+  summary,
 }: ToolbarProps) {
   const combined =
     pageActions || actions ? (
@@ -107,8 +116,8 @@ function PhoneToolbar({
     ) : undefined
   return (
     <>
-      {heading ? <div className={tableCardStyles().phoneHeading()}>{heading}</div> : null}
       <ToolbarBand
+        scope={scope}
         search={search}
         filters={filters}
         filtersActive={filtersActive > 0}
@@ -116,6 +125,8 @@ function PhoneToolbar({
         tabs={tabs}
         actions={combined}
       />
+      {summary}
+      {heading ? <div className={tableCardStyles().phoneHeading()}>{heading}</div> : null}
     </>
   )
 }

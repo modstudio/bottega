@@ -15,9 +15,19 @@ export const statStyles = variant({
     card: '-mr-px -mb-px flex min-w-0 flex-col gap-1 border-border-default border-r border-b p-4 @lg/stats:p-5',
     cardLabel: 'text-sm text-text-secondary',
     group: '@container/stats mb-6',
+    band: 'mb-4 flex items-stretch border border-border-default',
+    bandFigures:
+      'flex min-w-0 flex-1 divide-x divide-border-default overflow-x-auto [scrollbar-width:none]',
+    bandToggle:
+      'flex w-11 shrink-0 items-center justify-center border-border-default border-l text-text-secondary hover:bg-control-hover hover:text-text-primary [&_svg]:size-4',
+    chip: 'flex min-h-control-lg shrink-0 items-center gap-1.5 whitespace-nowrap px-3.5',
+    chipFigure: 'font-medium font-mono text-sm tabular-nums',
+    chipLabel: 'text-text-muted text-xs',
+    less: 'mt-1 flex min-h-control-lg items-center gap-1 text-sm text-text-muted hover:text-text-primary [&_svg]:size-4',
   },
   variants: {
-    live: { true: { figure: 'text-status-text' } },
+    live: { true: { figure: 'text-status-text', chipFigure: 'text-status-text' } },
+    phone: { true: { row: 'grid-cols-1' } },
     wrapHint: { false: { hint: 'truncate' } },
     three: { true: { row: '@3xl/stats:grid-cols-3' } },
     four: { true: { row: '@5xl/stats:grid-cols-4' } },

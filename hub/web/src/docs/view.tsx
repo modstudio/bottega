@@ -1,10 +1,14 @@
 import { Button } from '@bottega/hub-ui/button'
+import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
+import { Drawer } from '@bottega/hub-ui/drawer'
 import { Kbd } from '@bottega/hub-ui/kbd'
 import { Select } from '@bottega/hub-ui/listbox/select'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { Popover } from '@bottega/hub-ui/popover'
 import { mergeClasses as classes } from '@bottega/hub-ui/text/variant'
+import { ToolbarBand } from '@bottega/hub-ui/toolbar-band'
 import { useHeldPanel } from '@bottega/hub-views/detail-rail/use-held-panel'
+import { PanelLeft } from 'lucide-react'
 import { type ReactNode, type Ref, useEffect, useMemo, useRef, useState } from 'react'
 import type { FieldSave } from './doc-field-controls.tsx'
 import { DocsFacts, type DocsFactsControls } from './facts.tsx'
@@ -90,27 +94,98 @@ type DocsControlsProps = {
   showWorking: boolean
   onShowWorking: (show: boolean) => void
   canShowWorking: boolean
+  /** On a phone, the band's first cell opens the document list. */
+  onShowList?: () => void
+  /** On a phone, the open document's own actions, such as Edit, join the band's actions. */
+  docActions?: ReactNode
+}
+
+function ProjectSelect({
+  project,
+  subjects,
+  onProject,
+  size,
+}: Pick<DocsControlsProps, 'project' | 'subjects' | 'onProject'> & { size?: 'sm' }) {
+  return (
+    <Select
+      label="Project"
+      size={size}
+      value={project}
+      onChange={(value) => onProject(value === 'all' ? 'all' : value)}
+      options={[
+        ...subjects.map((name) => ({ value: name, label: name })),
+        { value: 'all', label: 'All projects' },
+      ]}
+    />
+  )
+}
+
+/** On a phone every control folds into one band; each cell opens the same tabbed sheet. */
+function PhoneDocsControls({
+  projectSelect,
+  filterPanel,
+  active,
+  onShowList,
+  actions,
+}: {
+  projectSelect?: ReactNode
+  filterPanel?: ReactNode
+  active: number
+  onShowList?: () => void
+  actions?: ReactNode
+}) {
+  return (
+    <ToolbarBand
+      panels={
+        onShowList
+          ? [{ id: 'documents', label: 'Documents', icon: PanelLeft, onOpen: onShowList }]
+          : []
+      }
+      scope={projectSelect}
+      filters={filterPanel}
+      filtersActive={active > 0}
+      actions={actions}
+    />
+  )
 }
 
 /** The project chooser, the filter panel and the create action: one group, wherever the page puts it. */
-function DocsControls({
-  showProjectChooser,
-  project,
-  onProject,
-  subjects,
-  offered,
-  chosen,
-  onFilters,
-  inView,
-  active,
-  createAction,
-  showDrafts,
-  onShowDrafts,
-  canShowDrafts,
-  showWorking,
-  onShowWorking,
-  canShowWorking,
-}: DocsControlsProps) {
+function DocsControls(props: DocsControlsProps) {
+  const { showProjectChooser, active, createAction, onShowList, docActions } = props
+  const phone = useMediaQuery(PHONE_QUERY)
+  const filterPanel =
+    props.offered.length || props.canShowDrafts || props.canShowWorking ? (
+      <FilterPanel
+        offered={props.offered}
+        chosen={props.chosen}
+        onChange={props.onFilters}
+        total={props.inView}
+        drafts={
+          props.canShowDrafts ? { shown: props.showDrafts, onChange: props.onShowDrafts } : null
+        }
+        working={
+          props.canShowWorking ? { shown: props.showWorking, onChange: props.onShowWorking } : null
+        }
+      />
+    ) : undefined
+  if (phone) {
+    return (
+      <PhoneDocsControls
+        projectSelect={showProjectChooser ? <ProjectSelect {...props} /> : undefined}
+        filterPanel={filterPanel}
+        active={active}
+        onShowList={onShowList}
+        actions={
+          docActions || createAction ? (
+            <>
+              {docActions}
+              {createAction}
+            </>
+          ) : undefined
+        }
+      />
+    )
+  }
   return (
     <div className="ml-auto flex flex-wrap items-center gap-3">
       {showProjectChooser ? (
@@ -118,19 +193,10 @@ function DocsControls({
           <span className="font-mono text-text-muted text-xs tracking-[0.14em] uppercase">
             Project
           </span>
-          <Select
-            label="Project"
-            size="sm"
-            value={project}
-            onChange={(value) => onProject(value === 'all' ? 'all' : value)}
-            options={[
-              ...subjects.map((name) => ({ value: name, label: name })),
-              { value: 'all', label: 'All projects' },
-            ]}
-          />
+          <ProjectSelect {...props} size="sm" />
         </div>
       ) : null}
-      {offered.length || canShowDrafts || canShowWorking ? (
+      {filterPanel ? (
         <Popover
           label="Filters"
           align="end"
@@ -145,14 +211,7 @@ function DocsControls({
             </Button>
           }
         >
-          <FilterPanel
-            offered={offered}
-            chosen={chosen}
-            onChange={onFilters}
-            total={inView}
-            drafts={canShowDrafts ? { shown: showDrafts, onChange: onShowDrafts } : null}
-            working={canShowWorking ? { shown: showWorking, onChange: onShowWorking } : null}
-          />
+          {filterPanel}
         </Popover>
       ) : null}
       {createAction}
@@ -183,6 +242,7 @@ function DocsRail({
   loading,
   emptyMessage,
   treeReorder,
+  inDrawer = false,
 }: {
   tree: readonly Docs.TreeNode[]
   groups: readonly Docs.DocsTreeGroup[] | null
@@ -194,6 +254,8 @@ function DocsRail({
   loading?: boolean
   emptyMessage: string
   treeReorder?: DocsViewProps['treeReorder']
+  /** In the phone drawer the list fills the drawer instead of capping its height. */
+  inDrawer?: boolean
 }) {
   const hasTree = groups ? groups.length > 0 : tree.length > 0
   const panel = useRef<HTMLElement>(null)
@@ -202,7 +264,11 @@ function DocsRail({
     <nav
       ref={panel}
       aria-label="Documents"
-      className="flex max-h-[min(24rem,70dvh)] flex-col border-border-default border-b p-5 lg:sticky lg:top-(--docs-stick) lg:max-h-[calc(100dvh-var(--docs-stick))] lg:self-start lg:border-b-0"
+      className={
+        inDrawer
+          ? 'flex h-full flex-col p-4'
+          : 'flex max-h-[min(24rem,70dvh)] flex-col border-border-default border-b p-5 lg:sticky lg:top-(--docs-stick) lg:max-h-[calc(100dvh-var(--docs-stick))] lg:self-start lg:border-b-0'
+      }
     >
       <button
         type="button"
@@ -305,28 +371,31 @@ function DocsViewControls({
   doc,
   signedIn,
   onOpenFirst,
+  onShowList,
+  docActions,
 }: {
   model: ReturnType<typeof docsViewModel>
   navigationItems: readonly Docs.DocsTreeItem[]
   selectedItem: Docs.DocsTreeItem | null
-} & Pick<
-  DocsViewProps,
-  | 'showProjectChooser'
-  | 'project'
-  | 'onProject'
-  | 'filters'
-  | 'onFilters'
-  | 'createAction'
-  | 'showDrafts'
-  | 'onShowDrafts'
-  | 'canShowDrafts'
-  | 'showWorking'
-  | 'onShowWorking'
-  | 'canShowWorking'
-  | 'doc'
-  | 'signedIn'
-  | 'onOpenFirst'
->) {
+} & Pick<DocsControlsProps, 'onShowList' | 'docActions'> &
+  Pick<
+    DocsViewProps,
+    | 'showProjectChooser'
+    | 'project'
+    | 'onProject'
+    | 'filters'
+    | 'onFilters'
+    | 'createAction'
+    | 'showDrafts'
+    | 'onShowDrafts'
+    | 'canShowDrafts'
+    | 'showWorking'
+    | 'onShowWorking'
+    | 'canShowWorking'
+    | 'doc'
+    | 'signedIn'
+    | 'onOpenFirst'
+  >) {
   const selectProject = (next: string | 'all') => {
     onProject(next)
     if (!selectedItem || next === 'all' || selectedItem.projectName === next) return
@@ -359,6 +428,8 @@ function DocsViewControls({
       showWorking={showWorking}
       onShowWorking={onShowWorking}
       canShowWorking={canShowWorking && model.canShowWorking}
+      onShowList={onShowList}
+      docActions={docActions}
     />
   )
 }
@@ -449,6 +520,63 @@ function OptionalDocsFacts({
   return wide ? null : <DocsFacts {...facts} />
 }
 
+/** The tree opens every folder above the selected document, so it is never hidden. */
+function useExpandedToSelected(
+  selectedId: string | null,
+  tree: readonly Docs.TreeNode[],
+  setCollapsed: (update: (current: ReadonlySet<string>) => ReadonlySet<string>) => void,
+) {
+  useEffect(() => {
+    if (!selectedId) return
+    const ancestors = treePath(tree, selectedId).slice(0, -1)
+    if (!ancestors.length) return
+    setCollapsed((current) => {
+      let changed = false
+      const next = new Set(current)
+      for (const ancestor of ancestors) {
+        if (next.delete(ancestor.id)) changed = true
+      }
+      return changed ? next : current
+    })
+  }, [selectedId, tree, setCollapsed])
+}
+
+/**
+ * On a phone the list is a drawer, open on arrival when no document was asked for. A linked
+ * document resolves only once the docs are ready, so the arrival is judged then.
+ */
+function usePhoneDocsList(ready: boolean, selectedId: string | null) {
+  const phone = useMediaQuery(PHONE_QUERY)
+  const [listOpen, setListOpen] = useState(false)
+  const arrived = useRef(false)
+  useEffect(() => {
+    if (!phone || !ready || arrived.current) return
+    arrived.current = true
+    if (!selectedId) setListOpen(true)
+  }, [phone, ready, selectedId])
+  // The drawer is a phone overlay; leaving the phone width closes it rather than keeping it.
+  useEffect(() => {
+    if (!phone) setListOpen(false)
+  }, [phone])
+  return {
+    phone,
+    /** What the page's controls add on a phone: the list cell and the document's actions. */
+    controls: (headerAction: ReactNode) =>
+      phone ? { onShowList: () => setListOpen(true), docActions: headerAction } : {},
+    /** The reading pane keeps its own actions only on a desk. */
+    readingAction: (headerAction: ReactNode) => (phone ? undefined : headerAction),
+    /** The list beside the reading pane on a desk; in a drawer on a phone. */
+    inGrid: (rail: ReactNode) => (phone ? null : rail),
+    drawer: (rail: ReactNode) =>
+      phone ? (
+        <Drawer open={listOpen} onClose={() => setListOpen(false)} title="Documents">
+          {rail}
+        </Drawer>
+      ) : null,
+    closeList: () => setListOpen(false),
+  }
+}
+
 export function DocsView({
   sourceLabel,
   items,
@@ -489,6 +617,7 @@ export function DocsView({
   const [searchOpen, setSearchOpen] = useState(false)
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
   const [wide, setWide] = useState(false)
+  const list = usePhoneDocsList(ready, selectedId)
   const { model, navigationItems, selectedItem } = useDocsNavigationModel(
     items,
     showDrafts,
@@ -500,19 +629,7 @@ export function DocsView({
     showWorking,
     onFilters,
   )
-  useEffect(() => {
-    if (!selectedId) return
-    const ancestors = treePath(model.tree, selectedId).slice(0, -1)
-    if (!ancestors.length) return
-    setCollapsed((current) => {
-      let changed = false
-      const next = new Set(current)
-      for (const ancestor of ancestors) {
-        if (next.delete(ancestor.id)) changed = true
-      }
-      return changed ? next : current
-    })
-  }, [selectedId, model.tree])
+  useExpandedToSelected(selectedId, model.tree, setCollapsed)
   useSearchHotkey(() => setSearchOpen(true))
   const detached = selectedItem !== null && treePath(model.tree, selectedItem.id).length === 0
   const readingCrumbs = detached ? breadcrumb(selectedItem, []) : model.crumbs
@@ -523,8 +640,27 @@ export function DocsView({
     const first = navigationItems.find((item) => item.id === firstId)
     if (first) onOpenFirst(first)
   }, [ready, selectedId, firstId, navigationItems, onOpenFirst])
+  const rail = (
+    <DocsRail
+      tree={model.tree}
+      groups={model.groups}
+      selectedId={selectedId}
+      collapsed={collapsed}
+      onToggle={(id) => setCollapsed((current) => toggled(current, id))}
+      onSelect={(item) => {
+        list.closeList()
+        onSelect(item)
+      }}
+      onSearch={() => setSearchOpen(true)}
+      loading={loading}
+      emptyMessage={signedIn ? 'No docs here yet.' : 'No user docs here yet.'}
+      treeReorder={readingEdit.treeReorder}
+      inDrawer={list.phone}
+    />
+  )
   const controls = (
     <DocsViewControls
+      {...list.controls(headerAction)}
       model={model}
       navigationItems={navigationItems}
       selectedItem={selectedItem}
@@ -573,18 +709,7 @@ export function DocsView({
             : 'max-w-(--docs-width) lg:grid-cols-[var(--docs-rail)_minmax(0,1fr)_var(--docs-rail)]',
         )}
       >
-        <DocsRail
-          tree={model.tree}
-          groups={model.groups}
-          selectedId={selectedId}
-          collapsed={collapsed}
-          onToggle={(id) => setCollapsed((current) => toggled(current, id))}
-          onSelect={onSelect}
-          onSearch={() => setSearchOpen(true)}
-          loading={loading}
-          emptyMessage={signedIn ? 'No docs here yet.' : 'No user docs here yet.'}
-          treeReorder={readingEdit.treeReorder}
-        />
+        {list.inGrid(rail)}
         <DocsReading
           doc={doc}
           tree={model.tree}
@@ -598,7 +723,7 @@ export function DocsView({
           onSelect={onSelect}
           replacement={replacement}
           locationFor={locationFor}
-          headerAction={headerAction}
+          headerAction={list.readingAction(headerAction)}
           error={error}
           bodyView={bodyView}
           viewedRevision={viewedRevision}
@@ -617,6 +742,7 @@ export function DocsView({
           canManage={canManage}
         />
       </div>
+      {list.drawer(rail)}
       <DocsSearchHost
         open={searchOpen}
         onOpen={setSearchOpen}

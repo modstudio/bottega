@@ -21,15 +21,22 @@ function InboxPage() {
   const navigate = useNavigate()
   const waiting = useWaiting()
   const columns: CollectionColumn<WaitingItem>[] = [
-    { id: 'project', label: 'Project', render: (item) => item.project ?? 'no project' },
+    {
+      id: 'project',
+      label: 'Project',
+      phone: 'line',
+      render: (item) => item.project ?? 'no project',
+    },
     {
       id: 'task',
       label: 'Task',
+      phone: 'line',
       render: (item) => (item.task_key ? <Identifier>{item.task_key}</Identifier> : '-'),
     },
     {
       id: 'question',
       label: 'Question',
+      phone: 'title',
       grow: true,
       render: (item) => (
         <span className="block max-w-2xl truncate">
@@ -42,11 +49,13 @@ function InboxPage() {
     {
       id: 'waited',
       label: 'Waiting',
+      phone: 'line',
       render: (item) => relativeTime(item.waiting_since),
     },
     {
       id: 'kind',
       label: 'Kind',
+      phone: 'aside',
       render: (item) => <Badge>{item.kind}</Badge>,
     },
     {

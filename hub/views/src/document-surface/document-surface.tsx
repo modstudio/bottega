@@ -79,19 +79,21 @@ export function DocumentSurface({
       {pending ? null : (
         <>
           <div className={documentSurfaceStyles({ titleGone }).top()}>
-            <div className={documentSurfaceStyles().crumbs()}>
-              {crumbs.map((crumb, index) => (
-                <span key={crumb.key} className={documentSurfaceStyles().crumb()}>
-                  {index > 0 ? <span>/</span> : null}
-                  <span>{crumb.label}</span>
-                </span>
-              ))}
-              {titleGone ? (
-                <>
-                  <span>/</span>
-                  <span className={documentSurfaceStyles().goneTitle()}>{title}</span>
-                </>
-              ) : null}
+            <div className={documentSurfaceStyles().start()}>
+              <div className={documentSurfaceStyles().crumbs()}>
+                {crumbs.map((crumb, index) => (
+                  <span key={crumb.key} className={documentSurfaceStyles().crumb()}>
+                    {index > 0 ? <span>/</span> : null}
+                    <span>{crumb.label}</span>
+                  </span>
+                ))}
+                {titleGone ? (
+                  <>
+                    <span>/</span>
+                    <span className={documentSurfaceStyles().goneTitle()}>{title}</span>
+                  </>
+                ) : null}
+              </div>
             </div>
             <div className={documentSurfaceStyles().actions()}>
               {headerActions}

@@ -162,6 +162,12 @@ function Page({
   )
 }
 
+/** On a phone the documents sit under the Contents tab; beside the rail it is already open. */
+async function showContents(canvas: ReturnType<typeof within>) {
+  const tabs = canvas.queryAllByRole('tab', { name: 'Contents' })
+  if (tabs[0]) await userEvent.click(tabs[0])
+}
+
 const meta: Meta = {
   title: 'Views/TaskPage',
   component: TaskPage,
@@ -180,6 +186,7 @@ export const ReadOnly: Story = { args: { refused: 'This tracker does not take ta
 export const OpensADocument: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
+    await showContents(canvas)
     await userEvent.click(await canvas.findByRole('button', { name: /Plan/ }))
     await expect(await canvas.findByRole('heading', { level: 1, name: 'Plan' })).toBeVisible()
     await userEvent.click(canvas.getByRole('button', { name: 'Back to task' }))
@@ -199,17 +206,18 @@ export const GuardsADraft: Story = {
     await userEvent.type(title, ' draft')
     await userEvent.click(canvas.getByRole('button', { name: 'Close task' }))
     const ask = await canvas.findByRole('dialog', { name: 'Discard unsaved changes?' })
-    await userEvent.click(within(ask).getByRole('button', { name: 'Keep editing' }))
+    await userEvent.click(await within(ask).findByRole('button', { name: 'Keep editing' }))
     // The browser turns Escape into the page dialog's cancel, which must ask rather than close.
     canvas
       .getByRole('dialog', { name: 'Task' })
       .dispatchEvent(new Event('cancel', { cancelable: true }))
     const escaped = await canvas.findByRole('dialog', { name: 'Discard unsaved changes?' })
-    await userEvent.click(within(escaped).getByRole('button', { name: 'Keep editing' }))
+    await userEvent.click(await within(escaped).findByRole('button', { name: 'Keep editing' }))
     // Opening a document leaves the draft, so it asks too.
+    await showContents(canvas)
     await userEvent.click(canvas.getAllByRole('button', { name: /Plan/ })[0]!)
     const switched = await canvas.findByRole('dialog', { name: 'Discard unsaved changes?' })
-    await userEvent.click(within(switched).getByRole('button', { name: 'Keep editing' }))
+    await userEvent.click(await within(switched).findByRole('button', { name: 'Keep editing' }))
     await expect(canvas.getByRole('textbox', { name: 'Title' })).toHaveValue(
       'Open a task as a full page draft',
     )

@@ -154,18 +154,20 @@ export function EditorBand({
   return (
     <div className={documentEditorStyles().band()}>
       <div className={documentEditorStyles().toolbar()}>{toolbar}</div>
-      <Segmented
-        label="Editor mode"
-        size="sm"
-        value={mode}
-        options={[
-          { value: 'rich', label: 'Rich' },
-          { value: 'markdown', label: 'Markdown' },
-        ]}
-        onChange={(value) => {
-          if (value === 'rich' || value === 'markdown') onModeChange(value)
-        }}
-      />
+      <div className={documentEditorStyles().mode()}>
+        <Segmented
+          label="Editor mode"
+          size="sm"
+          value={mode}
+          options={[
+            { value: 'rich', label: 'Rich' },
+            { value: 'markdown', label: 'Markdown' },
+          ]}
+          onChange={(value) => {
+            if (value === 'rich' || value === 'markdown') onModeChange(value)
+          }}
+        />
+      </div>
     </div>
   )
 }

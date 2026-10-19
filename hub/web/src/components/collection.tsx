@@ -1,3 +1,5 @@
+import { CardList, type CardListItem } from '@bottega/hub-ui/card-list'
+import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
 import { EmptyState } from '@bottega/hub-ui/empty-state'
 import { Input } from '@bottega/hub-ui/field/input'
 import { PAGE_SIZES, type PageSize, Pagination } from '@bottega/hub-ui/pagination'
@@ -35,6 +37,44 @@ export type CollectionColumn<Row> = {
   grow?: boolean
   /** Dropped when the table's own container is narrow, before anything else is squeezed. */
   priority?: 'low'
+  /**
+   * Where the column goes when a phone shows each row as a card: the line that names the
+   * record, beside it, the line of facts under it, or the details a reader opens. A column
+   * without a role is left out on a phone.
+   */
+  phone?: 'title' | 'aside' | 'line' | 'more'
+  /** How the value reads on a phone card, where the desk cell's truncation does not apply. */
+  phoneRender?: (row: Row) => ReactNode
+}
+
+/** The card a phone shows for a row, from the roles its columns declare. */
+function phoneCard<Row>(
+  columns: CollectionColumn<Row>[],
+  row: Row,
+  key: string,
+  children: CollectionChildRow[],
+  selected: boolean,
+  actions: ReactNode,
+): CardListItem {
+  const role = (name: NonNullable<CollectionColumn<Row>['phone']>) =>
+    columns
+      .filter((column) => column.phone === name)
+      .map((column) => ({ ...column, render: column.phoneRender ?? column.render }))
+  return {
+    key,
+    title: role('title').map((column) => <span key={column.id}>{column.render(row)}</span>),
+    aside: role('aside').map((column) => <span key={column.id}>{column.render(row)}</span>),
+    line: role('line').map((column) => column.render(row)),
+    more: role('more').map((column) => ({ label: column.label, value: column.render(row) })),
+    children: children.map((child) => ({
+      key: child.key,
+      line: columns
+        .filter((column) => column.phone && column.phone !== 'more')
+        .map((column) => child.cells[column.id] ?? null),
+    })),
+    selected,
+    actions,
+  }
 }
 
 const columnLayout = <Row,>(column: CollectionColumn<Row>) =>
@@ -44,6 +84,149 @@ const columnLayout = <Row,>(column: CollectionColumn<Row>) =>
   ]
     .filter(Boolean)
     .join(' ')
+
+type RowsProps<Row> = {
+  columns: CollectionColumn<Row>[]
+  /** The page of rows shown. */
+  rows: Row[]
+  /** Every row, for the empty state. */
+  total: number
+  getKey: (row: Row) => string | number
+  onOpen: (row: Row) => void
+  selectedKey?: string | number
+  empty: { title: string; hint?: string }
+  childRows?: (row: Row) => CollectionChildRow[]
+}
+
+/** On a phone, each row as the card its columns declare. */
+function CollectionCards<Row>({
+  title,
+  columns,
+  rows,
+  total,
+  getKey,
+  onOpen,
+  selectedKey,
+  empty,
+  childRows,
+  rowActions,
+}: RowsProps<Row> & { title: ReactNode; rowActions?: (row: Row) => ReactNode }) {
+  if (!total) return <EmptyState title={empty.title} hint={empty.hint} />
+  const keyed = new Map(rows.map((row) => [String(getKey(row)), row]))
+  return (
+    <CardList
+      label={typeof title === 'string' ? title : 'Records'}
+      items={rows.map((row) => {
+        const key = String(getKey(row))
+        return phoneCard(
+          columns,
+          row,
+          key,
+          childRows?.(row) ?? [],
+          selectedKey !== undefined && String(selectedKey) === key,
+          rowActions?.(row),
+        )
+      })}
+      onOpen={(key) => {
+        const row = keyed.get(key)
+        if (row) onOpen(row)
+      }}
+    />
+  )
+}
+
+function CollectionTable<Row>({
+  columns,
+  rows: visibleRows,
+  total,
+  getKey,
+  onOpen,
+  selectedKey,
+  rowActions,
+  empty,
+  childRows,
+}: RowsProps<Row> & { rowActions?: (row: Row) => ReactNode }) {
+  const openFromKeyboard = (event: React.KeyboardEvent, row: Row) => {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      onOpen(row)
+    }
+  }
+  const span = columns.length + (rowActions ? 1 : 0)
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          {columns.map((column) => (
+            <TableHead key={column.id} numeric={column.numeric} className={columnLayout(column)}>
+              {column.label}
+            </TableHead>
+          ))}
+          {rowActions ? <TableHead /> : null}
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {visibleRows.flatMap((row) => {
+          const key = getKey(row)
+          const children = childRows?.(row) ?? []
+          return [
+            <TableRow
+              key={key}
+              interactive
+              selected={selectedKey !== undefined && String(selectedKey) === String(key)}
+              data-record-key={String(key)}
+              tabIndex={0}
+              onClick={() => onOpen(row)}
+              onKeyDown={(event) => openFromKeyboard(event, row)}
+            >
+              {columns.map((column) => (
+                <TableCell
+                  key={column.id}
+                  numeric={column.numeric}
+                  nowrap={!column.grow}
+                  className={columnLayout(column)}
+                >
+                  {column.render(row)}
+                </TableCell>
+              ))}
+              {rowActions ? (
+                <TableCell
+                  nowrap
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
+                  {rowActions(row)}
+                </TableCell>
+              ) : null}
+            </TableRow>,
+            ...children.map((child) => (
+              <TableRow key={`${key}:${child.key}`} nested>
+                {columns.map((column) => (
+                  <TableCell
+                    key={column.id}
+                    numeric={column.numeric}
+                    nowrap={!column.grow}
+                    className={columnLayout(column)}
+                  >
+                    {child.cells[column.id] ?? null}
+                  </TableCell>
+                ))}
+                {rowActions ? <TableCell /> : null}
+              </TableRow>
+            )),
+          ]
+        })}
+        {!total ? (
+          <tr>
+            <td colSpan={span}>
+              <EmptyState title={empty.title} hint={empty.hint} />
+            </td>
+          </tr>
+        ) : null}
+      </TableBody>
+    </Table>
+  )
+}
 
 /**
  * A table of records on a TableCard: one page at a time, each row opening its
@@ -58,6 +241,8 @@ export function Collection<Row>({
   view,
   actions,
   pageActions,
+  scope,
+  summary,
   panel,
   selectedKey,
   paging,
@@ -77,6 +262,10 @@ export function Collection<Row>({
   view?: ReactNode
   actions?: ReactNode
   pageActions?: ReactNode
+  /** On a phone, what the page header scopes by, folded into the band. */
+  scope?: ReactNode
+  /** On a phone, the page's figures under the band. */
+  summary?: ReactNode
   panel?: ReactNode
   /** The row whose record is open in the panel. */
   selectedKey?: string | number
@@ -104,13 +293,8 @@ export function Collection<Row>({
       setPage(1)
     },
   }
-  const openFromKeyboard = (event: React.KeyboardEvent, row: Row) => {
-    if (event.key === 'Enter') {
-      event.preventDefault()
-      onOpen(row)
-    }
-  }
-  const span = columns.length + (rowActions ? 1 : 0)
+  const phone = useMediaQuery(PHONE_QUERY)
+  const cards = phone && columns.some((column) => column.phone)
   return (
     <TableCard
       heading={
@@ -136,6 +320,8 @@ export function Collection<Row>({
       view={view}
       actions={actions}
       pageActions={pageActions}
+      scope={scope}
+      summary={summary}
       panel={panel}
       footer={
         pager.total > PAGE_SIZES[0] ? (
@@ -149,77 +335,32 @@ export function Collection<Row>({
         ) : undefined
       }
     >
-      <Table>
-        <TableHeader>
-          <TableRow>
-            {columns.map((column) => (
-              <TableHead key={column.id} numeric={column.numeric} className={columnLayout(column)}>
-                {column.label}
-              </TableHead>
-            ))}
-            {rowActions ? <TableHead /> : null}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {visible.rows.flatMap((row) => {
-            const key = getKey(row)
-            const children = childRows?.(row) ?? []
-            return [
-              <TableRow
-                key={key}
-                interactive
-                selected={selectedKey !== undefined && String(selectedKey) === String(key)}
-                data-record-key={String(key)}
-                tabIndex={0}
-                onClick={() => onOpen(row)}
-                onKeyDown={(event) => openFromKeyboard(event, row)}
-              >
-                {columns.map((column) => (
-                  <TableCell
-                    key={column.id}
-                    numeric={column.numeric}
-                    nowrap={!column.grow}
-                    className={columnLayout(column)}
-                  >
-                    {column.render(row)}
-                  </TableCell>
-                ))}
-                {rowActions ? (
-                  <TableCell
-                    nowrap
-                    onClick={(event) => event.stopPropagation()}
-                    onKeyDown={(event) => event.stopPropagation()}
-                  >
-                    {rowActions(row)}
-                  </TableCell>
-                ) : null}
-              </TableRow>,
-              ...children.map((child) => (
-                <TableRow key={`${key}:${child.key}`} nested>
-                  {columns.map((column) => (
-                    <TableCell
-                      key={column.id}
-                      numeric={column.numeric}
-                      nowrap={!column.grow}
-                      className={columnLayout(column)}
-                    >
-                      {child.cells[column.id] ?? null}
-                    </TableCell>
-                  ))}
-                  {rowActions ? <TableCell /> : null}
-                </TableRow>
-              )),
-            ]
-          })}
-          {!rows.length ? (
-            <tr>
-              <td colSpan={span}>
-                <EmptyState title={empty.title} hint={empty.hint} />
-              </td>
-            </tr>
-          ) : null}
-        </TableBody>
-      </Table>
+      {cards ? (
+        <CollectionCards
+          title={title}
+          rowActions={rowActions}
+          columns={columns}
+          rows={visible.rows}
+          total={rows.length}
+          getKey={getKey}
+          onOpen={onOpen}
+          selectedKey={selectedKey}
+          empty={empty}
+          childRows={childRows}
+        />
+      ) : (
+        <CollectionTable
+          columns={columns}
+          rows={visible.rows}
+          total={rows.length}
+          getKey={getKey}
+          onOpen={onOpen}
+          selectedKey={selectedKey}
+          rowActions={rowActions}
+          empty={empty}
+          childRows={childRows}
+        />
+      )}
     </TableCard>
   )
 }
