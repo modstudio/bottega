@@ -15,15 +15,22 @@ export function createHostedSendChangeFamily(
     cursorPrefix: HOSTED_SEND_CHANGES_CURSOR_KEY,
     tables: 'hub_send',
     spaces: () => [activeSpaceId],
-    fullPull: async (cursor, options) => {
-      const page = await hostedSendChanges(cursor, options)
-      if (page.more && page.cursor === null)
-        throw new Error('hosted send full read did not advance; the hosted route cannot page')
+    fullPull: async (_snapshotCursor, options) => {
+      const sends: HostedSend[] = []
+      let cursor: string | null = null
+      for (;;) {
+        const page = await hostedSendChanges(cursor, options)
+        sends.push(...page.sends)
+        if (!page.more) break
+        if (page.cursor === null || page.cursor === cursor)
+          throw new Error('hosted send full read did not advance; the hosted route cannot page')
+        cursor = page.cursor
+      }
       return {
-        cursor: page.cursor ?? cursor ?? '',
-        more: page.more,
+        cursor: cursor ?? '',
+        more: false,
         apply: (conn) => {
-          for (const row of page.sends) cacheHostedSend(conn, row)
+          for (const row of sends) cacheHostedSend(conn, row)
         },
       }
     },
