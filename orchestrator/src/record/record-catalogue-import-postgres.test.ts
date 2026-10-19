@@ -7,6 +7,7 @@ import {
   importRecordWorkflowCatalogue,
 } from './record-catalogue-import.ts'
 import { ensureSpaceBuiltIns } from './record-space-built-ins.ts'
+import { listRecordWorkflowCatalogue } from './record-workflow-catalogue.ts'
 
 const actorUrl = process.env.ORCH_TEST_CATALOGUE_IMPORT_URL
 const setupUrl = process.env.ORCH_TEST_CATALOGUE_IMPORT_SETUP_URL
@@ -81,7 +82,14 @@ postgres('hosted catalogue bulk imports', () => {
       step_catalogue_version: [],
       step_catalogue_event: [],
       workflow: [
-        { id: workflowId, spaceId, slug: `import-${spaceId}`, createdAt: at, updatedAt: at },
+        {
+          id: workflowId,
+          spaceId,
+          slug: `import-${spaceId}`,
+          generation: 1,
+          createdAt: at,
+          updatedAt: at,
+        },
       ],
       workflow_version: [
         {
@@ -186,11 +194,17 @@ postgres('hosted catalogue bulk imports', () => {
       stepDraftId = newRecordId(),
       stepProductionId = newRecordId(),
       workflowDraftId = newRecordId(),
-      workflowProductionId = newRecordId()
+      workflowProductionId = newRecordId(),
+      stepEventId = newRecordId(),
+      workflowEventId = newRecordId(),
+      historicalAt = '2026-01-02T03:04:05.000Z'
     await ensureSpaceBuiltIns(tenant)
+    const cursor = { at: new Date(Date.now() - 1_000).toISOString(), id: newRecordId() }
     const input = {
       dryRun: false,
-      step_catalogue: [{ id: stepId, spaceId, slug: 'shared', createdAt: at, updatedAt: at }],
+      step_catalogue: [
+        { id: stepId, spaceId, slug: 'shared', generation: 1, createdAt: at, updatedAt: at },
+      ],
       step_catalogue_version: [
         {
           id: stepDraftId,
@@ -221,8 +235,28 @@ postgres('hosted catalogue bulk imports', () => {
           updatedAt: at,
         },
       ],
-      step_catalogue_event: [],
-      workflow: [{ id: workflowId, spaceId, slug: 'fix-defect', createdAt: at, updatedAt: at }],
+      step_catalogue_event: [
+        {
+          id: stepEventId,
+          spaceId,
+          ownerVersionId: stepProductionId,
+          event: 'promote' as const,
+          author: 'machine',
+          reason: 'local production',
+          sessionId: null,
+          at: historicalAt,
+        },
+      ],
+      workflow: [
+        {
+          id: workflowId,
+          spaceId,
+          slug: 'fix-defect',
+          generation: 1,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
       workflow_version: [
         {
           id: workflowDraftId,
@@ -253,7 +287,18 @@ postgres('hosted catalogue bulk imports', () => {
           updatedAt: at,
         },
       ],
-      workflow_event: [],
+      workflow_event: [
+        {
+          id: workflowEventId,
+          spaceId,
+          ownerVersionId: workflowProductionId,
+          event: 'promote' as const,
+          author: 'machine',
+          reason: 'local production',
+          sessionId: null,
+          at: historicalAt,
+        },
+      ],
     }
     const first = await importRecordWorkflowCatalogue({ ...tenant, ...input })
     expect(first.outcomes).toEqual([
@@ -276,13 +321,35 @@ postgres('hosted catalogue bulk imports', () => {
       ])
       expect([
         ...(await verify`SELECT COUNT(*)::int n FROM step_catalogue_event WHERE space_id=${spaceId}::uuid`),
-      ]).toEqual([{ n: 0 }])
+      ]).toEqual([{ n: 1 }])
       expect([
         ...(await verify`SELECT COUNT(*)::int n FROM workflow_event WHERE space_id=${spaceId}::uuid`),
-      ]).toEqual([{ n: 0 }])
+      ]).toEqual([{ n: 1 }])
     } finally {
       await verify.close()
     }
+    const stepEvents = await listRecordWorkflowCatalogue({
+        ...tenant,
+        table: 'step_catalogue_event',
+        limit: 100,
+        cursor,
+      }),
+      workflowEvents = await listRecordWorkflowCatalogue({
+        ...tenant,
+        table: 'workflow_event',
+        limit: 100,
+        cursor,
+      })
+    expect(stepEvents).toEqual([expect.objectContaining({ id: stepEventId, at: historicalAt })])
+    expect(workflowEvents).toEqual([
+      expect.objectContaining({ id: workflowEventId, at: historicalAt }),
+    ])
+    expect(new Date(String(stepEvents[0]!.updatedAt)).getTime()).toBeGreaterThan(
+      new Date(cursor.at).getTime(),
+    )
+    expect(new Date(String(workflowEvents[0]!.updatedAt)).getTime()).toBeGreaterThan(
+      new Date(cursor.at).getTime(),
+    )
     const second = await importRecordWorkflowCatalogue({ ...tenant, ...input })
     expect(second.inserted).toBe(0)
     expect(second.outcomes).toEqual([])
@@ -346,7 +413,14 @@ postgres('hosted catalogue bulk imports', () => {
       step_catalogue_version: [],
       step_catalogue_event: [],
       workflow: [
-        { id: importedWorkflowId, spaceId, slug: 'fix-defect', createdAt: at, updatedAt: at },
+        {
+          id: importedWorkflowId,
+          spaceId,
+          slug: 'fix-defect',
+          generation: 1,
+          createdAt: at,
+          updatedAt: at,
+        },
       ],
       workflow_version: [
         {
@@ -441,6 +515,7 @@ postgres('hosted catalogue bulk imports', () => {
           id: importedWorkflowId,
           spaceId,
           slug: 'fix-defect',
+          generation: 1,
           createdAt: historical,
           updatedAt: historical,
         },
@@ -586,7 +661,14 @@ postgres('hosted catalogue bulk imports', () => {
       step_catalogue_version: [],
       step_catalogue_event: [],
       workflow: [
-        { id: importedWorkflowId, spaceId, slug: 'natural-workflow', createdAt: at, updatedAt: at },
+        {
+          id: importedWorkflowId,
+          spaceId,
+          slug: 'natural-workflow',
+          generation: 1,
+          createdAt: at,
+          updatedAt: at,
+        },
       ],
       workflow_version: [
         {

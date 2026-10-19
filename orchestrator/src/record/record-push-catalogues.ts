@@ -13,6 +13,7 @@ import type { RecordIdentity } from './record-auth.ts'
 import { pullRecordCache } from './record-cache.ts'
 import type { RecordLensImportInput } from './record-lens-contract.ts'
 import type { RecordPortImportInput } from './record-port-contract.ts'
+import { normalizePortBaselineScannedAt } from './record-port-date.ts'
 import {
   declaredRecordSpace,
   noActiveRecordSpaceRefusal,
@@ -263,6 +264,7 @@ function workflowPlan(local: Database, activeSpaceId: string): RecordWorkflowImp
       id: String(r.record_id),
       spaceId: activeSpaceId,
       slug: String(r.slug),
+      generation: 1,
       createdAt: String(r.created_at),
       updatedAt: now,
     }))
@@ -391,7 +393,7 @@ function addPortBaseline(r: Record<string, unknown>, context: PortPlanContext): 
     spaceId: space,
     pairId: String(r.pair_record_id),
     sourceCommit: r.source_commit == null ? null : String(r.source_commit),
-    scannedAt: r.scanned_at == null ? null : String(r.scanned_at),
+    scannedAt: normalizePortBaselineScannedAt(r.scanned_at == null ? null : String(r.scanned_at)),
     version: Number(r.version),
     updatedAt: context.now,
   })

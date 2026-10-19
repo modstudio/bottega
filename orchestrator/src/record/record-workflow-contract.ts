@@ -28,6 +28,7 @@ const identity = z.object({
   id: uuid,
   spaceId: uuid,
   slug: z.string().min(1),
+  generation: z.number().int().positive().default(1),
   createdAt: iso,
   updatedAt: iso,
 })

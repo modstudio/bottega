@@ -142,23 +142,51 @@ function applyIdentity(
 ): void {
   const found =
     local
-      .query<{ id: number }, [string, string]>(
-        `SELECT id FROM ${n.identity} WHERE record_id=? AND space_id=?`,
+      .query<{ id: number; generation: number }, [string, string]>(
+        `SELECT id,generation FROM ${n.identity} WHERE record_id=? AND space_id=?`,
       )
       .get(recordId, spaceId) ??
     local
-      .query<{ id: number }, [string, string]>(
-        `SELECT id FROM ${n.identity} WHERE space_id=? AND slug=?`,
+      .query<{ id: number; generation: number }, [string, string]>(
+        `SELECT id,generation FROM ${n.identity} WHERE space_id=? AND slug=?`,
       )
       .get(spaceId, String(item.slug))
-  if (found)
+  const generation = Number(item.generation ?? 1)
+  if (found) {
+    if (generation > found.generation) deleteIdentityHistory(local, n, spaceId, found.id)
     local
-      .query(`UPDATE ${n.identity} SET record_id=?,slug=?,created_at=? WHERE id=?`)
-      .run(recordId, String(item.slug), String(item.createdAt), found.id)
-  else
+      .query(`UPDATE ${n.identity} SET record_id=?,slug=?,generation=?,created_at=? WHERE id=?`)
+      .run(
+        recordId,
+        String(item.slug),
+        Math.max(generation, found.generation),
+        String(item.createdAt),
+        found.id,
+      )
+  } else
     local
-      .query(`INSERT INTO ${n.identity} (record_id,space_id,slug,created_at) VALUES (?,?,?,?)`)
-      .run(recordId, spaceId, String(item.slug), String(item.createdAt))
+      .query(
+        `INSERT INTO ${n.identity} (record_id,space_id,slug,generation,created_at) VALUES (?,?,?,?,?)`,
+      )
+      .run(recordId, spaceId, String(item.slug), generation, String(item.createdAt))
+}
+
+function deleteIdentityHistory(local: Database, n: Names, spaceId: string, parentId: number): void {
+  if (n.event === 'workflow_event') {
+    local
+      .query('DELETE FROM workflow_event WHERE space_id=? AND workflow_id=?')
+      .run(spaceId, parentId)
+    local
+      .query('DELETE FROM workflow_version WHERE space_id=? AND workflow_id=?')
+      .run(spaceId, parentId)
+  } else {
+    local
+      .query('DELETE FROM step_catalogue_event WHERE space_id=? AND catalogue_id=?')
+      .run(spaceId, parentId)
+    local
+      .query('DELETE FROM step_catalogue_version WHERE space_id=? AND catalogue_id=?')
+      .run(spaceId, parentId)
+  }
 }
 
 function applyVersion(
