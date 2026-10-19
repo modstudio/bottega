@@ -96,15 +96,15 @@ async function ensureInTransaction(tx: SQL, spaceId: string): Promise<SpaceBuilt
       if (events[0]) result.alreadyPresent++
       else if (item.kind === 'workflow') {
         await tx`INSERT INTO workflow_event
-        (id,space_id,workflow_version_id,event,author,reason,at)
+        (id,space_id,workflow_version_id,event,author,reason,at,updated_at)
         VALUES (${newRecordId()}::uuid,${spaceId}::uuid,${versionId}::uuid,'set',
-          ${item.author},${item.reason},now())`
+          ${item.author},${item.reason},now(),now())`
         result.inserted++
       } else {
         await tx`INSERT INTO step_catalogue_event
-        (id,space_id,catalogue_version_id,event,author,reason,at)
+        (id,space_id,catalogue_version_id,event,author,reason,at,updated_at)
         VALUES (${newRecordId()}::uuid,${spaceId}::uuid,${versionId}::uuid,'set',
-          ${item.author},${item.reason},now())`
+          ${item.author},${item.reason},now(),now())`
         result.inserted++
       }
     },

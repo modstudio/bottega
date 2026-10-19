@@ -78,7 +78,7 @@ async function pullTable(
       current = page.endCursor
         ? decodeRecordCursor(page.endCursor)
         : {
-            at: String(last[table.endsWith('_event') ? 'at' : 'updatedAt']),
+            at: String(last.updatedAt),
             id: String(last.record_id),
           }
       remember(local, key, current)
@@ -173,12 +173,13 @@ function applyVersion(
       `SELECT id FROM ${n.identity} WHERE record_id=? AND space_id=?`,
     )
     .get(String(item.ownerId), spaceId)!
+  const byRecordId = local
+    .query<{ id: number }, [string, string]>(
+      `SELECT id FROM ${n.version} WHERE record_id=? AND space_id=?`,
+    )
+    .get(recordId, spaceId)
   const found =
-    local
-      .query<{ id: number }, [string, string]>(
-        `SELECT id FROM ${n.version} WHERE record_id=? AND space_id=?`,
-      )
-      .get(recordId, spaceId) ??
+    byRecordId ??
     local
       .query<{ id: number }, [number, number]>(
         `SELECT id FROM ${n.version} WHERE ${n.foreign}=? AND n=?`,
@@ -197,18 +198,36 @@ function applyVersion(
     item.promotedAt == null ? null : String(item.promotedAt),
     item.retiredAt == null ? null : String(item.retiredAt),
   ]
-  if (found)
+  if (found) {
+    if (!byRecordId) deleteReplacedVersionEvents(local, n, spaceId, parent.id, Number(item.n))
     local
       .query(
         `UPDATE ${n.version} SET record_id=?,space_id=?,${n.foreign}=?,n=?,status=?,definition=?,author=?,reason=?,created_at=?,promoted_at=?,retired_at=? WHERE id=?`,
       )
       .run(...values, found.id)
-  else
+  } else
     local
       .query(
         `INSERT INTO ${n.version} (record_id,space_id,${n.foreign},n,status,definition,author,reason,created_at,promoted_at,retired_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .run(...values)
+}
+
+function deleteReplacedVersionEvents(
+  local: Database,
+  n: Names,
+  spaceId: string,
+  parentId: number,
+  version: number,
+): void {
+  if (n.event === 'workflow_event')
+    local
+      .query('DELETE FROM workflow_event WHERE space_id=? AND workflow_id=? AND version_n=?')
+      .run(spaceId, parentId, version)
+  else
+    local
+      .query('DELETE FROM step_catalogue_event WHERE space_id=? AND catalogue_id=? AND version_n=?')
+      .run(spaceId, parentId, version)
 }
 
 function applyEvent(

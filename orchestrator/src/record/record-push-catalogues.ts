@@ -630,6 +630,8 @@ export async function pushCataloguesCommand(
     { ...plan.workflow, dryRun: options.dryRun },
     destination,
   )
+  for (const outcome of workflow.outcomes)
+    presentation.log(`workflow ${outcome.kind} ${outcome.slug}: ${outcome.outcome}`)
   presentation.log(
     `workflow: inserted ${workflow.inserted}, already present ${workflow.alreadyPresent}, skipped ${workflow.skipped.length}`,
   )

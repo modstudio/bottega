@@ -93,6 +93,44 @@ const appWith = (session: typeof identity | null, overrides: Record<string, unkn
 
 const id = '01990000-0000-7000-8000-000000000001'
 describe('record API', () => {
+  test('serves reconciled workflow import only on the v2 route', async () => {
+    const imported = mock(async () => ({
+      inserted: 0,
+      alreadyPresent: 0,
+      skipped: [],
+      outcomes: [],
+    }))
+    const app = appWith(identity, { importWorkflowCatalogue: imported })
+    const body = JSON.stringify({
+      dryRun: false,
+      step_catalogue: [],
+      step_catalogue_version: [],
+      step_catalogue_event: [],
+      workflow: [],
+      workflow_version: [],
+      workflow_event: [],
+    })
+    expect(
+      (
+        await app.request('/v1/workflow-catalogue/import/v2', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body,
+        })
+      ).status,
+    ).toBe(200)
+    expect(
+      (
+        await app.request('/v1/workflow-catalogue/import', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body,
+        })
+      ).status,
+    ).toBe(404)
+    expect(imported).toHaveBeenCalledTimes(1)
+  })
+
   test('the revisions route forwards its audience to the record service', async () => {
     const listDocRevisions = mock(async () => [])
     const app = appWith(identity, { listDocRevisions })

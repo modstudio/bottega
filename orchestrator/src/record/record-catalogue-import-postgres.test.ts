@@ -165,7 +165,337 @@ postgres('hosted catalogue bulk imports', () => {
     expect(secondBuiltIns.inserted).toBe(0)
   })
 
-  test('newer natural-key matches stay unchanged and imported children use hosted parents', async () => {
+  test('machine history replaces seeded workflow and step catalogue versions', async () => {
+    const spaceId = newRecordId(),
+      userId = newRecordId(),
+      setup = new SQL(setupUrl!)
+    try {
+      await setup`INSERT INTO "user" (id,email,name,email_verified,created_at,updated_at)
+        VALUES (${userId}::uuid,${`${userId}@test.invalid`},'Seed Replacement',true,now(),now())`
+      await setup`INSERT INTO space (id,name,slug,created_at)
+        VALUES (${spaceId}::uuid,${`Replacement ${spaceId}`},${`replacement-${spaceId}`},now())`
+      await setup`INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+        VALUES (${newRecordId()}::uuid,${spaceId}::uuid,${userId}::uuid,'owner','write',now())`
+    } finally {
+      await setup.close()
+    }
+    const tenant = { url: actorUrl!, spaceId, spaceIds: [spaceId], userId },
+      at = new Date().toISOString(),
+      stepId = newRecordId(),
+      workflowId = newRecordId(),
+      stepDraftId = newRecordId(),
+      stepProductionId = newRecordId(),
+      workflowDraftId = newRecordId(),
+      workflowProductionId = newRecordId()
+    await ensureSpaceBuiltIns(tenant)
+    const input = {
+      dryRun: false,
+      step_catalogue: [{ id: stepId, spaceId, slug: 'shared', createdAt: at, updatedAt: at }],
+      step_catalogue_version: [
+        {
+          id: stepDraftId,
+          spaceId,
+          ownerId: stepId,
+          n: 1,
+          status: 'draft' as const,
+          definition: '{"steps":[]}',
+          author: 'machine',
+          reason: 'local history',
+          createdAt: at,
+          promotedAt: null,
+          retiredAt: null,
+          updatedAt: at,
+        },
+        {
+          id: stepProductionId,
+          spaceId,
+          ownerId: stepId,
+          n: 2,
+          status: 'production' as const,
+          definition: '{"steps":[]}',
+          author: 'machine',
+          reason: 'local production',
+          createdAt: at,
+          promotedAt: at,
+          retiredAt: null,
+          updatedAt: at,
+        },
+      ],
+      step_catalogue_event: [],
+      workflow: [{ id: workflowId, spaceId, slug: 'fix-defect', createdAt: at, updatedAt: at }],
+      workflow_version: [
+        {
+          id: workflowDraftId,
+          spaceId,
+          ownerId: workflowId,
+          n: 1,
+          status: 'draft' as const,
+          definition: '{}',
+          author: 'machine',
+          reason: 'local history',
+          createdAt: at,
+          promotedAt: null,
+          retiredAt: null,
+          updatedAt: at,
+        },
+        {
+          id: workflowProductionId,
+          spaceId,
+          ownerId: workflowId,
+          n: 19,
+          status: 'production' as const,
+          definition: '{}',
+          author: 'machine',
+          reason: 'local production',
+          createdAt: at,
+          promotedAt: at,
+          retiredAt: null,
+          updatedAt: at,
+        },
+      ],
+      workflow_event: [],
+    }
+    const first = await importRecordWorkflowCatalogue({ ...tenant, ...input })
+    expect(first.outcomes).toEqual([
+      { kind: 'step_catalogue', slug: 'shared', outcome: 'replaced seeded built-in' },
+      { kind: 'workflow', slug: 'fix-defect', outcome: 'replaced seeded built-in' },
+    ])
+    const verify = new SQL(setupUrl!)
+    try {
+      expect([
+        ...(await verify`SELECT n,status,author FROM step_catalogue_version WHERE space_id=${spaceId}::uuid ORDER BY n`),
+      ]).toEqual([
+        { n: 1, status: 'draft', author: 'machine' },
+        { n: 2, status: 'production', author: 'machine' },
+      ])
+      expect([
+        ...(await verify`SELECT n,status,author FROM workflow_version WHERE space_id=${spaceId}::uuid ORDER BY n`),
+      ]).toEqual([
+        { n: 1, status: 'draft', author: 'machine' },
+        { n: 19, status: 'production', author: 'machine' },
+      ])
+      expect([
+        ...(await verify`SELECT COUNT(*)::int n FROM step_catalogue_event WHERE space_id=${spaceId}::uuid`),
+      ]).toEqual([{ n: 0 }])
+      expect([
+        ...(await verify`SELECT COUNT(*)::int n FROM workflow_event WHERE space_id=${spaceId}::uuid`),
+      ]).toEqual([{ n: 0 }])
+    } finally {
+      await verify.close()
+    }
+    const second = await importRecordWorkflowCatalogue({ ...tenant, ...input })
+    expect(second.inserted).toBe(0)
+    expect(second.outcomes).toEqual([])
+  })
+
+  test('a person-authored draft prevents replacing a seeded production or importing events', async () => {
+    const spaceId = newRecordId(),
+      userId = newRecordId(),
+      personDraftId = newRecordId(),
+      personEventId = newRecordId(),
+      importedWorkflowId = newRecordId(),
+      importedProductionId = newRecordId(),
+      importedEventId = newRecordId(),
+      setup = new SQL(setupUrl!)
+    try {
+      await setup`INSERT INTO "user" (id,email,name,email_verified,created_at,updated_at)
+        VALUES (${userId}::uuid,${`${userId}@test.invalid`},'Mixed History',true,now(),now())`
+      await setup`INSERT INTO space (id,name,slug,created_at)
+        VALUES (${spaceId}::uuid,${`Mixed ${spaceId}`},${`mixed-${spaceId}`},now())`
+      await setup`INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+        VALUES (${newRecordId()}::uuid,${spaceId}::uuid,${userId}::uuid,'owner','write',now())`
+    } finally {
+      await setup.close()
+    }
+    const tenant = { url: actorUrl!, spaceId, spaceIds: [spaceId], userId }
+    await ensureSpaceBuiltIns(tenant)
+    const write = new SQL(setupUrl!)
+    let hostedWorkflowId: string
+    try {
+      const owners =
+        await write`SELECT id FROM workflow WHERE space_id=${spaceId}::uuid AND slug='fix-defect'`
+      hostedWorkflowId = String(owners[0]!.id)
+      await write`INSERT INTO workflow_version
+        (id,space_id,workflow_id,n,status,definition,author,reason,created_at,updated_at)
+        VALUES (${personDraftId}::uuid,${spaceId}::uuid,${hostedWorkflowId}::uuid,2,'draft',
+          '{"person":true}','person','person draft',now(),now())`
+      await write`INSERT INTO workflow_event
+        (id,space_id,workflow_version_id,event,author,reason,session_id,at,updated_at)
+        VALUES (${personEventId}::uuid,${spaceId}::uuid,${personDraftId}::uuid,'set','person',
+          'person draft',NULL,now(),now())`
+    } finally {
+      await write.close()
+    }
+    const before = new SQL(setupUrl!)
+    let versionsBefore: unknown[], eventsBefore: unknown[]
+    try {
+      versionsBefore = [
+        ...(await before`SELECT id,n,status,author,definition FROM workflow_version WHERE space_id=${spaceId}::uuid AND workflow_id=${hostedWorkflowId}::uuid ORDER BY n`),
+      ]
+      eventsBefore = [
+        ...(await before`SELECT id,workflow_version_id,event,author,reason FROM workflow_event WHERE space_id=${spaceId}::uuid AND workflow_version_id IN (SELECT id FROM workflow_version WHERE workflow_id=${hostedWorkflowId}::uuid) ORDER BY id`),
+      ]
+    } finally {
+      await before.close()
+    }
+    const at = new Date().toISOString()
+    const result = await importRecordWorkflowCatalogue({
+      ...tenant,
+      dryRun: false,
+      step_catalogue: [],
+      step_catalogue_version: [],
+      step_catalogue_event: [],
+      workflow: [
+        { id: importedWorkflowId, spaceId, slug: 'fix-defect', createdAt: at, updatedAt: at },
+      ],
+      workflow_version: [
+        {
+          id: importedProductionId,
+          spaceId,
+          ownerId: importedWorkflowId,
+          n: 19,
+          status: 'production',
+          definition: '{"local":true}',
+          author: 'machine',
+          reason: 'local production',
+          createdAt: at,
+          promotedAt: at,
+          retiredAt: null,
+          updatedAt: at,
+        },
+      ],
+      workflow_event: [
+        {
+          id: importedEventId,
+          spaceId,
+          ownerVersionId: importedProductionId,
+          event: 'promote',
+          author: 'machine',
+          reason: 'local production',
+          sessionId: null,
+          at,
+        },
+      ],
+    })
+    expect(result.outcomes).toEqual([
+      {
+        kind: 'workflow',
+        slug: 'fix-defect',
+        outcome: 'kept hosted history; local history not imported',
+      },
+    ])
+    const verify = new SQL(setupUrl!)
+    try {
+      expect([
+        ...(await verify`SELECT id,n,status,author,definition FROM workflow_version WHERE space_id=${spaceId}::uuid AND workflow_id=${hostedWorkflowId}::uuid ORDER BY n`),
+      ]).toEqual(versionsBefore)
+      expect([
+        ...(await verify`SELECT id,workflow_version_id,event,author,reason FROM workflow_event WHERE space_id=${spaceId}::uuid AND workflow_version_id IN (SELECT id FROM workflow_version WHERE workflow_id=${hostedWorkflowId}::uuid) ORDER BY id`),
+      ]).toEqual(eventsBefore)
+      expect([
+        ...(await verify`SELECT id FROM workflow_event WHERE id=${importedEventId}::uuid`),
+      ]).toEqual([])
+    } finally {
+      await verify.close()
+    }
+  })
+
+  test('a retired seed-only history is replaced without a production gate', async () => {
+    const spaceId = newRecordId(),
+      userId = newRecordId(),
+      importedWorkflowId = newRecordId(),
+      importedDraftId = newRecordId(),
+      setup = new SQL(setupUrl!)
+    try {
+      await setup`INSERT INTO "user" (id,email,name,email_verified,created_at,updated_at)
+        VALUES (${userId}::uuid,${`${userId}@test.invalid`},'Retired Seed',true,now(),now())`
+      await setup`INSERT INTO space (id,name,slug,created_at)
+        VALUES (${spaceId}::uuid,${`Retired ${spaceId}`},${`retired-${spaceId}`},now())`
+      await setup`INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+        VALUES (${newRecordId()}::uuid,${spaceId}::uuid,${userId}::uuid,'owner','write',now())`
+    } finally {
+      await setup.close()
+    }
+    const tenant = { url: actorUrl!, spaceId, spaceIds: [spaceId], userId }
+    await ensureSpaceBuiltIns(tenant)
+    const retire = new SQL(setupUrl!)
+    let seededVersionId: string
+    try {
+      const rows = await retire`UPDATE workflow_version SET status='retired',promoted_at=NULL,
+        retired_at=now(),updated_at=now() WHERE space_id=${spaceId}::uuid
+        AND workflow_id=(SELECT id FROM workflow WHERE space_id=${spaceId}::uuid AND slug='fix-defect')
+        RETURNING id`
+      seededVersionId = String(rows[0]!.id)
+    } finally {
+      await retire.close()
+    }
+    const historical = '2020-01-01T00:00:00.000Z'
+    const result = await importRecordWorkflowCatalogue({
+      ...tenant,
+      dryRun: false,
+      step_catalogue: [],
+      step_catalogue_version: [],
+      step_catalogue_event: [],
+      workflow: [
+        {
+          id: importedWorkflowId,
+          spaceId,
+          slug: 'fix-defect',
+          createdAt: historical,
+          updatedAt: historical,
+        },
+      ],
+      workflow_version: [
+        {
+          id: importedDraftId,
+          spaceId,
+          ownerId: importedWorkflowId,
+          n: 9,
+          status: 'draft',
+          definition: '{"local":true}',
+          author: 'machine',
+          reason: 'local retired-era history',
+          createdAt: historical,
+          promotedAt: null,
+          retiredAt: null,
+          updatedAt: historical,
+        },
+      ],
+      workflow_event: [],
+    })
+    expect(result.outcomes).toEqual([
+      { kind: 'workflow', slug: 'fix-defect', outcome: 'replaced seeded built-in' },
+    ])
+    const verify = new SQL(setupUrl!)
+    try {
+      expect([
+        ...(await verify`SELECT id,n,status,author,created_at,updated_at
+          FROM workflow_version WHERE space_id=${spaceId}::uuid
+          AND workflow_id=(SELECT id FROM workflow WHERE space_id=${spaceId}::uuid AND slug='fix-defect')`),
+      ]).toEqual([
+        {
+          id: importedDraftId,
+          n: 9,
+          status: 'draft',
+          author: 'machine',
+          created_at: new Date(historical),
+          updated_at: expect.any(Date),
+        },
+      ])
+      const [timestamps] =
+        await verify`SELECT created_at,updated_at FROM workflow_version WHERE id=${importedDraftId}::uuid`
+      expect(new Date(String(timestamps!.updated_at)).getTime()).toBeGreaterThan(
+        new Date(String(timestamps!.created_at)).getTime(),
+      )
+      expect([
+        ...(await verify`SELECT id FROM workflow_version WHERE id=${seededVersionId}::uuid`),
+      ]).toEqual([])
+    } finally {
+      await verify.close()
+    }
+  })
+
+  test('newer natural-key matches stay unchanged and reject imported workflow children', async () => {
     const spaceId = newRecordId(),
       userId = newRecordId(),
       sourceProjectId = newRecordId(),
@@ -249,7 +579,7 @@ postgres('hosted catalogue bulk imports', () => {
       project_lens_profile: [],
       project_lens_profile_revision: [],
     })
-    await importRecordWorkflowCatalogue({
+    const workflowResult = await importRecordWorkflowCatalogue({
       ...tenant,
       dryRun: false,
       step_catalogue: [],
@@ -287,6 +617,13 @@ postgres('hosted catalogue bulk imports', () => {
         },
       ],
     })
+    expect(workflowResult.outcomes).toEqual([
+      {
+        kind: 'workflow',
+        slug: 'natural-workflow',
+        outcome: 'kept hosted history; local history not imported',
+      },
+    ])
     await importRecordPortCatalogue({
       ...tenant,
       dryRun: false,
@@ -330,7 +667,7 @@ postgres('hosted catalogue bulk imports', () => {
       ]).toEqual([{ id: hostedWorkflowVersionId, definition: '{"hosted":true}', author: 'hosted' }])
       expect([
         ...(await verify`SELECT workflow_version_id FROM workflow_event WHERE id=${workflowEventId}::uuid`),
-      ]).toEqual([{ workflow_version_id: hostedWorkflowVersionId }])
+      ]).toEqual([])
       expect([
         ...(await verify`SELECT id,source_commit,version FROM port_baseline WHERE space_id=${spaceId}::uuid AND pair_id=${hostedPairId}::uuid`),
       ]).toEqual([{ id: hostedBaselineId, source_commit: 'hosted-newer', version: 9 }])

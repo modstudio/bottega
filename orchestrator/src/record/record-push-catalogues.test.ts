@@ -30,6 +30,11 @@ function fakeCatalogueClient(
     },
   ],
   observeLens: (input: RecordLensImportInput, spaceId: string) => void = () => undefined,
+  workflowOutcomes: Array<{
+    kind: 'workflow' | 'step_catalogue'
+    slug: string
+    outcome: 'replaced seeded built-in' | 'kept hosted history; local history not imported'
+  }> = [],
 ): RecordApiClient {
   const base = createMemoryRecordApiClient()
   const lens = new Map<RecordLensTable, Record<string, unknown>[]>()
@@ -77,8 +82,10 @@ function fakeCatalogueClient(
       observeLens(input, space)
       return insert(lens, input as unknown as Record<string, unknown>, space)
     },
-    importWorkflowCatalogue: async (input: RecordWorkflowImportInput, target) =>
-      insert(workflow, input as unknown as Record<string, unknown>, destination(target)),
+    importWorkflowCatalogue: async (input: RecordWorkflowImportInput, target) => ({
+      ...insert(workflow, input as unknown as Record<string, unknown>, destination(target)),
+      outcomes: workflowOutcomes,
+    }),
     importPortCatalogue: async (input: RecordPortImportInput, target) =>
       insert(
         port,
@@ -155,6 +162,30 @@ test('dry run logs its local plan without calling hosted methods', async () => {
   )
   expect(logs).toContainEqual(
     expect.stringMatching(/^dry run active space — workflow: \d+; skipped: \d+$/),
+  )
+})
+
+test('prints workflow import reconciliation outcomes', async () => {
+  const local = db(),
+    logs: string[] = [],
+    client = fakeCatalogueClient(undefined, undefined, [
+      { kind: 'workflow', slug: 'fix-defect', outcome: 'replaced seeded built-in' },
+      {
+        kind: 'step_catalogue',
+        slug: 'shared',
+        outcome: 'kept hosted history; local history not imported',
+      },
+    ])
+  rememberActiveRecordSpace(local, spaceId)
+  installRecordApiClient(client)
+  await pushCataloguesCommand(
+    { dryRun: false },
+    { log: (line) => logs.push(line) },
+    { local, client },
+  )
+  expect(logs).toContain('workflow workflow fix-defect: replaced seeded built-in')
+  expect(logs).toContain(
+    'workflow step_catalogue shared: kept hosted history; local history not imported',
   )
 })
 

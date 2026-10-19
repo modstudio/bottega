@@ -68,7 +68,7 @@ export function registerRecordWorkflowRoutes(
         items,
         query.data.limit,
         (item) => ({
-          at: String(item[table.data.endsWith('_event') ? 'at' : 'updatedAt']),
+          at: String(item.updatedAt),
           id: String(item.id),
         }),
         true,
@@ -86,7 +86,7 @@ export function registerRecordWorkflowRoutes(
       return failure(context, error)
     }
   })
-  app.post('/v1/workflow-catalogue/import', async (context) => {
+  app.post('/v1/workflow-catalogue/import/v2', async (context) => {
     const active = ports.scope(context)
     if (!active) return ports.noSpace(context)
     const body = recordWorkflowImportSchema.safeParse(await context.req.json().catch(() => null))
