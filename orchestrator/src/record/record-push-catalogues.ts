@@ -20,6 +20,14 @@ type Plan = {
   ports: Map<string, RecordPortImportInput>
   skipped: Array<{ kind: string; id: string; reason: string }>
 }
+type LensPlanRows = {
+  lenses: Record<string, unknown>[]
+  revisions: Record<string, unknown>[]
+  selections: Record<string, unknown>[]
+  selectionRevisions: Record<string, unknown>[]
+  profiles: Record<string, unknown>[]
+  profileRevisions: Record<string, unknown>[]
+}
 const iso = () => new Date().toISOString()
 const forEachValue = <T>(values: readonly T[], use: (value: T) => void) => values.forEach(use)
 
@@ -46,11 +54,7 @@ function routedProjects(local: Database): Map<string, Set<string>> {
   return routed
 }
 
-function lensPlan(
-  local: Database,
-  routed: Map<string, Set<string>>,
-): Map<string, RecordLensImportInput> {
-  const now = iso()
+function lensPlanRows(local: Database): LensPlanRows {
   const lenses = local.query('SELECT * FROM lens WHERE space_id IS NULL').all() as Record<
       string,
       unknown
@@ -94,82 +98,101 @@ function lensPlan(
         )
         .all() as Record<string, unknown>[]
     ).filter((revision) => profileIds.has(String(revision.profile_record_id)))
+  return { lenses, revisions, selections, selectionRevisions, profiles, profileRevisions }
+}
+
+function lensSpacePlan(
+  spaceId: string,
+  projectIds: Set<string>,
+  rows: LensPlanRows,
+  now: string,
+): RecordLensImportInput {
+  const { lenses, revisions, selections, selectionRevisions, profiles, profileRevisions } = rows
+  const inSpace = selections.filter((row) => projectIds.has(String(row.project_record_id)))
+  const selectionIds = new Set(inSpace.map((row) => String(row.record_id)))
+  return {
+    dryRun: false,
+    lens: lenses.map((r) => ({
+      id: replicatedId(spaceId, 'lens', String(r.record_id)),
+      spaceId,
+      key: String(r.id),
+      title: String(r.title),
+      question: String(r.question),
+      excludes: String(r.excludes),
+      slots: String(r.slots),
+      version: Number(r.version),
+      enabled: Boolean(r.enabled),
+      requiresExecution: Boolean(r.requires_execution),
+      updatedAt: now,
+    })),
+    lens_revision: revisions.map((r) => ({
+      id: replicatedId(spaceId, 'lens_revision', String(r.record_id)),
+      spaceId,
+      lensId: replicatedId(spaceId, 'lens', String(r.lens_record_id)),
+      version: Number(r.version),
+      priorBody: String(r.prior_body),
+      reason: String(r.reason),
+      sessionId: r.session_id == null ? null : String(r.session_id),
+      at: String(r.at),
+    })),
+    lens_profile: profiles.map((r) => ({
+      id: replicatedId(spaceId, 'lens_profile', String(r.record_id)),
+      spaceId,
+      lensId: replicatedId(spaceId, 'lens', String(r.lens_record_id)),
+      axis: r.axis as 'framework' | 'architecture',
+      name: String(r.name),
+      version: Number(r.version),
+      body: String(r.body),
+      enabled: Boolean(r.enabled),
+      updatedAt: now,
+    })),
+    lens_profile_revision: profileRevisions.map((r) => ({
+      id: replicatedId(spaceId, 'lens_profile_revision', String(r.record_id)),
+      spaceId,
+      profileId: replicatedId(spaceId, 'lens_profile', String(r.profile_record_id)),
+      version: Number(r.version),
+      priorBody: String(r.prior_body),
+      reason: String(r.reason),
+      sessionId: r.session_id == null ? null : String(r.session_id),
+      at: String(r.at),
+    })),
+    project_lens_profile: inSpace.map((r) => ({
+      id: replicatedId(spaceId, 'project_lens_profile', String(r.record_id)),
+      spaceId,
+      projectId: String(r.project_record_id),
+      lensId:
+        r.lens_record_id == null ? null : replicatedId(spaceId, 'lens', String(r.lens_record_id)),
+      axis: r.axis as 'framework' | 'architecture',
+      profileName: String(r.profile_name),
+      selectedVersion: r.selected_version == null ? null : Number(r.selected_version),
+      selectionVersion: Number(r.selection_version),
+      updatedAt: now,
+    })),
+    project_lens_profile_revision: selectionRevisions
+      .filter((r) => selectionIds.has(String(r.selection_record_id)))
+      .map((r) => ({
+        id: replicatedId(spaceId, 'project_lens_profile_revision', String(r.record_id)),
+        spaceId,
+        selectionId: replicatedId(spaceId, 'project_lens_profile', String(r.selection_record_id)),
+        priorProfileName: r.prior_profile_name == null ? null : String(r.prior_profile_name),
+        priorSelectedVersion:
+          r.prior_selected_version == null ? null : Number(r.prior_selected_version),
+        reason: String(r.reason),
+        sessionId: r.session_id == null ? null : String(r.session_id),
+        at: String(r.at),
+      })),
+  }
+}
+
+function lensPlan(
+  local: Database,
+  routed: Map<string, Set<string>>,
+): Map<string, RecordLensImportInput> {
+  const rows = lensPlanRows(local)
+  const now = iso()
   const plans = new Map<string, RecordLensImportInput>()
   for (const [spaceId, projectIds] of routed) {
-    const inSpace = selections.filter((row) => projectIds.has(String(row.project_record_id)))
-    const selectionIds = new Set(inSpace.map((row) => String(row.record_id)))
-    plans.set(spaceId, {
-      dryRun: false,
-      lens: lenses.map((r) => ({
-        id: replicatedId(spaceId, 'lens', String(r.record_id)),
-        spaceId,
-        key: String(r.id),
-        title: String(r.title),
-        question: String(r.question),
-        excludes: String(r.excludes),
-        slots: String(r.slots),
-        version: Number(r.version),
-        enabled: Boolean(r.enabled),
-        requiresExecution: Boolean(r.requires_execution),
-        updatedAt: now,
-      })),
-      lens_revision: revisions.map((r) => ({
-        id: replicatedId(spaceId, 'lens_revision', String(r.record_id)),
-        spaceId,
-        lensId: replicatedId(spaceId, 'lens', String(r.lens_record_id)),
-        version: Number(r.version),
-        priorBody: String(r.prior_body),
-        reason: String(r.reason),
-        sessionId: r.session_id == null ? null : String(r.session_id),
-        at: String(r.at),
-      })),
-      lens_profile: profiles.map((r) => ({
-        id: replicatedId(spaceId, 'lens_profile', String(r.record_id)),
-        spaceId,
-        lensId: replicatedId(spaceId, 'lens', String(r.lens_record_id)),
-        axis: r.axis as 'framework' | 'architecture',
-        name: String(r.name),
-        version: Number(r.version),
-        body: String(r.body),
-        enabled: Boolean(r.enabled),
-        updatedAt: now,
-      })),
-      lens_profile_revision: profileRevisions.map((r) => ({
-        id: replicatedId(spaceId, 'lens_profile_revision', String(r.record_id)),
-        spaceId,
-        profileId: replicatedId(spaceId, 'lens_profile', String(r.profile_record_id)),
-        version: Number(r.version),
-        priorBody: String(r.prior_body),
-        reason: String(r.reason),
-        sessionId: r.session_id == null ? null : String(r.session_id),
-        at: String(r.at),
-      })),
-      project_lens_profile: inSpace.map((r) => ({
-        id: replicatedId(spaceId, 'project_lens_profile', String(r.record_id)),
-        spaceId,
-        projectId: String(r.project_record_id),
-        lensId:
-          r.lens_record_id == null ? null : replicatedId(spaceId, 'lens', String(r.lens_record_id)),
-        axis: r.axis as 'framework' | 'architecture',
-        profileName: String(r.profile_name),
-        selectedVersion: r.selected_version == null ? null : Number(r.selected_version),
-        selectionVersion: Number(r.selection_version),
-        updatedAt: now,
-      })),
-      project_lens_profile_revision: selectionRevisions
-        .filter((r) => selectionIds.has(String(r.selection_record_id)))
-        .map((r) => ({
-          id: replicatedId(spaceId, 'project_lens_profile_revision', String(r.record_id)),
-          spaceId,
-          selectionId: replicatedId(spaceId, 'project_lens_profile', String(r.selection_record_id)),
-          priorProfileName: r.prior_profile_name == null ? null : String(r.prior_profile_name),
-          priorSelectedVersion:
-            r.prior_selected_version == null ? null : Number(r.prior_selected_version),
-          reason: String(r.reason),
-          sessionId: r.session_id == null ? null : String(r.session_id),
-          at: String(r.at),
-        })),
-    })
+    plans.set(spaceId, lensSpacePlan(spaceId, projectIds, rows, now))
   }
   return plans
 }

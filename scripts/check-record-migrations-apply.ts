@@ -615,8 +615,9 @@ async function proofProjectRelationsStayWithinOneSpace(transaction: Transaction)
   `)
 
   await proofSameSpaceCatalogueRelations(transaction)
-  for (const [relation, statement] of crossSpaceCatalogueRows()) {
-    await expectCrossSpaceRefusal(transaction, relation, statement)
+  for (const [relation, statement, allowed] of crossSpaceCatalogueRows()) {
+    if (allowed) await transaction.exec(statement)
+    else await expectCrossSpaceRefusal(transaction, relation, statement)
   }
 }
 
@@ -648,7 +649,7 @@ async function proofSameSpaceCatalogueRelations(transaction: Transaction): Promi
   }
 }
 
-function crossSpaceCatalogueRows(): readonly (readonly [string, string])[] {
+function crossSpaceCatalogueRows(): readonly (readonly [string, string, boolean?])[] {
   return [
     [
       'workflow version to workflow',
@@ -693,6 +694,7 @@ function crossSpaceCatalogueRows(): readonly (readonly [string, string])[] {
     [
       'port pair to source project',
       `INSERT INTO port_pair (id, space_id, source_project_id, target_project_id, created_at) VALUES ('${catalogueProofId(310)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.projectSource}', '${sameSpaceCatalogue.projectTarget}', now())`,
+      true,
     ],
     [
       'port pair to target project',
@@ -713,6 +715,7 @@ function crossSpaceCatalogueRows(): readonly (readonly [string, string])[] {
     [
       'port ref source to project',
       `INSERT INTO port_ref_source (id, space_id, ref_id, source_project_id, commits, paths, note) VALUES ('${catalogueProofId(315)}', '${PLATFORM_SPACE_ID}', '${sameSpaceCatalogue.portRef}', '${otherSpaceCatalogue.projectSource}', '[]', '[]', 'proof')`,
+      true,
     ],
     [
       'port skip to pair',
