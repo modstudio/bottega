@@ -8,6 +8,7 @@ import { upsertProject } from '../project/projects.ts'
 import { rememberProjectSpace } from '../project-space.ts'
 import {
   chooseLensProfile,
+  hostedLensComplete,
   listLenses,
   resolveLens,
   selectProjectProfile,
@@ -252,8 +253,50 @@ describe('lens catalogue', () => {
       )
       .run(newRecordId(), space)
     rememberProjectSpace(db(), 'hosted', space)
+    expect(resolveLens('correctness', 'hosted')!.question).not.toBe('Hosted question?')
+    const local = db()
+      .query(
+        "SELECT lens_id,axis,name,version,body,enabled FROM lens_profile WHERE lens_id='correctness' AND enabled=1 AND space_id IS NULL",
+      )
+      .all() as {
+      lens_id: string
+      axis: string
+      name: string
+      version: number
+      body: string
+      enabled: number
+    }[]
+    for (const row of local)
+      db()
+        .query(
+          'INSERT INTO lens_profile (lens_id,axis,name,version,body,enabled,record_id,space_id) VALUES (?,?,?,?,?,?,?,?)',
+        )
+        .run(
+          row.lens_id,
+          row.axis,
+          row.name,
+          row.version,
+          row.body,
+          row.enabled,
+          newRecordId(),
+          space,
+        )
     expect(resolveLens('correctness', 'hosted')!.question).toBe('Hosted question?')
     expect(resolveLens('correctness', null)!.question).not.toBe('Hosted question?')
+  })
+
+  test('a hosted lens is complete only when it holds the local profiles and selections', () => {
+    const full = {
+      hostedCore: true,
+      localProfiles: 2,
+      hostedProfiles: 2,
+      localSelections: 1,
+      hostedSelections: 1,
+    }
+    expect(hostedLensComplete(full)).toBe(true)
+    expect(hostedLensComplete({ ...full, hostedCore: false })).toBe(false)
+    expect(hostedLensComplete({ ...full, hostedProfiles: 1 })).toBe(false)
+    expect(hostedLensComplete({ ...full, hostedSelections: 0 })).toBe(false)
   })
 
   test('unknown lenses remain free-form while disabled catalogue content refuses', async () => {

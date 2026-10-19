@@ -596,12 +596,50 @@ export async function selectProjectProfile(input: SelectProjectProfileInput) {
 const disabledLensRefusal = (id: string, what: string) =>
   `${what}\ninvariant: A disabled catalogue lens or selected profile never dispatches.\ncleared by: enable ${id} or select an enabled profile`
 
-/** A project's hosted space resolves a lens only once that space holds the lens; until then the local catalogue does. */
+/** Whether a hosted copy holds at least what the local copy holds for one lens and project. */
+export function hostedLensComplete(counts: {
+  hostedCore: boolean
+  localProfiles: number
+  hostedProfiles: number
+  localSelections: number
+  hostedSelections: number
+}): boolean {
+  return (
+    counts.hostedCore &&
+    counts.hostedProfiles >= counts.localProfiles &&
+    counts.hostedSelections >= counts.localSelections
+  )
+}
+
+/** A project's hosted space resolves a lens only once it holds that lens's profiles and the project's selections; until then the local catalogue does. */
 function resolutionSpace(id: string, projectName: string | null, d: Database): string | null {
   const hosted = effectiveProjectSpace(d, projectName)
   if (hosted === null) return null
-  const held = d.query('SELECT 1 FROM lens WHERE id=? AND space_id=?').get(id, hosted)
-  return held ? hosted : null
+  const projectRecordId = projectName ? (projectByName(projectName, d)?.recordId ?? null) : null
+  const profiles = (space: string | null) =>
+    (
+      d
+        .query(
+          'SELECT count(*) AS n FROM lens_profile WHERE lens_id=? AND enabled=1 AND space_id IS ?',
+        )
+        .get(id, space) as { n: number }
+    ).n
+  const selections = (space: string | null) =>
+    (
+      d
+        .query(
+          'SELECT count(*) AS n FROM project_lens_profile WHERE project_record_id=? AND (lens_id=? OR lens_id IS NULL) AND space_id IS ?',
+        )
+        .get(projectRecordId, id, space) as { n: number }
+    ).n
+  const complete = hostedLensComplete({
+    hostedCore: Boolean(d.query('SELECT 1 FROM lens WHERE id=? AND space_id=?').get(id, hosted)),
+    localProfiles: profiles(null),
+    hostedProfiles: profiles(hosted),
+    localSelections: selections(null),
+    hostedSelections: selections(hosted),
+  })
+  return complete ? hosted : null
 }
 
 export function resolveLens(id: string, projectName: string | null, d: Database = db()) {
