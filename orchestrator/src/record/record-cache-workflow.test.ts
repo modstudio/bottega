@@ -198,25 +198,13 @@ test('the same workflow slug resolves through each project space without consumi
 })
 
 const catalogueKinds = [
-  {
-    kind: 'workflow',
-    identityTable: 'workflow',
-    versionTable: 'workflow_version',
-    eventTable: 'workflow_event',
-    slug: 'fix-defect',
-  },
-  {
-    kind: 'step catalogue',
-    identityTable: 'step_catalogue',
-    versionTable: 'step_catalogue_version',
-    eventTable: 'step_catalogue_event',
-    slug: 'shared',
-  },
+  ['workflow', 'workflow', 'workflow_version', 'workflow_event', 'fix-defect'],
+  ['step catalogue', 'step_catalogue', 'step_catalogue_version', 'step_catalogue_event', 'shared'],
 ] as const
 
 test.each(catalogueKinds)(
-  'pull with persisted cursors replaces a cached $kind seed version and its events',
-  async ({ identityTable, versionTable, eventTable, slug }) => {
+  'pull with persisted cursors replaces a cached %s seed version and its events',
+  async (_kind, identityTable, versionTable, eventTable, slug) => {
     const local = db(),
       space = newRecordId(),
       hostedIdentity = identity(space, slug),
@@ -380,9 +368,9 @@ test('generation migration resets old-client cursors so replacement history repl
     expect(
       local.query('SELECT record_id,n FROM workflow_version WHERE space_id=?').all(space),
     ).toEqual([{ record_id: replacement.id, n: 2 }])
-    expect(local.query('SELECT record_id FROM workflow_event WHERE space_id=?').all(space)).toEqual([
-      { record_id: importedEvent.id },
-    ])
+    expect(local.query('SELECT record_id FROM workflow_event WHERE space_id=?').all(space)).toEqual(
+      [{ record_id: importedEvent.id }],
+    )
   } finally {
     local.close()
   }
