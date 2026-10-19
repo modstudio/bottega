@@ -7,8 +7,8 @@ import { dependencyCruiserConfig, writeTimeArchitectureRules } from './architect
 import { runArchitectureCruise } from './architecture-cruise.ts'
 import {
   hubDataPackageName,
-  hubWebDocsModeLiteralLines,
-  hubWebDocsModeLiteralRuleName,
+  hubViewsDocsModeLiteralLines,
+  hubViewsDocsModeLiteralRuleName,
 } from './architecture-hub-data.ts'
 import {
   hubUiFolderLayerRuleName,
@@ -34,14 +34,14 @@ if (!target || !original || deadlineArgument === -1 || !Number.isFinite(deadline
 }
 
 if (
-  /^hub\/web\/src\/docs\/.*\.[cm]?tsx?$/.test(original) &&
+  /^hub\/views\/src\/docs\/.*\.[cm]?tsx?$/.test(original) &&
   !/\.(?:test|spec)\.[cm]?tsx?$/.test(original) &&
-  hubWebDocsModeLiteralLines(readFileSync(target, 'utf8')).length
+  hubViewsDocsModeLiteralLines(readFileSync(target, 'utf8')).length
 ) {
   console.log(
     JSON.stringify({
       status: 'refused',
-      findings: [{ rule: hubWebDocsModeLiteralRuleName, dependency: hubDataPackageName }],
+      findings: [{ rule: hubViewsDocsModeLiteralRuleName, dependency: hubDataPackageName }],
     }),
   )
   process.exit(0)

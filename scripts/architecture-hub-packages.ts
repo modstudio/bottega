@@ -17,7 +17,7 @@ const TYPESCRIPT_TEST_PATH = '\\.(?:test|spec)\\.[cm]?tsx?$'
 
 export const hubWorkspaceDependencies: Record<string, readonly string[]> = {
   [HUB_UI_PACKAGE]: [],
-  [HUB_VIEWS_PACKAGE]: [HUB_UI_PACKAGE],
+  [HUB_VIEWS_PACKAGE]: [HUB_UI_PACKAGE, HUB_UTIL_PACKAGE],
   [HUB_DATA_PACKAGE]: [],
   [HUB_UTIL_PACKAGE]: [],
   [HUB_WEB_PACKAGE]: [HUB_UI_PACKAGE, HUB_VIEWS_PACKAGE, HUB_DATA_PACKAGE, HUB_UTIL_PACKAGE],

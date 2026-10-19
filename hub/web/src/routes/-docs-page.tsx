@@ -22,12 +22,9 @@ import { hostedOrigin, isHostedMode } from '@bottega/hub-data/hub-mode'
 import { Button } from '@bottega/hub-ui/button'
 import { toast } from '@bottega/hub-ui/toast'
 import { recordSpaces } from '@bottega/hub-util/record-spaces'
-import { Link, useBlocker, useLocation, useMatch, useNavigate } from '@tanstack/react-router'
-import { Plus } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { editorChrome, useArticleEditor } from '../docs/article-editor.tsx'
-import { CreateDocDialog } from '../docs/create-dialog.tsx'
-import { type DocFieldChange, fieldChangeReason } from '../docs/doc-field-changes.ts'
+import { editorChrome, useArticleEditor } from '@bottega/hub-views/docs/article-editor'
+import { CreateDocDialog } from '@bottega/hub-views/docs/create-dialog'
+import { type DocFieldChange, fieldChangeReason } from '@bottega/hub-views/docs/doc-field-changes'
 import {
   chooserProject,
   EMPTY_FILTERS,
@@ -35,25 +32,32 @@ import {
   projectSubjects,
   searchSubject,
   selectedAudience,
-} from '../docs/filters.ts'
-import { DocsHome } from '../docs/home.tsx'
-import { mapDoc, mapSearchMatch, mapTreeItem } from '../docs/map.ts'
+} from '@bottega/hub-views/docs/filters'
+import { DocsHome } from '@bottega/hub-views/docs/home'
 import {
   docsSearchIncludesWorking,
   docsVisibleByStatus,
   resolveDocsReplacement,
-} from '../docs/model.ts'
-import { revisionComparison } from '../docs/revision-diff.ts'
-import { type RevisionMode, RevisionViewer, revisionViewError } from '../docs/revision-viewer.tsx'
-import { isScope } from '../docs/scope.ts'
-import { orderedIdsAfterDrag, siblingKey } from '../docs/tree.ts'
-import type { DocsDoc, DocsTreeItem } from '../docs/types.ts'
-import { DocsView } from '../docs/view.tsx'
+} from '@bottega/hub-views/docs/model'
+import { revisionComparison } from '@bottega/hub-views/docs/revision-diff'
+import {
+  type RevisionMode,
+  RevisionViewer,
+  revisionViewError,
+} from '@bottega/hub-views/docs/revision-viewer'
+import { isScope } from '@bottega/hub-views/docs/scope'
+import { orderedIdsAfterDrag, siblingKey } from '@bottega/hub-views/docs/tree'
+import type { DocsDoc, DocsTreeItem } from '@bottega/hub-views/docs/types'
+import { DocsView } from '@bottega/hub-views/docs/view'
+import { Link, useBlocker, useLocation, useMatch, useNavigate } from '@tanstack/react-router'
+import { Plus } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { DocsLocation } from './-docs-location.ts'
 
 function enterDocEdit(
   navigate: ReturnType<typeof useNavigate>,
   selected: DocsTreeItem | null,
-  locationFor: (item: DocsTreeItem) => ReturnType<ReturnType<typeof useDocsMode>['locationFor']>,
+  locationFor: (item: DocsTreeItem) => DocsLocation,
 ) {
   if (!selected) return
   const location = locationFor(selected)
@@ -79,7 +83,7 @@ const errorMessage = (error: unknown) => (error instanceof Error ? error.message
 function useDocsRouteNavigation(
   navigate: ReturnType<typeof useNavigate>,
   selected: DocsTreeItem | null,
-  locationFor: (item: DocsTreeItem) => ReturnType<ReturnType<typeof useDocsMode>['locationFor']>,
+  locationFor: (item: DocsTreeItem) => DocsLocation,
 ) {
   const open = useCallback(
     (item: DocsTreeItem, replace = false) => {
@@ -178,13 +182,7 @@ function useDocsSelection(
 ) {
   const [project, setProject] = useState<string | 'all'>('all')
   const [emptyChooserSet, setEmptyChooserSet] = useState(false)
-  const catalog = useReorderableDocsTree(
-    source,
-    memberships,
-    mapTreeItem,
-    siblingKey,
-    orderedIdsAfterDrag,
-  )
+  const catalog = useReorderableDocsTree(source, memberships, siblingKey, orderedIdsAfterDrag)
   useEffect(() => {
     if (catalog.reorderError)
       toast.error(
@@ -335,7 +333,7 @@ function useDocsPageModel() {
     mode.includeDrafts(showDrafts),
   )
   const includeWorking = docsSearchIncludesWorking(navigationItems, project, showWorking)
-  const reading = useDocsDocument(source, selected, selectedAudience(filters), mapDoc, isScope)
+  const reading = useDocsDocument(source, selected, selectedAudience(filters), isScope)
   const revisionId = mode.selectedRevision(search?.revision)
   const { revisionMode, setRevisionMode, revision } = useDocsRevision(
     source,
@@ -354,7 +352,6 @@ function useDocsPageModel() {
     searchSubject(project, navigationItems),
     includeDrafts,
     includeWorking,
-    mapSearchMatch,
   )
 
   const { open, openFirst, locationFor, openRevision, backToCurrent, enterEdit } =
@@ -465,9 +462,8 @@ function DocsWorkspaceView({ model }: { model: DocsPageModel }) {
       onShowWorking={model.setShowWorking}
       doc={model.reading.document}
       replacement={model.replacement}
-      locationFor={model.locationFor}
-      renderLink={(location, children, className) => (
-        <Link {...location} className={className}>
+      renderLink={(item, children, className) => (
+        <Link {...model.locationFor(item)} className={className}>
           {children}
         </Link>
       )}

@@ -8,8 +8,8 @@ import { CONCERNS } from '../shared/brand.ts'
 import { architectureRules, modules } from './architecture.ts'
 import { ARCHITECTURE_CRUISE_ROOTS, runArchitectureCruise } from './architecture-cruise.ts'
 import {
-  hubWebDocsModeLiteralLines,
-  hubWebDocsModeLiteralRuleName,
+  hubViewsDocsModeLiteralLines,
+  hubViewsDocsModeLiteralRuleName,
 } from './architecture-hub-data.ts'
 import { importSpecifiers } from './import-scanner.ts'
 
@@ -24,13 +24,13 @@ function isProductionTypeScript(path: string) {
 }
 
 for (const relative of new Glob('**/*.{ts,tsx}').scanSync({
-  cwd: join(ROOT, 'hub/web/src/docs'),
+  cwd: join(ROOT, 'hub/views/src/docs'),
 })) {
-  const file = `hub/web/src/docs/${relative}`
+  const file = `hub/views/src/docs/${relative}`
   if (!isProductionTypeScript(file)) continue
-  for (const line of hubWebDocsModeLiteralLines(readFileSync(join(ROOT, file), 'utf8'))) {
+  for (const line of hubViewsDocsModeLiteralLines(readFileSync(join(ROOT, file), 'utf8'))) {
     violations.push(
-      `${file}:${line} (${hubWebDocsModeLiteralRuleName}): docs components receive mode-neutral props`,
+      `${file}:${line} (${hubViewsDocsModeLiteralRuleName}): docs components receive mode-neutral props`,
     )
   }
 }

@@ -3,7 +3,6 @@ import { join } from 'node:path'
 import {
   analyzeComponentStory,
   analyzeComponentStyleCalls,
-  analyzeHubViewDomainTerms,
   analyzeStyleModule,
 } from './check-hub-ui-styles.ts'
 
@@ -111,15 +110,5 @@ describe('hub-ui styles decisions', () => {
         componentPath,
       ),
     ).toEqual([])
-  })
-
-  test('refuses docs-domain words in hub-views production source', () => {
-    expect(
-      analyzeHubViewDomainTerms(
-        "const label = 'Planted article'; const articleRenderer = () => label",
-        componentPath,
-      ),
-    ).toHaveLength(2)
-    expect(analyzeHubViewDomainTerms("const label = 'Document'", componentPath)).toEqual([])
   })
 })

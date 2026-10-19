@@ -177,6 +177,7 @@ export function uiArchitectureRules(
 }
 
 const hubViewFolders = [
+  'docs',
   'markdown',
   'document-surface',
   'key-line',
