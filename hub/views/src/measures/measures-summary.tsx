@@ -24,13 +24,21 @@ type CostMeasure = {
   unknownShare?: { vendorCostUsd: number; vendorTokens: number }
 }
 
-type MeasuresSummaryValue = {
+export type MeasuresSummaryValue = {
   hoursRunning: { unionMs: number }
   agentHours: AgentHoursMeasure
   sessionTime: SessionTimeMeasure
   cost: CostMeasure
   shipped?: { count: number }
   cycleTime?: { medianMs: number; n: number }
+}
+
+type CoreMeasure = {
+  key: 'hours-running' | 'agent-hours' | 'session-time' | 'cost'
+  fullLabel: string
+  shortLabel: string
+  figure: string
+  detail: ReactNode
 }
 
 function Unknown({ children, mostly }: { children: ReactNode; mostly: boolean }) {
@@ -83,6 +91,39 @@ export function CostUnknown({ measure }: { measure: CostMeasure }) {
   )
 }
 
+export function coreMeasures(measures: MeasuresSummaryValue): CoreMeasure[] {
+  return [
+    {
+      key: 'hours-running',
+      fullLabel: 'How long any recorded work was in motion',
+      shortLabel: 'in motion',
+      figure: hour(measures.hoursRunning.unionMs),
+      detail: 'Work was running; this figure is not additive.',
+    },
+    {
+      key: 'agent-hours',
+      fullLabel: 'How much agent work was started',
+      shortLabel: 'agent work',
+      figure: hour(measures.agentHours.sumMs),
+      detail: <AgentUnknown measure={measures.agentHours} />,
+    },
+    {
+      key: 'session-time',
+      fullLabel: 'How long people were in session',
+      shortLabel: 'in session',
+      figure: hour(measures.sessionTime.unionThenSumMs),
+      detail: <SessionDetail measure={measures.sessionTime} />,
+    },
+    {
+      key: 'cost',
+      fullLabel: 'What the started agent work cost',
+      shortLabel: 'agent cost',
+      figure: money(measures.cost.vendorCostUsd),
+      detail: <CostUnknown measure={measures.cost} />,
+    },
+  ]
+}
+
 export function MeasuresSummary({
   measures,
   showShipped = true,
@@ -92,29 +133,15 @@ export function MeasuresSummary({
 }) {
   return (
     <StatRow>
-      <StatTile
-        label="How long any recorded work was in motion"
-        figure={hour(measures.hoursRunning.unionMs)}
-        hint="Work was running; this figure is not additive."
-      />
-      <StatTile
-        label="How much agent work was started"
-        figure={hour(measures.agentHours.sumMs)}
-        hint={<AgentUnknown measure={measures.agentHours} />}
-        wrapHint
-      />
-      <StatTile
-        label="How long people were in session"
-        figure={hour(measures.sessionTime.unionThenSumMs)}
-        hint={<SessionDetail measure={measures.sessionTime} />}
-        wrapHint
-      />
-      <StatTile
-        label="What the started agent work cost"
-        figure={money(measures.cost.vendorCostUsd)}
-        hint={<CostUnknown measure={measures.cost} />}
-        wrapHint
-      />
+      {coreMeasures(measures).map((measure, index) => (
+        <StatTile
+          key={measure.key}
+          label={measure.fullLabel}
+          figure={measure.figure}
+          hint={measure.detail}
+          wrapHint={index > 0}
+        />
+      ))}
       {showShipped && measures.shipped ? (
         <StatTile
           label="Tasks done"
@@ -130,60 +157,6 @@ export function MeasuresSummary({
         />
       ) : null}
     </StatRow>
-  )
-}
-
-/**
- * A task's measures as one compact line of figures under its key line; each figure's meaning and
- * bounds open from its (i). A task with no recorded time says so in place of zero figures.
- */
-export function TaskMeasures({
-  measures,
-  hasRecordedTime,
-}: {
-  measures: MeasuresSummaryValue
-  hasRecordedTime: boolean
-}) {
-  if (!hasRecordedTime) {
-    return <p className="mt-3 text-sm text-text-muted">No time was recorded for this task.</p>
-  }
-  return (
-    <div className="mt-4">
-      <StatRow compact>
-        <StatTile
-          label="in motion"
-          figure={hour(measures.hoursRunning.unionMs)}
-          about="How long any recorded work was in motion. Work was running; this figure is not additive."
-        />
-        <StatTile
-          label="agent work"
-          figure={hour(measures.agentHours.sumMs)}
-          about={
-            <>
-              How much agent work was started. <AgentUnknown measure={measures.agentHours} />
-            </>
-          }
-        />
-        <StatTile
-          label="in session"
-          figure={hour(measures.sessionTime.unionThenSumMs)}
-          about={
-            <>
-              How long people were in session. <SessionDetail measure={measures.sessionTime} />
-            </>
-          }
-        />
-        <StatTile
-          label="agent cost"
-          figure={money(measures.cost.vendorCostUsd)}
-          about={
-            <>
-              What the started agent work cost. <CostUnknown measure={measures.cost} />
-            </>
-          }
-        />
-      </StatRow>
-    </div>
   )
 }
 

@@ -10,14 +10,14 @@ import {
   TableRow,
 } from '@bottega/hub-ui/table'
 import { ToolbarBand } from '@bottega/hub-ui/toolbar-band'
-import { WindowControl } from '@/components/design-system'
 import {
   AgentUnknown,
   CostUnknown,
   MeasuresSummary,
   measureFormat,
   SessionDetail,
-} from '@/components/measure-display'
+} from '@bottega/hub-views/measures/measures-summary'
+import { WindowControl } from '@/components/design-system'
 
 type ScopeKind = 'space' | 'project' | 'person'
 type Sampled = { sample: { intervalCount: number } }

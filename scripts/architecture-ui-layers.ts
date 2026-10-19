@@ -188,6 +188,7 @@ const hubViewFolders = [
   'status-look',
   'task-history',
   'task-page',
+  'measures',
 ]
 
 const hubViewsFolderLayerRuleName = 'hub-views-folder-has-a-layer'
