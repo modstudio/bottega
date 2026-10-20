@@ -23,6 +23,8 @@ modes:
       - rebase-trunk
       - sequence: review
       - sequence: sync
+        omit:
+          - docs-gather
       - run-gate
       - acceptance
       - sequence: land
@@ -33,6 +35,8 @@ modes:
       - rebase-trunk
       - sequence: review
       - sequence: sync
+        omit:
+          - docs-gather
       - run-gate
       - acceptance
       - sequence: land
