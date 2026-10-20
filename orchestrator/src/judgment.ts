@@ -10,7 +10,12 @@ import { UNJUDGED_EXCLUSION_REASON } from './evidence/unjudged-expiry.ts'
 import { JOBS, job } from './jobs/jobs.ts'
 import { machineId } from './record/machine-identity.ts'
 import { cleanReviewEvidence, parseReviewOutput } from './review/review.ts'
-import { enqueueReview } from './review/review-outbox.ts'
+import {
+  duplicateFindingRefusal,
+  type ParsedDuplicateFinding,
+  parseDuplicateFinding,
+} from './review/review-duplicate-link.ts'
+import { enqueueReview, enqueueReviewFinding } from './review/review-outbox.ts'
 import {
   assertRunReviewFindingIntegrity,
   completeReview,
@@ -366,9 +371,122 @@ function storedReviewFindings(reviewRecordId: string) {
     .all(reviewRecordId) as { ordinal: number; disposition: string | null }[]
 }
 
+function findingForRunReviewOrdinal(
+  runId: string,
+  ordinal: number,
+): {
+  record_id: string
+  review_record_id: string
+  duplicate_of_finding_record_id: string | null
+} | null {
+  return db()
+    .query<
+      {
+        record_id: string
+        review_record_id: string
+        duplicate_of_finding_record_id: string | null
+      },
+      [number, string]
+    >(
+      `SELECT finding.record_id,finding.review_record_id,finding.duplicate_of_finding_record_id
+         FROM review_lens scored_lens
+         JOIN review_finding finding
+           ON finding.review_record_id=scored_lens.review_record_id AND finding.ordinal=?
+         JOIN review_lens finding_lens ON finding_lens.record_id=finding.review_lens_record_id
+        WHERE scored_lens.run_record_id=? AND finding_lens.run_record_id=scored_lens.run_record_id`,
+    )
+    .get(ordinal, runId)
+}
+
+function recordDuplicateFindingLink(currentRunId: string, link: ParsedDuplicateFinding): void {
+  const current = findingForRunReviewOrdinal(currentRunId, link.ordinal)
+  const other = findingForRunReviewOrdinal(link.otherRunId, link.otherOrdinal)
+  const runs = db()
+    .query<{ record_id: string; job: string; head_commit: string | null }, [string, string]>(
+      'SELECT record_id,job,head_commit FROM run WHERE record_id IN (?,?)',
+    )
+    .all(currentRunId, link.otherRunId)
+  const currentRun = runs.find((run) => run.record_id === currentRunId)
+  const otherRun = runs.find((run) => run.record_id === link.otherRunId)
+  const refusal = duplicateFindingRefusal({
+    currentRunId,
+    currentFindingId: current?.record_id ?? null,
+    currentReviewId: current?.review_record_id ?? null,
+    currentTip: currentRun?.head_commit ?? null,
+    otherRunId: link.otherRunId,
+    otherFindingsJob: Boolean(otherRun && JOBS[otherRun.job]?.findings),
+    otherFindingId: other?.record_id ?? null,
+    otherReviewId: other?.review_record_id ?? null,
+    otherTip: otherRun?.head_commit ?? null,
+    currentDuplicateOfFindingId: current?.duplicate_of_finding_record_id ?? null,
+  })
+  if (refusal) {
+    throw new Error(
+      `refused --duplicate ${link.ordinal}=${link.otherRunId}#${link.otherOrdinal}: ${refusal}`,
+    )
+  }
+  db()
+    .query('UPDATE review_finding SET duplicate_of_finding_record_id=? WHERE record_id=?')
+    .run(other!.record_id, current!.record_id)
+  enqueueReviewFinding(db(), current!.record_id)
+}
+
 function completeReviewWithoutFindings(reviewRecordId: string, scoredAt: string): void {
   db().query('UPDATE review SET completed_at=? WHERE record_id=?').run(scoredAt, reviewRecordId)
   enqueueReview(db(), reviewRecordId)
+}
+
+type ParsedFindingTriage = {
+  ordinal: number
+  disposition: Disposition
+  category: string | undefined
+  severity: string | undefined
+}
+
+function parseFindingFlags(flags: JudgmentFlags): ParsedFindingTriage[] {
+  const findings = flags.values('finding').map((value) => {
+    const matched = value.match(/^(\d+)=(accepted|modified|rejected|skipped):(.+)$/)
+    if (!matched) {
+      throw new Error(
+        `bad --finding ${JSON.stringify(value)}; use N=accepted:high or N=rejected:below-bar`,
+      )
+    }
+    const ordinal = Number(matched[1])
+    const disposition = matched[2] as Disposition
+    const detail = matched[3]!
+    if (disposition !== 'rejected' && !REVIEW_SEVERITY.includes(detail as ReviewSeverity)) {
+      throw new Error(`finding ${ordinal} severity must be: ${REVIEW_SEVERITY.join(' | ')}`)
+    }
+    return {
+      ordinal,
+      disposition,
+      category: disposition === 'rejected' ? detail : undefined,
+      severity: disposition === 'rejected' ? undefined : detail,
+    }
+  })
+  if (new Set(findings.map((finding) => finding.ordinal)).size !== findings.length) {
+    throw new Error('--finding names the same finding more than once')
+  }
+  return findings
+}
+
+function finishReview(
+  reviewRecordId: string,
+  runId: string,
+  findings: ParsedFindingTriage[],
+  duplicates: ParsedDuplicateFinding[],
+): void {
+  for (const finding of findings) {
+    triageFinding(
+      reviewRecordId,
+      finding.ordinal,
+      finding.disposition,
+      finding.category,
+      finding.severity,
+    )
+  }
+  for (const link of duplicates) recordDuplicateFindingLink(runId, link)
+  completeReview(reviewRecordId)
 }
 
 export async function judgeRun(
@@ -462,28 +580,10 @@ export async function judgeRun(
   const gradeValues = Object.fromEntries(
     gradeNames.map((name) => [name, suppliedGrades[name] ?? storedGrades[name]]),
   ) as Record<(typeof gradeNames)[number], string | undefined>
-  const parsedFindings = flags.values('finding').map((value) => {
-    const matched = value.match(/^(\d+)=(accepted|modified|rejected|skipped):(.+)$/)
-    if (!matched) {
-      throw new Error(
-        `bad --finding ${JSON.stringify(value)}; use N=accepted:high or N=rejected:below-bar`,
-      )
-    }
-    const ordinal = Number(matched[1])
-    const disposition = matched[2] as Disposition
-    const detail = matched[3]!
-    if (disposition !== 'rejected' && !REVIEW_SEVERITY.includes(detail as ReviewSeverity)) {
-      throw new Error(`finding ${ordinal} severity must be: ${REVIEW_SEVERITY.join(' | ')}`)
-    }
-    return {
-      ordinal,
-      disposition,
-      category: disposition === 'rejected' ? detail : undefined,
-      severity: disposition === 'rejected' ? undefined : detail,
-    }
-  })
-  if (new Set(parsedFindings.map((finding) => finding.ordinal)).size !== parsedFindings.length) {
-    throw new Error('--finding names the same finding more than once')
+  const parsedFindings = parseFindingFlags(flags)
+  const parsedDuplicates = flags.values('duplicate').map(parseDuplicateFinding)
+  if (new Set(parsedDuplicates.map((link) => link.ordinal)).size !== parsedDuplicates.length) {
+    throw new Error('--duplicate names the same finding more than once')
   }
   const partners = pairPartners(id, sessionId())
   const comparisonNames = ['better-than', 'worse-than', 'same-as'] as const
@@ -510,7 +610,10 @@ export async function judgeRun(
     }
     const unexpected = parsedFindings.find((finding) => !allowed.includes(finding.ordinal))
     if (unexpected) throw new Error(`review for run ${id} has no finding ${unexpected.ordinal}`)
-  } else if (parsedFindings.length || gradeNames.some((name) => suppliedGrades[name])) {
+  } else if (
+    [parsedFindings.length, parsedDuplicates.length].some(Boolean) ||
+    gradeNames.some((name) => suppliedGrades[name])
+  ) {
     throw new Error(`${row.job} does not take findings close-out flags`)
   }
   if (partners.length && !comparison) {
@@ -553,18 +656,7 @@ export async function judgeRun(
     if (reviewRecordId) {
       if (delivery === 'none') {
         completeReviewWithoutFindings(reviewRecordId, scoredAt)
-      } else {
-        for (const finding of parsedFindings) {
-          triageFinding(
-            reviewRecordId,
-            finding.ordinal,
-            finding.disposition,
-            finding.category,
-            finding.severity,
-          )
-        }
-        completeReview(reviewRecordId)
-      }
+      } else finishReview(reviewRecordId, id, parsedFindings, parsedDuplicates)
     }
     if (comparison === 'better-than')
       recordDuels(id, comparisonIds, sessionId(), scoredAt, flags.has('force'))

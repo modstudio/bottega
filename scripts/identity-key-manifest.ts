@@ -613,6 +613,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'review.record_id',
     'review.project_record_id',
     'review_finding.record_id',
+    'review_finding.duplicate_of_finding_record_id',
     'review_finding.review_record_id',
     'review_finding.review_lens_record_id',
     'review_finding_amendment.record_id',

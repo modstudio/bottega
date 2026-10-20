@@ -3,6 +3,7 @@
 
 import type { ApplicableReview } from '../review/review-applicability.ts'
 import type { TriageReviewRow } from '../review/review-group.ts'
+import { identifySecondOpinionRun } from '../review/review-second-opinion.ts'
 
 export type TriageReviewGroup = {
   reviews: readonly TriageReviewRow[]
@@ -81,16 +82,32 @@ function selectSecondOpinion(
   lens: string,
 ): SecondOpinionSelection {
   const opinions = reviews
-    .filter((review) => review.completedAt !== null)
     .flatMap((review) => review.lenses.map((opinion) => ({ opinion, review })))
-    .filter(({ opinion }) => opinion.graded && opinion.lens === lens)
     .sort((left, right) => left.opinion.recordId.localeCompare(right.opinion.recordId))
-  const first = opinions.find(({ opinion }) => opinion.model)
-  const second = first
-    ? opinions.find(({ opinion }) => opinion.model && opinion.model !== first.opinion.model)
-    : undefined
+  const creditedRuns = identifySecondOpinionRun(
+    opinions.flatMap(({ opinion, review }) =>
+      opinion.runId && opinion.lens
+        ? [
+            {
+              recordId: opinion.recordId,
+              runId: opinion.runId,
+              lens: opinion.lens,
+              model: opinion.model ?? null,
+              graded: opinion.graded,
+              completed: review.completedAt !== null,
+            },
+          ]
+        : [],
+    ),
+    lens,
+  )
+  const eligible = opinions.filter(
+    ({ opinion, review }) => review.completedAt !== null && opinion.graded && opinion.lens === lens,
+  )
+  const first = eligible.find(({ opinion }) => opinion.runId === creditedRuns?.firstRunId)
+  const second = eligible.find(({ opinion }) => opinion.runId === creditedRuns?.secondRunId)
   if (!first || !second) {
-    return { complete: false, lens, firstRunId: opinions[0]?.opinion.runId ?? null }
+    return { complete: false, lens, firstRunId: eligible[0]?.opinion.runId ?? null }
   }
   return {
     complete: true,

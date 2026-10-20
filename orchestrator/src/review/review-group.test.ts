@@ -136,7 +136,7 @@ test('a rebase credits the complete round from the same branch and never another
 
 test('a moved remote trunk is the shared base for review and admission despite stale local trunk', () => {
   const calls: string[] = []
-  const tier: ReviewTier = { tier: 1, risk: 1, size: 0, reasons: ['fixture'] }
+  const tier: ReviewTier = { tier: 1, risk: 1, size: 0, reasons: ['fixture'], riskBasis: null }
   const operations = {
     mergeBase: (_cwd: string, tip: string, trunk: string) => {
       calls.push(`${tip}:${trunk}`)

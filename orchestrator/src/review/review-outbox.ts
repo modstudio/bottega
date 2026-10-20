@@ -148,7 +148,8 @@ export function enqueueReviewFinding(
     .query<Record<string, unknown>, [string]>(
       `SELECT finding.record_id,finding.ordinal,finding.severity,finding.location,finding.evidence,
             finding.proposed_correction,finding.disposition,finding.rejection_category,
-            finding.triaged_severity,finding.triaged_at,review.record_id AS review_record_id,
+            finding.triaged_severity,finding.triaged_at,finding.duplicate_of_finding_record_id,
+            review.record_id AS review_record_id,
             project.name AS project_name, project.record_id AS project_record_id,
             lens.record_id AS review_lens_record_id
        FROM review_finding finding JOIN review ON review.record_id=finding.review_record_id
@@ -180,6 +181,7 @@ export function enqueueReviewFinding(
       rejectionCategory: row.rejection_category,
       triagedSeverity: row.triaged_severity,
       triagedAt: row.triaged_at,
+      duplicateOfFindingId: row.duplicate_of_finding_record_id,
       createdAt: at,
       updatedAt: at,
     },

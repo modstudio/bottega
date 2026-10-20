@@ -296,10 +296,17 @@ test('review tier reports stack and generic profile sources resolved for its pro
       settings: {
         trunk: 'main',
         review: {
-          lenses: [{ lens: 'correctness' }, { lens: 'craft' }],
-          secondOpinion: { lens: 'correctness' },
+          lenses: [{ lens: 'correctness', basis: 'yield evidence' }, { lens: 'craft' }],
+          secondOpinion: { lens: 'correctness', basis: 'escaped defect evidence' },
           risk: {
-            paths: [{ pattern: '^orchestrator/hooks/', tier: 3, reason: 'repository hooks' }],
+            paths: [
+              {
+                pattern: '^orchestrator/hooks/',
+                tier: 3,
+                reason: 'repository hooks',
+                basis: 'hook incident evidence',
+              },
+            ],
             unlisted: 2,
           },
         },
@@ -328,13 +335,21 @@ test('review tier reports stack and generic profile sources resolved for its pro
     await runReview(['review', 'tier', String(run.id)], output)
 
     expect(output).toContain('risk map project declaration')
-    expect(output).toContain('lens correctness  framework=stack')
+    expect(
+      output.some(
+        (line) => line.includes('risk 3:') && line.includes('basis: hook incident evidence'),
+      ),
+    ).toBeTrue()
+    expect(output).toContain('lens correctness  basis: yield evidence  framework=stack')
     expect(output).toContain('lens craft  framework=generic')
     expect(output).toContain(
-      'second opinion correctness: dispatch this lens a second time on a different model with --distinct-from <the first run of correctness on this tip>',
+      'second opinion correctness  basis: escaped defect evidence: dispatch this lens a second time on a different model with --distinct-from <the first run of correctness on this tip>',
     )
     expect(output).toContain('rounds 0/3')
     expect(output).toContain('current change would start a new round')
+    const json: string[] = []
+    await runReview(['review', 'tier', String(run.id), '--json'], json)
+    expect(JSON.parse(json[0]!).riskBasis).toBe('hook incident evidence')
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }

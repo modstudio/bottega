@@ -1,0 +1,1 @@
+ALTER TABLE "review_finding" ADD COLUMN "duplicate_of_finding_id" uuid;

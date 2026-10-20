@@ -8,6 +8,30 @@ export type ReviewBoundarySpec = {
 
 export const reviewModuleSpecs = [
   {
+    file: 'orchestrator/src/review/review-duplicate-link.ts',
+    allowed: [],
+  },
+  {
+    file: 'orchestrator/src/review/review-second-opinion.ts',
+    allowed: [],
+  },
+  {
+    file: 'orchestrator/src/review/review-yield.ts',
+    allowed: [
+      'bun:sqlite',
+      '../database/db.ts',
+      '../epic/epic.ts',
+      '../state/statistics.ts',
+      './review-applicability.ts',
+      './review-evidence-sql.ts',
+      './review-group.ts',
+      './review-second-opinion.ts',
+      './review-triage.ts',
+      './review-vocabulary.ts',
+    ],
+    typeOnlyAllowed: ['../project/project-injection.ts'],
+  },
+  {
     file: 'orchestrator/src/review/review-command-cwd.ts',
     allowed: ['../../../shared/brand.ts', 'node:fs', 'node:path'],
   },
@@ -43,6 +67,24 @@ export const reviewModuleSpecs = [
 ] as const
 
 export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
+  {
+    name: 'review-yield-boundary',
+    file: 'orchestrator/src/review/review-yield.ts',
+    allowed: [
+      'bun:sqlite',
+      '../database/db.ts',
+      '../epic/epic.ts',
+      '../state/statistics.ts',
+      './review-applicability.ts',
+      './review-evidence-sql.ts',
+      './review-group.ts',
+      './review-second-opinion.ts',
+      './review-triage.ts',
+      './review-vocabulary.ts',
+    ],
+    typeOnlyAllowed: ['../project/project-injection.ts'],
+    reason: 'Keep review yield independent of pull-request admission and other downstream policy.',
+  },
   {
     name: 'review-identifier-boundary',
     file: 'orchestrator/src/review/review-identifier.ts',
