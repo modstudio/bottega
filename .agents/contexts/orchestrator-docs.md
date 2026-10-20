@@ -38,7 +38,20 @@ A resume brief is a doc at `scope = resume`, `subject = <project>`, `slug = <epi
 
 **Writing.** At a task or epic boundary, draft the brief **in the conversation as markdown**, and write it only after the operator approves. Never draft-then-store-then-show; the approval must precede the write. Writes go through `set_doc`.
 
-**Brief contents.** Epic and task just finished; decisions made and the reasoning that produced them; open `orch` job ids and what each was asked to build; files and paths touched; and an explicit `NEXT ACTION` line.
+**Brief contents.** A brief carries only what the next session needs to take over the work. Keep a line only if the next session would act differently without it:
+- the epic and where it stands now;
+- the rulings still in force for the remaining work, each with the objection it overcame. A ruling that binds beyond the epic belongs in canon, not in a brief;
+- work in flight or held: open `orch` job ids and what each was asked to build, an unanswered question, an open quiet window;
+- pointers to the tasks, task documents and paths the next step uses;
+- an explicit `NEXT ACTION` line.
+
+Leave out what is recorded elsewhere or does not change the next step:
+- landed work and how it was reached, which git, the pull request and the task record already hold;
+- closed and scored runs and review rounds;
+- lessons and gotchas, which are filed as a note or proposed as canon; name one only if it will hit the next step;
+- specifications and designs restated in full; point to their task document instead.
+
+**Handoff material.** A brief names no scratch location: no session scratchpad, temporary directory or run artifact. A scratchpad is private to its session, and run output ages out after `KEEP_RUN_FILES_DAYS`. Before the brief is written, anything the next session needs beyond it goes on the epic's task as a task document (`bottega task doc new`). That includes a specification to build from, a survey or run result to build on, measurements still to take, and landing steps. The brief names that document by its task-document reference.
 
 **Resuming.** The SessionStart hook lists open briefs; it does not inject a body. The agent reads the list, asks which (or offers the single one), fetches it with `get_doc`, then marks it consumed with `set_doc` — flipping `status` and stamping `consumed`. Declining must not consume anything.
 
