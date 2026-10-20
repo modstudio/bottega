@@ -202,10 +202,12 @@ const catalogueKinds = [
   ['step catalogue', 'step_catalogue', 'step_catalogue_version', 'step_catalogue_event', 'shared'],
 ] as const
 
-const identityDisagreements = catalogueKinds.flatMap((kind) => [
-  [kind[0], 'lower generation', ...kind.slice(1), false] as const,
-  [kind[0], 'different identity id', ...kind.slice(1), true] as const,
-])
+const identityDisagreements = catalogueKinds.flatMap(
+  ([kind, identityTable, versionTable, eventTable, slug]) => [
+    [kind, 'lower generation', identityTable, versionTable, eventTable, slug, false] as const,
+    [kind, 'different identity id', identityTable, versionTable, eventTable, slug, true] as const,
+  ],
+)
 
 test.each(identityDisagreements)(
   'pull with persisted cursors replays a %s after a %s',

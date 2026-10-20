@@ -140,20 +140,21 @@ function applyIdentity(
   recordId: string,
   spaceId: string,
 ): void {
+  const byRecordId = local
+    .query<{ id: number; generation: number }, [string, string]>(
+      `SELECT id,generation FROM ${n.identity} WHERE record_id=? AND space_id=?`,
+    )
+    .get(recordId, spaceId)
   const found =
+    byRecordId ??
     local
-      .query<{ id: number; record_id: string; generation: number }, [string, string]>(
-        `SELECT id,record_id,generation FROM ${n.identity} WHERE record_id=? AND space_id=?`,
-      )
-      .get(recordId, spaceId) ??
-    local
-      .query<{ id: number; record_id: string; generation: number }, [string, string]>(
-        `SELECT id,record_id,generation FROM ${n.identity} WHERE space_id=? AND slug=?`,
+      .query<{ id: number; generation: number }, [string, string]>(
+        `SELECT id,generation FROM ${n.identity} WHERE space_id=? AND slug=?`,
       )
       .get(spaceId, String(item.slug))
   const generation = Number(item.generation ?? 1)
   if (found) {
-    if (generation !== found.generation || recordId !== found.record_id) {
+    if (generation !== found.generation || !byRecordId) {
       deleteIdentityHistory(local, n, spaceId, found.id)
       resetIdentityHistoryCursors(local, n, spaceId)
     }
