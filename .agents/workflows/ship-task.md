@@ -21,6 +21,7 @@ modes:
     default: true
     steps:
       - rebase-trunk
+      - scope
       - sequence: review
       - sequence: sync
         omit:
@@ -33,6 +34,7 @@ modes:
     title: Ship through merge
     steps:
       - rebase-trunk
+      - scope
       - sequence: review
       - sequence: sync
         omit:

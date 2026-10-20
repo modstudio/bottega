@@ -5,9 +5,11 @@ floor:
   - ruling
 job: null
 autonomy: ask
-needs: []
+needs:
+  - tracker
+  - docs
 ---
-Compare the gathered implementation with the task text, linked documents, canon, decision records, and knowledge-base entries. List every place where the written record is missing, stale, contradicted, superseded, or describes work that was not built. Include documents outside the optional scope when the gathered evidence shows that the scoped change made them inaccurate.
+Compare what was built with the task text, linked documents, canon, decision records, and knowledge-base entries. What was built is the record `docs-gather` made when sync runs on its own, or the diff `scope` recorded when sync runs inside `ship-task`. Read the documents through the tracker and docs adapters named in `facts`. List every place where the written record is missing, stale, contradicted, superseded, or describes work that was not built. Include documents outside the optional scope when that evidence shows that the scoped change made them inaccurate.
 
 Present one complete deviation table. For every deviation, require exactly one recorded disposition:
 
