@@ -17,6 +17,56 @@ export type CursorTransition =
 
 export type CursorStartDecision = 'insert' | 'reuse' | 'retire'
 
+export type OutcomeDecision = { action: 'allow' } | { action: 'refuse'; message: string }
+
+/** Decide whether a supplied close outcome matches the current catalogue step. */
+export function decideStepOutcome(
+  stepSlug: string,
+  allowed: readonly string[] | undefined,
+  outcome: string | undefined,
+): OutcomeDecision {
+  if (!allowed?.length)
+    return outcome === undefined
+      ? { action: 'allow' }
+      : {
+          action: 'refuse',
+          message: `step "${stepSlug}" declares no outcomes; omit --outcome`,
+        }
+  if (outcome === undefined)
+    return {
+      action: 'refuse',
+      message: `step "${stepSlug}" requires --outcome <slug>; allowed values: ${allowed.join(', ')}`,
+    }
+  return allowed.includes(outcome)
+    ? { action: 'allow' }
+    : {
+        action: 'refuse',
+        message: `step "${stepSlug}" does not allow outcome "${outcome}"; allowed values: ${allowed.join(', ')}`,
+      }
+}
+
+type ConditionalStep = { slug: string; when?: { step: string; outcome: string[] } }
+type OutcomeTrailEntry = { slug: string; outcome?: string }
+
+/** Select the next eligible ordinal and every conditional step skipped on the way. */
+export function decideConditionalAdvance(
+  steps: readonly ConditionalStep[],
+  trail: readonly OutcomeTrailEntry[],
+  nextOrdinal: number,
+): { ordinal: number | null; skipped: Array<{ ordinal: number; step: ConditionalStep }> } {
+  const skipped: Array<{ ordinal: number; step: ConditionalStep }> = []
+  let ordinal = nextOrdinal
+  while (ordinal < steps.length) {
+    const step = steps[ordinal]!
+    if (!step.when) return { ordinal, skipped }
+    const recorded = trail.findLast((entry) => entry.slug === step.when!.step)?.outcome
+    if (recorded !== undefined && step.when.outcome.includes(recorded)) return { ordinal, skipped }
+    skipped.push({ ordinal, step })
+    ordinal += 1
+  }
+  return { ordinal: null, skipped }
+}
+
 export const cursorValue = (
   ordinal: number,
   stepSlug: string,

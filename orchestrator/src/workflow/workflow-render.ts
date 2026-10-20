@@ -4,6 +4,7 @@ import {
   formatCursorResumed,
   workflowCursorReference,
 } from './workflow-cursor-format.ts'
+import type { ClosedStep } from './workflow-cursor-trail.ts'
 import { evidenceGuidance, type FloorKind } from './workflow-floor.ts'
 import type { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
@@ -17,7 +18,11 @@ type WorkflowComposition = ReturnType<typeof composeWorkflow> & {
     previousSession?: string | null
   } | null
 }
-type WorkflowStep = ReturnType<typeof getWorkflowStep> & { cursor?: number; notice?: string }
+type WorkflowStep = ReturnType<typeof getWorkflowStep> & {
+  cursor?: number
+  notice?: string
+  flow?: ClosedStep[]
+}
 
 export function withSelfRuling(
   result: string,
@@ -80,7 +85,7 @@ function renderRunnableComposition(result: WorkflowComposition): string {
     `facts: ${JSON.stringify(result.facts)}`,
     ...result.steps.map(
       (step) =>
-        `${step.n}. ${step.slug} — ${step.title} [job=${step.job ?? '-'} autonomy=${step.resolvedAutonomy.value}(${step.resolvedAutonomy.scope}) floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
+        `${step.n}. ${step.slug} — ${step.title}${step.when ? `; only when ${step.when.step} is ${step.when.outcome.join(' or ')}` : ''} [job=${step.job ?? '-'} autonomy=${step.resolvedAutonomy.value}(${step.resolvedAutonomy.scope}) floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
     ),
   ].join('\n')
 }
@@ -120,7 +125,7 @@ function renderIncompleteComposition(result: WorkflowComposition): string {
     ...facts,
     ...result.steps.map(
       (step) =>
-        `${step.n}. ${step.slug} — ${step.title} [job=${step.job ?? '-'} autonomy=${step.resolvedAutonomy.value}(${step.resolvedAutonomy.scope}) floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
+        `${step.n}. ${step.slug} — ${step.title}${step.when ? `; only when ${step.when.step} is ${step.when.outcome.join(' or ')}` : ''} [job=${step.job ?? '-'} autonomy=${step.resolvedAutonomy.value}(${step.resolvedAutonomy.scope}) floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
     ),
   ].join('\n')
 }
@@ -156,7 +161,10 @@ export function renderWorkflowStep(step: WorkflowStep): string {
   const reference = step.cursor ? workflowCursorReference(step.cursor) : null
   const cursor = reference ? ` with ${reference.mcp}` : ''
   const cliCursor = reference?.cli ?? ''
-  const close = `Next: when this step's floor is met, close it with \`next_workflow_step\` (MCP)${cursor} or \`${PLATFORM_SLUG} workflow next${step.cursor ? ` ${step.workflow}${cliCursor}` : ''}\`, giving a one-line note of how the floor was met;`
+  const outcome = step.outcomes?.length
+    ? ` Choose one allowed outcome (${step.outcomes.join(', ')}) and pass it as \`outcome\` to MCP or \`--outcome <slug>\` to the CLI.`
+    : ''
+  const close = `Next: when this step's floor is met, close it with \`next_workflow_step\` (MCP)${cursor} or \`${PLATFORM_SLUG} workflow next${step.cursor ? ` ${step.workflow}${cliCursor}` : ''}\`, giving a one-line note of how the floor was met;${outcome}`
   const pointer =
     step.next === undefined
       ? `${close} that serves the following step from the workflow's step list.`
@@ -170,5 +178,13 @@ export function renderWorkflowStep(step: WorkflowStep): string {
       `Evidence for ${kind}: ${evidenceGuidance(kind as FloorKind, Boolean(step.operatorRuling))}.`,
   )
   const notice = step.notice ? `${step.notice}\n` : ''
-  return `${notice}facts: ${JSON.stringify(step.facts)}\nAutonomy: ${step.resolvedAutonomy.value} (${step.resolvedAutonomy.scope}) — ${autonomy}\n${step.body}\n\n${guidance.join('\n')}\n\n${pointer}`
+  const flow = (step.flow ?? []).flatMap((entry) =>
+    entry.skipped
+      ? [`${entry.slug}=skipped`]
+      : entry.outcome
+        ? [`${entry.slug}=${entry.outcome}`]
+        : [],
+  )
+  const flowLine = flow.length ? `Flow so far: ${flow.join(', ')}\n` : ''
+  return `${notice}${flowLine}facts: ${JSON.stringify(step.facts)}\nAutonomy: ${step.resolvedAutonomy.value} (${step.resolvedAutonomy.scope}) — ${autonomy}\n${step.body}\n\n${guidance.join('\n')}\n\n${pointer}`
 }

@@ -36,12 +36,15 @@ import {
   type CursorTrailEntry,
   completedWorkflowSummary,
   currentStepActivatedAt,
+  isClosedStep,
 } from './workflow-cursor-trail.ts'
 import {
   type CursorState,
   cursorValue,
+  decideConditionalAdvance,
   decideCursorStart,
   decideCursorTransition,
+  decideStepOutcome,
 } from './workflow-cursor-transition.ts'
 import {
   catalogueFloorsFor,
@@ -469,6 +472,7 @@ function getWorkflowStepWithCursorImpl(
   return {
     ...served,
     cursor: row.id,
+    flow: (JSON.parse(row.closed) as CursorTrailEntry[]).filter(isClosedStep),
     notice: [openNotice, redirectNotice].filter(Boolean).join('\n'),
   }
 }
@@ -596,6 +600,89 @@ function persistFloorClose(
   }
 }
 
+function appendWorkflowClose(
+  row: CursorRow,
+  composition: ReturnType<typeof composeWorkflow>,
+  closed: CursorTrailEntry[],
+  note: string,
+  outcome: string | undefined,
+  floor: Extract<FloorDecision, { action: 'allow' }>,
+  skipped: ReturnType<typeof decideConditionalAdvance>['skipped'],
+  at: string,
+  d: Database,
+): void {
+  const review = composition.steps[row.ordinal]?.resolvedAutonomy.value === 'review'
+  closed.push({
+    n: row.ordinal + 1,
+    slug: row.step_slug,
+    note,
+    at,
+    ...(outcome ? { outcome } : {}),
+    ...(review ? { review: true as const } : {}),
+    ...persistFloorClose(row, floor, catalogueFloorsFor(composition.steps[row.ordinal]!), at, d),
+  })
+  for (const skippedStep of skipped) {
+    const condition = skippedStep.step.when!
+    closed.push({
+      n: skippedStep.ordinal + 1,
+      slug: skippedStep.step.slug,
+      note: `skipped: only when ${condition.step} is ${condition.outcome.join(' or ')}`,
+      at,
+      skipped: condition,
+    })
+  }
+}
+
+function persistWorkflowAdvance(input: {
+  row: CursorRow
+  composition: ReturnType<typeof composeWorkflow>
+  closed: CursorTrailEntry[]
+  advance: ReturnType<typeof decideConditionalAdvance>
+  context: WorkflowCursorContext
+  slug: string
+  project: string
+  mode: string
+  at: string
+  selfRuling?: WorkflowSelfRulingInput
+  d: Database
+}): string {
+  const { row, composition, closed, advance, context, slug, project, mode, at, selfRuling, d } =
+    input
+  if (advance.ordinal === null) {
+    d.query(
+      `UPDATE workflow_cursor SET state='done',closed=?,question=NULL,
+       session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
+    ).run(JSON.stringify(closed), context.session ?? null, at, row.id)
+    return withSelfRuling(
+      completedWorkflowSummary(cursorName(slug, mode, row.workflow_key, true), closed),
+      selfRuling,
+    )
+  }
+  const next = composition.steps[advance.ordinal]!
+  d.query(
+    `UPDATE workflow_cursor SET ordinal=?,step_slug=?,state='running',closed=?,question=NULL,
+     session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
+  ).run(advance.ordinal, next.slug, JSON.stringify(closed), context.session ?? null, at, row.id)
+  const rendered = renderWorkflowStep({
+    ...withWorkflowTextFacts(
+      getWorkflowStep(
+        slug,
+        project,
+        next.slug,
+        JSON.parse(row.args),
+        d,
+        { mode, version: row.workflow_version, catalogueVersion: row.catalogue_version },
+        cursorAutonomy(row),
+      ),
+      row.id,
+      d,
+    ),
+    cursor: row.id,
+    flow: closed.filter(isClosedStep),
+  })
+  return withSelfRuling(rendered, selfRuling)
+}
+
 function nextWorkflowStepImpl(
   slug: string,
   project: string,
@@ -608,6 +695,7 @@ function nextWorkflowStepImpl(
   d: Database = writableDb(),
   cursor?: number,
   selfRuling?: WorkflowSelfRulingInput,
+  outcome?: string,
 ): string {
   const row = findCursor(project, slug, mode, args, context, d, cursor)
   if (!row)
@@ -628,6 +716,9 @@ function nextWorkflowStepImpl(
     )
   }
   const composition = cursorComposition(row, d)
+  const currentStep = composition.steps[row.ordinal]!
+  const outcomeDecision = decideStepOutcome(currentStep.slug, currentStep.outcomes, outcome)
+  if (outcomeDecision.action === 'refuse') throw new Error(outcomeDecision.message)
   let effectiveEvidence = evidence
   if (selfRuling) {
     if (evidence.ruling !== undefined)
@@ -649,85 +740,41 @@ function nextWorkflowStepImpl(
     )
     effectiveEvidence = { ...evidence, ruling: recorded.questionId }
   }
-  const next = composition.steps[row.ordinal + 1] ?? null
-  const decision = decideCursorTransition(cursorValue(row.ordinal, row.step_slug, row.state), {
-    kind: 'next',
-    total: composition.steps.length,
-    nextSlug: next?.slug ?? null,
-  })
-  if (decision.action === 'refuse') {
-    if (decision.reason === 'not-started') throw new Error(remedy(row, composition))
-    throw new Error(`${cursorName(slug, mode, row.workflow_key)} is ${row.state}`)
-  }
+  const closed = JSON.parse(row.closed) as CursorTrailEntry[]
+  const closedSteps = closed.filter(isClosedStep)
+  const advance = decideConditionalAdvance(
+    composition.steps,
+    [...closedSteps, { slug: row.step_slug, ...(outcome ? { outcome } : {}) }],
+    row.ordinal + 1,
+  )
   const floor = applyFloorDecision(
     row,
     composition,
     effectiveEvidence,
     ports,
-    decision.action === 'finish',
+    advance.ordinal === null,
     d,
   )
   if (floor.action === 'refuse') throw new Error(floor.message)
   const at = nowIso()
   if (row.state === 'awaiting-ruling')
     closeOpenWorkflowQuestion(row.id, 'advanced-without-ruling', at, d)
-  const closed = JSON.parse(row.closed) as CursorTrailEntry[]
-  const review = composition.steps[row.ordinal]?.resolvedAutonomy.value === 'review'
-  closed.push({
-    n: row.ordinal + 1,
-    slug: row.step_slug,
-    note: note.trim(),
-    at,
-    ...(review ? { review: true as const } : {}),
-    ...persistFloorClose(row, floor, catalogueFloorsFor(composition.steps[row.ordinal]!), at, d),
-  })
-  if (
-    decision.action === 'finish' ||
-    composition.steps[row.ordinal]!.needs.includes('workflow-text')
-  )
+  appendWorkflowClose(row, composition, closed, note.trim(), outcome, floor, advance.skipped, at, d)
+  if (advance.ordinal === null || composition.steps[row.ordinal]!.needs.includes('workflow-text'))
     deleteWorkflowText(row.id, d)
-  if (decision.action === 'finish') {
-    d.query(
-      `UPDATE workflow_cursor SET state='done',closed=?,question=NULL,
-       session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
-    ).run(JSON.stringify(closed), context.session ?? null, at, row.id)
-    return withSelfRuling(
-      completedWorkflowSummary(cursorName(slug, mode, row.workflow_key, true), closed),
-      selfRuling,
-    )
-  }
-  d.query(
-    `UPDATE workflow_cursor SET ordinal=?,step_slug=?,state='running',closed=?,question=NULL,
-     session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
-  ).run(
-    decision.ordinal,
-    decision.slug,
-    JSON.stringify(closed),
-    context.session ?? null,
+  return persistWorkflowAdvance({
+    row,
+    composition,
+    closed,
+    advance,
+    context,
+    slug,
+    project,
+    mode,
     at,
-    row.id,
-  )
-  const rendered = renderWorkflowStep({
-    ...withWorkflowTextFacts(
-      getWorkflowStep(
-        slug,
-        project,
-        decision.slug,
-        JSON.parse(row.args),
-        d,
-        {
-          mode,
-          version: row.workflow_version,
-          catalogueVersion: row.catalogue_version,
-        },
-        cursorAutonomy(row),
-      ),
-      row.id,
-      d,
-    ),
-    cursor: row.id,
+    selfRuling,
+    d,
   })
-  return withSelfRuling(rendered, selfRuling)
 }
 
 export function nextWorkflowStep(
@@ -742,6 +789,7 @@ export function nextWorkflowStep(
   ports: FloorEvidencePorts = productionFloorPorts(),
   cursor?: number,
   selfRuling?: WorkflowSelfRulingInput,
+  outcome?: string,
 ): string {
   return withReplayedFloorEvidence(ports, (replayPorts) =>
     writeTransaction(
@@ -758,6 +806,7 @@ export function nextWorkflowStep(
           d,
           cursor,
           selfRuling,
+          outcome,
         ),
       d,
     ),

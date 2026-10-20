@@ -72,6 +72,22 @@ test('expectedStatus accepts one string or a non-empty string list', () => {
   }
 })
 
+test('outcomes are unique non-empty slugs', () => {
+  const staged = { ...step, stage: 'plan' as const }
+  expect(
+    validateStepCatalogue({ steps: [{ ...staged, outcomes: ['needed', 'not-needed'] }] }),
+  ).toEqual([])
+  expect(validateStepCatalogue({ steps: [{ ...staged, outcomes: [] }] })).toContain(
+    'step "design" outcomes must be a non-empty array',
+  )
+  expect(validateStepCatalogue({ steps: [{ ...staged, outcomes: ['Not Valid'] }] })).toContain(
+    'step "design" outcomes must be well-formed slugs',
+  )
+  expect(
+    validateStepCatalogue({ steps: [{ ...staged, outcomes: ['needed', 'needed'] }] }),
+  ).toContain('step "design" outcomes must be unique')
+})
+
 test('catalogue sequences reject nesting, duplicate names, and the step namespace', () => {
   const design = { ...step, stage: 'plan' as const }
   const errors = validateStepCatalogue({

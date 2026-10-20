@@ -1,52 +1,93 @@
 // concern: workflows
 /** Owns named workflow-step sequences and their flat expansion. */
 
-import type { CatalogueSequence } from './step-catalogue-definition.ts'
-import type { WorkflowModeStep } from './workflow-definition.ts'
+import type { CatalogueSequence, CatalogueStep } from './step-catalogue-definition.ts'
+import type { WorkflowModeStep, WorkflowStepCondition } from './workflow-definition.ts'
 
+export type ExpandedWorkflowStep = { slug: string; when?: WorkflowStepCondition }
 export type WorkflowStepInspection = {
   expanded: string[]
+  detailed: ExpandedWorkflowStep[]
   missingSequences: string[]
   missingSteps: string[]
   duplicateSteps: string[]
+  invalidOmissions: { sequence: string; step: string }[]
 }
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 const object = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
-export function isSequenceReference(value: unknown): value is { sequence: string } {
-  return object(value) && Object.keys(value).length === 1 && typeof value.sequence === 'string'
+export function isSequenceReference(
+  value: unknown,
+): value is { sequence: string; omit?: string[] } {
+  if (!object(value) || typeof value.sequence !== 'string') return false
+  const keys = Object.keys(value)
+  return keys.every((key) => key === 'sequence' || key === 'omit') && keys.includes('sequence')
+}
+
+export function isConditionalStep(
+  value: unknown,
+): value is { step: string; when: WorkflowStepCondition } {
+  return (
+    object(value) &&
+    Object.keys(value).length === 2 &&
+    typeof value.step === 'string' &&
+    object(value.when) &&
+    Object.keys(value.when).length === 2 &&
+    typeof value.when.step === 'string' &&
+    Array.isArray(value.when.outcome)
+  )
 }
 
 function expandEntries(
   entries: readonly WorkflowModeStep[],
   sequences: readonly CatalogueSequence[],
-): { expanded: string[]; missingSequences: string[] } {
+) {
   const bySlug = new Map(sequences.map((sequence) => [sequence.slug, sequence.steps]))
-  const expanded: string[] = []
+  const detailed: ExpandedWorkflowStep[] = []
   const missingSequences: string[] = []
+  const invalidOmissions: { sequence: string; step: string }[] = []
   for (const entry of entries) {
-    if (typeof entry === 'string') expanded.push(entry)
+    if (typeof entry === 'string') detailed.push({ slug: entry })
+    else if (isConditionalStep(entry)) detailed.push({ slug: entry.step, when: entry.when })
     else {
       const steps = bySlug.get(entry.sequence)
-      if (steps) expanded.push(...steps)
-      else missingSequences.push(entry.sequence)
+      if (!steps) missingSequences.push(entry.sequence)
+      else {
+        const omitted = new Set(entry.omit ?? [])
+        for (const step of omitted)
+          if (!steps.includes(step)) invalidOmissions.push({ sequence: entry.sequence, step })
+        detailed.push(...steps.filter((step) => !omitted.has(step)).map((slug) => ({ slug })))
+      }
     }
   }
-  return { expanded, missingSequences: [...new Set(missingSequences)] }
+  return { detailed, missingSequences: [...new Set(missingSequences)], invalidOmissions }
+}
+
+export function expandWorkflowModeSteps(
+  entries: readonly WorkflowModeStep[],
+  sequences: readonly CatalogueSequence[],
+): ExpandedWorkflowStep[] {
+  const result = expandEntries(entries, sequences)
+  if (result.missingSequences.length)
+    throw new Error(
+      `sequence "${result.missingSequences[0]}" is absent from the catalogue; add and promote that sequence, or edit the workflow mode to remove the reference`,
+    )
+  if (result.invalidOmissions.length) {
+    const invalid = result.invalidOmissions[0]!
+    throw new Error(
+      `sequence "${invalid.sequence}" cannot omit non-member step "${invalid.step}"; remove it from omit`,
+    )
+  }
+  return result.detailed
 }
 
 export function expandWorkflowSteps(
   entries: readonly WorkflowModeStep[],
   sequences: readonly CatalogueSequence[],
 ): string[] {
-  const { expanded, missingSequences } = expandEntries(entries, sequences)
-  if (missingSequences.length)
-    throw new Error(
-      `sequence "${missingSequences[0]}" is absent from the catalogue; add and promote that sequence, or edit the workflow mode to remove the reference`,
-    )
-  return expanded
+  return expandWorkflowModeSteps(entries, sequences).map(({ slug }) => slug)
 }
 
 export function inspectWorkflowSteps(
@@ -54,20 +95,61 @@ export function inspectWorkflowSteps(
   sequences: readonly CatalogueSequence[],
   stepSlugs: ReadonlySet<string>,
 ): WorkflowStepInspection {
-  const { expanded, missingSequences } = expandEntries(entries, sequences)
+  const { detailed, missingSequences, invalidOmissions } = expandEntries(entries, sequences)
+  const expanded = detailed.map(({ slug }) => slug)
   return {
     expanded,
+    detailed,
     missingSequences,
     missingSteps: [...new Set(expanded.filter((step) => !stepSlugs.has(step)))],
     duplicateSteps: [
       ...new Set(expanded.filter((step, index) => expanded.indexOf(step) !== index)),
     ],
+    invalidOmissions,
   }
 }
 
 export function workflowModeStepError(value: unknown): string | null {
-  if (typeof value === 'string' || isSequenceReference(value)) return null
-  return `step entry ${JSON.stringify(value)} must be a step slug or exactly {"sequence":"<slug>"}; edit the workflow mode to use one of those forms`
+  if (typeof value === 'string') return null
+  if (isSequenceReference(value)) {
+    if (value.omit === undefined) return null
+    if (!Array.isArray(value.omit) || value.omit.length === 0)
+      return `step entry ${JSON.stringify(value)} omit must be a non-empty string array`
+    if (value.omit.some((step) => typeof step !== 'string'))
+      return `step entry ${JSON.stringify(value)} omit must contain only step slugs`
+    return null
+  }
+  if (isConditionalStep(value)) {
+    if (value.when.outcome.length === 0)
+      return `step entry ${JSON.stringify(value)} when.outcome must be non-empty`
+    if (value.when.outcome.some((outcome) => typeof outcome !== 'string' || !SLUG.test(outcome)))
+      return `step entry ${JSON.stringify(value)} when.outcome must contain only outcome slugs`
+    return null
+  }
+  return `step entry ${JSON.stringify(value)} must be a step slug or exactly {"sequence":"<slug>","omit"?:[...]}, or exactly {"step":"<slug>","when":{"step":"<slug>","outcome":[...]}}; edit the workflow mode to use one of those forms`
+}
+
+export function workflowConditionErrors(
+  mode: string,
+  detailed: readonly ExpandedWorkflowStep[],
+  steps: readonly CatalogueStep[],
+): string[] {
+  const bySlug = new Map(steps.map((step) => [step.slug, step]))
+  return detailed.flatMap((entry, index) => {
+    if (!entry.when) return []
+    const prior = detailed.findIndex(({ slug }) => slug === entry.when!.step)
+    if (prior < 0 || prior >= index)
+      return [
+        `mode "${mode}" step "${entry.slug}" condition step "${entry.when.step}" must be an earlier step in the expanded mode`,
+      ]
+    const declared = new Set(bySlug.get(entry.when.step)?.outcomes ?? [])
+    const missing = entry.when.outcome.filter((outcome) => !declared.has(outcome))
+    return missing.length
+      ? [
+          `mode "${mode}" step "${entry.slug}" condition names undeclared outcome ${missing.map((outcome) => `"${outcome}"`).join(', ')} on step "${entry.when.step}"`,
+        ]
+      : []
+  })
 }
 
 export function validateCatalogueSequences(
@@ -77,7 +159,6 @@ export function validateCatalogueSequences(
   if (value === undefined) return []
   if (!Array.isArray(value))
     return ['sequences must be an array; edit the catalogue to use a list of named sequences']
-
   const errors: string[] = []
   const sequenceSlugs = new Set(
     value.flatMap((item) => (object(item) && typeof item.slug === 'string' ? [item.slug] : [])),
@@ -127,17 +208,16 @@ function validateSequenceMember(
   stepSlugs: ReadonlySet<string>,
   errors: string[],
 ): void {
-  if (typeof member !== 'string') {
+  if (typeof member !== 'string')
     errors.push(
       `sequence "${slug}" entries must be step slugs; edit the sequence to remove ${JSON.stringify(member)}`,
     )
-  } else if (sequenceSlugs.has(member)) {
+  else if (sequenceSlugs.has(member))
     errors.push(
       `sequence "${slug}" names sequence "${member}"; replace it with that sequence's step slugs`,
     )
-  } else if (!stepSlugs.has(member)) {
+  else if (!stepSlugs.has(member))
     errors.push(
       `sequence "${slug}" references missing step "${member}"; add that step or edit the sequence`,
     )
-  }
 }

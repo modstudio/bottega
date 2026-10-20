@@ -1,5 +1,10 @@
 import { expect, test } from 'bun:test'
-import { expandWorkflowSteps, workflowModeStepError } from './workflow-step-sequences.ts'
+import {
+  expandWorkflowModeSteps,
+  expandWorkflowSteps,
+  inspectWorkflowSteps,
+  workflowModeStepError,
+} from './workflow-step-sequences.ts'
 
 test('a sequence reference expands in place to the same flat step order', () => {
   const sequences = [{ slug: 'quality', title: 'Quality', steps: ['review', 'verify'] }]
@@ -9,6 +14,29 @@ test('a sequence reference expands in place to the same flat step order', () => 
     'verify',
     'finish',
   ])
+})
+
+test('a sequence reference omits named members and rejects a non-member', () => {
+  const sequences = [{ slug: 'quality', title: 'Quality', steps: ['review', 'verify'] }]
+  expect(expandWorkflowSteps([{ sequence: 'quality', omit: ['review'] }], sequences)).toEqual([
+    'verify',
+  ])
+  expect(
+    inspectWorkflowSteps(
+      [{ sequence: 'quality', omit: ['absent'] }],
+      sequences,
+      new Set(['review', 'verify']),
+    ).invalidOmissions,
+  ).toEqual([{ sequence: 'quality', step: 'absent' }])
+})
+
+test('conditional steps retain their condition at their expanded position', () => {
+  expect(
+    expandWorkflowModeSteps(
+      ['choose', { step: 'review', when: { step: 'choose', outcome: ['needed'] } }],
+      [],
+    ),
+  ).toEqual([{ slug: 'choose' }, { slug: 'review', when: { step: 'choose', outcome: ['needed'] } }])
 })
 
 test('a workflow step entry accepts only a slug or an exact sequence reference', () => {

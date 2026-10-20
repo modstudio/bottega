@@ -88,6 +88,7 @@ const nextWorkflowStepInputSchema = z.object({
   mode: z.string().trim().min(1).optional(),
   args: z.record(z.string(), z.string()).optional(),
   note: z.string().trim().min(1),
+  outcome: z.string().trim().min(1).optional(),
   ruling: z.number().int().positive().optional(),
   self_ruling: z.string().trim().min(1).optional(),
   self_ruling_basis: z.string().optional(),
@@ -221,6 +222,7 @@ async function advanceWorkflow({
   mode,
   args,
   note,
+  outcome,
   ruling,
   self_ruling,
   self_ruling_basis,
@@ -280,6 +282,7 @@ async function advanceWorkflow({
             question,
             channel: 'mcp',
           },
+      outcome,
     ),
   )
 }

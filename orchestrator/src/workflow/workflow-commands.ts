@@ -523,6 +523,7 @@ export function nextCommand(argv: string[], print: WorkflowPrint): void {
           question: flagValue(argv, 'question'),
           channel: 'cli',
         },
+    flagValue(argv, 'outcome'),
   )
   print(result, result)
 }

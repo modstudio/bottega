@@ -2,6 +2,11 @@ import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { applyMigrations } from '../database/migrations.ts'
+import {
+  productionStepCatalogue,
+  promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
+} from './step-catalogue.ts'
 import { floorGuidance, floorKinds } from './workflow-floor.ts'
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
@@ -38,6 +43,55 @@ const database = () => {
 const args = { key: 'DEV-821', branch: 'DEV-821-work', worktree: '/tmp/work' }
 
 describe('workflow rendering', () => {
+  test('renders conditional composition entries and a step close outcome contract', () => {
+    const d = database()
+    const current = productionStepCatalogue(d).definition
+    const catalogue = setStepCatalogueLocal(
+      {
+        ...current,
+        steps: current.steps.map((step) =>
+          step.slug === 'lens'
+            ? { ...step, body: 'Review the work.', outcomes: ['needed', 'clear'] }
+            : step,
+        ),
+      },
+      'render flow fixture',
+      'test',
+      d,
+    )
+    promoteStepCatalogueLocal(catalogue.n, 'publish', 'test', d)
+    const draft = setWorkflowLocal(
+      'render-flow',
+      {
+        title: 'Render flow',
+        description: 'Render conditions.',
+        arguments: [],
+        modes: [
+          {
+            slug: 'default',
+            title: 'Default',
+            default: true,
+            steps: [
+              'lens',
+              { step: 'score', when: { step: 'lens', outcome: ['needed', 'clear'] } },
+            ],
+          },
+        ],
+      },
+      'render flow fixture',
+      'test',
+      d,
+    )
+    promoteWorkflowLocal('render-flow', draft.n, 'publish', 'test', d)
+    expect(
+      renderWorkflowComposition(composeWorkflow('render-flow', 'fixture', 'default', {}, d)),
+    ).toContain('only when lens is needed or clear')
+    expect(
+      renderWorkflowStep(
+        getWorkflowStep('render-flow', 'fixture', 'lens', {}, d, { mode: 'default' }),
+      ),
+    ).toContain('Choose one allowed outcome (needed, clear)')
+  })
   test('every floor kind has generated evidence guidance', () => {
     expect(floorKinds.filter((kind) => !floorGuidance[kind]?.trim())).toEqual([])
     const d = database()
