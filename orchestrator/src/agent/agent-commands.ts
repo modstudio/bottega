@@ -36,14 +36,19 @@ function assertApiKeyFlags(argv: string[], value: string | undefined): void {
     throw new Error('--api-key-secret and --clear-api-key-secret are mutually exclusive')
 }
 
+function booleanFlag(name: string, value: string | undefined): boolean | undefined {
+  if (value === undefined) return undefined
+  if (value !== 'true' && value !== 'false') throw new Error(`--${name} must be true or false`)
+  return value === 'true'
+}
+
 function mutation(argv: string[]): AgentMutation {
   const flag = (name: string) => flagValue(argv, name)
   const apiKeySecret = flag('api-key-secret')
   assertApiKeyFlags(argv, apiKeySecret)
-  const enabled = flag('enabled')
+  const enabled = booleanFlag('enabled', flag('enabled'))
   const billing = flag('billing')
-  if (enabled !== undefined && enabled !== 'true' && enabled !== 'false')
-    throw new Error('--enabled must be true or false')
+  const routeMetered = booleanFlag('route-metered', flag('route-metered'))
   const context = flag('context-tokens'),
     jobs = flag('jobs'),
     prefer = flag('prefer'),
@@ -56,8 +61,9 @@ function mutation(argv: string[]): AgentMutation {
     ...(apiKeySecret ? { apiKeySecret } : {}),
     ...(argv.includes('--clear-api-key-secret') ? { apiKeySecret: null } : {}),
     ...(billing ? { billing: billing as AgentMutation['billing'] } : {}),
+    ...(routeMetered !== undefined ? { routeMetered } : {}),
     ...(context ? { contextTokens: Number(context) } : {}),
-    ...(enabled !== undefined ? { enabled: enabled === 'true' } : {}),
+    ...(enabled !== undefined ? { enabled } : {}),
     ...(flag('reason') !== undefined ? { reason: flag('reason')! } : {}),
     ...(jobs !== undefined ? { jobs: parseJobs(jobs) } : {}),
     ...(prefer !== undefined ? { preferredJobs: parseJobs(prefer) ?? [] } : {}),
@@ -153,6 +159,7 @@ function listedRow(row: ReturnType<typeof agentRows>[number]) {
     jobs: row.jobs ? JSON.parse(row.jobs) : null,
     preferredJobs: row.preferred_jobs ? JSON.parse(row.preferred_jobs) : [],
     maxConcurrent: row.max_concurrent,
+    routeMetered: Boolean(row.route_metered),
     probedAt: row.probed_at,
     probeResult: probe,
     legacy: !['codex', 'grok', 'opencode', 'goose', 'claude-code'].includes(row.harness),

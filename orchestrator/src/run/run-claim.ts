@@ -103,6 +103,7 @@ import {
 type ClaimOptions = {
   reserveId?: string
   agentExplicit?: boolean
+  transport?: 'cli' | 'acp'
   schemaPath?: string
   job: string
   label?: string
@@ -124,6 +125,9 @@ type ClaimOptions = {
   carry?: boolean
   resume?: RunResumeOptions
 }
+
+const explicitRunFlags = (opts: ClaimOptions) =>
+  [opts.automaticFailover ? 1 : 0, opts.agentExplicit ? 1 : 0, opts.transport ? 1 : 0] as const
 
 export type ClaimInput = {
   opts: ClaimOptions
@@ -337,7 +341,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
                         prompt_bytes=?, prompt_head=?, label=?, status='running', probe=?, retry_of_record_id=?,
                         route_reason=?, branch=?, parent_run_record_id=?, turn=?, vendor_session=?, docs_injected=?, doc_revisions=?, canon_sha=?,
                         launch_cwd=?, launch_seed=?, launch_key=?, task_record_id=?, launch_base=?, no_failover=?,
-                        automatic_failover=?, agent_explicit=?, review_ref=?, pid=?, mcp=?, transport=?
+                        automatic_failover=?, agent_explicit=?, transport_explicit=?, review_ref=?, pid=?, mcp=?, transport=?
           WHERE record_id=? RETURNING record_id, number`,
       )
       .get(
@@ -369,7 +373,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         taskRecordId,
         launchBase,
         noFailover ? 1 : 0,
-        ...[opts.automaticFailover ? 1 : 0, opts.agentExplicit ? 1 : 0],
+        ...explicitRunFlags(opts),
         opts.review ?? null,
         process.pid,
         storedMcpRequest(mcpRequest),
@@ -381,8 +385,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       .query(
         `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of_record_id, route_reason, branch, parent_run_record_id, turn, vendor_session, docs_injected, doc_revisions, canon_sha,
                           launch_cwd, launch_seed, launch_key, task_record_id, launch_base, no_failover,
-                          automatic_failover, agent_explicit, review_ref, pid, mcp, transport, started_by_user_id)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id, number`,
+                          automatic_failover, agent_explicit, transport_explicit, review_ref, pid, mcp, transport, started_by_user_id)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id, number`,
       )
       .get(
         recordId,
@@ -418,7 +422,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         taskRecordId,
         launchBase,
         noFailover ? 1 : 0,
-        ...[opts.automaticFailover ? 1 : 0, opts.agentExplicit ? 1 : 0],
+        ...explicitRunFlags(opts),
         opts.review ?? null,
         process.pid,
         storedMcpRequest(mcpRequest),

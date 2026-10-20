@@ -47,10 +47,11 @@ test("a later findings turn inherits its root's implicit review branch", async (
     .trim()
 
   try {
-    const claimed = await claimRun({
+    const claimInput: Parameters<typeof claimRun>[0] = {
       opts: {
         job: 'review-lens',
         reserveId: reserved,
+        transport: 'cli',
         resume: {
           kind: 'continue',
           parent: root,
@@ -93,9 +94,13 @@ test("a later findings turn inherits its root's implicit review branch", async (
       startedByUserId: null,
       replySchemaName: 'WORKER_SCHEMA',
       carriedQuestionIds: [carriedQuestionRecordId],
-    })
+    }
+    const claimed = await claimRun(claimInput)
 
     expect(claimed.claim.id).toBe(reserved)
+    expect(
+      db().query('SELECT transport_explicit FROM run WHERE record_id=?').get(claimed.claim.id),
+    ).toEqual({ transport_explicit: 1 })
     expect(
       db().query('SELECT branch,record_id FROM run WHERE record_id=?').get(claimed.claim.id),
     ).toEqual({
@@ -109,6 +114,16 @@ test("a later findings turn inherits its root's implicit review branch", async (
         )
         .get(claimed.claim.id)?.record_id,
     ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+
+    const implicit = await claimRun({
+      ...claimInput,
+      opts: { job: 'review-lens' },
+      stamp: 'implicit-transport-claim',
+      carriedQuestionIds: [],
+    })
+    expect(
+      db().query('SELECT transport_explicit FROM run WHERE record_id=?').get(implicit.claim.id),
+    ).toEqual({ transport_explicit: 0 })
   } finally {
     rmSync(runsDir, { recursive: true, force: true })
   }

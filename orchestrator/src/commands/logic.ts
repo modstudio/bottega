@@ -281,6 +281,11 @@ function registerAgentCommands(program: Command): void {
     .option('--api-key-secret <value>', 'set the sealed key holding the endpoint API key')
     .option('--clear-api-key-secret', 'clear the endpoint API key reference')
     .option('--context-tokens <value>', 'set the served context window')
+    .option('--billing <value>', 'set the billing class')
+    .option(
+      '--route-metered <value>',
+      "allow automatic read-only routing to this metered agent; spend limits live in the provider key's own settings",
+    )
     .option('--jobs <value>', 'allow these comma-separated jobs or any')
     .option('--prefer <value>', 'prefer these comma-separated jobs')
     .option('--max-concurrent <value>', 'limit concurrent runs for this agent')

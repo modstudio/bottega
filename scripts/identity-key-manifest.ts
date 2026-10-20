@@ -30,6 +30,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
   ]),
   ...manifest('orchestrator', 'boolean flag', [
     'agent.enabled',
+    'agent.route_metered',
     'board_message.ack_required',
     'board_reach_delivery.blocked_stop',
     'board_reach_delivery.acknowledgement_required',
@@ -51,6 +52,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'run.no_failover',
     'run.automatic_failover',
     'run.agent_explicit',
+    'run.transport_explicit',
     'run.carry_happened',
     'run.mcp',
     'run.mcp_connected',

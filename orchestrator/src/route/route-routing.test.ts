@@ -13,13 +13,38 @@ import {
   EVIDENCE_WINDOW,
   evidenceFor,
   MIN_SAMPLE,
+  meteredRouteEligibility,
   PROMPT_SIZE_BOUNDARY,
   pick,
   promptSizeBucket,
   scoreboard,
 } from './route.ts'
 
-test('automatic routing excludes metered billing while a named agent may spend it', () => {
+test('metered route eligibility is an opt-in limited to read-only jobs unless named', () => {
+  const base = { billing: 'metered', routeMetered: false, writesRepo: false, name: 'metered' }
+  expect(meteredRouteEligibility(base)).toEqual({
+    eligible: false,
+    why: 'metered billing is not opted in for automatic routing',
+    mayAutoRouteNamedJob: false,
+  })
+  expect(meteredRouteEligibility({ ...base, routeMetered: true })).toEqual({
+    eligible: true,
+    why: '',
+    mayAutoRouteNamedJob: true,
+  })
+  expect(meteredRouteEligibility({ ...base, routeMetered: true, writesRepo: true })).toEqual({
+    eligible: false,
+    why: 'metered routing opt-in is limited to jobs that do not write the repository',
+    mayAutoRouteNamedJob: false,
+  })
+  expect(meteredRouteEligibility({ ...base, explicitlyNamedAgent: 'metered' })).toEqual({
+    eligible: true,
+    why: '',
+    mayAutoRouteNamedJob: true,
+  })
+})
+
+test('automatic routing excludes metered billing without opt-in while a named agent may spend it', () => {
   const original = db().query("SELECT billing FROM agent WHERE name='codex'").get() as {
     billing: string
   }
@@ -28,11 +53,62 @@ test('automatic routing excludes metered billing while a named agent may spend i
     refreshAgents()
     expect(candidates('summarize').find((candidate) => candidate.agent === 'codex')).toMatchObject({
       eligible: false,
-      why: 'metered billing',
+      why: 'metered billing is not opted in for automatic routing',
     })
     expect(pick('summarize', 'codex')).toEqual({ agent: 'codex', reason: 'explicit --agent' })
   } finally {
     db().query("UPDATE agent SET billing=? WHERE name='codex'").run(original.billing)
+    refreshAgents()
+  }
+})
+
+test('metered routing opt-in admits read-only work and still excludes writer jobs', () => {
+  const original = db()
+    .query("SELECT billing,route_metered FROM agent WHERE name='codex'")
+    .get() as { billing: string; route_metered: number }
+  try {
+    db().query("UPDATE agent SET billing='metered',route_metered=1 WHERE name='codex'").run()
+    refreshAgents()
+    expect(
+      candidates('file-question').find((candidate) => candidate.agent === 'codex'),
+    ).toMatchObject({
+      eligible: true,
+      why: '',
+    })
+    expect(candidates('implement').find((candidate) => candidate.agent === 'codex')).toMatchObject({
+      eligible: false,
+      why: 'metered routing opt-in is limited to jobs that do not write the repository',
+    })
+  } finally {
+    db()
+      .query("UPDATE agent SET billing=?,route_metered=? WHERE name='codex'")
+      .run(original.billing, original.route_metered)
+    refreshAgents()
+  }
+})
+
+test('a named non-opted-in ACP agent remains eligible for a review lens', () => {
+  const name = 'codex'
+  const original = db()
+    .query('SELECT billing,route_metered,transport,probed_at FROM agent WHERE name=?')
+    .get(name) as {
+    billing: string
+    route_metered: number
+    transport: string
+    probed_at: string | null
+  }
+  try {
+    db()
+      .query(
+        "UPDATE agent SET billing='metered',route_metered=0,transport='acp',probed_at=? WHERE name=?",
+      )
+      .run(new Date().toISOString(), name)
+    refreshAgents()
+    expect(pick('review-lens', name)).toEqual({ agent: name, reason: 'explicit --agent' })
+  } finally {
+    db()
+      .query('UPDATE agent SET billing=?,route_metered=?,transport=?,probed_at=? WHERE name=?')
+      .run(original.billing, original.route_metered, original.transport, original.probed_at, name)
     refreshAgents()
   }
 })

@@ -26,6 +26,7 @@ import {
   resolveTransportName,
   selectAgentForTransport,
   stopErrorMessage,
+  transportPinIneligibility,
   valueMatchesStrictSchema,
 } from './transport.ts'
 import {
@@ -207,6 +208,56 @@ describe('ACP transport selection', () => {
 
   test('a named ACP agent may run a review lens', () => {
     expect(() => assertAcpAllowed('review-lens', 'codex', undefined, true)).not.toThrow()
+  })
+
+  test('an opted-in ACP agent may be routed a review lens', () => {
+    expect(() =>
+      assertAcpAllowed(
+        'review-lens',
+        'metered-acp',
+        {
+          ...AGENTS.codex!,
+          name: 'metered-acp',
+          defaultTransport: 'acp',
+        },
+        false,
+        true,
+      ),
+    ).not.toThrow()
+    expect(() =>
+      assertAcpAllowed('review-lens', 'metered-acp', {
+        ...AGENTS.codex!,
+        name: 'metered-acp',
+        defaultTransport: 'acp',
+      }),
+    ).toThrow('require an agent named with --agent')
+  })
+
+  test('a transport pin excludes agents that cannot run on it', () => {
+    const cliAgent = { ...AGENTS.codex!, defaultTransport: 'cli' as const }
+    const acpAgent = {
+      ...AGENTS.codex!,
+      name: 'metered-acp',
+      defaultTransport: 'acp' as const,
+    }
+    expect(transportPinIneligibility('review-lens', cliAgent.name, cliAgent, 'cli')).toBeNull()
+    expect(transportPinIneligibility('review-lens', acpAgent.name, acpAgent, 'cli')).toContain(
+      'not pinned cli transport',
+    )
+    expect(
+      transportPinIneligibility('review-lens', acpAgent.name, acpAgent, 'acp', true),
+    ).toBeNull()
+  })
+
+  test('an ACP pin reports the pilot refusal for a disallowed agent', () => {
+    const acpAgent = {
+      ...AGENTS.codex!,
+      name: 'metered-acp',
+      defaultTransport: 'acp' as const,
+    }
+    expect(transportPinIneligibility('review-lens', acpAgent.name, acpAgent, 'acp')).toContain(
+      'require an agent named with --agent',
+    )
   })
 
   test('installed paid-agent capability rows record native elicitation as unsupported', () => {

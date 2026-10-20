@@ -53,7 +53,7 @@ test('agent presentation distinguishes installation, probe, disabled, and ready 
   ])
 })
 
-test('agent add persists job and concurrency flags', async () => {
+test('agent add persists job, concurrency, and metered-routing flags', async () => {
   const output: string[] = []
   try {
     await agentCommand(
@@ -73,6 +73,8 @@ test('agent add persists job and concurrency flags', async () => {
         'file-question',
         '--max-concurrent',
         '1',
+        '--route-metered',
+        'true',
       ],
       { log: (value) => output.push(value), setExitCode: () => {} },
     )
@@ -81,6 +83,7 @@ test('agent add persists job and concurrency flags', async () => {
       jobs: '["file-question"]',
       preferred_jobs: '["file-question"]',
       max_concurrent: 1,
+      route_metered: 1,
     })
   } finally {
     removeAgent('add-flags-test')
@@ -157,7 +160,7 @@ test('a keyed add defaults to metered, stays out of automatic routing, and may b
     refreshAgents()
     expect(candidates('summarize').find((candidate) => candidate.agent === name)).toMatchObject({
       eligible: false,
-      why: 'metered billing',
+      why: 'metered billing is not opted in for automatic routing',
     })
     expect(pick('summarize', name)).toEqual({ agent: name, reason: 'explicit --agent' })
   } finally {
@@ -195,5 +198,41 @@ test('agent set accepts validated billing values', async () => {
     ).rejects.toThrow('unknown billing "invalid"')
   } finally {
     removeAgent('billing-set-test')
+  }
+})
+
+test('agent set validates and clears the metered-routing opt-in', async () => {
+  const output: string[] = []
+  try {
+    await agentCommand(
+      [
+        'agent',
+        'add',
+        'metered-route-set-test',
+        '--harness',
+        'codex',
+        '--backend',
+        'vendor',
+        '--model',
+        'test-model',
+        '--route-metered',
+        'true',
+      ],
+      { log: (value) => output.push(value), setExitCode: () => {} },
+    )
+    expect(JSON.parse(output.at(-1)!)).toMatchObject({ route_metered: 1 })
+    await agentCommand(['agent', 'set', 'metered-route-set-test', '--route-metered', 'false'], {
+      log: (value) => output.push(value),
+      setExitCode: () => {},
+    })
+    expect(JSON.parse(output.at(-1)!)).toMatchObject({ route_metered: 0 })
+    await expect(
+      agentCommand(['agent', 'set', 'metered-route-set-test', '--route-metered', 'sometimes'], {
+        log: () => {},
+        setExitCode: () => {},
+      }),
+    ).rejects.toThrow('--route-metered must be true or false')
+  } finally {
+    removeAgent('metered-route-set-test')
   }
 })

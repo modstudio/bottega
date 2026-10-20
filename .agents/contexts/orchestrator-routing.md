@@ -91,7 +91,7 @@ A failing behavioral canon eval closes exploration for the default eval agent un
 
 **So is context.** A job declares its working set; an agent whose window cannot hold that is excluded, the same kind of fact as lacking `readsRepo`. Errand jobs sit at `ERRAND` tokens, deep jobs at `DEEP`. Eligibility requires `OUTPUT_RESERVE` on top, because a server allows window minus prompt for the reply. The declared window is the one the server reports; `bottega machine doctor` reads it from `/v1/models`. Cloud agents declare no ceiling until one fails on window.
 
-**Metered billing is a hard exclusion.**
+**A metered agent is routed only when its row opts in, and only for jobs that do not write the repository.** Spend limits live in the provider key's own settings.
 
 Retrieval-shaped jobs (`file-question`, `canon-lookup`, `summarize`) prefer the local model. Judgment-shaped jobs (`safety`, `craft`, `understand`, `review-lens`) prefer cloud agents. Preference orders agents that could do a job; eligibility says which ones can.
 
