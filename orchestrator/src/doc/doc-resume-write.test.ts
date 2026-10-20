@@ -156,9 +156,14 @@ describe('open resume write decision', () => {
   }
 
   test('accepts the word scratchpad in prose, which names no location', () => {
-    expect(violations(brief(['NEXT ACTION: continue', 'The session scratchpad holds nothing the next session needs']))).toEqual(
-      [],
-    )
+    expect(
+      violations(
+        brief([
+          'NEXT ACTION: continue',
+          'The session scratchpad holds nothing the next session needs',
+        ]),
+      ),
+    ).toEqual([])
   })
 
   test('accepts URLs whose paths name scratch and run-artifact locations', () => {

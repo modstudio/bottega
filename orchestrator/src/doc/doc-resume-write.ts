@@ -49,18 +49,16 @@ function hasNextAction(body: string): boolean {
   return false
 }
 
-/** Return every reason an open resume brief cannot be written. */
-export function openResumeViolations(
-  body: string,
-  frontmatter: ResumeFrontmatter,
-): OpenResumeViolation[] {
-  const violations: OpenResumeViolation[] = []
+function trackerViolations(frontmatter: ResumeFrontmatter): OpenResumeViolation[] {
   if (!('epic' in frontmatter) && !('task' in frontmatter)) {
-    violations.push({
-      offendingText: 'epic or task: <missing>',
-      remedy: 'supply a top-level epic or task field holding a tracker key',
-    })
+    return [
+      {
+        offendingText: 'epic or task: <missing>',
+        remedy: 'supply a top-level epic or task field holding a tracker key',
+      },
+    ]
   }
+  const violations: OpenResumeViolation[] = []
   for (const field of ['epic', 'task'] as const) {
     if (!(field in frontmatter)) continue
     const value = frontmatter[field] ?? ''
@@ -71,6 +69,32 @@ export function openResumeViolations(
       })
     }
   }
+  return violations
+}
+
+function scratchLocationViolations(body: string): OpenResumeViolation[] {
+  const urlSpans = [...body.matchAll(URL_SPAN)].map((match) => ({
+    start: match.index!,
+    end: match.index! + match[0].length,
+  }))
+  const violations: OpenResumeViolation[] = []
+  for (const match of body.matchAll(PATH_TOKEN)) {
+    if (urlSpans.some(({ start, end }) => match.index! >= start && match.index! < end)) continue
+    if (!isScratchLocation(match[0])) continue
+    violations.push({
+      offendingText: match[0],
+      remedy: 'remove the scratch location and name a durable repository or doc-store location',
+    })
+  }
+  return violations
+}
+
+/** Return every reason an open resume brief cannot be written. */
+export function openResumeViolations(
+  body: string,
+  frontmatter: ResumeFrontmatter,
+): OpenResumeViolation[] {
+  const violations = trackerViolations(frontmatter)
   for (const field of ['project', 'written'] as const) {
     if (!frontmatter[field]?.trim()) violations.push(missingField(field))
   }
@@ -87,18 +111,7 @@ export function openResumeViolations(
       remedy: 'add an explicit NEXT ACTION line',
     })
   }
-  const urlSpans = [...body.matchAll(URL_SPAN)].map((match) => ({
-    start: match.index!,
-    end: match.index! + match[0].length,
-  }))
-  for (const match of body.matchAll(PATH_TOKEN)) {
-    if (urlSpans.some(({ start, end }) => match.index! >= start && match.index! < end)) continue
-    if (!isScratchLocation(match[0])) continue
-    violations.push({
-      offendingText: match[0],
-      remedy: 'remove the scratch location and name a durable repository or doc-store location',
-    })
-  }
+  violations.push(...scratchLocationViolations(body))
   return violations
 }
 
