@@ -364,6 +364,7 @@ export const CLI_COMMANDS = new Set([
   'pr',
   'probe',
   'project',
+  'provisioning',
   'question',
   'record',
   'reference',

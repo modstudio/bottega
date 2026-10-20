@@ -65,6 +65,8 @@ export const cleanupBoundarySpecs = [
       '../landing-tree/release-observation.ts',
       '../../../shared/process-identity.ts',
       '../project/projects.ts',
+      '../resources/process-inventory.ts',
+      '../reclaim/orphan-process-reclaim.ts',
       '../resources/resource-ownership.ts',
       '../resources/main-stack.ts',
       '../run/run-alive.ts',

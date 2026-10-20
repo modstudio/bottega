@@ -19,6 +19,7 @@ import {
   releaseRecipeAllocationClaims,
   settleClaims,
 } from '../resources/resource-claims.ts'
+import { appendProvisioningPhases } from '../worktree/provisioning-measurement.ts'
 import { type ProvisionSkip, provisionWorktree } from '../worktree/worktree-provision.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { type ComposeSpawn, createCompose, downCompose } from './compose-provision.ts'
@@ -75,6 +76,57 @@ export type TrackedAllocator = {
   release(attempt: AllocationAttempt, reason: string): void
 }
 type StepRunner = (step: Step, context: StepContext) => StepResult
+
+function measureProvisioningPhase<T>(
+  runId: string,
+  phase: string,
+  name: string,
+  operation: () => T,
+): T {
+  const started = performance.now()
+  try {
+    return operation()
+  } finally {
+    appendProvisioningPhases(runId, [{ phase, name, durationMs: performance.now() - started }])
+  }
+}
+
+function provisionTrackedDependencies(
+  input: TrackedCreateInput,
+  path: string,
+  snapshot: RecipeSnapshot,
+) {
+  return measureProvisioningPhase(input.runId, 'dependency', 'declared dependencies', () =>
+    provisionWorktree(
+      input.repoRoot,
+      path,
+      snapshot.recipe.provision ?? [],
+      `tracked recipe "${snapshot.source.path}"`,
+    ),
+  )
+}
+
+function recordTrackedCreateSteps(runId: string, results: readonly StepResult[]): void {
+  appendProvisioningPhases(
+    runId,
+    results.map((result) => ({
+      phase: 'create',
+      name: result.name,
+      durationMs: result.durationMs,
+    })),
+  )
+}
+
+function writeTrackedEnvironment(
+  input: TrackedCreateInput,
+  recipe: TrackedRecipe,
+  context: StepContext,
+  secrets: Record<string, string>,
+): StepResult | null {
+  return measureProvisioningPhase(input.runId, 'env', 'env files', () =>
+    writeTrackedEnvFiles(recipe, context, input.repoRoot, secrets),
+  )
+}
 
 function composeContext(input: {
   runId: string
@@ -358,17 +410,20 @@ export function executeTrackedCreateSteps(
   context: StepContext,
   runStep: StepRunner,
   runUndo: StepRunner,
-): { failure: StepResult | null; compensation: StepResult[] } {
+): { failure: StepResult | null; compensation: StepResult[]; results: StepResult[] } {
+  const results: StepResult[] = []
   for (const [index, step] of recipe.create.entries()) {
     const failure = runStep(step, context)
+    results.push(failure)
     if (failure.status !== 'ok') {
       return {
         failure,
         compensation: compensationPlan(recipe, index).map((item) => runUndo(item, context)),
+        results,
       }
     }
   }
-  return { failure: null, compensation: [] }
+  return { failure: null, compensation: [], results }
 }
 
 export function executeTrackedRefreshSteps(
@@ -709,12 +764,7 @@ export function createTrackedRecipe(
   input.attribute(worktree)
   const context = { treeRoot: path, vars }
   try {
-    const skipped = provisionWorktree(
-      input.repoRoot,
-      path,
-      prepared.recipe.provision ?? [],
-      `tracked recipe "${snapshot.source.path}"`,
-    )
+    const skipped = provisionTrackedDependencies(input, path, snapshot)
     for (const entry of reportedProvisionSkips(skipped)) {
       console.error(`orch: provision skipped "${entry.path}": ${entry.reason}`)
     }
@@ -755,7 +805,7 @@ export function createTrackedRecipe(
       creation: { failure: urls.result, compensation: [] },
     })
   }
-  const envFailure = writeTrackedEnvFiles(prepared.recipe, context, input.repoRoot, urls.secrets)
+  const envFailure = writeTrackedEnvironment(input, prepared.recipe, context, urls.secrets)
   if (envFailure) {
     failTrackedCreation({
       createInput: input,
@@ -766,21 +816,25 @@ export function createTrackedRecipe(
       creation: { failure: envFailure, compensation: [] },
     })
   }
-  const preparedComposeContext = createTrackedCompose({
-    createInput: input,
-    worktree,
-    recipe: prepared.recipe,
-    snapshot,
-    allocationAttempt: prepared.allocationAttempt,
-    allocator,
-    spawn: composeSpawn,
-  })
+  const preparedComposeContext = measureProvisioningPhase(input.runId, 'compose', 'compose', () =>
+    createTrackedCompose({
+      createInput: input,
+      worktree,
+      recipe: prepared.recipe,
+      snapshot,
+      allocationAttempt: prepared.allocationAttempt,
+      allocator,
+      spawn: composeSpawn,
+    }),
+  )
   const databaseContext = {
     projectRoot: input.repoRoot,
     treeRoot: path,
     allocations: prepared.snapshot.allocations!.databases,
   }
-  const databases = createProvisionedDatabases(prepared.recipe, databaseContext)
+  const databases = measureProvisioningPhase(input.runId, 'database', 'provisioned databases', () =>
+    createProvisionedDatabases(prepared.recipe, databaseContext),
+  )
   snapshot.databaseOwnership = databases.ownership
   if (databases.failure) {
     failTrackedCreation({
@@ -801,6 +855,7 @@ export function createTrackedRecipe(
     })
   }
   const creation = executeTrackedCreateSteps(prepared.recipe, context, runStep, runUndo)
+  recordTrackedCreateSteps(input.runId, creation.results)
   if (creation.failure) {
     failTrackedCreation({
       createInput: input,
@@ -822,7 +877,7 @@ export function createTrackedRecipe(
   }
   writeSnapshot(input.runId, snapshot)
   try {
-    input.verify(worktree)
+    measureProvisioningPhase(input.runId, 'verify', 'worktree', () => input.verify(worktree))
   } catch (error) {
     input.removeProvisioned(worktree)
     settleCreateTimeBranchCleanup(worktree, input.runId)

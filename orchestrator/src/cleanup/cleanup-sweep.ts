@@ -18,8 +18,14 @@ import {
   projectByName,
   projects,
 } from '../project/projects.ts'
+import {
+  automaticOrphanReclaimDecision,
+  liveRunWorktrees,
+  reclaimOrphanProcess,
+} from '../reclaim/orphan-process-reclaim.ts'
 import type { DockerResource } from '../resources/docker-resources.ts'
 import { sweepIdleMainStacks } from '../resources/main-stack.ts'
+import { currentOrphanProcesses } from '../resources/process-inventory.ts'
 import { liveWorktreeSharers } from '../resources/resource-ownership.ts'
 import { runAlive } from '../run/run-alive.ts'
 import { auditRunMutation } from '../run/run-authority.ts'
@@ -71,6 +77,30 @@ function reapExpiredBoardMessages(dryRun: boolean): void {
     reapBoardMessages()
     reapBoardReach(Date.now(), writableDb())
   }
+}
+
+async function sweepOrphanProcesses(
+  sweepProjects: Project[],
+  dryRun: boolean,
+  presentation: CleanupPresentation,
+): Promise<boolean> {
+  const inventory = currentOrphanProcesses(sweepProjects)
+  let failed = false
+  if (inventory.error) {
+    presentation.error(`orphan process inventory failed: ${inventory.error}`)
+    failed = true
+  }
+  const liveWorktrees = liveRunWorktrees()
+  for (const process of inventory.orphans) {
+    if (!automaticOrphanReclaimDecision(process, liveWorktrees).reclaim) continue
+    const result = await reclaimOrphanProcess(String(process.pid), dryRun)
+    if (result.ok) presentation.log(result.action)
+    else {
+      failed = true
+      presentation.error(result.action)
+    }
+  }
+  return failed
 }
 
 export type SweepOptions = {
@@ -628,10 +658,9 @@ function sweepRecordedRow(
 
 export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): Promise<void> {
   const dry = options.dryRun
-  const projectName = options.project
-  const selectedProject = projectName === undefined ? null : projectByName(projectName)
-  if (projectName !== undefined && !selectedProject)
-    throw new Error(`unknown project ${projectName}`)
+  const selectedProject = options.project === undefined ? null : projectByName(options.project)
+  if (options.project !== undefined && !selectedProject)
+    throw new Error(`unknown project ${options.project}`)
   const sweepProjects = (selectedProject ? [selectedProject] : projects()).filter(
     isProjectRepository,
   )
@@ -644,7 +673,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   const trustObservation = helpers.observeGrokTrustHeadings()
   reconcileAbsentClaims({
     dryRun: dry,
-    project: projectName,
+    project: options.project,
     presentation: options.presentation,
     trust: trustObservation,
   })
@@ -952,6 +981,8 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     presentation: options.presentation,
   })
   cleanupFailed ||= branchCleanupFailed
+
+  cleanupFailed ||= await sweepOrphanProcesses(sweepProjects, dry, options.presentation)
 
   printSweepKept(
     closedCounts.released,

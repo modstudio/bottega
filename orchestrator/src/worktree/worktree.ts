@@ -23,8 +23,12 @@
  * disposable worktree. No worker pushes.
  */
 import { existsSync } from 'node:fs'
+import { db } from '../database/db.ts'
+import { type HostLoadSample, sampleHostLoad } from '../host-load-sample.ts'
 import type { MainStackConsumer, WorktreeTool } from '../project/projects.ts'
+import type { RecipeSnapshot } from '../recipe/tracked-recipe.ts'
 import { ensureMainStackStarted } from '../resources/main-stack.ts'
+import { finishProvisioningMeasurement } from './provisioning-measurement.ts'
 import {
   type ClaimRecipePort,
   createWithTool,
@@ -33,6 +37,7 @@ import {
   type RecordRecipeResource,
   type RecordWorktree,
 } from './worktree-create.ts'
+import type { ProvisionEntry } from './worktree-provision.ts'
 import { createReadOnlyWithTool, createReadOnlyWorktree } from './worktree-readonly.ts'
 import type { Worktree } from './worktree-types.ts'
 
@@ -63,39 +68,61 @@ export type CreateWorkerWorktreeOptions = {
   provisionTimeoutMs?: number
 }
 
-/** Create the worker tree through the project lifecycle or Git fallback. */
-export function createWorkerWorktree(options: CreateWorkerWorktreeOptions): Worktree {
-  if (!options.writes) {
-    return options.tool?.readonly_create
-      ? createReadOnlyWithTool(
-          options.tool,
-          options.cwd,
-          options.runId,
-          options.readOnlyBase,
-          options.record,
-        )
-      : createReadOnlyWorktree(
-          options.cwd,
-          options.runId,
-          options.readOnlyBase,
-          options.record,
-          options.tool?.readonly_provision,
-          options.provisionTimeoutMs,
-        )
-  }
-  ensureMainStackStarted({
-    projectId: options.mainStackProject?.recordId ?? '',
-    projectName: options.mainStackProject?.name ?? options.mainProjectPath,
-    projectPath: options.mainProjectPath,
-    declaration: options.mainStackConsumers
-      ? {
-          consumers: options.mainStackConsumers,
-          requiredServices: options.mainStackRequiredServices,
-        }
-      : undefined,
-    consumer: 'worktree-create',
+function recordProvisioning(
+  options: CreateWorkerWorktreeOptions,
+  started: number,
+  hostLoad: HostLoadSample,
+  outcome: 'ok' | 'failed',
+  worktree: Worktree | null,
+): void {
+  const stored = db()
+    .query('SELECT recipe_snapshot FROM run WHERE record_id=?')
+    .get(options.runId) as { recipe_snapshot: string | null } | null
+  const tracked = stored?.recipe_snapshot
+    ? (JSON.parse(stored.recipe_snapshot) as RecipeSnapshot)
+    : null
+  const provisions: readonly ProvisionEntry[] = options.writes
+    ? (tracked?.recipe?.provision ?? [])
+    : (options.tool?.readonly_provision ?? [])
+  finishProvisioningMeasurement({
+    runId: options.runId,
+    kind: options.writes ? 'writer' : 'read-only',
+    outcome,
+    started,
+    hostLoad,
+    tree: worktree?.path ?? recordedWorktree(options.runId),
+    provisions,
   })
-  if (options.tool) {
+}
+
+function recordedWorktree(runId: string): string | null {
+  const row = db().query('SELECT worktree FROM run WHERE record_id=?').get(runId) as {
+    worktree: string | null
+  } | null
+  return row?.worktree ?? null
+}
+
+function createReadOnlyWorkerWorktree(options: CreateWorkerWorktreeOptions): Worktree {
+  return options.tool?.readonly_create
+    ? createReadOnlyWithTool(
+        options.tool,
+        options.cwd,
+        options.runId,
+        options.readOnlyBase,
+        options.record,
+      )
+    : createReadOnlyWorktree(
+        options.cwd,
+        options.runId,
+        options.readOnlyBase,
+        options.record,
+        options.tool?.readonly_provision,
+        options.provisionTimeoutMs,
+      )
+}
+
+function createWritingWorkerWorktree(options: CreateWorkerWorktreeOptions): Worktree {
+  if (options.tool)
     return createWithTool(
       options.tool,
       options.cwd,
@@ -111,8 +138,37 @@ export function createWorkerWorktree(options: CreateWorkerWorktreeOptions): Work
       undefined,
       options.templateBaseRef,
     )
-  }
   return options.existingBranch
     ? createWorktreeForBranch(options.cwd, options.runId, options.existingBranch, options.record)
     : createWorktree(options.cwd, options.runId, options.baseRef, options.record, options.detached)
+}
+
+/** Create the worker tree through the project lifecycle or Git fallback. */
+export function createWorkerWorktree(options: CreateWorkerWorktreeOptions): Worktree {
+  const started = performance.now()
+  const hostLoad = sampleHostLoad()
+  let worktree: Worktree | null = null
+  let outcome: 'ok' | 'failed' = 'failed'
+  try {
+    if (!options.writes) worktree = createReadOnlyWorkerWorktree(options)
+    else {
+      ensureMainStackStarted({
+        projectId: options.mainStackProject?.recordId ?? '',
+        projectName: options.mainStackProject?.name ?? options.mainProjectPath,
+        projectPath: options.mainProjectPath,
+        declaration: options.mainStackConsumers
+          ? {
+              consumers: options.mainStackConsumers,
+              requiredServices: options.mainStackRequiredServices,
+            }
+          : undefined,
+        consumer: 'worktree-create',
+      })
+      worktree = createWritingWorkerWorktree(options)
+    }
+    outcome = 'ok'
+    return worktree
+  } finally {
+    recordProvisioning(options, started, hostLoad, outcome, worktree)
+  }
 }

@@ -125,6 +125,9 @@ export function runDetail(id: string, receipt = false) {
             r.changed_paths, r.review_ref, r.doc_revisions, r.canon_sha,
             r.prompt_path, r.output_path, r.mcp, r.mcp_server, r.mcp_connected, r.mcp_error,
             r.branch_kept, r.branch_kept_tip,
+            r.provisioning_kind, r.provisioning_ms, r.provisioning_phases,
+            r.provisioning_entries, r.provisioning_entries_limited, r.provisioning_host_load,
+            r.provisioning_outcome, r.provisioning_entry_roots,
             s.delivery, s.quality, s.fidelity, s.note, s.scored_at
        FROM run r
        LEFT JOIN score s ON s.run_record_id = r.record_id WHERE r.record_id = ?`,
@@ -179,6 +182,16 @@ export function runDetail(id: string, receipt = false) {
     root_id: identity.root_id,
     root_record_id: identity.root_record_id,
     changed_paths: typeof row.changed_paths === 'string' ? JSON.parse(row.changed_paths) : null,
+    provisioning_phases:
+      typeof row.provisioning_phases === 'string' ? JSON.parse(row.provisioning_phases) : null,
+    provisioning_host_load:
+      typeof row.provisioning_host_load === 'string'
+        ? JSON.parse(row.provisioning_host_load)
+        : null,
+    provisioning_entry_roots:
+      typeof row.provisioning_entry_roots === 'string'
+        ? JSON.parse(row.provisioning_entry_roots)
+        : null,
     project: typeof row.cwd === 'string' ? (projectAt(row.cwd)?.name ?? null) : null,
     scoreAxes: JOBS[String(row.job)]?.needs.writesRepo
       ? ['delivery', 'quality', 'fidelity']

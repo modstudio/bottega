@@ -1,7 +1,10 @@
 // concern: monitor-types
 /** Owns the plain data shapes shared by monitor composition, conditions, notices, and reporting. */
 
+import type { HostLoadSample } from '../host-load-sample.ts'
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
+
+export type MonitorHostLoad = HostLoadSample
 
 export const MONITOR_NOTICE_DELIVERY_POLICY = {
   'abandoned-bootstrap': 'revalidated',
@@ -66,6 +69,7 @@ export type MonitorResult = {
   conditions: MonitorCondition[]
   errors: string[]
   canon: { findings: number; docs: number }
+  hostLoad: MonitorHostLoad
 }
 
 export type MonitorNotice = Omit<MonitorCondition, 'detail' | 'action'> & {
@@ -86,4 +90,5 @@ export type MonitorHistoryRow = {
   findings: number
   errors: number
   conditions: unknown[]
+  host_load: MonitorHostLoad | null
 }

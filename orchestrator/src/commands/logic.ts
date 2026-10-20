@@ -34,6 +34,7 @@ import { mcpCommand } from '../mcp/mcp-commands.ts'
 import { readerMcpProxyCommand } from '../mcp/mcp-reader-proxy.ts'
 import { metricCommand } from '../metric/metric-commands.ts'
 import { monitorCommand } from '../monitor/monitor-commands.ts'
+import { provisioningCommand } from '../monitor/provisioning-commands.ts'
 import { storageCommand } from '../monitor/storage-commands.ts'
 import { relayCommand, waitingCommand } from '../operator/operator-commands.ts'
 import { projectAt } from '../project/projects.ts'
@@ -156,6 +157,19 @@ const describedCommand = (program: Command, name: string, description: string) =
 
 function registerMachineAttentionCommands(program: Command): void {
   program
+    .command('provisioning')
+    .description('report worker-tree provisioning cost')
+    .option('--project <name>', 'limit samples to one project')
+    .option('--since <duration>', 'limit samples by age')
+    .option('--json', 'write the report as JSON')
+    .allowExcessArguments(false)
+    .action((options) =>
+      provisioningCommand(
+        { project: options.project, since: options.since, json: Boolean(options.json) },
+        { write: writeStdout },
+      ),
+    )
+  program
     .command('setup-ask')
     .description('install the live worker question channel')
     .allowExcessArguments(false)
@@ -201,7 +215,7 @@ function registerMachineAttentionCommands(program: Command): void {
     .description('reclaim one classified stale resource')
     .option('--dry-run', 'report the reclamation without applying it')
     .allowExcessArguments(false)
-    .action((kind, subject, options) =>
+    .action(async (kind, subject, options) =>
       reclaimCommand(kind, subject, Boolean(options.dryRun), presentation),
     )
 }

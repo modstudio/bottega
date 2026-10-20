@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { cpus, freemem, loadavg, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -8,6 +8,8 @@ export type HostLoad = {
   ncpu: number
   freeMem: number
   pressure: MemoryPressure
+  swapUsed: number
+  swapTotal: number
 }
 
 export type MemoryPressure = 'normal' | 'warning' | 'critical' | 'unknown'
@@ -87,17 +89,52 @@ function readMemoryPressure(platform: NodeJS.Platform): MemoryPressure {
   }
 }
 
-function measureHostLoad(
+export function parseSwapUsage(output: string): { used: number; total: number } {
+  const mac = /total = ([\d.]+)([KMG])\s+used = ([\d.]+)([KMG])/i.exec(output)
+  const scale = (value: string, unit: string) =>
+    Number(value) *
+    (unit.toUpperCase() === 'G' ? 1024 ** 3 : unit.toUpperCase() === 'M' ? 1024 ** 2 : 1024)
+  if (mac) return { total: scale(mac[1]!, mac[2]!), used: scale(mac[3]!, mac[4]!) }
+  const total = /^SwapTotal:\s+(\d+)\s+kB$/m.exec(output)
+  const free = /^SwapFree:\s+(\d+)\s+kB$/m.exec(output)
+  if (total && free) {
+    const totalBytes = Number(total[1]) * 1024
+    return { total: totalBytes, used: Math.max(0, totalBytes - Number(free[1]) * 1024) }
+  }
+  return { used: 0, total: 0 }
+}
+
+function readSwap(platform: NodeJS.Platform): { used: number; total: number } {
+  try {
+    if (platform === 'darwin') {
+      const result = Bun.spawnSync(['/usr/sbin/sysctl', '-n', 'vm.swapusage'], {
+        stdout: 'pipe',
+        stderr: 'ignore',
+        timeout: MEMORY_PRESSURE_READ_TIMEOUT_MS,
+      })
+      return result.exitCode === 0
+        ? parseSwapUsage(result.stdout.toString())
+        : { used: 0, total: 0 }
+    }
+    if (platform === 'linux') return parseSwapUsage(readFileSync('/proc/meminfo', 'utf8'))
+  } catch {}
+  return { used: 0, total: 0 }
+}
+
+export function measureHostLoad(
   env: NodeJS.ProcessEnv = process.env,
   selfPid = process.pid,
   platform: NodeJS.Platform = process.platform,
 ): HostLoad {
+  const swap = readSwap(platform)
   return {
     gates: countRunningGates(gatePidDir(env), selfPid),
     loadavg: loadavg()[0] ?? 0,
     ncpu: Math.max(1, cpus().length),
     freeMem: freemem(),
     pressure: readMemoryPressure(platform),
+    swapUsed: swap.used,
+    swapTotal: swap.total,
   }
 }
 

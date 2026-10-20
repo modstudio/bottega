@@ -377,7 +377,6 @@ export const modules: ArchitectureModule[] = [
     './monitor-types.ts',
     '../review/review-vocabulary.ts',
   ]),
-  module('orchestrator/src/monitor/monitor-types.ts', ['../review/review-vocabulary.ts']),
   module('orchestrator/src/stalled-run.ts', []),
   module('orchestrator/src/no-follow-file.ts', ['node:fs']),
   module('orchestrator/src/mail/password-reset-mailer.ts', [
@@ -524,8 +523,13 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/self-spawn.ts',
   ]),
-  module('orchestrator/src/reclaim/reclaim-residue-policy.ts', ['../../../shared/brand.ts']),
-  module('orchestrator/src/reclaim/reclaim-worktree-dirty.ts', []),
+  module('orchestrator/src/reclaim/orphan-process-reclaim.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/process-identity.ts',
+    '../database/db.ts',
+    '../project/projects.ts',
+    '../resources/process-inventory.ts',
+  ]),
   module('orchestrator/src/reclaim/reclaim-residue.ts', [
     '../../../shared/brand.ts',
     'node:fs',
