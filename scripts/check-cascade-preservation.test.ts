@@ -178,6 +178,26 @@ test('accepts explicit columns in the preservation copy and restore', () => {
   ).toEqual([])
 })
 
+test('recognizes an outer snapshot restore that contains a scalar parent lookup', () => {
+  const risks = cascadeRisks([
+    {
+      tag: '0001_scalar_restore',
+      source: `CREATE TABLE parent(id INTEGER PRIMARY KEY);
+        CREATE TABLE child(id INTEGER PRIMARY KEY,parent_id INTEGER REFERENCES parent(id) ON DELETE CASCADE);`,
+    },
+    {
+      tag: '0002_scalar_restore',
+      source: `CREATE TABLE child_snapshot AS SELECT * FROM child;
+        DROP TABLE child;
+        DROP TABLE parent;
+        CREATE TABLE parent(record_id TEXT PRIMARY KEY);
+        CREATE TABLE child(record_id TEXT PRIMARY KEY,parent_record_id TEXT REFERENCES parent(record_id) ON DELETE CASCADE);
+        INSERT INTO child SELECT id,(SELECT record_id FROM parent WHERE record_id=CAST(child_snapshot.parent_id AS TEXT)) FROM child_snapshot;`,
+    },
+  ])
+  expect(risks).toEqual([])
+})
+
 test('execution probe observes a cascading row loss', () => {
   expect(
     probeMigrations([
@@ -251,6 +271,18 @@ test('execution probe seeds nullable exclusive-or columns with an integer flag',
       detectedBy: ['replay'],
     },
   ])
+})
+
+test('execution probe seeds JSON values before CHECK literals that are not JSON', () => {
+  const result = probeMigrations([
+    {
+      tag: '0001_json',
+      source: `CREATE TABLE parent(id TEXT PRIMARY KEY);
+        CREATE TABLE child(id TEXT PRIMARY KEY,parent_id TEXT REFERENCES parent(id) ON DELETE CASCADE,
+          audiences TEXT NOT NULL CHECK(json_valid(audiences) AND json_type(audiences)='array' AND json_array_length(audiences)>0));`,
+    },
+  ])
+  expect(result.unprobed).toEqual([])
 })
 
 test('execution probe seeds a nullable self-reference with null', () => {
