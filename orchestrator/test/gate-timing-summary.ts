@@ -7,8 +7,10 @@ import { fileURLToPath } from 'node:url'
 import {
   baselineDisposition,
   decideTestTiming,
+  decideTestTimingRun,
 } from '../../scripts/quality/test-timing-decision.ts'
-import type { FileRow } from './record-gate-timings.ts'
+import { decideTimingGrowthPublication } from './gate-timing-summary-decision.ts'
+import type { FileRow, TestRow } from './record-gate-timings.ts'
 
 const root = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '')
 const TIMING_SUMMARY_LABEL = 'scripts/quality/test-timings.json'
@@ -24,6 +26,7 @@ type CommittedTestTiming = {
 }
 
 type CommittedTimingSummary = {
+  scope: 'whole-suite'
   unitElapsedMs: number
   files: CommittedTestTiming[]
 }
@@ -38,9 +41,10 @@ function readCommittedTimingSummary(): CommittedTimingSummary | undefined {
   })
   if (result.exitCode !== 0) return undefined
   const parsed = JSON.parse(result.stdout.toString()) as
-    | CommittedTimingSummary
+    | Partial<CommittedTimingSummary>
     | CommittedTestTiming[]
-  return Array.isArray(parsed) ? { unitElapsedMs: 0, files: parsed } : parsed
+  if (Array.isArray(parsed) || parsed.scope !== 'whole-suite' || !parsed.files) return undefined
+  return parsed as CommittedTimingSummary
 }
 
 function packageOf(path: string): string {
@@ -74,7 +78,6 @@ function largestGrowth(
 function unitTimingResult(
   unitElapsedMs: number,
   committedMs: number | undefined,
-  ci: boolean,
   reporter: Reporter,
 ): { changed: boolean; fatal: boolean; nextMs: number; initial: boolean } {
   const decision = decideTestTiming({
@@ -114,12 +117,67 @@ function summaryRows(files: FileRow[]): CommittedTestTiming[] {
     .sort((a, b) => a.path.localeCompare(b.path))
 }
 
+function publishBaselineDisposition({
+  disposition,
+  currentFileCount,
+  nextUnitElapsedMs,
+  next,
+  longPoleCount,
+  fatal,
+  reporter,
+}: {
+  disposition: ReturnType<typeof baselineDisposition>
+  currentFileCount: number
+  nextUnitElapsedMs: number
+  next: CommittedTestTiming[]
+  longPoleCount: number
+  fatal: boolean
+  reporter: Reporter
+}): boolean {
+  if (disposition === 'report') {
+    reporter.error(
+      `${TIMING_SUMMARY_LABEL}: baseline measured on CI is informational; commit a baseline from a local gate`,
+    )
+    reporter.log(`test timing ratchet: ok (${currentFileCount} files)`)
+    return longPoleCount === 0
+  }
+  if (disposition === 'write') {
+    writeFileSync(
+      TIMING_SUMMARY_PATH,
+      `${JSON.stringify({ scope: 'whole-suite', unitElapsedMs: nextUnitElapsedMs, files: next }, null, 2)}\n`,
+    )
+    reporter.error(`test timing baseline changed; commit ${TIMING_SUMMARY_LABEL} and re-run`)
+    return false
+  }
+  reporter.log(`test timing ratchet: ok (${currentFileCount} files)`)
+  return !fatal && longPoleCount === 0
+}
+
 export function publishTimingSummary(
   files: FileRow[],
+  tests: TestRow[],
   unitElapsedMs: number,
+  sharded = false,
   reporter: Reporter = console,
 ): boolean {
   const current = summaryRows(files)
+  const runDecision = decideTestTimingRun({ sharded, files, tests })
+  const longPoles = runDecision.longPoles
+  for (const failure of longPoles) reporter.error(`test timing long pole: ${failure}`)
+  const growthPublication = decideTimingGrowthPublication({
+    growth: runDecision.growth,
+    longPoleCount: longPoles.length,
+    ci: Boolean(process.env.CI),
+  })
+  if (growthPublication.reportOnly) {
+    reporter.error('test timing ceilings are report-only in CI and block locally')
+  }
+  if (growthPublication.kind === 'finish-sharded') {
+    reporter.log(
+      'test timing growth comparison skipped because the run is sharded; it runs in an unsharded full-suite run',
+    )
+    return growthPublication.passed
+  }
   const committedSummary = readCommittedTimingSummary()
   const committed = committedSummary?.files
   const currentTotals = totals(current)
@@ -131,7 +189,6 @@ export function publishTimingSummary(
   const unit = unitTimingResult(
     unitElapsedMs,
     committedSummary?.unitElapsedMs || undefined,
-    ci,
     reporter,
   )
   const reseedFiles = unit.initial
@@ -181,21 +238,13 @@ export function publishTimingSummary(
       ].sort((a, b) => a.path.localeCompare(b.path))
     : current
   const disposition = baselineDisposition({ changed: baselineChanged, ci })
-  if (disposition === 'report') {
-    reporter.error(
-      `${TIMING_SUMMARY_LABEL}: baseline measured on CI is informational; commit a baseline from a local gate`,
-    )
-    reporter.log(`test timing ratchet: ok (${current.length} files)`)
-    return true
-  }
-  if (disposition === 'write') {
-    writeFileSync(
-      TIMING_SUMMARY_PATH,
-      `${JSON.stringify({ unitElapsedMs: nextUnitElapsedMs, files: next }, null, 2)}\n`,
-    )
-    reporter.error(`test timing baseline changed; commit ${TIMING_SUMMARY_LABEL} and re-run`)
-    return false
-  }
-  reporter.log(`test timing ratchet: ok (${current.length} files)`)
-  return !fatal
+  return publishBaselineDisposition({
+    disposition,
+    currentFileCount: current.length,
+    nextUnitElapsedMs,
+    next,
+    longPoleCount: growthPublication.longPolesPassed ? 0 : longPoles.length,
+    fatal,
+    reporter,
+  })
 }

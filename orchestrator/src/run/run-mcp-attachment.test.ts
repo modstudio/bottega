@@ -6,7 +6,6 @@ import {
   decideMcpAttachment,
   decideMcpMirrorMismatch,
   decideMcpToolProbe,
-  shouldDeferCwdMcpPreflight,
 } from './run-mcp-attachment.ts'
 
 const mcpServerName = PLATFORM_NAME.toLowerCase()
@@ -21,68 +20,6 @@ const disconnected: McpConnection = {
   connected: false,
   error: 'connection refused',
 }
-
-describe('cwd MCP preflight deferral', () => {
-  test.each([
-    {
-      name: 'a project exists and the job forbids a repository',
-      facts: {
-        mcpRequest: 'require' as const,
-        callerCwdHasProject: true,
-        forbidsRepo: true,
-        repoJob: false,
-        discoversMcpFromCwd: false,
-      },
-      expected: true,
-    },
-    {
-      name: 'a repository job uses an agent that discovers MCP from cwd',
-      facts: {
-        mcpRequest: 'prefer' as const,
-        callerCwdHasProject: true,
-        forbidsRepo: false,
-        repoJob: true,
-        discoversMcpFromCwd: true,
-      },
-      expected: true,
-    },
-    {
-      name: 'no MCP was requested',
-      facts: {
-        mcpRequest: undefined,
-        callerCwdHasProject: true,
-        forbidsRepo: true,
-        repoJob: true,
-        discoversMcpFromCwd: true,
-      },
-      expected: false,
-    },
-    {
-      name: 'the caller cwd has no project',
-      facts: {
-        mcpRequest: 'require' as const,
-        callerCwdHasProject: false,
-        forbidsRepo: true,
-        repoJob: true,
-        discoversMcpFromCwd: true,
-      },
-      expected: false,
-    },
-    {
-      name: 'the repository agent does not discover MCP from cwd',
-      facts: {
-        mcpRequest: 'require' as const,
-        callerCwdHasProject: true,
-        forbidsRepo: false,
-        repoJob: true,
-        discoversMcpFromCwd: false,
-      },
-      expected: false,
-    },
-  ])('$name: $expected', ({ facts, expected }) => {
-    expect(shouldDeferCwdMcpPreflight(facts)).toBe(expected)
-  })
-})
 
 describe('MCP attachment ruling', () => {
   test('a refused required attachment returns the existing refusal reason', () => {

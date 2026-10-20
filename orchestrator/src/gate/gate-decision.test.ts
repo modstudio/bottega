@@ -2,10 +2,13 @@ import { describe, expect, test } from 'bun:test'
 import {
   boundedGateOutputTail,
   brokerGateEnvironment,
+  changedGateToolingPaths,
   decideGateCancellation,
   decideGateEligibility,
+  decideGateExecutionFinalization,
   decideGateHeadCommit,
   decideGateRequest,
+  decideGateToolingDiffBase,
   decideGateWait,
   formatGateRequestDecision,
   GATE_CLOSE_REASON,
@@ -49,6 +52,56 @@ test('broker gate records HEAD only for a clean tree', () => {
   expect(decideGateHeadCommit({ headCommit, porcelainPaths: [] })).toBe(headCommit)
   expect(decideGateHeadCommit({ headCommit, porcelainPaths: [' M src/app.ts'] })).toBeNull()
   expect(decideGateHeadCommit({ headCommit: '', porcelainPaths: [] })).toBeNull()
+})
+
+test('broker tooling compares a rebased worker to the live merge-base, not its recorded base', () => {
+  const base = decideGateToolingDiffBase({ recordedBase: 'recorded-base', mergeBase: 'merge-base' })
+  expect(base).toBe('merge-base')
+  const pathsByBase: Record<string, string[]> = {
+    'recorded-base': ['scripts/trunk.ts', 'scripts/worker.ts'],
+    'merge-base': ['scripts/worker.ts'],
+  }
+  expect(
+    changedGateToolingPaths({
+      diffPaths: pathsByBase[base]!,
+      untrackedPaths: [],
+      gateCommand: 'scripts/gate',
+    }),
+  ).toEqual(['scripts/worker.ts'])
+  expect(decideGateToolingDiffBase({ recordedBase: 'recorded-base', mergeBase: null })).toBe(
+    'recorded-base',
+  )
+})
+
+test('broker execution finalizes normal and cancelled runs without losing lifecycle evidence', () => {
+  expect(
+    decideGateExecutionFinalization({
+      exitCode: 0,
+      timedOut: false,
+      cancelledReason: null,
+      logCreated: true,
+      artifactPath: '/artifacts/gate-7.log',
+    }),
+  ).toEqual({
+    exitCode: 0,
+    timedOut: false,
+    cancelledReason: null,
+    artifactPath: '/artifacts/gate-7.log',
+  })
+  expect(
+    decideGateExecutionFinalization({
+      exitCode: -1,
+      timedOut: false,
+      cancelledReason: GATE_CLOSE_REASON,
+      logCreated: false,
+      artifactPath: '/artifacts/gate-8.log',
+    }),
+  ).toEqual({
+    exitCode: -1,
+    timedOut: false,
+    cancelledReason: GATE_CLOSE_REASON,
+    artifactPath: null,
+  })
 })
 
 describe('worker gate eligibility', () => {
@@ -150,6 +203,16 @@ test('gate tooling paths include execution inputs and exclude ordinary source', 
   for (const path of ['src/app.ts', 'nested/eslint.config.ts', 'README.md', 'package.ts']) {
     expect(isGateToolingPath(path, 'tools/custom-gate --plain')).toBe(false)
   }
+})
+
+test('broker tooling evidence combines, deduplicates, filters, and sorts repository observations', () => {
+  expect(
+    changedGateToolingPaths({
+      diffPaths: ['src/app.ts', 'scripts/gate', 'package.json'],
+      untrackedPaths: ['scripts/gate', '.githooks/pre-commit'],
+      gateCommand: 'scripts/gate',
+    }),
+  ).toEqual(['.githooks/pre-commit', 'package.json', 'scripts/gate'])
 })
 
 test('gate result bounds the combined output tail and preserves timeout evidence', () => {

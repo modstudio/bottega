@@ -76,5 +76,10 @@ console.log('orchestrator test wall time top ten:')
 for (const file of [...timing.files].sort((a, b) => b.wallMs - a.wallMs).slice(0, 10)) {
   console.log(`${file.file} ${Math.round(file.wallMs)}ms`)
 }
-const timingPassed = publishTimingSummary(timing.files, timing.elapsedMs)
+const timingPassed = publishTimingSummary(
+  timing.files,
+  timing.tests,
+  timing.elapsedMs,
+  shardArguments.length > 0,
+)
 process.exit(timing.exitCode !== 0 || !timingPassed ? 1 : 0)

@@ -1,19 +1,23 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { applyMigrations, applyMigrationsBefore } from './migrations.ts'
+import { applyMigrations } from './migrations.ts'
+import { migratedTestDatabase, migrationBoundaryTestDatabase } from './test-database.fixture.ts'
 
 const TABLES = ['doc', 'doc_revision', 'canon_pack', 'doc_related_subject'] as const
+const DOC_UUID_BOUNDARY = '0130_doc_uuid_key'
+
+// Keep the boundary replay out of an individual test's timed body.
+migrationBoundaryTestDatabase(DOC_UUID_BOUNDARY).close()
 
 function count(database: Database, table: string): number {
   return database.query<{ n: number }, []>(`SELECT COUNT(*) n FROM ${table}`).get()!.n
 }
 
 test('document UUID-key migration preserves rebuilt rows, record identities, and relationships', () => {
-  const database = new Database(':memory:')
+  const database = migrationBoundaryTestDatabase(DOC_UUID_BOUNDARY)
   database.exec('PRAGMA foreign_keys=ON')
   try {
-    applyMigrationsBefore(database, '0130_doc_uuid_key')
     const ids = {
       project: newRecordId(),
       parent: newRecordId(),
@@ -99,9 +103,8 @@ test('document UUID-key migration preserves rebuilt rows, record identities, and
 })
 
 test('document UUID-key migration keeps removed-document history grouped with a null live reference', () => {
-  const database = new Database(':memory:')
+  const database = migrationBoundaryTestDatabase(DOC_UUID_BOUNDARY)
   try {
-    applyMigrationsBefore(database, '0130_doc_uuid_key')
     for (const [number, op] of [
       [41, 'create'],
       [42, 'set'],
@@ -133,9 +136,8 @@ test('document UUID-key migration keeps removed-document history grouped with a 
 })
 
 test('document UUID-key migration reports every orphan together and leaves the old schema unchanged', () => {
-  const database = new Database(':memory:')
+  const database = migrationBoundaryTestDatabase(DOC_UUID_BOUNDARY)
   try {
-    applyMigrationsBefore(database, '0130_doc_uuid_key')
     database.exec('PRAGMA foreign_keys=OFF')
     const missingRevision = newRecordId()
     database.exec(`
@@ -170,9 +172,8 @@ test('document UUID-key migration reports every orphan together and leaves the o
 })
 
 test('document UUID-key migration refuses an ambiguous bare run and document number', () => {
-  const database = new Database(':memory:')
+  const database = migrationBoundaryTestDatabase(DOC_UUID_BOUNDARY)
   try {
-    applyMigrationsBefore(database, '0130_doc_uuid_key')
     database.exec(`
       INSERT INTO project(record_id,name,path,canon,settings) VALUES ('01990000-0000-7000-8000-000000000070','other','/other',1,'{}');
       INSERT INTO workflow_cursor(id,project,workflow_slug,mode_slug,instance_id,workflow_version,catalogue_version,args,total_steps,created_at,updated_at,record_id)
@@ -196,9 +197,8 @@ test('document UUID-key migration refuses an ambiguous bare run and document num
 })
 
 test('document UUID-key migration preserves a path-shaped canon artifact address', () => {
-  const database = new Database(':memory:')
+  const database = migrationBoundaryTestDatabase(DOC_UUID_BOUNDARY)
   try {
-    applyMigrationsBefore(database, '0130_doc_uuid_key')
     database.exec(`
       INSERT INTO workflow_cursor(id,project,workflow_slug,mode_slug,instance_id,workflow_version,catalogue_version,args,total_steps,created_at,updated_at,record_id)
       VALUES (999,'fixture','flow','mode','instance',1,1,'{}',1,'a','a','01990000-0000-7000-8000-000000000087');
@@ -222,9 +222,8 @@ test('document UUID-key migration preserves a path-shaped canon artifact address
 })
 
 test('every declared document foreign key leads an index', () => {
-  const database = new Database(':memory:')
+  const database = migratedTestDatabase()
   try {
-    applyMigrations(database)
     for (const table of TABLES) {
       const leading = new Set(
         database

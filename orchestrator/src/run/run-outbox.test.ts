@@ -1,7 +1,6 @@
-import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { HOOK_TREE_JOB } from '../hook-tree/hook-tree.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from '../record/outbox-payload-contracts.ts'
 import { sanitizeOutboxPayload } from '../record/outbox-sanitize.ts'
@@ -49,8 +48,7 @@ test('terminal payload maps every hosted run column and no execution-state colum
 })
 
 test('backfill resolves chains, enqueues finished turns once, and skips running rows', () => {
-  const database = new Database(':memory:')
-  applyMigrations(database)
+  const database = migratedTestDatabase()
   database
     .query(
       `INSERT INTO project (record_id,name,path,canon,settings)
@@ -156,8 +154,7 @@ test('backfill resolves chains, enqueues finished turns once, and skips running 
 })
 
 test('backfill leaves hook-tree rows local', () => {
-  const database = new Database(':memory:')
-  applyMigrations(database)
+  const database = migratedTestDatabase()
   database
     .query(
       `INSERT INTO run
@@ -181,8 +178,7 @@ test('backfill leaves hook-tree rows local', () => {
 })
 
 test('backfill refreshes only roots whose latest run payload disagrees', () => {
-  const database = new Database(':memory:')
-  applyMigrations(database)
+  const database = migratedTestDatabase()
   const insert = database.query(
     `INSERT INTO run
        (record_id,number,started_at,last_event_at,agent,job,prompt_sha,prompt_bytes,prompt_head,
@@ -225,8 +221,7 @@ test('backfill refreshes only roots whose latest run payload disagrees', () => {
 })
 
 test('backfill timestamps a refreshed root from its outcome-producing turn', () => {
-  const database = new Database(':memory:')
-  applyMigrations(database)
+  const database = migratedTestDatabase()
   const rootRecordId = newRecordId()
   database
     .query(

@@ -22,34 +22,23 @@ import { appendRunEvent } from '../events.ts'
 import { checkoutAliases, realpathOrSpelled } from '../git/checkout-identity.ts'
 import { branchOf, gitContext, repoRootOf } from '../git/git-environment.ts'
 import {
-  assertGrokTrustEligible,
+  type DeferredCwdMcpStep,
   type McpConnection,
   type McpMode,
   type McpRequest,
-  mcpAttachRefusal,
-  mcpConnectionFor,
   storedMcpRequest,
 } from '../mcp/mcp-preflight.ts'
-import { wrongProjectReason } from '../mcp/mcp-probe.ts'
 import { withWorktreeCreateLock, withWorktreeLease } from '../project/project-lock.ts'
 import { projectAt, stackAt } from '../project/projects.ts'
-import { ensureProjectMainStack } from '../resources/main-stack.ts'
 import {
   claimRecipePort,
   RECIPE_PORT_BAND,
   recordCreatedWorktreeClaims,
   recordDatabaseClaim,
-  recordSandboxDirectoryClaim,
-  recordTrustEntryClaims,
 } from '../resources/resource-claims.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { attributedLaunchKey } from '../review/review-target.ts'
 import { resolveSupersededTurn } from '../route/failover.ts'
-import {
-  addedGrokTrustHeadings,
-  grokTrustHeadings,
-  grokTrustStorePath,
-} from '../sandbox/grok-trust.ts'
 import { type KeepTreeExemption, keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { createWorkerWorktree, worktreeExists } from '../worktree/worktree.ts'
 import {
@@ -77,6 +66,7 @@ import {
   writeGeneratedSchema,
 } from './run-artifacts.ts'
 import { inheritedRunFacts } from './run-claim-inheritance.ts'
+import { executeClaimedMcpPlan } from './run-claim-mcp.ts'
 import {
   claimedRunBranch,
   claimTreePlanForCandidate,
@@ -94,11 +84,6 @@ import type { RunResumeOptions } from './run-resume-options.ts'
 import { assertRetryRootWorkspace } from './run-retry-claim.ts'
 import { taskBranchResolution } from './run-task-branch-resolution.ts'
 import { resolveRunTaskRecordId } from './run-task-reference.ts'
-import {
-  claimedGrokReaderConfig,
-  prepareClaimedGrokMcpScope,
-  prepareClaimedWorkerMcpConfig,
-} from './run-worker-home.ts'
 
 type ClaimOptions = {
   reserveId?: string
@@ -159,7 +144,7 @@ export type ClaimInput = {
   implicitReview: { branch: string | null; findings: boolean }
   coverageBase: string | null
   readOnlyBase: string | null
-  deferredCwdMcpPreflight: boolean
+  deferredCwdMcpPlan: DeferredCwdMcpStep[]
   usingMcp: boolean
   startedByUserId: string | null
   replySchemaName: string
@@ -220,7 +205,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     implicitReview,
     coverageBase,
     readOnlyBase,
-    deferredCwdMcpPreflight,
+    deferredCwdMcpPlan,
     usingMcp,
     startedByUserId,
     replySchemaName,
@@ -917,134 +902,32 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         .query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE record_id=?')
         .run(sha(prompt), Buffer.byteLength(prompt), claim.id)
     }
-    if (deferredCwdMcpPreflight) {
-      const project = projectAt(callerCwd)
-      if (!project)
-        throw new Error(`no registered project identifies MCP configuration for ${callerCwd}`)
-      ensureProjectMainStack(project, 'mcp')
-      const grokScope = prepareClaimedGrokMcpScope(
-        {
-          agent: a,
-          runDir: sandboxRunDir,
-          runDirExisted: sandboxRunDirExisted,
-          cwd,
-          project,
-          config: prepareClaimedWorkerMcpConfig({
-            cwd,
-            checkout: project.path,
-            inherited: resume.workspaceSource === 'retained',
-            writesRepository: writesJob,
-          }),
-          ...claimedGrokReaderConfig(a, writesJob, cwd, project),
-        },
-        () =>
-          writeTransaction(() => {
-            recordSandboxDirectoryClaim(db(), {
-              rootRunId: sandboxRoot.record_id,
-              runId: claim.id,
-              projectId: runProjectId,
-              path: sandboxRunDir,
-              claimedAt: nowIso(),
-            })
-          }),
-      )
-      provisionedMcpConfig = grokScope.config
-      mcpSetupHeader = grokScope.header
-      const server = grokScope.server
-      if (grokScope.error) {
-        mcpConnection = { server, connected: false, error: grokScope.error }
-      } else {
-        const grokTrust = name === 'grok'
-        grokMcpEnvironment = grokScope.environment
-        const recorded = db()
-          .query('SELECT record_id, cwd, worktree, worktree_source FROM run WHERE record_id=?')
-          .get(claim.id) as {
-          record_id: string
-          cwd: string | null
-          worktree: string | null
-          worktree_source: string | null
-        } | null
-        if (grokTrust) {
-          assertGrokTrustEligible(
-            cwd,
-            recorded,
-            noRepoIsolatePath(recorded?.record_id ?? claim.id, runsDir),
-          )
-        }
-        const beforeTrust = grokTrust ? grokTrustHeadings(grokMcpEnvironment) : []
-        mcpTrustGranted = grokTrust
-        // Record the attempt before doctor: the trusted invocation may write its
-        // store and then fail, and that remains a grant orch made.
-        if (grokTrust)
-          db().query('UPDATE run SET mcp_trust_granted=1 WHERE record_id=?').run(claim.id)
-        try {
-          mcpConnection = mcpConnectionFor(
-            name,
-            cwd,
-            server,
-            grokTrust,
-            repoJob,
-            grokMcpEnvironment,
-          )
-        } finally {
-          if (grokTrust) {
-            const added = addedGrokTrustHeadings(beforeTrust, grokTrustHeadings(grokMcpEnvironment))
-            writeTransaction(() => {
-              db()
-                .query('UPDATE run SET mcp_trust_path=? WHERE record_id=?')
-                .run(added.length ? JSON.stringify(added) : null, claim.id)
-              recordTrustEntryClaims(db(), {
-                rootRunId: sandboxRoot.record_id,
-                runId: claim.id,
-                projectId: runProjectId,
-                headings: added,
-                storePath: grokTrustStorePath(grokMcpEnvironment),
-                claimedAt: nowIso(),
-              })
-            })
-          }
-        }
-      }
-      if (
-        mcpTrustGranted &&
-        mcpConnection.connected === false &&
-        /folder untrusted|repo-local server not started/i.test(mcpConnection.error ?? '')
-      ) {
-        throw new Error(
-          `Grok remained untrusted after scoped trust for ${cwd}: ${mcpConnection.error}`,
-        )
-      }
-      const mismatched = wrongProjectReason(server, mcpConnection.namesSeen ?? [])
-      if (mismatched) {
-        mcpConnection = { ...mcpConnection, connected: false, error: mismatched }
-      }
-      if (mcpConnection.connected === false && mcpMode === 'prefer') {
-        mcpConnection = {
-          ...mcpConnection,
-          error: mcpConnection.error?.startsWith('wrong project:')
-            ? mcpConnection.error
-            : `mirror: ${mcpConnection.error ?? `server '${server}' could not be attached`}`,
-        }
-        usingMcp = false
-      }
-      db()
-        .query(`UPDATE run SET mcp_server=?, mcp_connected=?, mcp_error=? WHERE record_id=?`)
-        .run(
-          mcpConnection.server,
-          mcpConnection.connected == null ? null : mcpConnection.connected ? 1 : 0,
-          mcpConnection.error,
-          claim.id,
-        )
-      const refusal = mcpAttachRefusal(mcpConnection)
-      if (refusal && mcpMode === 'require') throw new Error(refusal)
-    } else if (mcpConnection?.connected === false && mcpMode === 'prefer') {
-      mcpConnection = {
-        ...mcpConnection,
-        error: `mirror: ${mcpConnection.error ?? `server '${mcpConnection.server}' could not be attached`}`,
-      }
-      usingMcp = false
-      db().query('UPDATE run SET mcp_error=? WHERE record_id=?').run(mcpConnection.error, claim.id)
-    }
+    ;({
+      provisionedMcpConfig,
+      mcpSetupHeader,
+      mcpTrustGranted,
+      grokMcpEnvironment,
+      mcpConnection,
+      usingMcp,
+    } = executeClaimedMcpPlan({
+      plan: deferredCwdMcpPlan,
+      callerCwd,
+      agent: a,
+      agentName: name,
+      sandboxRunDir,
+      sandboxRunDirExisted,
+      sandboxRootId: sandboxRoot.record_id,
+      runId: claim.id,
+      runProjectId,
+      runsDir,
+      cwd,
+      inherited: resume.workspaceSource === 'retained',
+      writesJob,
+      repoJob,
+      mcpMode,
+      mcpConnection,
+      usingMcp,
+    }))
   } catch (e) {
     removeIsolatedCwd?.()
     const why = errorTail(String((e as Error)?.message ?? e))

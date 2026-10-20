@@ -1,15 +1,7 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import {
-  applyMigrations,
-  applyMigrationsBefore,
-  canonicalSchemaHash,
-  MIGRATIONS_FOLDER,
-  migrationJournal,
-} from './migrations.ts'
+import { applyMigrationsBefore, canonicalSchemaHash } from './migrations.ts'
+import { migrationBoundaryTestDatabase } from './test-database.fixture.ts'
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 const TABLES = [
@@ -30,24 +22,12 @@ const TABLES = [
   'review_finding_amendment',
 ] as const
 
+migrationBoundaryTestDatabase('0107_score_gate_claim_audit_record_identity').close()
+migrationBoundaryTestDatabase('0125_question_uuid_key').close()
+
 test('score gate claim and audit identity migration fills ids, keeps rows and keys, and preserves schema', () => {
-  const folder = mkdtempSync(join(tmpdir(), 'orch-score-gate-claim-identity-'))
-  mkdirSync(join(folder, 'meta'))
-  const journal = migrationJournal()
-  const migration = journal.findIndex(
-    (entry) => entry.tag === '0107_score_gate_claim_audit_record_identity',
-  )
-  const prior = journal.slice(0, migration)
-  for (const entry of prior)
-    copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`))
-  writeFileSync(
-    join(folder, 'meta', '_journal.json'),
-    JSON.stringify({ version: '7', dialect: 'sqlite', entries: prior }),
-  )
-  const database = new Database(':memory:')
+  const database = migrationBoundaryTestDatabase('0107_score_gate_claim_audit_record_identity')
   try {
-    database.exec('PRAGMA foreign_keys=ON')
-    applyMigrations(database, folder)
     database
       .query(
         `INSERT INTO run
@@ -240,9 +220,7 @@ test('score gate claim and audit identity migration fills ids, keeps rows and ke
       { gate_execution_id: 2, check_name: 'lint' },
     ])
     expect(database.query('PRAGMA foreign_key_check').all()).toEqual([])
-    const fresh = new Database(':memory:')
-    fresh.exec('PRAGMA foreign_keys=ON')
-    applyMigrationsBefore(fresh, '0125_question_uuid_key')
+    const fresh = migrationBoundaryTestDatabase('0125_question_uuid_key')
     const schemaRows = (subject: Database) =>
       subject
         .query(
@@ -255,6 +233,5 @@ test('score gate claim and audit identity migration fills ids, keeps rows and ke
     fresh.close()
   } finally {
     database.close()
-    rmSync(folder, { recursive: true, force: true })
   }
 })

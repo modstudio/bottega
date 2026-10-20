@@ -1,5 +1,49 @@
 export type TestTimingDecision = 'initial' | 'pass' | 'tighten' | 'fail'
 
+export const TEST_FILE_WALL_CEILING_MS = 3_000
+export const SINGLE_TEST_WALL_CEILING_MS = 1_000
+
+type TimedFile = { file: string; wallMs: number }
+type TimedTest = { file: string; name: string; wallMs: number }
+
+export type TestTimingRunDecision = {
+  growth: 'compare' | 'skip-sharded'
+  longPoles: string[]
+}
+
+export function longPoleFailures(files: TimedFile[], tests: TimedTest[]): string[] {
+  return [
+    ...files
+      .filter((file) => file.file.endsWith('.test.ts') && file.wallMs > TEST_FILE_WALL_CEILING_MS)
+      .map(
+        (file) =>
+          `${file.file} ${Math.round(file.wallMs)}ms exceeds test file ceiling ${TEST_FILE_WALL_CEILING_MS}ms`,
+      ),
+    ...tests
+      .filter((test) => test.wallMs > SINGLE_TEST_WALL_CEILING_MS)
+      .map(
+        (test) =>
+          `${test.file}: ${test.name} ${Math.round(test.wallMs)}ms exceeds single test ceiling ${SINGLE_TEST_WALL_CEILING_MS}ms`,
+      ),
+  ]
+}
+
+/** Keep absolute ceilings authoritative while comparing growth only for like-for-like runs. */
+export function decideTestTimingRun({
+  sharded,
+  files,
+  tests,
+}: {
+  sharded: boolean
+  files: TimedFile[]
+  tests: TimedTest[]
+}): TestTimingRunDecision {
+  return {
+    growth: sharded ? 'skip-sharded' : 'compare',
+    longPoles: longPoleFailures(files, tests),
+  }
+}
+
 type TestTimingInput = {
   currentMs: number
   committedMs: number | undefined

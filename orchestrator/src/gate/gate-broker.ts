@@ -16,10 +16,12 @@ import { runArtifactsDir } from '../run/run-artifacts.ts'
 import {
   boundedGateOutputTail,
   brokerGateEnvironment,
+  changedGateToolingPaths,
+  decideGateExecutionFinalization,
   decideGateHeadCommit,
+  decideGateToolingDiffBase,
   GATE_CLOSE_REASON,
   GATE_COMMAND_TIMEOUT_MS,
-  isGateToolingPath,
   resolveGateCommand,
 } from './gate-decision.ts'
 import { hostSlotWaitCallbacks } from './host-slot-wait.ts'
@@ -117,21 +119,21 @@ function changedGateTooling(
   plan: ReturnType<typeof gatePlan>,
   log: (line: string) => void,
 ): string[] {
-  let base = plan.baseCommit
+  let mergeBase: string | null = null
   try {
     if (!plan.trunk) throw new Error('the project has no registered trunk')
-    const mergeBase = resolveReviewMergeBase(plan.worktree, 'HEAD', plan.trunk)
+    mergeBase = resolveReviewMergeBase(plan.worktree, 'HEAD', plan.trunk)
     if (!mergeBase) throw new Error(`no merge-base with trunk ${plan.trunk}`)
-    base = mergeBase
   } catch (error) {
     const reason = (error instanceof Error ? error.message : String(error)).replaceAll('\n', ' ')
     log(`gate tooling diff fell back to recorded base ${plan.baseCommit}: ${reason}\n`)
   }
-  const changed = new Set([
-    ...gitPaths(plan.worktree, ['diff', '--name-only', '-z', base, '--']),
-    ...gitPaths(plan.worktree, ['ls-files', '--others', '--exclude-standard', '-z']),
-  ])
-  return [...changed].filter((path) => isGateToolingPath(path, plan.command)).sort()
+  const base = decideGateToolingDiffBase({ recordedBase: plan.baseCommit, mergeBase })
+  return changedGateToolingPaths({
+    diffPaths: gitPaths(plan.worktree, ['diff', '--name-only', '-z', base, '--']),
+    untrackedPaths: gitPaths(plan.worktree, ['ls-files', '--others', '--exclude-standard', '-z']),
+    gateCommand: plan.command,
+  })
 }
 
 async function waitForExit(child: ReturnType<typeof spawn>): Promise<void> {
@@ -338,15 +340,22 @@ function startGateExecution(
       if (fd !== null) closeSync(fd)
     }
     finishedAt = nowIso()
+    const finalization = decideGateExecutionFinalization({
+      exitCode: state.exitCode,
+      timedOut: state.timedOut,
+      cancelledReason,
+      logCreated: fd !== null,
+      artifactPath,
+    })
     recordFinishedGate({
       requestId: request.id,
       finishedAt,
-      exitCode: state.exitCode,
-      timedOut: state.timedOut,
+      exitCode: finalization.exitCode,
+      timedOut: finalization.timedOut,
       elapsedMs: Date.now() - started,
       tail,
-      artifactPath: fd === null ? null : artifactPath,
-      cancelledReason,
+      artifactPath: finalization.artifactPath,
+      cancelledReason: finalization.cancelledReason,
       command,
     })
   })()

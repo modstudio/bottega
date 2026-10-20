@@ -447,7 +447,7 @@ export async function ask(o: {
           'question in your final answer, describing what you completed before reaching it.',
       }
     }
-    await new Promise((r) => setTimeout(r, POLL_MS))
+    await new Promise((r) => setTimeout(r, Math.min(POLL_MS, Math.max(0, deadline - Date.now()))))
   }
 }
 

@@ -1,7 +1,7 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {
   productionStepCatalogue,
   promoteStepCatalogueLocal,
@@ -23,10 +23,7 @@ const ports = {
   resolveTreeCommit: () => 'abc',
 }
 
-function database(): Database {
-  const d = new Database(':memory:')
-  d.exec('PRAGMA foreign_keys=ON')
-  applyMigrations(d)
+const database = testDatabaseFixture((d) => {
   seedWorkflows(d)
   installWorkflowStoreFixture(d)
   d.query(
@@ -42,8 +39,7 @@ function database(): Database {
       tracker: { protocol: 'hub' },
     }),
   )
-  return d
-}
+})
 
 function resolution(d: Database) {
   const preliminary = composeWorkflow('flow', 'fixture', 'default', args, d)

@@ -1,9 +1,13 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import { applyMigrations, applyMigrationsBefore } from './migrations.ts'
+import { migrationBoundaryTestDatabase } from './test-database.fixture.ts'
+
+migrationBoundaryTestDatabase('0124_run_uuid_key').close()
+migrationBoundaryTestDatabase('0125_question_uuid_key').close()
 
 const CHILD_REFERENCES = [
   ['blocker', 'run_id', 'run_record_id'],
@@ -337,11 +341,9 @@ function seedEveryRunRelationship(database: Database): { root: number; turn: num
 }
 
 test('run UUID-key migration changes only run identity in rebuilt schema objects', () => {
-  const before = new Database(':memory:')
-  const after = new Database(':memory:')
+  const before = migrationBoundaryTestDatabase('0124_run_uuid_key')
+  const after = migrationBoundaryTestDatabase('0125_question_uuid_key')
   try {
-    applyMigrationsBefore(before, '0124_run_uuid_key')
-    applyMigrationsBefore(after, '0125_question_uuid_key')
     for (const table of REBUILT_TABLES) {
       expect(columns(after, table), `${table} columns`).toEqual(
         expectedColumns(table, columns(before, table)),
@@ -377,9 +379,8 @@ test('run UUID-key migration changes only run identity in rebuilt schema objects
 })
 
 test('run UUID-key migration preserves every run relationship and display number', () => {
-  const database = new Database(':memory:')
+  const database = migrationBoundaryTestDatabase('0124_run_uuid_key')
   try {
-    applyMigrationsBefore(database, '0124_run_uuid_key')
     const { root, turn } = seedEveryRunRelationship(database)
     const before = new Map(
       CHILD_REFERENCES.map(([table, oldColumn]) => [
@@ -427,9 +428,8 @@ test('run UUID-key migration preserves every run relationship and display number
 })
 
 test('run UUID-key migration reorders compared pairs by UUID without losing the pair', () => {
-  const database = new Database(':memory:')
+  const database = migrationBoundaryTestDatabase('0124_run_uuid_key')
   try {
-    applyMigrationsBefore(database, '0124_run_uuid_key')
     database.exec(`
       INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
       VALUES ('zzzz','2026-10-18','codex','implement','sha',1,'prompt','ok');
@@ -454,9 +454,8 @@ test('run UUID-key migration reorders compared pairs by UUID without losing the 
 })
 
 test('run UUID-key migration refuses an unmapped child with its count', () => {
-  const database = new Database(':memory:')
+  const database = migrationBoundaryTestDatabase('0124_run_uuid_key')
   try {
-    applyMigrationsBefore(database, '0124_run_uuid_key')
     database
       .query(
         `INSERT INTO contention
@@ -473,9 +472,8 @@ test('run UUID-key migration refuses an unmapped child with its count', () => {
 })
 
 test('run number allocation starts after every previously issued number and never reuses a deleted reservation', () => {
-  const database = new Database(':memory:')
+  const database = migrationBoundaryTestDatabase('0124_run_uuid_key')
   try {
-    applyMigrationsBefore(database, '0124_run_uuid_key')
     insertRun(database)
     database.query("UPDATE sqlite_sequence SET seq=50 WHERE name='run'").run()
     const applied = applyMigrations(database)

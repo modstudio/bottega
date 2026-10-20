@@ -1,8 +1,8 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {
   type CursorIdentity,
   classifyCheckoutEvidence,
@@ -123,10 +123,7 @@ const ports: FloorEvidencePorts = {
   viewPullRequest: () => ({ state: 'MERGED', mergedAt: '2026-09-01' }),
 }
 
-const database = () => {
-  const d = new Database(':memory:')
-  d.exec('PRAGMA foreign_keys=ON')
-  applyMigrations(d)
+const database = testDatabaseFixture((d) => {
   d.query(
     'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
   ).run('fixture', '/fixture', 'bun', '{}')
@@ -141,8 +138,7 @@ const database = () => {
      VALUES ('${newRecordId()}','fixture','flow','default','DEV-977','','s',1,1,'{}',0,'rebase','running','[]',NULL,
              1,'2026-09-01','2026-09-01','floors')`,
   ).run()
-  return d
-}
+})
 
 const setTrackerStates = (d: Database, name: string, states: Record<string, string>) => {
   d.query('UPDATE project SET settings=? WHERE name=?').run(

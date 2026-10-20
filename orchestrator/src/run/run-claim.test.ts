@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
@@ -8,7 +8,7 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { claimRun } from './run-claim.ts'
 
-test("a later findings turn inherits its root's implicit review branch", async () => {
+test('a later claim records a UUID identity for its carried ruling', async () => {
   const root = addRun({ agent: 'codex', job: 'review-lens', status: 'asking' })
   const reserved = addRun({ agent: '(pending)', job: 'review-lens', status: 'running' })
   const reservedRecordId = db()
@@ -23,28 +23,7 @@ test("a later findings turn inherits its root's implicit review branch", async (
       )
       .get(newRecordId(), root) as { record_id: string }
   ).record_id
-  db().query('UPDATE run SET branch=? WHERE record_id=?').run('DEV-1147-reviewed', root)
   const runsDir = mkdtempSync(join(tmpdir(), 'later-findings-claim-'))
-  const repository = join(runsDir, 'repository')
-  Bun.spawnSync(['git', 'init', '-b', 'main', repository])
-  writeFileSync(join(repository, 'fixture.txt'), 'fixture\n')
-  Bun.spawnSync(['git', 'add', 'fixture.txt'], { cwd: repository })
-  Bun.spawnSync(
-    [
-      'git',
-      '-c',
-      'user.name=Fixture',
-      '-c',
-      'user.email=fixture@example.com',
-      'commit',
-      '-m',
-      'fixture',
-    ],
-    { cwd: repository },
-  )
-  const head = Bun.spawnSync(['git', 'rev-parse', 'HEAD'], { cwd: repository })
-    .stdout.toString()
-    .trim()
 
   try {
     const claimInput: Parameters<typeof claimRun>[0] = {
@@ -58,7 +37,7 @@ test("a later findings turn inherits its root's implicit review branch", async (
           agent: 'codex',
           turn: 2,
           sessionId: null,
-          worktree: { path: repository, branch: '', base: head, repoRoot: repository },
+          worktree: null,
         },
       },
       runsDir,
@@ -67,10 +46,10 @@ test("a later findings turn inherits its root's implicit review branch", async (
       generatedSchema: null,
       originalPrompt: 'review the change',
       prompt: 'review the change',
-      callerCwd: repository,
+      callerCwd: runsDir,
       seed: undefined,
       writesJob: false,
-      repoJob: true,
+      repoJob: false,
       runProjectName: null,
       runProjectId: null,
       reason: 'test',
@@ -84,12 +63,12 @@ test("a later findings turn inherits its root's implicit review branch", async (
       declaredDeliverables: [],
       timeoutMinutes: undefined,
       timeoutMs: 60_000,
-      forbidsRepo: false,
+      forbidsRepo: true,
       reviewTarget: null,
       implicitReview: { branch: null, findings: true },
       coverageBase: null,
-      readOnlyBase: head,
-      deferredCwdMcpPreflight: false,
+      readOnlyBase: null,
+      deferredCwdMcpPlan: [],
       usingMcp: false,
       startedByUserId: null,
       replySchemaName: 'WORKER_SCHEMA',
@@ -101,12 +80,11 @@ test("a later findings turn inherits its root's implicit review branch", async (
     expect(
       db().query('SELECT transport_explicit FROM run WHERE record_id=?').get(claimed.claim.id),
     ).toEqual({ transport_explicit: 1 })
-    expect(
-      db().query('SELECT branch,record_id FROM run WHERE record_id=?').get(claimed.claim.id),
-    ).toEqual({
-      branch: 'DEV-1147-reviewed',
-      record_id: reservedRecordId,
-    })
+    expect(db().query('SELECT record_id FROM run WHERE record_id=?').get(claimed.claim.id)).toEqual(
+      {
+        record_id: reservedRecordId,
+      },
+    )
     expect(
       db()
         .query<{ record_id: string }, [string]>(

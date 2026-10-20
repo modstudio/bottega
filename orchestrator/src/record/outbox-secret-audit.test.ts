@@ -1,7 +1,7 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { auditOutboxSecrets, renderOutboxSecretAudit } from './outbox-secret-audit.ts'
 
@@ -21,8 +21,7 @@ function runPayload(error: string): string {
 }
 
 function seeded(): Database {
-  const database = new Database(':memory:')
-  applyMigrations(database)
+  const database = migratedTestDatabase()
   const secret = runPayload(SECRET)
   database
     .query(
@@ -85,8 +84,7 @@ test('audit --ids is the only way outbox ids appear', () => {
 })
 
 function plantedOutbox(payloads: string[]): Database {
-  const database = new Database(':memory:')
-  applyMigrations(database)
+  const database = migratedTestDatabase()
   const insert = database.query(
     `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,?,?,?,?,?)`,
   )

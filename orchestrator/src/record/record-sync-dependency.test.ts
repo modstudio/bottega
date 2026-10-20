@@ -1,9 +1,9 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { machineId } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { syncRecord } from './record-sync.ts'
 import { RECORD_SYNC_BATCH_SIZE, type RecordSyncRowResult } from './record-sync-contract.ts'
@@ -15,8 +15,7 @@ const SNAPSHOT_ID = '01990000-0000-7000-8000-000000000004'
 const STAMP = '2026-10-13T04:00:00.000Z'
 
 test('one sync pushes a review read before its dependent triage snapshot', async () => {
-  const local = new Database(':memory:')
-  applyMigrations(local)
+  const local = migratedTestDatabase()
   const identity = { id: machineId(), name: 'test-machine' }
   const read = Object.fromEntries(
     OUTBOX_PAYLOAD_CONTRACTS.review_read.columns.map((column) => [column, null]),
@@ -145,8 +144,7 @@ function insertOutboxRow(
 }
 
 test('one sync request carries a review, lens, and finding dependency chain', async () => {
-  using local = new Database(':memory:')
-  applyMigrations(local)
+  using local = migratedTestDatabase()
   insertOutboxRow(local, 1, 'review', 'review-1', { id: 'review-1' })
   insertOutboxRow(local, 2, 'review_lens', 'lens-1', {
     id: 'lens-1',
@@ -172,8 +170,7 @@ test('one sync request carries a review, lens, and finding dependency chain', as
 })
 
 test('mixed dependent rows fill count-limited batches instead of stopping per family', async () => {
-  using local = new Database(':memory:')
-  applyMigrations(local)
+  using local = migratedTestDatabase()
   const familyCount = RECORD_SYNC_BATCH_SIZE + 1
   for (let family = 0; family < familyCount; family++) {
     const parentId = family * 2 + 1
@@ -202,8 +199,7 @@ test('mixed dependent rows fill count-limited batches instead of stopping per fa
 })
 
 test('a quarantined same-batch parent leaves its refused child pending', async () => {
-  using local = new Database(':memory:')
-  applyMigrations(local)
+  using local = migratedTestDatabase()
   insertOutboxRow(local, 1, 'run', 'run-1', { id: 'run-1' })
   insertOutboxRow(local, 2, 'score', 'run-1', { id: 'run-1' })
   const batches: number[][] = []
@@ -226,8 +222,7 @@ test('a quarantined same-batch parent leaves its refused child pending', async (
 })
 
 test('a deferred same-batch parent leaves its child pending', async () => {
-  using local = new Database(':memory:')
-  applyMigrations(local)
+  using local = migratedTestDatabase()
   insertOutboxRow(local, 1, 'run', 'run-1', { id: 'run-1' })
   insertOutboxRow(local, 2, 'score', 'run-1', { id: 'run-1' })
   const batches: number[][] = []
@@ -267,8 +262,7 @@ test('a deferred same-batch parent leaves its child pending', async () => {
 })
 
 test('a synced copy satisfies a parent identity when a later copy is refused', async () => {
-  using local = new Database(':memory:')
-  applyMigrations(local)
+  using local = migratedTestDatabase()
   insertOutboxRow(local, 1, 'review', 'review-1', { id: 'review-1' })
   insertOutboxRow(local, 2, 'review', 'review-1', { id: 'review-1' })
   insertOutboxRow(local, 3, 'review_lens', 'lens-1', {
@@ -297,8 +291,7 @@ test('a synced copy satisfies a parent identity when a later copy is refused', a
 })
 
 test('a child stays pending when every copy of its parent identity is refused', async () => {
-  using local = new Database(':memory:')
-  applyMigrations(local)
+  using local = migratedTestDatabase()
   insertOutboxRow(local, 1, 'review', 'review-1', { id: 'review-1' })
   insertOutboxRow(local, 2, 'review', 'review-1', { id: 'review-1' })
   insertOutboxRow(local, 3, 'review_lens', 'lens-1', {
@@ -325,8 +318,7 @@ test('a child stays pending when every copy of its parent identity is refused', 
 })
 
 test('a child is not sent while another parent identity remains outside the batch', async () => {
-  using local = new Database(':memory:')
-  applyMigrations(local)
+  using local = migratedTestDatabase()
   insertOutboxRow(local, 1, 'review', 'review-1', { id: 'review-1' })
   insertOutboxRow(local, 2, 'review_finding', 'finding-1', {
     id: 'finding-1',
@@ -352,8 +344,7 @@ test('a child is not sent while another parent identity remains outside the batc
 })
 
 test('a synced child of a quarantined same-batch parent fails without marking the child', async () => {
-  using local = new Database(':memory:')
-  applyMigrations(local)
+  using local = migratedTestDatabase()
   insertOutboxRow(local, 1, 'run', 'run-1', { id: 'run-1' })
   insertOutboxRow(local, 2, 'score', 'run-1', { id: 'run-1' })
   const batches: number[][] = []

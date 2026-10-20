@@ -1,18 +1,21 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nextQuestionNumber } from '../run/question-number.ts'
-import { applyMigrations, applyMigrationsBefore } from './migrations.ts'
+import { applyMigrations } from './migrations.ts'
+import { migrationBoundaryTestDatabase } from './test-database.fixture.ts'
+
+const QUESTION_UUID_BOUNDARY = '0125_question_uuid_key'
+migrationBoundaryTestDatabase(QUESTION_UUID_BOUNDARY).close()
 
 function count(database: Database, table: string): number {
   return database.query<{ n: number }, []>(`SELECT COUNT(*) n FROM ${table}`).get()!.n
 }
 
 test('question UUID-key migration preserves every local relationship and seeds the shared counter', () => {
-  const database = new Database(':memory:')
+  const database = migrationBoundaryTestDatabase(QUESTION_UUID_BOUNDARY)
   database.exec('PRAGMA foreign_keys=ON')
   try {
-    applyMigrationsBefore(database, '0125_question_uuid_key')
     const runRecordId = newRecordId()
     database
       .query(
@@ -113,9 +116,8 @@ for (const orphan of [
   },
 ] as const) {
   test(`question UUID-key migration refuses an orphan in ${orphan.table} without changing the store`, () => {
-    const database = new Database(':memory:')
+    const database = migrationBoundaryTestDatabase(QUESTION_UUID_BOUNDARY)
     try {
-      applyMigrationsBefore(database, '0125_question_uuid_key')
       database.exec('PRAGMA foreign_keys=OFF')
       database.exec(orphan.insert)
 

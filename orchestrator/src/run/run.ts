@@ -587,7 +587,7 @@ export async function run(opts: {
     }
     prompt += `\n\n${suffix}`
   }
-  let { deferredCwdMcpPreflight, mcpConnection } = prepareRunMcpPreflight({
+  let { deferredCwdMcpPlan, mcpConnection } = prepareRunMcpPreflight({
     mcpRequest,
     callerCwd,
     projectName: runProjectName ?? undefined,
@@ -696,7 +696,7 @@ export async function run(opts: {
     implicitReview,
     coverageBase,
     readOnlyBase,
-    deferredCwdMcpPreflight,
+    deferredCwdMcpPlan,
     usingMcp,
     startedByUserId,
     replySchemaName,

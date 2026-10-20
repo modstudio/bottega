@@ -1,132 +1,150 @@
 import { afterEach, expect, mock, spyOn, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readlinkSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { dir } from '../../test/fixtures/store.ts'
+import { DEFERRED_CWD_MCP_STEPS, decideDeferredCwdMcpPlan } from '../mcp/mcp-preflight.ts'
 import { upsertProject } from '../project/projects.ts'
-import { run } from './run.ts'
+import { provisionMcpConfig } from '../worktree/worktree-mcp.ts'
 import { prepareRunMcpPreflight } from './run-mcp-main-stack.ts'
 
-const repositories: string[] = []
+const directories: string[] = []
 afterEach(() => {
   mock.restore()
-  for (const repository of repositories.splice(0))
-    rmSync(repository, { recursive: true, force: true })
+  for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
 })
 
-test('a foreground repository run ensures its declared MCP stack before probing', async () => {
-  const repository = fixtureRepository()
-  upsertProject({
-    recordId: newRecordId(),
-    name: 'foreground-mcp-stack-fixture',
-    path: repository,
-    settings: { mainStack: { consumers: ['mcp'], requiredServices: ['db'] } },
-  })
-  const originalSpawnSync = Bun.spawnSync
-  const dockerCalls: string[][] = []
-  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[], options?: object) => {
-    if (args[0] !== 'docker') return originalSpawnSync(args, options as never)
-    dockerCalls.push(args)
-    return {
-      exitCode: 1,
-      stdout: Buffer.from(''),
-      stderr: Buffer.from('daemon unavailable'),
-      success: false,
-      exitedDueToTimeout: false,
-    } as ReturnType<typeof Bun.spawnSync>
-  }) as typeof Bun.spawnSync)
-
-  await expect(
-    run({
-      job: 'review-lens',
-      prompt: 'MCP stack foreground fixture',
-      agent: 'codex',
-      cwd: repository,
-      mcp: true,
-      lens: 'correctness',
-    }),
-  ).rejects.toThrow('daemon unavailable')
-  expect(dockerCalls.filter((call) => call[1] === 'compose')).toEqual([
-    ['docker', 'compose', 'ps', '--status', 'running', '--services', 'db'],
+test('the deferred cwd MCP plan fixes deferral before stack enforcement and worker provisioning', () => {
+  const deferredFacts = {
+    mcpRequest: true,
+    callerCwdHasProject: true,
+    forbidsRepo: false,
+    repoJob: true,
+    discoversMcpFromCwd: true,
+  } as const
+  expect(decideDeferredCwdMcpPlan(deferredFacts)).toEqual([
+    'defer-cwd-preflight',
+    'ensure-main-stack',
+    'provision-worker-mcp',
   ])
+  expect(decideDeferredCwdMcpPlan(deferredFacts)).toEqual([...DEFERRED_CWD_MCP_STEPS])
 })
 
-test('a cwd-discovered MCP run ensures its declared stack before the worker-tree probe', async () => {
-  const repository = fixtureRepository()
-  upsertProject({
-    recordId: newRecordId(),
-    name: 'deferred-mcp-stack-fixture',
-    path: repository,
-    settings: { mainStack: { consumers: ['mcp'], requiredServices: ['db'] } },
-  })
-  const originalSpawnSync = Bun.spawnSync
-  const dockerCalls: string[][] = []
-  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[], options?: object) => {
-    if (args[0] !== 'docker') return originalSpawnSync(args, options as never)
-    dockerCalls.push(args)
-    return {
-      exitCode: 1,
-      stdout: Buffer.from(''),
-      stderr: Buffer.from('daemon unavailable'),
-      success: false,
-      exitedDueToTimeout: false,
-    } as ReturnType<typeof Bun.spawnSync>
-  }) as typeof Bun.spawnSync)
-
-  await expect(
-    run({
-      job: 'review-lens',
-      prompt: 'deferred MCP stack fixture',
-      agent: 'grok',
-      cwd: repository,
-      mcp: true,
-      lens: 'correctness',
-    }),
-  ).rejects.toThrow('daemon unavailable')
-  expect(dockerCalls.filter((call) => call[1] === 'compose')).toEqual([
-    ['docker', 'compose', 'ps', '--status', 'running', '--services', 'db'],
-  ])
-})
-
-test('a read-only run without an MCP request starts no project stack', () => {
-  const repository = fixtureRepository()
-  upsertProject({
-    recordId: newRecordId(),
-    name: 'read-only-no-mcp-stack-fixture',
-    path: repository,
-    settings: { mainStack: { consumers: ['mcp'], requiredServices: ['db'] } },
-  })
-  const originalSpawnSync = Bun.spawnSync
-  const dockerCalls: string[][] = []
-  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[], options?: object) => {
-    if (args[0] === 'docker') dockerCalls.push(args)
-    return originalSpawnSync(args, options as never)
-  }) as typeof Bun.spawnSync)
-
+test.each([
+  { name: 'no MCP request', facts: { mcpRequest: undefined } },
+  { name: 'no caller project', facts: { callerCwdHasProject: false } },
+  {
+    name: 'repository agent without cwd discovery',
+    facts: { discoversMcpFromCwd: false },
+  },
+])('$name selects no deferred cwd MCP steps', ({ facts }) => {
   expect(
+    decideDeferredCwdMcpPlan({
+      mcpRequest: 'require',
+      callerCwdHasProject: true,
+      forbidsRepo: false,
+      repoJob: true,
+      discoversMcpFromCwd: true,
+      ...facts,
+    }),
+  ).toEqual([])
+})
+
+test('a repository-forbidden job defers MCP without cwd discovery', () => {
+  expect(
+    decideDeferredCwdMcpPlan({
+      mcpRequest: 'require',
+      callerCwdHasProject: true,
+      forbidsRepo: true,
+      repoJob: false,
+      discoversMcpFromCwd: false,
+    }),
+  ).toEqual([...DEFERRED_CWD_MCP_STEPS])
+})
+
+test('foreground MCP preflight executes the declared main-stack step before probing', () => {
+  const repository = fixtureDirectory('foreground-mcp-stack-')
+  registerMcpProject('foreground-mcp-stack-fixture', repository)
+  const dockerCalls = stubDockerFailure()
+
+  expect(() =>
     prepareRunMcpPreflight({
-      mcpRequest: undefined,
+      mcpRequest: true,
       callerCwd: repository,
+      projectName: 'foreground-mcp-stack-fixture',
       forbidsRepo: false,
       repoJob: true,
       discoversMcpFromCwd: false,
       agent: 'codex',
     }),
-  ).toEqual({ deferredCwdMcpPreflight: false, mcpConnection: null })
+  ).toThrow('daemon unavailable')
+  expect(dockerCalls.filter((call) => call[1] === 'compose')).toEqual([
+    ['docker', 'compose', 'ps', '--status', 'running', '--services', 'db'],
+  ])
+})
+
+test('worker MCP provisioning executes the final plan step against the worker tree', () => {
+  const root = fixtureDirectory('worker-mcp-step-')
+  const checkout = join(root, 'checkout')
+  const worker = join(root, 'worker')
+  mkdirSync(checkout)
+  mkdirSync(worker)
+  writeFileSync(join(checkout, '.mcp.json'), '{}\n')
+
+  expect(provisionMcpConfig(worker, checkout)).toEqual({
+    header: 'MCP preflight: linked .mcp.json -> ../checkout/.mcp.json',
+    error: null,
+  })
+  expect(readlinkSync(join(worker, '.mcp.json'))).toBe('../checkout/.mcp.json')
+})
+
+test('a read-only run without an MCP request selects no deferred work or project stack', () => {
+  const repository = fixtureDirectory('read-only-no-mcp-stack-')
+  registerMcpProject('read-only-no-mcp-stack-fixture', repository)
+  const dockerCalls = stubDockerFailure()
+
+  expect(
+    prepareRunMcpPreflight({
+      mcpRequest: undefined,
+      callerCwd: repository,
+      projectName: 'read-only-no-mcp-stack-fixture',
+      forbidsRepo: false,
+      repoJob: true,
+      discoversMcpFromCwd: false,
+      agent: 'codex',
+    }),
+  ).toEqual({ deferredCwdMcpPlan: [], mcpConnection: null })
   expect(dockerCalls).toEqual([])
 })
 
-function fixtureRepository(): string {
-  const repository = mkdtempSync(join(dir, 'mcp-stack-repo-'))
-  repositories.push(repository)
-  writeFileSync(join(repository, 'fixture.txt'), 'fixture\n')
-  for (const args of [
-    ['init', '-b', 'main'],
-    ['add', 'fixture.txt'],
-    ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', 'commit', '-m', 'fixture'],
-  ]) {
-    const result = Bun.spawnSync(['git', ...args], { cwd: repository, stderr: 'pipe' })
-    if (result.exitCode !== 0) throw new Error(result.stderr.toString())
-  }
-  return repository
+function fixtureDirectory(prefix: string): string {
+  const directory = mkdtempSync(join(dir, prefix))
+  directories.push(directory)
+  return directory
+}
+
+function registerMcpProject(name: string, path: string): void {
+  upsertProject({
+    recordId: newRecordId(),
+    name,
+    path,
+    settings: { mainStack: { consumers: ['mcp'], requiredServices: ['db'] } },
+  })
+}
+
+function stubDockerFailure(): string[][] {
+  const calls: string[][] = []
+  const originalSpawnSync = Bun.spawnSync
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[], options?: object) => {
+    if (args[0] !== 'docker') return originalSpawnSync(args, options as never)
+    calls.push(args)
+    return {
+      exitCode: 1,
+      stdout: Buffer.from(''),
+      stderr: Buffer.from('daemon unavailable'),
+      success: false,
+      exitedDueToTimeout: false,
+    } as ReturnType<typeof Bun.spawnSync>
+  }) as typeof Bun.spawnSync)
+  return calls
 }

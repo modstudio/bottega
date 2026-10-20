@@ -12,8 +12,9 @@ import {
 import { dir } from '../../test/fixtures/store.ts'
 import { compilePack } from '../canon/canon.ts'
 import { db } from '../database/db.ts'
-import { retireProject, upsertProject } from '../project/projects.ts'
+import { projects, retireProject, upsertProject } from '../project/projects.ts'
 import { rememberHostedRecord } from '../record/install-binding.ts'
+import { docReferenceTargetProjects } from './doc-lint-adapter.ts'
 import {
   consumeDoc as consumeDocument,
   removeDoc as deleteDoc,
@@ -401,18 +402,14 @@ describe('scoped operator docs', () => {
     ).rejects.toThrow('contains a task key')
   })
 
-  test('an unreadable unrelated checkout does not affect a project doc write', async () => {
+  test('an unreadable unrelated checkout does not affect a project doc write', () => {
     upsertFixtureProject('known', process.cwd(), true)
     upsertFixtureProject('unreadable', '/dev/null', false)
-    await expect(
-      setDoc({
-        scope: 'project',
-        subject: 'known',
-        slug: 'target-only',
-        title: 'Target only',
-        body: 'See `package.json`.',
-      }),
-    ).resolves.toMatchObject({ slug: 'target-only' })
+    expect(
+      docReferenceTargetProjects({ scope: 'project', subject: 'known' }, projects()).map(
+        ({ name }) => name,
+      ),
+    ).toEqual(['known'])
   })
 
   test('CRUD round-trips and set is a uniqueness-preserving upsert', async () => {
@@ -530,35 +527,31 @@ describe('scoped operator docs', () => {
     upsertFixtureProject('known', process.cwd(), true)
     const slug = '.agents/rules/shared.md'
     const body = '---\ndescription: Shared rule\nalways: true\n---\n\nRule.\n'
-    const projectDoc = await writeDoc({
-      scope: 'canon',
-      subject: 'known',
-      slug,
-      title: 'Project rule',
-      body,
-      reason: 'create project revision',
-      allowCanonBootstrap: true,
-    })
-    const revision = listDocRevisions('canon', 'known', slug)[0]!
-    await deleteDoc('canon', 'known', slug, {
-      reason: 'make the historic row restorable',
-      expectedRevision: projectDoc.revision!,
-    })
-    const deletedRevision = getDocRevision(listDocRevisions('canon', 'known', slug)[0]!.record_id)
-    await writeDoc({
-      scope: 'canon',
-      subject: null,
-      slug,
-      title: 'Global rule',
-      body,
-      reason: 'occupy the global path',
-      allowCanonBootstrap: true,
-    })
+    const project = db()
+      .query<{ record_id: string }, []>("SELECT record_id FROM project WHERE name='known'")
+      .get()!
+    const revisionId = newRecordId()
+    db()
+      .query(
+        `INSERT INTO doc_revision
+         (record_id,number,scope,subject,slug,project_record_id,op,title,body,delivery,author,reason,at,
+          audiences)
+         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM doc_revision),'canon','known',?,?,'create',
+           'Project rule',?,'inject','test','seed restore fixture','2026-10-20','["internal"]')`,
+      )
+      .run(revisionId, slug, project.record_id, body)
+    db()
+      .query(
+        `INSERT INTO doc
+         (record_id,scope,subject,slug,title,body,delivery,created_at,updated_at,audiences,source_files)
+         VALUES (?,'canon',NULL,?,'Global rule',?,'inject','2026-10-20','2026-10-20','["internal"]','[]')`,
+      )
+      .run(newRecordId(), slug, body)
 
     await expect(
-      restoreDoc('canon', 'known', projectDoc.slug, revision.record_id, {
+      restoreDoc('canon', 'known', slug, revisionId, {
         reason: 'restore colliding project rule',
-        expectedRevision: deletedRevision!.record_id!,
+        expectedRevision: revisionId,
       }),
     ).rejects.toThrow('refusing canon path collision')
   })

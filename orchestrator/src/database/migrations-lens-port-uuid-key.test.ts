@@ -18,9 +18,17 @@ const TABLES = [
   'port_skip',
 ] as const
 
+let beforeTemplate: Uint8Array | undefined
+
 function before(): Database {
-  const database = new Database(':memory:')
-  applyMigrationsBefore(database, '0131_lens_port_uuid_key')
+  if (!beforeTemplate) {
+    const database = new Database(':memory:')
+    applyMigrationsBefore(database, '0131_lens_port_uuid_key')
+    beforeTemplate = database.serialize()
+    database.close()
+  }
+  const database = Database.deserialize(beforeTemplate)
+  database.exec('PRAGMA foreign_keys=ON')
   return database
 }
 

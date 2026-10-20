@@ -1,6 +1,6 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { applyMigrations } from '../database/migrations.ts'
+import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {
   awaitWorkflowRuling,
   composeWorkflowWithCursor,
@@ -29,10 +29,7 @@ const ports: FloorEvidencePorts = {
   },
 }
 
-function database(): Database {
-  const d = new Database(':memory:')
-  d.exec('PRAGMA foreign_keys=ON')
-  applyMigrations(d)
+const database = testDatabaseFixture((d) => {
   seedWorkflows(d)
   installWorkflowStoreFixture(d)
   d.query(
@@ -48,8 +45,7 @@ function database(): Database {
       tracker: { protocol: 'hub' },
     }),
   )
-  return d
-}
+})
 
 function installKeylessWorkflow(d: Database, slug: string): void {
   const draft = setWorkflowLocal(
