@@ -8,7 +8,7 @@ import { db } from '../database/db.ts'
 import { normalizePortBaselineScannedAt } from '../porting/porting-date.ts'
 import { projects } from '../project/projects.ts'
 import { activeRecordSpace } from '../project-space.ts'
-import type { RecordApiClient, RecordRequestDestination } from './record-api-client.ts'
+import type { RecordApiClient } from './record-api-client.ts'
 import { recordApiClient } from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { pullRecordCache } from './record-cache.ts'
@@ -25,7 +25,7 @@ import type { RecordWorkflowImportInput } from './record-workflow-contract.ts'
 type Presentation = { log(value: string): void }
 type Plan = {
   lens: Map<string, RecordLensImportInput>
-  workflow: RecordWorkflowImportInput
+  workflow: Map<string, RecordWorkflowImportInput>
   ports: Map<string, RecordPortImportInput>
   skipped: Array<{ kind: string; id: string; reason: string }>
 }
@@ -254,7 +254,7 @@ function lensPlan(
   return plans
 }
 
-function workflowPlan(local: Database, activeSpaceId: string): RecordWorkflowImportInput {
+function workflowSpacePlan(local: Database, spaceId: string): RecordWorkflowImportInput {
   const now = iso()
   const kind = (name: 'workflow' | 'step_catalogue') => {
     const foreign = name === 'workflow' ? 'workflow_id' : 'catalogue_id'
@@ -262,7 +262,7 @@ function workflowPlan(local: Database, activeSpaceId: string): RecordWorkflowImp
       local.query(`SELECT * FROM ${name} WHERE space_id IS NULL`).all() as Record<string, unknown>[]
     ).map((r) => ({
       id: String(r.record_id),
-      spaceId: activeSpaceId,
+      spaceId,
       slug: String(r.slug),
       generation: 1,
       createdAt: String(r.created_at),
@@ -276,7 +276,7 @@ function workflowPlan(local: Database, activeSpaceId: string): RecordWorkflowImp
         .all() as Record<string, unknown>[]
     ).map((r) => ({
       id: String(r.record_id),
-      spaceId: activeSpaceId,
+      spaceId,
       ownerId: String(r.owner_record_id),
       n: Number(r.n),
       status: r.status as 'draft' | 'production' | 'retired',
@@ -296,7 +296,7 @@ function workflowPlan(local: Database, activeSpaceId: string): RecordWorkflowImp
         .all() as Record<string, unknown>[]
     ).map((r) => ({
       id: String(r.record_id),
-      spaceId: activeSpaceId,
+      spaceId,
       ownerVersionId: String(r.version_record_id),
       event: r.event as 'set' | 'fork' | 'import' | 'promote' | 'retire',
       author: String(r.author),
@@ -564,10 +564,13 @@ function portPlan(
 }
 
 function planCataloguePush(local: Database, activeSpaceId: string, routes: ProjectRoutes): Plan {
-  const skipped: Plan['skipped'] = []
+  const skipped: Plan['skipped'] = [],
+    routed = routedProjects(local, routes)
   return {
-    lens: lensPlan(local, routedProjects(local, routes)),
-    workflow: workflowPlan(local, activeSpaceId),
+    lens: lensPlan(local, routed),
+    workflow: new Map(
+      [...routed.keys()].map((spaceId) => [spaceId, workflowSpacePlan(local, spaceId)]),
+    ),
     ports: portPlan(local, activeSpaceId, routes, skipped),
     skipped,
   }
@@ -576,15 +579,30 @@ function planCataloguePush(local: Database, activeSpaceId: string, routes: Proje
 const count = (value: object) =>
   Object.values(value).reduce((n, rows) => n + (Array.isArray(rows) ? rows.length : 0), 0)
 function logPlan(plan: Plan, presentation: Presentation, prefix = ''): void {
-  const spaces = new Set([...plan.lens.keys(), ...plan.ports.keys()])
+  const spaces = new Set([...plan.lens.keys(), ...plan.workflow.keys(), ...plan.ports.keys()])
   for (const spaceId of spaces) {
     presentation.log(
-      `${prefix}space ${spaceId} — lens: ${count(plan.lens.get(spaceId) ?? {})}; port: ${count(plan.ports.get(spaceId) ?? {})}`,
+      `${prefix}space ${spaceId} — lens: ${count(plan.lens.get(spaceId) ?? {})}; workflow: ${count(plan.workflow.get(spaceId) ?? {})}; port: ${count(plan.ports.get(spaceId) ?? {})}`,
     )
   }
-  presentation.log(
-    `${prefix}active space — workflow: ${count(plan.workflow)}; skipped: ${plan.skipped.length}`,
-  )
+  presentation.log(`${prefix}skipped: ${plan.skipped.length}`)
+}
+
+async function importWorkflowPlans(
+  plans: Plan['workflow'],
+  client: RecordApiClient & {
+    importWorkflowCatalogue: NonNullable<RecordApiClient['importWorkflowCatalogue']>
+  },
+  presentation: Presentation,
+): Promise<void> {
+  for (const [spaceId, workflow] of plans) {
+    const result = await client.importWorkflowCatalogue(workflow, { destinationSpaceId: spaceId })
+    for (const outcome of result.outcomes)
+      presentation.log(`workflow ${spaceId} ${outcome.kind} ${outcome.slug}: ${outcome.outcome}`)
+    presentation.log(
+      `workflow ${spaceId}: inserted ${result.inserted}, already present ${result.alreadyPresent}, skipped ${result.skipped.length}`,
+    )
+  }
 }
 
 export async function pushCataloguesCommand(
@@ -618,7 +636,6 @@ export async function pushCataloguesCommand(
     throw new Error(
       'record API does not support catalogue imports; deploy the matching record API, then retry',
     )
-  const destination: RecordRequestDestination = { destinationSpaceId: active }
   for (const [spaceId, lens] of plan.lens) {
     const result = await client.importLensCatalogue(
       { ...lens, dryRun: options.dryRun },
@@ -628,15 +645,7 @@ export async function pushCataloguesCommand(
       `lens ${spaceId}: inserted ${result.inserted}, already present ${result.alreadyPresent}, skipped ${result.skipped.length}`,
     )
   }
-  const workflow = await client.importWorkflowCatalogue(
-    { ...plan.workflow, dryRun: options.dryRun },
-    destination,
-  )
-  for (const outcome of workflow.outcomes)
-    presentation.log(`workflow ${outcome.kind} ${outcome.slug}: ${outcome.outcome}`)
-  presentation.log(
-    `workflow: inserted ${workflow.inserted}, already present ${workflow.alreadyPresent}, skipped ${workflow.skipped.length}`,
-  )
+  await importWorkflowPlans(plan.workflow, client, presentation)
   for (const [spaceId, port] of plan.ports) {
     const result = await client.importPortCatalogue(
       { ...port, dryRun: options.dryRun },

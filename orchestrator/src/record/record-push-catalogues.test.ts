@@ -42,6 +42,7 @@ function fakeCatalogueClient(
     outcome: 'replaced seeded built-in' | 'kept hosted history; local history not imported'
   }> = [],
   observePort: (input: RecordPortImportInput, spaceId: string) => void = () => undefined,
+  observeWorkflow: (input: RecordWorkflowImportInput, spaceId: string) => void = () => undefined,
 ): RecordApiClient {
   const base = createMemoryRecordApiClient()
   const lens = new Map<RecordLensTable, Record<string, unknown>[]>()
@@ -89,10 +90,14 @@ function fakeCatalogueClient(
       observeLens(input, space)
       return insert(lens, input as unknown as Record<string, unknown>, space)
     },
-    importWorkflowCatalogue: async (input: RecordWorkflowImportInput, target) => ({
-      ...insert(workflow, input as unknown as Record<string, unknown>, destination(target)),
-      outcomes: workflowOutcomes,
-    }),
+    importWorkflowCatalogue: async (input: RecordWorkflowImportInput, target) => {
+      const space = destination(target)
+      observeWorkflow(input, space)
+      return {
+        ...insert(workflow, input as unknown as Record<string, unknown>, space),
+        outcomes: workflowOutcomes,
+      }
+    },
     importPortCatalogue: async (input: RecordPortImportInput, target) => {
       const space = destination(target)
       observePort(input, space)
@@ -153,8 +158,16 @@ test('pushes a seeded local store through bulk routes and sync resolves routed c
 })
 
 test('dry run logs its local plan without calling hosted methods', async () => {
-  const local = db()
+  const local = db(),
+    projectId = newRecordId()
+  upsertProject({
+    recordId: projectId,
+    name: `dry-run-${projectId}`,
+    path: `/tmp/dry-run-${projectId}`,
+    settings: {},
+  })
   rememberActiveRecordSpace(local, spaceId)
+  rememberProjectSpace(local, `dry-run-${projectId}`, spaceId)
   const logs: string[] = []
   const throwingClient = new Proxy({} as RecordApiClient, {
     get: (_target, property) => {
@@ -167,8 +180,80 @@ test('dry run logs its local plan without calling hosted methods', async () => {
     { local, client: throwingClient },
   )
   expect(logs).toContainEqual(
-    expect.stringMatching(/^dry run active space — workflow: \d+; skipped: \d+$/),
+    expect.stringMatching(
+      new RegExp(`^dry run space ${spaceId} — lens: \\d+; workflow: \\d+; port: \\d+$`),
+    ),
   )
+})
+
+test('pushes complete workflow history to every registered project space and lists both in dry run', async () => {
+  const local = db(),
+    remoteSpace = newRecordId(),
+    activeProjectId = newRecordId(),
+    remoteProjectId = newRecordId(),
+    activeProject = `workflow-active-${activeProjectId}`,
+    remoteProject = `workflow-remote-${remoteProjectId}`
+  upsertProject({
+    recordId: activeProjectId,
+    name: activeProject,
+    path: `/tmp/${activeProject}`,
+    settings: { space: 'active' },
+  })
+  upsertProject({
+    recordId: remoteProjectId,
+    name: remoteProject,
+    path: `/tmp/${remoteProject}`,
+    settings: { space: 'remote' },
+  })
+  rememberActiveRecordSpace(local, spaceId)
+  rememberProjectSpace(local, activeProject, spaceId)
+  rememberProjectSpace(local, remoteProject, remoteSpace)
+  const imports = new Map<string, RecordWorkflowImportInput>()
+  const client = fakeCatalogueClient(
+    [
+      { space_id: spaceId, slug: 'active', name: 'Active', role: 'owner', permission: 'write' },
+      {
+        space_id: remoteSpace,
+        slug: 'remote',
+        name: 'Remote',
+        role: 'owner',
+        permission: 'write',
+      },
+    ],
+    undefined,
+    [{ kind: 'workflow', slug: 'fix-defect', outcome: 'replaced seeded built-in' }],
+    undefined,
+    (input, destination) => imports.set(destination, input),
+  )
+  installRecordApiClient(client)
+
+  await pushCataloguesCommand({ dryRun: false }, { log: () => undefined }, { local, client })
+
+  expect([...imports.keys()]).toEqual([spaceId, remoteSpace])
+  const activeInput = imports.get(spaceId)!
+  for (const [destination, input] of imports) {
+    expect(input.workflow.filter((row) => row.slug === 'fix-defect')).toEqual([
+      expect.objectContaining({ spaceId: destination }),
+    ])
+    expect(input.workflow_version.map((row) => row.id)).toEqual(
+      activeInput.workflow_version.map((row) => row.id),
+    )
+    expect(input.workflow_event.map((row) => row.id)).toEqual(
+      activeInput.workflow_event.map((row) => row.id),
+    )
+    expect(input.workflow_version.every((row) => row.spaceId === destination)).toBeTrue()
+    expect(input.workflow_event.every((row) => row.spaceId === destination)).toBeTrue()
+    expect(input.step_catalogue.every((row) => row.spaceId === destination)).toBeTrue()
+  }
+
+  const logs: string[] = []
+  await pushCataloguesCommand({ dryRun: true }, { log: (line) => logs.push(line) }, { local })
+  for (const destination of [spaceId, remoteSpace])
+    expect(logs).toContainEqual(
+      expect.stringMatching(
+        new RegExp(`^dry run space ${destination} — lens: \\d+; workflow: \\d+; port: \\d+$`),
+      ),
+    )
 })
 
 test('push planner normalizes a date-only baseline without changing the local value', async () => {
@@ -207,6 +292,8 @@ test('push planner normalizes a date-only baseline without changing the local va
 
 test('prints workflow import reconciliation outcomes', async () => {
   const local = db(),
+    projectId = newRecordId(),
+    projectName = `workflow-outcome-${projectId}`,
     logs: string[] = [],
     client = fakeCatalogueClient(undefined, undefined, [
       { kind: 'workflow', slug: 'fix-defect', outcome: 'replaced seeded built-in' },
@@ -216,16 +303,23 @@ test('prints workflow import reconciliation outcomes', async () => {
         outcome: 'kept hosted history; local history not imported',
       },
     ])
+  upsertProject({
+    recordId: projectId,
+    name: projectName,
+    path: `/tmp/${projectName}`,
+    settings: {},
+  })
   rememberActiveRecordSpace(local, spaceId)
+  rememberProjectSpace(local, projectName, spaceId)
   installRecordApiClient(client)
   await pushCataloguesCommand(
     { dryRun: false },
     { log: (line) => logs.push(line) },
     { local, client },
   )
-  expect(logs).toContain('workflow workflow fix-defect: replaced seeded built-in')
+  expect(logs).toContain(`workflow ${spaceId} workflow fix-defect: replaced seeded built-in`)
   expect(logs).toContain(
-    'workflow step_catalogue shared: kept hosted history; local history not imported',
+    `workflow ${spaceId} step_catalogue shared: kept hosted history; local history not imported`,
   )
 })
 
