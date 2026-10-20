@@ -227,7 +227,18 @@ test('a bound store with no local lens or port rows reports nothing to push with
   await pushCataloguesCommand(
     { dryRun: false },
     { log: (line) => logs.push(line) },
-    { local, client, sync: async () => undefined },
+    {
+      local,
+      client,
+      sync: async () => ({
+        pushed: 0,
+        failed: 0,
+        pending: 0,
+        configured: true,
+        quarantined: [],
+        blocked: [],
+      }),
+    },
   )
 
   expect(logs).toContain('nothing to push for lens and port catalogues')
