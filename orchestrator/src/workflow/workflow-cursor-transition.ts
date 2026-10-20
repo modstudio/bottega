@@ -45,16 +45,50 @@ export function decideStepOutcome(
       }
 }
 
-type ConditionalStep = { slug: string; when?: { step: string; outcome: string[] } }
-type OutcomeTrailEntry = { slug: string; outcome?: string }
+export const AUTOMATIC_REENTRY_LIMIT = 1
 
-/** Select the next eligible ordinal and every conditional step skipped on the way. */
-export function decideConditionalAdvance(
+type ConditionalStep = {
+  slug: string
+  when?: { step: string; outcome: string[] }
+  reenter?: { to: string; outcome: string }
+}
+type OutcomeTrailEntry = {
+  slug: string
+  outcome?: string
+  reentered?: { to: string; pass: number }
+}
+
+export type ReentryRecord = { to: string; pass: number }
+
+export type ConditionalAdvance = {
+  ordinal: number | null
+  skipped: Array<{ ordinal: number; step: ConditionalStep }>
+  reentered?: ReentryRecord
+  requireRuling: boolean
+}
+
+/** Pass number for a served step: 1 plus re-entries whose target is at or before it. */
+export function stepPass(
+  trail: readonly OutcomeTrailEntry[],
+  steps: readonly { slug: string }[],
+  currentOrdinal: number,
+): number {
+  return (
+    1 +
+    trail.filter((entry) => {
+      if (!entry.reentered) return false
+      const toOrdinal = steps.findIndex((step) => step.slug === entry.reentered!.to)
+      return toOrdinal >= 0 && toOrdinal <= currentOrdinal
+    }).length
+  )
+}
+
+function forwardAdvance(
   steps: readonly ConditionalStep[],
   trail: readonly OutcomeTrailEntry[],
   nextOrdinal: number,
-): { ordinal: number | null; skipped: Array<{ ordinal: number; step: ConditionalStep }> } {
-  const skipped: Array<{ ordinal: number; step: ConditionalStep }> = []
+): Pick<ConditionalAdvance, 'ordinal' | 'skipped'> {
+  const skipped: ConditionalAdvance['skipped'] = []
   let ordinal = nextOrdinal
   while (ordinal < steps.length) {
     const step = steps[ordinal]!
@@ -65,6 +99,33 @@ export function decideConditionalAdvance(
     ordinal += 1
   }
   return { ordinal: null, skipped }
+}
+
+/** Select the next ordinal, skips, any re-entry, and whether a ruling floor applies. */
+export function decideConditionalAdvance(
+  steps: readonly ConditionalStep[],
+  trail: readonly OutcomeTrailEntry[],
+  currentOrdinal: number,
+  outcome: string | undefined,
+): ConditionalAdvance {
+  const current = steps[currentOrdinal]
+  const reenter = current?.reenter
+  if (reenter && outcome === reenter.outcome) {
+    const toOrdinal = steps.findIndex((step) => step.slug === reenter.to)
+    if (toOrdinal >= 0 && toOrdinal < currentOrdinal) {
+      const count = trail.filter((entry) => entry.slug === current.slug && entry.reentered).length
+      return {
+        ordinal: toOrdinal,
+        skipped: [],
+        reentered: { to: reenter.to, pass: count + AUTOMATIC_REENTRY_LIMIT + 1 },
+        requireRuling: count >= AUTOMATIC_REENTRY_LIMIT,
+      }
+    }
+  }
+  return {
+    ...forwardAdvance(steps, [...trail, { slug: current?.slug ?? '', ...(outcome ? { outcome } : {}) }], currentOrdinal + 1),
+    requireRuling: false,
+  }
 }
 
 export const cursorValue = (

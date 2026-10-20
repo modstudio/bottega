@@ -12,6 +12,7 @@ export type ClosedStep = {
   satisfied?: number
   outcome?: string
   skipped?: { step: string; outcome: string[] }
+  reentered?: { to: string; pass: number }
 }
 
 export type ArgumentReboundEvent = {

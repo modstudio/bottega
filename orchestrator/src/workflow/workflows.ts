@@ -853,22 +853,15 @@ export function composeWorkflow(
       selected.map((step, index) => {
         const resolve = (template: string) => resolveWorkflowTemplate(template, values)
         return {
+          ...step,
           n: index + 1,
-          slug: step.slug,
-          title: step.title,
-          job: step.job,
-          stage: step.stage,
-          autonomy: step.autonomy,
           resolvedAutonomy: effectiveAutonomy.steps[step.slug]!,
           floor: resolveWorkflowStepFloors(step, resolve),
-          outcomes: step.outcomes,
           when: selectedEntries[index]?.when,
           deferrable: step.deferrable ?? [],
           expectedStatus: resolveWorkflowStepExpectedStatus(step, resolve),
           requirePullRequest: Boolean(step.requirePullRequest),
           operatorRuling: Boolean(step.operatorRuling),
-          commandEvidence: step.commandEvidence,
-          needs: step.needs,
         }
       }) ?? [],
     docs: {

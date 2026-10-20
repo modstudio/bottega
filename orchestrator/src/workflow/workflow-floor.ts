@@ -222,6 +222,40 @@ export function catalogueFloorsFor(step: {
   )
 }
 
+type CloseFloorStep = Parameters<typeof catalogueFloorsFor>[0] & {
+  rulingOutcomes?: readonly string[]
+}
+
+/** Floors that apply to a close: a ruling outcome (or a forced ruling) replaces the ordinary floor. */
+export function decideCloseFloors(
+  step: CloseFloorStep,
+  outcome: string | undefined,
+  forceRuling = false,
+): Floor[] {
+  if (forceRuling || (outcome !== undefined && step.rulingOutcomes?.includes(outcome)))
+    return catalogueFloors(
+      ['ruling'],
+      step.deferrable,
+      step.expectedStatus,
+      step.requirePullRequest,
+      step.operatorRuling,
+      step.commandEvidence,
+    )
+  return catalogueFloorsFor(step)
+}
+
+export function reentryBoundRefusal(
+  reenterOutcome: string,
+  outcomes: readonly string[] | undefined,
+): string {
+  const alternative = (outcomes ?? []).filter((item) => item !== reenterOutcome)
+  const named = alternative.length ? ` (${alternative.join(', ')})` : ''
+  return (
+    `automatic re-entry bound is reached; call \`${PLATFORM_SLUG} workflow await\`, ` +
+    `then \`${PLATFORM_SLUG} workflow rule\`, or close with a non-re-entering outcome${named}`
+  )
+}
+
 function rulingMet(floor: Floor, evidence: ValidatedEvidence): boolean {
   const ruling = evidence.ruling
   const review = evidence.review

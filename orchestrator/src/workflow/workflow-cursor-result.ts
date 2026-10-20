@@ -10,7 +10,10 @@ import {
   completedWorkflowSummary,
   isClosedStep,
 } from './workflow-cursor-trail.ts'
-import type { decideConditionalAdvance } from './workflow-cursor-transition.ts'
+import {
+  type decideConditionalAdvance,
+  stepPass,
+} from './workflow-cursor-transition.ts'
 import { renderWorkflowStep, withSelfRuling } from './workflow-render.ts'
 import type { WorkflowSelfRulingInput } from './workflow-self-ruling-mutation.ts'
 import { withWorkflowTextFacts } from './workflow-text.ts'
@@ -80,6 +83,7 @@ export function renderWorkflowAdvanceResult(input: {
     ),
     cursor: row.id,
     flow: closed.filter(isClosedStep),
+    pass: stepPass(closed.filter(isClosedStep), composition.steps, advance.ordinal),
   })
   return withSelfRuling(rendered, selfRuling)
 }

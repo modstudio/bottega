@@ -21,6 +21,7 @@ type WorkflowStep = ReturnType<typeof getWorkflowStep> & {
   cursor?: number
   notice?: string
   flow?: Array<{ slug: string; outcome?: string; skipped?: unknown }>
+  pass?: number
 }
 
 export function withSelfRuling(
@@ -166,7 +167,13 @@ export function renderWorkflowStep(step: WorkflowStep): string {
   const outcome = step.outcomes?.length
     ? ` Choose one allowed outcome (${step.outcomes.join(', ')}) and pass it as \`outcome\` to MCP or \`--outcome <slug>\` to the CLI.`
     : ''
-  const close = `Next: when this step's floor is met, close it with \`next_workflow_step\` (MCP)${cursor} or \`${PLATFORM_SLUG} workflow next${step.cursor ? ` ${step.workflow}${cliCursor}` : ''}\`, giving a one-line note of how the floor was met;${outcome}`
+  const rulingOutcomes = step.rulingOutcomes?.length
+    ? ` Closing with ${step.rulingOutcomes.join(' or ')} stops for a ruling.`
+    : ''
+  const reenter = step.reenter
+    ? ` Outcome ${step.reenter.outcome} returns to ${step.reenter.to} automatically once; beyond that it needs a ruling.`
+    : ''
+  const close = `Next: when this step's floor is met, close it with \`next_workflow_step\` (MCP)${cursor} or \`${PLATFORM_SLUG} workflow next${step.cursor ? ` ${step.workflow}${cliCursor}` : ''}\`, giving a one-line note of how the floor was met;${outcome}${rulingOutcomes}${reenter}`
   const pointer =
     step.next === undefined
       ? `${close} that serves the following step from the workflow's step list.`
@@ -189,6 +196,7 @@ export function renderWorkflowStep(step: WorkflowStep): string {
         ? [`${entry.slug}=${entry.outcome}`]
         : [],
   )
+  if (step.pass !== undefined && step.pass > 1) flow.unshift(`Pass ${step.pass}`)
   const flowLine = flow.length ? `Flow so far: ${flow.join(', ')}\n` : ''
   return `${notice}${flowLine}facts: ${JSON.stringify(step.facts)}\nAutonomy: ${step.resolvedAutonomy.value} (${step.resolvedAutonomy.scope}) — ${autonomy}\n${step.body}\n\n${guidance.join('\n')}\n\n${pointer}`
 }
