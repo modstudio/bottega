@@ -50,7 +50,7 @@ export function portStaleCopyConflicts(d: Database): string[] {
     ],
     [
       'port_baseline',
-      `SELECT l.record_id FROM port_baseline l WHERE l.space_id IS NULL AND NOT EXISTS (SELECT 1 FROM port_baseline h WHERE h.space_id IS NOT NULL AND h.record_id=l.record_id AND l.source_commit IS h.source_commit AND (l.scanned_at IS h.scanned_at OR (length(l.scanned_at)=10 AND l.scanned_at||'T00:00:00.000Z'=h.scanned_at)) AND l.version=h.version) ORDER BY l.record_id`,
+      `SELECT l.record_id FROM port_baseline l WHERE l.space_id IS NULL AND NOT EXISTS (SELECT 1 FROM port_baseline h WHERE h.space_id IS NOT NULL AND h.record_id=l.record_id AND l.source_commit IS h.source_commit AND (l.scanned_at IS h.scanned_at OR (length(l.scanned_at)=10 AND l.scanned_at||'T00:00:00.000Z'=h.scanned_at)) AND l.version=h.version AND EXISTS (SELECT 1 FROM port_pair lp JOIN port_pair hp ON hp.record_id=lp.record_id AND hp.space_id IS NOT NULL WHERE lp.id=l.pair_id AND hp.id=h.pair_id)) ORDER BY l.record_id`,
     ],
     [
       'port_doctrine',

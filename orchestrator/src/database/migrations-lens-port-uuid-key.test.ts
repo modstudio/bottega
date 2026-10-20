@@ -34,6 +34,72 @@ function seedPortPair(database: Database, recordId: string, spaceId: string | nu
   return Number(database.query<{ id: number }, []>('SELECT last_insert_rowid() id').get()!.id)
 }
 
+type PortTwinIds = {
+  hostedPairId: number
+  hostedSpaceId: string
+}
+
+function seedPortTwins(database: Database): PortTwinIds {
+  const hostedSpaceId = newRecordId()
+  const pairRecordId = newRecordId()
+  database
+    .query(
+      `INSERT INTO port_pair(record_id,space_id,source_project_record_id,target_project_record_id,created_at)
+       VALUES (?,NULL,'source-project','target-project','2026-01-01T00:00:00.000Z')`,
+    )
+    .run(pairRecordId)
+  const localPairId = Number(
+    database.query<{ id: number }, []>('SELECT last_insert_rowid() id').get()!.id,
+  )
+  database
+    .query(
+      `INSERT INTO port_pair(record_id,space_id,source_project_record_id,target_project_record_id,created_at)
+       VALUES (?,?,'source-project','target-project','2026-01-01T00:00:00.000Z')`,
+    )
+    .run(pairRecordId, hostedSpaceId)
+  const hostedPairId = Number(
+    database.query<{ id: number }, []>('SELECT last_insert_rowid() id').get()!.id,
+  )
+  const baselineRecordId = newRecordId()
+  const doctrineRecordId = newRecordId()
+  const refRecordId = newRecordId()
+  const sourceRecordId = newRecordId()
+  const skipRecordId = newRecordId()
+  database.exec(`
+    INSERT INTO port_baseline(pair_id,source_commit,scanned_at,record_id,version,space_id)
+      VALUES (${localPairId},'abc123','2026-01-02','${baselineRecordId}',2,NULL);
+    INSERT INTO port_baseline(pair_id,source_commit,scanned_at,record_id,version,space_id)
+      VALUES (${hostedPairId},'abc123','2026-01-02T00:00:00.000Z','${baselineRecordId}',2,'${hostedSpaceId}');
+    INSERT INTO port_doctrine(number,title,body,created_at,retired_at,record_id,version,space_id)
+      VALUES (1,'Doctrine','Body','2026-01-01T00:00:00.000Z',NULL,'${doctrineRecordId}',2,NULL);
+    INSERT INTO port_doctrine(number,title,body,created_at,retired_at,record_id,version,space_id)
+      VALUES (1,'Doctrine','Body','2026-01-01T00:00:00.000Z',NULL,'${doctrineRecordId}',2,'${hostedSpaceId}');
+    INSERT INTO port_ref(task_key,target_project_record_id,note,created_at,resolved_at,record_id,version,space_id)
+      VALUES ('DEV-1','target-project','Note','2026-01-01T00:00:00.000Z',NULL,'${refRecordId}',2,NULL);
+    INSERT INTO port_ref(task_key,target_project_record_id,note,created_at,resolved_at,record_id,version,space_id)
+      VALUES ('DEV-1','target-project','Note','2026-01-01T00:00:00.000Z',NULL,'${refRecordId}',2,'${hostedSpaceId}');
+    INSERT INTO port_ref_source(task_key,target_project_record_id,source_project_record_id,commits,paths,note,record_id,space_id)
+      VALUES ('DEV-1','target-project','source-project','["abc123"]','["src/a.ts"]','Source','${sourceRecordId}',NULL);
+    INSERT INTO port_ref_source(task_key,target_project_record_id,source_project_record_id,commits,paths,note,record_id,space_id)
+      VALUES ('DEV-1','target-project','source-project','["abc123"]','["src/a.ts"]','Source','${sourceRecordId}','${hostedSpaceId}');
+    INSERT INTO port_skip(pair_id,candidate,reason,skipped_at,record_id,space_id)
+      VALUES (${localPairId},'def456','already ported','2026-01-03T00:00:00.000Z','${skipRecordId}',NULL);
+    INSERT INTO port_skip(pair_id,candidate,reason,skipped_at,record_id,space_id)
+      VALUES (${hostedPairId},'def456','already ported','2026-01-03T00:00:00.000Z','${skipRecordId}','${hostedSpaceId}');
+    INSERT INTO record_install_binding(id,bound_at) VALUES (1,'2026-01-04T00:00:00.000Z');
+  `)
+  return { hostedPairId, hostedSpaceId }
+}
+
+function portRows(database: Database): Record<string, unknown[]> {
+  return Object.fromEntries(
+    TABLES.filter((table) => table.startsWith('port_')).map((table) => [
+      table,
+      database.query(`SELECT * FROM ${table} ORDER BY rowid`).all(),
+    ]),
+  )
+}
+
 test('lens and port UUID-key migration rebuilds every catalogue table and relationship', () => {
   const database = before()
   try {
@@ -98,32 +164,21 @@ test('lens and port UUID-key migration rebuilds every catalogue table and relati
   }
 })
 
-test('bound migration removes matching stale copies, refuses a missing twin atomically, and unbound keeps local rows', () => {
+test('bound migration removes an all-equal twin from every port table and unbound keeps local rows', () => {
   const matching = before()
-  const shared = newRecordId()
-  seedPortPair(matching, shared, null)
-  matching
-    .query(
-      `INSERT INTO port_pair(record_id,space_id,source_project_record_id,target_project_record_id,created_at)
-       SELECT record_id,?,source_project_record_id,target_project_record_id,created_at
-       FROM port_pair WHERE record_id=? AND space_id IS NULL`,
-    )
-    .run(newRecordId(), shared)
-  matching.exec("INSERT INTO record_install_binding(id,bound_at) VALUES (1,'a')")
+  seedPortTwins(matching)
   applyMigrations(matching)
-  expect(matching.query('SELECT COUNT(*) n FROM port_pair WHERE space_id IS NULL').get()).toEqual({
-    n: 0,
-  })
+  for (const table of TABLES.filter((candidate) => candidate.startsWith('port_'))) {
+    expect(
+      matching.query(`SELECT COUNT(*) n FROM ${table} WHERE space_id IS NULL`).get(),
+      table,
+    ).toEqual({ n: 0 })
+    expect(
+      matching.query(`SELECT COUNT(*) n FROM ${table} WHERE space_id IS NOT NULL`).get(),
+      table,
+    ).toEqual({ n: 1 })
+  }
   matching.close()
-
-  const refused = before()
-  seedPortPair(refused, newRecordId(), null)
-  refused.exec("INSERT INTO record_install_binding(id,bound_at) VALUES (1,'a')")
-  expect(() => applyMigrations(refused)).toThrow('without equivalent hosted twins')
-  expect(refused.query("SELECT name FROM pragma_table_info('port_pair')").all()).toContainEqual({
-    name: 'id',
-  })
-  refused.close()
 
   const unbound = before()
   seedPortPair(unbound, newRecordId(), null)
@@ -133,6 +188,205 @@ test('bound migration removes matching stale copies, refuses a missing twin atom
   })
   unbound.close()
 })
+
+test('bound migration refuses every port twin content or parent mismatch atomically', () => {
+  const variations: Array<{
+    label: string
+    mutate: (database: Database, ids: PortTwinIds) => void
+  }> = [
+    {
+      label: 'port_pair.source_project_record_id',
+      mutate: (d) =>
+        d.exec(
+          "UPDATE port_pair SET source_project_record_id='other-source' WHERE space_id IS NOT NULL",
+        ),
+    },
+    {
+      label: 'port_pair.target_project_record_id',
+      mutate: (d) =>
+        d.exec(
+          "UPDATE port_pair SET target_project_record_id='other-target' WHERE space_id IS NOT NULL",
+        ),
+    },
+    {
+      label: 'port_pair.created_at',
+      mutate: (d) => d.exec("UPDATE port_pair SET created_at='later' WHERE space_id IS NOT NULL"),
+    },
+    {
+      label: 'port_baseline.parent pair',
+      mutate: (d, ids) => {
+        d.query(
+          `INSERT INTO port_pair(record_id,space_id,source_project_record_id,target_project_record_id,created_at)
+           VALUES (?,?, 'other-source','other-target','2026-01-01T00:00:00.000Z')`,
+        ).run(newRecordId(), ids.hostedSpaceId)
+        const other = Number(d.query<{ id: number }, []>('SELECT last_insert_rowid() id').get()!.id)
+        d.query('UPDATE port_baseline SET pair_id=? WHERE space_id IS NOT NULL').run(other)
+      },
+    },
+    {
+      label: 'port_baseline.source_commit',
+      mutate: (d) =>
+        d.exec("UPDATE port_baseline SET source_commit='other' WHERE space_id IS NOT NULL"),
+    },
+    {
+      label: 'port_baseline.scanned_at',
+      mutate: (d) =>
+        d.exec(
+          "UPDATE port_baseline SET scanned_at='2026-01-03T00:00:00.000Z' WHERE space_id IS NOT NULL",
+        ),
+    },
+    {
+      label: 'port_baseline.version',
+      mutate: (d) => d.exec('UPDATE port_baseline SET version=3 WHERE space_id IS NOT NULL'),
+    },
+    {
+      label: 'port_doctrine.number',
+      mutate: (d) => d.exec('UPDATE port_doctrine SET number=2 WHERE space_id IS NOT NULL'),
+    },
+    {
+      label: 'port_doctrine.title',
+      mutate: (d) => d.exec("UPDATE port_doctrine SET title='Other' WHERE space_id IS NOT NULL"),
+    },
+    {
+      label: 'port_doctrine.body',
+      mutate: (d) => d.exec("UPDATE port_doctrine SET body='Other' WHERE space_id IS NOT NULL"),
+    },
+    {
+      label: 'port_doctrine.created_at',
+      mutate: (d) =>
+        d.exec("UPDATE port_doctrine SET created_at='later' WHERE space_id IS NOT NULL"),
+    },
+    {
+      label: 'port_doctrine.retired_at',
+      mutate: (d) =>
+        d.exec("UPDATE port_doctrine SET retired_at='later' WHERE space_id IS NOT NULL"),
+    },
+    {
+      label: 'port_doctrine.version',
+      mutate: (d) => d.exec('UPDATE port_doctrine SET version=3 WHERE space_id IS NOT NULL'),
+    },
+    {
+      label: 'port_ref.task_key',
+      mutate: (d) => {
+        d.exec('PRAGMA foreign_keys=OFF')
+        d.exec("UPDATE port_ref_source SET task_key='DEV-2' WHERE space_id IS NOT NULL")
+        d.exec("UPDATE port_ref SET task_key='DEV-2' WHERE space_id IS NOT NULL")
+        d.exec('PRAGMA foreign_keys=ON')
+      },
+    },
+    {
+      label: 'port_ref.target_project_record_id',
+      mutate: (d) => {
+        d.exec('PRAGMA foreign_keys=OFF')
+        d.exec(
+          "UPDATE port_ref_source SET target_project_record_id='other-target' WHERE space_id IS NOT NULL",
+        )
+        d.exec(
+          "UPDATE port_ref SET target_project_record_id='other-target' WHERE space_id IS NOT NULL",
+        )
+        d.exec('PRAGMA foreign_keys=ON')
+      },
+    },
+    {
+      label: 'port_ref.note',
+      mutate: (d) => d.exec("UPDATE port_ref SET note='Other' WHERE space_id IS NOT NULL"),
+    },
+    {
+      label: 'port_ref.created_at',
+      mutate: (d) => d.exec("UPDATE port_ref SET created_at='later' WHERE space_id IS NOT NULL"),
+    },
+    {
+      label: 'port_ref.resolved_at',
+      mutate: (d) => d.exec("UPDATE port_ref SET resolved_at='later' WHERE space_id IS NOT NULL"),
+    },
+    {
+      label: 'port_ref.version',
+      mutate: (d) => d.exec('UPDATE port_ref SET version=3 WHERE space_id IS NOT NULL'),
+    },
+    {
+      label: 'port_ref_source parent task_key',
+      mutate: (d, ids) => {
+        d.query(
+          `INSERT INTO port_ref(task_key,target_project_record_id,note,created_at,record_id,version,space_id)
+           VALUES ('DEV-2','target-project','Aux','later',?,1,?)`,
+        ).run(newRecordId(), ids.hostedSpaceId)
+        d.exec("UPDATE port_ref_source SET task_key='DEV-2' WHERE space_id IS NOT NULL")
+      },
+    },
+    {
+      label: 'port_ref_source parent target_project_record_id',
+      mutate: (d, ids) => {
+        d.query(
+          `INSERT INTO port_ref(task_key,target_project_record_id,note,created_at,record_id,version,space_id)
+           VALUES ('DEV-1','other-target','Aux','later',?,1,?)`,
+        ).run(newRecordId(), ids.hostedSpaceId)
+        d.exec(
+          "UPDATE port_ref_source SET target_project_record_id='other-target' WHERE space_id IS NOT NULL",
+        )
+      },
+    },
+    {
+      label: 'port_ref_source.source_project_record_id',
+      mutate: (d) =>
+        d.exec(
+          "UPDATE port_ref_source SET source_project_record_id='other-source' WHERE space_id IS NOT NULL",
+        ),
+    },
+    {
+      label: 'port_ref_source.commits',
+      mutate: (d) => d.exec("UPDATE port_ref_source SET commits='[]' WHERE space_id IS NOT NULL"),
+    },
+    {
+      label: 'port_ref_source.paths',
+      mutate: (d) => d.exec("UPDATE port_ref_source SET paths='[]' WHERE space_id IS NOT NULL"),
+    },
+    {
+      label: 'port_ref_source.note',
+      mutate: (d) => d.exec("UPDATE port_ref_source SET note='Other' WHERE space_id IS NOT NULL"),
+    },
+    {
+      label: 'port_skip.parent pair',
+      mutate: (d, ids) => {
+        d.query(
+          `INSERT INTO port_pair(record_id,space_id,source_project_record_id,target_project_record_id,created_at)
+           VALUES (?,?, 'other-source','other-target','2026-01-01T00:00:00.000Z')`,
+        ).run(newRecordId(), ids.hostedSpaceId)
+        const other = Number(d.query<{ id: number }, []>('SELECT last_insert_rowid() id').get()!.id)
+        d.query('UPDATE port_skip SET pair_id=? WHERE space_id IS NOT NULL').run(other)
+      },
+    },
+    {
+      label: 'port_skip.candidate',
+      mutate: (d) => d.exec("UPDATE port_skip SET candidate='other' WHERE space_id IS NOT NULL"),
+    },
+    {
+      label: 'port_skip.reason',
+      mutate: (d) => d.exec("UPDATE port_skip SET reason='Other' WHERE space_id IS NOT NULL"),
+    },
+    {
+      label: 'port_skip.skipped_at',
+      mutate: (d) => d.exec("UPDATE port_skip SET skipped_at='later' WHERE space_id IS NOT NULL"),
+    },
+  ]
+  for (const variation of variations) {
+    const database = before()
+    try {
+      const ids = seedPortTwins(database)
+      variation.mutate(database, ids)
+      const beforeRows = portRows(database)
+      expect(() => applyMigrations(database), variation.label).toThrow(
+        'without equivalent hosted twins',
+      )
+      expect(
+        database.query("SELECT name FROM pragma_table_info('port_pair')").all(),
+        variation.label,
+      ).toContainEqual({ name: 'id' })
+      expect(portRows(database), variation.label).toEqual(beforeRows)
+    } finally {
+      database.close()
+    }
+  }
+}, 30_000)
 
 test('lens and port UUID-key migration reports every orphan and leaves the old schema unchanged', () => {
   const database = before()
