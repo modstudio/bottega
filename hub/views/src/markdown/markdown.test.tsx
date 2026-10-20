@@ -42,7 +42,7 @@ test('renders a resume brief with flat scalar properties and preserves its times
   const html = render(`---
 status: paused
 epic: DEV-1400
-project: bottega
+project: workshop
 written: 2026-10-20T14:05:06Z
 consumed: false
 consumed_by: worker-7

@@ -70,25 +70,32 @@ function isPropertyMap(value: unknown): value is Record<string, unknown> {
 }
 
 function FrontmatterValue({ value }: { value: unknown }) {
-  const styles = markdownStyles()
   if (typeof value === 'boolean') return value ? 'yes' : 'no'
   if (Array.isArray(value)) {
+    const occurrences = new Map<string, number>()
     return (
-      <span className={styles.frontmatterItems()}>
-        {value.map((item, index) => (
-          <code key={`${String(item)}-${index}`}>{String(item)}</code>
-        ))}
+      <span className={markdownStyles().frontmatterItems()}>
+        {value.map((item) => {
+          const label = String(item)
+          const occurrence = (occurrences.get(label) ?? 0) + 1
+          occurrences.set(label, occurrence)
+          return <code key={`${label}-${occurrence}`}>{label}</code>
+        })}
       </span>
     )
   }
   if (isPropertyMap(value)) {
     return (
-      <table className={styles.frontmatterNested()} data-fit="">
+      <table className={markdownStyles().frontmatterNested()} data-fit="">
         <PropertyRows properties={value} />
       </table>
     )
   }
-  return <span className={styles.frontmatterValue()}>{value == null ? '' : String(value)}</span>
+  return (
+    <span className={markdownStyles().frontmatterValue()}>
+      {value == null ? '' : String(value)}
+    </span>
+  )
 }
 
 function PropertyRows({ properties }: { properties: Record<string, unknown> }) {
