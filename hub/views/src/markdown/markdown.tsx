@@ -84,6 +84,7 @@ function FrontmatterValue({
     return (
       <span className={markdownStyles().frontmatterItems()}>
         {value.map((item, index) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: parsed frontmatter is immutable
           <span key={index}>
             <FrontmatterValue value={item} ancestors={nextAncestors} />
           </span>
