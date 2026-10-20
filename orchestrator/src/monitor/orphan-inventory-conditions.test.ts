@@ -48,13 +48,23 @@ test('does not report a missing directory outside the worktree root', () => {
   ).toEqual([])
 })
 
-test('reports one row when the inventory repeats the same Docker object', () => {
-  const resource = {
-    kind: 'container' as const,
-    name: 'web-1',
-    project: 'orch_web',
-    workingDir: '/code/app/.claude/worktrees/gone',
-    workingDirExists: false,
-  }
-  expect(orphanComposeResourceConditions([resource, resource])).toHaveLength(1)
+test('reports one row for two containers in the same Compose project', () => {
+  expect(
+    orphanComposeResourceConditions([
+      {
+        kind: 'container',
+        name: 'web-1',
+        project: 'orch_web',
+        workingDir: '/code/app/.claude/worktrees/gone',
+        workingDirExists: false,
+      },
+      {
+        kind: 'container',
+        name: 'db-1',
+        project: 'orch_web',
+        workingDir: '/code/app/.claude/worktrees/gone',
+        workingDirExists: false,
+      },
+    ]),
+  ).toEqual([expect.objectContaining({ subject: 'compose-project:orch_web' })])
 })

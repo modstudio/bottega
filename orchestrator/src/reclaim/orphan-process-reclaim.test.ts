@@ -5,6 +5,7 @@ import {
   automaticOrphanReclaimDecision,
   orphanProcessReverification,
   orphanSignalPlan,
+  signalFreshOrphanPlan,
 } from './orphan-process-reclaim.ts'
 
 const identity = { pid: 42, startTime: 'start', command: 'vite', missingTree: '/trees/gone' }
@@ -51,17 +52,45 @@ test('automatic reclaim requires cwd evidence, age, non-platform command, and no
   expect(automaticOrphanReclaimDecision(orphan(), new Set(['/trees/gone'])).reclaim).toBe(false)
 })
 
-test('signals a group only when every member is a same-tree orphan or descendant', () => {
+test('a signal plan contains only the root and descendants with their births', () => {
   const root = orphan()
   const child: ProcessFact = { ...root, pid: 43, ppid: 42, cwd: null }
-  expect(orphanSignalPlan(root, [root, child], [root], 99)).toEqual({ kind: 'group', pgid: 42 })
   const unrelated: ProcessFact = { ...root, pid: 44, ppid: 1, cwd: null }
-  expect(orphanSignalPlan(root, [root, child, unrelated], [root], 99)).toEqual({
-    kind: 'pids',
-    pids: [43, 42],
+  expect(
+    orphanSignalPlan(
+      root,
+      [root, child, unrelated],
+      new Map([
+        [42, 'root-birth'],
+        [43, 'child-birth'],
+        [44, 'other-birth'],
+      ]),
+    ),
+  ).toEqual({
+    targets: [
+      { pid: 43, startTime: 'child-birth' },
+      { pid: 42, startTime: 'root-birth' },
+    ],
   })
-  expect(orphanSignalPlan(root, [root, child], [root], 42)).toEqual({
-    kind: 'pids',
-    pids: [43, 42],
-  })
+})
+
+test('a signal pass uses a fresh plan and skips a descendant whose birth changed', () => {
+  const signaled: number[] = []
+  const freshPlan = {
+    targets: [
+      { pid: 43, startTime: 'child-birth' },
+      { pid: 42, startTime: 'root-birth' },
+    ],
+  }
+  expect(
+    signalFreshOrphanPlan(orphan(), 'SIGTERM', {
+      freshPlan: () => ({ ok: true, plan: freshPlan }),
+      identity: (pid, birth) => (pid === 42 && birth === 'root-birth' ? 'live' : 'reused'),
+      kill: ((pid: number) => {
+        signaled.push(pid)
+        return true
+      }) as typeof process.kill,
+    }),
+  ).toEqual({ ok: true })
+  expect(signaled).toEqual([42])
 })

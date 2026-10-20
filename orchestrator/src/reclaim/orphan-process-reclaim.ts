@@ -1,6 +1,6 @@
 // concern: orphan process reclamation
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { pidAlive, pidRecordIdentity } from '../../../shared/process-identity.ts'
+import { pidAlive, pidRecordIdentity, processStartTime } from '../../../shared/process-identity.ts'
 import { liveRuns } from '../database/db.ts'
 import { isProjectRepository, projects } from '../project/projects.ts'
 import {
@@ -80,44 +80,43 @@ function descendants(root: number, facts: readonly ProcessFact[]): Set<number> {
   return found
 }
 
-export type OrphanSignalPlan = { kind: 'group'; pgid: number } | { kind: 'pids'; pids: number[] }
+export type OrphanSignalPlan = {
+  targets: { pid: number; startTime: string | null }[]
+}
 
 export function orphanSignalPlan(
   root: OrphanProcess,
   facts: readonly ProcessFact[],
-  orphans: readonly OrphanProcess[],
-  callerPgid: number | null,
+  births: ReadonlyMap<number, string | null>,
 ): OrphanSignalPlan {
-  const tree = descendants(root.pid, facts)
-  const sameTreeOrphans = new Set(
-    orphans.filter((item) => item.missingTree === root.missingTree).map((item) => item.pid),
-  )
-  const group = facts.filter((fact) => fact.pgid === root.pgid)
-  const groupSafe =
-    root.pgid > 1 &&
-    root.pgid !== callerPgid &&
-    group.length > 0 &&
-    group.every((fact) => tree.has(fact.pid) || sameTreeOrphans.has(fact.pid))
-  return groupSafe
-    ? { kind: 'group', pgid: root.pgid }
-    : { kind: 'pids', pids: [...tree].sort((a, b) => b - a) }
+  return {
+    targets: [...descendants(root.pid, facts)]
+      .sort((a, b) => b - a)
+      .map((pid) => ({ pid, startTime: births.get(pid) ?? null })),
+  }
 }
 
-function callerPgid(facts: readonly ProcessFact[]): number | null {
-  return facts.find((fact) => fact.pid === process.pid)?.pgid ?? null
+type SignalPassAdapters = {
+  freshPlan: (first: OrphanProcess) => ReturnType<typeof verifyAndPlan>
+  identity: typeof pidRecordIdentity
+  kill: typeof process.kill
 }
 
-function signal(
+export function signalFreshOrphanPlan(
   first: OrphanProcess,
-  plan: OrphanSignalPlan,
   value: NodeJS.Signals,
+  adapters: SignalPassAdapters = {
+    freshPlan: verifyAndPlan,
+    identity: pidRecordIdentity,
+    kill: process.kill.bind(process),
+  },
 ): { ok: true } | { ok: false; reason: string } {
-  const targets = plan.kind === 'group' ? [-plan.pgid] : plan.pids
-  for (const pid of targets) {
-    const identity = verifyAndPlan(first)
-    if (!identity.ok) return identity
+  const fresh = adapters.freshPlan(first)
+  if (!fresh.ok) return fresh
+  for (const target of fresh.plan.targets) {
+    if (adapters.identity(target.pid, target.startTime) !== 'live') continue
     try {
-      process.kill(pid, value)
+      adapters.kill(target.pid, value)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
     }
@@ -137,14 +136,13 @@ function verifyAndPlan(
   const liveIdentity = pidRecordIdentity(first.pid, first.startTime)
   if (liveIdentity !== 'live')
     return { ok: false, reason: `pid ${first.pid} identity is ${liveIdentity}` }
+  const pids = [...descendants(verified!.pid, inventory.facts)]
+  const births = new Map(
+    pids.map((pid) => [pid, pid === first.pid ? first.startTime : processStartTime(pid)]),
+  )
   return {
     ok: true,
-    plan: orphanSignalPlan(
-      verified!,
-      inventory.facts,
-      inventory.orphans,
-      callerPgid(inventory.facts),
-    ),
+    plan: orphanSignalPlan(verified!, inventory.facts, births),
   }
 }
 
@@ -171,7 +169,7 @@ export async function reclaimOrphanProcess(
       ok: true,
       action: `would terminate pid ${pid} (${first.command}) for missing tree ${first.missingTree}`,
     }
-  const terminated = signal(first, initial.plan, 'SIGTERM')
+  const terminated = signalFreshOrphanPlan(first, 'SIGTERM')
   if (!terminated.ok) return { ok: false, action: `refused; ${terminated.reason}` }
   const deadline = Date.now() + RECLAIM_GRACE_MS
   while (pidAlive(pid) && Date.now() < deadline) await Bun.sleep(50)
@@ -180,10 +178,7 @@ export async function reclaimOrphanProcess(
       ok: true,
       action: `terminated orphan process tree rooted at pid ${pid} for missing tree ${first.missingTree}`,
     }
-  const escalation = verifyAndPlan(first)
-  if (!escalation.ok)
-    return { ok: false, action: `refused SIGKILL escalation; ${escalation.reason}` }
-  const killed = signal(first, escalation.plan, 'SIGKILL')
+  const killed = signalFreshOrphanPlan(first, 'SIGKILL')
   if (!killed.ok) return { ok: false, action: `refused SIGKILL escalation; ${killed.reason}` }
   await Bun.sleep(50)
   return pidAlive(pid)

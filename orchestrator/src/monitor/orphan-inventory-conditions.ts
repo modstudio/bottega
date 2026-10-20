@@ -68,19 +68,19 @@ export type ComposeWorktreeResource = {
 export function orphanComposeResourceConditions(
   resources: readonly ComposeWorktreeResource[],
 ): MonitorCondition[] {
-  const reported = new Set<string>()
+  const reportedProjects = new Set<string>()
   return resources.flatMap((resource): MonitorCondition[] => {
     if (resource.workingDirExists || !resource.workingDir.includes('/.claude/worktrees/')) return []
-    const subject = `${resource.kind}:${resource.name}`
-    if (reported.has(subject)) return []
-    reported.add(subject)
+    if (reportedProjects.has(resource.project)) return []
+    reportedProjects.add(resource.project)
+    const subject = `compose-project:${resource.project}`
     return [
       {
         kind: 'orphan-compose-resource',
         subject,
         since: null,
         ageMs: null,
-        detail: `${resource.kind} ${resource.name} belongs to Compose project ${resource.project}; working directory is gone: ${resource.workingDir}`,
+        detail: `Compose project ${resource.project} has a missing working directory: ${resource.workingDir}`,
         action: `report only; lifecycle action is docker compose -p ${resource.project} down`,
       },
     ]
