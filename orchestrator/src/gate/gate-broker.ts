@@ -5,6 +5,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { closeSync, mkdirSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { HOST_SLOT_HELD_ENV, HostSlotWaitAborted, withGateSlot } from '../gate-load.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { workerGateEnvironment } from '../issue/issue-shell.ts'
 import { createNoFollowFile } from '../no-follow-file.ts'
@@ -21,13 +22,21 @@ import {
   isGateToolingPath,
   resolveGateCommand,
 } from './gate-decision.ts'
+import { hostSlotWaitCallbacks } from './host-slot-wait.ts'
 
 /** A pending check is a plain read; only an actual claim takes the write lock. */
 const GATE_REQUEST_POLL_MS = 1000
 
 type PendingGate = { id: number; run_record_id: string; startedAt: string }
 type ActiveGate = { completion: Promise<void>; cancel(reason: string): Promise<void> }
+type HostSlotRunner = typeof withGateSlot
 export type GateExecutionMoment = { executionId: number; at: string }
+type GateProcessState = {
+  child: ReturnType<typeof spawn> | null
+  termination: Promise<void> | null
+  timedOut: boolean
+  exitCode: number
+}
 
 const PENDING_GATE_SQL = `SELECT id,run_record_id FROM gate_execution
   WHERE run_record_id=? AND started_at IS NULL AND finished_at IS NULL ORDER BY id LIMIT 1`
@@ -173,23 +182,110 @@ function recordFinishedGate(input: {
     )
 }
 
+async function runGateProcess(input: {
+  command: string
+  worktree: string
+  environment: Record<string, string>
+  state: GateProcessState
+  record: (chunk: Buffer | string) => void
+  stop: () => Promise<void>
+}): Promise<void> {
+  const { state } = input
+  state.child = spawn('sh', ['-c', input.command], {
+    cwd: input.worktree,
+    env: {
+      ...brokerGateEnvironment(workerGateEnvironment(process.env), process.env, input.environment),
+      [HOST_SLOT_HELD_ENV]: '1',
+    },
+    detached: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  state.child.stdout?.on('data', input.record)
+  state.child.stderr?.on('data', input.record)
+  state.child.once('error', (error) => input.record(`gate could not start: ${String(error)}\n`))
+  const timeout = setTimeout(() => {
+    state.timedOut = true
+    void input.stop()
+  }, GATE_COMMAND_TIMEOUT_MS)
+  await waitForExit(state.child)
+  clearTimeout(timeout)
+  if (state.termination) await state.termination
+  state.exitCode = state.child.exitCode ?? -1
+  if (state.timedOut) input.record(`\ngate timed out after ${GATE_COMMAND_TIMEOUT_MS}ms\n`)
+}
+
+function gateWaitCallbacks(request: PendingGate) {
+  return hostSlotWaitCallbacks({
+    runId: request.run_record_id,
+    writeProgress: (message) => {
+      db().query('UPDATE gate_execution SET output_tail=? WHERE id=?').run(message, request.id)
+    },
+  })
+}
+
+function prepareGateExecution(input: {
+  request: PendingGate
+  environment: Record<string, string>
+  record: (chunk: Buffer | string) => void
+}) {
+  const plan = gatePlan(input.request.run_record_id)
+  const mainCheckout = requiredMainCheckout(input.environment, input.request.run_record_id)
+  ensureMainStackStarted({
+    projectId: plan.projectId,
+    projectName: plan.projectName,
+    projectPath: mainCheckout,
+    declaration: plan.mainStackConsumers
+      ? {
+          consumers: plan.mainStackConsumers,
+          requiredServices: plan.mainStackRequiredServices,
+        }
+      : undefined,
+    consumer: 'gate',
+  })
+  const command = resolveGateCommand(plan.command, plan.worktree)
+  const toolingPaths = changedGateTooling(plan, input.record)
+  const headCommit = decideGateHeadCommit({
+    headCommit:
+      gitPaths(plan.worktree, ['rev-parse', '--verify', 'HEAD^{commit}'])[0]?.trim() ?? '',
+    porcelainPaths: gitPaths(plan.worktree, [
+      'status',
+      '--porcelain',
+      '-z',
+      '--untracked-files=all',
+    ]),
+  })
+  db()
+    .query('UPDATE gate_execution SET tooling_paths=?,resolved_command=?,head_commit=? WHERE id=?')
+    .run(JSON.stringify(toolingPaths), command, headCommit, input.request.id)
+  return { command, worktree: plan.worktree }
+}
+
 function startGateExecution(
   request: PendingGate,
   scratchDir: string,
   environment: Record<string, string>,
   registerActive: (terminate: () => Promise<void>) => () => void,
   onFinish: ((moment: GateExecutionMoment) => void) | undefined,
+  hostSlot: HostSlotRunner,
 ): ActiveGate {
-  let child: ReturnType<typeof spawn> | null = null
-  let termination: Promise<void> | null = null
+  const state: GateProcessState = {
+    child: null,
+    termination: null,
+    timedOut: false,
+    exitCode: -1,
+  }
   let cancelledReason: string | null = null
+  const slotWait = new AbortController()
   const stop = (reason?: string): Promise<void> => {
     if (reason) cancelledReason ??= reason
-    if (!child || child.exitCode !== null) return Promise.resolve()
-    termination ??= terminateProcessGroup(child.pid ?? 0, { direct: child }).then((result) => {
+    slotWait.abort()
+    if (!state.child || state.child.exitCode !== null) return Promise.resolve()
+    state.termination ??= terminateProcessGroup(state.child.pid ?? 0, {
+      direct: state.child,
+    }).then((result) => {
       if (!result.exited) throw new Error(result.reason ?? 'gate process group did not exit')
     })
-    return termination
+    return state.termination
   }
   let completion!: Promise<void>
   const unregister = registerActive(async () => {
@@ -204,8 +300,6 @@ function startGateExecution(
     const started = Date.now()
     let fd: number | null = null
     let tail = ''
-    let timedOut = false
-    let exitCode = -1
     let command: string | null = null
     const record = (chunk: Buffer | string) => {
       const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
@@ -215,60 +309,31 @@ function startGateExecution(
     }
     try {
       fd = createGateLog(scratchPath)
-      const plan = gatePlan(request.run_record_id)
-      const mainCheckout = requiredMainCheckout(environment, request.run_record_id)
-      ensureMainStackStarted({
-        projectId: plan.projectId,
-        projectName: plan.projectName,
-        projectPath: mainCheckout,
-        declaration: plan.mainStackConsumers
-          ? {
-              consumers: plan.mainStackConsumers,
-              requiredServices: plan.mainStackRequiredServices,
-            }
-          : undefined,
-        consumer: 'gate',
-      })
-      command = resolveGateCommand(plan.command, plan.worktree)
-      const toolingPaths = changedGateTooling(plan, record)
-      const headCommit = decideGateHeadCommit({
-        headCommit:
-          gitPaths(plan.worktree, ['rev-parse', '--verify', 'HEAD^{commit}'])[0]?.trim() ?? '',
-        porcelainPaths: gitPaths(plan.worktree, [
-          'status',
-          '--porcelain',
-          '-z',
-          '--untracked-files=all',
-        ]),
-      })
-      db()
-        .query(
-          'UPDATE gate_execution SET tooling_paths=?,resolved_command=?,head_commit=? WHERE id=?',
-        )
-        .run(JSON.stringify(toolingPaths), command, headCommit, request.id)
-      child = spawn('sh', ['-c', command], {
-        cwd: plan.worktree,
-        env: brokerGateEnvironment(workerGateEnvironment(process.env), process.env, environment),
-        detached: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      })
-      child.stdout?.on('data', record)
-      child.stderr?.on('data', record)
-      child.once('error', (error) => record(`gate could not start: ${String(error)}\n`))
-      const timeout = setTimeout(() => {
-        timedOut = true
-        void stop()
-      }, GATE_COMMAND_TIMEOUT_MS)
-      await waitForExit(child)
-      clearTimeout(timeout)
-      if (termination) await termination
-      exitCode = child.exitCode ?? -1
-      if (timedOut) record(`\ngate timed out after ${GATE_COMMAND_TIMEOUT_MS}ms\n`)
+      const prepared = prepareGateExecution({ request, environment, record })
+      command = prepared.command
+      await hostSlot(
+        () =>
+          runGateProcess({
+            command: command!,
+            worktree: prepared.worktree,
+            environment,
+            state,
+            record,
+            stop,
+          }),
+        {
+          signal: slotWait.signal,
+          ...gateWaitCallbacks(request),
+        },
+      )
     } catch (error) {
-      const line = `gate broker failed: ${String(error)}\n`
+      const line =
+        error instanceof HostSlotWaitAborted && cancelledReason
+          ? `${cancelledReason}\n`
+          : `gate broker failed: ${String(error)}\n`
       if (fd !== null) writeSync(fd, line)
       tail = boundedGateOutputTail(tail + line)
-      if (termination) throw error
+      if (state.termination) throw error
     } finally {
       if (fd !== null) closeSync(fd)
     }
@@ -276,8 +341,8 @@ function startGateExecution(
     recordFinishedGate({
       requestId: request.id,
       finishedAt,
-      exitCode,
-      timedOut,
+      exitCode: state.exitCode,
+      timedOut: state.timedOut,
       elapsedMs: Date.now() - started,
       tail,
       artifactPath: fd === null ? null : artifactPath,
@@ -300,6 +365,7 @@ export function startGateBroker(input: {
   registerActive?: (terminate: () => Promise<void>) => () => void
   onExecutionStart?: (moment: GateExecutionMoment) => void
   onExecutionFinish?: (moment: GateExecutionMoment) => void
+  withHostSlot?: HostSlotRunner
 }): GateBroker {
   let closed = false
   let active: ActiveGate | null = null
@@ -315,6 +381,7 @@ export function startGateBroker(input: {
       input.environment,
       registerActive,
       input.onExecutionFinish,
+      input.withHostSlot ?? withGateSlot,
     )
     active = execution
     void execution.completion.then(

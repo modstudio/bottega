@@ -7,6 +7,8 @@ import { join } from 'node:path'
 import { db, nowIso } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import { brokerGateEnvironment, GATE_COMMAND_TIMEOUT_MS } from '../gate/gate-decision.ts'
+import { hostSlotWaitCallbacks } from '../gate/host-slot-wait.ts'
+import { HOST_SLOT_HELD_ENV, HostSlotWaitAborted, withGateSlot } from '../gate-load.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { workerGateEnvironment } from '../issue/issue-shell.ts'
 import { createNoFollowFile } from '../no-follow-file.ts'
@@ -33,6 +35,7 @@ import {
   FOCUSED_TEST_ACTIVE_FILE,
   FOCUSED_TEST_LOCK_FILE,
   FOCUSED_TEST_REQUEST_FILE,
+  focusedTestProgressFile,
   focusedTestResultFile,
 } from './focused-test-request.ts'
 
@@ -41,6 +44,13 @@ const FOCUSED_TEST_CLOSE_REASON = 'Focused test run cancelled because the superv
 
 type ActiveFocusedTest = { completion: Promise<void>; cancel(): Promise<void> }
 export type FocusedTestBroker = { close(): Promise<void> }
+type FocusedTestProcessState = {
+  child: ReturnType<typeof spawn> | null
+  termination: Promise<void> | null
+  cancelled: boolean
+  timedOut: boolean
+  exitCode: number
+}
 
 function focusedTestPlan(runId: string) {
   const row = db()
@@ -119,6 +129,48 @@ function claimRequest(scratchDir: string): FocusedTestRequest | null {
   return parseFocusedTestRequest(JSON.parse(contents))
 }
 
+async function runFocusedTestProcess(input: {
+  invocation: ReturnType<typeof focusedTestInvocation>
+  worktree: string
+  environment: Record<string, string>
+  state: FocusedTestProcessState
+  record: (chunk: Buffer | string) => void
+  stop: () => Promise<void>
+}): Promise<void> {
+  const { state } = input
+  state.child = spawn(input.invocation.command, input.invocation.argv, {
+    cwd: input.worktree,
+    env: {
+      ...brokerGateEnvironment(workerGateEnvironment(process.env), process.env, input.environment),
+      [HOST_SLOT_HELD_ENV]: '1',
+    },
+    detached: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  state.child.stdout?.on('data', input.record)
+  state.child.stderr?.on('data', input.record)
+  state.child.once('error', (error) =>
+    input.record(`focused test runner could not start: ${String(error)}\n`),
+  )
+  const timeout = setTimeout(() => {
+    state.timedOut = true
+    void input.stop()
+  }, GATE_COMMAND_TIMEOUT_MS)
+  await waitForExit(state.child)
+  clearTimeout(timeout)
+  if (state.termination) await state.termination
+  state.exitCode = state.child.exitCode ?? -1
+  if (state.timedOut) input.record(`\nfocused tests timed out after ${GATE_COMMAND_TIMEOUT_MS}ms\n`)
+  if (state.cancelled && !state.timedOut) input.record(`\n${FOCUSED_TEST_CLOSE_REASON}\n`)
+}
+
+function focusedTestWaitCallbacks(input: { runId: string; progressPath: string }) {
+  return hostSlotWaitCallbacks({
+    runId: input.runId,
+    writeProgress: (message) => writeFocusedTestFileAtomic(input.progressPath, message),
+  })
+}
+
 function startFocusedTest(input: {
   runId: string
   scratchDir: string
@@ -126,17 +178,25 @@ function startFocusedTest(input: {
   request: FocusedTestRequest
   registerActive: (terminate: () => Promise<void>) => () => void
 }): ActiveFocusedTest {
-  let child: ReturnType<typeof spawn> | null = null
-  let termination: Promise<void> | null = null
-  let cancelled = false
+  const state: FocusedTestProcessState = {
+    child: null,
+    termination: null,
+    cancelled: false,
+    timedOut: false,
+    exitCode: -1,
+  }
+  const slotWait = new AbortController()
   const stop = (): Promise<void> => {
-    cancelled = true
-    if (!child || child.exitCode !== null) return Promise.resolve()
-    termination ??= terminateProcessGroup(child.pid ?? 0, { direct: child }).then((result) => {
+    state.cancelled = true
+    slotWait.abort()
+    if (!state.child || state.child.exitCode !== null) return Promise.resolve()
+    state.termination ??= terminateProcessGroup(state.child.pid ?? 0, {
+      direct: state.child,
+    }).then((result) => {
       if (!result.exited)
         throw new Error(result.reason ?? 'focused test process group did not exit')
     })
-    return termination
+    return state.termination
   }
   let completion!: Promise<void>
   const unregister = input.registerActive(async () => {
@@ -149,8 +209,6 @@ function startFocusedTest(input: {
     const fd = createNoFollowFile(logPath)
     const started = Date.now()
     let outputTail = ''
-    let exitCode = -1
-    let timedOut = false
     const record = (chunk: Buffer | string) => {
       const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
       writeSync(fd, bytes)
@@ -161,45 +219,46 @@ function startFocusedTest(input: {
       const paths = validateFocusedTestPaths(input.request.paths, plan.worktree)
       ensureFocusedTestMainStack(plan, input.environment)
       const invocation = focusedTestInvocation(plan.runner, paths, plan.worktree)
-      child = spawn(invocation.command, invocation.argv, {
-        cwd: plan.worktree,
-        env: brokerGateEnvironment(
-          workerGateEnvironment(process.env),
-          process.env,
-          input.environment,
-        ),
-        detached: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      })
-      child.stdout?.on('data', record)
-      child.stderr?.on('data', record)
-      child.once('error', (error) =>
-        record(`focused test runner could not start: ${String(error)}\n`),
+      const progressPath = join(input.scratchDir, focusedTestProgressFile(input.request.id))
+      await withGateSlot(
+        () => {
+          removeFocusedTestFile(progressPath)
+          return runFocusedTestProcess({
+            invocation,
+            worktree: plan.worktree,
+            environment: input.environment,
+            state,
+            record,
+            stop,
+          })
+        },
+        {
+          signal: slotWait.signal,
+          ...focusedTestWaitCallbacks({ runId: input.runId, progressPath }),
+        },
       )
-      const timeout = setTimeout(() => {
-        timedOut = true
-        void stop()
-      }, GATE_COMMAND_TIMEOUT_MS)
-      await waitForExit(child)
-      clearTimeout(timeout)
-      if (termination) await termination
-      exitCode = child.exitCode ?? -1
-      if (timedOut) record(`\nfocused tests timed out after ${GATE_COMMAND_TIMEOUT_MS}ms\n`)
-      if (cancelled && !timedOut) record(`\n${FOCUSED_TEST_CLOSE_REASON}\n`)
     } catch (error) {
-      record(`focused test broker failed: ${String(error)}\n`)
+      if (error instanceof HostSlotWaitAborted && state.cancelled)
+        record(`\n${FOCUSED_TEST_CLOSE_REASON}\n`)
+      else record(`focused test broker failed: ${String(error)}\n`)
     } finally {
       closeSync(fd)
     }
     const elapsedMs = Date.now() - started
-    const result = { exitCode, timedOut, elapsedMs, logName, outputTail }
+    const result = {
+      exitCode: state.exitCode,
+      timedOut: state.timedOut,
+      elapsedMs,
+      logName,
+      outputTail,
+    }
     writeResult(input.scratchDir, input.request.id, result)
     appendRunEvent(input.runId, {
       ts: nowIso(),
       type: 'focused_test',
       paths: input.request.paths,
-      exitCode,
-      timedOut,
+      exitCode: state.exitCode,
+      timedOut: state.timedOut,
       elapsedMs,
       logName,
     })

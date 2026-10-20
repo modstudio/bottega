@@ -316,6 +316,14 @@ describe('the live ask channel always answers', () => {
         wait: async () => {
           nowMs += 2
           waits += 1
+          if (waits === 1) {
+            db()
+              .query('UPDATE gate_execution SET output_tail=? WHERE run_record_id=?')
+              .run(
+                'waiting 2ms for host capacity (gates=1 loadavg=8 ncpu=8 free_mb=2048 floor_mb=1024 pressure=normal held_on=load)',
+                run,
+              )
+          }
           if (waits === 2) {
             db()
               .query(
@@ -334,6 +342,8 @@ describe('the live ask channel always answers', () => {
       expect(resultText(first)).toContain('The gate is still running after')
       expect(resultText(first)).toContain('ms.')
       expect(resultText(first)).toContain('Call run_gate again to wait for this same execution')
+      expect(resultText(first)).toContain('waiting 2ms for host capacity')
+      expect(resultText(first)).toContain('held_on=load')
 
       const second = await connection.client.callTool({ name: 'run_gate', arguments: {} })
       expect(second.isError).toBeUndefined()

@@ -26,7 +26,7 @@ test('broker gate environment adds host paths without exposing secrets and appli
         TMPDIR: '/tmp/operator',
         ANTHROPIC_API_KEY: 'secret',
       },
-      { HOME: '/sandbox/home', ORCH_RUN_ID: '41' },
+      { HOME: '/sandbox/home', ORCH_RUN_ID: '41', ORCH_GATE_PIDS: '/worker/controlled' },
     ),
   ).toEqual({
     PATH: '/bin',

@@ -25,6 +25,7 @@ import {
 export const FOCUSED_TEST_LOCK_FILE = 'focused-test.lock'
 export const FOCUSED_TEST_REQUEST_FILE = 'focused-test-request.json'
 export const FOCUSED_TEST_ACTIVE_FILE = 'focused-test-active.json'
+export const focusedTestProgressFile = (id: string) => `focused-test-progress-${id}.txt`
 export const focusedTestResultFile = (id: string) => `focused-test-result-${id}.json`
 const FOCUSED_TEST_POLL_MS = 250
 const pendingResults = new Set<string>()
@@ -80,6 +81,7 @@ function currentExecution(scratchDir: string): FocusedTestRequest | null {
 
 function clearExecution(scratchDir: string, execution: FocusedTestRequest): void {
   removeFocusedTestFile(join(scratchDir, focusedTestResultFile(execution.id)))
+  removeFocusedTestFile(join(scratchDir, focusedTestProgressFile(execution.id)))
   removeFocusedTestFile(join(scratchDir, FOCUSED_TEST_REQUEST_FILE))
   removeFocusedTestFile(join(scratchDir, FOCUSED_TEST_ACTIVE_FILE))
   removeFocusedTestFile(join(scratchDir, FOCUSED_TEST_LOCK_FILE))
@@ -180,7 +182,13 @@ async function waitForFocusedTestExecution(input: {
       const formatted = formatResult(input.runId, input.scratchDir, result)
       return input.introduction ? `${input.introduction}\n${formatted}` : formatted
     }
-    if (!waitDecision.wait) return waitDecision.message!
+    if (!waitDecision.wait) {
+      const progressPath = join(input.scratchDir, focusedTestProgressFile(input.execution.id))
+      const progress = focusedTestFileExists(progressPath)
+        ? `\n${readFocusedTestRegularFile(progressPath)}`
+        : ''
+      return `${waitDecision.message!}${progress}`
+    }
     await waitForPoll(
       Math.min(FOCUSED_TEST_POLL_MS, input.dependencies.waitMs - (now - waitStartedAt)),
       input.signal,
