@@ -1038,9 +1038,12 @@ export async function applyImport(
       )
     }
 
-    const pairs = new Map<string, number>()
+    const pairs = new Map<string, string>()
     for (const row of plan.pairs)
-      pairs.set(`${row.source}->${row.target}`, porting.addPairLocal(row.sourceId, row.targetId).id)
+      pairs.set(
+        `${row.source}->${row.target}`,
+        porting.addPairLocal(row.sourceId, row.targetId).record_id,
+      )
     for (const row of plan.baselines)
       porting.setBaselineLocal(pairs.get(row.pairKey)!, row.sourceCommit, row.scannedAt)
     for (const row of plan.skips)

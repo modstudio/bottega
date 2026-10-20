@@ -252,7 +252,7 @@ export async function portCommand(
       output(null, `no port pair from "${sourceName}" to "${targetName}"`)
       return
     }
-    const value = { pair, baseline: baselineForPair(pair.id) }
+    const value = { pair, baseline: baselineForPair(pair.record_id) }
     output(
       value,
       value.baseline?.source_commit
@@ -289,7 +289,7 @@ export async function portCommand(
     if (!sourceName || !targetName)
       throw new Error(`${PLATFORM_SLUG} doc port skip list <source> <target> [--json]`)
     const { pair } = namedPair(sourceName, targetName)
-    const rows = pair ? listSkips(pair.id) : []
+    const rows = pair ? listSkips(pair.record_id) : []
     if (has('json')) {
       log(JSON.stringify(rows))
       return
@@ -311,7 +311,7 @@ export async function portCommand(
       throw new Error(
         `no port pair from "${sourceName}" to "${targetName}"; set its baseline first`,
       )
-    const row = await addSkip(pair.id, candidate, reason)
+    const row = await addSkip(pair.record_id, candidate, reason)
     output(row, `skipped ${candidate}: ${reason}`)
     return
   }

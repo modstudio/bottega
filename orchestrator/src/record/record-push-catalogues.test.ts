@@ -292,7 +292,7 @@ test('pushes complete workflow history to every registered project space and lis
     )
 })
 
-test('push planner normalizes a date-only baseline without changing the local value', async () => {
+test('push and cache reconciliation normalizes a date-only baseline', async () => {
   const local = db(),
     sourceId = newRecordId(),
     targetId = newRecordId()
@@ -311,7 +311,7 @@ test('push planner normalizes a date-only baseline without changing the local va
   rememberProjectSpace(local, 'dated-source', spaceId)
   rememberProjectSpace(local, 'dated-target', spaceId)
   const pair = addPairLocal(sourceId, targetId)
-  setBaselineLocal(pair.id, 'abc123', '2026-08-24')
+  setBaselineLocal(pair.record_id, 'abc123', '2026-08-24')
   const imports: RecordPortImportInput[] = []
   const client = fakeCatalogueClient(undefined, undefined, [], (input) => imports.push(input))
   installRecordApiClient(client)
@@ -321,9 +321,9 @@ test('push planner normalizes a date-only baseline without changing the local va
   expect(imports.flatMap((input) => input.port_baseline)).toEqual([
     expect.objectContaining({ scannedAt: '2026-08-24T00:00:00.000Z' }),
   ])
-  expect(local.query('SELECT scanned_at FROM port_baseline WHERE pair_id=?').get(pair.id)).toEqual({
-    scanned_at: '2026-08-24',
-  })
+  expect(
+    local.query('SELECT scanned_at FROM port_baseline WHERE pair_record_id=?').get(pair.record_id),
+  ).toEqual({ scanned_at: '2026-08-24T00:00:00.000Z' })
 })
 
 test('prints workflow import reconciliation outcomes', async () => {

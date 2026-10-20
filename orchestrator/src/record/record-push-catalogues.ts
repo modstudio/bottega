@@ -105,29 +105,31 @@ function routedProjects(local: Database, routes: ProjectRoutes): Map<string, Set
 }
 
 function lensPlanRows(local: Database): LensPlanRows {
-  const lenses = local.query('SELECT * FROM lens WHERE space_id IS NULL').all() as Record<
-      string,
-      unknown
-    >[],
+  const lenses = local
+      .query(
+        'SELECT record_id,id,title,question,excludes,slots,version,enabled,requires_execution FROM lens WHERE space_id IS NULL',
+      )
+      .all() as Record<string, unknown>[],
     revisions = local
       .query(
-        `SELECT r.*,l.record_id lens_record_id FROM lens_revision r JOIN lens l ON l.id=r.lens_id WHERE r.space_id IS NULL`,
+        `SELECT record_id,lens_record_id,version,prior_body,reason,session_id,at FROM lens_revision WHERE space_id IS NULL`,
       )
       .all() as Record<string, unknown>[],
     selections = local
       .query(
-        `SELECT s.*,l.record_id lens_record_id FROM project_lens_profile s LEFT JOIN lens l ON l.id=s.lens_id AND l.space_id IS NULL WHERE s.space_id IS NULL`,
+        `SELECT record_id,project_record_id,lens_record_id,axis,profile_name,selected_version,selection_version FROM project_lens_profile WHERE space_id IS NULL`,
       )
       .all() as Record<string, unknown>[],
     selectionRevisions = local
       .query(
-        `SELECT r.*,s.record_id selection_record_id,s.project_record_id FROM project_lens_profile_revision r JOIN project_lens_profile s ON s.id=r.selection_id WHERE r.space_id IS NULL`,
+        `SELECT r.record_id,r.selection_record_id,r.prior_profile_name,r.prior_selected_version,r.reason,r.session_id,r.at,s.project_record_id
+         FROM project_lens_profile_revision r JOIN project_lens_profile s ON s.record_id=r.selection_record_id WHERE r.space_id IS NULL`,
       )
       .all() as Record<string, unknown>[],
     profiles = (
       local
         .query(
-          `SELECT p.*,l.record_id lens_record_id FROM lens_profile p JOIN lens l ON l.id=p.lens_id WHERE p.space_id IS NULL`,
+          `SELECT record_id,lens_record_id,axis,name,version,body,enabled FROM lens_profile WHERE space_id IS NULL`,
         )
         .all() as Record<string, unknown>[]
     ).filter(
@@ -137,14 +139,15 @@ function lensPlanRows(local: Database): LensPlanRows {
           (selection) =>
             selection.axis === profile.axis &&
             selection.profile_name === profile.name &&
-            (selection.lens_id == null || selection.lens_id === profile.lens_id),
+            (selection.lens_record_id == null ||
+              selection.lens_record_id === profile.lens_record_id),
         ),
     ),
     profileIds = new Set(profiles.map((profile) => String(profile.record_id))),
     profileRevisions = (
       local
         .query(
-          `SELECT r.*,p.record_id profile_record_id FROM lens_profile_revision r JOIN lens_profile p ON p.id=r.profile_id WHERE r.space_id IS NULL`,
+          `SELECT record_id,profile_record_id,version,prior_body,reason,session_id,at FROM lens_profile_revision WHERE space_id IS NULL`,
         )
         .all() as Record<string, unknown>[]
     ).filter((revision) => profileIds.has(String(revision.profile_record_id)))
@@ -249,8 +252,10 @@ function lensPlan(
   const now = iso()
   const plans = new Map<string, RecordLensImportInput>()
   for (const [spaceId, projectIds] of routed) {
-    plans.set(spaceId, lensSpacePlan(spaceId, projectIds, rows, now))
+    const plan = lensSpacePlan(spaceId, projectIds, rows, now)
+    if (catalogueRowCount(plan)) plans.set(spaceId, plan)
   }
+  for (const [spaceId, plan] of plans) if (!catalogueRowCount(plan)) plans.delete(spaceId)
   return plans
 }
 
@@ -495,10 +500,11 @@ function portPlan(
     now = iso()
   plans.set(activeSpaceId, active)
   active.port_doctrine = (
-    local.query('SELECT * FROM port_doctrine WHERE space_id IS NULL').all() as Record<
-      string,
-      unknown
-    >[]
+    local
+      .query(
+        'SELECT record_id,number,title,body,created_at,retired_at,version FROM port_doctrine WHERE space_id IS NULL',
+      )
+      .all() as Record<string, unknown>[]
   ).map((r) => ({
     id: String(r.record_id),
     spaceId: activeSpaceId,
@@ -523,7 +529,8 @@ function portPlan(
   forEachValue(
     local
       .query(
-        `SELECT pp.*,sp.name source_name,tp.name target_name FROM port_pair pp JOIN project sp ON sp.record_id=pp.source_project_record_id JOIN project tp ON tp.record_id=pp.target_project_record_id WHERE pp.space_id IS NULL`,
+        `SELECT pp.record_id,pp.source_project_record_id,pp.target_project_record_id,pp.created_at,sp.name source_name,tp.name target_name
+         FROM port_pair pp JOIN project sp ON sp.record_id=pp.source_project_record_id JOIN project tp ON tp.record_id=pp.target_project_record_id WHERE pp.space_id IS NULL`,
       )
       .all() as Record<string, unknown>[],
     (r) => addPortPair(r, context),
@@ -531,7 +538,7 @@ function portPlan(
   forEachValue(
     local
       .query(
-        `SELECT b.*,p.record_id pair_record_id FROM port_baseline b JOIN port_pair p ON p.id=b.pair_id WHERE b.space_id IS NULL`,
+        `SELECT record_id,pair_record_id,source_commit,scanned_at,version FROM port_baseline WHERE space_id IS NULL`,
       )
       .all() as Record<string, unknown>[],
     (r) => addPortBaseline(r, context),
@@ -539,7 +546,8 @@ function portPlan(
   forEachValue(
     local
       .query(
-        `SELECT pr.*,p.name project_name FROM port_ref pr JOIN project p ON p.record_id=pr.target_project_record_id WHERE pr.space_id IS NULL`,
+        `SELECT pr.record_id,pr.task_key,pr.target_project_record_id,pr.note,pr.created_at,pr.resolved_at,pr.version,p.name project_name
+         FROM port_ref pr JOIN project p ON p.record_id=pr.target_project_record_id WHERE pr.space_id IS NULL`,
       )
       .all() as Record<string, unknown>[],
     (r) => addPortRef(r, context),
@@ -547,7 +555,8 @@ function portPlan(
   forEachValue(
     local
       .query(
-        `SELECT s.*,r.record_id ref_record_id,p.name source_name FROM port_ref_source s JOIN port_ref r ON r.target_project_record_id=s.target_project_record_id AND r.task_key=s.task_key AND r.space_id IS NULL JOIN project p ON p.record_id=s.source_project_record_id WHERE s.space_id IS NULL`,
+        `SELECT s.record_id,s.ref_record_id,s.source_project_record_id,s.commits,s.paths,s.note,p.name source_name
+         FROM port_ref_source s JOIN project p ON p.record_id=s.source_project_record_id WHERE s.space_id IS NULL`,
       )
       .all() as Record<string, unknown>[],
     (r) => addPortRefSource(r, context),
@@ -555,7 +564,7 @@ function portPlan(
   forEachValue(
     local
       .query(
-        `SELECT s.*,p.record_id pair_record_id FROM port_skip s JOIN port_pair p ON p.id=s.pair_id WHERE s.space_id IS NULL`,
+        `SELECT record_id,pair_record_id,candidate,reason,skipped_at FROM port_skip WHERE space_id IS NULL`,
       )
       .all() as Record<string, unknown>[],
     (r) => addPortSkip(r, context),
@@ -576,15 +585,17 @@ function planCataloguePush(local: Database, activeSpaceId: string, routes: Proje
   }
 }
 
-const count = (value: object) =>
+const catalogueRowCount = (value: object) =>
   Object.values(value).reduce((n, rows) => n + (Array.isArray(rows) ? rows.length : 0), 0)
 function logPlan(plan: Plan, presentation: Presentation, prefix = ''): void {
   const spaces = new Set([...plan.lens.keys(), ...plan.workflow.keys(), ...plan.ports.keys()])
   for (const spaceId of spaces) {
     presentation.log(
-      `${prefix}space ${spaceId} — lens: ${count(plan.lens.get(spaceId) ?? {})}; workflow: ${count(plan.workflow.get(spaceId) ?? {})}; port: ${count(plan.ports.get(spaceId) ?? {})}`,
+      `${prefix}space ${spaceId} — lens: ${catalogueRowCount(plan.lens.get(spaceId) ?? {})}; workflow: ${catalogueRowCount(plan.workflow.get(spaceId) ?? {})}; port: ${catalogueRowCount(plan.ports.get(spaceId) ?? {})}`,
     )
   }
+  if (!plan.lens.size && !plan.ports.size)
+    presentation.log(`${prefix}nothing to push for lens and port catalogues`)
   presentation.log(`${prefix}skipped: ${plan.skipped.length}`)
 }
 

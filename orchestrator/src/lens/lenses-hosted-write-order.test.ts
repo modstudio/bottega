@@ -126,8 +126,10 @@ test('hosted profile failure is inert and success adopts hosted identities and v
       enabled: true,
       reason: 'hosted profile ordering',
     })
-    expect(changed).toMatchObject({ id: before.id, version: 2 })
-    expect(db().query('SELECT record_id FROM lens_profile WHERE id=?').get(before.id)).toEqual({
+    expect(changed).toMatchObject({ record_id: before.record_id, version: 2 })
+    expect(
+      db().query('SELECT record_id FROM lens_profile WHERE record_id=?').get(before.record_id),
+    ).toEqual({
       record_id: profileId,
     })
     expect(

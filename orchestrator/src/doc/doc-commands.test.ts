@@ -275,7 +275,7 @@ describe('scoped operator docs', () => {
         .code,
     ).toBe(0)
     const pair = listPairs()[0]!
-    expect(baselineForPair(pair.id)?.source_commit).toBe('abc')
+    expect(baselineForPair(pair.record_id)?.source_commit).toBe('abc')
     expect(
       (
         await command([
@@ -290,7 +290,9 @@ describe('scoped operator docs', () => {
         ])
       ).code,
     ).toBe(0)
-    expect(listSkips(pair.id)).toMatchObject([{ candidate: 'old-feature', reason: 'superseded' }])
+    expect(listSkips(pair.record_id)).toMatchObject([
+      { candidate: 'old-feature', reason: 'superseded' },
+    ])
 
     const sources = JSON.stringify([
       { project: 'source-invented', commits: ['abc'], paths: ['src/a.ts'], note: 'origin' },

@@ -140,7 +140,7 @@ test('lens cache reconciles hosted rows within their space and preserves the loc
       "SELECT record_id,title FROM lens WHERE id='correctness' AND space_id IS NULL",
     )
     .get()!
-  const seeded = row('correctness', localSeed.record_id)
+  const seeded = row('correctness')
   const localTitle = localSeed.title
   applyLensCatalogueRow(local, 'lens', seeded)
   expect(local.query("SELECT COUNT(*) AS n FROM lens WHERE id='correctness'").get()).toEqual({

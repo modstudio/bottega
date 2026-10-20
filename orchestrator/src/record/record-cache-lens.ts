@@ -132,43 +132,41 @@ function applyLensRevisionRow(local: Database, item: Record<string, unknown>): v
   const recordId = String(item.id)
   const spaceId = String(item.spaceId)
   const parent = local
-    .query<{ id: string }, [string, string]>('SELECT id FROM lens WHERE record_id=? AND space_id=?')
+    .query<{ record_id: string }, [string, string]>(
+      'SELECT record_id FROM lens WHERE record_id=? AND space_id=?',
+    )
     .get(String(item.lensId), spaceId)
   if (!parent) throw new Error(`record cache could not resolve lens parent ${String(item.lensId)}`)
   const found =
     local
-      .query<{ id: number }, [string, string]>(
-        'SELECT id FROM lens_revision WHERE record_id=? AND space_id=?',
+      .query<{ record_id: string }, [string, string]>(
+        'SELECT record_id FROM lens_revision WHERE record_id=? AND space_id=?',
       )
       .get(recordId, spaceId) ??
     local
-      .query<{ id: number }, [string, string, number]>(
-        'SELECT id FROM lens_revision WHERE space_id=? AND lens_id=? AND version=?',
+      .query<{ record_id: string }, [string, string, number]>(
+        'SELECT record_id FROM lens_revision WHERE space_id=? AND lens_record_id=? AND version=?',
       )
-      .get(spaceId, parent.id, Number(item.version))
+      .get(spaceId, parent.record_id, Number(item.version))
   if (found)
     local
-      .query(
-        'UPDATE lens_revision SET record_id=?,space_id=?,prior_body=?,reason=?,session_id=?,at=? WHERE id=?',
-      )
+      .query('UPDATE lens_revision SET prior_body=?,reason=?,session_id=?,at=? WHERE record_id=?')
       .run(
-        recordId,
-        spaceId,
         String(item.priorBody),
         String(item.reason),
         nullableText(item.sessionId),
         String(item.at),
-        found.id,
+        found.record_id,
       )
   else
     local
       .query(
-        'INSERT INTO lens_revision (record_id,space_id,lens_id,version,prior_body,reason,session_id,at) VALUES (?,?,?,?,?,?,?,?)',
+        'INSERT INTO lens_revision (record_id,space_id,lens_record_id,version,prior_body,reason,session_id,at) VALUES (?,?,?,?,?,?,?,?)',
       )
       .run(
         recordId,
         spaceId,
-        parent.id,
+        parent.record_id,
         Number(item.version),
         String(item.priorBody),
         String(item.reason),
@@ -181,43 +179,43 @@ function applyLensProfileRow(local: Database, item: Record<string, unknown>): vo
   const recordId = String(item.id)
   const spaceId = String(item.spaceId)
   const lens = local
-    .query<{ id: string }, [string, string]>('SELECT id FROM lens WHERE record_id=? AND space_id=?')
+    .query<{ record_id: string }, [string, string]>(
+      'SELECT record_id FROM lens WHERE record_id=? AND space_id=?',
+    )
     .get(String(item.lensId), spaceId)
   if (!lens) throw new Error(`record cache could not resolve lens parent ${String(item.lensId)}`)
   const found =
     local
-      .query<{ id: number }, [string, string]>(
-        'SELECT id FROM lens_profile WHERE record_id=? AND space_id=?',
+      .query<{ record_id: string }, [string, string]>(
+        'SELECT record_id FROM lens_profile WHERE record_id=? AND space_id=?',
       )
       .get(recordId, spaceId) ??
     local
-      .query<{ id: number }, [string, string, string, string]>(
-        'SELECT id FROM lens_profile WHERE space_id=? AND lens_id=? AND axis=? AND name=?',
+      .query<{ record_id: string }, [string, string, string, string]>(
+        'SELECT record_id FROM lens_profile WHERE space_id=? AND lens_record_id=? AND axis=? AND name=?',
       )
-      .get(spaceId, lens.id, String(item.axis), String(item.name))
+      .get(spaceId, lens.record_id, String(item.axis), String(item.name))
   if (found)
     local
       .query(
-        'UPDATE lens_profile SET record_id=?,space_id=?,lens_id=?,version=?,body=?,enabled=? WHERE id=?',
+        'UPDATE lens_profile SET lens_record_id=?,version=?,body=?,enabled=? WHERE record_id=?',
       )
       .run(
-        recordId,
-        spaceId,
-        lens.id,
+        lens.record_id,
         Number(item.version),
         String(item.body),
         item.enabled ? 1 : 0,
-        found.id,
+        found.record_id,
       )
   else
     local
       .query(
-        'INSERT INTO lens_profile (record_id,space_id,lens_id,axis,name,version,body,enabled) VALUES (?,?,?,?,?,?,?,?)',
+        'INSERT INTO lens_profile (record_id,space_id,lens_record_id,axis,name,version,body,enabled) VALUES (?,?,?,?,?,?,?,?)',
       )
       .run(
         recordId,
         spaceId,
-        lens.id,
+        lens.record_id,
         String(item.axis),
         String(item.name),
         Number(item.version),
@@ -230,46 +228,44 @@ function applyLensProfileRevisionRow(local: Database, item: Record<string, unkno
   const recordId = String(item.id)
   const spaceId = String(item.spaceId)
   const parent = local
-    .query<{ id: number }, [string, string]>(
-      'SELECT id FROM lens_profile WHERE record_id=? AND space_id=?',
+    .query<{ record_id: string }, [string, string]>(
+      'SELECT record_id FROM lens_profile WHERE record_id=? AND space_id=?',
     )
     .get(String(item.profileId), spaceId)
   if (!parent)
     throw new Error(`record cache could not resolve lens profile parent ${String(item.profileId)}`)
   const found =
     local
-      .query<{ id: number }, [string, string]>(
-        'SELECT id FROM lens_profile_revision WHERE record_id=? AND space_id=?',
+      .query<{ record_id: string }, [string, string]>(
+        'SELECT record_id FROM lens_profile_revision WHERE record_id=? AND space_id=?',
       )
       .get(recordId, spaceId) ??
     local
-      .query<{ id: number }, [string, number, number]>(
-        'SELECT id FROM lens_profile_revision WHERE space_id=? AND profile_id=? AND version=?',
+      .query<{ record_id: string }, [string, string, number]>(
+        'SELECT record_id FROM lens_profile_revision WHERE space_id=? AND profile_record_id=? AND version=?',
       )
-      .get(spaceId, parent.id, Number(item.version))
+      .get(spaceId, parent.record_id, Number(item.version))
   if (found)
     local
       .query(
-        'UPDATE lens_profile_revision SET record_id=?,space_id=?,prior_body=?,reason=?,session_id=?,at=? WHERE id=?',
+        'UPDATE lens_profile_revision SET prior_body=?,reason=?,session_id=?,at=? WHERE record_id=?',
       )
       .run(
-        recordId,
-        spaceId,
         String(item.priorBody),
         String(item.reason),
         nullableText(item.sessionId),
         String(item.at),
-        found.id,
+        found.record_id,
       )
   else
     local
       .query(
-        'INSERT INTO lens_profile_revision (record_id,space_id,profile_id,version,prior_body,reason,session_id,at) VALUES (?,?,?,?,?,?,?,?)',
+        'INSERT INTO lens_profile_revision (record_id,space_id,profile_record_id,version,prior_body,reason,session_id,at) VALUES (?,?,?,?,?,?,?,?)',
       )
       .run(
         recordId,
         spaceId,
-        parent.id,
+        parent.record_id,
         Number(item.version),
         String(item.priorBody),
         String(item.reason),
@@ -286,46 +282,44 @@ function applyProjectLensProfileRow(local: Database, item: Record<string, unknow
     item.lensId == null
       ? null
       : local
-          .query<{ id: string }, [string, string]>(
-            'SELECT id FROM lens WHERE record_id=? AND space_id=?',
+          .query<{ record_id: string }, [string, string]>(
+            'SELECT record_id FROM lens WHERE record_id=? AND space_id=?',
           )
           .get(String(item.lensId), spaceId)
   if (item.lensId != null && !lens)
     throw new Error(`record cache could not resolve lens parent ${String(item.lensId)}`)
   const found =
     local
-      .query<{ id: number }, [string, string]>(
-        'SELECT id FROM project_lens_profile WHERE record_id=? AND space_id=?',
+      .query<{ record_id: string }, [string, string]>(
+        'SELECT record_id FROM project_lens_profile WHERE record_id=? AND space_id=?',
       )
       .get(recordId, spaceId) ??
     local
-      .query<{ id: number }, [string, string, string | null, string]>(
-        'SELECT id FROM project_lens_profile WHERE space_id=? AND project_record_id=? AND lens_id IS ? AND axis=?',
+      .query<{ record_id: string }, [string, string, string | null, string]>(
+        'SELECT record_id FROM project_lens_profile WHERE space_id=? AND project_record_id=? AND lens_record_id IS ? AND axis=?',
       )
-      .get(spaceId, projectRecordId, lens?.id ?? null, String(item.axis))
+      .get(spaceId, projectRecordId, lens?.record_id ?? null, String(item.axis))
   if (found)
     local
       .query(
-        'UPDATE project_lens_profile SET record_id=?,space_id=?,profile_name=?,selected_version=?,selection_version=? WHERE id=?',
+        'UPDATE project_lens_profile SET profile_name=?,selected_version=?,selection_version=? WHERE record_id=?',
       )
       .run(
-        recordId,
-        spaceId,
         String(item.profileName),
         nullableNumber(item.selectedVersion),
         Number(item.selectionVersion),
-        found.id,
+        found.record_id,
       )
   else
     local
       .query(
-        'INSERT INTO project_lens_profile (record_id,space_id,project_record_id,lens_id,axis,profile_name,selected_version,selection_version) VALUES (?,?,?,?,?,?,?,?)',
+        'INSERT INTO project_lens_profile (record_id,space_id,project_record_id,lens_record_id,axis,profile_name,selected_version,selection_version) VALUES (?,?,?,?,?,?,?,?)',
       )
       .run(
         recordId,
         spaceId,
         projectRecordId,
-        lens?.id ?? null,
+        lens?.record_id ?? null,
         String(item.axis),
         String(item.profileName),
         nullableNumber(item.selectedVersion),
@@ -337,8 +331,8 @@ function applyProjectLensProfileRevisionRow(local: Database, item: Record<string
   const recordId = String(item.id)
   const spaceId = String(item.spaceId)
   const parent = local
-    .query<{ id: number }, [string, string]>(
-      'SELECT id FROM project_lens_profile WHERE record_id=? AND space_id=?',
+    .query<{ record_id: string }, [string, string]>(
+      'SELECT record_id FROM project_lens_profile WHERE record_id=? AND space_id=?',
     )
     .get(String(item.selectionId), spaceId)
   if (!parent)
@@ -347,39 +341,37 @@ function applyProjectLensProfileRevisionRow(local: Database, item: Record<string
     )
   const found =
     local
-      .query<{ id: number }, [string, string]>(
-        'SELECT id FROM project_lens_profile_revision WHERE record_id=? AND space_id=?',
+      .query<{ record_id: string }, [string, string]>(
+        'SELECT record_id FROM project_lens_profile_revision WHERE record_id=? AND space_id=?',
       )
       .get(recordId, spaceId) ??
     local
-      .query<{ id: number }, [string, number, string]>(
-        'SELECT id FROM project_lens_profile_revision WHERE space_id=? AND selection_id=? AND at=?',
+      .query<{ record_id: string }, [string, string, string]>(
+        'SELECT record_id FROM project_lens_profile_revision WHERE space_id=? AND selection_record_id=? AND at=?',
       )
-      .get(spaceId, parent.id, String(item.at))
+      .get(spaceId, parent.record_id, String(item.at))
   if (found)
     local
       .query(
-        'UPDATE project_lens_profile_revision SET record_id=?,space_id=?,prior_profile_name=?,prior_selected_version=?,reason=?,session_id=?,at=? WHERE id=?',
+        'UPDATE project_lens_profile_revision SET prior_profile_name=?,prior_selected_version=?,reason=?,session_id=?,at=? WHERE record_id=?',
       )
       .run(
-        recordId,
-        spaceId,
         nullableText(item.priorProfileName),
         nullableNumber(item.priorSelectedVersion),
         String(item.reason),
         nullableText(item.sessionId),
         String(item.at),
-        found.id,
+        found.record_id,
       )
   else
     local
       .query(
-        'INSERT INTO project_lens_profile_revision (record_id,space_id,selection_id,prior_profile_name,prior_selected_version,reason,session_id,at) VALUES (?,?,?,?,?,?,?,?)',
+        'INSERT INTO project_lens_profile_revision (record_id,space_id,selection_record_id,prior_profile_name,prior_selected_version,reason,session_id,at) VALUES (?,?,?,?,?,?,?,?)',
       )
       .run(
         recordId,
         spaceId,
-        parent.id,
+        parent.record_id,
         nullableText(item.priorProfileName),
         nullableNumber(item.priorSelectedVersion),
         String(item.reason),

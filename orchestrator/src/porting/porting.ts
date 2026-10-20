@@ -7,21 +7,21 @@ import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { workerStoreWriteRefusal } from '../worker-store-write.ts'
 
 export type PortPair = {
-  id: number
+  record_id: string
   source_project_record_id: string
   target_project_record_id: string
   created_at: string
 }
 
 export type PortBaseline = {
-  pair_id: number
+  pair_record_id: string
   source_commit: string | null
   scanned_at: string | null
 }
 
 export type PortSkip = {
-  id: number
-  pair_id: number
+  record_id: string
+  pair_record_id: string
   candidate: string
   reason: string
   skipped_at: string
@@ -84,7 +84,7 @@ function pairByProjectsInSpace(
 ): PortPair | null {
   const selected = db()
     .query(
-      'SELECT id,source_project_record_id,target_project_record_id,created_at,space_id FROM port_pair WHERE source_project_record_id=? AND target_project_record_id=? AND space_id IS ?',
+      'SELECT record_id,source_project_record_id,target_project_record_id,created_at,space_id FROM port_pair WHERE source_project_record_id=? AND target_project_record_id=? AND space_id IS ?',
     )
     .get(sourceProjectId, targetProjectId, spaceId) as
     | (PortPair & { space_id: string | null })
@@ -110,51 +110,53 @@ export function addPairLocal(
     const pair = pairByProjectsInSpace(sourceProjectId, targetProjectId, null)!
     db()
       .query(
-        `INSERT INTO port_baseline (record_id, pair_id, source_commit, scanned_at) VALUES (?,?,NULL,NULL)
-       ON CONFLICT(pair_id) DO NOTHING`,
+        `INSERT INTO port_baseline (record_id, pair_record_id, source_commit, scanned_at) VALUES (?,?,NULL,NULL)
+       ON CONFLICT(pair_record_id) DO NOTHING`,
       )
-      .run(newRecordId(), pair.id)
+      .run(newRecordId(), pair.record_id)
   })
   return pairByProjectsInSpace(sourceProjectId, targetProjectId, null)!
 }
 
-export function baselineForPair(pairId: number): PortBaseline | null {
+export function baselineForPair(pairRecordId: string): PortBaseline | null {
   return db()
-    .query('SELECT pair_id,source_commit,scanned_at FROM port_baseline WHERE pair_id=?')
-    .get(pairId) as PortBaseline | null
+    .query(
+      'SELECT pair_record_id,source_commit,scanned_at FROM port_baseline WHERE pair_record_id=?',
+    )
+    .get(pairRecordId) as PortBaseline | null
 }
 
 export function setBaselineLocal(
-  pairId: number,
+  pairRecordId: string,
   sourceCommit: string | null,
   scannedAt: string | null = sourceCommit === null ? null : nowIso(),
 ): PortBaseline {
   writableDb()
   db()
     .query(
-      `INSERT INTO port_baseline (record_id, pair_id, source_commit, scanned_at) VALUES (?,?,?,?)
-     ON CONFLICT(pair_id) DO UPDATE SET
+      `INSERT INTO port_baseline (record_id, pair_record_id, source_commit, scanned_at) VALUES (?,?,?,?)
+     ON CONFLICT(pair_record_id) DO UPDATE SET
        source_commit=excluded.source_commit, scanned_at=excluded.scanned_at`,
     )
-    .run(newRecordId(), pairId, sourceCommit, scannedAt)
-  return baselineForPair(pairId)!
+    .run(newRecordId(), pairRecordId, sourceCommit, scannedAt)
+  return baselineForPair(pairRecordId)!
 }
 
-export function listSkips(pairId: number): PortSkip[] {
+export function listSkips(pairRecordId: string): PortSkip[] {
   const pair = db()
-    .query<PortPair & { space_id: string | null }, [number]>(
-      'SELECT id,source_project_record_id,target_project_record_id,created_at,space_id FROM port_pair WHERE id=?',
+    .query<PortPair & { space_id: string | null }, [string]>(
+      'SELECT record_id,source_project_record_id,target_project_record_id,created_at,space_id FROM port_pair WHERE record_id=?',
     )
-    .get(pairId)
+    .get(pairRecordId)
   if (!pair) return []
   const spaceId = projectSpace(pair.target_project_record_id)
   const rows = db()
     .query(
-      `SELECT s.id,s.pair_id,s.candidate,s.reason,s.skipped_at,p.space_id
-       FROM port_skip s JOIN port_pair p ON p.id=s.pair_id
+      `SELECT s.record_id,s.pair_record_id,s.candidate,s.reason,s.skipped_at,p.space_id
+       FROM port_skip s JOIN port_pair p ON p.record_id=s.pair_record_id
        WHERE p.source_project_record_id=? AND p.target_project_record_id=?
          AND p.space_id IS ?
-       ORDER BY s.id`,
+       ORDER BY s.skipped_at,s.record_id`,
     )
     .all(pair.source_project_record_id, pair.target_project_record_id, spaceId) as (PortSkip & {
     space_id: string | null
@@ -163,23 +165,25 @@ export function listSkips(pairId: number): PortSkip[] {
 }
 
 export function addSkipLocal(
-  pairId: number,
+  pairRecordId: string,
   candidate: string,
   reason: string,
   skippedAt = nowIso(),
 ): PortSkip {
   writableDb()
-  const id = (
+  const recordId = (
     db()
       .query(
-        `INSERT INTO port_skip (record_id, pair_id, candidate, reason, skipped_at) VALUES (?,?,?,?,?)
-     RETURNING id`,
+        `INSERT INTO port_skip (record_id, pair_record_id, candidate, reason, skipped_at) VALUES (?,?,?,?,?)
+     RETURNING record_id`,
       )
-      .get(newRecordId(), pairId, candidate, reason, skippedAt) as { id: number }
-  ).id
+      .get(newRecordId(), pairRecordId, candidate, reason, skippedAt) as { record_id: string }
+  ).record_id
   return db()
-    .query('SELECT id,pair_id,candidate,reason,skipped_at FROM port_skip WHERE id=?')
-    .get(id) as PortSkip
+    .query(
+      'SELECT record_id,pair_record_id,candidate,reason,skipped_at FROM port_skip WHERE record_id=?',
+    )
+    .get(recordId) as PortSkip
 }
 
 function parseStringArray(value: string): string[] {
@@ -208,8 +212,9 @@ function ledgerRefInSpace(
   if (!ref) return null
   const sourceRows = db()
     .query(
-      `SELECT source_project_record_id, commits, paths, note FROM port_ref_source
-     WHERE target_project_record_id=? AND task_key=? AND space_id IS ? ORDER BY id`,
+      `SELECT s.source_project_record_id,s.commits,s.paths,s.note FROM port_ref_source s
+       JOIN port_ref r ON r.record_id=s.ref_record_id
+       WHERE r.target_project_record_id=? AND r.task_key=? AND s.space_id IS ? ORDER BY s.position`,
     )
     .all(targetProjectId, taskKey, ref.space_id) as {
     source_project_record_id: string
@@ -282,21 +287,28 @@ export function setLedgerRefLocal(input: {
         input.createdAt ?? nowIso(),
       )
     db()
-      .query('DELETE FROM port_ref_source WHERE target_project_record_id=? AND task_key=?')
+      .query(
+        'DELETE FROM port_ref_source WHERE ref_record_id=(SELECT record_id FROM port_ref WHERE target_project_record_id=? AND task_key=? AND space_id IS NULL)',
+      )
       .run(input.targetProjectId, input.taskKey)
+    const ref = db()
+      .query<{ record_id: string }, [string, string]>(
+        'SELECT record_id FROM port_ref WHERE target_project_record_id=? AND task_key=? AND space_id IS NULL',
+      )
+      .get(input.targetProjectId, input.taskKey)!
     const insert = db().query(
       `INSERT INTO port_ref_source
-         (record_id, task_key, target_project_record_id, source_project_record_id, commits, paths, note) VALUES (?,?,?,?,?,?,?)`,
+         (record_id, ref_record_id, source_project_record_id, commits, paths, note, position) VALUES (?,?,?,?,?,?,?)`,
     )
-    for (const source of input.sources) {
+    for (const [position, source] of input.sources.entries()) {
       insert.run(
         newRecordId(),
-        input.taskKey,
-        input.targetProjectId,
+        ref.record_id,
         source.source_project_record_id,
         JSON.stringify(source.commits),
         JSON.stringify(source.paths),
         source.note,
+        position,
       )
     }
   })
@@ -366,19 +378,19 @@ export function retireDoctrineRuleLocal(number: number, retiredAt = nowIso()): b
   )
 }
 
-function storedBaseline(pairId: number): (PortBaseline & SpaceRow) | null {
+function storedBaseline(pairRecordId: string): (PortBaseline & SpaceRow) | null {
   return db()
     .query(
-      'SELECT pair_id,source_commit,scanned_at,record_id,space_id,version FROM port_baseline WHERE pair_id=?',
+      'SELECT pair_record_id,source_commit,scanned_at,record_id,space_id,version FROM port_baseline WHERE pair_record_id=?',
     )
-    .get(pairId) as (PortBaseline & SpaceRow) | null
+    .get(pairRecordId) as (PortBaseline & SpaceRow) | null
 }
-function storedPair(pairId: number): (PortPair & SpaceRow) | null {
+function storedPair(pairRecordId: string): (PortPair & SpaceRow) | null {
   return db()
     .query(
-      'SELECT id,source_project_record_id,target_project_record_id,created_at,record_id,space_id FROM port_pair WHERE id=?',
+      'SELECT record_id,source_project_record_id,target_project_record_id,created_at,space_id FROM port_pair WHERE record_id=?',
     )
-    .get(pairId) as (PortPair & SpaceRow) | null
+    .get(pairRecordId) as (PortPair & SpaceRow) | null
 }
 function storedRef(targetProjectId: string, taskKey: string): SpaceRow | null {
   const spaceId = projectSpace(targetProjectId)
@@ -399,12 +411,12 @@ export function setBaselineForProjects(
   return applyRecordWriteAuthority({
     local: () => {
       const pair = addPairLocal(sourceProjectId, targetProjectId)
-      return { pair, baseline: setBaselineLocal(pair.id, sourceCommit, scannedAt) }
+      return { pair, baseline: setBaselineLocal(pair.record_id, sourceCommit, scannedAt) }
     },
     hosted: async () => {
       const spaceId = await hostedSpace(targetProjectId)
       const currentPair = pairByProjects(sourceProjectId, targetProjectId)
-      const current = currentPair ? storedBaseline(currentPair.id) : null
+      const current = currentPair ? storedBaseline(currentPair.record_id) : null
       const response = await recordApiClient().writePort!(
         {
           action: 'set_baseline',
@@ -418,17 +430,22 @@ export function setBaselineForProjects(
       )
       applyPortWriteResponse(db(), response)
       const pair = pairByProjects(sourceProjectId, targetProjectId)!
-      return { pair, baseline: baselineForPair(pair.id)! }
+      return { pair, baseline: baselineForPair(pair.record_id)! }
     },
   })
 }
 
-export function addSkip(pairId: number, candidate: string, reason: string, skippedAt = nowIso()) {
+export function addSkip(
+  pairRecordId: string,
+  candidate: string,
+  reason: string,
+  skippedAt = nowIso(),
+) {
   assertPortWriteAllowed('record port skip')
-  const pair = storedPair(pairId)
-  if (!pair) throw new Error(`unknown port pair ${pairId}`)
+  const pair = storedPair(pairRecordId)
+  if (!pair) throw new Error(`unknown port pair ${pairRecordId}`)
   return applyRecordWriteAuthority({
-    local: () => addSkipLocal(pairId, candidate, reason, skippedAt),
+    local: () => addSkipLocal(pairRecordId, candidate, reason, skippedAt),
     hosted: async () => {
       const spaceId = await hostedSpace(pair.target_project_record_id)
       const response = await recordApiClient().writePort!(
@@ -444,7 +461,7 @@ export function addSkip(pairId: number, candidate: string, reason: string, skipp
       )
       applyPortWriteResponse(db(), response)
       return listSkips(
-        pairByProjects(pair.source_project_record_id, pair.target_project_record_id)!.id,
+        pairByProjects(pair.source_project_record_id, pair.target_project_record_id)!.record_id,
       ).find((row) => row.candidate === candidate)!
     },
   })

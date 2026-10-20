@@ -771,7 +771,7 @@ export function createDocsMcpServer(): McpServer {
     },
     async ({ source, target }) => {
       const { pair } = registeredPair(source, target)
-      return text(pair ? { pair, baseline: baselineForPair(pair.id) } : null)
+      return text(pair ? { pair, baseline: baselineForPair(pair.record_id) } : null)
     },
   )
 
@@ -797,7 +797,7 @@ export function createDocsMcpServer(): McpServer {
     },
     async ({ source, target }) => {
       const { pair } = registeredPair(source, target)
-      return text(pair ? listSkips(pair.id) : [])
+      return text(pair ? listSkips(pair.record_id) : [])
     },
   )
 
@@ -816,7 +816,7 @@ export function createDocsMcpServer(): McpServer {
       const { pair } = registeredPair(source, target)
       if (!pair)
         throw new Error(`no port pair from "${source}" to "${target}"; set its baseline first`)
-      return text(await addSkip(pair.id, candidate, reason))
+      return text(await addSkip(pair.record_id, candidate, reason))
     },
   )
 
