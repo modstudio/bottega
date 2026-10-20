@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { applyMigrations, applyMigrationsBefore } from './migrations.ts'
+import { applyMigrationsBefore } from './migrations.ts'
 
 const MIGRATION = '0117_project_uuid_key'
 const RECORD_ID = '01990000-0000-7000-8000-000000001214'
@@ -168,7 +168,7 @@ test('project UUID migration preserves every project child relationship', () => 
       )
       .run()
 
-    expect(applyMigrations(database)).toContain(MIGRATION)
+    expect(applyMigrationsBefore(database, '0131_lens_port_uuid_key')).toContain(MIGRATION)
     const columns = [
       ['run', 'project_record_id', RECORD_ID],
       ['canon_pack', 'project_record_id', RECORD_ID],

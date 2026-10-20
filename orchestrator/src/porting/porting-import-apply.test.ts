@@ -19,7 +19,7 @@ import { ImportRefusalError } from './porting-import-contract.ts'
 const listPairs = () =>
   db()
     .query(
-      'SELECT id,source_project_record_id,target_project_record_id,created_at FROM port_pair ORDER BY id',
+      'SELECT record_id,source_project_record_id,target_project_record_id,created_at FROM port_pair ORDER BY created_at,record_id',
     )
     .all() as PortPair[]
 
