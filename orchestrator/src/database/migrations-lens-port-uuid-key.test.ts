@@ -164,7 +164,9 @@ test('every declared lens and port foreign key leads an index', () => {
   try {
     applyMigrations(database)
     for (const table of TABLES) {
-      const foreignKeys = database.query<{ from: string }, []>(`PRAGMA foreign_key_list('${table}')`).all()
+      const foreignKeys = database
+        .query<{ from: string }, []>(`PRAGMA foreign_key_list('${table}')`)
+        .all()
       const indexed = new Set(
         database
           .query<{ name: string }, []>(`PRAGMA index_list('${table}')`)
