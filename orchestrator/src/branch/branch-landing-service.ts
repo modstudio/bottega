@@ -7,12 +7,15 @@ import { targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { projectByName } from '../project/projects.ts'
 import { finalizeTriageIntent } from '../pull-request/pr-admission.ts'
+import { decideMergeLandingBranches } from './branch-containment.ts'
 import { decideAutomaticBranchLandingTip } from './branch-landing-match.ts'
 import {
   chooseBranchLandingTip,
   type PullRequestLandingEvidence,
   verifyBranchLanding,
 } from './branch-landing-record.ts'
+import { taskKeyToken } from './other-branch-state.ts'
+import { taskBranchContainedTips, taskBranchIsAncestor } from './task-branch.ts'
 
 type BranchRunIdentity = { project_name: string; launch_key: string | null }
 
@@ -69,6 +72,50 @@ function localBranchTip(cwd: string, branch: string): string | null {
   throw new Error(
     `git ${args.join(' ')} failed: ${process.stderr?.toString().trim() || `exit ${process.exitCode}`}`,
   )
+}
+
+function localBranchTips(cwd: string): { branch: string; tip: string }[] {
+  return command(
+    cwd,
+    ['git', 'for-each-ref', '--format=%(refname:short)%09%(objectname)', 'refs/heads'],
+    'local branch listing',
+  )
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const [branch, tip, ...extra] = line.split('\t')
+      if (!branch || !tip || extra.length) {
+        throw new Error(`local branch listing returned an unexpected row: ${line}`)
+      }
+      return { branch, tip }
+    })
+}
+
+function mergeTaskKey(project: Project, taskBranch: string): string {
+  const recorded = db()
+    .query(
+      `SELECT DISTINCT launch_key FROM run
+        WHERE project_record_id=? AND branch=? AND launch_key IS NOT NULL`,
+    )
+    .all(project.recordId, taskBranch) as { launch_key: string }[]
+  const named = taskKeyToken(taskBranch, project.settings.keyPrefixes ?? [])
+  const keys = new Set([...recorded.map((row) => row.launch_key), ...(named ? [named] : [])])
+  if (keys.size !== 1) {
+    throw new Error(
+      `could not establish one task key for pull-request branch ${taskBranch}; found ${[...keys].join(', ') || 'none'}`,
+    )
+  }
+  return [...keys][0]!
+}
+
+function recordedTaskBranches(project: Project, taskKey: string): Set<string> {
+  const rows = db()
+    .query(
+      `SELECT minted_branch FROM run
+        WHERE project_record_id=? AND launch_key=? AND minted_branch IS NOT NULL`,
+    )
+    .all(project.recordId, taskKey) as { minted_branch: string }[]
+  return new Set(rows.map((row) => row.minted_branch))
 }
 
 function branchRunIdentity(branch: string): { project: Project; taskKey: string } {
@@ -145,6 +192,48 @@ export function recordBranchLanding(branch: string, number: number): RecordedLan
   if (!Number.isSafeInteger(number) || number < 1) throw new Error('PR number must be positive')
   const { project, taskKey } = branchRunIdentity(branch)
   return persistBranchLanding(branch, project, taskKey, pullRequestLanding(project, number))
+}
+
+/** Record every task-key branch still contained in the exact head admitted for merge. */
+export function recordMergeBranchLandings(input: {
+  project: Project
+  taskBranch: string
+  admittedHead: string
+  number: number
+}): RecordedLandingReport[] {
+  writableDb()
+  const taskKey = mergeTaskKey(input.project, input.taskBranch)
+  const pullRequest = pullRequestLanding(input.project, input.number)
+  const verification = verifyBranchLanding(taskKey, pullRequest)
+  if (!verification.accepted) throw new Error(`refusing to record landing: ${verification.reason}`)
+  const recordedBranches = recordedTaskBranches(input.project, taskKey)
+  const branchTips = localBranchTips(input.project.path)
+  const tipIsStrictAncestorOfAdmittedHead = (tip: string) =>
+    taskBranchContainedTips([tip, input.admittedHead], (ancestor, descendant) =>
+      taskBranchIsAncestor(input.project.path, ancestor, descendant),
+    ).has(tip)
+  const candidates = decideMergeLandingBranches({
+    taskBranch: input.taskBranch,
+    admittedHead: input.admittedHead,
+    branches: branchTips.map(({ branch, tip }) => ({
+      branch,
+      tip,
+      carriesTaskKey:
+        recordedBranches.has(branch) ||
+        taskKeyToken(branch, input.project.settings.keyPrefixes ?? []) === taskKey,
+      tipIsAncestorOfAdmittedHead: tipIsStrictAncestorOfAdmittedHead(tip),
+    })),
+  })
+  return candidates.map(({ branch, tip }) =>
+    persistVerifiedBranchLanding(
+      branch,
+      input.project,
+      taskKey,
+      verification.landing,
+      tip,
+      tip !== pullRequest.headRefOid,
+    ),
+  )
 }
 
 /** Verify already-listed GitHub evidence, then persist a safe automatic landing repair. */

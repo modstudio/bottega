@@ -8,7 +8,8 @@ import { withWorktreeCreateLock } from '../project/project-lock.ts'
 import type { Project } from '../project/projects.ts'
 import { isProjectRepository, projectByName, projects } from '../project/projects.ts'
 import { liveBaseClaim } from './branch-base-claim.ts'
-import { matchAutomaticBranchLandingForTip, matchBranchLandings } from './branch-landing-match.ts'
+import { type BranchReportRow, type BranchReportRun, branchKeyReport } from './branch-key-report.ts'
+import { matchBranchLandings } from './branch-landing-match.ts'
 import {
   type AutomaticLandingPreview,
   previewAutomaticBranchLandingEvidence,
@@ -20,7 +21,6 @@ import {
   type BranchLandingRecord,
   type BranchStateDecision,
   branchMatchesFilter,
-  decideBranchState,
   decideProtectedBranch,
   decidePruneEligibility,
   findRecordedBranchLanding,
@@ -43,30 +43,10 @@ import {
   type OtherBranchLanding,
   taskKeyToken,
 } from './other-branch-state.ts'
-import {
-  isTaskBranchSuperseded,
-  taskBranchPatchEquivalent,
-  taskBranchRunRow,
-} from './task-branch.ts'
+import { taskBranchPatchEquivalent } from './task-branch.ts'
 
-type RunRow = {
-  record_id: string
-  number: number
-  parent_run_record_id: string | null
-  launch_key: string | null
-  branch: string | null
+type RunRow = BranchReportRun & {
   minted_branch: string | null
-  launch_base: string | null
-  status: string
-}
-
-type BranchReportRow = BranchStateDecision & {
-  branch: string
-  tip: string
-  commitsNotOnTrunk: number
-  checkedOut: boolean
-  liveRun: boolean
-  runIds: number[]
 }
 
 type OtherBranchReportRow = OtherBranchLanding & {
@@ -371,104 +351,21 @@ function branchReportFor(
   }
   const keys = [...minted]
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, byBranch]) => {
-      const keyRows = runs
-        .filter((run) => (run.launch_key ?? 'unkeyed') === key && run.branch !== null)
-        .map(taskBranchRunRow)
-      const observed = [...byBranch].map(([branch, branchRuns]) => {
-        const tip = branches.get(branch)!
-        const commitCount = Number(git(project.path, 'rev-list', '--count', tip, '--not', trunkTip))
-        if (!Number.isSafeInteger(commitCount) || commitCount < 0) {
-          throw new Error(`git rev-list returned an invalid commit count for ${branch}`)
-        }
-        const matchingPr = matchAutomaticBranchLandingForTip(branch, tip, pullRequests) !== null
-        let patchEquivalent = null
-        if (!matchingPr && commitCount > 0) {
-          const mergeBase = git(project.path, 'merge-base', trunkTip, tip)
-          patchEquivalent = taskBranchPatchEquivalent({
-            cwd: project.path,
-            trunkTip,
-            branchTip: tip,
-            mergeBase,
-            commitMessage: `orch branch report ${branch}`,
-          })
-        }
-        return {
-          branch,
-          tip,
-          commitsNotOnTrunk: commitCount,
-          checkedOut: checkedOut.has(branch),
-          liveRun: branchRuns.some((run) => run.status === 'running' || run.status === 'asking'),
-          runIds: branchRuns.map((run) => run.number),
-          matchingPr,
-          patchEquivalent: patchEquivalent as PatchEquivalentForm | null,
-          pullRequestCommitCheck:
-            !matchingPr && commitCount > 0 && !patchEquivalent && key !== 'unkeyed'
-              ? pullRequestCommitCheck(
-                  project,
-                  pullRequests.filter((pullRequest) => pullRequestCarriesKey(pullRequest, key)),
-                  tip,
-                  fetchedPullRequests,
-                )
-              : null,
-          recordedLanding: findRecordedBranchLanding(recordedLandings, project.name, branch),
-          superseded: isTaskBranchSuperseded(branch, keyRows),
-          turns: new Map(
-            branchRuns.map(
-              (run) => [run.parent_run_record_id ?? run.record_id, run.number] as const,
-            ),
-          ),
-        }
-      })
-      const decided = new Map<string, BranchStateDecision>()
-      for (const row of [...observed].sort(
-        (left, right) => Math.max(...right.runIds) - Math.max(...left.runIds),
-      )) {
-        const laterTurnBranches = observed
-          .filter(
-            (candidate) =>
-              candidate.branch !== row.branch &&
-              [...row.turns].some(
-                ([root, turn]) => (candidate.turns.get(root) ?? Number.NEGATIVE_INFINITY) > turn,
-              ),
-          )
-          .flatMap((candidate) => {
-            const state = decided.get(candidate.branch)
-            return state ? [{ branch: candidate.branch, state }] : []
-          })
-        decided.set(
-          row.branch,
-          decideBranchState({
-            branch: row.branch,
-            tip: row.tip,
-            mergedPullRequests: row.matchingPr
-              ? pullRequests
-              : pullRequests.filter((pullRequest) => pullRequest.headRefName !== row.branch),
-            mergedPullRequestsTruncated: truncated,
-            commitsNotOnTrunk: row.commitsNotOnTrunk,
-            patchEquivalent: row.patchEquivalent,
-            pullRequestCommitCheck: row.pullRequestCommitCheck,
-            recordedLanding: row.recordedLanding,
-            laterTurnBranches,
-            superseded: row.superseded,
-          }),
-        )
-      }
-      const reportBranches = observed
-        .sort((left, right) => left.branch.localeCompare(right.branch))
-        .map(
-          ({
-            patchEquivalent: _patchEquivalent,
-            matchingPr: _matchingPr,
-            pullRequestCommitCheck: _pullRequestCommitCheck,
-            recordedLanding: _recordedLanding,
-            superseded: _superseded,
-            turns: _turns,
-            ...row
-          }) => ({ ...row, ...decided.get(row.branch)! }) satisfies BranchReportRow,
-        )
-      return { key, branches: reportBranches }
-    })
+    .map(([key, byBranch]) =>
+      branchKeyReport({
+        project,
+        key,
+        byBranch,
+        runs,
+        branches,
+        trunkTip,
+        pullRequests,
+        fetchedPullRequests,
+        recordedLandings,
+        checkedOut,
+        truncated,
+      }),
+    )
   const protectedBranches = [...protectedRuns]
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([branch, branchRuns]) => ({
@@ -967,6 +864,7 @@ function landedByText(row: BranchStateDecision | OtherBranchLanding): string {
     return `landed (patch-equivalent ${row.landedBy.form})`
   }
   if (row.landedBy.type === 'turn') return `landed (turn ${row.landedBy.branch})`
+  if (row.landedBy.type === 'contained') return `landed (contained by ${row.landedBy.branch})`
   if (row.landedBy.type === 'pr-commits') return `landed (PR #${row.landedBy.number} commits)`
   if (row.landedBy.type === 'recorded') {
     return `landed (recorded PR #${row.landedBy.number}, merge ${row.landedBy.mergeCommit ?? 'none'}, ${row.landedBy.mergedAt})`

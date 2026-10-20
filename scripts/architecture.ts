@@ -246,10 +246,9 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/branch/branches.ts', [
     '../../../shared/brand.ts',
     './branch-base-claim.ts',
+    './branch-key-report.ts',
     './branch-landing-match.ts',
-    './branch-landing-record.ts',
     './branch-landing-service.ts',
-    './branch-run-row.ts',
     './branch-state.ts',
     './branch-settlement.ts',
     '../database/db.ts',
@@ -258,7 +257,6 @@ export const modules: ArchitectureModule[] = [
     './other-branch-state.ts',
     '../project/project-lock.ts',
     '../project/projects.ts',
-    '../pull-request/pr-admission.ts',
     './task-branch.ts',
   ]),
   module('orchestrator/src/agent/agent-registry.ts', [
