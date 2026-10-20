@@ -29,11 +29,12 @@ export const hostedTaskPullSerializers = {
 
 const rows = <T>(value: unknown) => value as T[]
 
-export async function getHostedTask(client: SQL, identity: TaskIdentity, key: string) {
+export async function getHostedTask(client: SQL, identity: TaskIdentity, taskIdentity: string) {
   return withHostedTenant(client, identity, async (tx) => {
     const task = rows<HostedTask>(
       await tx`
-      SELECT * FROM hub_task WHERE space_id=${identity.spaceId}::uuid AND key=${key}
+      SELECT * FROM hub_task WHERE space_id=${identity.spaceId}::uuid
+        AND (key=${taskIdentity} OR id::text=${taskIdentity})
         AND deleted_at IS NULL`,
     )[0]
     if (!task) return null

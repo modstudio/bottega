@@ -251,6 +251,7 @@ test('first run reads head, full-pulls, and stores that head', async () => {
       upsertsNoop: 0,
       deletesApplied: 0,
       deletesSkipped: 0,
+      absentParentSkipped: 0,
       resets: 1,
     },
   ])
@@ -702,7 +703,9 @@ test('the collect line prints the change counts and resets per space', () => {
         upsertsNoop: 10,
         deletesApplied: 1,
         deletesSkipped: 0,
+        absentParentSkipped: 0,
         resets: 1,
+        reportAbsentParentSkips: true,
         spaces: [
           {
             spaceId: 'space-one',
@@ -710,12 +713,15 @@ test('the collect line prints the change counts and resets per space', () => {
             upsertsNoop: 10,
             deletesApplied: 1,
             deletesSkipped: 0,
+            absentParentSkipped: 0,
             resets: 1,
           },
         ],
       },
     }),
-  ).toBe('hosted task changes space-one 3 changed, 10 no-op, 1 deleted, 0 skipped, 1 reset')
+  ).toBe(
+    'hosted task changes space-one 3 changed, 10 no-op, 1 deleted, 0 skipped, 0 absent-parent skipped, 1 reset',
+  )
 })
 
 test('the page bound stops a pass and the next pass continues from the stored cursor', async () => {
