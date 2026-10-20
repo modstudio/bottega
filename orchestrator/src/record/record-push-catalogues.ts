@@ -590,13 +590,11 @@ function logPlan(plan: Plan, presentation: Presentation, prefix = ''): void {
 
 async function importWorkflowPlans(
   plans: Plan['workflow'],
-  client: RecordApiClient & {
-    importWorkflowCatalogue: NonNullable<RecordApiClient['importWorkflowCatalogue']>
-  },
+  importCatalogue: NonNullable<RecordApiClient['importWorkflowCatalogue']>,
   presentation: Presentation,
 ): Promise<void> {
   for (const [spaceId, workflow] of plans) {
-    const result = await client.importWorkflowCatalogue(workflow, { destinationSpaceId: spaceId })
+    const result = await importCatalogue(workflow, { destinationSpaceId: spaceId })
     for (const outcome of result.outcomes)
       presentation.log(`workflow ${spaceId} ${outcome.kind} ${outcome.slug}: ${outcome.outcome}`)
     presentation.log(
@@ -645,7 +643,7 @@ export async function pushCataloguesCommand(
       `lens ${spaceId}: inserted ${result.inserted}, already present ${result.alreadyPresent}, skipped ${result.skipped.length}`,
     )
   }
-  await importWorkflowPlans(plan.workflow, client, presentation)
+  await importWorkflowPlans(plan.workflow, client.importWorkflowCatalogue, presentation)
   for (const [spaceId, port] of plan.ports) {
     const result = await client.importPortCatalogue(
       { ...port, dryRun: options.dryRun },
