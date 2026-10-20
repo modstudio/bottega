@@ -5,17 +5,42 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db, sessionId } from '../database/db.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { upsertProject } from '../project/projects.ts'
-import { rememberProjectSpace } from '../project-space.ts'
+import { rememberActiveRecordSpace, rememberProjectSpace } from '../project-space.ts'
 import {
   chooseLensProfile,
   listLenses,
+  listProfiles,
   resolveLens,
   selectProjectProfile,
   setLens,
   setProfile,
+  showLens,
+  showProfile,
 } from './lenses.ts'
 
 describe('lens catalogue', () => {
+  test('inspection defaults to the active hosted record space', () => {
+    const space = newRecordId()
+    const lensRecordId = newRecordId()
+    db()
+      .query(
+        `INSERT INTO lens(record_id,space_id,id,title,question,excludes,slots,version,enabled,requires_execution)
+         VALUES (?,?,'hosted-inspection','Hosted','Q','E','{"type":"object","properties":{},"additionalProperties":false}',1,1,0)`,
+      )
+      .run(lensRecordId, space)
+    db()
+      .query(
+        `INSERT INTO lens_profile(record_id,space_id,lens_record_id,axis,name,version,body,enabled)
+         VALUES (?,?,?,'framework','default',1,'{}',1)`,
+      )
+      .run(newRecordId(), space, lensRecordId)
+    rememberActiveRecordSpace(db(), space)
+
+    expect(listLenses().map((lens) => lens.id)).toEqual(['hosted-inspection'])
+    expect(showLens('hosted-inspection')?.title).toBe('Hosted')
+    expect(listProfiles('hosted-inspection')).toHaveLength(1)
+    expect(showProfile('hosted-inspection', 'framework', 'default')?.name).toBe('default')
+  })
   test('six seeded cores render their default profile for every registered project', () => {
     upsertProject({ recordId: newRecordId(), name: 'one', path: '/tmp/one', settings: {} })
     upsertProject({ recordId: newRecordId(), name: 'two', path: '/tmp/two', settings: {} })

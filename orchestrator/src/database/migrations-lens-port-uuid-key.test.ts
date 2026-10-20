@@ -73,14 +73,22 @@ test('lens and port UUID-key migration rebuilds every catalogue table and relati
       expect(primary, table).toHaveLength(1)
       expect(primary[0]!.name, table).toMatch(/record_id$/)
     }
-    expect(database.query('SELECT lens_record_id FROM lens_profile').get()).toEqual({
+    expect(
+      database.query('SELECT lens_record_id FROM lens_profile WHERE record_id=?').get(profileId),
+    ).toEqual({
       lens_record_id: lensId,
     })
-    expect(database.query('SELECT profile_record_id FROM lens_profile_revision').get()).toEqual({
-      profile_record_id: profileId,
-    })
     expect(
-      database.query('SELECT selection_record_id FROM project_lens_profile_revision').get(),
+      database
+        .query('SELECT profile_record_id FROM lens_profile_revision WHERE profile_record_id=?')
+        .get(profileId),
+    ).toEqual({ profile_record_id: profileId })
+    expect(
+      database
+        .query(
+          'SELECT selection_record_id FROM project_lens_profile_revision WHERE selection_record_id=?',
+        )
+        .get(selectionId),
     ).toEqual({
       selection_record_id: selectionId,
     })
@@ -146,6 +154,38 @@ test('lens and port UUID-key migration reports every orphan and leaves the old s
     expect(database.query("SELECT name FROM pragma_table_info('port_pair')").all()).toContainEqual({
       name: 'id',
     })
+  } finally {
+    database.close()
+  }
+})
+
+test('every declared lens and port foreign key leads an index', () => {
+  const database = new Database(':memory:')
+  try {
+    applyMigrations(database)
+    for (const table of TABLES) {
+      const foreignKeys = database.query<{ from: string }, []>(`PRAGMA foreign_key_list('${table}')`).all()
+      const indexed = new Set(
+        database
+          .query<{ name: string }, []>(`PRAGMA index_list('${table}')`)
+          .all()
+          .flatMap((index) =>
+            database
+              .query<{ name: string }, []>(`PRAGMA index_info('${index.name}')`)
+              .all()
+              .slice(0, 1)
+              .map((column) => column.name),
+          ),
+      )
+      const primary = database
+        .query<{ name: string }, []>(`PRAGMA table_info('${table}')`)
+        .all()
+        .slice(0, 1)
+        .map((column) => column.name)
+      for (const column of primary) indexed.add(column)
+      for (const foreignKey of foreignKeys)
+        expect(indexed.has(foreignKey.from), `${table}.${foreignKey.from}`).toBe(true)
+    }
   } finally {
     database.close()
   }
