@@ -2,11 +2,13 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   catalogueFloors,
+  decideCloseFloors,
   decideFloorSatisfaction,
   type Floor,
   type FloorSatisfactionInput,
   type OpenObligation,
   parseArtifactRef,
+  reentryBoundRefusal,
   type ValidatedEvidence,
 } from './workflow-floor.ts'
 
@@ -74,6 +76,61 @@ const decide = (input: Partial<FloorSatisfactionInput> & Pick<FloorSatisfactionI
     openObligations: [],
     ...input,
   })
+
+test('a ruling outcome replaces ordinary floors with a ruling floor', () => {
+  const step = {
+    floor: ['recorded-artifact'] as const,
+    rulingOutcomes: ['fix'],
+    operatorRuling: false,
+  }
+  expect(decideCloseFloors(step, 'fix').map((floor) => floor.kind)).toEqual(['ruling'])
+  expect(decideCloseFloors(step, 'clear').map((floor) => floor.kind)).toEqual(['recorded-artifact'])
+  expect(decideCloseFloors(step, 'clear', true).map((floor) => floor.kind)).toEqual(['ruling'])
+})
+
+test('the re-entry bound refusal names await and a non-re-entering outcome', () => {
+  expect(reentryBoundRefusal('changed', ['changed', 'clean'])).toContain(
+    `${PLATFORM_SLUG} workflow await`,
+  )
+  expect(reentryBoundRefusal('changed', ['changed', 'clean'])).toContain(
+    'close with a non-re-entering outcome (clean)',
+  )
+})
+
+test('a re-entry bound accepts only a ruling answered after the last re-entry', () => {
+  const after = '2026-10-20T12:00:00.000Z'
+  const bound = (answeredAt: string | null): ValidatedEvidence => ({
+    ruling: {
+      id: 9,
+      answered: true,
+      answeredByOperator: false,
+      boundToCursor: true,
+      boundToStep: true,
+      answeredAt,
+    },
+  })
+  expect(
+    decide({
+      floors: [ruling],
+      evidence: bound('2026-10-20T12:00:00.001Z'),
+      freshRulingAfter: after,
+    }),
+  ).toMatchObject({ action: 'allow' })
+  expect(decide({ floors: [ruling], evidence: bound(after), freshRulingAfter: after }).action).toBe(
+    'refuse',
+  )
+  expect(
+    decide({
+      floors: [ruling],
+      evidence: bound('2026-10-20T11:59:59.999Z'),
+      freshRulingAfter: after,
+    }).action,
+  ).toBe('refuse')
+  expect(decide({ floors: [ruling], evidence: gradedReview, freshRulingAfter: after }).action).toBe(
+    'refuse',
+  )
+  expect(decide({ floors: [ruling], evidence: gradedReview }).action).toBe('allow')
+})
 
 test('note-only enforcement closes without evidence', () => {
   expect(decide({ floors: [ruling], enforcement: 'note-only' })).toEqual({

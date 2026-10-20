@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { workflowKeyOf as keyOf } from './workflow-cursor-arguments.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { cursorName, shellWord, workflowCursorReference } from './workflow-cursor-format.ts'
 import {
@@ -10,7 +11,13 @@ import {
   completedWorkflowSummary,
   isClosedStep,
 } from './workflow-cursor-trail.ts'
-import type { decideConditionalAdvance } from './workflow-cursor-transition.ts'
+import {
+  type CursorState,
+  type decideConditionalAdvance,
+  decideCursorStart,
+  type decideCursorTransition,
+  stepPass,
+} from './workflow-cursor-transition.ts'
 import { renderWorkflowStep, withSelfRuling } from './workflow-render.ts'
 import type { WorkflowSelfRulingInput } from './workflow-self-ruling-mutation.ts'
 import { withWorkflowTextFacts } from './workflow-text.ts'
@@ -28,7 +35,41 @@ type AdvanceRow = {
   autonomy: string | null
 }
 
-export function renderWorkflowCursorRemedy(
+export function refuseInvalidServe(
+  decision: ReturnType<typeof decideCursorTransition>,
+  row: (AdvanceRow & { ordinal: number; state: string; workflow_key: string }) | null,
+  composition: ReturnType<typeof composeWorkflow>,
+  slug: string,
+  mode: string,
+  args: Record<string, string>,
+): void {
+  if (decision.action !== 'refuse') return
+  if (decision.reason === 'compose-first') {
+    throw new Error(
+      `${cursorName(slug, mode, keyOf(args))} has no cursor; compose the workflow first`,
+    )
+  }
+  if (decision.reason === 'state') {
+    throw new Error(
+      `${cursorName(slug, mode, row!.workflow_key)} is ${row!.state}; compose it again to start a new run`,
+    )
+  }
+  throw new Error(renderWorkflowCursorRemedy(row!, composition.steps[row!.ordinal]!))
+}
+
+export function refuseTerminalCursor(row: {
+  workflow_slug: string
+  mode_slug: string
+  workflow_key: string
+  state: CursorState
+}): void {
+  if (decideCursorStart(row.state) === 'retire')
+    throw new Error(
+      `${cursorName(row.workflow_slug, row.mode_slug, row.workflow_key)} is ${row.state}`,
+    )
+}
+
+function renderWorkflowCursorRemedy(
   row: Pick<
     AdvanceRow,
     'id' | 'workflow_slug' | 'project' | 'mode_slug' | 'workflow_key' | 'args'
@@ -64,6 +105,7 @@ export function renderWorkflowAdvanceResult(input: {
     )
   }
   const next = composition.steps[advance.ordinal]!
+  const flow = closed.filter(isClosedStep)
   const rendered = renderWorkflowStep({
     ...withWorkflowTextFacts(
       getWorkflowStep(
@@ -79,7 +121,8 @@ export function renderWorkflowAdvanceResult(input: {
       d,
     ),
     cursor: row.id,
-    flow: closed.filter(isClosedStep),
+    flow,
+    pass: stepPass(flow, composition.steps, advance.ordinal),
   })
   return withSelfRuling(rendered, selfRuling)
 }

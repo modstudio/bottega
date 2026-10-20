@@ -144,13 +144,31 @@ export function workflowModeStepError(value: unknown): string | null {
   return `step entry ${JSON.stringify(value)} must be a step slug or exactly {"sequence":"<slug>","omit"?:[...]}, or exactly {"step":"<slug>","when":{"step":"<slug>","outcome":[...]}}; edit the workflow mode to use one of those forms`
 }
 
-export function workflowConditionErrors(
+function workflowReentryErrors(
   mode: string,
   detailed: readonly ExpandedWorkflowStep[],
   steps: readonly CatalogueStep[],
 ): string[] {
   const bySlug = new Map(steps.map((step) => [step.slug, step]))
   return detailed.flatMap((entry, index) => {
+    const reenter = bySlug.get(entry.slug)?.reenter
+    if (!reenter) return []
+    const prior = detailed.findIndex(({ slug }) => slug === reenter.to)
+    if (prior < 0 || prior >= index)
+      return [
+        `mode "${mode}" step "${entry.slug}" reentry to "${reenter.to}" must be an earlier step in the expanded mode`,
+      ]
+    return []
+  })
+}
+
+export function workflowConditionErrors(
+  mode: string,
+  detailed: readonly ExpandedWorkflowStep[],
+  steps: readonly CatalogueStep[],
+): string[] {
+  const bySlug = new Map(steps.map((step) => [step.slug, step]))
+  const whenErrors = detailed.flatMap((entry, index) => {
     if (!entry.when) return []
     const prior = detailed.findIndex(({ slug }) => slug === entry.when!.step)
     if (prior < 0 || prior >= index)
@@ -165,6 +183,7 @@ export function workflowConditionErrors(
         ]
       : []
   })
+  return [...whenErrors, ...workflowReentryErrors(mode, detailed, steps)]
 }
 
 export function validateCatalogueSequences(

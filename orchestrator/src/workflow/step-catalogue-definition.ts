@@ -13,6 +13,8 @@ export type CatalogueStep = {
   body: string
   floor: FloorEntry[]
   outcomes?: string[]
+  rulingOutcomes?: string[]
+  reenter?: { to: string; outcome: string }
   deferrable?: FloorKind[]
   expectedStatus?: string | string[]
   requirePullRequest?: boolean

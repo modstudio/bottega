@@ -92,6 +92,30 @@ describe('workflow rendering', () => {
       ),
     ).toContain('Choose one allowed outcome (needed, clear)')
     expect(
+      renderWorkflowStep({
+        ...getWorkflowStep('render-flow', 'fixture', 'lens', {}, d, { mode: 'default' }),
+        rulingOutcomes: ['needed'],
+        reenter: { to: 'score', outcome: 'needed' },
+        pass: 2,
+        flow: [{ slug: 'lens', outcome: 'needed' }],
+      }),
+    ).toContain('Flow so far: Pass 2, lens=needed')
+    expect(
+      renderWorkflowStep({
+        ...getWorkflowStep('render-flow', 'fixture', 'lens', {}, d, { mode: 'default' }),
+        rulingOutcomes: ['needed'],
+        reenter: { to: 'score', outcome: 'needed' },
+      }),
+    ).toContain('Closing with needed stops for a ruling.')
+    expect(
+      renderWorkflowStep({
+        ...getWorkflowStep('render-flow', 'fixture', 'lens', {}, d, { mode: 'default' }),
+        reenter: { to: 'score', outcome: 'needed' },
+      }),
+    ).toContain(
+      'Outcome needed returns to score automatically once; beyond that it needs a ruling.',
+    )
+    expect(
       renderWorkflowStep(
         getWorkflowStep('render-flow', 'fixture', 'lens', {}, d, { mode: 'default' }),
       ),

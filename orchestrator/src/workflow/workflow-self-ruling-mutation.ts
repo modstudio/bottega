@@ -60,3 +60,17 @@ export function recordWorkflowSelfRuling(
   )
   return { questionId: question.number }
 }
+
+export function bindCloseSelfRuling<T extends { ruling?: number }>(
+  input: Omit<Parameters<typeof recordWorkflowSelfRuling>[0], 'selfRuling'> & {
+    evidence: T
+    selfRuling?: WorkflowSelfRulingInput
+  },
+  database: Database,
+): T {
+  if (!input.selfRuling) return input.evidence
+  if (input.evidence.ruling !== undefined)
+    throw new Error('--self-ruling and --ruling are mutually exclusive')
+  const recorded = recordWorkflowSelfRuling({ ...input, selfRuling: input.selfRuling }, database)
+  return { ...input.evidence, ruling: recorded.questionId }
+}

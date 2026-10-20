@@ -88,6 +88,37 @@ test('outcomes are unique non-empty slugs', () => {
   ).toContain('step "design" outcomes must be unique')
 })
 
+test('rulingOutcomes must be a non-empty unique subset of outcomes', () => {
+  const staged = { ...step, stage: 'plan' as const, outcomes: ['needed', 'clear'] }
+  expect(validateStepCatalogue({ steps: [{ ...staged, rulingOutcomes: ['needed'] }] })).toEqual([])
+  expect(validateStepCatalogue({ steps: [{ ...staged, rulingOutcomes: [] }] })).toContain(
+    'step "design" rulingOutcomes must be a non-empty array',
+  )
+  expect(validateStepCatalogue({ steps: [{ ...staged, rulingOutcomes: ['unknown'] }] })).toContain(
+    'step "design" rulingOutcomes must be a non-empty unique subset of outcomes',
+  )
+  expect(
+    validateStepCatalogue({ steps: [{ ...staged, rulingOutcomes: ['needed', 'needed'] }] }),
+  ).toContain('step "design" rulingOutcomes must be a non-empty unique subset of outcomes')
+})
+
+test('reenter.outcome must be one of the step outcomes', () => {
+  const staged = { ...step, stage: 'plan' as const, outcomes: ['changed', 'clean'] }
+  expect(
+    validateStepCatalogue({
+      steps: [{ ...staged, reenter: { to: 'start', outcome: 'changed' } }],
+    }),
+  ).toEqual([])
+  expect(
+    validateStepCatalogue({
+      steps: [{ ...staged, reenter: { to: 'start', outcome: 'unknown' } }],
+    }),
+  ).toContain('step "design" reenter.outcome must be one of the step\'s outcomes')
+  expect(
+    validateStepCatalogue({ steps: [{ ...staged, reenter: { to: 'start' } }] as never }),
+  ).toContain('step "design" reenter must be { to, outcome }')
+})
+
 test('catalogue sequences reject nesting, duplicate names, and the step namespace', () => {
   const design = { ...step, stage: 'plan' as const }
   const errors = validateStepCatalogue({

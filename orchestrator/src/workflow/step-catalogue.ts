@@ -50,6 +50,8 @@ export function validateStepCatalogue(value: unknown): string[] {
     }
     validateIdentity(item, seen, errors)
     validateOutcomes(item, errors)
+    validateRulingOutcomes(item, errors)
+    validateReenter(item, errors)
     validateFloor(item, errors)
     validateNeeds(item, errors)
     validateDispatchPrompts(item, errors)
@@ -78,6 +80,40 @@ function validateOutcomes(item: Record<string, unknown>, errors: string[]): void
     errors.push(`step "${slug}" outcomes must be well-formed slugs`)
   if (new Set(item.outcomes).size !== item.outcomes.length)
     errors.push(`step "${slug}" outcomes must be unique`)
+}
+
+function validateRulingOutcomes(item: Record<string, unknown>, errors: string[]): void {
+  if (item.rulingOutcomes === undefined) return
+  const slug = String(item.slug ?? '')
+  if (!Array.isArray(item.rulingOutcomes) || item.rulingOutcomes.length === 0) {
+    errors.push(`step "${slug}" rulingOutcomes must be a non-empty array`)
+    return
+  }
+  const outcomes = new Set(Array.isArray(item.outcomes) ? item.outcomes : [])
+  if (
+    new Set(item.rulingOutcomes).size !== item.rulingOutcomes.length ||
+    item.rulingOutcomes.some((outcome) => typeof outcome !== 'string' || !outcomes.has(outcome))
+  )
+    errors.push(`step "${slug}" rulingOutcomes must be a non-empty unique subset of outcomes`)
+}
+
+function validateReenter(item: Record<string, unknown>, errors: string[]): void {
+  if (item.reenter === undefined) return
+  const slug = String(item.slug ?? '')
+  if (
+    !object(item.reenter) ||
+    Object.keys(item.reenter).length !== 2 ||
+    typeof item.reenter.to !== 'string' ||
+    typeof item.reenter.outcome !== 'string'
+  ) {
+    errors.push(`step "${slug}" reenter must be { to, outcome }`)
+    return
+  }
+  if (!SLUG.test(item.reenter.to))
+    errors.push(`step "${slug}" reenter.to must be a well-formed slug`)
+  const outcomes = Array.isArray(item.outcomes) ? item.outcomes : []
+  if (!outcomes.includes(item.reenter.outcome))
+    errors.push(`step "${slug}" reenter.outcome must be one of the step's outcomes`)
 }
 
 function validateDispatchPrompts(item: Record<string, unknown>, errors: string[]): void {

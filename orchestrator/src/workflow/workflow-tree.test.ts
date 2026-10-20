@@ -15,6 +15,8 @@ const store: WorkflowTreeStore = {
       stage: 'implement',
       floor: ['command-exit'],
       outcomes: ['passed', 'failed'],
+      rulingOutcomes: ['failed'],
+      reenter: { to: 'prepare', outcome: 'failed' },
       job: null,
       autonomy: 'auto',
       needs: ['docs'],

@@ -21,6 +21,7 @@ type WorkflowStep = ReturnType<typeof getWorkflowStep> & {
   cursor?: number
   notice?: string
   flow?: Array<{ slug: string; outcome?: string; skipped?: unknown }>
+  pass?: number
 }
 
 export function withSelfRuling(
@@ -158,30 +159,35 @@ function autonomyInstruction(step: WorkflowStep): string {
     : `rule yourself; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
 }
 
-export function renderWorkflowStep(step: WorkflowStep): string {
-  const autonomy = autonomyInstruction(step)
+function closeContract(step: WorkflowStep): string {
   const reference = step.cursor ? workflowCursorReference(step.cursor) : null
   const cursor = reference ? ` with ${reference.mcp}` : ''
   const cliCursor = reference?.cli ?? ''
   const outcome = step.outcomes?.length
     ? ` Choose one allowed outcome (${step.outcomes.join(', ')}) and pass it as \`outcome\` to MCP or \`--outcome <slug>\` to the CLI.`
     : ''
-  const close = `Next: when this step's floor is met, close it with \`next_workflow_step\` (MCP)${cursor} or \`${PLATFORM_SLUG} workflow next${step.cursor ? ` ${step.workflow}${cliCursor}` : ''}\`, giving a one-line note of how the floor was met;${outcome}`
-  const pointer =
-    step.next === undefined
-      ? `${close} that serves the following step from the workflow's step list.`
-      : step.next
-        ? step.next.when
-          ? `${close} step ${step.next.n} ${step.next.slug} — ${step.next.title} runs ${conditionText(step.next.when)}; otherwise closing skips it and serves the next eligible step.`
-          : `${close} that serves step ${step.next.n} ${step.next.slug} — ${step.next.title}.`
-        : step.mode
-          ? `${close} this is the last step of ${step.workflow} (${step.mode}), and closing it finishes the workflow.`
-          : `${close} this is the last step of ${step.workflow} in every mode that contains it, and closing it finishes the workflow.`
-  const guidance = step.floor.map(
-    (kind) =>
-      `Evidence for ${kind}: ${evidenceGuidance(kind as FloorKind, Boolean(step.operatorRuling))}.`,
-  )
-  const notice = step.notice ? `${step.notice}\n` : ''
+  const rulingOutcomes = step.rulingOutcomes?.length
+    ? ` Closing with ${step.rulingOutcomes.join(' or ')} stops for a ruling.`
+    : ''
+  const reenter = step.reenter
+    ? ` Outcome ${step.reenter.outcome} returns to ${step.reenter.to} automatically once; beyond that it needs a ruling.`
+    : ''
+  return `Next: when this step's floor is met, close it with \`next_workflow_step\` (MCP)${cursor} or \`${PLATFORM_SLUG} workflow next${step.cursor ? ` ${step.workflow}${cliCursor}` : ''}\`, giving a one-line note of how the floor was met;${outcome}${rulingOutcomes}${reenter}`
+}
+
+function nextPointer(step: WorkflowStep, close: string): string {
+  if (step.next === undefined)
+    return `${close} that serves the following step from the workflow's step list.`
+  if (step.next)
+    return step.next.when
+      ? `${close} step ${step.next.n} ${step.next.slug} — ${step.next.title} runs ${conditionText(step.next.when)}; otherwise closing skips it and serves the next eligible step.`
+      : `${close} that serves step ${step.next.n} ${step.next.slug} — ${step.next.title}.`
+  return step.mode
+    ? `${close} this is the last step of ${step.workflow} (${step.mode}), and closing it finishes the workflow.`
+    : `${close} this is the last step of ${step.workflow} in every mode that contains it, and closing it finishes the workflow.`
+}
+
+function flowSoFar(step: WorkflowStep): string {
   const flow = (step.flow ?? []).flatMap((entry) =>
     entry.skipped
       ? [`${entry.slug}=skipped`]
@@ -189,6 +195,17 @@ export function renderWorkflowStep(step: WorkflowStep): string {
         ? [`${entry.slug}=${entry.outcome}`]
         : [],
   )
-  const flowLine = flow.length ? `Flow so far: ${flow.join(', ')}\n` : ''
-  return `${notice}${flowLine}facts: ${JSON.stringify(step.facts)}\nAutonomy: ${step.resolvedAutonomy.value} (${step.resolvedAutonomy.scope}) — ${autonomy}\n${step.body}\n\n${guidance.join('\n')}\n\n${pointer}`
+  if (step.pass !== undefined && step.pass > 1) flow.unshift(`Pass ${step.pass}`)
+  return flow.length ? `Flow so far: ${flow.join(', ')}\n` : ''
+}
+
+export function renderWorkflowStep(step: WorkflowStep): string {
+  const autonomy = autonomyInstruction(step)
+  const close = closeContract(step)
+  const guidance = step.floor.map(
+    (kind) =>
+      `Evidence for ${kind}: ${evidenceGuidance(kind as FloorKind, Boolean(step.operatorRuling))}.`,
+  )
+  const notice = step.notice ? `${step.notice}\n` : ''
+  return `${notice}${flowSoFar(step)}facts: ${JSON.stringify(step.facts)}\nAutonomy: ${step.resolvedAutonomy.value} (${step.resolvedAutonomy.scope}) — ${autonomy}\n${step.body}\n\n${guidance.join('\n')}\n\n${nextPointer(step, close)}`
 }
