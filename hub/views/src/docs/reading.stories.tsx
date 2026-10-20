@@ -55,8 +55,8 @@ export const ResumeBriefFrontmatter: Story = {
   args: {
     doc: {
       ...doc,
-      title: 'Bottega sync redesign',
-      body: '---\nstatus: open\nepic: DEV-1208\ntask: DEV-1214\nproject: bottega\nwritten: 2026-10-20T15:40:00Z\n---\n\n# Bottega sync redesign\n\n## Next action\n\n**NEXT ACTION: specify K7b-2 from DEV-1214/13.**',
+      title: 'Sync redesign',
+      body: '---\nstatus: open\nepic: DEV-1208\ntask: DEV-1214\nproject: workshop\nwritten: 2026-10-20T15:40:00Z\n---\n\n# Sync redesign\n\n## Next action\n\n**NEXT ACTION: specify K7b-2 from DEV-1214/13.**',
     },
   },
 }

@@ -102,13 +102,12 @@ function PropertyList({
   properties: Record<string, unknown>
   nested?: boolean
 }) {
-  const styles = markdownStyles({ nested })
   return (
-    <dl className={styles.frontmatterList()}>
+    <dl className={markdownStyles({ nested }).frontmatterList()}>
       {Object.entries(properties).map(([key, value]) => (
         <Fragment key={key}>
-          <dt className={styles.frontmatterKey()}>{key}</dt>
-          <dd className={styles.frontmatterDetail()}>
+          <dt className={markdownStyles().frontmatterKey()}>{key}</dt>
+          <dd className={markdownStyles().frontmatterDetail()}>
             <FrontmatterValue value={value} />
           </dd>
         </Fragment>
