@@ -4,6 +4,7 @@ import { db } from '../src/database/db.ts'
 import type { RecordApiClient } from '../src/record/record-api-client.ts'
 import type { RecordIdentity } from '../src/record/record-auth.ts'
 import { pullRecordCache } from '../src/record/record-cache.ts'
+import { docImportBody } from './fixtures/doc-import.ts'
 import { psql, succeeds } from './fixtures/postgres-rls.ts'
 import {
   createMemoryRecordApiClient,
@@ -192,7 +193,10 @@ async function proveCanonImportAddress(
   expect(await regained.json()).toMatchObject({ error: expect.stringContaining('canon/history') })
 }
 
-async function proveCanonImports(origin: string, headers: Record<string, string>): Promise<void> {
+export async function proveCanonImports(
+  origin: string,
+  headers: Record<string, string>,
+): Promise<void> {
   const projectId = newRecordId()
   const subject = `canon-proof-${newRecordId()}`
   const project = await fetch(`${origin}/v1/projects`, {
@@ -850,7 +854,6 @@ export async function proveHostedDocs(input: {
   expect(inject.status).toBe(400)
   await proveHostedCanonRefusal(input.origin, headers)
   await selectSpace(identity.personalSpaceId)
-  await proveCanonImports(input.origin, headers)
 
   const runs = await fetch(`${input.origin}/v1/runs?limit=1`, { headers })
   expect(runs.status).toBe(200)
@@ -883,45 +886,6 @@ export async function proveHostedDocs(input: {
   return memberSpaceId
 }
 
-function importBody(input: {
-  slug: string
-  body: string
-  updatedAt: string
-  deletedAt: string | null
-  revisions: Array<{ body: string; op: string; at: string; reason: string }>
-}) {
-  const createdAt = input.revisions[0]?.at ?? input.updatedAt
-  return {
-    doc: {
-      scope: 'machine',
-      subject: null,
-      slug: input.slug,
-      title: 'Import',
-      body: input.body,
-      delivery: 'inject' as const,
-      audiences: ['technical'],
-      projectName: null,
-      createdAt,
-      updatedAt: input.updatedAt,
-      deletedAt: input.deletedAt,
-    },
-    revisions: input.revisions.map((revision) => ({
-      scope: 'machine',
-      subject: null,
-      slug: input.slug,
-      op: revision.op,
-      title: 'Import',
-      body: revision.body,
-      delivery: 'inject' as const,
-      audiences: ['technical'],
-      author: 'proof',
-      reason: revision.reason,
-      sessionId: null,
-      at: revision.at,
-    })),
-  }
-}
-
 async function proveDocImport(origin: string, headers: Record<string, string>): Promise<void> {
   const older = '2026-01-01T00:00:00.000Z'
   const middle = '2026-01-01T12:00:00.000Z'
@@ -932,7 +896,7 @@ async function proveDocImport(origin: string, headers: Record<string, string>): 
       headers,
       body: JSON.stringify(body),
     })
-  const current = importBody({
+  const current = docImportBody({
     slug: 'import-current',
     body: 'current-body',
     updatedAt: newer,
@@ -950,7 +914,7 @@ async function proveDocImport(origin: string, headers: Record<string, string>): 
   expect(((await hosted.json()) as { body: string }).body).toBe('current-body')
 
   const refusedDeletion = await post(
-    importBody({
+    docImportBody({
       slug: 'import-current',
       body: 'current-body',
       updatedAt: newer,
@@ -970,7 +934,7 @@ async function proveDocImport(origin: string, headers: Record<string, string>): 
     deletedAt: null,
   })
 
-  const deletedPayload = importBody({
+  const deletedPayload = docImportBody({
     slug: 'import-deleted',
     body: 'gone',
     updatedAt: newer,
@@ -1023,7 +987,7 @@ async function proveDocImport(origin: string, headers: Record<string, string>): 
   })
   expect(put.status).toBe(200)
   const conflict = await post(
-    importBody({
+    docImportBody({
       slug: conflictSlug,
       body: 'local-old',
       updatedAt: older,

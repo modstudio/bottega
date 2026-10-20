@@ -83,7 +83,7 @@ async function writeCanonRows(
   const results: RecordCanonImportResult['rows'] = []
   for (const row of input.rows) {
     const prior = existing.get(row.slug)
-    const id = prior ? String(prior.record_id) : newRecordId()
+    const id = prior ? String(prior.id) : newRecordId()
     assertWrite(
       await recordCanonTreeWriteRefusal(tx, {
         spaceId: input.spaceId,
@@ -152,7 +152,7 @@ async function deleteMissingCanonRows(
   for (const prior of currentRows) {
     const slug = String(prior.slug)
     if (!deletedSlugs.has(slug)) continue
-    const id = String(prior.record_id)
+    const id = String(prior.id)
     assertWrite(
       await recordCanonTreeWriteRefusal(tx, {
         spaceId: input.spaceId,

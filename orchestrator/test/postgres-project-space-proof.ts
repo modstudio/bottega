@@ -112,6 +112,11 @@ export function registerProjectSpaceProofs(input: {
     const otherProject = newRecordId()
     const run = newRecordId()
     const otherRun = newRecordId()
+    const review = newRecordId()
+    const reviewLens = newRecordId()
+    const finding = newRecordId()
+    const landing = newRecordId()
+    const document = newRecordId()
     const subscription = newRecordId()
     const send = newRecordId()
     const sendRecipient = newRecordId()
@@ -129,6 +134,27 @@ export function registerProjectSpaceProofs(input: {
           work_preserved,created_at,updated_at) VALUES
          ('${run}','${source}','${project}','${input.machineId}',now(),'proof','proof','m',1,'m',false,'ok',1,false,false,false,now(),now()),
          ('${otherRun}','${source}','${otherProject}','${input.machineId}',now(),'proof','proof','s',1,'s',false,'ok',1,false,false,false,now(),now());
+       INSERT INTO review
+         (id,space_id,project_id,machine_id,recorded_at,created_at,updated_at)
+         VALUES ('${review}','${source}','${project}','${input.machineId}',now(),now(),now());
+       INSERT INTO review_lens
+         (id,space_id,review_id,run_id,machine_id,lens,agent,standards_read,files_covered,
+          commands_run,could_not_verify,mcp_tools,docs_read,substitutes,created_at,updated_at)
+         VALUES ('${reviewLens}','${source}','${review}','${run}','${input.machineId}',
+          'correctness','proof','[]','[]','[]','[]','[]','[]','[]',now(),now());
+       INSERT INTO review_finding
+         (id,space_id,review_id,review_lens_id,machine_id,ordinal,severity,location,evidence,
+          proposed_correction,created_at,updated_at)
+         VALUES ('${finding}','${source}','${review}','${reviewLens}','${input.machineId}',1,
+          'major','proof.ts:1','evidence','fix',now(),now());
+       INSERT INTO landing
+         (id,space_id,project_id,machine_id,branch,status,started_at,created_at,updated_at)
+         VALUES ('${landing}','${source}','${project}','${input.machineId}',
+          'DEV-747-proof','landed',now(),now(),now());
+       INSERT INTO doc
+         (id,space_id,scope,subject,slug,title,body,delivery,audiences,project_id,created_at,updated_at)
+         VALUES ('${document}','${source}','project','move-proof','move-proof','Move proof',
+          'Body','demand',ARRAY['technical'],'${project}',now(),now());
        INSERT INTO seq(space_id,project_id,name,next) VALUES
          ('${source}','${project}','task:MOVE',2),('${source}','${otherProject}','task:STAY',2);
        INSERT INTO hub_task
@@ -200,6 +226,11 @@ export function registerProjectSpaceProofs(input: {
       `SELECT count(*) FROM project WHERE id='${project}';
        SELECT count(*) FROM run WHERE id='${run}';
        SELECT count(*) FROM hub_task WHERE key='${task}';
+       SELECT count(*) FROM review WHERE id='${review}';
+       SELECT count(*) FROM review_lens WHERE id='${reviewLens}';
+       SELECT count(*) FROM review_finding WHERE id='${finding}';
+       SELECT count(*) FROM landing WHERE id='${landing}';
+       SELECT count(*) FROM doc WHERE id='${document}';
        SELECT count(*) FROM project WHERE id='${otherProject}';
        SELECT count(*) FROM run WHERE id='${otherRun}';
        SELECT count(*) FROM hub_day WHERE day='2099-07-47';
@@ -207,7 +238,21 @@ export function registerProjectSpaceProofs(input: {
        SELECT count(*) FROM hub_send_recipient WHERE id='${sendRecipient}';`,
     )
     expect(sourceFacts.code, sourceFacts.stderr).toBe(0)
-    expect(sourceFacts.stdout.split('\n')).toEqual(['0', '0', '0', '1', '1', '1', '1', '1'])
+    expect(sourceFacts.stdout.split('\n')).toEqual([
+      '0',
+      '0',
+      '0',
+      '0',
+      '0',
+      '0',
+      '0',
+      '0',
+      '1',
+      '1',
+      '1',
+      '1',
+      '1',
+    ])
     const destinationFacts = input.asSpace(
       input.actorRole,
       'actor-password',
@@ -215,10 +260,25 @@ export function registerProjectSpaceProofs(input: {
       `SELECT count(*) FROM project WHERE id='${project}';
        SELECT count(*) FROM run WHERE id='${run}';
        SELECT count(*) FROM hub_task WHERE key='${task}';
+       SELECT count(*) FROM review WHERE id='${review}';
+       SELECT count(*) FROM review_lens WHERE id='${reviewLens}';
+       SELECT count(*) FROM review_finding WHERE id='${finding}';
+       SELECT count(*) FROM landing WHERE id='${landing}';
+       SELECT count(*) FROM doc WHERE id='${document}';
        SELECT count(*) FROM seq WHERE project_id='${project}';`,
     )
     expect(destinationFacts.code, destinationFacts.stderr).toBe(0)
-    expect(destinationFacts.stdout.split('\n')).toEqual(['1', '1', '1', '1'])
+    expect(destinationFacts.stdout.split('\n')).toEqual([
+      '1',
+      '1',
+      '1',
+      '1',
+      '1',
+      '1',
+      '1',
+      '1',
+      '1',
+    ])
 
     // The move turns FORCE RLS off per table to rewrite space_id, and this move
     // COMMITTED, so nothing would put it back. A table left unforced lets its

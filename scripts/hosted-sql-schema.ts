@@ -83,8 +83,12 @@ function productionTypeScriptFilesIncludingTests(directory: string): string[] {
 const HOSTED_FIXTURE_IMPORTS_WITHOUT_SQL = new Set([
   'orchestrator/src/postgres/postgres-migrate-public-role.test.ts',
   'orchestrator/src/postgres/postgres-migrate-schema.test.ts',
+  // Builds hosted document-import HTTP payloads and intentionally owns no SQL.
+  'orchestrator/test/fixtures/doc-import.ts',
   'orchestrator/test/fixtures/record-api.ts',
   'orchestrator/test/fixtures/record-session.ts',
+  // Registers hosted canon HTTP assertions and intentionally owns no SQL.
+  'orchestrator/test/canon-import-proof.ts',
   'orchestrator/test/postgres-board-api-values.ts',
   'orchestrator/test/postgres-board-cache-client.ts',
   'orchestrator/test/postgres-board-claim-api-proof.ts',

@@ -6,7 +6,6 @@ import { hostedProjectColumns } from '../record/record-project-columns.ts'
 import { upsertHostedProjectRow } from '../record/record-projects.ts'
 
 type SourceProject = {
-  id: number
   record_id: string | null
   name: string
   path: string
@@ -65,7 +64,7 @@ function readSources(
     return {
       projects: orch
         .query<SourceProject, []>(
-          'SELECT id, record_id, name, path, stack, canon, settings, retired_at FROM project ORDER BY id',
+          'SELECT record_id, name, path, stack, canon, settings, retired_at FROM project ORDER BY name',
         )
         .all(),
       sequences: hub.query<SourceSequence, []>('SELECT name, next FROM seq ORDER BY name').all(),

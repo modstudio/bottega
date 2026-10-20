@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { SQL } from 'bun'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
-import { getRecordDoc, restoreRecordDoc, upsertRecordDoc } from '../record/record-docs.ts'
+import {
+  getRecordDoc,
+  listRecordDocRevisions,
+  restoreRecordDoc,
+  upsertRecordDoc,
+} from '../record/record-docs.ts'
 
 const actorUrl = process.env.ORCH_RECORD_URL
 const adminUrl = process.env.ORCH_TEST_POSTGRES_URL
@@ -107,6 +112,13 @@ realPostgres('Bun SQL jsonb binding', () => {
       expect(read?.relatedSubjects).toEqual([{ id: RELATED_SUBJECT_ID, name: 'Related' }])
       expect(read?.checkedAgainstCommit).toBe(checkedCommit)
       expect(read).toMatchObject({ summary: writtenSummary, summarySource: 'written' })
+      const revisions = await listRecordDocRevisions({
+        url: actorUrl!,
+        spaceId: SPACE_ID,
+        userId: USER_ID,
+        id: written.id,
+      })
+      expect(revisions?.[0]?.relatedSubjects).toEqual([{ id: RELATED_SUBJECT_ID, name: 'Related' }])
 
       const kept = await upsertRecordDoc({
         url: actorUrl!,
