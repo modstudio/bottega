@@ -78,7 +78,8 @@ describe('command CPU attribution', () => {
 })
 
 describe('suite runtime budget', () => {
-  test('CPU time over budget under CI is fatal', () => {
+  test('CPU time over the runner-noise allowance under CI is fatal', () => {
+    expect(SUITE_CPU_BUDGET_MS).toBe(300_000)
     expect(
       decideRuntimeBudget({
         elapsedMs: SUITE_CPU_BUDGET_MS + 1,
