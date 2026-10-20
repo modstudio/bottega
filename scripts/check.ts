@@ -9,6 +9,7 @@ import {
   attributeCommandCpu,
   type CheckArguments,
   type CommandCpuSample,
+  cpuBudgetMs,
   decideRuntimeBudget,
   HUNG_SUITE_TIMEOUT_MS,
   parseCheckArguments,
@@ -108,7 +109,7 @@ function printSummary(): { elapsedMs: number; cpuMs: number } | undefined {
     `${checkArguments.mode} runtime: ${(elapsedMs / 1000).toFixed(2)}s / ${(SUITE_RUNTIME_BUDGET_MS / 1000).toFixed(0)}s budget`,
   )
   console.log(
-    `${checkArguments.mode} cpu: ${(attributed.totalMs / 1000).toFixed(2)}s / ${(SUITE_CPU_BUDGET_MS / 1000).toFixed(0)}s budget`,
+    `${checkArguments.mode} cpu: ${(attributed.totalMs / 1000).toFixed(2)}s / ${(cpuBudgetMs(checkArguments.mode) / 1000).toFixed(0)}s budget`,
   )
   console.log(`${checkArguments.mode} cpu by command:`)
   for (const command of attributed.commands) {
@@ -480,7 +481,7 @@ if (!summary) throw new Error('check summary printed before budget checks')
 const { elapsedMs, cpuMs } = summary
 const cpuBudgetVerdict = decideRuntimeBudget({
   elapsedMs: cpuMs,
-  budgetMs: SUITE_CPU_BUDGET_MS,
+  budgetMs: cpuBudgetMs(checkArguments.mode),
   ci: checkArguments.mode === 'suite' && Boolean(process.env.CI),
   measure: 'cpu',
 })
