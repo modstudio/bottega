@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { consumeDoc, importDocs, removeDoc, setDoc } from '../../test/fixtures/docs.ts'
+import { consumeDoc, importDocs, removeDoc, resume, setDoc } from '../../test/fixtures/docs.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -730,7 +730,7 @@ describe('scoped operator docs', () => {
       subject: 'former',
       slug: 'epic',
       title: 'Resume',
-      body: '---\nstatus: open\n---\n\nresume',
+      body: resume,
     })
     await setDoc({
       scope: 'project',
@@ -755,7 +755,7 @@ describe('scoped operator docs', () => {
         subject,
         slug,
         title: 'T',
-        body: scope === 'resume' ? '---\nstatus: open\n---\n\nB' : 'B',
+        body: scope === 'resume' ? resume : 'B',
       })
     await expect(put('global', null, 'Bad')).rejects.toThrow('1-64')
     await expect(put('global', null, 'a'.repeat(65))).rejects.toThrow('1-64')
@@ -790,7 +790,7 @@ describe('scoped operator docs', () => {
       subject: 'known',
       slug: 'epic',
       title: 'Resume',
-      body: '---\nstatus: open\n---\n\nR',
+      body: resume,
     })
     expect(docsForRun({ job: 'file-question', cwd: '/w/known/src' }).map((d) => d.title)).toEqual([
       'Job',

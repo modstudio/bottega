@@ -28,3 +28,6 @@ export const removeDoc = (
 ) => deleteDoc(scope, subject, slug, context)
 export const importDocs = (dir: string, context = { reason: 'test import' }) =>
   readDocs(dir, context)
+
+export const resume =
+  '---\nstatus: open\nepic: epic\nproject: known\nwritten: 2026-10-20T12:00:00.000Z\n---\n\nNEXT ACTION: continue\n'

@@ -10,9 +10,18 @@ export type OpenResumeViolation = {
 
 const ISO_8601_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/
 const NEXT_ACTION_LINE =
-  /^[ \t]*(?:#{1,6}[ \t]+|(?:(?:[-+*]|\d+[.)])[ \t]+))?(?:[*_]{1,3})?NEXT ACTION\b/im
-const SCRATCH_LOCATION =
-  /(?:\/private\/tmp\/|\/tmp\/|\/var\/folders\/|\/orchestrator\/runs\/|(?:^|\/)scratchpad(?:\/|$))[^\s`'"\][(){}<>,]*/gim
+  /^[ \t]*(?:#{1,6}[ \t]+|(?:(?:[-+*]|\d+[.)])[ \t]+))?(?:[*_]{1,3})?NEXT ACTION(?:[*_]{1,3})?(?=[ \t:]|$)/im
+const PATH_TOKEN = /\/?[A-Za-z0-9._~:@%+=-]+(?:\/[A-Za-z0-9._~:@%+=-]+)*\/?/g
+
+function isScratchLocation(path: string): boolean {
+  return (
+    path.startsWith('/tmp/') ||
+    path.startsWith('/private/tmp/') ||
+    path.startsWith('/var/folders/') ||
+    path.includes('/orchestrator/runs/') ||
+    path.split('/').includes('scratchpad')
+  )
+}
 
 function missingField(field: 'epic' | 'project' | 'written'): OpenResumeViolation {
   return {
@@ -43,7 +52,8 @@ export function openResumeViolations(
       remedy: 'add an explicit NEXT ACTION line',
     })
   }
-  for (const match of body.matchAll(SCRATCH_LOCATION)) {
+  for (const match of body.matchAll(PATH_TOKEN)) {
+    if (!isScratchLocation(match[0])) continue
     violations.push({
       offendingText: match[0],
       remedy: 'remove the scratch location and name a durable repository or doc-store location',
