@@ -18,6 +18,7 @@ export const gateModules: GateModule[] = [
     'node:fs',
     'node:path',
     '../database/db.ts',
+    '../gate-load.ts',
     '../idle-kill.ts',
     '../issue/issue-shell.ts',
     '../no-follow-file.ts',
@@ -26,6 +27,12 @@ export const gateModules: GateModule[] = [
     '../resources/main-stack.ts',
     '../run/run-artifacts.ts',
     './gate-decision.ts',
+    './host-slot-wait.ts',
+  ]),
+  module('orchestrator/src/gate/host-slot-wait.ts', [
+    '../database/db.ts',
+    '../events.ts',
+    '../gate-load.ts',
   ]),
   module('orchestrator/src/gate/gate-run.ts', [
     '../../../shared/brand.ts',

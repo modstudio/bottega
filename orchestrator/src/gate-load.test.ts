@@ -1,15 +1,17 @@
 import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import { existsSync, lstatSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import { dir as suiteDir } from '../test/fixtures/store.ts'
 import { trackedTestResidue } from '../test/residue.ts'
 import type { HostLoad } from './gate-load.ts'
 import {
-  GATE_CONCURRENCY_LIMIT,
-  gateHoldConditions,
-  holdForGateCapacity,
+  decideHostSlotAdmission,
+  HOST_SLOT_HELD_ENV,
+  measureHostSlotLeases,
+  measureHostWaiters,
   parseMacOSMemoryPressure,
   parseSwapUsage,
-  shouldHoldShard,
   withGateSlot,
 } from './gate-load.ts'
 
@@ -17,6 +19,15 @@ const trackResidue = trackedTestResidue()
 beforeEach(() => {
   trackResidue(join(suiteDir, 'gates'))
 })
+
+const stateEnvironment = (name: string) => {
+  const state = trackResidue(join(suiteDir, name))
+  return {
+    state,
+    env: { ...process.env, CI: undefined, [STATE_HOME_ENV]: state },
+    slots: join(state, 'orchestrator', 'host-slots'),
+  }
+}
 
 test('swap parsing supports macOS and Linux samples', () => {
   expect(parseSwapUsage('total = 4096.00M  used = 1024.50M  free = 3071.50M')).toEqual({
@@ -37,150 +48,81 @@ const idle = (over: Partial<HostLoad> = {}): HostLoad => ({
   pressure: 'unknown',
   swapUsed: 0,
   swapTotal: 0,
+  recentAdmissions: 0,
+  waitingRequests: 0,
+  oldestWaitMs: 0,
   ...over,
 })
 
+const decision = (load: HostLoad, platform: NodeJS.Platform = 'linux') =>
+  decideHostSlotAdmission({
+    heldSlots: load.gates,
+    loadavg: load.loadavg,
+    ncpu: load.ncpu,
+    recentAdmissions: load.recentAdmissions,
+    freeMem: load.freeMem,
+    pressure: load.pressure,
+    platform,
+  })
+
 describe('gate load hold', () => {
-  test('persistent overload waits the full maximum and reports exhaustion', async () => {
-    let clock = 0
-    const result = await holdForGateCapacity({
-      platform: 'linux',
-      measure: () => idle({ gates: 3 }),
-      sleep: async (ms) => {
-        clock += ms
-      },
-      now: () => clock,
-      pollMs: 25,
-      maxMs: 100,
-    })
-    expect(result).toEqual({
-      delayedMs: 100,
-      held: true,
-      exhausted: true,
-      load: idle({ gates: 3 }),
-      heldOn: ['gates'],
-    })
-  })
-
-  test('capacity freeing mid-hold reports the elapsed wait without exhaustion', async () => {
-    let clock = 0
-    const result = await holdForGateCapacity({
-      platform: 'linux',
-      measure: () => (clock < 50 ? idle({ gates: 3 }) : idle({ gates: 1 })),
-      sleep: async (ms) => {
-        clock += ms
-      },
-      now: () => clock,
-      pollMs: 25,
-      maxMs: 100,
-    })
-    expect(result).toEqual({
-      delayedMs: 50,
-      held: true,
-      exhausted: false,
-      load: idle({ gates: 1 }),
-      heldOn: ['gates'],
-    })
-  })
-
-  test('two concurrent gates need no hold and report no exhaustion', async () => {
-    const result = await holdForGateCapacity({
-      platform: 'linux',
-      measure: () => idle({ gates: GATE_CONCURRENCY_LIMIT }),
-      sleep: async () => {
-        throw new Error('must not sleep under the limit')
-      },
-    })
-    expect(result).toEqual({
-      delayedMs: 0,
-      held: false,
-      exhausted: false,
-      load: idle({ gates: GATE_CONCURRENCY_LIMIT }),
-      heldOn: [],
-    })
-  })
-
-  test('elapsed clock time, rather than poll count, ends the hold', async () => {
-    let clock = 0
-    const sleeps: number[] = []
-    const result = await holdForGateCapacity({
-      platform: 'linux',
-      measure: () => idle({ gates: 3 }),
-      sleep: async (ms) => {
-        sleeps.push(ms)
-        clock += ms + 15
-      },
-      now: () => clock,
-      pollMs: 25,
-      maxMs: 100,
-    })
-    expect(sleeps).toEqual([25, 25, 20])
-    expect(result.delayedMs).toBe(115)
-    expect(result.exhausted).toBe(true)
-    expect(result.heldOn).toEqual(['gates'])
-  })
-
   test('CPU and memory floors hold even with one gate', () => {
-    expect(shouldHoldShard(idle({ gates: 1, loadavg: 8, ncpu: 8 }), undefined, 'linux')).toBe(true)
-    expect(
-      gateHoldConditions(idle({ gates: 1, freeMem: 512 * 1024 * 1024 }), undefined, 'linux'),
-    ).toEqual(['memory'])
-    expect(shouldHoldShard(idle({ gates: 2 }), undefined, 'linux')).toBe(false)
-    expect(shouldHoldShard(idle({ gates: 3 }), undefined, 'linux')).toBe(true)
+    expect(decision(idle({ gates: 1, loadavg: 8, ncpu: 8 })).heldOn).toEqual(['load'])
+    expect(decision(idle({ gates: 1, freeMem: 512 * 1024 * 1024 })).heldOn).toEqual(['memory'])
+    expect(decision(idle({ gates: 1 })).heldOn).toEqual([])
+    expect(decision(idle({ gates: 2 })).heldOn).toEqual(['gates'])
   })
 
-  test('hold conditions name each threshold alone and in combination', () => {
-    expect(gateHoldConditions(idle({ gates: 3 }), undefined, 'linux')).toEqual(['gates'])
-    expect(gateHoldConditions(idle({ loadavg: 8, ncpu: 8 }), undefined, 'linux')).toEqual(['load'])
-    expect(gateHoldConditions(idle({ freeMem: 64 * 1024 * 1024 }), undefined, 'linux')).toEqual([
-      'memory',
-    ])
+  test('admission decision names each threshold alone and in combination', () => {
+    expect(decision(idle({ gates: 2 })).heldOn).toEqual(['gates'])
+    expect(decision(idle({ loadavg: 8, ncpu: 8 })).heldOn).toEqual(['load'])
+    expect(decision(idle({ freeMem: 64 * 1024 * 1024 })).heldOn).toEqual(['memory'])
     expect(
-      gateHoldConditions(
-        idle({ gates: 3, loadavg: 8, ncpu: 8, freeMem: 64 * 1024 * 1024 }),
-        undefined,
-        'linux',
-      ),
+      decision(idle({ gates: 3, loadavg: 8, ncpu: 8, freeMem: 64 * 1024 * 1024 })).heldOn,
     ).toEqual(['gates', 'load', 'memory'])
-    expect(gateHoldConditions(idle(), undefined, 'linux')).toEqual([])
+    expect(decision(idle()).heldOn).toEqual([])
+  })
+
+  test('admits one project step under unrelated high load and memory pressure', () => {
+    const result = decision(idle({ gates: 0, loadavg: 32, ncpu: 8, freeMem: 64 * 1024 * 1024 }))
+    expect(result).toEqual({ admit: true, heldOn: [] })
+  })
+
+  test('holds on load only while a project slot is already held', () => {
+    expect(decision(idle({ gates: 0, loadavg: 8, ncpu: 8 })).admit).toBe(true)
+    expect(decision(idle({ gates: 1, loadavg: 8, ncpu: 8 }))).toEqual({
+      admit: false,
+      heldOn: ['load'],
+    })
+  })
+
+  test('recent admissions reserve load capacity without changing the gate count decision', () => {
+    expect(decision(idle({ gates: 1, loadavg: 6.5, ncpu: 8, recentAdmissions: 2 })).heldOn).toEqual(
+      ['load'],
+    )
+    expect(decision(idle({ gates: 1, loadavg: 0.2, ncpu: 8, recentAdmissions: 2 })).heldOn).toEqual(
+      [],
+    )
   })
 
   test('macOS memory holds only on warning or critical pressure', () => {
     const lowFreeMem = 64 * 1024 * 1024
-    expect(
-      gateHoldConditions(idle({ freeMem: lowFreeMem, pressure: 'warning' }), undefined, 'darwin'),
-    ).toEqual(['memory'])
-    expect(
-      gateHoldConditions(idle({ freeMem: lowFreeMem, pressure: 'critical' }), undefined, 'darwin'),
-    ).toEqual(['memory'])
-    expect(
-      gateHoldConditions(idle({ freeMem: lowFreeMem, pressure: 'normal' }), undefined, 'darwin'),
-    ).toEqual([])
-    expect(
-      gateHoldConditions(idle({ freeMem: lowFreeMem, pressure: 'unknown' }), undefined, 'darwin'),
-    ).toEqual([])
+    expect(decision(idle({ freeMem: lowFreeMem, pressure: 'warning' }), 'darwin').heldOn).toEqual([
+      'memory',
+    ])
+    expect(decision(idle({ freeMem: lowFreeMem, pressure: 'critical' }), 'darwin').heldOn).toEqual([
+      'memory',
+    ])
+    expect(decision(idle({ freeMem: lowFreeMem, pressure: 'normal' }), 'darwin').heldOn).toEqual([])
+    expect(decision(idle({ freeMem: lowFreeMem, pressure: 'unknown' }), 'darwin').heldOn).toEqual(
+      [],
+    )
   })
 
   test('other platforms use free memory regardless of pressure', () => {
     for (const pressure of ['normal', 'warning', 'critical', 'unknown'] as const) {
-      expect(
-        gateHoldConditions(idle({ freeMem: 64 * 1024 * 1024, pressure }), undefined, 'linux'),
-      ).toEqual(['memory'])
-      expect(
-        gateHoldConditions(idle({ freeMem: 8 * 1024 * 1024 * 1024, pressure }), undefined, 'linux'),
-      ).toEqual([])
-    }
-  })
-
-  test('boolean and named hold decisions agree on each platform', () => {
-    const cases: [NodeJS.Platform, HostLoad][] = [
-      ['darwin', idle({ freeMem: 64 * 1024 * 1024, pressure: 'normal' })],
-      ['linux', idle({ freeMem: 64 * 1024 * 1024, pressure: 'normal' })],
-    ]
-    for (const [platform, load] of cases) {
-      expect(shouldHoldShard(load, undefined, platform)).toBe(
-        gateHoldConditions(load, undefined, platform).length > 0,
-      )
+      expect(decision(idle({ freeMem: 64 * 1024 * 1024, pressure })).heldOn).toEqual(['memory'])
+      expect(decision(idle({ freeMem: 8 * 1024 * 1024 * 1024, pressure })).heldOn).toEqual([])
     }
   })
 
@@ -203,7 +145,6 @@ describe('gate load hold', () => {
           sleeps.push(ms)
         },
         pollMs: 25,
-        maxMs: 1_000,
       })
     } finally {
       error.mockRestore()
@@ -231,7 +172,6 @@ describe('gate load hold', () => {
         },
         now: () => clock,
         pollMs: 25,
-        maxMs: 100,
         platform: 'linux',
       })
     } finally {
@@ -240,7 +180,7 @@ describe('gate load hold', () => {
     expect(lines[0]).toContain('held_on=gates+memory')
   })
 
-  test('withGateSlot preserves the held line and warns after exhaustion', async () => {
+  test('withGateSlot reports its completed capacity wait', async () => {
     let clock = 0
     const lines: string[] = []
     const error = spyOn(console, 'error').mockImplementation((line) => {
@@ -249,27 +189,25 @@ describe('gate load hold', () => {
     try {
       const result = await withGateSlot(async () => 'ok', {
         env: { ...process.env, CI: undefined },
-        measure: () => idle({ gates: 1, freeMem: 64 * 1024 * 1024 }),
+        measure: () =>
+          clock < 50 ? idle({ gates: 1, freeMem: 64 * 1024 * 1024 }) : idle({ gates: 1 }),
         sleep: async (ms) => {
           clock += ms
         },
         now: () => clock,
         pollMs: 25,
-        maxMs: 50,
         platform: 'linux',
       })
       expect(result).toBe('ok')
     } finally {
       error.mockRestore()
     }
-    expect(lines[0]).toStartWith('held 50ms for host load ')
-    expect(lines[0]).toContain('gates=2 loadavg=0.2 ncpu=8')
+    expect(lines[0]).toStartWith('waiting 50ms for host capacity ')
+    expect(lines[0]).toContain('gates=1 loadavg=0.2 ncpu=8')
     expect(lines[0]).toContain('free_mb=64 floor_mb=1024')
     expect(lines[0]).toContain('floor_mb=1024 pressure=unknown held_on=memory')
     expect(lines[0]).toContain('held_on=memory')
-    expect(lines[1]).toBe(
-      'admitted over the load threshold after the maximum hold; a per-test timeout in this run is suspect, rerun before treating it as a failure',
-    )
+    expect(lines).toHaveLength(1)
   })
 
   test('withGateSlot does not hold for host load under CI', async () => {
@@ -282,6 +220,89 @@ describe('gate load hold', () => {
       },
     })
     expect(result).toBe('ok')
+  })
+
+  test('an inherited broker slot bypasses the nested gate acquisition', async () => {
+    const result = await withGateSlot(async () => 'ok', {
+      env: { ...process.env, [HOST_SLOT_HELD_ENV]: '1' },
+      measure: () => {
+        throw new Error('a nested gate must not measure or acquire another slot')
+      },
+    })
+    expect(result).toBe('ok')
+  })
+
+  test('a cancelled waiter is visible and never enters the run callback', async () => {
+    const controller = new AbortController()
+    const { env } = stateEnvironment('cancelled-wait-state')
+    let ran = false
+    let visibleWaiters = 0
+    let finishedWaits = 0
+    await expect(
+      withGateSlot(
+        async () => {
+          ran = true
+        },
+        {
+          env,
+          platform: 'linux',
+          signal: controller.signal,
+          measure: () => idle({ gates: 2 }),
+          onWait: () => {
+            visibleWaiters = measureHostWaiters(env).waitingRequests
+            controller.abort()
+          },
+          onWaitFinished: () => {
+            finishedWaits += 1
+          },
+        },
+      ),
+    ).rejects.toThrow('host slot wait was cancelled')
+    expect(ran).toBe(false)
+    expect(visibleWaiters).toBe(1)
+    expect(finishedWaits).toBe(1)
+    expect(measureHostWaiters(env).waitingRequests).toBe(0)
+  })
+
+  test.each([
+    ['empty', ''],
+    ['zero PID', '0'],
+  ])('reclaims the %s acquisition lock', async (_label, contents) => {
+    const { env, slots: gateDir } = stateEnvironment(`stale-lock-${contents || 'empty'}`)
+    mkdirSync(gateDir, { recursive: true })
+    writeFileSync(join(gateDir, 'acquire.lock'), contents)
+    let sleeps = 0
+    await withGateSlot(async () => {}, {
+      env,
+      measure: () => idle({ gates: 0 }),
+      sleep: async () => {
+        sleeps += 1
+      },
+      platform: 'linux',
+    })
+    expect(sleeps).toBe(1)
+  })
+
+  test('slot inspection leaves symlinks and directories untouched while reaping invalid and dead leases', () => {
+    const { env, state, slots } = stateEnvironment('unsafe-slot-entries')
+    mkdirSync(slots, { recursive: true })
+    const target = join(state, 'target')
+    writeFileSync(target, 'must survive')
+    const symlinkLease = join(slots, '1-00000000-0000-4000-8000-000000000001')
+    const directoryLease = join(slots, '1-00000000-0000-4000-8000-000000000002')
+    const invalidLease = join(slots, '1-00000000-0000-4000-8000-000000000003')
+    const deadLease = join(slots, '1-00000000-0000-4000-8000-000000000004')
+    symlinkSync(target, symlinkLease)
+    mkdirSync(directoryLease)
+    writeFileSync(invalidLease, 'not json')
+    writeFileSync(deadLease, JSON.stringify({ pid: 2_147_483_647, admittedAt: 0 }))
+
+    expect(measureHostSlotLeases(env)).toBe(0)
+    expect(lstatSync(symlinkLease).isSymbolicLink()).toBe(true)
+    expect(lstatSync(directoryLease).isDirectory()).toBe(true)
+    expect(existsSync(target)).toBe(true)
+    expect(existsSync(invalidLease)).toBe(false)
+    expect(existsSync(deadLease)).toBe(false)
   })
 })
 

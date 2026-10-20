@@ -15,6 +15,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
 import { WORKER_ENVIRONMENT_MARKERS } from '../../shared/caller-classification.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../shared/config-directory.ts'
+import { STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import { createTestHubDatabaseGuard, mintTestHubDatabase } from '../../shared/test-hub-database.ts'
 
 const discoveryEnv = Object.fromEntries(
@@ -59,6 +60,7 @@ const originalHarnessEnvFile = process.env[HARNESS_ENV_FILE_ENV]
 const originalRecordApiUrl = process.env.ORCH_RECORD_API_URL
 const originalRunId = process.env.ORCH_RUN_ID
 const originalDepth = process.env.ORCH_DEPTH
+const originalStateHome = process.env[STATE_HOME_ENV]
 const inheritedGitConfig: Record<string, string> = {}
 const gitConfigEnvironmentName = /^GIT_CONFIG_(?:COUNT|KEY_\d+|VALUE_\d+)$/
 const configDir = mkdtempSync(join(tmpdir(), 'orch-test-config-'))
@@ -74,7 +76,9 @@ process.env.ORCH_RUNS = join(dir, FROZEN_STATE_NAMES.runsDirectory)
 // with the machine's pid directory inherited, a landing spawned inside a gate
 // saw the outer gates and held for host capacity until its test expired (four
 // landings refused on one lifecycle test on 2026-09-08).
-process.env.ORCH_GATE_PIDS = join(dir, 'gates')
+const testStateHome = join(dir, 'state')
+process.env[STATE_HOME_ENV] = testStateHome
+mkdirSync(testStateHome, { recursive: true })
 // Terminalisation now inventories Docker for every run. Keep the whole suite
 // hermetic, including test files that do not import the shared fixture.
 export const cleanDockerBin = join(dir, 'clean-docker-bin')
@@ -271,7 +275,7 @@ afterAll(() => {
   delete process.env.ORCH_DB
   delete process.env.HUB_DB
   delete process.env.ORCH_RUNS
-  delete process.env.ORCH_GATE_PIDS
+  restoreEnvironment(STATE_HOME_ENV, originalStateHome)
   restoreEnvironment('PATH', originalPath)
   restoreEnvironment('ORCH_SANDBOX', originalSandbox)
   restoreEnvironment(CONFIG_HOME_ENV, originalConfigHome)

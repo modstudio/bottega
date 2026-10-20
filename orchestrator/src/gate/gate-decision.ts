@@ -34,7 +34,9 @@ export function brokerGateEnvironment(
   const hostPaths: Record<string, string> = {}
   if (source.HOME) hostPaths.HOME = source.HOME
   if (source.TMPDIR) hostPaths.TMPDIR = source.TMPDIR
-  return { ...base, ...hostPaths, ...overlay }
+  const environment = { ...base, ...hostPaths, ...overlay }
+  delete environment.ORCH_GATE_PIDS
+  return environment
 }
 
 function quoteShellWord(word: string): string {

@@ -7,6 +7,7 @@ import { runArtifactsDir } from '../run/run-artifacts.ts'
 import { writeFocusedTestFileAtomic } from './focused-test-files.ts'
 import {
   FOCUSED_TEST_REQUEST_FILE,
+  focusedTestProgressFile,
   focusedTestResultFile,
   requestFocusedTests,
 } from './focused-test-request.ts'
@@ -95,13 +96,26 @@ test('a capped wait leaves the execution available for a later joining call', as
   const scratchDir = scratchDirectory()
   const runId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
   const signal = new AbortController().signal
+  let now = 0
   const first = await requestFocusedTests(
     { runId, scratchDir, paths: ['tests/slow.test.ts'], signal },
-    shortWait(),
+    {
+      waitMs: 1,
+      now: () => now,
+      wait: async () => {
+        now += 1
+        const request = emittedRequest(scratchDir)
+        writeFocusedTestFileAtomic(
+          join(scratchDir, focusedTestProgressFile(request.id)),
+          'waiting 250ms for host capacity (held_on=load)',
+        )
+      },
+    },
   )
   expect(first).toBe(
     'Focused tests for "tests/slow.test.ts" are still running. ' +
-      'Call run_tests again to wait for and collect this same execution.',
+      'Call run_tests again to wait for and collect this same execution.\n' +
+      'waiting 250ms for host capacity (held_on=load)',
   )
 
   const request = emittedRequest(scratchDir)

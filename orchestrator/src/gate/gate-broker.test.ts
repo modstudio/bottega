@@ -120,6 +120,7 @@ test("a rebased writer runs the gate from its tree and records only a clean tree
     environment: { ORCH_MAIN_CHECKOUT: '/main/checkout' },
     onExecutionStart: ({ executionId }) => started.push(executionId),
     onExecutionFinish: ({ executionId }) => finished.push(executionId),
+    withHostSlot: async (run) => run(),
   })
   try {
     await waitForFinishedGate(gateId)
@@ -242,6 +243,7 @@ test('an occupied gate log path fails the execution without following the path',
     runId,
     scratchDir: scratch,
     environment: { ORCH_MAIN_CHECKOUT: '/main/checkout' },
+    withHostSlot: async (run) => run(),
   })
   try {
     await waitForFinishedGate(gateId)

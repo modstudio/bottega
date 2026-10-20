@@ -297,6 +297,10 @@ function gateResultLogPaths(runId: string, executionId: number, artifactPath: st
   }
 }
 
+function formatPendingGateWait(message: string, outputTail: string | null): string {
+  return `${message}${outputTail ? `\n${outputTail}` : ''}`
+}
+
 async function waitForGateExecution(
   runId: string,
   requested: Exclude<RequestedGate, { message: string }>,
@@ -355,7 +359,7 @@ async function waitForGateExecution(
       )
       return requested.introduction ? `${requested.introduction}\n${result}` : result
     }
-    if (!waitDecision.wait) return waitDecision.message!
+    if (!waitDecision.wait) return formatPendingGateWait(waitDecision.message!, row.output_tail)
     await waitForGatePoll(
       Math.min(POLL_MS, dependencies.waitMs - (now - waitStartedAt)),
       signal,

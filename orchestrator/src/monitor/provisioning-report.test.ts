@@ -16,6 +16,9 @@ const sample = (durationMs: number, entries = durationMs): ProvisioningObservati
     pressure: 'normal',
     swapUsed: 2,
     swapTotal: 3,
+    recentAdmissions: 0,
+    waitingRequests: 0,
+    oldestWaitMs: 0,
     liveRuns: 1,
   },
 })

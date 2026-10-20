@@ -230,7 +230,7 @@ async function runMonitor(options: Options, presentation: Presentation): Promise
   else {
     const failing = failingCanonEvalSlugs(),
       lines = [
-        `host: load ${result.hostLoad.loadavg.toFixed(2)}/${result.hostLoad.ncpu} cpu; pressure ${result.hostLoad.pressure}; swap ${Math.round(result.hostLoad.swapUsed / 1024 / 1024)}/${Math.round(result.hostLoad.swapTotal / 1024 / 1024)} MiB; ${result.hostLoad.liveRuns} live run(s)`,
+        `host: load ${result.hostLoad.loadavg.toFixed(2)}/${result.hostLoad.ncpu} cpu; pressure ${result.hostLoad.pressure}; swap ${Math.round(result.hostLoad.swapUsed / 1024 / 1024)}/${Math.round(result.hostLoad.swapTotal / 1024 / 1024)} MiB; ${result.hostLoad.liveRuns} live run(s); ${result.hostLoad.waitingRequests} broker request(s) waiting, oldest ${result.hostLoad.oldestWaitMs}ms`,
         `canon: ${result.canon.findings} stale references in ${result.canon.docs} docs`,
       ]
     if (failing.length) lines.push(`canon evals: ${failing.length} failing (${failing.join(', ')})`)
