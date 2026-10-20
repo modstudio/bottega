@@ -8,6 +8,14 @@ const DEPENDENCY_AUDIT_OUTPUT_LIMIT = 500
 const BUN_AUDIT_OFFLINE_ERROR_PATTERNS = [
   '/-/npm/v1/security/advisories/bulk - DNSResolveFailed',
   '/-/npm/v1/security/advisories/bulk - FailedToOpenSocket',
+  '/-/npm/v1/security/advisories/bulk - ProxyConnectFailed',
+  '/-/npm/v1/security/advisories/bulk - ConnectionRefused',
+  '/-/npm/v1/security/advisories/bulk - ConnectionClosed',
+  '/-/npm/v1/security/advisories/bulk - ConnectionReset',
+  '/-/npm/v1/security/advisories/bulk - ConnectionTimedOut',
+  '/-/npm/v1/security/advisories/bulk - NetworkUnreachable',
+  '/-/npm/v1/security/advisories/bulk - HostUnreachable',
+  '/-/npm/v1/security/advisories/bulk - TLSHandshakeFailed',
 ] as const
 
 const BASELINE_PATH = fileURLToPath(new URL('./quality/dependency-audit.json', import.meta.url))
