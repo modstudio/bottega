@@ -14,12 +14,12 @@ import { commandOutcome, workflowImportLines, workflowProjectRefusal } from './w
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { recordWorkflowExec, recordWorkflowProbe } from './workflow-probe.ts'
 import {
-  installHostedWorkflowTreeFixture as installHostedWorkflowTree,
   hostedWorkflowRepositoryFixture,
+  installHostedWorkflowTreeFixture as installHostedWorkflowTree,
   workflowCommandOutcomePresentation as outcomePresentation,
   workflowCommandPresentation as presentation,
-  publishStaleLocalWorkflowFixture as publishStaleLocalWorkflow,
   publishCursorWorkflowFixture as publishCursorWorkflow,
+  publishStaleLocalWorkflowFixture as publishStaleLocalWorkflow,
   workflowRecordedArtifact as recordedArtifact,
   registerCurrentWorkflowProject as registerCurrentProject,
   registerFixtureWorkflowProject as registerFixtureProject,
