@@ -13,10 +13,6 @@ import {
 import { questionOpenSql } from '../run/question-open.ts'
 import type { AutonomyResolution } from './autonomy.ts'
 import { adoptWorkflowTask, vacateRetiredWorkflowKeySlot } from './workflow-cursor-adoption.ts'
-import {
-  renderWorkflowAdvanceResult,
-  renderWorkflowCursorRemedy,
-} from './workflow-cursor-result.ts'
 import { applyCursorArguments, workflowKeyOf as keyOf } from './workflow-cursor-arguments.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import {
@@ -25,6 +21,10 @@ import {
   formatCursorResumed,
   renderWorkflowCursorLine,
 } from './workflow-cursor-format.ts'
+import {
+  renderWorkflowAdvanceResult,
+  renderWorkflowCursorRemedy,
+} from './workflow-cursor-result.ts'
 import {
   LISTED_CURSOR_COLUMNS,
   type SelectableCursorRow,
