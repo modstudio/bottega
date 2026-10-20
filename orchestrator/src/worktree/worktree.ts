@@ -26,7 +26,7 @@ import { existsSync } from 'node:fs'
 import { db } from '../database/db.ts'
 import { type HostLoadSample, sampleHostLoad } from '../host-load-sample.ts'
 import type { MainStackConsumer, WorktreeTool } from '../project/projects.ts'
-import type { RecipeSnapshot } from '../recipe/tracked-recipe.ts'
+import { readSnapshot } from '../recipe/tracked-recipe.ts'
 import { ensureMainStackStarted } from '../resources/main-stack.ts'
 import { finishProvisioningMeasurement } from './provisioning-measurement.ts'
 import {
@@ -68,19 +68,14 @@ export type CreateWorkerWorktreeOptions = {
   provisionTimeoutMs?: number
 }
 
-function recordProvisioning(
+export function recordProvisioning(
   options: CreateWorkerWorktreeOptions,
   started: number,
   hostLoad: HostLoadSample,
   outcome: 'ok' | 'failed',
   worktree: Worktree | null,
 ): void {
-  const stored = db()
-    .query('SELECT recipe_snapshot FROM run WHERE record_id=?')
-    .get(options.runId) as { recipe_snapshot: string | null } | null
-  const tracked = stored?.recipe_snapshot
-    ? (JSON.parse(stored.recipe_snapshot) as RecipeSnapshot)
-    : null
+  const tracked = readSnapshot(options.runId).snapshot
   const provisions: readonly ProvisionEntry[] = options.writes
     ? (tracked?.recipe?.provision ?? [])
     : (options.tool?.readonly_provision ?? [])
