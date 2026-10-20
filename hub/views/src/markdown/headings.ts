@@ -35,9 +35,18 @@ function uniqueHeadingId(title: string, seen: Map<string, number>): string {
   return count === 0 ? base : `${base}-${count + 1}`
 }
 
+function leadingFrontmatterEndLine(lines: string[]): number {
+  if (!/^---[ \t]*$/.test(lines[0] ?? '')) return 0
+  const closingOffset = lines.slice(1).findIndex((line) => /^---[ \t]*$/.test(line))
+  return closingOffset < 0 ? 0 : closingOffset + 2
+}
+
 function eachProseLine(body: string, visit: (line: string, lineNumber: number) => void) {
   let fence: { char: string; length: number } | null = null
-  for (const [index, line] of body.split(/\r?\n/).entries()) {
+  const lines = body.split(/\r?\n/)
+  const frontmatterEndLine = leadingFrontmatterEndLine(lines)
+  for (const [index, line] of lines.entries()) {
+    if (index < frontmatterEndLine) continue
     if (fence) {
       if (fenceCloses(line, fence)) fence = null
       continue

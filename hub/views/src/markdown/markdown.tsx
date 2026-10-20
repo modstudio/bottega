@@ -1,6 +1,7 @@
 import { Callout } from '@bottega/hub-ui/callout'
 import {
   createContext,
+  Fragment,
   isValidElement,
   type ReactNode,
   useCallback,
@@ -11,7 +12,9 @@ import {
 } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkDirective from 'remark-directive'
+import remarkFrontmatter from 'remark-frontmatter'
 import remarkGfm from 'remark-gfm'
+import { parse } from 'yaml'
 import { secondLevelHeadingIdsByLine } from './headings.ts'
 import { markdownStyles } from './markdown.styles.ts'
 import { githubAlertPlugin, isTone } from './markdown-alerts'
@@ -37,6 +40,128 @@ export function DocTable({ fit = false, children }: { fit?: boolean; children?: 
     <DocOverflow expandLabel="Expand table" title="Table">
       <table data-fit={fit ? '' : undefined}>{children}</table>
     </DocOverflow>
+  )
+}
+
+type FrontmatterNode = {
+  type: string
+  value?: string
+  children?: []
+  data?: { hName?: string; hProperties?: Record<string, unknown> }
+}
+
+function frontmatterPropertiesPlugin() {
+  return (tree: { children?: FrontmatterNode[] }) => {
+    for (const node of tree.children ?? []) {
+      if (node.type !== 'yaml' || typeof node.value !== 'string') continue
+      const source = node.value
+      node.type = 'paragraph'
+      node.children = []
+      node.data = {
+        ...node.data,
+        hName: 'div',
+        hProperties: { ...node.data?.hProperties, 'data-frontmatter': source },
+      }
+    }
+  }
+}
+
+function isPropertyMap(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function itemKeyLabel(item: unknown): string {
+  if (Array.isArray(item)) return 'list'
+  if (isPropertyMap(item)) return 'map'
+  return `value:${String(item)}`
+}
+
+function FrontmatterValue({
+  value,
+  ancestors,
+}: {
+  value: unknown
+  ancestors: ReadonlySet<object>
+}) {
+  if (typeof value === 'boolean') return value ? 'yes' : 'no'
+  if (Array.isArray(value)) {
+    if (ancestors.has(value)) return '(cycle)'
+    const nextAncestors = new Set(ancestors).add(value)
+    const occurrences = new Map<string, number>()
+    return (
+      <span className={markdownStyles().frontmatterItems()}>
+        {value.map((item) => {
+          const label = itemKeyLabel(item)
+          const occurrence = (occurrences.get(label) ?? 0) + 1
+          occurrences.set(label, occurrence)
+          return (
+            <span key={`${label}-${occurrence}`}>
+              <FrontmatterValue value={item} ancestors={nextAncestors} />
+            </span>
+          )
+        })}
+      </span>
+    )
+  }
+  if (isPropertyMap(value)) {
+    if (ancestors.has(value)) return '(cycle)'
+    return <PropertyList properties={value} ancestors={new Set(ancestors).add(value)} nested />
+  }
+  return (
+    <span className={markdownStyles().frontmatterValue()}>
+      {value == null ? '' : String(value)}
+    </span>
+  )
+}
+
+function PropertyList({
+  properties,
+  ancestors,
+  nested = false,
+}: {
+  properties: Record<string, unknown>
+  ancestors: ReadonlySet<object>
+  nested?: boolean
+}) {
+  return (
+    <dl className={markdownStyles({ nested }).frontmatterList()}>
+      {Object.entries(properties).map(([key, value]) => (
+        <Fragment key={key}>
+          <dt className={markdownStyles().frontmatterKey()}>{key}</dt>
+          <dd className={markdownStyles().frontmatterDetail()}>
+            <FrontmatterValue value={value} ancestors={ancestors} />
+          </dd>
+        </Fragment>
+      ))}
+    </dl>
+  )
+}
+
+function FrontmatterProperties({ source }: { source: string }) {
+  let properties: unknown
+  try {
+    properties = parse(source)
+  } catch {
+    return <UnreadableFrontmatter source={source} />
+  }
+  if (properties == null) return null
+  if (!isPropertyMap(properties)) return <UnreadableFrontmatter source={source} />
+  if (Object.keys(properties).length === 0) return null
+  return (
+    <div className={markdownStyles().frontmatter()}>
+      <PropertyList properties={properties} ancestors={new Set([properties])} />
+    </div>
+  )
+}
+
+function UnreadableFrontmatter({ source }: { source: string }) {
+  return (
+    <div>
+      <p className={markdownStyles().frontmatterError()}>Frontmatter could not be read.</p>
+      <pre>
+        <code>{`---\n${source}\n---`}</code>
+      </pre>
+    </div>
   )
 }
 
@@ -111,7 +236,10 @@ function DocCallout({
   'data-callout'?: unknown
   'data-tone'?: unknown
   'data-doc-section-audiences'?: unknown
+  'data-frontmatter'?: unknown
 }) {
+  const frontmatter = props['data-frontmatter']
+  if (typeof frontmatter === 'string') return <FrontmatterProperties source={frontmatter} />
   const title = props['data-callout']
   const tone = props['data-tone']
   const sectionAudiences = props['data-doc-section-audiences']
@@ -166,7 +294,13 @@ export function Markdown({ content }: { content: string }) {
   return (
     <div className={markdownStyles().root()}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkDirective, docDirectives]}
+        remarkPlugins={[
+          remarkFrontmatter,
+          frontmatterPropertiesPlugin,
+          remarkGfm,
+          remarkDirective,
+          docDirectives,
+        ]}
         rehypePlugins={[
           githubAlertPlugin,
           ...(highlight
