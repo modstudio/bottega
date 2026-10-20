@@ -1,4 +1,6 @@
 import { expect, spyOn, test } from 'bun:test'
+import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
@@ -18,6 +20,8 @@ import {
 } from './workflow-commands.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { recordWorkflowExec, recordWorkflowProbe } from './workflow-probe.ts'
+import { collectWorkflowTree } from './workflow-tree-files.ts'
+import { parseWorkflowTree } from './workflow-tree.ts'
 import {
   promoteWorkflowLocal,
   resolvedWorkflowVersions,
@@ -31,6 +35,7 @@ const presentation = (lines: string[]) => ({
   error: () => {},
   setExitCode: () => {},
 })
+const repositoryRoot = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
 
 async function workflowCommand(
   argv: string[],
@@ -101,6 +106,66 @@ const registerCurrentProject = (name: string) =>
     stack: 'bun',
     settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
   })
+
+const registerOwningProject = (name: string, path: string) =>
+  upsertProject({
+    recordId: newRecordId(),
+    name,
+    path,
+    stack: 'bun',
+    settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
+  })
+
+const installHostedWorkflowTree = (project: string, spaceId: string) => {
+  const local = db()
+  const tree = parseWorkflowTree(collectWorkflowTree(repositoryRoot))
+  const at = '2026-10-20T12:00:00.000Z'
+  const catalogueId = newRecordId()
+  applyWorkflowCatalogueRow(local, 'step_catalogue', {
+    id: catalogueId,
+    spaceId,
+    slug: 'shared',
+    generation: 1,
+    createdAt: at,
+  })
+  applyWorkflowCatalogueRow(local, 'step_catalogue_version', {
+    id: newRecordId(),
+    spaceId,
+    ownerId: catalogueId,
+    n: 1,
+    status: 'production',
+    definition: JSON.stringify({ steps: tree.steps, sequences: tree.sequences }),
+    author: 'hosted',
+    reason: 'hosted tree fixture',
+    createdAt: at,
+    promotedAt: at,
+    retiredAt: null,
+  })
+  for (const { slug, definition } of tree.workflows) {
+    const workflowId = newRecordId()
+    applyWorkflowCatalogueRow(local, 'workflow', {
+      id: workflowId,
+      spaceId,
+      slug,
+      generation: 1,
+      createdAt: at,
+    })
+    applyWorkflowCatalogueRow(local, 'workflow_version', {
+      id: newRecordId(),
+      spaceId,
+      ownerId: workflowId,
+      n: 1,
+      status: 'production',
+      definition: JSON.stringify(definition),
+      author: 'hosted',
+      reason: 'hosted tree fixture',
+      createdAt: at,
+      promotedAt: at,
+      retiredAt: null,
+    })
+  }
+  rememberProjectSpace(local, project, spaceId)
+}
 
 test('workflow inspection reads only the current project space and stays local outside it', async () => {
   const local = db()
@@ -396,6 +461,84 @@ test('workflow inspection reads only the current project space and stays local o
   expect(
     (JSON.parse(outside[0]!) as { slug: string }[]).some((row) => row.slug === localOnlySlug),
   ).toBe(true)
+})
+
+test('workflow hydrate check resolves hosted production from the worktree without ORCH_MAIN_CHECKOUT', async () => {
+  const mainCheckout = process.env.ORCH_MAIN_CHECKOUT ?? resolve(repositoryRoot, '../../..')
+  const project = 'hydrate-hosted-worktree'
+  registerOwningProject(project, mainCheckout)
+  installHostedWorkflowTree(project, newRecordId())
+  const stale = setWorkflowLocal(
+    'hydrate-local-only',
+    {
+      title: 'Stale local workflow',
+      description: 'Exists only in the local catalogue.',
+      arguments: [],
+      modes: [],
+    },
+    'local stale fixture',
+    'test',
+  )
+  promoteWorkflowLocal('hydrate-local-only', stale.n, 'publish local stale fixture', 'test')
+  const priorMainCheckout = process.env.ORCH_MAIN_CHECKOUT
+  const result = outcomePresentation()
+  try {
+    delete process.env.ORCH_MAIN_CHECKOUT
+    await workflowCommand(
+      ['workflow', 'hydrate', '--check', '--cwd', repositoryRoot],
+      result.presentation,
+    )
+  } finally {
+    if (priorMainCheckout === undefined) delete process.env.ORCH_MAIN_CHECKOUT
+    else process.env.ORCH_MAIN_CHECKOUT = priorMainCheckout
+  }
+  expect(result.stdout).toEqual([])
+  expect(result.exitCodes).toEqual([])
+})
+
+test('workflow import resolves hosted production from the worktree without ORCH_MAIN_CHECKOUT', async () => {
+  const mainCheckout = process.env.ORCH_MAIN_CHECKOUT ?? resolve(repositoryRoot, '../../..')
+  const project = 'import-hosted-worktree'
+  registerOwningProject(project, mainCheckout)
+  installHostedWorkflowTree(project, newRecordId())
+  const priorMainCheckout = process.env.ORCH_MAIN_CHECKOUT
+  const lines: string[] = []
+  try {
+    delete process.env.ORCH_MAIN_CHECKOUT
+    await workflowCommand(
+      ['workflow', 'import', '--cwd', repositoryRoot, '--reason', 'unchanged hosted tree'],
+      presentation(lines),
+    )
+  } finally {
+    if (priorMainCheckout === undefined) delete process.env.ORCH_MAIN_CHECKOUT
+    else process.env.ORCH_MAIN_CHECKOUT = priorMainCheckout
+  }
+  expect(lines).toEqual(['no changes'])
+})
+
+test('workflow hydrate and import refuse an unowned directory when a record is configured', async () => {
+  const priorRecordApiUrl = process.env.ORCH_RECORD_API_URL
+  process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
+  try {
+    await expect(
+      workflowCommand(['workflow', 'hydrate', '--check', '--cwd', repositoryRoot], presentation([])),
+    ).rejects.toThrow(
+      `refusing workflow hydrate in ${repositoryRoot}: no registered project owns this directory\n` +
+        "cleared by: run from a registered project's worktree, or pass --cwd for one",
+    )
+    await expect(
+      workflowCommand(
+        ['workflow', 'import', '--cwd', repositoryRoot, '--reason', 'unowned tree'],
+        presentation([]),
+      ),
+    ).rejects.toThrow(
+      `refusing workflow import in ${repositoryRoot}: no registered project owns this directory\n` +
+        "cleared by: run from a registered project's worktree, or pass --cwd for one",
+    )
+  } finally {
+    if (priorRecordApiUrl === undefined) delete process.env.ORCH_RECORD_API_URL
+    else process.env.ORCH_RECORD_API_URL = priorRecordApiUrl
+  }
 })
 
 test('workflow import reports a sequence-only draft as a change', () => {

@@ -5,6 +5,7 @@ import { constants } from 'node:os'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
+import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import { projectAt, projects } from '../project/projects.ts'
@@ -666,10 +667,8 @@ export function catalogueVersionsCommand(
   print(resolvedStepCatalogueVersions(inspectionProject(options)))
 }
 
-function workflowRoot(argv: string[]): string {
-  const cwd = flagValue(argv, 'cwd')
-  if (!cwd) throw new Error('--cwd is required')
-  const resolved = resolve(cwd)
+function workflowRoot(options: WorkflowCommandOptions): string {
+  const resolved = resolve(options.cwd ?? process.cwd())
   const root = gitToplevel(resolved)
   if (!root) throw new Error(`refusing ${resolved}: not a git repository`)
   return root
@@ -679,8 +678,12 @@ function registeredMainCheckout(root: string): string | null {
   return projects().find((project) => resolvedPathsEqual(root, project.path))?.path ?? null
 }
 
-export function hydrateCommand(argv: string[], presentation: WorkflowPresentation): void {
-  const root = workflowRoot(argv)
+export function hydrateCommand(
+  argv: string[],
+  presentation: WorkflowPresentation,
+  options: WorkflowCommandOptions = {},
+): void {
+  const root = workflowRoot(options)
   const main = registeredMainCheckout(root)
   if (main) {
     throw new Error(
@@ -689,12 +692,12 @@ export function hydrateCommand(argv: string[], presentation: WorkflowPresentatio
         'cleared by: pass --cwd for a worktree',
     )
   }
-  const project =
-    projects().find(
-      (candidate) =>
-        process.env.ORCH_MAIN_CHECKOUT &&
-        resolvedPathsEqual(candidate.path, process.env.ORCH_MAIN_CHECKOUT),
-    )?.name ?? null
+  const project = inspectionProject({ ...options, cwd: root })
+  if (!project && resolveRecordApiUrl())
+    throw new Error(
+      `refusing workflow hydrate in ${root}: no registered project owns this directory\n` +
+        "cleared by: run from a registered project's worktree, or pass --cwd for one",
+    )
   const plan = planWorkflowHydration({
     store: productionWorkflowTree(db(), project),
     tree: collectWorkflowTree(root),
@@ -721,13 +724,18 @@ export function workflowImportLines(result: WorkflowTreeImportResult): string[] 
   ]
 }
 
-export async function importCommand(argv: string[], print: WorkflowPrint): Promise<void> {
-  const root = workflowRoot(argv)
-  const project = projects().find(
-    (candidate) =>
-      process.env.ORCH_MAIN_CHECKOUT &&
-      resolvedPathsEqual(candidate.path, process.env.ORCH_MAIN_CHECKOUT),
-  )?.name
+export async function importCommand(
+  argv: string[],
+  print: WorkflowPrint,
+  options: WorkflowCommandOptions = {},
+): Promise<void> {
+  const root = workflowRoot(options)
+  const project = inspectionProject({ ...options, cwd: root }) ?? undefined
+  if (!project && resolveRecordApiUrl())
+    throw new Error(
+      `refusing workflow import in ${root}: no registered project owns this directory\n` +
+        "cleared by: run from a registered project's worktree, or pass --cwd for one",
+    )
   const result = await importWorkflowTree(
     parseWorkflowTree(collectWorkflowTree(root)),
     flagValue(argv, 'reason'),
