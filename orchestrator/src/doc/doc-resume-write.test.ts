@@ -1,15 +1,24 @@
 import { describe, expect, test } from 'bun:test'
+import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { consumeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
-import { upsertRecordDoc } from '../record/record-docs.ts'
+import {
+  getRecordDoc,
+  listRecordDocRevisions,
+  restoreRecordDoc,
+  upsertRecordDoc,
+} from '../record/record-docs.ts'
 import { resumeFrontmatter } from './doc-resume-frontmatter.ts'
 import { openResumeViolations, resumeWriteRefusal } from './doc-resume-write.ts'
 import { getDoc, listDocRevisions, restoreDoc } from './docs.ts'
 
 const written = '2026-10-20T12:34:56.000Z'
+const actorUrl = process.env.ORCH_RECORD_URL
+const adminUrl = process.env.ORCH_TEST_POSTGRES_URL
+const hosted = actorUrl && adminUrl ? describe : describe.skip
 
 function brief(lines: string[] = [], status = 'open'): string {
   return `---\nstatus: ${status}\nepic: DEV-1439\nproject: ${PLATFORM_SLUG}\nwritten: ${written}\n---\n\n${lines.join('\n')}\n`
@@ -271,5 +280,83 @@ describe('resume write adapters', () => {
         author: 'tester',
       }),
     ).rejects.toThrow('/orchestrator/runs/123/reply.json')
+  })
+})
+
+hosted('hosted resume restore', () => {
+  const spaceId = '01990000-0000-7000-8000-000000001439'
+  const userId = '01990000-0000-7000-8000-000000001440'
+  const membershipId = '01990000-0000-7000-8000-000000001441'
+
+  test('refuses a non-compliant open revision without changing or hiding it', async () => {
+    const admin = new SQL(adminUrl!)
+    const tenant = { url: actorUrl!, spaceId, userId }
+    const currentBody = brief(['NEXT ACTION: keep the live body'])
+    const historicalBody = '---\nstatus: open\n---\n\n/tmp/legacy\n'
+    try {
+      await admin`
+        INSERT INTO space (id,name,slug,created_at)
+        VALUES (${spaceId}::uuid,'resume restore','resume-restore',now())
+      `
+      await admin`
+        INSERT INTO "user" (id,email,name,created_at)
+        VALUES (${userId}::uuid,'resume-restore@example.test','Resume Restore',now())
+      `
+      await admin`
+        INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+        VALUES (${membershipId}::uuid,${spaceId}::uuid,${userId}::uuid,'member','write',now())
+      `
+      const created = await upsertRecordDoc({
+        ...tenant,
+        scope: 'resume',
+        subject: PLATFORM_SLUG,
+        slug: 'hosted-restore-rule',
+        title: 'Hosted restore rule',
+        body: brief(['NEXT ACTION: create the newer revision']),
+        delivery: 'demand',
+        reason: 'create hosted resume',
+        author: userId,
+      })
+      const current = await upsertRecordDoc({
+        ...tenant,
+        scope: 'resume',
+        subject: PLATFORM_SLUG,
+        slug: 'hosted-restore-rule',
+        title: 'Hosted restore rule',
+        body: currentBody,
+        delivery: 'demand',
+        reason: 'write current hosted resume',
+        author: userId,
+        expectedRevision: created.revisionId,
+      })
+      await admin`UPDATE doc_revision SET body=${historicalBody} WHERE id=${created.revisionId}::uuid`
+
+      await expect(
+        restoreRecordDoc({
+          ...tenant,
+          id: created.id,
+          revisionId: created.revisionId,
+          reason: 'restore old hosted resume',
+          author: userId,
+          expectedRevision: current.revisionId,
+        }),
+      ).rejects.toThrow(
+        `The revision remains readable; cleared by: read the revision, correct its body, then write it with ${PLATFORM_SLUG} doc set.`,
+      )
+      expect((await getRecordDoc({ ...tenant, id: created.id }))?.body).toBe(currentBody)
+      expect(
+        (await listRecordDocRevisions({ ...tenant, id: created.id }))?.find(
+          ({ id }) => id === created.revisionId,
+        )?.body,
+      ).toBe(historicalBody)
+    } finally {
+      await admin`UPDATE doc SET latest_revision_id=NULL WHERE space_id=${spaceId}::uuid`
+      await admin`DELETE FROM doc_revision WHERE space_id=${spaceId}::uuid`
+      await admin`DELETE FROM doc WHERE space_id=${spaceId}::uuid`
+      await admin`DELETE FROM membership WHERE space_id=${spaceId}::uuid`
+      await admin`DELETE FROM "user" WHERE id=${userId}::uuid`
+      await admin`DELETE FROM space WHERE id=${spaceId}::uuid`
+      await admin.close()
+    }
   })
 })
