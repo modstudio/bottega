@@ -144,6 +144,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'machine legacy-calls',
   'machine migrate',
   'machine monitor',
+  'machine provisioning',
   'machine reclaim',
   'machine reclaim-fixture-questions',
   'machine reclassify-failures',

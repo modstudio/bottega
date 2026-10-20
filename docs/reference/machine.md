@@ -29,6 +29,7 @@ upkeep of this machine
 - [bottega machine legacy-calls](#bottega-machine-legacy-calls)
 - [bottega machine migrate](#bottega-machine-migrate)
 - [bottega machine monitor](#bottega-machine-monitor)
+- [bottega machine provisioning](#bottega-machine-provisioning)
 - [bottega machine reclaim](#bottega-machine-reclaim)
 - [bottega machine reclaim-fixture-questions](#bottega-machine-reclaim-fixture-questions)
 - [bottega machine reclassify-failures](#bottega-machine-reclassify-failures)
@@ -73,6 +74,7 @@ upkeep of this machine
 - [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
 - [bottega machine migrate](./machine.md#bottega-machine-migrate)
 - [bottega machine monitor](./machine.md#bottega-machine-monitor)
+- [bottega machine provisioning](./machine.md#bottega-machine-provisioning)
 - [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
 - [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
 - [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
@@ -409,6 +411,22 @@ inspect machine conditions that need attention
 - `--notices`: claim undelivered monitor notices for this session
 - `--skip-board-refresh`: claim notices without refreshing the board
 - `--json`: write the monitor result as JSON
+
+### Related
+
+- [bottega machine](./machine.md#bottega-machine)
+
+## bottega machine provisioning
+
+**Synopsis:** `bottega machine provisioning [--project <name>] [--since <duration>] [--json]`
+
+report worker-tree provisioning cost
+
+### Options
+
+- `--project <name>`: limit samples to one project
+- `--since <duration>`: limit samples by age
+- `--json`: write the report as JSON
 
 ### Related
 
