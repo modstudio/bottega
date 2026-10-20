@@ -370,6 +370,7 @@ function registerWorkflowChildCommands({
 function registerWorkflowTreeCommands({
   workflow,
   workflowPresentation,
+  handlerOptions,
   output,
 }: WorkflowRegistration): void {
   workflow
@@ -378,7 +379,12 @@ function registerWorkflowTreeCommands({
     .option('--cwd <value>', 'select the project worktree to hydrate')
     .option('--check', 'report drift without writing files')
     .allowExcessArguments(false)
-    .action((options) => hydrateCommand(workflowArgv('hydrate', [], options), workflowPresentation))
+    .action((options) =>
+      hydrateCommand(workflowArgv('hydrate', [], options), workflowPresentation, {
+        ...handlerOptions,
+        cwd: options.cwd ?? handlerOptions.cwd,
+      }),
+    )
 
   jsonOption(
     authorOption(
@@ -391,7 +397,12 @@ function registerWorkflowTreeCommands({
     ),
   )
     .allowExcessArguments(false)
-    .action((options) => importCommand(workflowArgv('import', [], options), output(options)))
+    .action((options) =>
+      importCommand(workflowArgv('import', [], options), output(options), {
+        ...handlerOptions,
+        cwd: options.cwd ?? handlerOptions.cwd,
+      }),
+    )
 }
 
 function registerWorkflowCatalogue({

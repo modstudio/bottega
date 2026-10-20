@@ -1,47 +1,39 @@
 import { expect, spyOn, test } from 'bun:test'
-import { Command } from 'commander'
+import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { program, run } from '../cli/program.ts'
 import { setRawArgv } from '../commands/support.ts'
-import { registerWorkflowCommands } from '../commands/workflow.ts'
 import { db, sessionId } from '../database/db.ts'
-import { upsertProject } from '../project/projects.ts'
+import { projectAt, upsertProject } from '../project/projects.ts'
 import { rememberProjectSpace } from '../project-space.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
-import {
-  commandOutcome,
-  type WorkflowCommandOptions,
-  type WorkflowPresentation,
-  workflowImportLines,
-} from './workflow-commands.ts'
+import { commandOutcome, workflowImportLines, workflowProjectRefusal } from './workflow-commands.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { recordWorkflowExec, recordWorkflowProbe } from './workflow-probe.ts'
+import {
+  hostedWorkflowRepositoryFixture,
+  installHostedWorkflowTreeFixture as installHostedWorkflowTree,
+  workflowCommandOutcomePresentation as outcomePresentation,
+  workflowCommandPresentation as presentation,
+  publishCursorWorkflowFixture as publishCursorWorkflow,
+  publishStaleLocalWorkflowFixture as publishStaleLocalWorkflow,
+  workflowRecordedArtifact as recordedArtifact,
+  registerCurrentWorkflowProject as registerCurrentProject,
+  registerFixtureWorkflowProject as registerFixtureProject,
+  registerOwningWorkflowProject as registerOwningProject,
+  runWorkflowCommand as workflowCommand,
+} from './workflow-store.fixture.ts'
 import {
   promoteWorkflowLocal,
   resolvedWorkflowVersions,
   setWorkflowLocal,
   showResolvedWorkflow,
-  type WorkflowDefinition,
 } from './workflows.ts'
 
-const presentation = (lines: string[]) => ({
-  log: (line: string) => lines.push(line),
-  error: () => {},
-  setExitCode: () => {},
-})
-
-async function workflowCommand(
-  argv: string[],
-  shown: WorkflowPresentation,
-  options: WorkflowCommandOptions = {},
-): Promise<void> {
-  const command = new Command().exitOverride().enablePositionalOptions()
-  registerWorkflowCommands(command, shown, options)
-  setRawArgv(argv)
-  await command.parseAsync(['node', 'orch', ...argv])
-}
+const repositoryRoot = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
 
 test('workflow preserves the unknown-verb refusal and exit status', async () => {
   const errors: string[] = []
@@ -55,52 +47,6 @@ test('workflow preserves the unknown-verb refusal and exit status', async () => 
     `unknown: ${PLATFORM_SLUG} workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | await | rule | abandon | cursors | probe | exec | hydrate | import`,
   ])
 })
-
-const outcomePresentation = () => {
-  const stdout: string[] = []
-  const stderr: string[] = []
-  const exitCodes: number[] = []
-  return {
-    stdout,
-    stderr,
-    exitCodes,
-    presentation: {
-      log: (line: string) => stdout.push(line),
-      error: (line: string) => stderr.push(line),
-      setExitCode: (code: number) => exitCodes.push(code),
-    },
-  }
-}
-
-const recordedArtifact = (project: string) => {
-  const row = db()
-    .query<{ record_id: string }, [string, string, string]>(
-      `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_record_id,record_id)
-       SELECT 'project', ?, 'floor-artifact', 't', 'b', 'inject', '["technical"]', 't', 't', record_id, ?
-         FROM project WHERE name=?
-       RETURNING record_id`,
-    )
-    .get(project, newRecordId(), project) as { record_id: string }
-  return [`--artifact`, `doc:${row.record_id}`] as const
-}
-
-const registerFixtureProject = (name: string) =>
-  upsertProject({
-    recordId: newRecordId(),
-    name,
-    path: `/fixture/${name}`,
-    stack: 'bun',
-    settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
-  })
-
-const registerCurrentProject = (name: string) =>
-  upsertProject({
-    recordId: newRecordId(),
-    name,
-    path: process.cwd(),
-    stack: 'bun',
-    settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
-  })
 
 test('workflow inspection reads only the current project space and stays local outside it', async () => {
   const local = db()
@@ -398,26 +344,96 @@ test('workflow inspection reads only the current project space and stays local o
   ).toBe(true)
 })
 
+test('workflow hydrate check resolves hosted production from the worktree without ORCH_MAIN_CHECKOUT', async () => {
+  const fixture = hostedWorkflowRepositoryFixture('hydrate')
+  const project = 'hydrate-hosted-worktree'
+  registerOwningProject(project, fixture.mainCheckout)
+  expect(projectAt(fixture.worktree)?.name).toBe(project)
+  installHostedWorkflowTree(project, newRecordId(), fixture.worktree)
+  publishStaleLocalWorkflow('hydrate-local-only')
+  const priorMainCheckout = process.env.ORCH_MAIN_CHECKOUT
+  const result = outcomePresentation()
+  try {
+    delete process.env.ORCH_MAIN_CHECKOUT
+    await workflowCommand(
+      ['workflow', 'hydrate', '--check', '--cwd', fixture.worktree],
+      result.presentation,
+    )
+  } finally {
+    if (priorMainCheckout === undefined) delete process.env.ORCH_MAIN_CHECKOUT
+    else process.env.ORCH_MAIN_CHECKOUT = priorMainCheckout
+    fixture.dispose()
+  }
+  expect(result.stdout).toEqual([])
+  expect(result.exitCodes).toEqual([])
+})
+
+test('workflow import resolves hosted production from the worktree without ORCH_MAIN_CHECKOUT', async () => {
+  const fixture = hostedWorkflowRepositoryFixture('import')
+  const project = 'import-hosted-worktree'
+  registerOwningProject(project, fixture.mainCheckout)
+  expect(projectAt(fixture.worktree)?.name).toBe(project)
+  installHostedWorkflowTree(project, newRecordId(), fixture.worktree)
+  publishStaleLocalWorkflow('import-local-only')
+  const priorMainCheckout = process.env.ORCH_MAIN_CHECKOUT
+  const lines: string[] = []
+  try {
+    delete process.env.ORCH_MAIN_CHECKOUT
+    await workflowCommand(
+      ['workflow', 'import', '--cwd', fixture.worktree, '--reason', 'unchanged hosted tree'],
+      presentation(lines),
+    )
+  } finally {
+    if (priorMainCheckout === undefined) delete process.env.ORCH_MAIN_CHECKOUT
+    else process.env.ORCH_MAIN_CHECKOUT = priorMainCheckout
+    fixture.dispose()
+  }
+  expect(lines).toEqual(['no changes'])
+})
+
+test('workflow tree project refusal is only required for a configured record without an owner', () => {
+  const input = { command: 'hydrate' as const, root: '/fixture/unowned' }
+  expect(workflowProjectRefusal({ ...input, project: 'owned', recordConfigured: true })).toBeNull()
+  expect(workflowProjectRefusal({ ...input, project: null, recordConfigured: false })).toBeNull()
+  expect(workflowProjectRefusal({ ...input, project: null, recordConfigured: true })).toBe(
+    'refusing workflow hydrate in /fixture/unowned: no registered project owns this directory\n' +
+      "cleared by: run from a registered project's worktree, or pass --cwd for one",
+  )
+})
+
+test('workflow hydrate and import refuse an unowned directory when a record is configured', async () => {
+  const priorRecordApiUrl = process.env.ORCH_RECORD_API_URL
+  process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
+  try {
+    await expect(
+      workflowCommand(
+        ['workflow', 'hydrate', '--check', '--cwd', repositoryRoot],
+        presentation([]),
+      ),
+    ).rejects.toThrow(
+      `refusing workflow hydrate in ${repositoryRoot}: no registered project owns this directory\n` +
+        "cleared by: run from a registered project's worktree, or pass --cwd for one",
+    )
+    await expect(
+      workflowCommand(
+        ['workflow', 'import', '--cwd', repositoryRoot, '--reason', 'unowned tree'],
+        presentation([]),
+      ),
+    ).rejects.toThrow(
+      `refusing workflow import in ${repositoryRoot}: no registered project owns this directory\n` +
+        "cleared by: run from a registered project's worktree, or pass --cwd for one",
+    )
+  } finally {
+    if (priorRecordApiUrl === undefined) delete process.env.ORCH_RECORD_API_URL
+    else process.env.ORCH_RECORD_API_URL = priorRecordApiUrl
+  }
+})
+
 test('workflow import reports a sequence-only draft as a change', () => {
   expect(workflowImportLines({ steps: [], sequences: ['review'], workflows: [] })).toEqual([
     'drafted sequence review',
   ])
 })
-
-const publishCursorWorkflow = (slug: string, modes: WorkflowDefinition['modes']) => {
-  const draft = setWorkflowLocal(
-    slug,
-    {
-      title: `Cursor command ${slug}`,
-      description: 'Exercises cursor mode resolution.',
-      arguments: [{ name: 'key', required: true, description: 'Task key.' }],
-      modes,
-    },
-    'test cursor mode resolution',
-    'test',
-  )
-  promoteWorkflowLocal(slug, draft.n, 'publish', 'test')
-}
 
 test('mode-less step command resolves autonomy from the fetched catalogue step', async () => {
   registerFixtureProject('mode-less-step')
