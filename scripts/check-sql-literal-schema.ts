@@ -161,6 +161,7 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
       '4117180a80520023',
       '5ca1249106c1292d',
       '90bc6e3bb7a00855',
+      '78b817a537ff4b7b',
     ],
     'versioned lifecycle helper interpolates its controlled workflow table descriptor',
   ),

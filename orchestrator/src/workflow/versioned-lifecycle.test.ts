@@ -5,11 +5,11 @@ import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 import {
   listWorkflows,
+  resolvedWorkflowVersions,
   retireWorkflowLocal,
   setWorkflowLocal,
   showWorkflow,
   type WorkflowDefinition,
-  workflowVersions,
 } from './workflows.ts'
 
 const definition = (title: string): WorkflowDefinition => ({
@@ -55,7 +55,7 @@ describe('versioned lifecycle retirement', () => {
         /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
       )
     }
-    expect(workflowVersions('withdraw-draft', d)[0]!.events).toContainEqual(
+    expect(resolvedWorkflowVersions('withdraw-draft', null, d)[0]!.events).toContainEqual(
       expect.objectContaining({ event: 'retire', reason: 'superseded', author: 'architect' }),
     )
   })

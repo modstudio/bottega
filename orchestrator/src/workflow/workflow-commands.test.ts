@@ -7,6 +7,8 @@ import { setRawArgv } from '../commands/support.ts'
 import { registerWorkflowCommands } from '../commands/workflow.ts'
 import { db, sessionId } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
+import { rememberProjectSpace } from '../project-space.ts'
+import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
 import {
   commandOutcome,
@@ -93,6 +95,248 @@ const registerCurrentProject = (name: string) =>
     stack: 'bun',
     settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
   })
+
+test('workflow inspection resolves the current project space and falls back to local outside it', async () => {
+  const local = db()
+  const slug = 'inspection-resolution'
+  const localDraft = setWorkflowLocal(
+    slug,
+    {
+      title: 'Local inspection',
+      description: 'Local catalogue definition.',
+      arguments: [],
+      modes: [],
+    },
+    'local inspection fixture',
+    'test',
+  )
+  promoteWorkflowLocal(slug, localDraft.n, 'publish local inspection fixture', 'test')
+
+  const project = 'inspection-resolution-project'
+  const spaceId = newRecordId()
+  registerCurrentProject(project)
+  rememberProjectSpace(local, project, spaceId)
+  const at = '2026-10-19T12:00:00.000Z'
+  const catalogueId = newRecordId()
+  applyWorkflowCatalogueRow(local, 'step_catalogue', {
+    id: catalogueId,
+    spaceId,
+    slug: 'shared',
+    generation: 1,
+    createdAt: at,
+  })
+  applyWorkflowCatalogueRow(local, 'step_catalogue_version', {
+    id: newRecordId(),
+    spaceId,
+    ownerId: catalogueId,
+    n: 3,
+    status: 'production',
+    definition: JSON.stringify({
+      ...productionStepCatalogue(local).definition,
+      steps: [
+        ...productionStepCatalogue(local).definition.steps,
+        {
+          slug: 'inspection-check',
+          title: 'Inspection check',
+          body: 'Use {{tracker.server}}.',
+          floor: ['recorded-artifact'],
+          job: null,
+          stage: 'review',
+          autonomy: 'auto',
+          needs: [],
+        },
+      ],
+    }),
+    author: 'hosted',
+    reason: 'hosted catalogue fixture',
+    createdAt: at,
+    promotedAt: at,
+    retiredAt: null,
+  })
+  const workflowId = newRecordId()
+  applyWorkflowCatalogueRow(local, 'workflow', {
+    id: workflowId,
+    spaceId,
+    slug,
+    generation: 1,
+    createdAt: at,
+  })
+  applyWorkflowCatalogueRow(local, 'workflow_version', {
+    id: newRecordId(),
+    spaceId,
+    ownerId: workflowId,
+    n: 4,
+    status: 'production',
+    definition: JSON.stringify({
+      title: 'Hosted inspection',
+      description: 'Hosted catalogue definition.',
+      arguments: [],
+      modes: [
+        {
+          slug: 'default',
+          title: 'Default',
+          default: true,
+          steps: ['inspection-check'],
+        },
+      ],
+    }),
+    author: 'hosted',
+    reason: 'hosted workflow fixture',
+    createdAt: at,
+    promotedAt: at,
+    retiredAt: null,
+  })
+  applyWorkflowCatalogueRow(local, 'workflow_version', {
+    id: newRecordId(),
+    spaceId,
+    ownerId: workflowId,
+    n: 5,
+    status: 'draft',
+    definition: JSON.stringify({
+      title: 'Hosted inspection draft',
+      description: 'Hosted draft catalogue definition.',
+      arguments: [],
+      modes: [],
+    }),
+    author: 'hosted',
+    reason: 'hosted workflow draft fixture',
+    createdAt: at,
+    promotedAt: null,
+    retiredAt: null,
+  })
+
+  const secondProject = 'inspection-resolution-second-project'
+  const secondSpaceId = newRecordId()
+  const secondStep = 'second-space-check'
+  const secondWorkflow = 'second-space-workflow'
+  registerFixtureProject(secondProject)
+  rememberProjectSpace(local, secondProject, secondSpaceId)
+  const secondCatalogueId = newRecordId()
+  applyWorkflowCatalogueRow(local, 'step_catalogue', {
+    id: secondCatalogueId,
+    spaceId: secondSpaceId,
+    slug: 'shared',
+    generation: 1,
+    createdAt: at,
+  })
+  applyWorkflowCatalogueRow(local, 'step_catalogue_version', {
+    id: newRecordId(),
+    spaceId: secondSpaceId,
+    ownerId: secondCatalogueId,
+    n: 2,
+    status: 'production',
+    definition: JSON.stringify({
+      ...productionStepCatalogue(local).definition,
+      steps: [
+        ...productionStepCatalogue(local).definition.steps,
+        {
+          slug: secondStep,
+          title: 'Second space check',
+          body: 'Use {{second.only}}.',
+          floor: ['recorded-artifact'],
+          job: null,
+          stage: 'review',
+          autonomy: 'auto',
+          needs: [],
+        },
+      ],
+    }),
+    author: 'hosted',
+    reason: 'second hosted catalogue fixture',
+    createdAt: at,
+    promotedAt: at,
+    retiredAt: null,
+  })
+  const secondWorkflowId = newRecordId()
+  applyWorkflowCatalogueRow(local, 'workflow', {
+    id: secondWorkflowId,
+    spaceId: secondSpaceId,
+    slug: secondWorkflow,
+    generation: 1,
+    createdAt: at,
+  })
+  applyWorkflowCatalogueRow(local, 'workflow_version', {
+    id: newRecordId(),
+    spaceId: secondSpaceId,
+    ownerId: secondWorkflowId,
+    n: 2,
+    status: 'production',
+    definition: JSON.stringify({
+      title: 'Second hosted workflow',
+      description: 'Uses a step available only in the second project space.',
+      arguments: [],
+      modes: [
+        {
+          slug: 'default',
+          title: 'Default',
+          default: true,
+          steps: [secondStep],
+        },
+      ],
+    }),
+    author: 'hosted',
+    reason: 'second hosted workflow fixture',
+    createdAt: at,
+    promotedAt: at,
+    retiredAt: null,
+  })
+
+  const inside: string[] = []
+  await workflowCommand(['workflow', 'list', '--json'], presentation(inside), {
+    cwd: process.cwd(),
+  })
+  await workflowCommand(['workflow', 'show', slug, '--json'], presentation(inside), {
+    cwd: process.cwd(),
+  })
+  await workflowCommand(['workflow', 'versions', slug, '--json'], presentation(inside), {
+    cwd: process.cwd(),
+  })
+  await workflowCommand(['workflow', 'catalogue', 'show', '--json'], presentation(inside), {
+    cwd: process.cwd(),
+  })
+  expect(
+    (
+      JSON.parse(inside[0]!) as {
+        slug: string
+        title: string
+        production_n: number
+        draft_n: number | null
+      }[]
+    ).find((row) => row.slug === slug),
+  ).toEqual({ slug, title: 'Hosted inspection', production_n: 4, draft_n: 5 })
+  expect(JSON.parse(inside[1]!).definition.title).toBe('Hosted inspection')
+  expect(JSON.parse(inside[2]!)).toEqual([
+    expect.objectContaining({ n: 4 }),
+    expect.objectContaining({ n: 5 }),
+  ])
+  expect(JSON.parse(inside[3]!).n).toBe(3)
+
+  const renderLines: string[] = []
+  await workflowCommand(['workflow', 'render-check'], presentation(renderLines))
+  expect(renderLines).toContain(`${project}  checked workflow spaces: local,${spaceId}`)
+  expect(renderLines).toContain(
+    `${project}  ${slug}  default  inspection-check  body  tracker.server`,
+  )
+  expect(renderLines).toContain(
+    `${secondProject}  ${secondWorkflow}  default  ${secondStep}  body  second.only`,
+  )
+  expect(renderLines).not.toContain(
+    `${project}  ${secondWorkflow}  default  ${secondStep}  body  second.only`,
+  )
+
+  const outside: string[] = []
+  await workflowCommand(['workflow', 'list', '--json'], presentation(outside), {
+    cwd: '/private/tmp/outside-registered-project',
+  })
+  await workflowCommand(['workflow', 'show', slug, '--json'], presentation(outside), {
+    cwd: '/private/tmp/outside-registered-project',
+  })
+  expect(
+    (JSON.parse(outside[0]!) as { slug: string; title: string }[]).find((row) => row.slug === slug)
+      ?.title,
+  ).toBe('Local inspection')
+  expect(JSON.parse(outside[1]!).definition.title).toBe('Local inspection')
+})
 
 test('workflow import reports a sequence-only draft as a change', () => {
   expect(workflowImportLines({ steps: [], sequences: ['review'], workflows: [] })).toEqual([

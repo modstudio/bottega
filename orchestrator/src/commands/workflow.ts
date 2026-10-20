@@ -80,10 +80,14 @@ function workflowRegistration(
   return { workflow, workflowPresentation, handlerOptions, output }
 }
 
-function registerWorkflowDefinitions({ workflow, output }: WorkflowRegistration): void {
+function registerWorkflowDefinitions({
+  workflow,
+  output,
+  handlerOptions,
+}: WorkflowRegistration): void {
   jsonOption(workflow.command('list').description('list workflow definitions'))
     .allowExcessArguments(false)
-    .action((options) => listWorkflowCommand(output(options)))
+    .action((options) => listWorkflowCommand(output(options), handlerOptions))
 
   jsonOption(
     workflow
@@ -93,7 +97,7 @@ function registerWorkflowDefinitions({ workflow, output }: WorkflowRegistration)
   )
     .allowExcessArguments(false)
     .action((slug, options) =>
-      showWorkflowCommand(workflowArgv('show', [slug], options), output(options)),
+      showWorkflowCommand(workflowArgv('show', [slug], options), output(options), handlerOptions),
     )
 
   jsonOption(
@@ -115,6 +119,7 @@ function registerWorkflowDefinitions({ workflow, output }: WorkflowRegistration)
 function registerWorkflowVersions({
   workflow,
   workflowPresentation,
+  handlerOptions,
   output,
 }: WorkflowRegistration): void {
   for (const [verb, description, handler] of [
@@ -150,7 +155,11 @@ function registerWorkflowVersions({
   jsonOption(workflow.command('versions <workflow>').description('list versions of a workflow'))
     .allowExcessArguments(false)
     .action((slug, options) =>
-      workflowVersionsCommand(workflowArgv('versions', [slug], options), output(options)),
+      workflowVersionsCommand(
+        workflowArgv('versions', [slug], options),
+        output(options),
+        handlerOptions,
+      ),
     )
 
   jsonOption(
@@ -384,7 +393,11 @@ function registerWorkflowTreeCommands({
     .action((options) => importCommand(workflowArgv('import', [], options), output(options)))
 }
 
-function registerWorkflowCatalogue({ workflow, output }: WorkflowRegistration): void {
+function registerWorkflowCatalogue({
+  workflow,
+  output,
+  handlerOptions,
+}: WorkflowRegistration): void {
   const catalogue = workflow
     .command('catalogue')
     .description('inspect and change the workflow step catalogue')
@@ -409,7 +422,11 @@ function registerWorkflowCatalogue({ workflow, output }: WorkflowRegistration): 
   )
     .allowExcessArguments(false)
     .action((options) =>
-      showCatalogueCommand(productArgv('catalogue', ['show'], options), output(options)),
+      showCatalogueCommand(
+        productArgv('catalogue', ['show'], options),
+        output(options),
+        handlerOptions,
+      ),
     )
   jsonOption(
     authorOption(
@@ -453,7 +470,7 @@ function registerWorkflowCatalogue({ workflow, output }: WorkflowRegistration): 
     )
   jsonOption(catalogue.command('versions').description('list step catalogue versions'))
     .allowExcessArguments(false)
-    .action((options) => catalogueVersionsCommand(output(options)))
+    .action((options) => catalogueVersionsCommand(output(options), handlerOptions))
 }
 
 export function registerWorkflowCommands(

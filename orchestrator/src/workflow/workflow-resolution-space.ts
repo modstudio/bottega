@@ -46,7 +46,7 @@ export function projectCatalogueResolutionSpace(
 
 export function projectWorkflowResolutionSpace(
   d: Database,
-  project: string,
+  project: string | null,
   slug: string,
   version?: number,
 ): string | null {
