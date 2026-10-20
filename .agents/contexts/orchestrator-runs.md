@@ -112,7 +112,7 @@ It reports emptiness only after looking at the right data. Otherwise it exits no
 
 # The test gate
 
-`gate-load.ts` runs `bun test` preloaded in-process on `orchestrator/src`. `GATE_CONCURRENCY_LIMIT` bounds gates; others wait for load and RAM (macOS kernel pressure, else `FREE_MEM_FLOOR_BYTES`), a wait CI skips. Timing only ratchets down. `scripts/check-test-spawns.ts` caps Bun spawns at `SPAWN_LIMIT`. CI runs one job per `bun test --shard`. `scripts/check-plan.ts` names its legs; `scripts/check-ci-workflow.ts` pins the workflow to them. No size classes, subprocess leg or retry path.
+`gate-load.ts` runs `bun test` on `orchestrator/src`. `GATE_CONCURRENCY_LIMIT` bounds gates; CI skips host-capacity waits. Test timing growth only reports; aggregate CPU above `SUITE_CPU_BUDGET_MS` fails CI. `scripts/check-test-spawns.ts` enforces `SPAWN_LIMIT`. CI shards with `bun test --shard`; `scripts/check-plan.ts` names its legs and `scripts/check-ci-workflow.ts` pins the workflow to them.
 
 # Prompts and replies age out
 
