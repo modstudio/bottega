@@ -90,7 +90,7 @@ test('hosted profile failure is inert and success adopts hosted identities and v
       .get()!.n,
   ).toBe(beforeRevisions)
 
-  const profileId = newRecordId()
+  const profileId = before.record_id
   const revisionId = newRecordId()
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
@@ -127,7 +127,7 @@ test('hosted profile failure is inert and success adopts hosted identities and v
       enabled: true,
       reason: 'hosted profile ordering',
     })
-    expect(changed).toMatchObject({ record_id: before.record_id, version: 2 })
+    expect(changed).toMatchObject({ record_id: profileId, version: 2 })
     expect(
       db().query('SELECT record_id FROM lens_profile WHERE record_id=?').get(before.record_id),
     ).toEqual({

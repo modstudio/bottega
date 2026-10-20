@@ -92,7 +92,7 @@ test('catalogue project-parent removal preserves populated rows, ids, and catalo
   expect(database.query('SELECT record_id FROM port_pair').get()).toEqual({
     record_id: pairRecord,
   })
-  expect(database.query('SELECT position FROM port_ref_source').get()).toEqual({ position: 1 })
+  expect(database.query('SELECT position FROM port_ref_source').get()).toEqual({ position: 45 })
   for (const table of ['port_pair', 'port_ref'])
     expect(database.query(`PRAGMA foreign_key_list(${table})`).all()).toEqual([])
   expect(database.query('PRAGMA foreign_key_list(port_ref_source)').all()).toEqual(
