@@ -321,6 +321,103 @@ class AssembleAdditionalContext(unittest.TestCase):
         self.assertNotIn("y" * 80, text)
 
 
+class InboxQuestions(unittest.TestCase):
+    def counts(self, rows):
+        return session_brief._inbox_counts(
+            json.dumps({"cwd_registered": True, "project": "bottega", "rows": rows})
+        )
+
+    def test_answerable_workflow_question_counts_as_waiting_on_your_ruling(self):
+        self.assertEqual(
+            self.counts([
+                {
+                    "kind": "workflow",
+                    "question_id": 11,
+                    "workflow": "release",
+                    "session_id": "session-1",
+                    "can_answer": True,
+                    "ownership_notice": None,
+                }
+            ]),
+            (1, 0, 0, 0),
+        )
+
+    def test_foreign_workflow_questions_are_counted_by_distinct_question_id(self):
+        row = {
+            "kind": "workflow",
+            "question_id": 12,
+            "workflow": "release",
+            "session_id": "session-2",
+            "can_answer": False,
+            "ownership_notice": "another session owns this workflow",
+        }
+        self.assertEqual(self.counts([row, row]), (0, 0, 0, 1))
+        self.assertEqual(
+            session_brief._foreign_workflow_notice(1),
+            "1 workflow started by another session is waiting on a ruling. "
+            "Only that session, or the operator relaying a decision, can answer it.",
+        )
+
+    def test_foreign_workflow_notice_has_a_plural_form(self):
+        self.assertEqual(
+            session_brief._foreign_workflow_notice(2),
+            "2 workflows started by other sessions are waiting on rulings. "
+            "Only those sessions, or the operator relaying decisions, can answer them.",
+        )
+
+    def test_mixed_run_and_workflow_questions_keep_their_separate_counts(self):
+        self.assertEqual(
+            self.counts([
+                {
+                    "answer_id": 21,
+                    "session_liveness": "live",
+                    "can_answer": True,
+                },
+                {
+                    "answer_id": 22,
+                    "session_liveness": "unknown",
+                    "can_answer": False,
+                },
+                {
+                    "kind": "workflow",
+                    "question_id": 23,
+                    "workflow": "release",
+                    "session_id": "session-1",
+                    "can_answer": True,
+                    "ownership_notice": None,
+                },
+                {
+                    "kind": "workflow",
+                    "question_id": 24,
+                    "workflow": "release",
+                    "session_id": "session-2",
+                    "can_answer": False,
+                    "ownership_notice": "owned by session session-2",
+                },
+            ]),
+            (2, 1, 1, 1),
+        )
+
+    def test_malformed_run_question_invalidates_the_inbox(self):
+        with self.assertRaisesRegex(ValueError, "invalid inbox JSON"):
+            self.counts([
+                {"answer_id": 31, "session_liveness": "gone", "can_answer": True}
+            ])
+
+    def test_malformed_workflow_question_invalidates_the_inbox(self):
+        with self.assertRaisesRegex(ValueError, "invalid inbox JSON"):
+            self.counts([
+                {
+                    "kind": "workflow",
+                    "question_id": "32",
+                    "workflow": "release",
+                    "session_id": 32,
+                    "can_answer": False,
+                    "ownership_notice": "operator relay required",
+                }
+            ])
+
+
 class WorkerSessionSkip(unittest.TestCase):
     def test_orch_run_id_marks_a_worker_session(self):
         self.assertTrue(session_brief.orch_worker_session({"ORCH_RUN_ID": "12"}))
