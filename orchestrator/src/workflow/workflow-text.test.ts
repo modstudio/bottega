@@ -1,6 +1,6 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
-import { applyMigrations } from '../database/migrations.ts'
+import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {
   productionStepCatalogue,
   promoteStepCatalogueLocal,
@@ -24,10 +24,7 @@ import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
 const context = { session: 'text-owner' }
 
-function database(): Database {
-  const d = new Database(':memory:')
-  d.exec('PRAGMA foreign_keys=ON')
-  applyMigrations(d)
+const database = testDatabaseFixture((d) => {
   seedWorkflows(d)
   d.query(
     'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
@@ -79,8 +76,7 @@ function database(): Database {
     d,
   )
   promoteWorkflowLocal('text-fixture', workflow.n, 'publish fixture', 'test', d)
-  return d
-}
+})
 
 function open(d: Database): number {
   return getWorkflowStepWithCursor(

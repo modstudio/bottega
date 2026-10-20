@@ -1,7 +1,7 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from '../record/outbox-payload-contracts.ts'
 import { WITHHELD_SECRET_SHAPED } from '../record/outbox-sanitize.ts'
 import { finishReleaseLedgerEntry, startReleaseLedgerEntry } from './release-ledger.ts'
@@ -12,8 +12,7 @@ const DECOY_PROJECT_RECORD_ID = '01990000-0000-7000-8000-000000001213'
 const RELEASE_PROJECT_RECORD_ID = '01990000-0000-7000-8000-000000001214'
 
 function fixture(): Database {
-  const database = new Database(':memory:')
-  applyMigrations(database)
+  const database = migratedTestDatabase()
   database
     .query('INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?)')
     .run(DECOY_PROJECT_RECORD_ID, 'decoy', '/decoy', '{}')

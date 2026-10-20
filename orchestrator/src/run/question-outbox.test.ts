@@ -1,9 +1,9 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { writeTransaction } from '../database/db.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from '../record/outbox-payload-contracts.ts'
 import { WITHHELD_SECRET_SHAPED } from '../record/outbox-sanitize.ts'
 import { backfillQuestionRecords, enqueueQuestionRecord } from './question-outbox.ts'
@@ -13,8 +13,7 @@ const QUESTION_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.question.column
 const RUN_RECORD_ID = '01990000-0000-7000-8000-000000000042'
 
 function fixture(): Database {
-  const database = new Database(':memory:')
-  applyMigrations(database)
+  const database = migratedTestDatabase()
   database
     .query(
       `INSERT INTO run
@@ -144,8 +143,7 @@ test('secret-shaped hosted fields are withheld while local text stays intact', (
 })
 
 test('a question has an identity before its first enqueue', () => {
-  const database = new Database(':memory:')
-  applyMigrations(database)
+  const database = migratedTestDatabase()
   database
     .query(
       `INSERT INTO run

@@ -448,7 +448,9 @@ re-export them as another public surface. Mutate process environment only in a
 test lifecycle hook and always restore it; never mutate it at module load.
 
 Suite time is shared and `bun run check` reports the budget. Prefer deleting a
-slow, low-value test to nursing it.
+slow, low-value test to nursing it. Per-file and per-test timing ceilings block
+local and worker gates, where the machine is known; CI reports overruns without
+failing because shared-runner wall time varies.
 
 ---
 description: Reversible cleanup, conservative destructive defaults, liveness, claims, and visible escalation

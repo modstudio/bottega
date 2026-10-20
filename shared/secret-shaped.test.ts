@@ -4,6 +4,7 @@ import {
   evidenceSecretShapedRules,
   secretShapedRule,
 } from './secret-shaped.ts'
+import fixtures from './secret-shaped-fixtures.json'
 
 const hex40 = 'a'.repeat(40)
 const hex64 = 'b'.repeat(64)
@@ -54,4 +55,10 @@ test('the evidence detector can report every matching rule', () => {
   expect(
     evidenceSecretShapedRules(`Bearer fixture ${'c'.repeat(32)} https://user:pass@host.example`),
   ).toEqual(['bearer', 'hex-run', 'url-userinfo'])
+})
+
+test('canonical secret fixtures stay aligned with non-TypeScript adapters', () => {
+  for (const fixture of fixtures) {
+    expect(containsSecretShaped(fixture.parts.join('')), fixture.name).toBe(fixture.secret)
+  }
 })

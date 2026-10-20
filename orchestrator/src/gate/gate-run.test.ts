@@ -1,10 +1,9 @@
-import { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CHECK_EXECUTION_FILE_ENV } from '../../../shared/check-execution.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { GATE_OUTPUT_TAIL_BYTES } from './gate-decision.ts'
 import { passingGateForCommit } from './gate-passed.ts'
 import { architectGateProcessExitCode, runArchitectGate } from './gate-run.ts'
@@ -29,9 +28,7 @@ afterEach(() => {
 })
 
 const database = () => {
-  const d = new Database(':memory:')
-  d.exec('PRAGMA foreign_keys=ON')
-  applyMigrations(d)
+  const d = migratedTestDatabase()
   d.query(
     'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
   ).run('fixture', repositoryPath, 'bun', JSON.stringify({ gate: 'bun run check' }))

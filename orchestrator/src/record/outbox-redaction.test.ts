@@ -1,7 +1,7 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import {
   redactSyncedOutbox,
@@ -35,8 +35,7 @@ function runPayload(error: string, label: string): string {
 }
 
 function seeded(): { database: Database; urlUserinfo: string; base64: string } {
-  const database = new Database(':memory:')
-  applyMigrations(database)
+  const database = migratedTestDatabase()
   const planted = plantedValues()
   database
     .query(

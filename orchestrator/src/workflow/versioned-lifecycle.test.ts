@@ -1,6 +1,5 @@
-import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
-import { applyMigrations } from '../database/migrations.ts'
+import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 import {
@@ -19,14 +18,10 @@ const definition = (title: string): WorkflowDefinition => ({
   modes: [{ slug: 'default', title: 'Default', default: true, steps: ['lens'] }],
 })
 
-const database = () => {
-  const d = new Database(':memory:')
-  d.exec('PRAGMA foreign_keys=ON')
-  applyMigrations(d)
+const database = testDatabaseFixture((d) => {
   seedWorkflows(d)
   installWorkflowStoreFixture(d)
-  return d
-}
+})
 
 describe('versioned lifecycle retirement', () => {
   test('retires a draft, preserves its null promotion time, and records the event', () => {

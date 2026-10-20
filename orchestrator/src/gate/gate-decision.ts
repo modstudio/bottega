@@ -60,6 +60,35 @@ export function decideGateHeadCommit(input: {
   return input.headCommit && input.porcelainPaths.length === 0 ? input.headCommit : null
 }
 
+/** Prefer the live trunk merge-base so a rebased worker excludes trunk-only changes. */
+export function decideGateToolingDiffBase(input: {
+  recordedBase: string
+  mergeBase: string | null
+}): string {
+  return input.mergeBase?.trim() || input.recordedBase
+}
+
+/** Reduce process state to the durable broker completion fields. */
+export function decideGateExecutionFinalization(input: {
+  exitCode: number
+  timedOut: boolean
+  cancelledReason: string | null
+  logCreated: boolean
+  artifactPath: string
+}): {
+  exitCode: number
+  timedOut: boolean
+  cancelledReason: string | null
+  artifactPath: string | null
+} {
+  return {
+    exitCode: input.exitCode,
+    timedOut: input.timedOut,
+    cancelledReason: input.cancelledReason,
+    artifactPath: input.logCreated ? input.artifactPath : null,
+  }
+}
+
 export type GateEligibility =
   | { eligible: true; gate: string }
   | { eligible: false; message: string }
@@ -160,6 +189,17 @@ export function isGateToolingPath(path: string, gateCommand: string): boolean {
     name.endsWith('.toml') ||
     name.startsWith('.env')
   )
+}
+
+/** Reduce the repository observations to the sorted gate inputs recorded as evidence. */
+export function changedGateToolingPaths(input: {
+  diffPaths: readonly string[]
+  untrackedPaths: readonly string[]
+  gateCommand: string
+}): string[] {
+  return [...new Set([...input.diffPaths, ...input.untrackedPaths])]
+    .filter((path) => isGateToolingPath(path, input.gateCommand))
+    .sort()
 }
 
 /** Keep the last complete UTF-8 text that fits in the worker-context bound. */

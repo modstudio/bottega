@@ -70,8 +70,6 @@ INTERVAL="${2:-60}"
 MAX="${3:-60}"
 KEEPALIVE_TICKS="${KEEPALIVE_TICKS:-15}"   # re-announce an unchanged state this often
 NOTICE_TIMEOUT_SECONDS="${NOTICE_TIMEOUT_SECONDS:-5}"
-NOTICE_REASON_MAX_BYTES=4096
-NOTICE_REASON_MAX_CHARS=240
 
 prev_key=""
 since_emit=0
@@ -400,20 +398,18 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   direct_stalled_subjects=""
   if [ "$key" != "$prev_key" ] || [ "$since_emit" -ge "$KEEPALIVE_TICKS" ]; then
     prev_key="$key"; since_emit=0
-    ts=$(date +%H:%M:%S)
-    if [ "$asking" -gt 0 ]; then
-      echo "[$ts] BLOCKED - $asking question(s) waiting on you: run 'bottega question inbox', then 'bottega question answer <id>'. $n run(s) and $landing_n landing(s) live."
+    combined_detail="$detail"
+    if [ -n "$landing_detail" ]; then
+      [ -z "$combined_detail" ] || combined_detail="$combined_detail | "
+      combined_detail="$combined_detail$landing_detail"
     fi
+    HEARTBEAT_TIMESTAMP=$(date +%H:%M:%S) \
+    HEARTBEAT_ASKING="$asking" HEARTBEAT_RUNS="$n" HEARTBEAT_LANDINGS="$landing_n" \
+    HEARTBEAT_STALLED="$stalled_n" HEARTBEAT_STALLED_DETAIL="$stalled_detail" \
+    HEARTBEAT_WAITING_DETAIL="$combined_detail" \
+      python3 "$ROOT/hooks/heartbeat-decision.py" tick
     if [ "$stalled_n" -gt 0 ]; then
-      echo "[$ts] STALLED - $stalled_n run(s): $stalled_detail"
       direct_stalled_subjects="$stalled_subjects"
-    elif [ "$asking" -eq 0 ] && { [ "$n" -gt 0 ] || [ "$landing_n" -gt 0 ]; }; then
-      combined_detail="$detail"
-      if [ -n "$landing_detail" ]; then
-        [ -z "$combined_detail" ] || combined_detail="$combined_detail | "
-        combined_detail="$combined_detail$landing_detail"
-      fi
-      echo "[$ts] WAITING - $n run(s) and $landing_n landing(s), nothing needed from you: $combined_detail"
     elif [ "$asking" -eq 0 ]; then
       should_exit=1
     fi
@@ -437,35 +433,7 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   ACTIVE_WATCHDOG_PID=""
   monitor_raw=$(<"$monitor_out")
   if [ -s "$monitor_timed_out" ]; then monitor_rc=124; fi
-  if [ -s "$monitor_err" ]; then
-    monitor_err_had_bytes=1
-  else
-    monitor_err_had_bytes=0
-  fi
-  monitor_reason=$(LC_ALL=C head -c "$NOTICE_REASON_MAX_BYTES" "$monitor_err" | \
-    LC_ALL=C tr -cd '\12\40-\176' | \
-    LC_ALL=C awk -v limit="$NOTICE_REASON_MAX_CHARS" '
-NF {
-  reason = substr($0, 1, limit)
-  lower = tolower(reason)
-  if (lower ~ /:\/\/[^[:space:]\/@:]+:[^[:space:]\/@]+@/ ||
-      lower ~ /(key|token|secret|password|passwd|credential|auth)[[:alnum:]_.-]*["\047]?[[:space:]]*[=:]/ ||
-      lower ~ /bearer[[:space:]]/ ||
-      reason ~ /[[:alnum:]+\/]{32}/) {
-    print "reason withheld (secret-shaped)"
-  } else {
-    print reason
-  }
-  exit
-}
-  ')
-  if [ -z "$monitor_reason" ]; then
-    if [ "$monitor_err_had_bytes" -eq 0 ]; then
-      monitor_reason="stderr empty"
-    else
-      monitor_reason="stderr not printable"
-    fi
-  fi
+  monitor_reason=$(python3 "$ROOT/hooks/heartbeat-decision.py" <"$monitor_err")
   rm -f "$monitor_err" "$monitor_out" "$monitor_timed_out"
 
   monitor_observed=$(printf '%s' "$monitor_raw" | SID="$SID" STALLED_SUBJECTS="$direct_stalled_subjects" python3 -c '

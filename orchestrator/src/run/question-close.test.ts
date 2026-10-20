@@ -1,8 +1,8 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import {
   closeQuestionByOperator,
   closeQuestions,
@@ -23,8 +23,7 @@ afterEach(() => {
 })
 
 function fixture(status = 'ok'): { database: Database; questionId: string } {
-  const database = new Database(':memory:')
-  applyMigrations(database)
+  const database = migratedTestDatabase()
   database
     .query(
       `INSERT INTO run

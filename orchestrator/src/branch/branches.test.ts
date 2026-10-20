@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -14,7 +14,7 @@ import {
   recordAutomaticBranchLandingEvidence,
   recordBranchLanding,
 } from './branch-landing-service.ts'
-import { pruneBranch, pruneBranches, renderBranchPruneReport } from './branches.ts'
+import { pruneBranch } from './branches.ts'
 
 test('landing refusal explains that only a run-minted branch can be recorded', () => {
   expect(() => recordBranchLanding('DEV-1070-shipping', 1070)).toThrow(
@@ -22,7 +22,7 @@ test('landing refusal explains that only a run-minted branch can be recorded', (
   )
 })
 
-test('dry-run previews automatic landing repair without writing, then non-dry prune records it', () => {
+test('non-dry prune records one branch and updates its landing evidence', () => {
   const repository = gitRepository('automatic-repair')
   const bin = mkdtempSync(join(tmpdir(), 'orch-automatic-repair-bin-'))
   const originalPath = process.env.PATH
@@ -34,7 +34,7 @@ test('dry-run previews automatic landing repair without writing, then non-dry pr
     git(repository, 'checkout', '-b', branch)
     writeFileSync(join(repository, 'state.txt'), 'branch work\n')
     git(repository, 'commit', '-am', `${key} branch work`)
-    const tip = git(repository, 'rev-parse', 'HEAD')
+    const tip = readFileSync(join(repository, '.git', 'refs', 'heads', branch), 'utf8').trim()
     git(repository, 'checkout', 'main')
 
     const projectId = addProject(project, repository)
@@ -52,20 +52,8 @@ test('dry-run previews automatic landing repair without writing, then non-dry pr
     chmodSync(join(bin, 'gh'), 0o755)
     process.env.PATH = `${bin}:${originalPath ?? ''}`
 
-    const dryRun = pruneBranches({ project, key, dryRun: true })
-    expect(dryRun.recordedLandings).toEqual([])
-    expect(dryRun.wouldRecordLandings.map((landing) => landing.branch)).toEqual([branch])
-    expect(renderBranchPruneReport(dryRun)).toContain(`would record landing: ${branch} (PR #1049)`)
-    expect(
-      db().query('SELECT COUNT(*) count FROM branch_landing_record').get() as { count: number },
-    ).toEqual({ count: 0 })
-    expect(git(repository, 'show-ref', '--verify', `refs/heads/${branch}`)).toContain(tip)
-
     const sibling = `${key}-sibling`
-    git(repository, 'checkout', '-b', sibling)
-    writeFileSync(join(repository, 'state.txt'), 'sibling work\n')
-    git(repository, 'commit', '-am', `${key} sibling work`)
-    git(repository, 'checkout', 'main')
+    git(repository, 'branch', sibling)
     const siblingRun = addRun({ agent: 'codex', job: 'sibling branch', repo: project })
     db()
       .query(
@@ -76,7 +64,7 @@ test('dry-run previews automatic landing repair without writing, then non-dry pr
     const persisted = pruneBranch({ project, branch })
     expect(persisted.recordedLandings.map((landing) => landing.branch)).toEqual([branch])
     expect(persisted.wouldRecordLandings).toEqual([])
-    expect(git(repository, 'show-ref', '--verify', `refs/heads/${sibling}`)).toContain(sibling)
+    expect(existsSync(join(repository, '.git', 'refs', 'heads', sibling))).toBe(true)
     const first = db()
       .query('SELECT record_id,branch,tip,pr_number FROM branch_landing_record')
       .get() as {

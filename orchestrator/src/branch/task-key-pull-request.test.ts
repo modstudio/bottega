@@ -1,18 +1,13 @@
-import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { branchForTaskKey, pullRequestNumberForBranch } from './task-key-pull-request.ts'
 
-const database = () => {
-  const d = new Database(':memory:')
-  d.exec('PRAGMA foreign_keys=ON')
-  applyMigrations(d)
+const database = testDatabaseFixture((d) => {
   d.query(
     'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
   ).run('fixture', '/fixture', 'bun', '{}')
-  return d
-}
+})
 
 test('prefers the cursor branch when it is recorded', () => {
   expect(branchForTaskKey('fixture', 'DEV-977', 'DEV-977-work', database())).toBe('DEV-977-work')

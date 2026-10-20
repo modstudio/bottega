@@ -1,4 +1,3 @@
-import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -6,7 +5,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { ConfigClientError, configClient } from '../../../shared/config-client.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { answerRulingRefusal, combineRulingsSnapshots, parseAutonomy } from './autonomy.ts'
 import {
   HOSTED_AUTONOMY_TIMEOUT_MS,
@@ -19,8 +18,7 @@ const steps = [
   { slug: 'verify', stage: 'implement' as const, autonomy: 'auto' as const },
 ]
 const database = (settings = '{}') => {
-  const d = new Database(':memory:')
-  applyMigrations(d)
+  const d = migratedTestDatabase()
   d.query(
     'INSERT INTO project (record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?)',
   ).run('fixture', '/fixture', settings)

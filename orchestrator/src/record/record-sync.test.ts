@@ -13,7 +13,7 @@ import {
   STAMP,
 } from '../../test/fixtures/record-sync.ts'
 import { fakePostgres, serverError } from '../../test/fixtures/record-sync-postgres.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
@@ -117,8 +117,7 @@ function localLandingOverrideOutbox(mutate: (payload: Record<string, unknown>) =
 }
 
 function localScoreOutbox(): Database {
-  const local = new Database(':memory:')
-  applyMigrations(local)
+  const local = migratedTestDatabase()
   local
     .query(
       `INSERT INTO run
@@ -176,8 +175,7 @@ test('a quarantined newer row blocks redaction and becomes final after retry and
 })
 
 test('ordinary sync pushes an asking run before its live question', async () => {
-  const local = new Database(':memory:')
-  applyMigrations(local)
+  const local = migratedTestDatabase()
   local
     .query(
       `INSERT INTO run
@@ -538,8 +536,7 @@ test('a whole-request grant failure leaves every row untouched', async () => {
 })
 
 test('a quarantined parent defers its graph until retry delivers the parent', async () => {
-  const local = new Database(':memory:')
-  applyMigrations(local)
+  const local = migratedTestDatabase()
   local
     .query(
       `INSERT INTO run
@@ -689,8 +686,7 @@ test('retiring a row after its batch is sent does not mark its local snapshot sy
 })
 
 test('a dependent reports a retired parent without attempting delivery', async () => {
-  const local = new Database(':memory:')
-  applyMigrations(local)
+  const local = migratedTestDatabase()
   local
     .query(
       `INSERT INTO run

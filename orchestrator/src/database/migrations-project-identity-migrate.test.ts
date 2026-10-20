@@ -1,4 +1,4 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { afterEach, expect, test } from 'bun:test'
 import {
   createMemoryRecordApiClient,
@@ -11,6 +11,7 @@ import {
   migrationApplied,
   readUserVersion,
 } from './migrations.ts'
+import { migratedTestDatabase, migrationBoundaryTestDatabase } from './test-database.fixture.ts'
 
 const CONTRACT = '0115_project_identity_contract'
 const priorRecordApiUrl = process.env.ORCH_RECORD_API_URL
@@ -22,7 +23,6 @@ afterEach(() => {
 })
 
 function preContractProject(database: Database, recordId: string | null): void {
-  applyMigrationsBefore(database, CONTRACT)
   database
     .query('INSERT INTO project (record_id,name,path,settings) VALUES (?, ?, ?, ?)')
     .run(recordId, 'fixture', '/fixture', '{}')
@@ -30,7 +30,7 @@ function preContractProject(database: Database, recordId: string | null): void {
 
 test('the real two-phase migrate mints locally before contracting without hosting', async () => {
   delete process.env.ORCH_RECORD_API_URL
-  const database = new Database(':memory:')
+  const database = migrationBoundaryTestDatabase(CONTRACT)
   try {
     preContractProject(database, null)
     const beforeContract = readUserVersion(database)
@@ -59,7 +59,7 @@ test('the real two-phase migrate mints locally before contracting without hostin
 
 test('the real two-phase migrate skips authority and network when no identity is missing', async () => {
   delete process.env.ORCH_RECORD_API_URL
-  const database = new Database(':memory:')
+  const database = migrationBoundaryTestDatabase(CONTRACT)
   try {
     preContractProject(database, '01990000-0000-7000-8000-000000001214')
     database.exec(
@@ -82,7 +82,7 @@ test('the real two-phase migrate skips authority and network when no identity is
 
 test('the real two-phase migrate refuses unreachable hosting before contraction', async () => {
   process.env.ORCH_RECORD_API_URL = 'https://record-api.example.test'
-  const database = new Database(':memory:')
+  const database = migrationBoundaryTestDatabase(CONTRACT)
   try {
     preContractProject(database, null)
     const beforeContract = readUserVersion(database)
@@ -103,7 +103,7 @@ test('the real two-phase migrate refuses unreachable hosting before contraction'
 })
 
 test('a bounded phase never lowers a fully current store when the next step throws', () => {
-  const database = new Database(':memory:')
+  const database = migratedTestDatabase()
   try {
     applyMigrations(database)
     const current = readUserVersion(database)

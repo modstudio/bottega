@@ -1,7 +1,8 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations, migrationJournal } from '../database/migrations.ts'
+import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {
   forkStepCatalogueLocal,
   productionStepCatalogue,
@@ -19,13 +20,9 @@ import {
   validateWorkflowDefinition,
 } from './workflows.ts'
 
-const database = () => {
-  const d = new Database(':memory:')
-  d.exec('PRAGMA foreign_keys=ON')
-  applyMigrations(d)
+const database = testDatabaseFixture((d) => {
   seedWorkflows(d)
-  return d
-}
+})
 
 describe('seedMayPromote', () => {
   test('higher revision, no operator promotion → may promote (catches breaking bootstrap upgrades)', () => {

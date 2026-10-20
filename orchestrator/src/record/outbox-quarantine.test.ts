@@ -1,13 +1,12 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { retireOutboxRowWithDependencyProof } from './outbox-operator.ts'
 import { quarantineOutboxRow, retireOutboxRow, retryOutboxRow } from './outbox-quarantine.ts'
 
 function fixture(): Database {
-  const database = new Database(':memory:')
-  applyMigrations(database)
+  const database = migratedTestDatabase()
   database
     .query(
       `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,7,'score','record-7','{}','2026-09-28T00:00:00.000Z')`,
@@ -118,8 +117,7 @@ describe('outbox quarantine exits', () => {
   })
 
   test('retire accepts an active row blocked by a retired parent and audits it', () => {
-    const database = new Database(':memory:')
-    applyMigrations(database)
+    const database = migratedTestDatabase()
     database
       .query(
         `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at,retired_at,retirement_reason) VALUES (?,8,'run','parent','{}','2026-09-28','2026-09-28','not deliverable'),

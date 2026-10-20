@@ -1,7 +1,6 @@
-import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import type { WorkflowFactSource } from '../project/project-injection.ts'
 import type { Project } from '../project/projects.ts'
 import {
@@ -52,10 +51,7 @@ const project = (settings: Project['settings']): Project => ({
   settings,
 })
 
-const database = () => {
-  const d = new Database(':memory:')
-  d.exec('PRAGMA foreign_keys=ON')
-  applyMigrations(d)
+const database = testDatabaseFixture((d) => {
   seedWorkflows(d)
   d.query(
     'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
@@ -71,8 +67,7 @@ const database = () => {
       release: { rungs: [], mergeMethod: 'squash', requiredChecks: [] },
     }),
   )
-  return d
-}
+})
 
 describe('workflow render check', () => {
   test('passes with conditional and omitted steps in a mode', () => {

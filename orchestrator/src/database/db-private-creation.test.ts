@@ -37,7 +37,7 @@ test("a losing creator opens no replacement window and leaves the winner's defau
   const fixture = temporaryStore()
   try {
     const loser = createDatabasePrivately(fixture.path, (candidate) => {
-      initialize(candidate, fixture.root)
+      candidate.exec('CREATE TABLE losing_candidate (id INTEGER PRIMARY KEY)')
       const winner = createDatabasePrivately(fixture.path, (database) =>
         initialize(database, fixture.root),
       )

@@ -8,28 +8,6 @@ import {
 } from '../mcp/mcp-preflight.ts'
 import { type McpProbeResult, mcpCallEvidence, wrongProjectReason } from '../mcp/mcp-probe.ts'
 
-export type CwdMcpPreflightFacts = {
-  mcpRequest: McpRequest | undefined
-  callerCwdHasProject: boolean
-  forbidsRepo: boolean
-  repoJob: boolean
-  discoversMcpFromCwd: boolean
-}
-
-/**
- * Probe after routing: a failed doctor is evidence about the selected agent.
- * Agents that discover MCP from cwd must be probed later, against the worker
- * tree they will actually inspect; all others retain the pre-row path.
- */
-export function shouldDeferCwdMcpPreflight(facts: CwdMcpPreflightFacts): boolean {
-  const mcpMode = requestedMcpMode(facts.mcpRequest)
-  return Boolean(
-    mcpMode &&
-      facts.callerCwdHasProject &&
-      (facts.forbidsRepo || (facts.repoJob && facts.discoversMcpFromCwd)),
-  )
-}
-
 export type McpAttachmentFacts = {
   connection: McpConnection | null
   mcpRequest: McpRequest | undefined
