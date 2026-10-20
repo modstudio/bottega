@@ -19,12 +19,16 @@ type HostedChangeRow =
 
 type HostedTaskChild = Exclude<HostedChangeRow, HostedChanges['tasks'][number]>
 
-function childTaskRecordId(conn: Database, row: HostedTaskChild) {
+export function childTaskRecordId(
+  conn: Database,
+  row: { task_id?: string | null; task_key: string; project_name: string },
+) {
   if (row.task_id) {
-    const parent = conn
-      .query<{ record_id: string }, [string]>('SELECT record_id FROM task WHERE record_id=?')
-      .get(row.task_id)
-    if (parent) return parent.record_id
+    return (
+      conn
+        .query<{ record_id: string }, [string]>('SELECT record_id FROM task WHERE record_id=?')
+        .get(row.task_id)?.record_id ?? null
+    )
   }
   return taskRecordIdFor(conn, row.task_key, row.project_name)
 }
@@ -78,7 +82,8 @@ export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][numb
       ? stored
       : incoming
   conn
-    .query(`INSERT INTO task
+    .query(
+      `INSERT INTO task
       (record_id,key,project,project_record_id,title,status,status_category,parent_key,parent_record_id,body,assignee,opened_at,
        closed_at,updated_at,source,first_seen,last_seen,next_document_number)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(record_id) DO UPDATE SET
@@ -89,7 +94,8 @@ export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][numb
       body=excluded.body,assignee=excluded.assignee,opened_at=excluded.opened_at,
       closed_at=excluded.closed_at,updated_at=excluded.updated_at,source=excluded.source,
       first_seen=excluded.first_seen,last_seen=excluded.last_seen,
-      next_document_number=MAX(task.next_document_number,excluded.next_document_number)`)
+      next_document_number=MAX(task.next_document_number,excluded.next_document_number)`,
+    )
     .run(
       row.id,
       row.key,
@@ -344,8 +350,14 @@ function applySnapshotRow(
 
 const hostedTaskChangeTables = {
   hub_task: { machine: HOSTED_MACHINE_TABLES.hub_task, apply: applyHostedTask },
-  hub_task_comment: { machine: HOSTED_MACHINE_TABLES.hub_task_comment, apply: applyComment },
-  hub_task_document: { machine: HOSTED_MACHINE_TABLES.hub_task_document, apply: applyDocument },
+  hub_task_comment: {
+    machine: HOSTED_MACHINE_TABLES.hub_task_comment,
+    apply: applyComment,
+  },
+  hub_task_document: {
+    machine: HOSTED_MACHINE_TABLES.hub_task_document,
+    apply: applyDocument,
+  },
   hub_task_status_event: {
     machine: HOSTED_MACHINE_TABLES.hub_task_status_event,
     apply: applyStatusEvent,
@@ -360,6 +372,12 @@ export const HOSTED_TASK_CHANGE_TABLE_QUERY = (
 
 export function isHostedTaskChangeTable(table: string): table is HostedTaskChangeTable {
   return Object.hasOwn(hostedTaskChangeTables, table)
+}
+
+export function isHostedTaskChildTable(
+  table: string,
+): table is Exclude<HostedTaskChangeTable, 'hub_task'> {
+  return isHostedTaskChangeTable(table) && table !== 'hub_task'
 }
 
 export function applyHostedChangeUpsert(

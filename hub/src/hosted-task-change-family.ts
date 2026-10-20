@@ -1,15 +1,18 @@
 import type { Database } from 'bun:sqlite'
 import { db } from './db.ts'
 import type { HostedChangeFamily } from './hosted-change-family.ts'
+import { hostedTaskReference } from './hosted-task-reference.ts'
 import {
   applyHostedChangeUpsert,
   applyHostedTaskRows,
+  childTaskRecordId,
   deleteHostedChangeRow,
   HOSTED_TASK_CHANGE_TABLE_QUERY,
   type HostedTaskChangeTable,
   hostedChangeMachineRow,
   hostedChangeRowProject,
   isHostedTaskChangeTable,
+  isHostedTaskChildTable,
   reconcileParentRecordIds,
 } from './task-cache.ts'
 import {
@@ -28,23 +31,6 @@ import {
 
 export const HOSTED_CHANGES_CURSOR_KEY = 'collect.hosted-changes.cursor'
 
-const childTables = new Set(['hub_task_comment', 'hub_task_document', 'hub_task_status_event'])
-
-type ChildRow = NonNullable<HostedSpaceChange['row']> & {
-  task_id?: string | null
-  task_key: string
-  project_name: string
-  deleted_at: string | null
-}
-
-function cachedParent(row: ChildRow) {
-  if (row.task_id && db().query('SELECT 1 FROM task WHERE record_id=?').get(row.task_id))
-    return true
-  return Boolean(
-    db().query('SELECT 1 FROM task WHERE key=? AND project=?').get(row.task_key, row.project_name),
-  )
-}
-
 function pageParentStates(page: HostedSpaceChangePage) {
   const states = new Map<string, 'live' | 'absent'>()
   for (const change of page.changes) {
@@ -56,23 +42,29 @@ function pageParentStates(page: HostedSpaceChangePage) {
   return states
 }
 
-function liveChildRow(change: HostedSpaceChange): ChildRow | null {
-  if (change.op !== 'upsert' || !childTables.has(change.table)) return null
-  const row = change.row as ChildRow
-  return row.deleted_at ? null : row
+function liveChildRow(change: HostedSpaceChange) {
+  if (change.op !== 'upsert' || !isHostedTaskChildTable(change.table) || !change.row) return null
+  const row = change.row as Parameters<typeof childTaskRecordId>[1] & {
+    deleted_at?: string | null
+  }
+  return row.deleted_at ? null : { table: change.table, row }
 }
 
 type ParentRequirement = { kind: 'ready' } | { kind: 'absent' } | { kind: 'fetch'; id: string }
 
 function parentRequirement(
-  row: ChildRow,
+  child: NonNullable<ReturnType<typeof liveChildRow>>,
   pageParents: ReadonlyMap<string, 'live' | 'absent'>,
   fetched: ReadonlyMap<string, unknown>,
+  cached: boolean,
 ): ParentRequirement {
-  if (cachedParent(row)) return { kind: 'ready' }
-  if (!row.task_id || pageParents.get(row.task_id) === 'absent') return { kind: 'absent' }
-  if (pageParents.get(row.task_id) === 'live' || fetched.has(row.task_id)) return { kind: 'ready' }
-  return { kind: 'fetch', id: row.task_id }
+  const parent = hostedTaskReference(child.table, child.row)
+  if (parent.id && pageParents.get(parent.id) === 'absent') return { kind: 'absent' }
+  if (parent.id && (pageParents.get(parent.id) === 'live' || fetched.has(parent.id)))
+    return { kind: 'ready' }
+  if (cached) return { kind: 'ready' }
+  if (!parent.id) return { kind: 'absent' }
+  return { kind: 'fetch', id: parent.id }
 }
 
 async function fetchLiveParent(
@@ -96,9 +88,10 @@ async function prepareTaskParents(
   const fetched = new Map<string, Awaited<ReturnType<typeof hostedGetTask>>['task']>()
   const absent = new Set<string>()
   for (const change of page.changes) {
-    const row = liveChildRow(change)
-    if (!row) continue
-    const requirement = parentRequirement(row, pageParents, fetched)
+    const child = liveChildRow(change)
+    if (!child) continue
+    const cached = childTaskRecordId(db(), child.row) !== null
+    const requirement = parentRequirement(child, pageParents, fetched, cached)
     if (requirement.kind === 'ready') continue
     if (requirement.kind === 'absent') {
       absent.add(`${change.table}:${change.id}`)
