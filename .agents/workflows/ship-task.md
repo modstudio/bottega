@@ -21,8 +21,11 @@ modes:
     default: true
     steps:
       - rebase-trunk
+      - scope
       - sequence: review
       - sequence: sync
+        omit:
+          - docs-gather
       - run-gate
       - acceptance
       - sequence: land
@@ -31,8 +34,11 @@ modes:
     title: Ship through merge
     steps:
       - rebase-trunk
+      - scope
       - sequence: review
       - sequence: sync
+        omit:
+          - docs-gather
       - run-gate
       - acceptance
       - sequence: land

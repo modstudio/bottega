@@ -24,11 +24,14 @@ modes:
     steps:
       - dedupe
       - refresh
-      - discover
       - reproduce
       - research
       - recurrence
-      - design
+      - step: design
+        when:
+          step: recurrence
+          outcome:
+            - original-fix-wrong
       - decompose
       - signoff
       - write
