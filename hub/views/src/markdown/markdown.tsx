@@ -70,6 +70,12 @@ function isPropertyMap(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+function itemKeyLabel(item: unknown): string {
+  if (Array.isArray(item)) return 'list'
+  if (isPropertyMap(item)) return 'map'
+  return `value:${String(item)}`
+}
+
 function FrontmatterValue({
   value,
   ancestors,
@@ -81,14 +87,19 @@ function FrontmatterValue({
   if (Array.isArray(value)) {
     if (ancestors.has(value)) return '(cycle)'
     const nextAncestors = new Set(ancestors).add(value)
+    const occurrences = new Map<string, number>()
     return (
       <span className={markdownStyles().frontmatterItems()}>
-        {value.map((item, index) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: parsed frontmatter is immutable
-          <span key={index}>
-            <FrontmatterValue value={item} ancestors={nextAncestors} />
-          </span>
-        ))}
+        {value.map((item) => {
+          const label = itemKeyLabel(item)
+          const occurrence = (occurrences.get(label) ?? 0) + 1
+          occurrences.set(label, occurrence)
+          return (
+            <span key={`${label}-${occurrence}`}>
+              <FrontmatterValue value={item} ancestors={nextAncestors} />
+            </span>
+          )
+        })}
       </span>
     )
   }
