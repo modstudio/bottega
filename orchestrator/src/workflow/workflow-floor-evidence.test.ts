@@ -222,6 +222,7 @@ test('gathers a bound answered ruling and a finished matching gate', () => {
     answeredByOperator: true,
     boundToCursor: true,
     boundToStep: true,
+    answeredAt: '2026-09-01',
   })
   expect(gathered.gate).toEqual({
     id: 1,

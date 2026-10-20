@@ -297,6 +297,7 @@ function gatherRuling(
     answeredByOperator: row.answerer_kind === 'operator',
     boundToCursor: row.workflow_cursor_id === cursorId,
     boundToStep: row.workflow_step_ordinal === stepOrdinal && row.workflow_step_slug === stepSlug,
+    answeredAt: row.answered_at,
   }
 }
 

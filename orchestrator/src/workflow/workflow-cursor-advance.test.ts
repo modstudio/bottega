@@ -256,6 +256,7 @@ function closeStep(
   slug: string,
   outcome: string | undefined,
   ruling?: number,
+  extra: { review?: string } = {},
 ): string {
   const probe = d
     .query<{ id: number }, [string]>(
@@ -271,7 +272,7 @@ function closeStep(
     'selected',
     context,
     d,
-    { artifact: `probe:${probe}`, ...(ruling === undefined ? {} : { ruling }) },
+    { artifact: `probe:${probe}`, ...(ruling === undefined ? {} : { ruling }), ...extra },
     testPorts,
     undefined,
     undefined,
@@ -279,7 +280,7 @@ function closeStep(
   )
 }
 
-function boundRuling(d: Database): number {
+function boundRuling(d: Database, answeredAt = new Date(Date.now() + 1000).toISOString()): number {
   const row = d
     .query<{ id: number; ordinal: number; step_slug: string; workflow_key: string }, []>(
       'SELECT id,ordinal,step_slug,workflow_key FROM workflow_cursor',
@@ -297,12 +298,46 @@ function boundRuling(d: Database): number {
       newRecordId(),
       row.id,
       row.workflow_key,
-      '2026-10-20',
+      answeredAt,
       'floor ruling?',
-      '2026-10-20',
+      answeredAt,
       row.ordinal + 1,
       row.step_slug,
     )!.number
+}
+
+function insertGradedReview(d: Database): string {
+  const project = (
+    d.query<{ id: string }, [string]>('SELECT record_id AS id FROM project WHERE name=?').get(
+      'fixture',
+    ) as { id: string }
+  ).id
+  const key = (
+    d.query<{ workflow_key: string }, []>('SELECT workflow_key FROM workflow_cursor').get() as {
+      workflow_key: string
+    }
+  ).workflow_key
+  const runId = d
+    .query<{ id: string }, (string | number | null)[]>(
+      `INSERT INTO run (record_id,number,started_at,agent,job,repo,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,exit_code,launch_key,branch,session_id)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-10-20','codex','implement','fixture',?,'sha',1,'p','ok',0,?,null,?)
+       RETURNING record_id AS id`,
+    )
+    .get(newRecordId(), project, key, context.session)!.id
+  const reviewId = newRecordId()
+  d.query(
+    `INSERT INTO review (record_id,number,recorded_at,project_record_id)
+     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM review),'2026-10-20',?)`,
+  ).run(reviewId, project)
+  d.query(
+    `INSERT INTO review_lens (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
+     VALUES (?,?,?,'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
+  ).run(newRecordId(), reviewId, runId)
+  return String(
+    (d.query<{ number: number }, [string]>('SELECT number FROM review WHERE record_id=?').get(
+      reviewId,
+    ) as { number: number }).number,
+  )
 }
 
 describe('ruling outcomes and bounded re-entry', () => {
@@ -400,8 +435,22 @@ describe('ruling outcomes and bounded re-entry', () => {
     )
     expect(() => closeStep(d, 'reentry-bound', 'changed')).toThrow(/workflow await/)
     expect(() => closeStep(d, 'reentry-bound', 'changed')).toThrow(/non-re-entering outcome/)
-    const second = closeStep(d, 'reentry-bound', 'changed', boundRuling(d))
+    expect(() =>
+      closeStep(d, 'reentry-bound', 'changed', undefined, { review: insertGradedReview(d) }),
+    ).toThrow(/automatic re-entry bound is reached/)
+    const rulingN = boundRuling(d)
+    const second = closeStep(d, 'reentry-bound', 'changed', rulingN)
     expect(second).toContain('Flow so far: Pass 3')
+    expect(d.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({
+      ordinal: 0,
+      step_slug: 'flow-start',
+    })
+    closeStep(d, 'reentry-bound', undefined)
+    expect(() => closeStep(d, 'reentry-bound', 'changed', rulingN)).toThrow(
+      /automatic re-entry bound is reached/,
+    )
+    const third = closeStep(d, 'reentry-bound', 'changed', boundRuling(d))
+    expect(third).toContain('Flow so far: Pass 4')
     expect(d.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({
       ordinal: 0,
       step_slug: 'flow-start',
@@ -412,6 +461,7 @@ describe('ruling outcomes and bounded re-entry', () => {
     expect(closed.filter((entry: { reentered?: unknown }) => entry.reentered)).toEqual([
       expect.objectContaining({ reentered: { to: 'flow-start', pass: 2 } }),
       expect.objectContaining({ reentered: { to: 'flow-start', pass: 3 } }),
+      expect.objectContaining({ reentered: { to: 'flow-start', pass: 4 } }),
     ])
   })
 })

@@ -78,6 +78,7 @@ export type ValidatedEvidence = {
     answeredByOperator: boolean
     boundToCursor: boolean
     boundToStep: boolean
+    answeredAt?: string | null
   }
   review?: {
     recordId: string
@@ -140,6 +141,7 @@ export type FloorSatisfactionInput = {
   enforcement: EnforcementMode
   finishing: boolean
   openObligations: OpenObligation[]
+  freshRulingAfter?: string
 }
 
 export function flagForFloor(kind: FloorKind): string {
@@ -270,17 +272,28 @@ export function allowedCloseFloor(
   return floor
 }
 
-function rulingMet(floor: Floor, evidence: ValidatedEvidence): boolean {
+function rulingMet(
+  floor: Floor,
+  evidence: ValidatedEvidence,
+  freshRulingAfter?: string,
+): boolean {
   const ruling = evidence.ruling
   const review = evidence.review
+  const fresh =
+    freshRulingAfter === undefined ||
+    Boolean(ruling?.answeredAt && ruling.answeredAt > freshRulingAfter)
   const question = Boolean(
     ruling?.answered &&
       ruling.boundToCursor &&
       ruling.boundToStep &&
-      (!floor.operatorRuling || ruling.answeredByOperator),
+      (!floor.operatorRuling || ruling.answeredByOperator) &&
+      fresh,
   )
   const triaged = Boolean(
-    !floor.operatorRuling && review?.allFindingsDisposed && review.allLensesGraded,
+    freshRulingAfter === undefined &&
+      !floor.operatorRuling &&
+      review?.allFindingsDisposed &&
+      review.allLensesGraded,
   )
   return question || triaged
 }
@@ -347,8 +360,12 @@ function taskMet(floor: Floor, evidence: ValidatedEvidence): boolean {
   return !floor.requirePullRequest || task.mergedPullRequest
 }
 
-function floorIsMet(floor: Floor, evidence: ValidatedEvidence): boolean {
-  if (floor.kind === 'ruling') return rulingMet(floor, evidence)
+function floorIsMet(
+  floor: Floor,
+  evidence: ValidatedEvidence,
+  freshRulingAfter?: string,
+): boolean {
+  if (floor.kind === 'ruling') return rulingMet(floor, evidence, freshRulingAfter)
   if (floor.kind === 'command-exit') return commandExitMet(floor, evidence)
   if (floor.kind === 'recorded-artifact') return evidence.artifact?.exists === true
   if (floor.kind === 'tracker-transition') return taskMet(floor, evidence)
@@ -502,7 +519,10 @@ function deferralOf(
   return { defer: { floor: deferrable.kind, reason: deferReason } }
 }
 
-function satisfyOf(evidence: ValidatedEvidence): FloorDecision | { satisfyId?: number } {
+function satisfyOf(
+  evidence: ValidatedEvidence,
+  freshRulingAfter?: string,
+): FloorDecision | { satisfyId?: number } {
   const satisfy = evidence.satisfy
   if (!satisfy) return {}
   if (
@@ -511,7 +531,7 @@ function satisfyOf(evidence: ValidatedEvidence): FloorDecision | { satisfyId?: n
       satisfy.open &&
       !satisfy.abandoned &&
       satisfy.cursorMatches &&
-      floorIsMet(satisfy.floor, evidence)
+      floorIsMet(satisfy.floor, evidence, freshRulingAfter)
     )
   )
     return refuseSatisfy(satisfy)
@@ -540,7 +560,9 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
   if (rulingRefusal) return { action: 'refuse', message: rulingRefusal }
   const reviewRefusal = unfinishedReviewRefusal(input.floors, input.evidence)
   if (reviewRefusal) return { action: 'refuse', message: reviewRefusal }
-  const met = input.floors.filter((floor) => floorIsMet(floor, input.evidence))
+  const met = input.floors.filter((floor) =>
+    floorIsMet(floor, input.evidence, input.freshRulingAfter),
+  )
   const bindingRefusal = commandExitBindingRefusal(input.evidence)
   if (
     met.length === 0 &&
@@ -552,7 +574,7 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
   if ('action' in deferred) return deferred
   if (met.length === 0 && !deferred.defer)
     return { action: 'refuse', message: unmetMessage(input.floors, input.evidence) }
-  const satisfied = satisfyOf(input.evidence)
+  const satisfied = satisfyOf(input.evidence, input.freshRulingAfter)
   if ('action' in satisfied) return satisfied
   const remaining = input.openObligations.filter((row) => row.id !== input.evidence.satisfy?.id)
   const finishing = finishOf(input.finishing, remaining, deferred.defer)

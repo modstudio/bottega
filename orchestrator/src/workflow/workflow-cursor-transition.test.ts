@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  AUTOMATIC_REENTRY_LIMIT,
   type CursorValue,
   decideConditionalAdvance,
   decideCursorStart,
@@ -73,7 +72,7 @@ describe('workflow cursor transition', () => {
     expect(decideConditionalAdvance(steps, [], 1, 'changed')).toEqual({
       ordinal: 0,
       skipped: [],
-      reentered: { to: 'start', pass: AUTOMATIC_REENTRY_LIMIT + 1 },
+      reentered: { to: 'start', pass: 2 },
       requireRuling: false,
     })
   })
@@ -88,7 +87,7 @@ describe('workflow cursor transition', () => {
     expect(decideConditionalAdvance(steps, trail, 1, 'changed')).toEqual({
       ordinal: 0,
       skipped: [],
-      reentered: { to: 'start', pass: AUTOMATIC_REENTRY_LIMIT + 2 },
+      reentered: { to: 'start', pass: 3 },
       requireRuling: true,
     })
     expect(decideConditionalAdvance(steps, trail, 1, 'clean')).toEqual({

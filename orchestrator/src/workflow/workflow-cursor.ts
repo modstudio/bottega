@@ -38,6 +38,7 @@ import {
   type CursorTrailEntry,
   currentStepActivatedAt,
   isClosedStep,
+  reentryBoundFloorInput,
 } from './workflow-cursor-trail.ts'
 import {
   type CursorState,
@@ -89,10 +90,8 @@ type CursorRow = SelectableCursorRow & {
 }
 
 const MCP_INSTANCE = randomUUID()
-export const mcpWorkflowCursorContext = (): WorkflowCursorContext => ({
-  session: sessionId(),
-  instance: MCP_INSTANCE,
-})
+export const mcpWorkflowCursorContext = (): WorkflowCursorContext =>
+  ({ session: sessionId(), instance: MCP_INSTANCE })
 export const cliWorkflowCursorContext = (): WorkflowCursorContext => ({ session: sessionId() })
 
 function closeOpenWorkflowQuestion(
@@ -456,6 +455,7 @@ function applyFloorDecision(
   ports: FloorEvidencePorts,
   finishing: boolean,
   d: Database,
+  requireRuling = false,
 ): FloorDecision {
   const args = JSON.parse(row.args) as Record<string, string>
   const gathered = gatherValidatedEvidence({
@@ -484,6 +484,7 @@ function applyFloorDecision(
     enforcement: row.enforcement ?? 'note-only',
     finishing,
     openObligations: openWorkflowObligations(row.id, d),
+    ...reentryBoundFloorInput(requireRuling, row.closed, row.step_slug),
   })
 }
 
@@ -620,6 +621,7 @@ function closeFloorsForStep(
       ports,
       advance.ordinal === null,
       d,
+      advance.requireRuling,
     ),
     advance.requireRuling,
     currentStep,

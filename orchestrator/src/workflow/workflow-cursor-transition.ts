@@ -46,6 +46,7 @@ export function decideStepOutcome(
 }
 
 export const AUTOMATIC_REENTRY_LIMIT = 1
+const FIRST_VISIT = 1
 
 type ConditionalStep = {
   slug: string
@@ -111,12 +112,12 @@ export function decideConditionalAdvance(
   if (reenter && outcome === reenter.outcome) {
     const toOrdinal = steps.findIndex((step) => step.slug === reenter.to)
     if (toOrdinal >= 0 && toOrdinal < currentOrdinal) {
-      const count = trail.filter((entry) => entry.slug === current.slug && entry.reentered).length
+      const taken = trail.filter((entry) => entry.slug === current.slug && entry.reentered).length
       return {
         ordinal: toOrdinal,
         skipped: [],
-        reentered: { to: reenter.to, pass: count + AUTOMATIC_REENTRY_LIMIT + 1 },
-        requireRuling: count >= AUTOMATIC_REENTRY_LIMIT,
+        reentered: { to: reenter.to, pass: FIRST_VISIT + taken + 1 },
+        requireRuling: taken >= AUTOMATIC_REENTRY_LIMIT,
       }
     }
   }
