@@ -20,10 +20,10 @@ function violations(body: string) {
 }
 
 describe('open resume write decision', () => {
-  for (const field of ['epic', 'project', 'written'] as const) {
+  for (const field of ['project', 'written'] as const) {
     test(`reports a missing ${field} alone`, () => {
       const body = brief(['NEXT ACTION: continue']).replace(
-        `${field}: ${field === 'epic' ? 'DEV-1439' : field === 'project' ? PLATFORM_SLUG : written}\n`,
+        `${field}: ${field === 'project' ? PLATFORM_SLUG : written}\n`,
         '',
       )
       expect(violations(body)).toEqual([
@@ -35,7 +35,7 @@ describe('open resume write decision', () => {
     })
 
     test(`reports an empty ${field} alone`, () => {
-      const value = field === 'epic' ? 'DEV-1439' : field === 'project' ? PLATFORM_SLUG : written
+      const value = field === 'project' ? PLATFORM_SLUG : written
       const body = brief(['NEXT ACTION: continue']).replace(`${field}: ${value}`, `${field}:   `)
       expect(violations(body)).toEqual([
         {
@@ -45,6 +45,43 @@ describe('open resume write decision', () => {
       ])
     })
   }
+
+  test('accepts an epic tracker key alone', () => {
+    expect(violations(brief(['NEXT ACTION: continue']))).toEqual([])
+  })
+
+  test('accepts a task tracker key alone', () => {
+    const body = brief(['NEXT ACTION: continue']).replace('epic: DEV-1439', 'task: STO-1080')
+    expect(violations(body)).toEqual([])
+  })
+
+  test('accepts both epic and task tracker keys', () => {
+    const body = brief(['NEXT ACTION: continue']).replace(
+      'epic: DEV-1439',
+      'epic: DEV-1439\ntask: STO-1080',
+    )
+    expect(violations(body)).toEqual([])
+  })
+
+  test('reports neither epic nor task', () => {
+    const body = brief(['NEXT ACTION: continue']).replace('epic: DEV-1439\n', '')
+    expect(violations(body)).toEqual([
+      {
+        offendingText: 'epic or task: <missing>',
+        remedy: 'supply a top-level epic or task field holding a tracker key',
+      },
+    ])
+  })
+
+  test('reports a present tracker field whose value is not a key', () => {
+    const body = brief(['NEXT ACTION: continue']).replace('DEV-1439', 'sync-redesign')
+    expect(violations(body)).toEqual([
+      {
+        offendingText: 'epic: sync-redesign',
+        remedy: 'supply epic as a tracker key such as DEV-1208',
+      },
+    ])
+  })
 
   test('reports an invalid written timestamp alone', () => {
     const body = brief(['NEXT ACTION: continue']).replace(written, 'Tuesday afternoon')
@@ -91,7 +128,7 @@ describe('open resume write decision', () => {
   test('returns all violations together', () => {
     const body = `---\nstatus: open\nepic:\nproject:\nwritten:\n---\n\n/tmp/a /private/tmp/b /var/folders/c notes/scratchpad/d /state/orchestrator/runs/e\n`
     expect(violations(body).map(({ offendingText }) => offendingText)).toEqual([
-      'epic: <missing or empty>',
+      'epic: ',
       'project: <missing or empty>',
       'written: <missing or empty>',
       'NEXT ACTION: <missing>',

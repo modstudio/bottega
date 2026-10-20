@@ -10,6 +10,7 @@ export type OpenResumeViolation = {
 }
 
 const ISO_8601_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/
+const TRACKER_KEY = /^[A-Z][A-Z0-9]*-[0-9]+$/
 const NEXT_ACTION_LINE =
   /^[ \t]*(?:#{1,6}[ \t]+|(?:(?:[-+*]|\d+[.)])[ \t]+))?(?:[*_]{1,3})?NEXT ACTION(?:[*_]{1,3})?(?=[ \t:]|$)/im
 const PATH_TOKEN = /\/?[A-Za-z0-9._~:@%+=-]+(?:\/[A-Za-z0-9._~:@%+=-]+)*\/?/g
@@ -24,7 +25,7 @@ function isScratchLocation(path: string): boolean {
   )
 }
 
-function missingField(field: 'epic' | 'project' | 'written'): OpenResumeViolation {
+function missingField(field: 'project' | 'written'): OpenResumeViolation {
   return {
     offendingText: `${field}: <missing or empty>`,
     remedy: `supply a non-empty top-level ${field} field`,
@@ -37,7 +38,23 @@ export function openResumeViolations(
   frontmatter: ResumeFrontmatter,
 ): OpenResumeViolation[] {
   const violations: OpenResumeViolation[] = []
-  for (const field of ['epic', 'project', 'written'] as const) {
+  if (!('epic' in frontmatter) && !('task' in frontmatter)) {
+    violations.push({
+      offendingText: 'epic or task: <missing>',
+      remedy: 'supply a top-level epic or task field holding a tracker key',
+    })
+  }
+  for (const field of ['epic', 'task'] as const) {
+    if (!(field in frontmatter)) continue
+    const value = frontmatter[field] ?? ''
+    if (!TRACKER_KEY.test(value.trim())) {
+      violations.push({
+        offendingText: `${field}: ${value}`,
+        remedy: `supply ${field} as a tracker key such as DEV-1208`,
+      })
+    }
+  }
+  for (const field of ['project', 'written'] as const) {
     if (!frontmatter[field]?.trim()) violations.push(missingField(field))
   }
   const written = frontmatter.written?.trim()

@@ -4,6 +4,7 @@
 const RESUME_FRONTMATTER_KEYS = [
   'status',
   'epic',
+  'task',
   'project',
   'written',
   'consumed',
