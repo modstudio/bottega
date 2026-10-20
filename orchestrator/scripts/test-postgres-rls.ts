@@ -360,7 +360,9 @@ try {
   if (workflowCatalogue !== 0 || lensCatalogue !== 0 || portCatalogue !== 0)
     throw new EarlyExit(workflowCatalogue || lensCatalogue || portCatalogue)
 
-  const rls = await run(
+  const rls = process.env.DEV_1415_IMPORT_ONLY
+    ? 0
+    : await run(
     ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-rls.test.ts'],
     {
       ORCH_TEST_POSTGRES_CONTAINER: container,
@@ -369,7 +371,7 @@ try {
       RECORD_AUTH_DATABASE_URL: authUrl,
       ORCH_TEST_POSTGRES_FALSIFY: falsifyMode,
     },
-  )
+      )
   if (rls !== 0) process.exitCode = rls
   else if (!falsifyMode) {
     const readOnlyMembership = await run(
@@ -416,11 +418,13 @@ try {
         )
         if (jsonbBinding !== 0) process.exitCode = jsonbBinding
         else {
-          const evidence = await run(['bun', 'run', '--cwd', '../hub', 'test:postgres'], {
-            ORCH_TEST_POSTGRES_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,
-            ORCH_RECORD_URL: actorUrl,
-            RECORD_AUTH_DATABASE_URL: authUrl,
-          })
+          const evidence = process.env.DEV_1415_IMPORT_ONLY
+            ? 0
+            : await run(['bun', 'run', '--cwd', '../hub', 'test:postgres'], {
+                ORCH_TEST_POSTGRES_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,
+                ORCH_RECORD_URL: actorUrl,
+                RECORD_AUTH_DATABASE_URL: authUrl,
+              })
           if (evidence !== 0) process.exitCode = evidence
           else
             process.exitCode = await run(

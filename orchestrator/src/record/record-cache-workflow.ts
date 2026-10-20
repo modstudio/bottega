@@ -142,33 +142,36 @@ function applyIdentity(
 ): void {
   const found =
     local
-      .query<{ id: number; generation: number }, [string, string]>(
-        `SELECT id,generation FROM ${n.identity} WHERE record_id=? AND space_id=?`,
+      .query<{ id: number; record_id: string; generation: number }, [string, string]>(
+        `SELECT id,record_id,generation FROM ${n.identity} WHERE record_id=? AND space_id=?`,
       )
       .get(recordId, spaceId) ??
     local
-      .query<{ id: number; generation: number }, [string, string]>(
-        `SELECT id,generation FROM ${n.identity} WHERE space_id=? AND slug=?`,
+      .query<{ id: number; record_id: string; generation: number }, [string, string]>(
+        `SELECT id,record_id,generation FROM ${n.identity} WHERE space_id=? AND slug=?`,
       )
       .get(spaceId, String(item.slug))
   const generation = Number(item.generation ?? 1)
   if (found) {
-    if (generation > found.generation) deleteIdentityHistory(local, n, spaceId, found.id)
+    if (generation !== found.generation || recordId !== found.record_id) {
+      deleteIdentityHistory(local, n, spaceId, found.id)
+      resetIdentityHistoryCursors(local, n, spaceId)
+    }
     local
       .query(`UPDATE ${n.identity} SET record_id=?,slug=?,generation=?,created_at=? WHERE id=?`)
-      .run(
-        recordId,
-        String(item.slug),
-        Math.max(generation, found.generation),
-        String(item.createdAt),
-        found.id,
-      )
+      .run(recordId, String(item.slug), generation, String(item.createdAt), found.id)
   } else
     local
       .query(
         `INSERT INTO ${n.identity} (record_id,space_id,slug,generation,created_at) VALUES (?,?,?,?,?)`,
       )
       .run(recordId, spaceId, String(item.slug), generation, String(item.createdAt))
+}
+
+function resetIdentityHistoryCursors(local: Database, n: Names, spaceId: string): void {
+  local
+    .query('DELETE FROM schema_meta WHERE key=? OR key=?')
+    .run(`${CURSOR}:${spaceId}:${n.version}`, `${CURSOR}:${spaceId}:${n.event}`)
 }
 
 function deleteIdentityHistory(local: Database, n: Names, spaceId: string, parentId: number): void {
