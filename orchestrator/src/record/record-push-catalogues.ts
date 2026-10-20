@@ -261,7 +261,7 @@ function workflowSpacePlan(local: Database, spaceId: string): RecordWorkflowImpo
     const identities = (
       local.query(`SELECT * FROM ${name} WHERE space_id IS NULL`).all() as Record<string, unknown>[]
     ).map((r) => ({
-      id: String(r.record_id),
+      id: replicatedId(spaceId, name, String(r.record_id)),
       spaceId,
       slug: String(r.slug),
       generation: 1,
@@ -275,9 +275,9 @@ function workflowSpacePlan(local: Database, spaceId: string): RecordWorkflowImpo
         )
         .all() as Record<string, unknown>[]
     ).map((r) => ({
-      id: String(r.record_id),
+      id: replicatedId(spaceId, `${name}_version`, String(r.record_id)),
       spaceId,
-      ownerId: String(r.owner_record_id),
+      ownerId: replicatedId(spaceId, name, String(r.owner_record_id)),
       n: Number(r.n),
       status: r.status as 'draft' | 'production' | 'retired',
       definition: String(r.definition),
@@ -295,9 +295,9 @@ function workflowSpacePlan(local: Database, spaceId: string): RecordWorkflowImpo
         )
         .all() as Record<string, unknown>[]
     ).map((r) => ({
-      id: String(r.record_id),
+      id: replicatedId(spaceId, `${name}_event`, String(r.record_id)),
       spaceId,
-      ownerVersionId: String(r.version_record_id),
+      ownerVersionId: replicatedId(spaceId, `${name}_version`, String(r.version_record_id)),
       event: r.event as 'set' | 'fork' | 'import' | 'promote' | 'retire',
       author: String(r.author),
       reason: String(r.reason),
