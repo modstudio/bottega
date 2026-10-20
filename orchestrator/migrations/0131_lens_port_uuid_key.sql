@@ -40,7 +40,7 @@ INSERT INTO lens SELECT record_id,id,title,question,excludes,slots,version,enabl
 WHERE space_id IS NOT NULL OR NOT EXISTS (SELECT 1 FROM record_install_binding WHERE id=1);
 CREATE TABLE lens_revision (
   record_id TEXT NOT NULL PRIMARY KEY,
-  lens_record_id TEXT NOT NULL REFERENCES lens(record_id) ON DELETE CASCADE,
+  lens_record_id TEXT NOT NULL REFERENCES lens(record_id) ON UPDATE CASCADE ON DELETE CASCADE,
   version INTEGER NOT NULL,
   prior_body TEXT NOT NULL,
   reason TEXT NOT NULL CHECK(length(trim(reason)) > 0),
@@ -53,7 +53,7 @@ SELECT r.record_id,(SELECT l.record_id FROM lens_uuid_snapshot l WHERE l.id=r.le
 FROM lens_revision_uuid_snapshot r WHERE r.space_id IS NOT NULL OR NOT EXISTS (SELECT 1 FROM record_install_binding WHERE id=1);
 CREATE TABLE lens_profile (
   record_id TEXT NOT NULL PRIMARY KEY,
-  lens_record_id TEXT NOT NULL REFERENCES lens(record_id) ON DELETE CASCADE,
+  lens_record_id TEXT NOT NULL REFERENCES lens(record_id) ON UPDATE CASCADE ON DELETE CASCADE,
   axis TEXT NOT NULL CHECK(axis IN ('framework','architecture')),
   name TEXT NOT NULL,
   version INTEGER NOT NULL CHECK(version > 0),
@@ -66,7 +66,7 @@ SELECT p.record_id,(SELECT l.record_id FROM lens_uuid_snapshot l WHERE l.id=p.le
 FROM lens_profile_uuid_snapshot p WHERE p.space_id IS NOT NULL OR NOT EXISTS (SELECT 1 FROM record_install_binding WHERE id=1);
 CREATE TABLE lens_profile_revision (
   record_id TEXT NOT NULL PRIMARY KEY,
-  profile_record_id TEXT NOT NULL REFERENCES lens_profile(record_id) ON DELETE CASCADE,
+  profile_record_id TEXT NOT NULL REFERENCES lens_profile(record_id) ON UPDATE CASCADE ON DELETE CASCADE,
   version INTEGER NOT NULL,
   prior_body TEXT NOT NULL,
   reason TEXT NOT NULL CHECK(length(trim(reason)) > 0),
@@ -80,7 +80,7 @@ FROM lens_profile_revision_uuid_snapshot r WHERE r.space_id IS NOT NULL OR NOT E
 CREATE TABLE project_lens_profile (
   record_id TEXT NOT NULL PRIMARY KEY,
   project_record_id TEXT NOT NULL,
-  lens_record_id TEXT REFERENCES lens(record_id) ON DELETE CASCADE,
+  lens_record_id TEXT REFERENCES lens(record_id) ON UPDATE CASCADE ON DELETE CASCADE,
   axis TEXT NOT NULL CHECK(axis IN ('framework','architecture')),
   profile_name TEXT NOT NULL,
   selected_version INTEGER CHECK(selected_version IS NULL OR selected_version > 0),
@@ -92,7 +92,7 @@ SELECT s.record_id,s.project_record_id,(SELECT l.record_id FROM lens_uuid_snapsh
 FROM project_lens_profile_uuid_snapshot s WHERE s.space_id IS NOT NULL OR NOT EXISTS (SELECT 1 FROM record_install_binding WHERE id=1);
 CREATE TABLE project_lens_profile_revision (
   record_id TEXT NOT NULL PRIMARY KEY,
-  selection_record_id TEXT NOT NULL REFERENCES project_lens_profile(record_id) ON DELETE CASCADE,
+  selection_record_id TEXT NOT NULL REFERENCES project_lens_profile(record_id) ON UPDATE CASCADE ON DELETE CASCADE,
   prior_profile_name TEXT,
   prior_selected_version INTEGER CHECK(prior_selected_version IS NULL OR prior_selected_version > 0),
   reason TEXT NOT NULL CHECK(length(trim(reason)) > 0),
@@ -115,7 +115,7 @@ CREATE TABLE port_pair (
 INSERT INTO port_pair SELECT record_id,source_project_record_id,target_project_record_id,created_at,space_id FROM port_pair_uuid_snapshot
 WHERE space_id IS NOT NULL OR NOT EXISTS (SELECT 1 FROM record_install_binding WHERE id=1);
 CREATE TABLE port_baseline (
-  pair_record_id TEXT NOT NULL PRIMARY KEY REFERENCES port_pair(record_id) ON DELETE CASCADE,
+  pair_record_id TEXT NOT NULL PRIMARY KEY REFERENCES port_pair(record_id) ON UPDATE CASCADE ON DELETE CASCADE,
   source_commit TEXT,
   scanned_at TEXT,
   record_id TEXT NOT NULL UNIQUE,
@@ -152,7 +152,7 @@ INSERT INTO port_ref SELECT record_id,task_key,target_project_record_id,note,cre
 WHERE space_id IS NOT NULL OR NOT EXISTS (SELECT 1 FROM record_install_binding WHERE id=1);
 CREATE TABLE port_ref_source (
   record_id TEXT NOT NULL PRIMARY KEY,
-  ref_record_id TEXT NOT NULL REFERENCES port_ref(record_id) ON DELETE CASCADE,
+  ref_record_id TEXT NOT NULL REFERENCES port_ref(record_id) ON UPDATE CASCADE ON DELETE CASCADE,
   source_project_record_id TEXT NOT NULL,
   commits TEXT NOT NULL,
   paths TEXT NOT NULL,
@@ -165,7 +165,7 @@ SELECT s.record_id,(SELECT r.record_id FROM port_ref_uuid_snapshot r WHERE r.tas
 FROM port_ref_source_uuid_snapshot s WHERE s.space_id IS NOT NULL OR NOT EXISTS (SELECT 1 FROM record_install_binding WHERE id=1);
 CREATE TABLE port_skip (
   record_id TEXT NOT NULL PRIMARY KEY,
-  pair_record_id TEXT NOT NULL REFERENCES port_pair(record_id) ON DELETE CASCADE,
+  pair_record_id TEXT NOT NULL REFERENCES port_pair(record_id) ON UPDATE CASCADE ON DELETE CASCADE,
   candidate TEXT NOT NULL,
   reason TEXT NOT NULL,
   skipped_at TEXT NOT NULL,

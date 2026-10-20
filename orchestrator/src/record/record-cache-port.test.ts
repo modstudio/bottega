@@ -105,6 +105,108 @@ test('a hosted pull keeps the null-space local copy', () => {
   ).toBe(before)
 })
 
+test('port cache adopts hosted UUIDs and cascades them through every child relationship', () => {
+  const local = db()
+  const spaceId = newRecordId()
+  const sourceProjectId = newRecordId()
+  const targetProjectId = newRecordId()
+  const oldPairId = newRecordId()
+  const pair = {
+    id: oldPairId,
+    spaceId,
+    sourceProjectId,
+    targetProjectId,
+    createdAt: at,
+  }
+  const oldBaselineId = newRecordId()
+  const baseline = {
+    id: oldBaselineId,
+    spaceId,
+    pairId: oldPairId,
+    sourceCommit: 'abc123',
+    scannedAt: at,
+    version: 1,
+    updatedAt: at,
+  }
+  const oldSkipId = newRecordId()
+  const skip = {
+    id: oldSkipId,
+    spaceId,
+    pairId: oldPairId,
+    candidate: 'def456',
+    reason: 'already ported',
+    skippedAt: at,
+  }
+  applyPortCatalogueRow(local, 'port_pair', pair)
+  applyPortCatalogueRow(local, 'port_baseline', baseline)
+  applyPortCatalogueRow(local, 'port_skip', skip)
+
+  const pairId = newRecordId()
+  applyPortCatalogueRow(local, 'port_pair', { ...pair, id: pairId })
+  expect(
+    local.query('SELECT pair_record_id FROM port_baseline WHERE record_id=?').get(oldBaselineId),
+  ).toEqual({ pair_record_id: pairId })
+  expect(
+    local.query('SELECT pair_record_id FROM port_skip WHERE record_id=?').get(oldSkipId),
+  ).toEqual({ pair_record_id: pairId })
+  const baselineId = newRecordId()
+  const skipId = newRecordId()
+  applyPortCatalogueRow(local, 'port_baseline', { ...baseline, id: baselineId, pairId })
+  applyPortCatalogueRow(local, 'port_skip', { ...skip, id: skipId, pairId })
+  expect(
+    local.query('SELECT record_id FROM port_baseline WHERE pair_record_id=?').get(pairId),
+  ).toEqual({ record_id: baselineId })
+  expect(local.query('SELECT record_id FROM port_skip WHERE pair_record_id=?').get(pairId)).toEqual(
+    { record_id: skipId },
+  )
+
+  const oldRefId = newRecordId()
+  const ref = {
+    id: oldRefId,
+    spaceId,
+    taskKey: 'DEV-1214',
+    targetProjectId,
+    note: 'old ref',
+    createdAt: at,
+    resolvedAt: null,
+    deletedAt: null,
+    version: 1,
+    updatedAt: at,
+  }
+  const oldSourceId = newRecordId()
+  const source = {
+    id: oldSourceId,
+    spaceId,
+    refId: oldRefId,
+    sourceProjectId,
+    commits: '["abc123"]',
+    paths: '["src/a.ts"]',
+    note: 'source',
+    deletedAt: null,
+    updatedAt: at,
+  }
+  applyPortCatalogueRow(local, 'port_ref', ref)
+  applyPortCatalogueRow(local, 'port_ref_source', source)
+  const refId = newRecordId()
+  applyPortCatalogueRow(local, 'port_ref', { ...ref, id: refId })
+  expect(
+    local.query('SELECT ref_record_id FROM port_ref_source WHERE record_id=?').get(oldSourceId),
+  ).toEqual({ ref_record_id: refId })
+  const sourceId = newRecordId()
+  applyPortCatalogueRow(local, 'port_ref_source', { ...source, id: sourceId, refId })
+  expect(
+    local.query('SELECT record_id FROM port_ref_source WHERE ref_record_id=?').get(refId),
+  ).toEqual({ record_id: sourceId })
+
+  const oldDoctrine = doctrine(spaceId)
+  applyPortCatalogueRow(local, 'port_doctrine', oldDoctrine)
+  const doctrineId = newRecordId()
+  applyPortCatalogueRow(local, 'port_doctrine', { ...oldDoctrine, id: doctrineId })
+  expect(
+    local.query('SELECT record_id FROM port_doctrine WHERE space_id=? AND number=1').get(spaceId),
+  ).toEqual({ record_id: doctrineId })
+})
+
 test('port pull caches unregistered catalogue rows and continues to a registered pair', async () => {
   const local = db()
   local.query('DELETE FROM project').run()

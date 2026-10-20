@@ -215,9 +215,9 @@ function applyDoctrine(local: Database, item: RecordPortRowByTable['port_doctrin
   if (found)
     local
       .query(
-        'UPDATE port_doctrine SET space_id=?,title=?,body=?,created_at=?,retired_at=?,version=? WHERE record_id=?',
+        'UPDATE port_doctrine SET record_id=?,space_id=?,title=?,body=?,created_at=?,retired_at=?,version=? WHERE record_id=?',
       )
-      .run(spaceId, ...values, found.record_id)
+      .run(recordId, spaceId, ...values, found.record_id)
   else
     local
       .query(
@@ -374,9 +374,9 @@ function applyRef(local: Database, item: RecordPortRowByTable['port_ref']): void
   if (found)
     local
       .query(
-        'UPDATE port_ref SET space_id=?,task_key=?,target_project_record_id=?,note=?,created_at=?,resolved_at=?,version=? WHERE record_id=?',
+        'UPDATE port_ref SET record_id=?,space_id=?,task_key=?,target_project_record_id=?,note=?,created_at=?,resolved_at=?,version=? WHERE record_id=?',
       )
-      .run(...values.slice(1), found.record_id)
+      .run(...values, found.record_id)
   else
     local
       .query(

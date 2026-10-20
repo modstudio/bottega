@@ -150,8 +150,11 @@ function applyLensRevisionRow(local: Database, item: Record<string, unknown>): v
       .get(spaceId, parent.record_id, Number(item.version))
   if (found)
     local
-      .query('UPDATE lens_revision SET prior_body=?,reason=?,session_id=?,at=? WHERE record_id=?')
+      .query(
+        'UPDATE lens_revision SET record_id=?,prior_body=?,reason=?,session_id=?,at=? WHERE record_id=?',
+      )
       .run(
+        recordId,
         String(item.priorBody),
         String(item.reason),
         nullableText(item.sessionId),
@@ -198,9 +201,10 @@ function applyLensProfileRow(local: Database, item: Record<string, unknown>): vo
   if (found)
     local
       .query(
-        'UPDATE lens_profile SET lens_record_id=?,version=?,body=?,enabled=? WHERE record_id=?',
+        'UPDATE lens_profile SET record_id=?,lens_record_id=?,version=?,body=?,enabled=? WHERE record_id=?',
       )
       .run(
+        recordId,
         lens.record_id,
         Number(item.version),
         String(item.body),
@@ -248,9 +252,10 @@ function applyLensProfileRevisionRow(local: Database, item: Record<string, unkno
   if (found)
     local
       .query(
-        'UPDATE lens_profile_revision SET prior_body=?,reason=?,session_id=?,at=? WHERE record_id=?',
+        'UPDATE lens_profile_revision SET record_id=?,prior_body=?,reason=?,session_id=?,at=? WHERE record_id=?',
       )
       .run(
+        recordId,
         String(item.priorBody),
         String(item.reason),
         nullableText(item.sessionId),
@@ -302,9 +307,10 @@ function applyProjectLensProfileRow(local: Database, item: Record<string, unknow
   if (found)
     local
       .query(
-        'UPDATE project_lens_profile SET profile_name=?,selected_version=?,selection_version=? WHERE record_id=?',
+        'UPDATE project_lens_profile SET record_id=?,profile_name=?,selected_version=?,selection_version=? WHERE record_id=?',
       )
       .run(
+        recordId,
         String(item.profileName),
         nullableNumber(item.selectedVersion),
         Number(item.selectionVersion),
@@ -353,9 +359,10 @@ function applyProjectLensProfileRevisionRow(local: Database, item: Record<string
   if (found)
     local
       .query(
-        'UPDATE project_lens_profile_revision SET prior_profile_name=?,prior_selected_version=?,reason=?,session_id=?,at=? WHERE record_id=?',
+        'UPDATE project_lens_profile_revision SET record_id=?,prior_profile_name=?,prior_selected_version=?,reason=?,session_id=?,at=? WHERE record_id=?',
       )
       .run(
+        recordId,
         nullableText(item.priorProfileName),
         nullableNumber(item.priorSelectedVersion),
         String(item.reason),
