@@ -209,3 +209,209 @@ describe('conditional workflow cursor advance', () => {
     expect(d.query('SELECT state FROM workflow_cursor').get()).toEqual({ state: 'done' })
   })
 })
+
+const flowStep = (slug: string, extra: Record<string, unknown> = {}) => ({
+  slug,
+  title: slug,
+  stage: 'review' as const,
+  body: `${slug} body.`,
+  floor: ['recorded-artifact'],
+  job: null,
+  autonomy: 'auto' as const,
+  needs: [],
+  ...extra,
+})
+
+function installFlowFixture(
+  d: Database,
+  slug: string,
+  extraSteps: ReturnType<typeof flowStep>[],
+  modeSteps: Array<string | { step: string; when: { step: string; outcome: string[] } }>,
+): void {
+  const current = productionStepCatalogue(d).definition
+  const catalogue = setStepCatalogueLocal(
+    { ...current, steps: [...current.steps, ...extraSteps] },
+    'flow-state cursor fixture',
+    'test',
+    d,
+  )
+  promoteStepCatalogueLocal(catalogue.n, 'publish', 'test', d)
+  const draft = setWorkflowLocal(
+    slug,
+    {
+      title: 'Flow-state fixture',
+      description: 'Exercises ruling outcomes and re-entry.',
+      arguments: [{ name: 'key', required: true, description: 'Task key.' }],
+      modes: [{ slug: 'default', title: 'Default', default: true, steps: modeSteps }],
+    },
+    'flow-state cursor fixture',
+    'test',
+    d,
+  )
+  promoteWorkflowLocal(slug, draft.n, 'publish', 'test', d)
+}
+
+function closeStep(
+  d: Database,
+  slug: string,
+  outcome: string | undefined,
+  ruling?: number,
+): string {
+  const probe = d
+    .query<{ id: number }, [string]>(
+      `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at)
+       VALUES (?,'["true"]','/tmp','abc',0,'','2026-10-20') RETURNING id`,
+    )
+    .get(newRecordId())!.id
+  return nextWorkflowStep(
+    slug,
+    'fixture',
+    'default',
+    args,
+    'selected',
+    context,
+    d,
+    { artifact: `probe:${probe}`, ...(ruling === undefined ? {} : { ruling }) },
+    testPorts,
+    undefined,
+    undefined,
+    outcome,
+  )
+}
+
+function boundRuling(d: Database): number {
+  const row = d
+    .query<{ id: number; ordinal: number; step_slug: string; workflow_key: string }, []>(
+      'SELECT id,ordinal,step_slug,workflow_key FROM workflow_cursor',
+    )
+    .get()!
+  return d
+    .query<{ number: number }, (string | number | null)[]>(
+      `INSERT INTO question
+        (number,record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,answered_at,answer,
+         workflow_step_ordinal,workflow_step_slug)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),?,?,?,?,?,'workflow',?,'yes',?,?)
+       RETURNING number`,
+    )
+    .get(
+      newRecordId(),
+      row.id,
+      row.workflow_key,
+      '2026-10-20',
+      'floor ruling?',
+      '2026-10-20',
+      row.ordinal + 1,
+      row.step_slug,
+    )!.number
+}
+
+describe('ruling outcomes and bounded re-entry', () => {
+  test('a ruling outcome refuses without a ruling and closes with one', () => {
+    const d = database()
+    installFlowFixture(
+      d,
+      'ruling-outcome',
+      [
+        flowStep('flow-triage', { outcomes: ['fix', 'clear'], rulingOutcomes: ['fix'] }),
+        flowStep('flow-done'),
+      ],
+      ['flow-triage', 'flow-done'],
+    )
+    open(d, 'ruling-outcome')
+    expect(() => closeStep(d, 'ruling-outcome', 'fix')).toThrow(/floor ruling is unmet/)
+    expect(closeStep(d, 'ruling-outcome', 'fix', boundRuling(d))).toContain('flow-done body.')
+  })
+
+  test('a non-ruling outcome closes on ordinary floors', () => {
+    const d = database()
+    installFlowFixture(
+      d,
+      'ordinary-outcome',
+      [
+        flowStep('flow-triage', { outcomes: ['fix', 'clear'], rulingOutcomes: ['fix'] }),
+        flowStep('flow-done'),
+      ],
+      ['flow-triage', 'flow-done'],
+    )
+    open(d, 'ordinary-outcome')
+    expect(closeStep(d, 'ordinary-outcome', 'clear')).toContain('flow-done body.')
+  })
+
+  test('the first re-entry moves back, records pass 2, and a clean outcome advances', () => {
+    const d = database()
+    installFlowFixture(
+      d,
+      'reentry-once',
+      [
+        flowStep('flow-start'),
+        flowStep('flow-apply', {
+          outcomes: ['changed', 'clean'],
+          reenter: { to: 'flow-start', outcome: 'changed' },
+        }),
+        flowStep('flow-done'),
+      ],
+      ['flow-start', 'flow-apply', 'flow-done'],
+    )
+    open(d, 'reentry-once')
+    closeStep(d, 'reentry-once', undefined)
+    const first = closeStep(d, 'reentry-once', 'changed')
+    expect(first).toContain('Flow so far: Pass 2')
+    expect(d.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({
+      ordinal: 0,
+      step_slug: 'flow-start',
+    })
+    const closed = JSON.parse(
+      (d.query('SELECT closed FROM workflow_cursor').get() as { closed: string }).closed,
+    )
+    expect(closed.at(-1)).toMatchObject({
+      slug: 'flow-apply',
+      outcome: 'changed',
+      reentered: { to: 'flow-start', pass: 2 },
+    })
+    closeStep(d, 'reentry-once', undefined)
+    expect(closeStep(d, 'reentry-once', 'clean')).toContain('flow-done body.')
+    expect(d.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({
+      ordinal: 2,
+      step_slug: 'flow-done',
+    })
+  })
+
+  test('a second re-entry without a ruling is refused and with a ruling re-enters', () => {
+    const d = database()
+    installFlowFixture(
+      d,
+      'reentry-bound',
+      [
+        flowStep('flow-start'),
+        flowStep('flow-apply', {
+          outcomes: ['changed', 'clean'],
+          reenter: { to: 'flow-start', outcome: 'changed' },
+        }),
+        flowStep('flow-done'),
+      ],
+      ['flow-start', 'flow-apply', 'flow-done'],
+    )
+    open(d, 'reentry-bound')
+    closeStep(d, 'reentry-bound', undefined)
+    closeStep(d, 'reentry-bound', 'changed')
+    closeStep(d, 'reentry-bound', undefined)
+    expect(() => closeStep(d, 'reentry-bound', 'changed')).toThrow(
+      /automatic re-entry bound is reached/,
+    )
+    expect(() => closeStep(d, 'reentry-bound', 'changed')).toThrow(/workflow await/)
+    expect(() => closeStep(d, 'reentry-bound', 'changed')).toThrow(/non-re-entering outcome/)
+    const second = closeStep(d, 'reentry-bound', 'changed', boundRuling(d))
+    expect(second).toContain('Flow so far: Pass 3')
+    expect(d.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({
+      ordinal: 0,
+      step_slug: 'flow-start',
+    })
+    const closed = JSON.parse(
+      (d.query('SELECT closed FROM workflow_cursor').get() as { closed: string }).closed,
+    )
+    expect(closed.filter((entry: { reentered?: unknown }) => entry.reentered)).toEqual([
+      expect.objectContaining({ reentered: { to: 'flow-start', pass: 2 } }),
+      expect.objectContaining({ reentered: { to: 'flow-start', pass: 3 } }),
+    ])
+  })
+})

@@ -134,6 +134,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-cursor-result.ts', [
     '../../../shared/brand.ts',
     'bun:sqlite',
+    './workflow-cursor-arguments.ts',
     './workflow-cursor-autonomy.ts',
     './workflow-cursor-format.ts',
     './workflow-cursor-selection.ts',

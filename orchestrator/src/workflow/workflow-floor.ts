@@ -256,6 +256,20 @@ export function reentryBoundRefusal(
   )
 }
 
+export function allowedCloseFloor(
+  floor: FloorDecision,
+  requireRuling: boolean,
+  step: { reenter?: { outcome: string }; outcomes?: string[] },
+): Extract<FloorDecision, { action: 'allow' }> {
+  if (floor.action === 'refuse')
+    throw new Error(
+      requireRuling
+        ? reentryBoundRefusal(step.reenter?.outcome ?? '', step.outcomes)
+        : floor.message,
+    )
+  return floor
+}
+
 function rulingMet(floor: Floor, evidence: ValidatedEvidence): boolean {
   const ruling = evidence.ruling
   const review = evidence.review

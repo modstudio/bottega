@@ -122,9 +122,35 @@ export function decideConditionalAdvance(
       }
     }
   }
+  const trailWithClose = [...trail, { slug: current?.slug ?? '', ...(outcome ? { outcome } : {}) }]
   return {
-    ...forwardAdvance(steps, [...trail, { slug: current?.slug ?? '', ...(outcome ? { outcome } : {}) }], currentOrdinal + 1),
+    ...forwardAdvance(steps, trailWithClose, currentOrdinal + 1),
     requireRuling: false,
+  }
+}
+
+/** Decide which stored composition a serve should reuse. */
+export function decideCursorCompositionInput(
+  cursor: {
+    state: CursorState
+    args: string
+    workflow_version: number
+    catalogue_version: number
+  } | null,
+  args: Record<string, string>,
+  mode: string,
+) {
+  const startDecision = decideCursorStart(cursor?.state ?? null)
+  if (!cursor || startDecision === 'retire')
+    return { startDecision, effectiveArgs: args, selection: { mode } }
+  return {
+    startDecision,
+    effectiveArgs: JSON.parse(cursor.args) as Record<string, string>,
+    selection: {
+      mode,
+      version: cursor.workflow_version,
+      catalogueVersion: cursor.catalogue_version,
+    },
   }
 }
 

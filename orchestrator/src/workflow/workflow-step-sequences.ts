@@ -144,7 +144,7 @@ export function workflowModeStepError(value: unknown): string | null {
   return `step entry ${JSON.stringify(value)} must be a step slug or exactly {"sequence":"<slug>","omit"?:[...]}, or exactly {"step":"<slug>","when":{"step":"<slug>","outcome":[...]}}; edit the workflow mode to use one of those forms`
 }
 
-export function workflowReentryErrors(
+function workflowReentryErrors(
   mode: string,
   detailed: readonly ExpandedWorkflowStep[],
   steps: readonly CatalogueStep[],

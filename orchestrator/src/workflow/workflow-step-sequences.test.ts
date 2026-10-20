@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import {
   expandWorkflowSteps,
   inspectWorkflowSteps,
+  workflowConditionErrors,
   workflowModeStepError,
 } from './workflow-step-sequences.ts'
 
@@ -35,4 +36,51 @@ test('a workflow step entry accepts only a slug or an exact sequence reference',
   )
   expect(workflowModeStepError({ step: 'review' })).toContain('must be a step slug or exactly')
   expect(workflowModeStepError({ sequence: 4 })).toContain('must be a step slug or exactly')
+})
+
+test('reentry to must be an earlier step in the expanded mode', () => {
+  const catalogue = [
+    {
+      slug: 'start',
+      title: 'Start',
+      body: '',
+      floor: ['ruling'] as const,
+      job: null,
+      autonomy: 'auto' as const,
+      needs: [],
+    },
+    {
+      slug: 'apply',
+      title: 'Apply',
+      body: '',
+      floor: ['ruling'] as const,
+      job: null,
+      autonomy: 'auto' as const,
+      needs: [],
+      outcomes: ['changed', 'clean'],
+      reenter: { to: 'start', outcome: 'changed' },
+    },
+    {
+      slug: 'finish',
+      title: 'Finish',
+      body: '',
+      floor: ['ruling'] as const,
+      job: null,
+      autonomy: 'auto' as const,
+      needs: [],
+    },
+  ]
+  expect(
+    workflowConditionErrors('default', [{ slug: 'start' }, { slug: 'apply' }], catalogue),
+  ).toEqual([])
+  expect(
+    workflowConditionErrors('default', [{ slug: 'apply' }, { slug: 'start' }], catalogue),
+  ).toContain(
+    'mode "default" step "apply" reentry to "start" must be an earlier step in the expanded mode',
+  )
+  expect(
+    workflowConditionErrors('ship', [{ slug: 'apply' }, { slug: 'finish' }], catalogue),
+  ).toContain(
+    'mode "ship" step "apply" reentry to "start" must be an earlier step in the expanded mode',
+  )
 })
