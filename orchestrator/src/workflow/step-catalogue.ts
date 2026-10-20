@@ -23,7 +23,6 @@ import { versionedLifecycle } from './versioned-lifecycle.ts'
 import type { WorkflowDefinition, WorkflowModeStep } from './workflow-definition.ts'
 import { floorKinds, isFloorKind } from './workflow-floor.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
-import { projectCatalogueResolutionSpace } from './workflow-resolution-space.ts'
 import { inspectWorkflowSteps, validateCatalogueSequences } from './workflow-step-sequences.ts'
 
 export type {
@@ -475,11 +474,11 @@ const retireStepCatalogueLocal = (
   d: Database = writableDb(),
 ) => lifecycle.retire(CATALOGUE, n, reason, author, d)
 export function showResolvedStepCatalogue(project: string | null, n?: number, d: Database = db()) {
-  return selectedStepCatalogue(n, d, projectCatalogueResolutionSpace(d, project))
+  return selectedStepCatalogue(n, d, effectiveProjectSpace(d, project))
 }
 
 export function resolvedStepCatalogueVersions(project: string | null, d: Database = db()) {
-  const spaceId = projectCatalogueResolutionSpace(d, project)
+  const spaceId = effectiveProjectSpace(d, project)
   return lifecycle.versions(CATALOGUE, d, spaceId)
 }
 

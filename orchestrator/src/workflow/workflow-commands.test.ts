@@ -20,6 +20,7 @@ import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { recordWorkflowExec, recordWorkflowProbe } from './workflow-probe.ts'
 import {
   promoteWorkflowLocal,
+  resolvedWorkflowVersions,
   setWorkflowLocal,
   showResolvedWorkflow,
   type WorkflowDefinition,
@@ -337,6 +338,9 @@ test('workflow inspection reads only the current project space and stays local o
     (JSON.parse(inside[0]!) as { slug: string }[]).some((row) => row.slug === localOnlySlug),
   ).toBe(false)
   expect(() => showResolvedWorkflow(localOnlySlug, undefined, project, local)).toThrow(
+    `unknown workflow "${localOnlySlug}" in hosted space ${spaceId}`,
+  )
+  expect(() => resolvedWorkflowVersions(localOnlySlug, project, local)).toThrow(
     `unknown workflow "${localOnlySlug}" in hosted space ${spaceId}`,
   )
 
