@@ -209,7 +209,7 @@ export async function proveScoreRecordSync(input: {
   cache
     .query(
       `INSERT INTO run
-        (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,evidence_excluded)
+        (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,evidence_excluded)
        VALUES (991,?,?,?,?,?,?,?,?,?), (992,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
@@ -234,8 +234,8 @@ export async function proveScoreRecordSync(input: {
     )
   cache
     .query(
-      `INSERT INTO score (record_id, run_id,delivery,quality,note,scored_at,scored_by)
-       VALUES ('${newRecordId()}', 991,'full','right','first',?,'architect')`,
+      `INSERT INTO score (record_id, run_record_id,delivery,quality,note,scored_at,scored_by)
+       VALUES ('${newRecordId()}', '${recordId}','full','right','first',?,'architect')`,
     )
     .run(String(score.scoredAt))
   cache.query("INSERT INTO schema_meta (key,value) VALUES ('record_scores_cursor',?)").run(cursor)
@@ -256,15 +256,17 @@ export async function proveScoreRecordSync(input: {
     expect(await pullRecordCache(cache)).toMatchObject({ scores: 2 })
     expect(
       cache
-        .query<{ id: number; evidence_excluded: string | null }, []>(
-          'SELECT id,evidence_excluded FROM run WHERE id IN (991,992) ORDER BY id',
+        .query<{ number: number; evidence_excluded: string | null }, []>(
+          'SELECT number,evidence_excluded FROM run WHERE number IN (991,992) ORDER BY number',
         )
         .all(),
     ).toEqual([
-      { id: 991, evidence_excluded: null },
-      { id: 992, evidence_excluded: null },
+      { number: 991, evidence_excluded: null },
+      { number: 992, evidence_excluded: null },
     ])
-    expect(cache.query('SELECT run_id FROM score ORDER BY run_id').all()).toEqual([{ run_id: 991 }])
+    expect(cache.query('SELECT run_record_id FROM score ORDER BY run_record_id').all()).toEqual([
+      { run_record_id: recordId },
+    ])
   } finally {
     // The later sync in this proof uploads through the real hosted route.
     installRecordApiClient(null)

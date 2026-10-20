@@ -8,6 +8,12 @@ import {
   recordAuth,
 } from '../../src/record/record-auth.ts'
 
+export function installPostgresAuthEnvironment(): void {
+  process.env.BETTER_AUTH_SECRET = 'postgres-harness-secret-at-least-thirty-two-characters'
+  process.env.BETTER_AUTH_URL = 'http://127.0.0.1'
+  process.env.RECORD_HUB_URL = 'https://hub.example.test'
+}
+
 export const SIGN_UP_AUTH = {
   emailA: 'auth-a@example.test',
   emailB: 'auth-b@example.test',

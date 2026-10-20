@@ -68,10 +68,10 @@ function seedLocalBoard(input: ProofInput) {
   const notice = local
     .query(
       `INSERT INTO board_message
-       (record_id,kind,author_kind,author_session,audience,title,body,ack_required,expires_at,created_at,
+       (record_id,number,kind,author_kind,author_session,audience,title,body,ack_required,expires_at,created_at,
         author_harness,author_project)
-       VALUES (?,'notice','architect',?,?,'Adopt notice','Notice',0,?,?,'claude',?)
-       RETURNING id,record_id`,
+       VALUES (?,1,'notice','architect',?,?,'Adopt notice','Notice',0,?,?,'claude',?)
+       RETURNING number,record_id`,
     )
     .get(
       newRecordId(),
@@ -80,7 +80,7 @@ function seedLocalBoard(input: ProofInput) {
       input.expiresAt,
       created,
       input.project,
-    ) as { id: number; record_id: string }
+    ) as { number: number; record_id: string }
   const receiptReader = input.caseSession('adopt-receipt')
   local
     .query(
@@ -92,17 +92,17 @@ function seedLocalBoard(input: ProofInput) {
   local
     .query(
       `INSERT INTO board_receipt
-       (record_id,message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
+       (record_id,message_record_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
        VALUES (?,?,?,1,?,NULL)`,
     )
-    .run(newRecordId(), notice.id, receiptReader, created)
+    .run(newRecordId(), notice.record_id, receiptReader, created)
   const question = local
     .query(
       `INSERT INTO board_message
-       (record_id,kind,author_kind,author_session,audience,title,body,ack_required,expires_at,created_at,
+       (record_id,number,kind,author_kind,author_session,audience,title,body,ack_required,expires_at,created_at,
         author_harness,author_project)
-       VALUES (?,'question','architect',?,?,'Adopt question','Question',0,?,?,'claude',?)
-       RETURNING id,record_id`,
+       VALUES (?,2,'question','architect',?,?,'Adopt question','Question',0,?,?,'claude',?)
+       RETURNING record_id`,
     )
     .get(
       newRecordId(),
@@ -111,17 +111,22 @@ function seedLocalBoard(input: ProofInput) {
       input.expiresAt,
       created,
       input.project,
-    ) as { id: number; record_id: string }
+    ) as { record_id: string }
   const reply = local
     .query(
       `INSERT INTO board_message
-       (record_id,kind,author_kind,author_session,audience,title,body,ack_required,expires_at,created_at,
-        author_harness,author_project,thread_root_id)
-       VALUES (?,'reply','architect',?,NULL,NULL,'Answer',0,NULL,?,'claude',?,?)
-       RETURNING id,record_id`,
+       (record_id,number,kind,author_kind,author_session,audience,title,body,ack_required,expires_at,created_at,
+        author_harness,author_project,thread_root_record_id)
+       VALUES (?,3,'reply','architect',?,NULL,NULL,'Answer',0,NULL,?,'claude',?,?)
+       RETURNING record_id`,
     )
-    .get(newRecordId(), input.caseSession('adopt-reply'), created, input.project, question.id) as {
-    id: number
+    .get(
+      newRecordId(),
+      input.caseSession('adopt-reply'),
+      created,
+      input.project,
+      question.record_id,
+    ) as {
     record_id: string
   }
   const claim = local
@@ -130,7 +135,7 @@ function seedLocalBoard(input: ProofInput) {
        (record_id,project,subject_kind,subject_value,holder_kind,holder_session,duration_ms,taken_at,
         renewed_at,lapses_at)
        VALUES (?,?,'resource','adoption-proof','architect',?,3600000,?,?,?)
-       RETURNING id,record_id`,
+       RETURNING record_id`,
     )
     .get(
       newRecordId(),
@@ -139,7 +144,7 @@ function seedLocalBoard(input: ProofInput) {
       created,
       created,
       new Date(Date.now() + 3_600_000).toISOString(),
-    ) as { id: number; record_id: string }
+    ) as { record_id: string }
   return { local, notice, question, reply, claim, receiptReader }
 }
 
@@ -204,6 +209,6 @@ export function registerBoardAdoptionProof(input: ProofInput): void {
         .find((item) => item.message.id === notice.record_id)
         ?.receipts.some((receipt) => receipt.readerSession === receiptReader),
     ).toBeTrue()
-    expect(notice.id).toBeGreaterThan(0)
+    expect(notice.number).toBeGreaterThan(0)
   })
 }

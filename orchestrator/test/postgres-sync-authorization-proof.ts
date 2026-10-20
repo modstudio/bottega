@@ -591,6 +591,7 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
     })
     const insert =
       "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,?,'test_flake',?,?,?)"
+    const client = recordApiClient()
     const sync = async (rowId: number) => {
       const local = new Database(':memory:')
       applyMigrations(local)
@@ -598,6 +599,7 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       try {
         return await withoutDirectRecordCredentials(() =>
           syncRecord({
+            client: { ...client, sync: client.sync! },
             local,
             identity: { id: input.machineId, name: 'proof-machine' },
             projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
@@ -665,6 +667,7 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
     })
     const local = new Database(':memory:')
     applyMigrations(local)
+    const client = recordApiClient()
     local
       .query(
         `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,1,'review_read',?,?,?),
@@ -683,6 +686,7 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       expect(
         await withoutDirectRecordCredentials(() =>
           syncRecord({
+            client: { ...client, sync: client.sync! },
             local,
             identity: { id: input.machineId, name: 'proof-machine' },
             projectSpaces: { [input.writeProjectName]: input.writeSpaceId },

@@ -7,12 +7,14 @@ import {
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
 } from '../../../shared/record/schema.ts'
+import { registerHostedCanonProofs } from '../../test/canon-import-proof.ts'
 import { asSpace, asSpaces, psql, succeeds } from '../../test/fixtures/postgres-rls.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import {
+  installPostgresAuthEnvironment,
   invitationApiClient,
   registerInvitationAuthProofs,
   SIGN_UP_AUTH,
@@ -27,7 +29,6 @@ import {
 import { registerBoardApiProofs, registerBoardRlsProofs } from '../../test/postgres-board-proof.ts'
 import { registerHostedConfigProofs } from '../../test/postgres-config-proof.ts'
 import { registerCustomerAuthProof } from '../../test/postgres-customer-auth-proof.ts'
-import { registerOwnedCanonPrivacyProof } from '../../test/postgres-owned-canon-proof.ts'
 import { registerProjectSpaceProofs } from '../../test/postgres-project-space-proof.ts'
 import { registerPublicDocProofs } from '../../test/postgres-public-doc-proof.ts'
 import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-proof.ts'
@@ -82,9 +83,7 @@ realPostgres('RLS proof against real Postgres', () => {
   const authRunB = newRecordId()
 
   beforeAll(async () => {
-    process.env.BETTER_AUTH_SECRET = 'postgres-harness-secret-at-least-thirty-two-characters'
-    process.env.BETTER_AUTH_URL = 'http://127.0.0.1'
-    process.env.RECORD_HUB_URL = 'https://hub.example.test'
+    installPostgresAuthEnvironment()
     invitationAuth = testRecordAuth(actorUrl!, authUrl, async (input) => {
       invitationEmails.push(input)
     })
@@ -265,6 +264,7 @@ realPostgres('RLS proof against real Postgres', () => {
   })
 
   beforeEach(() => {
+    process.env.BETTER_AUTH_SECRET = 'postgres-harness-secret-at-least-thirty-two-characters'
     installRecordApiClient(null)
     recordSession.setToken(tokenA)
   })
@@ -382,9 +382,10 @@ realPostgres('RLS proof against real Postgres', () => {
     expect(visible.stdout.split('\n')).toEqual(['1', '0', '1', '0', '0'])
   })
 
-  registerOwnedCanonPrivacyProof(
+  registerHostedCanonProofs(
     () => ({ spaceId: authSpaceA, ownerUserId: authUserA, otherUserId: authUserB }),
     [ids.SPACE_A, ids.SPACE_B, ids.PROJECT_A, ids.PROJECT_B],
+    () => tokenA,
   )
 
   test('CLI whoami prints the user, active space, and only that user memberships', async () => {

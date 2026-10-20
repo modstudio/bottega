@@ -140,6 +140,34 @@ describe('record API', () => {
     )
   })
 
+  test('pages reviews past the first page with the hosted review id', async () => {
+    const firstId = '01990000-0000-7000-8000-000000000011'
+    const secondId = '01990000-0000-7000-8000-000000000012'
+    const first = { id: firstId, recordedAt: '2026-10-19T12:00:00.000Z' }
+    const second = { id: secondId, recordedAt: '2026-10-19T11:00:00.000Z' }
+    const readReviews = mock(async (input: { before: { at: string; id: string } | null }) =>
+      input.before ? [second] : [first, second],
+    )
+    const app = appWith(identity, { readReviews })
+
+    const firstResponse = await app.request('/v1/reviews?limit=1')
+    expect(firstResponse.status).toBe(200)
+    const firstPage = (await firstResponse.json()) as {
+      items: Array<{ id: string }>
+      nextCursor: string
+    }
+    expect(firstPage.items).toEqual([first])
+
+    const secondResponse = await app.request(
+      `/v1/reviews?limit=1&before=${encodeURIComponent(firstPage.nextCursor)}`,
+    )
+    expect(secondResponse.status).toBe(200)
+    expect(await secondResponse.json()).toEqual({ items: [second], nextCursor: null })
+    expect(readReviews).toHaveBeenLastCalledWith(
+      expect.objectContaining({ before: { at: first.recordedAt, id: firstId } }),
+    )
+  })
+
   test('a document destination binds a member space while no header keeps the active space', async () => {
     const calls: Array<{ spaceId: string; spaceIds: string[] }> = []
     const session = {

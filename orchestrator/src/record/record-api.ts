@@ -438,7 +438,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
         hasMore && last
           ? encodeRecordCursor({
               at: String(last.recordedAt),
-              id: String(last.record_id),
+              id: String(last.id),
             })
           : null,
     })

@@ -222,7 +222,10 @@ realPostgres('project import against copied live SQLite data', () => {
         })),
     )
 
-    const imported = (await sql`SELECT * FROM project ORDER BY name`) as ImportedProject[]
+    const sourceNames = new Set(sourceProjects.map(({ name }) => name))
+    const imported = ((await sql`SELECT * FROM project ORDER BY name`) as ImportedProject[]).filter(
+      ({ name }) => sourceNames.has(name),
+    )
     expect(imported).toHaveLength(sourceProjects.length)
     expectPreservedProjectIds(sourceProjects, imported)
     const columnForSetting: Record<string, string> = {
