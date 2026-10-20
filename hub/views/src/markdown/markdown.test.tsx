@@ -114,6 +114,17 @@ values:
   expect(html).not.toContain('one,two')
 })
 
+test('renders a marker for cyclic frontmatter aliases without throwing', () => {
+  const html = render(`---
+a: &loop
+  self: *loop
+---`)
+
+  expect(html).toMatch(key('a'))
+  expect(html).toMatch(key('self'))
+  expect(html).toContain('(cycle)')
+})
+
 test('shows unparseable frontmatter verbatim instead of rendering it as markdown', () => {
   const html = render(`---
 description: [not closed

@@ -70,21 +70,30 @@ function isPropertyMap(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function FrontmatterValue({ value }: { value: unknown }) {
+function FrontmatterValue({
+  value,
+  ancestors,
+}: {
+  value: unknown
+  ancestors: ReadonlySet<object>
+}) {
   if (typeof value === 'boolean') return value ? 'yes' : 'no'
   if (Array.isArray(value)) {
+    if (ancestors.has(value)) return '(cycle)'
+    const nextAncestors = new Set(ancestors).add(value)
     return (
       <span className={markdownStyles().frontmatterItems()}>
         {value.map((item, index) => (
           <span key={index}>
-            <FrontmatterValue value={item} />
+            <FrontmatterValue value={item} ancestors={nextAncestors} />
           </span>
         ))}
       </span>
     )
   }
   if (isPropertyMap(value)) {
-    return <PropertyList properties={value} nested />
+    if (ancestors.has(value)) return '(cycle)'
+    return <PropertyList properties={value} ancestors={new Set(ancestors).add(value)} nested />
   }
   return (
     <span className={markdownStyles().frontmatterValue()}>
@@ -95,9 +104,11 @@ function FrontmatterValue({ value }: { value: unknown }) {
 
 function PropertyList({
   properties,
+  ancestors,
   nested = false,
 }: {
   properties: Record<string, unknown>
+  ancestors: ReadonlySet<object>
   nested?: boolean
 }) {
   return (
@@ -106,7 +117,7 @@ function PropertyList({
         <Fragment key={key}>
           <dt className={markdownStyles().frontmatterKey()}>{key}</dt>
           <dd className={markdownStyles().frontmatterDetail()}>
-            <FrontmatterValue value={value} />
+            <FrontmatterValue value={value} ancestors={ancestors} />
           </dd>
         </Fragment>
       ))}
@@ -126,7 +137,7 @@ function FrontmatterProperties({ source }: { source: string }) {
   if (Object.keys(properties).length === 0) return null
   return (
     <div className={markdownStyles().frontmatter()}>
-      <PropertyList properties={properties} />
+      <PropertyList properties={properties} ancestors={new Set([properties])} />
     </div>
   )
 }
