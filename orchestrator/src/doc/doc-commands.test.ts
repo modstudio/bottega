@@ -41,7 +41,7 @@ import {
 const listPairs = () =>
   db()
     .query(
-      'SELECT id,source_project_record_id,target_project_record_id,created_at FROM port_pair ORDER BY id',
+      'SELECT record_id,source_project_record_id,target_project_record_id,created_at FROM port_pair ORDER BY created_at,record_id',
     )
     .all() as PortPair[]
 
@@ -275,7 +275,7 @@ describe('scoped operator docs', () => {
         .code,
     ).toBe(0)
     const pair = listPairs()[0]!
-    expect(baselineForPair(pair.id)?.source_commit).toBe('abc')
+    expect(baselineForPair(pair.record_id)?.source_commit).toBe('abc')
     expect(
       (
         await command([
@@ -290,7 +290,9 @@ describe('scoped operator docs', () => {
         ])
       ).code,
     ).toBe(0)
-    expect(listSkips(pair.id)).toMatchObject([{ candidate: 'old-feature', reason: 'superseded' }])
+    expect(listSkips(pair.record_id)).toMatchObject([
+      { candidate: 'old-feature', reason: 'superseded' },
+    ])
 
     const sources = JSON.stringify([
       { project: 'source-invented', commits: ['abc'], paths: ['src/a.ts'], note: 'origin' },

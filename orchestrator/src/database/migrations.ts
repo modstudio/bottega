@@ -4,6 +4,10 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readInstallAsset } from '../../../shared/embedded-assets.ts'
 import { assetPath } from '../../../shared/install-root.ts'
+import {
+  lensPortReferenceOrphanCounts,
+  portStaleCopyConflicts,
+} from './lens-port-migration-preflight.ts'
 export const MIGRATIONS_FOLDER = assetPath('orchestrator', 'migrations')
 const MIGRATIONS_TABLE = 'orch_migrations'
 export const SCHEMA_LOCK_TABLE = 'orch_schema_lock'
@@ -12,6 +16,7 @@ export const CONNECTION_SCHEMA_INVARIANT = 'A process writes only the schema ver
 export const JOURNAL_WHEN_ORDER = 'migration journal when values must be strictly increasing'
 const BACKFILL_UNCLOSED = 'migration backfill blocks must be closed by -- /BACKFILL'
 const RUN_UUID_KEY_MIGRATION = '0124_run_uuid_key'
+const LENS_PORT_UUID_KEY_MIGRATION = '0131_lens_port_uuid_key'
 
 type JournalEntry = { idx: number; when: number; tag: string }
 export type BeforeMigrationApply = {
@@ -872,6 +877,7 @@ function migrationOrphanCounts(d: Database, tag: string): string[] {
   if (tag === '0126_review_landing_uuid_key') return reviewLandingReferenceOrphanCounts(d)
   if (tag === '0127_board_uuid_key') return boardReferenceOrphanCounts(d)
   if (tag === '0130_doc_uuid_key') return docReferenceOrphanCounts(d)
+  if (tag === LENS_PORT_UUID_KEY_MIGRATION) return lensPortReferenceOrphanCounts(d)
   return []
 }
 
@@ -881,6 +887,8 @@ function migrationEntityLabel(tag: string): { migration: string; parent: string 
   if (tag === '0126_review_landing_uuid_key')
     return { migration: 'review/landing', parent: 'review/landing row' }
   if (tag === '0130_doc_uuid_key') return { migration: 'document', parent: 'document row' }
+  if (tag === LENS_PORT_UUID_KEY_MIGRATION)
+    return { migration: 'lens/port catalogue', parent: 'catalogue row' }
   return { migration: 'board', parent: 'board row' }
 }
 
@@ -898,6 +906,15 @@ function prepareMigrationEntry(
         `integer references have no parent ${label.parent} ` +
         `(${orphanCounts.join(', ')})`,
     )
+  }
+  if (entry.tag === LENS_PORT_UUID_KEY_MIGRATION) {
+    const conflicts = portStaleCopyConflicts(d)
+    if (conflicts.length) {
+      throw new Error(
+        `refusing lens/port UUID-key migration: bound store has NULL-space port rows without equivalent hosted twins (${conflicts.join(', ')})\n` +
+          `cleared by: reconcile the named rows with the hosted record, then run \`${PLATFORM_SLUG} database migrate\``,
+      )
+    }
   }
 }
 

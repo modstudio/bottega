@@ -19,7 +19,7 @@ import { ImportRefusalError } from './porting-import-contract.ts'
 const listPairs = () =>
   db()
     .query(
-      'SELECT id,source_project_record_id,target_project_record_id,created_at FROM port_pair ORDER BY id',
+      'SELECT record_id,source_project_record_id,target_project_record_id,created_at FROM port_pair ORDER BY created_at,record_id',
     )
     .all() as PortPair[]
 
@@ -387,8 +387,8 @@ describe('port importer', () => {
     const original = planImport(fixture(), registered())
     await applyImport(original)
     const priorPair = listPairs()
-    const priorBaseline = baselineForPair(priorPair[0]!.id)
-    const priorSkips = listSkips(priorPair[0]!.id)
+    const priorBaseline = baselineForPair(priorPair[0]!.record_id)
+    const priorSkips = listSkips(priorPair[0]!.record_id)
     const targetProjectId = priorPair[0]!.target_project_record_id
     const priorRef = ledgerRef(targetProjectId, 'BET-7')
     const priorDoc = getDoc('global', null, 'port-category-map')
@@ -399,8 +399,8 @@ describe('port importer', () => {
     })
     await expect(applyImport(replacement, { replace: true })).rejects.toThrow()
     expect(listPairs()).toEqual(priorPair)
-    expect(baselineForPair(priorPair[0]!.id)).toEqual(priorBaseline)
-    expect(listSkips(priorPair[0]!.id)).toEqual(priorSkips)
+    expect(baselineForPair(priorPair[0]!.record_id)).toEqual(priorBaseline)
+    expect(listSkips(priorPair[0]!.record_id)).toEqual(priorSkips)
     expect(ledgerRef(targetProjectId, 'BET-7')).toEqual(priorRef)
     expect(getDoc('global', null, 'port-category-map')).toEqual(priorDoc)
     expect(listDoctrineRules()).toHaveLength(1)

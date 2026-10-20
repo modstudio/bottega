@@ -164,24 +164,12 @@ test('real natural and undeclared references remain measured', () => {
   const database = new Database(':memory:')
   try {
     applyMigrations(database)
-    database
-      .query(
-        `INSERT INTO lens
-         (id,title,question,excludes,slots,version,enabled,requires_execution,record_id)
-         VALUES ('architecture','Architecture','Question','[]','[]',1,1,0,
-                 '01990000-0000-7000-8000-000000001214')`,
-      )
-      .run()
-    expect(database.query("SELECT id FROM lens WHERE id='architecture'").get()).toEqual({
-      id: 'architecture',
-    })
     const inventory = classifyKeyInventory(
       'orchestrator',
       readSqliteKeyTables(database),
       KEY_MANIFESTS,
     )
-    expect(inventory.findings).toContain('lens:primary-key')
-    expect(inventory.findings).toContain('project_lens_profile.lens_id:reference')
+    expect(inventory.findings).toContain('port_ref.task_key:reference')
     expect(inventory.findings).toContain('workflow_cursor.workflow_version:reference')
     expect(inventory.findings).toContain('workflow_cursor.catalogue_version:reference')
   } finally {

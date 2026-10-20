@@ -338,7 +338,7 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
     db()
       .query(
         `INSERT INTO project_lens_profile
-         (record_id,project_record_id,lens_id,axis,profile_name,selection_version,space_id)
+         (record_id,project_record_id,lens_record_id,axis,profile_name,selection_version,space_id)
          VALUES (?,?,NULL,'framework','default',1,NULL)`,
       )
       .run(newRecordId(), project.recordId)
@@ -370,7 +370,7 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
     db()
       .query(
         `INSERT INTO project_lens_profile
-         (record_id,project_record_id,lens_id,axis,profile_name,selection_version,space_id)
+         (record_id,project_record_id,lens_record_id,axis,profile_name,selection_version,space_id)
          VALUES (?,?,NULL,'framework','default',1,?)`,
       )
       .run(newRecordId(), project.recordId, space)
@@ -391,10 +391,10 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
     db()
       .query(
         `INSERT INTO port_ref_source
-         (record_id,task_key,target_project_record_id,source_project_record_id,commits,paths,note,space_id)
-         VALUES (?,'DEV-1404',?,?, '[]','[]','hosted',?)`,
+         (record_id,ref_record_id,source_project_record_id,commits,paths,note,position,space_id)
+         VALUES (?,?,?,'[]','[]','hosted',1,?)`,
       )
-      .run(newRecordId(), project.recordId, project.recordId, space)
+      .run(newRecordId(), ref, project.recordId, space)
 
     expect(removeProject('hosted-catalogue')).toBe(true)
     expect(projectByName('hosted-catalogue')).toBeNull()

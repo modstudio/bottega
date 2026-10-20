@@ -61,6 +61,22 @@ const PROJECT_UUID_REBUILD_CASCADE_EDGES = [
 // These migrations may already be applied. The repair restores every
 // missing review_finding row from its outbox payload, whichever migration removed it.
 const EXEMPTIONS: readonly CascadeExemption[] = [
+  ...[
+    ['project_lens_profile', 'project_lens_profile_revision'],
+    ['lens_profile', 'lens_profile_revision'],
+    ['lens', 'lens_revision'],
+    ['lens', 'lens_profile'],
+    ['lens', 'project_lens_profile'],
+    ['port_ref', 'port_ref_source'],
+    ['port_pair', 'port_baseline'],
+    ['port_pair', 'port_skip'],
+  ].map(([deletedTable, dependentTable]) => ({
+    migration: '0131_lens_port_uuid_key',
+    deletedTable: deletedTable!,
+    dependentTable: dependentTable!,
+    remedy:
+      'DEV-1214: bound-store cleanup explicitly deletes the matching NULL-space dependent rows before their parent and the migration refuses any foreign_key_check violation before commit',
+  })),
   ...PROJECT_UUID_REBUILD_CASCADE_EDGES.map(([deletedTable, dependentTable]) => ({
     migration: '0117_project_uuid_key',
     deletedTable,
@@ -143,7 +159,7 @@ function destructiveTables(statement: AstNode): string[] {
 }
 
 function selectedTable(statement: AstNode): string | null {
-  const from = nodes(statement, 'from_clause')[0]
+  const from = nodes(statement, 'from_clause').at(-1)
   return from ? name(from.expr) : null
 }
 
@@ -406,6 +422,9 @@ function candidates(
   } else if (type.includes('BLOB')) {
     values.push(new Uint8Array([1]))
   } else {
+    if (related.some((check) => /\bjson_(?:valid|type|array_length)\s*\(/i.test(check))) {
+      values.push('["probe"]', '{}', '[]')
+    }
     values.push(
       ...related.flatMap(stringLiterals),
       `probe-${ordinal}`,

@@ -86,7 +86,7 @@ test('every hosted port writer refuses a worker before calling the record', () =
   const target = newRecordId()
   const writers = [
     () => setBaselineForProjects(source, target, null),
-    () => addSkip(999_999, 'candidate', 'reason'),
+    () => addSkip('01990000-0000-7000-8000-000000999999', 'candidate', 'reason'),
     () =>
       setLedgerRef({
         taskKey: 'DEV-1',

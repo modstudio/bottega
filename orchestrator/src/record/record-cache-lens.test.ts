@@ -140,7 +140,7 @@ test('lens cache reconciles hosted rows within their space and preserves the loc
       "SELECT record_id,title FROM lens WHERE id='correctness' AND space_id IS NULL",
     )
     .get()!
-  const seeded = row('correctness', localSeed.record_id)
+  const seeded = row('correctness')
   const localTitle = localSeed.title
   applyLensCatalogueRow(local, 'lens', seeded)
   expect(local.query("SELECT COUNT(*) AS n FROM lens WHERE id='correctness'").get()).toEqual({
@@ -152,6 +152,116 @@ test('lens cache reconciles hosted rows within their space and preserves the loc
       .get(seeded.spaceId),
   ).toEqual({ record_id: seeded.id })
   expect(resolveLens('correctness', null, local)).toMatchObject({ title: localTitle })
+})
+
+test('lens cache adopts hosted UUIDs and cascades them through every child relationship', () => {
+  const local = db()
+  const spaceId = newRecordId()
+  const oldLens = { ...row('adopted-lens'), id: newRecordId(), spaceId }
+  const oldProfile = profileRow(spaceId, oldLens.id, '{}', newRecordId())
+  const revisionAt = '2026-10-19T12:00:00.000Z'
+  const oldLensRevision = {
+    id: newRecordId(),
+    spaceId,
+    lensId: oldLens.id,
+    version: 1,
+    priorBody: '{}',
+    reason: 'old lens revision',
+    sessionId: null,
+    at: revisionAt,
+  }
+  const oldProfileRevision = {
+    id: newRecordId(),
+    spaceId,
+    profileId: oldProfile.id,
+    version: 1,
+    priorBody: '{}',
+    reason: 'old profile revision',
+    sessionId: null,
+    at: revisionAt,
+  }
+  const projectId = newRecordId()
+  const oldSelection = {
+    id: newRecordId(),
+    spaceId,
+    projectId,
+    lensId: null,
+    axis: 'framework',
+    profileName: 'default',
+    selectedVersion: null,
+    selectionVersion: 1,
+    updatedAt: revisionAt,
+  }
+  const oldSelectionRevision = {
+    id: newRecordId(),
+    spaceId,
+    selectionId: oldSelection.id,
+    priorProfileName: null,
+    priorSelectedVersion: null,
+    reason: 'old selection revision',
+    sessionId: null,
+    at: revisionAt,
+  }
+  applyLensCatalogueRow(local, 'lens', oldLens)
+  applyLensCatalogueRow(local, 'lens_revision', oldLensRevision)
+  applyLensCatalogueRow(local, 'lens_profile', oldProfile)
+  applyLensCatalogueRow(local, 'lens_profile_revision', oldProfileRevision)
+  applyLensCatalogueRow(local, 'project_lens_profile', oldSelection)
+  applyLensCatalogueRow(local, 'project_lens_profile_revision', oldSelectionRevision)
+
+  const lensId = newRecordId()
+  applyLensCatalogueRow(local, 'lens', { ...oldLens, id: lensId })
+  expect(
+    local.query('SELECT lens_record_id FROM lens_profile WHERE record_id=?').get(oldProfile.id),
+  ).toEqual({ lens_record_id: lensId })
+
+  const lensRevisionId = newRecordId()
+  applyLensCatalogueRow(local, 'lens_revision', {
+    ...oldLensRevision,
+    id: lensRevisionId,
+    lensId,
+  })
+  expect(
+    local.query('SELECT record_id FROM lens_revision WHERE lens_record_id=?').get(lensId),
+  ).toEqual({ record_id: lensRevisionId })
+
+  const profileId = newRecordId()
+  applyLensCatalogueRow(local, 'lens_profile', { ...oldProfile, id: profileId, lensId })
+  expect(
+    local
+      .query('SELECT profile_record_id FROM lens_profile_revision WHERE record_id=?')
+      .get(oldProfileRevision.id),
+  ).toEqual({ profile_record_id: profileId })
+  const profileRevisionId = newRecordId()
+  applyLensCatalogueRow(local, 'lens_profile_revision', {
+    ...oldProfileRevision,
+    id: profileRevisionId,
+    profileId,
+  })
+  expect(
+    local
+      .query('SELECT record_id FROM lens_profile_revision WHERE profile_record_id=?')
+      .get(profileId),
+  ).toEqual({ record_id: profileRevisionId })
+
+  const selectionId = newRecordId()
+  applyLensCatalogueRow(local, 'project_lens_profile', { ...oldSelection, id: selectionId })
+  expect(
+    local
+      .query('SELECT selection_record_id FROM project_lens_profile_revision WHERE record_id=?')
+      .get(oldSelectionRevision.id),
+  ).toEqual({ selection_record_id: selectionId })
+  const selectionRevisionId = newRecordId()
+  applyLensCatalogueRow(local, 'project_lens_profile_revision', {
+    ...oldSelectionRevision,
+    id: selectionRevisionId,
+    selectionId,
+  })
+  expect(
+    local
+      .query('SELECT record_id FROM project_lens_profile_revision WHERE selection_record_id=?')
+      .get(selectionId),
+  ).toEqual({ record_id: selectionRevisionId })
 })
 
 test('two spaces keep the same lens key isolated after later hosted revisions', () => {

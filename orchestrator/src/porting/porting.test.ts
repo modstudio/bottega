@@ -24,7 +24,7 @@ import {
 const listPairs = () =>
   db()
     .query(
-      'SELECT id,source_project_record_id,target_project_record_id,created_at FROM port_pair ORDER BY id',
+      'SELECT record_id,source_project_record_id,target_project_record_id,created_at FROM port_pair ORDER BY record_id',
     )
     .all() as PortPair[]
 
@@ -44,20 +44,20 @@ describe('porting data model', () => {
     })
     const [source, target] = projects().sort((a, b) => a.name.localeCompare(b.name))
     const pair = addPairLocal(source!.recordId, target!.recordId, '2026-09-01T00:00:00.000Z')
-    expect(addPairLocal(source!.recordId, target!.recordId).id).toBe(pair.id)
+    expect(addPairLocal(source!.recordId, target!.recordId).record_id).toBe(pair.record_id)
     expect(listPairs()).toEqual([pair])
-    expect(baselineForPair(pair.id)).toEqual({
-      pair_id: pair.id,
+    expect(baselineForPair(pair.record_id)).toEqual({
+      pair_record_id: pair.record_id,
       source_commit: null,
       scanned_at: null,
     })
-    expect(setBaselineLocal(pair.id, 'abc123', '2026-09-02T00:00:00.000Z')).toEqual({
-      pair_id: pair.id,
+    expect(setBaselineLocal(pair.record_id, 'abc123', '2026-09-02T00:00:00.000Z')).toEqual({
+      pair_record_id: pair.record_id,
       source_commit: 'abc123',
       scanned_at: '2026-09-02T00:00:00.000Z',
     })
-    addSkipLocal(pair.id, 'candidate-one', 'not applicable', '2026-09-03T00:00:00.000Z')
-    expect(listSkips(pair.id)).toMatchObject([
+    addSkipLocal(pair.record_id, 'candidate-one', 'not applicable', '2026-09-03T00:00:00.000Z')
+    expect(listSkips(pair.record_id)).toMatchObject([
       { candidate: 'candidate-one', reason: 'not applicable' },
     ])
     for (const row of db()
@@ -276,7 +276,7 @@ describe('porting data model', () => {
     upsertProject({ recordId: sourceId, name: 'skip-source', path: '/w/skip-source', settings: {} })
     upsertProject({ recordId: targetId, name: 'skip-target', path: '/w/skip-target', settings: {} })
     const localPair = addPairLocal(sourceId, targetId)
-    addSkipLocal(localPair.id, 'local-candidate', 'keep this skip')
+    addSkipLocal(localPair.record_id, 'local-candidate', 'keep this skip')
     rememberProjectSpace(db(), 'skip-target', space)
     expect(pairByProjects(sourceId, targetId)).toBeNull()
     applyPortCatalogueRow(db(), 'port_pair', {
@@ -288,8 +288,8 @@ describe('porting data model', () => {
     })
 
     const routedPair = pairByProjects(sourceId, targetId)!
-    expect(routedPair.id).not.toBe(localPair.id)
-    expect(listSkips(routedPair.id)).toEqual([])
+    expect(routedPair.record_id).not.toBe(localPair.record_id)
+    expect(listSkips(routedPair.record_id)).toEqual([])
   })
   test('a routed project does not read a local-only ledger ref or its sources', () => {
     const sourceId = newRecordId()

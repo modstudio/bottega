@@ -196,10 +196,10 @@ function applyDoctrine(local: Database, item: RecordPortRowByTable['port_doctrin
   const spaceId = String(item.spaceId)
   const found =
     local
-      .query<{ record_id: string }, [string, string]>(
-        'SELECT record_id FROM port_doctrine WHERE record_id=? AND space_id=?',
+      .query<{ record_id: string }, [string]>(
+        'SELECT record_id FROM port_doctrine WHERE record_id=?',
       )
-      .get(recordId, spaceId) ??
+      .get(recordId) ??
     local
       .query<{ record_id: string }, [string, number]>(
         'SELECT record_id FROM port_doctrine WHERE space_id=? AND number=?',
@@ -215,9 +215,9 @@ function applyDoctrine(local: Database, item: RecordPortRowByTable['port_doctrin
   if (found)
     local
       .query(
-        'UPDATE port_doctrine SET record_id=?,title=?,body=?,created_at=?,retired_at=?,version=? WHERE record_id=? AND space_id=?',
+        'UPDATE port_doctrine SET record_id=?,space_id=?,title=?,body=?,created_at=?,retired_at=?,version=? WHERE record_id=?',
       )
-      .run(recordId, ...values, found.record_id, spaceId)
+      .run(recordId, spaceId, ...values, found.record_id)
   else
     local
       .query(
@@ -230,13 +230,11 @@ function applyPair(local: Database, item: RecordPortRowByTable['port_pair']): vo
   const spaceId = String(item.spaceId)
   const found =
     local
-      .query<{ id: number }, [string, string]>(
-        'SELECT id FROM port_pair WHERE record_id=? AND space_id=?',
-      )
-      .get(recordId, spaceId) ??
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM port_pair WHERE record_id=?')
+      .get(recordId) ??
     local
-      .query<{ id: number }, [string, string, string]>(
-        'SELECT id FROM port_pair WHERE space_id=? AND source_project_record_id=? AND target_project_record_id=?',
+      .query<{ record_id: string }, [string, string, string]>(
+        'SELECT record_id FROM port_pair WHERE space_id=? AND source_project_record_id=? AND target_project_record_id=?',
       )
       .get(spaceId, String(item.sourceProjectId), String(item.targetProjectId))
   const values = [
@@ -249,9 +247,9 @@ function applyPair(local: Database, item: RecordPortRowByTable['port_pair']): vo
   if (found)
     local
       .query(
-        'UPDATE port_pair SET record_id=?,space_id=?,source_project_record_id=?,target_project_record_id=?,created_at=? WHERE id=?',
+        'UPDATE port_pair SET record_id=?,space_id=?,source_project_record_id=?,target_project_record_id=?,created_at=? WHERE record_id=?',
       )
-      .run(...values, found.id)
+      .run(...values, found.record_id)
   else
     local
       .query(
@@ -259,34 +257,36 @@ function applyPair(local: Database, item: RecordPortRowByTable['port_pair']): vo
       )
       .run(...values)
 }
-function portPairId(
+function portPairRecordId(
   local: Database,
   item: RecordPortRowByTable['port_baseline'] | RecordPortRowByTable['port_skip'],
   spaceId: string,
-): number {
+): string {
   return local
-    .query<{ id: number }, [string, string]>(
-      'SELECT id FROM port_pair WHERE record_id=? AND space_id=?',
+    .query<{ record_id: string }, [string, string]>(
+      'SELECT record_id FROM port_pair WHERE record_id=? AND space_id=?',
     )
-    .get(String(item.pairId), spaceId)!.id
+    .get(String(item.pairId), spaceId)!.record_id
 }
 function applyBaseline(local: Database, item: RecordPortRowByTable['port_baseline']): void {
   const recordId = String(item.id)
   const spaceId = String(item.spaceId)
-  const pairId = portPairId(local, item, spaceId)
+  const pairRecordId = portPairRecordId(local, item, spaceId)
   const found =
     local
-      .query<{ pair_id: number }, [string, string]>(
-        'SELECT pair_id FROM port_baseline WHERE record_id=? AND space_id=?',
+      .query<{ pair_record_id: string }, [string]>(
+        'SELECT pair_record_id FROM port_baseline WHERE record_id=?',
       )
-      .get(recordId, spaceId) ??
+      .get(recordId) ??
     local
-      .query<{ pair_id: number }, [number]>('SELECT pair_id FROM port_baseline WHERE pair_id=?')
-      .get(pairId)
+      .query<{ pair_record_id: string }, [string]>(
+        'SELECT pair_record_id FROM port_baseline WHERE pair_record_id=?',
+      )
+      .get(pairRecordId)
   const values = [
     recordId,
     spaceId,
-    pairId,
+    pairRecordId,
     nullable(item.sourceCommit),
     nullable(item.scannedAt),
     Number(item.version),
@@ -294,35 +294,40 @@ function applyBaseline(local: Database, item: RecordPortRowByTable['port_baselin
   if (found)
     local
       .query(
-        'UPDATE port_baseline SET record_id=?,space_id=?,pair_id=?,source_commit=?,scanned_at=?,version=? WHERE pair_id=?',
+        'UPDATE port_baseline SET record_id=?,space_id=?,source_commit=?,scanned_at=?,version=? WHERE pair_record_id=?',
       )
-      .run(...values, found.pair_id)
+      .run(
+        recordId,
+        spaceId,
+        nullable(item.sourceCommit),
+        nullable(item.scannedAt),
+        Number(item.version),
+        found.pair_record_id,
+      )
   else
     local
       .query(
-        'INSERT INTO port_baseline (record_id,space_id,pair_id,source_commit,scanned_at,version) VALUES (?,?,?,?,?,?)',
+        'INSERT INTO port_baseline (record_id,space_id,pair_record_id,source_commit,scanned_at,version) VALUES (?,?,?,?,?,?)',
       )
       .run(...values)
 }
 function applySkip(local: Database, item: RecordPortRowByTable['port_skip']): void {
   const recordId = String(item.id)
   const spaceId = String(item.spaceId)
-  const pairId = portPairId(local, item, spaceId)
+  const pairRecordId = portPairRecordId(local, item, spaceId)
   const found =
     local
-      .query<{ id: number }, [string, string]>(
-        'SELECT id FROM port_skip WHERE record_id=? AND space_id=?',
-      )
-      .get(recordId, spaceId) ??
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM port_skip WHERE record_id=?')
+      .get(recordId) ??
     local
-      .query<{ id: number }, [string, number, string]>(
-        'SELECT id FROM port_skip WHERE space_id=? AND pair_id=? AND candidate=?',
+      .query<{ record_id: string }, [string, string, string]>(
+        'SELECT record_id FROM port_skip WHERE space_id=? AND pair_record_id=? AND candidate=?',
       )
-      .get(spaceId, pairId, String(item.candidate))
+      .get(spaceId, pairRecordId, String(item.candidate))
   const values = [
     recordId,
     spaceId,
-    pairId,
+    pairRecordId,
     String(item.candidate),
     String(item.reason),
     String(item.skippedAt),
@@ -330,13 +335,13 @@ function applySkip(local: Database, item: RecordPortRowByTable['port_skip']): vo
   if (found)
     local
       .query(
-        'UPDATE port_skip SET record_id=?,space_id=?,pair_id=?,candidate=?,reason=?,skipped_at=? WHERE id=?',
+        'UPDATE port_skip SET record_id=?,space_id=?,pair_record_id=?,candidate=?,reason=?,skipped_at=? WHERE record_id=?',
       )
-      .run(...values, found.id)
+      .run(...values, found.record_id)
   else
     local
       .query(
-        'INSERT INTO port_skip (record_id,space_id,pair_id,candidate,reason,skipped_at) VALUES (?,?,?,?,?,?)',
+        'INSERT INTO port_skip (record_id,space_id,pair_record_id,candidate,reason,skipped_at) VALUES (?,?,?,?,?,?)',
       )
       .run(...values)
 }
@@ -349,10 +354,8 @@ function applyRef(local: Database, item: RecordPortRowByTable['port_ref']): void
   }
   const found =
     local
-      .query<{ record_id: string }, [string, string]>(
-        'SELECT record_id FROM port_ref WHERE record_id=? AND space_id=?',
-      )
-      .get(recordId, spaceId) ??
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM port_ref WHERE record_id=?')
+      .get(recordId) ??
     local
       .query<{ record_id: string }, [string, string, string]>(
         'SELECT record_id FROM port_ref WHERE space_id=? AND target_project_record_id=? AND task_key=?',
@@ -371,9 +374,9 @@ function applyRef(local: Database, item: RecordPortRowByTable['port_ref']): void
   if (found)
     local
       .query(
-        'UPDATE port_ref SET record_id=?,space_id=?,task_key=?,target_project_record_id=?,note=?,created_at=?,resolved_at=?,version=? WHERE record_id=? AND space_id=?',
+        'UPDATE port_ref SET record_id=?,space_id=?,task_key=?,target_project_record_id=?,note=?,created_at=?,resolved_at=?,version=? WHERE record_id=?',
       )
-      .run(...values, found.record_id, spaceId)
+      .run(...values, found.record_id)
   else
     local
       .query(
@@ -385,8 +388,8 @@ function applyRefSource(local: Database, item: RecordPortRowByTable['port_ref_so
   const recordId = String(item.id)
   const spaceId = String(item.spaceId)
   const parent = local
-    .query<{ task_key: string; target_project_record_id: string }, [string, string]>(
-      'SELECT task_key,target_project_record_id FROM port_ref WHERE record_id=? AND space_id=?',
+    .query<{ record_id: string }, [string, string]>(
+      'SELECT record_id FROM port_ref WHERE record_id=? AND space_id=?',
     )
     .get(String(item.refId), spaceId)
   if (item.deletedAt != null) {
@@ -399,20 +402,19 @@ function applyRefSource(local: Database, item: RecordPortRowByTable['port_ref_so
     throw new Error(`record cache could not resolve port ref parent ${String(item.refId)}`)
   const found =
     local
-      .query<{ id: number }, [string, string]>(
-        'SELECT id FROM port_ref_source WHERE record_id=? AND space_id=?',
+      .query<{ record_id: string }, [string]>(
+        'SELECT record_id FROM port_ref_source WHERE record_id=?',
       )
-      .get(recordId, spaceId) ??
+      .get(recordId) ??
     local
-      .query<{ id: number }, [string, string, string, string]>(
-        'SELECT id FROM port_ref_source WHERE space_id=? AND target_project_record_id=? AND task_key=? AND source_project_record_id=?',
+      .query<{ record_id: string }, [string, string, string]>(
+        'SELECT record_id FROM port_ref_source WHERE space_id=? AND ref_record_id=? AND source_project_record_id=?',
       )
-      .get(spaceId, parent.target_project_record_id, parent.task_key, String(item.sourceProjectId))
+      .get(spaceId, parent.record_id, String(item.sourceProjectId))
   const values = [
     recordId,
     spaceId,
-    parent.task_key,
-    parent.target_project_record_id,
+    parent.record_id,
     String(item.sourceProjectId),
     String(item.commits),
     String(item.paths),
@@ -421,15 +423,16 @@ function applyRefSource(local: Database, item: RecordPortRowByTable['port_ref_so
   if (found)
     local
       .query(
-        'UPDATE port_ref_source SET record_id=?,space_id=?,task_key=?,target_project_record_id=?,source_project_record_id=?,commits=?,paths=?,note=? WHERE id=?',
+        'UPDATE port_ref_source SET record_id=?,space_id=?,ref_record_id=?,source_project_record_id=?,commits=?,paths=?,note=? WHERE record_id=?',
       )
-      .run(...values, found.id)
+      .run(...values, found.record_id)
   else
     local
       .query(
-        'INSERT INTO port_ref_source (record_id,space_id,task_key,target_project_record_id,source_project_record_id,commits,paths,note) VALUES (?,?,?,?,?,?,?,?)',
+        `INSERT INTO port_ref_source (record_id,space_id,ref_record_id,source_project_record_id,commits,paths,note,position)
+         VALUES (?,?,?,?,?,?,?,COALESCE((SELECT MAX(position)+1 FROM port_ref_source WHERE ref_record_id=?),0))`,
       )
-      .run(...values)
+      .run(...values, parent.record_id)
 }
 
 export function applyPortWriteResponse(local: Database, response: RecordPortWriteResponse): void {

@@ -20,10 +20,11 @@ function installHostedCorrectness(): void {
       WHERE id='correctness' AND space_id IS NULL`)
     .run(newRecordId(), HOSTED_SPACE)
   local
-    .query(`INSERT INTO lens_profile (record_id,space_id,lens_id,axis,name,version,body,enabled)
-      SELECT ?,?,lens_id,axis,name,version,body,enabled FROM lens_profile
-      WHERE lens_id='correctness' AND axis='framework' AND name='default' AND space_id IS NULL`)
-    .run(newRecordId(), HOSTED_SPACE)
+    .query(`INSERT INTO lens_profile (record_id,space_id,lens_record_id,axis,name,version,body,enabled)
+      SELECT ?,?,(SELECT record_id FROM lens WHERE id='correctness' AND space_id IS ?),p.axis,p.name,p.version,p.body,p.enabled
+      FROM lens_profile p JOIN lens l ON l.record_id=p.lens_record_id
+      WHERE l.id='correctness' AND p.axis='framework' AND p.name='default' AND p.space_id IS NULL`)
+    .run(newRecordId(), HOSTED_SPACE, HOSTED_SPACE)
 }
 
 test('a hosted lens failure leaves the local catalogue unchanged', async () => {
@@ -89,7 +90,7 @@ test('hosted profile failure is inert and success adopts hosted identities and v
       .get()!.n,
   ).toBe(beforeRevisions)
 
-  const profileId = newRecordId()
+  const profileId = before.record_id
   const revisionId = newRecordId()
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
@@ -126,8 +127,10 @@ test('hosted profile failure is inert and success adopts hosted identities and v
       enabled: true,
       reason: 'hosted profile ordering',
     })
-    expect(changed).toMatchObject({ id: before.id, version: 2 })
-    expect(db().query('SELECT record_id FROM lens_profile WHERE id=?').get(before.id)).toEqual({
+    expect(changed).toMatchObject({ record_id: profileId, version: 2 })
+    expect(
+      db().query('SELECT record_id FROM lens_profile WHERE record_id=?').get(before.record_id),
+    ).toEqual({
       record_id: profileId,
     })
     expect(

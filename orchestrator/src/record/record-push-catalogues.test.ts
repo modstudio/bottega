@@ -190,6 +190,61 @@ test('dry run logs its local plan without calling hosted methods', async () => {
   )
 })
 
+test('a bound store with no local lens or port rows reports nothing to push without importing', async () => {
+  const local = db()
+  local.exec(`
+    DELETE FROM project_lens_profile_revision WHERE space_id IS NULL;
+    DELETE FROM project_lens_profile WHERE space_id IS NULL;
+    DELETE FROM lens_profile_revision WHERE space_id IS NULL;
+    DELETE FROM lens_profile WHERE space_id IS NULL;
+    DELETE FROM lens_revision WHERE space_id IS NULL;
+    DELETE FROM lens WHERE space_id IS NULL;
+    DELETE FROM port_ref_source WHERE space_id IS NULL;
+    DELETE FROM port_ref WHERE space_id IS NULL;
+    DELETE FROM port_skip WHERE space_id IS NULL;
+    DELETE FROM port_baseline WHERE space_id IS NULL;
+    DELETE FROM port_pair WHERE space_id IS NULL;
+    DELETE FROM port_doctrine WHERE space_id IS NULL;
+    DELETE FROM project;
+    INSERT OR REPLACE INTO record_install_binding(id,bound_at) VALUES (1,'2026-10-20T00:00:00.000Z');
+  `)
+  const logs: string[] = []
+  let imports = 0
+  const client = fakeCatalogueClient()
+  client.importLensCatalogue = async () => {
+    imports++
+    throw new Error('lens import must not be called')
+  }
+  client.importWorkflowCatalogue = async () => {
+    imports++
+    throw new Error('workflow import must not be called')
+  }
+  client.importPortCatalogue = async () => {
+    imports++
+    throw new Error('port import must not be called')
+  }
+
+  await pushCataloguesCommand(
+    { dryRun: false },
+    { log: (line) => logs.push(line) },
+    {
+      local,
+      client,
+      sync: async () => ({
+        pushed: 0,
+        failed: 0,
+        pending: 0,
+        configured: true,
+        quarantined: [],
+        blocked: [],
+      }),
+    },
+  )
+
+  expect(logs).toContain('nothing to push for lens and port catalogues')
+  expect(imports).toBe(0)
+})
+
 test('pushes complete workflow history to every registered project space and lists both in dry run', async () => {
   const local = db(),
     remoteSpace = newRecordId(),
@@ -292,7 +347,7 @@ test('pushes complete workflow history to every registered project space and lis
     )
 })
 
-test('push planner normalizes a date-only baseline without changing the local value', async () => {
+test('push and cache reconciliation normalizes a date-only baseline', async () => {
   const local = db(),
     sourceId = newRecordId(),
     targetId = newRecordId()
@@ -311,7 +366,7 @@ test('push planner normalizes a date-only baseline without changing the local va
   rememberProjectSpace(local, 'dated-source', spaceId)
   rememberProjectSpace(local, 'dated-target', spaceId)
   const pair = addPairLocal(sourceId, targetId)
-  setBaselineLocal(pair.id, 'abc123', '2026-08-24')
+  setBaselineLocal(pair.record_id, 'abc123', '2026-08-24')
   const imports: RecordPortImportInput[] = []
   const client = fakeCatalogueClient(undefined, undefined, [], (input) => imports.push(input))
   installRecordApiClient(client)
@@ -321,9 +376,9 @@ test('push planner normalizes a date-only baseline without changing the local va
   expect(imports.flatMap((input) => input.port_baseline)).toEqual([
     expect.objectContaining({ scannedAt: '2026-08-24T00:00:00.000Z' }),
   ])
-  expect(local.query('SELECT scanned_at FROM port_baseline WHERE pair_id=?').get(pair.id)).toEqual({
-    scanned_at: '2026-08-24',
-  })
+  expect(
+    local.query('SELECT scanned_at FROM port_baseline WHERE pair_record_id=?').get(pair.record_id),
+  ).toEqual({ scanned_at: '2026-08-24T00:00:00.000Z' })
 })
 
 test('prints workflow import reconciliation outcomes', async () => {

@@ -75,6 +75,11 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
     'migration runner executes SQL loaded from journal files',
   ),
   ...exempt(
+    'orchestrator/src/database/lens-port-migration-preflight.ts',
+    ['4ec7c53222c8a758'],
+    'lens and port migration preflight executes a closed list of legacy-schema queries',
+  ),
+  ...exempt(
     'orchestrator/src/branch/branch-settlement.ts',
     ['d960c156a7b69340'],
     'query composes the shared chain-score join fragment',

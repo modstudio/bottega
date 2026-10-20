@@ -23,7 +23,7 @@ export const PROJECT_REFERENCES = [
   ['port_pair_target', 'port_pair target', 'target_project_record_id', 'port_pair'],
   ['port_ref', 'port_ref', 'target_project_record_id'],
   ['port_ref_source', 'port_ref_source source', 'source_project_record_id', 'port_ref_source'],
-  ['port_ref_target', 'port_ref_source target', 'target_project_record_id', 'port_ref_source'],
+  ['port_ref_target', 'port_ref_source target', 'target_project_record_id', 'port_ref'],
   ['project_lens_profile', 'project_lens_profile', 'project_record_id'],
   ['release_ledger', 'release_ledger', 'project_record_id'],
   ['subject', 'subject', 'project_record_id'],
@@ -49,6 +49,14 @@ export function projectReferenceCounts(
     PROJECT_REFERENCES.map(([key, , column, explicitTable]) => {
       const table = explicitTable ?? key
       const localOnly = LOCAL_CATALOGUE_REFERENCES.has(key) ? ' AND space_id IS NULL' : ''
+      if (key === 'port_ref_target') {
+        const row = database
+          .query(`SELECT COUNT(*) AS n FROM port_ref_source s
+            JOIN port_ref r ON r.record_id=s.ref_record_id
+            WHERE r.target_project_record_id=? AND s.space_id IS NULL`)
+          .get(projectRecordId) as { n: number }
+        return [key, row.n]
+      }
       const row = database
         .query(`SELECT COUNT(*) AS n FROM ${table} WHERE ${column}=?${localOnly}`)
         .get(projectRecordId) as { n: number }

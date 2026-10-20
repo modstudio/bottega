@@ -5,17 +5,42 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db, sessionId } from '../database/db.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { upsertProject } from '../project/projects.ts'
-import { rememberProjectSpace } from '../project-space.ts'
+import { rememberActiveRecordSpace, rememberProjectSpace } from '../project-space.ts'
 import {
   chooseLensProfile,
   listLenses,
+  listProfiles,
   resolveLens,
   selectProjectProfile,
   setLens,
   setProfile,
+  showLens,
+  showProfile,
 } from './lenses.ts'
 
 describe('lens catalogue', () => {
+  test('inspection defaults to the active hosted record space', () => {
+    const space = newRecordId()
+    const lensRecordId = newRecordId()
+    db()
+      .query(
+        `INSERT INTO lens(record_id,space_id,id,title,question,excludes,slots,version,enabled,requires_execution)
+         VALUES (?,?,'hosted-inspection','Hosted','Q','E','{"type":"object","properties":{},"additionalProperties":false}',1,1,0)`,
+      )
+      .run(lensRecordId, space)
+    db()
+      .query(
+        `INSERT INTO lens_profile(record_id,space_id,lens_record_id,axis,name,version,body,enabled)
+         VALUES (?,?,?,'framework','default',1,'{}',1)`,
+      )
+      .run(newRecordId(), space, lensRecordId)
+    rememberActiveRecordSpace(db(), space)
+
+    expect(listLenses().map((lens) => lens.id)).toEqual(['hosted-inspection'])
+    expect(showLens('hosted-inspection')?.title).toBe('Hosted')
+    expect(listProfiles('hosted-inspection')).toHaveLength(1)
+    expect(showProfile('hosted-inspection', 'framework', 'default')?.name).toBe('default')
+  })
   test('six seeded cores render their default profile for every registered project', () => {
     upsertProject({ recordId: newRecordId(), name: 'one', path: '/tmp/one', settings: {} })
     upsertProject({ recordId: newRecordId(), name: 'two', path: '/tmp/two', settings: {} })
@@ -130,7 +155,9 @@ describe('lens catalogue', () => {
     expect(resolveLens('custom-sections', null)!.body).toBe('LOOKS FOR\nBoundary leaks.')
     for (const row of db()
       .query<{ record_id: string }, []>(
-        "SELECT record_id FROM lens WHERE id='custom-sections' UNION ALL SELECT record_id FROM lens_profile WHERE lens_id='custom-sections'",
+        `SELECT record_id FROM lens WHERE id='custom-sections'
+         UNION ALL
+         SELECT p.record_id FROM lens_profile p JOIN lens l ON l.record_id=p.lens_record_id WHERE l.id='custom-sections'`,
       )
       .all()) {
       expect(row.record_id).toMatch(
@@ -188,7 +215,9 @@ describe('lens catalogue', () => {
     })
     expect(
       db()
-        .query("SELECT COUNT(*) n FROM lens_profile WHERE lens_id='correctness' AND name='node'")
+        .query(
+          "SELECT COUNT(*) n FROM lens_profile p JOIN lens l ON l.record_id=p.lens_record_id WHERE l.id='correctness' AND p.name='node'",
+        )
         .get(),
     ).toEqual({ n: 1 })
     expect(resolveLens('correctness', 'one')!.body).toContain('Node.\n\nCOMMANDS\nbun test')
@@ -260,10 +289,11 @@ describe('lens catalogue', () => {
     rememberProjectSpace(db(), 'hosted', space)
     const local = db()
       .query(
-        "SELECT lens_id,axis,name,version,body,enabled FROM lens_profile WHERE lens_id='correctness' AND enabled=1 AND space_id IS NULL",
+        `SELECT p.axis,p.name,p.version,p.body,p.enabled FROM lens_profile p
+         JOIN lens l ON l.record_id=p.lens_record_id
+         WHERE l.id='correctness' AND p.enabled=1 AND p.space_id IS NULL`,
       )
       .all() as {
-      lens_id: string
       axis: string
       name: string
       version: number
@@ -273,10 +303,11 @@ describe('lens catalogue', () => {
     for (const row of local)
       db()
         .query(
-          'INSERT INTO lens_profile (lens_id,axis,name,version,body,enabled,record_id,space_id) VALUES (?,?,?,?,?,?,?,?)',
+          'INSERT INTO lens_profile (lens_record_id,axis,name,version,body,enabled,record_id,space_id) VALUES ((SELECT record_id FROM lens WHERE id=? AND space_id=?),?,?,?,?,?,?,?)',
         )
         .run(
-          row.lens_id,
+          'correctness',
+          space,
           row.axis,
           row.name,
           row.version,
@@ -288,10 +319,20 @@ describe('lens catalogue', () => {
     expect(resolveLens('correctness', 'hosted')!.question).toBe('Hosted question?')
     db()
       .query(
-        `INSERT INTO project_lens_profile (record_id,space_id,project_record_id,lens_id,axis,profile_name,selected_version,selection_version)
-         VALUES (?,?,?,?,?,?,?,?)`,
+        `INSERT INTO project_lens_profile (record_id,space_id,project_record_id,lens_record_id,axis,profile_name,selected_version,selection_version)
+         VALUES (?,?,?,(SELECT record_id FROM lens WHERE id=? AND space_id=?),?,?,?,?)`,
       )
-      .run(newRecordId(), space, projectRecordId, 'correctness', 'framework', 'default', null, 1)
+      .run(
+        newRecordId(),
+        space,
+        projectRecordId,
+        'correctness',
+        space,
+        'framework',
+        'default',
+        null,
+        1,
+      )
     expect(resolveLens('correctness', 'hosted')!.question).toBe('Hosted question?')
     expect(resolveLens('correctness', null)!.question).not.toBe('Hosted question?')
   })
@@ -385,10 +426,10 @@ describe('lens catalogue', () => {
       live.query('SELECT project_record_id FROM run WHERE record_id=?').get(renamedRunId),
     ).toEqual({
       project_record_id: (
-        live.query(`SELECT record_id AS id FROM project WHERE name='${PLATFORM_SLUG}'`).get() as {
-          id: number
+        live.query(`SELECT record_id FROM project WHERE name='${PLATFORM_SLUG}'`).get() as {
+          record_id: string
         }
-      ).id,
+      ).record_id,
     })
     for (const [table, where] of [
       ['run', 'repo IS NOT NULL'],
