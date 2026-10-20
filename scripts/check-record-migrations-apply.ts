@@ -14,6 +14,7 @@ import {
   RECORD_PUBLIC_ROLE,
   RECORD_READER_ROLE,
 } from '../shared/record/schema.ts'
+import { proofProjectSpaceOwnershipDeclaration } from './check-record-project-space-ownership.ts'
 import {
   applyHostedProjectCleanupProof,
   seedHostedProjectCleanupProof,
@@ -293,10 +294,13 @@ async function proofAudienceVocabularyBackfill(transaction: Transaction): Promis
     'SELECT id, audiences FROM doc WHERE id IN ($1, $2) ORDER BY id',
     [publicAudienceDocId, internalAudienceDocId],
   )
-  const revisions = await transaction.query<{ doc_id: string; audiences: string[] }>(
-    'SELECT doc_id, audiences FROM doc_revision WHERE doc_id IN ($1, $2) ORDER BY doc_id',
-    [publicAudienceDocId, internalAudienceDocId],
-  )
+  const revisions = await transaction.query<{
+    doc_id: string
+    audiences: string[]
+  }>('SELECT doc_id, audiences FROM doc_revision WHERE doc_id IN ($1, $2) ORDER BY doc_id', [
+    publicAudienceDocId,
+    internalAudienceDocId,
+  ])
   await transaction.exec(`
     SELECT set_config('app.space_id', '', true);
     SELECT set_config('app.user_id', '', true);
@@ -310,7 +314,10 @@ async function proofAudienceVocabularyBackfill(transaction: Transaction): Promis
       `DEV-1238 document audience vocabulary backfill produced ${JSON.stringify(docs.rows)}`,
     )
   }
-  const expectedRevisions = expected.map(({ id, audiences }) => ({ doc_id: id, audiences }))
+  const expectedRevisions = expected.map(({ id, audiences }) => ({
+    doc_id: id,
+    audiences,
+  }))
   if (JSON.stringify(revisions.rows) !== JSON.stringify(expectedRevisions)) {
     throw new CheckFailure(
       `DEV-1238 revision audience vocabulary backfill produced ${JSON.stringify(revisions.rows)}`,
@@ -345,7 +352,10 @@ async function seedBoardThreadAuthorBackfill(transaction: Transaction): Promise<
 
 async function proofBoardPurposeBackfill(transaction: Transaction): Promise<void> {
   await transaction.exec('ALTER TABLE board_message NO FORCE ROW LEVEL SECURITY;')
-  const result = await transaction.query<{ kind: string; purpose: string | null }>(`
+  const result = await transaction.query<{
+    kind: string
+    purpose: string | null
+  }>(`
     SELECT kind,purpose FROM board_message
     WHERE id IN ('${boardBackfillRootId}','${boardBackfillQuestionId}','${boardBackfillReplyId}')
     ORDER BY kind
@@ -427,16 +437,35 @@ async function proofDocJsonbArrayRepair(transaction: Transaction): Promise<void>
     ORDER BY doc_id
   `)
   const expectedDocs = [
-    { id: jsonbStringDocId, source_type: 'array', source_files: ['src/string.ts'], advanced: true },
-    { id: jsonbArrayDocId, source_type: 'array', source_files: ['src/array.ts'], advanced: false },
-    { id: jsonbInvalidDocId, source_type: 'string', source_files: 'not an array', advanced: false },
+    {
+      id: jsonbStringDocId,
+      source_type: 'array',
+      source_files: ['src/string.ts'],
+      advanced: true,
+    },
+    {
+      id: jsonbArrayDocId,
+      source_type: 'array',
+      source_files: ['src/array.ts'],
+      advanced: false,
+    },
+    {
+      id: jsonbInvalidDocId,
+      source_type: 'string',
+      source_files: 'not an array',
+      advanced: false,
+    },
   ]
   if (JSON.stringify(docs.rows) !== JSON.stringify(expectedDocs))
     throw new CheckFailure(`DEV-1303 document repair produced ${JSON.stringify(docs.rows)}`)
   const expectedRevisions = [
     { doc_id: jsonbStringDocId, related_type: 'array', source_type: 'array' },
     { doc_id: jsonbArrayDocId, related_type: 'array', source_type: 'array' },
-    { doc_id: jsonbInvalidDocId, related_type: 'string', source_type: 'string' },
+    {
+      doc_id: jsonbInvalidDocId,
+      related_type: 'string',
+      source_type: 'string',
+    },
   ]
   if (JSON.stringify(revisions.rows) !== JSON.stringify(expectedRevisions))
     throw new CheckFailure(`DEV-1303 revision repair produced ${JSON.stringify(revisions.rows)}`)
@@ -796,7 +825,10 @@ async function hubProjectIdentityTaskRows(
   transaction: Transaction,
 ): Promise<{ id: string; project_id: string | null }[]> {
   await transaction.exec('ALTER TABLE hub_task NO FORCE ROW LEVEL SECURITY;')
-  const result = await transaction.query<{ id: string; project_id: string | null }>(`
+  const result = await transaction.query<{
+    id: string
+    project_id: string | null
+  }>(`
     SELECT id::text AS id, project_id::text AS project_id FROM hub_task
     WHERE id IN ('${hubProjectMatchTaskId}', '${hubProjectUnmatchedTaskId}')
     ORDER BY key
@@ -932,6 +964,7 @@ async function main(): Promise<void> {
         await proofManagedCanonProjects(transaction)
         await proofProjectRelationsStayWithinOneSpace(transaction)
         await proofCatalogueDefaultGrants(transaction)
+        await proofProjectSpaceOwnershipDeclaration(transaction)
       })
       await proofBoardNotifications(database)
     } catch (error) {
