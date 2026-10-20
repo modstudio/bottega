@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import type { CatalogueStep } from './step-catalogue-definition.ts'
 import {
   expandWorkflowSteps,
   inspectWorkflowSteps,
@@ -39,23 +40,23 @@ test('a workflow step entry accepts only a slug or an exact sequence reference',
 })
 
 test('reentry to must be an earlier step in the expanded mode', () => {
-  const catalogue = [
+  const catalogue: CatalogueStep[] = [
     {
       slug: 'start',
       title: 'Start',
       body: '',
-      floor: ['ruling'] as const,
+      floor: ['ruling'],
       job: null,
-      autonomy: 'auto' as const,
+      autonomy: 'auto',
       needs: [],
     },
     {
       slug: 'apply',
       title: 'Apply',
       body: '',
-      floor: ['ruling'] as const,
+      floor: ['ruling'],
       job: null,
-      autonomy: 'auto' as const,
+      autonomy: 'auto',
       needs: [],
       outcomes: ['changed', 'clean'],
       reenter: { to: 'start', outcome: 'changed' },
@@ -64,9 +65,9 @@ test('reentry to must be an earlier step in the expanded mode', () => {
       slug: 'finish',
       title: 'Finish',
       body: '',
-      floor: ['ruling'] as const,
+      floor: ['ruling'],
       job: null,
-      autonomy: 'auto' as const,
+      autonomy: 'auto',
       needs: [],
     },
   ]

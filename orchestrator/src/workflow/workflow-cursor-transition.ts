@@ -58,12 +58,10 @@ type OutcomeTrailEntry = {
   reentered?: { to: string; pass: number }
 }
 
-export type ReentryRecord = { to: string; pass: number }
-
 export type ConditionalAdvance = {
   ordinal: number | null
   skipped: Array<{ ordinal: number; step: ConditionalStep }>
-  reentered?: ReentryRecord
+  reentered?: { to: string; pass: number }
   requireRuling: boolean
 }
 

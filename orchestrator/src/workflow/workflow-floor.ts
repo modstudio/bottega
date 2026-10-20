@@ -204,7 +204,7 @@ export function catalogueFloors(
   })
 }
 
-export function catalogueFloorsFor(step: {
+function catalogueFloorsFor(step: {
   floor: readonly string[]
   deferrable?: readonly string[]
   expectedStatus?: string | readonly string[]

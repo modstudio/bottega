@@ -69,7 +69,7 @@ export function refuseTerminalCursor(row: {
     )
 }
 
-export function renderWorkflowCursorRemedy(
+function renderWorkflowCursorRemedy(
   row: Pick<
     AdvanceRow,
     'id' | 'workflow_slug' | 'project' | 'mode_slug' | 'workflow_key' | 'args'
