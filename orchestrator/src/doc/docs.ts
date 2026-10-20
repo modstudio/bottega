@@ -58,6 +58,7 @@ import {
   assertLocalStoredReferenceWrite,
   skipsProseLint,
 } from './doc-reference-write.ts'
+import { resumeWriteRefusal } from './doc-resume-write.ts'
 import {
   docSubjects,
   validateDocSubject,
@@ -456,20 +457,8 @@ export async function setDoc(input: DocWriteInput): Promise<Doc & { writeWarning
   assertWorkerDocStoreWriteAllowed('setDoc')
   if (input.scope === 'resume') {
     const frontmatter = resumeFrontmatter(input.body)
-    if (!frontmatter?.top.status) {
-      throw new Error(
-        `resume doc "${input.slug}" requires readable top-level YAML frontmatter in the shape "status: open" or "status: consumed"`,
-      )
-    }
-    if (frontmatter.status?.occurrences && frontmatter.status.occurrences > 1) {
-      throw new Error(`resume doc "${input.slug}" has more than one top-level status field`)
-    }
-    const status = frontmatter.top.status
-    if (status !== 'open' && status !== 'consumed') {
-      throw new Error(
-        `resume doc "${input.slug}" has unrecognized status "${status}"; permitted values are "open" and "consumed"`,
-      )
-    }
+    const refusal = resumeWriteRefusal(input.slug, input.body, frontmatter)
+    if (refusal) throw new Error(refusal)
   }
   return setDocWithOp(input)
 }

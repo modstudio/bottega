@@ -8,6 +8,8 @@ import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
+import { resumeFrontmatter } from '../doc/doc-resume-frontmatter.ts'
+import { resumeWriteRefusal } from '../doc/doc-resume-write.ts'
 import {
   consumeDocBody,
   type DocDelivery,
@@ -161,6 +163,9 @@ export async function upsertRecordDoc(
   input: RecordDocWriteInput,
 ): Promise<{ id: string; revisionId: string } & HostedArticleResponse> {
   assertUpsertAddress(input)
+  if (input.scope === 'resume') {
+    assertWrite(resumeWriteRefusal(input.slug, input.body, resumeFrontmatter(input.body)))
+  }
   return tenant(input, async (tx) => {
     const existing = await tx`
       SELECT id, scope, subject, owner_user_id, slug, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, parent_id, position, latest_revision_id FROM doc
