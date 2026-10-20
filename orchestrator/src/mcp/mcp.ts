@@ -555,7 +555,7 @@ export function createDocsMcpServer(): McpServer {
       const preliminary = composeWorkflow(slug, project, effectiveMode, args ?? {})
       const stepSlug = effectiveMode
         ? step
-        : resolveWorkflowStepReference(step, workflowModeStepLists(slug))
+        : resolveWorkflowStepReference(step, workflowModeStepLists(slug, project))
       const preliminaryStep = effectiveMode
         ? undefined
         : getWorkflowStep(slug, project, stepSlug, args ?? {}, undefined, { mode })

@@ -449,7 +449,10 @@ export async function stepCommand(
   const preliminary = composeWorkflow(slug, project, mode, args, undefined, selection)
   const stepSlug = mode
     ? target.step!
-    : resolveWorkflowStepReference(target.step!, workflowModeStepLists(slug, undefined, selection))
+    : resolveWorkflowStepReference(
+        target.step!,
+        workflowModeStepLists(slug, project, undefined, selection),
+      )
   const preliminaryStep = mode
     ? undefined
     : getWorkflowStep(slug, project, stepSlug, args, undefined, selection)

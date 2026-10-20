@@ -111,7 +111,14 @@ test('workflow inspection reads only the current project space and stays local o
       title: 'Local inspection',
       description: 'Local catalogue definition.',
       arguments: [],
-      modes: [],
+      modes: [
+        {
+          slug: 'local',
+          title: 'Local',
+          default: true,
+          steps: ['verify'],
+        },
+      ],
     },
     'local inspection fixture',
     'test',
@@ -160,6 +167,16 @@ test('workflow inspection reads only the current project space and stays local o
       steps: [
         ...productionStepCatalogue(local).definition.steps,
         {
+          slug: 'hosted-ordinal-check',
+          title: 'Hosted ordinal check',
+          body: 'This step exists only in the hosted mode layout.',
+          floor: [],
+          job: null,
+          stage: 'review',
+          autonomy: 'auto',
+          needs: [],
+        },
+        {
           slug: 'inspection-check',
           title: 'Inspection check',
           body: 'Use {{tracker.server}}.',
@@ -200,7 +217,7 @@ test('workflow inspection reads only the current project space and stays local o
           slug: 'default',
           title: 'Default',
           default: true,
-          steps: ['inspection-check'],
+          steps: ['hosted-ordinal-check', 'inspection-check'],
         },
       ],
     }),
@@ -343,6 +360,13 @@ test('workflow inspection reads only the current project space and stays local o
   expect(() => resolvedWorkflowVersions(localOnlySlug, project, local)).toThrow(
     `unknown workflow "${localOnlySlug}" in hosted space ${spaceId}`,
   )
+
+  const stepLines: string[] = []
+  await workflowCommand(
+    ['workflow', 'step', slug, '1', '--project', project],
+    presentation(stepLines),
+  )
+  expect(stepLines.join('\n')).toContain('This step exists only in the hosted mode layout.')
 
   const renderLines: string[] = []
   await workflowCommand(['workflow', 'render-check'], presentation(renderLines))

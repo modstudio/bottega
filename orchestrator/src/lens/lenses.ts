@@ -599,12 +599,8 @@ export async function selectProjectProfile(input: SelectProjectProfileInput) {
 const disabledLensRefusal = (id: string, what: string) =>
   `${what}\ninvariant: A disabled catalogue lens or selected profile never dispatches.\ncleared by: enable ${id} or select an enabled profile`
 
-function resolutionSpace(projectName: string | null, d: Database): string | null {
-  return effectiveProjectSpace(d, projectName)
-}
-
 export function resolveLens(id: string, projectName: string | null, d: Database = db()) {
-  const spaceId = resolutionSpace(projectName, d)
+  const spaceId = effectiveProjectSpace(d, projectName)
   const core = d
     .query(`SELECT ${LENS_COLUMNS} FROM lens WHERE id=? AND space_id IS ?`)
     .get(id, spaceId) as CoreRow | null

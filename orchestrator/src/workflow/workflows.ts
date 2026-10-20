@@ -734,11 +734,13 @@ export function resolveWorkflowMode(
 
 export function workflowModeStepLists(
   slug: string,
+  project: string,
   d: Database = db(),
   selection: WorkflowSelection = {},
 ): WorkflowModeStepList[] {
-  const workflow = selectedWorkflow(slug, selection.version, d)
-  const catalogue = selectedCatalogue(selection.catalogueVersion, d)
+  const spaceId = effectiveProjectSpace(d, project)
+  const workflow = selectedWorkflow(slug, selection.version, d, spaceId)
+  const catalogue = selectedCatalogue(selection.catalogueVersion, d, spaceId)
   return workflow.definition.modes.map((mode) => ({
     mode: mode.slug,
     steps: expandWorkflowSteps(mode.steps, catalogue.definition.sequences ?? []),
