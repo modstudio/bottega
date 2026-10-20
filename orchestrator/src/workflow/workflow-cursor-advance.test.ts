@@ -317,9 +317,9 @@ function setLastReentryAt(d: Database, at: string): void {
 
 function insertGradedReview(d: Database): string {
   const project = (
-    d.query<{ id: string }, [string]>('SELECT record_id AS id FROM project WHERE name=?').get(
-      'fixture',
-    ) as { id: string }
+    d
+      .query<{ id: string }, [string]>('SELECT record_id AS id FROM project WHERE name=?')
+      .get('fixture') as { id: string }
   ).id
   const key = (
     d.query<{ workflow_key: string }, []>('SELECT workflow_key FROM workflow_cursor').get() as {
@@ -343,9 +343,11 @@ function insertGradedReview(d: Database): string {
      VALUES (?,?,?,'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
   ).run(newRecordId(), reviewId, runId)
   return String(
-    (d.query<{ number: number }, [string]>('SELECT number FROM review WHERE record_id=?').get(
-      reviewId,
-    ) as { number: number }).number,
+    (
+      d
+        .query<{ number: number }, [string]>('SELECT number FROM review WHERE record_id=?')
+        .get(reviewId) as { number: number }
+    ).number,
   )
 }
 

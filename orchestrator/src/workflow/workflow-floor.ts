@@ -272,11 +272,7 @@ export function allowedCloseFloor(
   return floor
 }
 
-function rulingMet(
-  floor: Floor,
-  evidence: ValidatedEvidence,
-  freshRulingAfter?: string,
-): boolean {
+function rulingMet(floor: Floor, evidence: ValidatedEvidence, freshRulingAfter?: string): boolean {
   const ruling = evidence.ruling
   const review = evidence.review
   const fresh =
@@ -360,11 +356,7 @@ function taskMet(floor: Floor, evidence: ValidatedEvidence): boolean {
   return !floor.requirePullRequest || task.mergedPullRequest
 }
 
-function floorIsMet(
-  floor: Floor,
-  evidence: ValidatedEvidence,
-  freshRulingAfter?: string,
-): boolean {
+function floorIsMet(floor: Floor, evidence: ValidatedEvidence, freshRulingAfter?: string): boolean {
   if (floor.kind === 'ruling') return rulingMet(floor, evidence, freshRulingAfter)
   if (floor.kind === 'command-exit') return commandExitMet(floor, evidence)
   if (floor.kind === 'recorded-artifact') return evidence.artifact?.exists === true

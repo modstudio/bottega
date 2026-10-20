@@ -32,6 +32,7 @@ import {
   selectUntouchedKeylessWorkflowCursor,
   selectWorkflowCursor,
   type WorkflowCursorContext,
+  workflowCursorProjectScope,
 } from './workflow-cursor-selection.ts'
 import {
   type ClosedStep,
@@ -90,8 +91,10 @@ type CursorRow = SelectableCursorRow & {
 }
 
 const MCP_INSTANCE = randomUUID()
-export const mcpWorkflowCursorContext = (): WorkflowCursorContext =>
-  ({ session: sessionId(), instance: MCP_INSTANCE })
+export const mcpWorkflowCursorContext = (): WorkflowCursorContext => ({
+  session: sessionId(),
+  instance: MCP_INSTANCE,
+})
 export const cliWorkflowCursorContext = (): WorkflowCursorContext => ({ session: sessionId() })
 
 function closeOpenWorkflowQuestion(
@@ -983,16 +986,7 @@ export type CursorListOptions = {
   cwd?: string
 }
 
-export function workflowCursorProjectScope(
-  options: Pick<CursorListOptions, 'all' | 'project' | 'session'>,
-  cwdProject: string | undefined,
-  cwd: string,
-): string | undefined {
-  if (options.all || (options.session && !options.project)) return undefined
-  if (options.project) return options.project
-  if (cwdProject) return cwdProject
-  throw new Error(`cannot list workflow cursors from ${cwd}: pass --project, --session or --all`)
-}
+export { workflowCursorProjectScope }
 
 export function listWorkflowCursors(
   options: CursorListOptions = {},

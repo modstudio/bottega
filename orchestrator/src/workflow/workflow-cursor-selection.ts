@@ -20,6 +20,17 @@ export type WorkflowCursorIdentity = {
 
 export type WorkflowCursorContext = { session?: string | null; instance?: string }
 
+export function workflowCursorProjectScope(
+  options: { all?: boolean; project?: string; session?: string },
+  cwdProject: string | undefined,
+  cwd: string,
+): string | undefined {
+  if (options.all || (options.session && !options.project)) return undefined
+  if (options.project) return options.project
+  if (cwdProject) return cwdProject
+  throw new Error(`cannot list workflow cursors from ${cwd}: pass --project, --session or --all`)
+}
+
 export type SelectableCursorRow = {
   id: number
   project: string

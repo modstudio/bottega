@@ -45,7 +45,7 @@ export function decideStepOutcome(
       }
 }
 
-export const AUTOMATIC_REENTRY_LIMIT = 1
+const AUTOMATIC_REENTRY_LIMIT = 1
 const FIRST_VISIT = 1
 
 type ConditionalStep = {
