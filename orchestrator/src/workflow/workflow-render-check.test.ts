@@ -75,6 +75,26 @@ const database = () => {
 }
 
 describe('workflow render check', () => {
+  test('passes with conditional and omitted steps in a mode', () => {
+    const definition = workflow('check')
+    definition.modes[0]!.steps = [
+      { sequence: 'checks', omit: ['omitted'] },
+      { step: 'conditional', when: { step: 'check', outcome: ['ready'] } },
+    ]
+    const definitionCatalogue = catalogue('Check.', [])
+    definitionCatalogue.steps[0]!.outcomes = ['ready']
+    definitionCatalogue.steps.push(
+      { ...definitionCatalogue.steps[0]!, slug: 'omitted', outcomes: undefined },
+      { ...definitionCatalogue.steps[0]!, slug: 'conditional', outcomes: undefined },
+    )
+    definitionCatalogue.sequences = [
+      { slug: 'checks', title: 'Checks', steps: ['check', 'omitted'] },
+    ]
+    expect(
+      checkWorkflowRendering([{ slug: 'flow', definition }], definitionCatalogue, [project({})]),
+    ).toEqual({ failures: [], unresolvedProjects: [], resolutionFailures: [] })
+  })
+
   test('reports an optional-fact placeholder only when the resolved project lacks it', () => {
     const definition = workflow('check')
     const missing = unresolvedWorkflowStepPlaceholders(

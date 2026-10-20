@@ -68,6 +68,7 @@ import { registerWorkflowPrompts } from './mcp-prompts.ts'
 import { registerSearchTools } from './mcp-search-tools.ts'
 import { registerSetupTools } from './mcp-setup-tools.ts'
 import { registerSubjectTools } from './mcp-subject-tools.ts'
+import { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
 
 const text = (value: unknown, isError = false) => ({
   content: [
@@ -81,26 +82,6 @@ const requiredReportField = (field: string, belongs: string) =>
     .string({ error: `${field} is required: ${belongs}` })
     .trim()
     .min(1, `${field} is required: ${belongs}`)
-
-const nextWorkflowStepInputSchema = z.object({
-  slug: z.string().trim().min(1),
-  project: z.string().trim().min(1),
-  mode: z.string().trim().min(1).optional(),
-  args: z.record(z.string(), z.string()).optional(),
-  note: z.string().trim().min(1),
-  ruling: z.number().int().positive().optional(),
-  self_ruling: z.string().trim().min(1).optional(),
-  self_ruling_basis: z.string().optional(),
-  question: z.string().trim().min(1).optional(),
-  review: z.union([z.number().int().positive(), z.uuid()]).optional(),
-  gate: z.number().int().positive().optional(),
-  run: z.union([z.number().int().positive(), z.string().trim().min(1)]).optional(),
-  artifact: z.string().trim().min(1).optional(),
-  task: z.string().trim().min(1).optional(),
-  cursor: z.number().int().positive().optional(),
-  defer: z.string().trim().min(1).optional(),
-  satisfies: z.number().int().positive().optional(),
-})
 
 const workflowRunEvidence = (run: string | number | undefined) =>
   run === undefined ? undefined : resolveRunIdentifier(db(), run)
@@ -221,6 +202,7 @@ async function advanceWorkflow({
   mode,
   args,
   note,
+  outcome,
   ruling,
   self_ruling,
   self_ruling_basis,
@@ -280,6 +262,7 @@ async function advanceWorkflow({
             question,
             channel: 'mcp',
           },
+      outcome,
     ),
   )
 }

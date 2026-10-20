@@ -153,6 +153,57 @@ describe('workflow definition validation', () => {
       ).join('\n'),
     ).toContain('expands to duplicate step "lens"')
   })
+  test('validates omitted sequence members and conditional predecessors and outcomes', () => {
+    const d = database()
+    const current = productionStepCatalogue(d).definition
+    const catalogue = setStepCatalogueLocal(
+      {
+        steps: current.steps.map((step) =>
+          step.slug === 'lens' ? { ...step, outcomes: ['needed', 'clear'] } : step,
+        ),
+        sequences: [{ slug: 'quality', title: 'Quality', steps: ['lens', 'score'] }],
+      },
+      'conditional fixture',
+      'test',
+      d,
+    )
+    promoteStepCatalogueLocal(catalogue.n, 'publish', 'test', d)
+    const mode = valid().modes[0]!
+    expect(
+      validateWorkflowDefinition(
+        { ...valid(), modes: [{ ...mode, steps: [{ sequence: 'quality', omit: ['absent'] }] }] },
+        d,
+      ).join('\n'),
+    ).toContain('cannot omit non-member step "absent"')
+    expect(
+      validateWorkflowDefinition(
+        {
+          ...valid(),
+          modes: [
+            {
+              ...mode,
+              steps: [{ step: 'score', when: { step: 'complete', outcome: ['done'] } }, 'complete'],
+            },
+          ],
+        },
+        d,
+      ).join('\n'),
+    ).toContain('must be an earlier step')
+    expect(
+      validateWorkflowDefinition(
+        {
+          ...valid(),
+          modes: [
+            {
+              ...mode,
+              steps: ['lens', { step: 'score', when: { step: 'lens', outcome: ['unknown'] } }],
+            },
+          ],
+        },
+        d,
+      ).join('\n'),
+    ).toContain('names undeclared outcome "unknown"')
+  })
   test('validates modes and arguments', () => {
     const d = database(),
       definition = valid()

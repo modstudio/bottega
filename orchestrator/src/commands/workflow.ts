@@ -242,6 +242,7 @@ function registerWorkflowAdvancement({
       .option('--mode <value>', 'select this workflow mode')
       .option('--project <value>', 'select this registered project')
       .option('--note <value>', 'record how the current step was completed')
+      .option('--outcome <value>', 'record the current step outcome')
       .option('--question <value>', 'record the self-ruling question')
       .option('--self-ruling <value>', 'record the self-ruling answer')
       .option('--basis <value>', 'record the basis for a self-ruling')

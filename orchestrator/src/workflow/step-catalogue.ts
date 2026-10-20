@@ -23,7 +23,11 @@ import { versionedLifecycle } from './versioned-lifecycle.ts'
 import type { WorkflowDefinition, WorkflowModeStep } from './workflow-definition.ts'
 import { floorKinds, isFloorKind } from './workflow-floor.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
-import { inspectWorkflowSteps, validateCatalogueSequences } from './workflow-step-sequences.ts'
+import {
+  inspectWorkflowSteps,
+  validateCatalogueSequences,
+  workflowConditionErrors,
+} from './workflow-step-sequences.ts'
 
 export type {
   CatalogueSequence,
@@ -45,6 +49,7 @@ export function validateStepCatalogue(value: unknown): string[] {
       continue
     }
     validateIdentity(item, seen, errors)
+    validateOutcomes(item, errors)
     validateFloor(item, errors)
     validateNeeds(item, errors)
     validateDispatchPrompts(item, errors)
@@ -60,6 +65,19 @@ export function validateStepCatalogue(value: unknown): string[] {
     ),
   )
   return [...new Set(errors)]
+}
+
+function validateOutcomes(item: Record<string, unknown>, errors: string[]): void {
+  if (item.outcomes === undefined) return
+  const slug = String(item.slug ?? '')
+  if (!Array.isArray(item.outcomes) || item.outcomes.length === 0) {
+    errors.push(`step "${slug}" outcomes must be a non-empty array`)
+    return
+  }
+  if (item.outcomes.some((outcome) => typeof outcome !== 'string' || !SLUG.test(outcome)))
+    errors.push(`step "${slug}" outcomes must be well-formed slugs`)
+  if (new Set(item.outcomes).size !== item.outcomes.length)
+    errors.push(`step "${slug}" outcomes must be unique`)
 }
 
 function validateDispatchPrompts(item: Record<string, unknown>, errors: string[]): void {
@@ -508,6 +526,12 @@ function catalogueModePromotionErrors(
     errors.push(
       `${workflowSlug} mode ${mode.slug ?? ''}: duplicate steps ${proposed.duplicateSteps.join(', ')}`,
     )
+  else if (proposed.invalidOmissions.length) {
+    const invalid = proposed.invalidOmissions[0]!
+    errors.push(
+      `${workflowSlug} mode ${mode.slug ?? ''}: sequence "${invalid.sequence}" cannot omit non-member step "${invalid.step}"`,
+    )
+  }
   return errors
 }
 
@@ -521,9 +545,20 @@ function cataloguePromotionReferenceErrors(
   return rows.flatMap((row) => {
     const workflow = JSON.parse(row.definition) as ProductionWorkflowDefinition
     if (workflow.steps) return [] // Legacy inline versions remain valid history and self-contained.
-    return (workflow.modes ?? []).flatMap((mode) =>
-      catalogueModePromotionErrors(row.slug, mode, available, currentSequences, proposedSequences),
-    )
+    return (workflow.modes ?? []).flatMap((mode) => [
+      ...catalogueModePromotionErrors(
+        row.slug,
+        mode,
+        available,
+        currentSequences,
+        proposedSequences,
+      ),
+      ...workflowConditionErrors(
+        mode.slug ?? '',
+        inspectWorkflowSteps(mode.steps ?? [], proposedSequences, available).detailed,
+        definition.steps,
+      ),
+    ])
   })
 }
 

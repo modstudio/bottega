@@ -17,7 +17,11 @@ type WorkflowComposition = ReturnType<typeof composeWorkflow> & {
     previousSession?: string | null
   } | null
 }
-type WorkflowStep = ReturnType<typeof getWorkflowStep> & { cursor?: number; notice?: string }
+type WorkflowStep = ReturnType<typeof getWorkflowStep> & {
+  cursor?: number
+  notice?: string
+  flow?: Array<{ slug: string; outcome?: string; skipped?: unknown }>
+}
 
 export function withSelfRuling(
   result: string,
@@ -39,6 +43,9 @@ const rulingsHeader = (result: WorkflowComposition) =>
 
 const shellWord = (value: string) =>
   /^[A-Za-z0-9_@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`
+
+const conditionText = (condition: { step: string; outcome: string[] }) =>
+  `only when ${condition.step} is ${condition.outcome.join(' or ')}`
 
 export function renderWorkflowComposition(result: WorkflowComposition): string {
   if (result.mode && result.steps.length && !result.needs.arguments)
@@ -80,7 +87,7 @@ function renderRunnableComposition(result: WorkflowComposition): string {
     `facts: ${JSON.stringify(result.facts)}`,
     ...result.steps.map(
       (step) =>
-        `${step.n}. ${step.slug} — ${step.title} [job=${step.job ?? '-'} autonomy=${step.resolvedAutonomy.value}(${step.resolvedAutonomy.scope}) floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
+        `${step.n}. ${step.slug} — ${step.title}${step.when ? `; ${conditionText(step.when)}` : ''} [job=${step.job ?? '-'} autonomy=${step.resolvedAutonomy.value}(${step.resolvedAutonomy.scope}) floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
     ),
   ].join('\n')
 }
@@ -120,7 +127,7 @@ function renderIncompleteComposition(result: WorkflowComposition): string {
     ...facts,
     ...result.steps.map(
       (step) =>
-        `${step.n}. ${step.slug} — ${step.title} [job=${step.job ?? '-'} autonomy=${step.resolvedAutonomy.value}(${step.resolvedAutonomy.scope}) floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
+        `${step.n}. ${step.slug} — ${step.title}${step.when ? `; ${conditionText(step.when)}` : ''} [job=${step.job ?? '-'} autonomy=${step.resolvedAutonomy.value}(${step.resolvedAutonomy.scope}) floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
     ),
   ].join('\n')
 }
@@ -156,12 +163,17 @@ export function renderWorkflowStep(step: WorkflowStep): string {
   const reference = step.cursor ? workflowCursorReference(step.cursor) : null
   const cursor = reference ? ` with ${reference.mcp}` : ''
   const cliCursor = reference?.cli ?? ''
-  const close = `Next: when this step's floor is met, close it with \`next_workflow_step\` (MCP)${cursor} or \`${PLATFORM_SLUG} workflow next${step.cursor ? ` ${step.workflow}${cliCursor}` : ''}\`, giving a one-line note of how the floor was met;`
+  const outcome = step.outcomes?.length
+    ? ` Choose one allowed outcome (${step.outcomes.join(', ')}) and pass it as \`outcome\` to MCP or \`--outcome <slug>\` to the CLI.`
+    : ''
+  const close = `Next: when this step's floor is met, close it with \`next_workflow_step\` (MCP)${cursor} or \`${PLATFORM_SLUG} workflow next${step.cursor ? ` ${step.workflow}${cliCursor}` : ''}\`, giving a one-line note of how the floor was met;${outcome}`
   const pointer =
     step.next === undefined
       ? `${close} that serves the following step from the workflow's step list.`
       : step.next
-        ? `${close} that serves step ${step.next.n} ${step.next.slug} — ${step.next.title}.`
+        ? step.next.when
+          ? `${close} step ${step.next.n} ${step.next.slug} — ${step.next.title} runs ${conditionText(step.next.when)}; otherwise closing skips it and serves the next eligible step.`
+          : `${close} that serves step ${step.next.n} ${step.next.slug} — ${step.next.title}.`
         : step.mode
           ? `${close} this is the last step of ${step.workflow} (${step.mode}), and closing it finishes the workflow.`
           : `${close} this is the last step of ${step.workflow} in every mode that contains it, and closing it finishes the workflow.`
@@ -170,5 +182,13 @@ export function renderWorkflowStep(step: WorkflowStep): string {
       `Evidence for ${kind}: ${evidenceGuidance(kind as FloorKind, Boolean(step.operatorRuling))}.`,
   )
   const notice = step.notice ? `${step.notice}\n` : ''
-  return `${notice}facts: ${JSON.stringify(step.facts)}\nAutonomy: ${step.resolvedAutonomy.value} (${step.resolvedAutonomy.scope}) — ${autonomy}\n${step.body}\n\n${guidance.join('\n')}\n\n${pointer}`
+  const flow = (step.flow ?? []).flatMap((entry) =>
+    entry.skipped
+      ? [`${entry.slug}=skipped`]
+      : entry.outcome
+        ? [`${entry.slug}=${entry.outcome}`]
+        : [],
+  )
+  const flowLine = flow.length ? `Flow so far: ${flow.join(', ')}\n` : ''
+  return `${notice}${flowLine}facts: ${JSON.stringify(step.facts)}\nAutonomy: ${step.resolvedAutonomy.value} (${step.resolvedAutonomy.scope}) — ${autonomy}\n${step.body}\n\n${guidance.join('\n')}\n\n${pointer}`
 }

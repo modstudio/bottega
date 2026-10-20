@@ -31,9 +31,12 @@ import {
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
 import type { WorkflowModeStepList } from './workflow-step-reference.ts'
 import {
+  expandWorkflowModeSteps,
   expandWorkflowSteps,
   inspectWorkflowSteps,
+  isConditionalStep,
   isSequenceReference,
+  workflowConditionErrors,
   workflowModeStepError,
 } from './workflow-step-sequences.ts'
 import {
@@ -123,7 +126,8 @@ function workflowModeReferenceErrors(
     return [`mode "${slug}" must contain at least one step`]
   if (!catalogue) return []
   const entries = mode.steps.filter(
-    (entry): entry is WorkflowModeStep => typeof entry === 'string' || isSequenceReference(entry),
+    (entry): entry is WorkflowModeStep =>
+      typeof entry === 'string' || isSequenceReference(entry) || isConditionalStep(entry),
   )
   const stepNames = new Set(catalogue.steps.map((step) => step.slug))
   const inspection = inspectWorkflowSteps(entries, catalogue.sequences ?? [], stepNames)
@@ -135,12 +139,19 @@ function workflowModeReferenceErrors(
     (ref) =>
       `mode "${slug}" references missing step "${ref}"; add and promote that catalogue step, or edit the workflow mode`,
   )
-  return inspection.duplicateSteps.length
-    ? [
-        ...missing,
-        `mode "${slug}" expands to duplicate step ${inspection.duplicateSteps.map((ref) => `"${ref}"`).join(', ')}; edit its step and sequence references so each step appears once`,
-      ]
-    : missing
+  return [
+    ...missing,
+    ...inspection.invalidOmissions.map(
+      ({ sequence, step }) =>
+        `mode "${slug}" sequence "${sequence}" cannot omit non-member step "${step}"; remove it from omit`,
+    ),
+    ...(inspection.duplicateSteps.length
+      ? [
+          `mode "${slug}" expands to duplicate step ${inspection.duplicateSteps.map((ref) => `"${ref}"`).join(', ')}; edit its step and sequence references so each step appears once`,
+        ]
+      : []),
+    ...workflowConditionErrors(slug, inspection.detailed, catalogue.steps),
+  ]
 }
 
 export function validateWorkflowDefinition(
@@ -252,6 +263,12 @@ function catalogueReferenceRefusal(
       return `workflow "${workflowSlug}" mode "${mode.slug}" sequence "${inspection.missingSequences[0]}" is absent from the catalogue; add and promote that sequence, or edit the workflow mode to remove the reference`
     if (inspection.duplicateSteps.length)
       return `workflow "${workflowSlug}" mode "${mode.slug}" expands to duplicate step ${inspection.duplicateSteps.map((step) => `"${step}"`).join(', ')}; edit its step and sequence references so each step appears once`
+    if (inspection.invalidOmissions.length) {
+      const invalid = inspection.invalidOmissions[0]!
+      return `workflow "${workflowSlug}" mode "${mode.slug}" sequence "${invalid.sequence}" cannot omit non-member step "${invalid.step}"; remove it from omit`
+    }
+    const conditionErrors = workflowConditionErrors(mode.slug, inspection.detailed, catalogue.steps)
+    if (conditionErrors.length) return conditionErrors[0]!
     if (inspection.missingSteps.length)
       missing.push({ slug: mode.slug, steps: inspection.missingSteps })
   }
@@ -796,10 +813,10 @@ export function composeWorkflow(
   const missing = missingWorkflowArguments(definition, mode ? [mode] : [], args)
   if (missing.length) needs.arguments = missing
   const project = workflowProject(projectName, d)
-  const selectedSlugs = mode
-    ? expandWorkflowSteps(mode.steps, catalogue.definition.sequences ?? [])
+  const selectedEntries = mode
+    ? expandWorkflowModeSteps(mode.steps, catalogue.definition.sequences ?? [])
     : []
-  const selected = selectedSlugs.map((stepSlug) =>
+  const selected = selectedEntries.map(({ slug: stepSlug }) =>
     compatibleCatalogueStep(catalogue.definition.steps.find((step) => step.slug === stepSlug)!),
   )
   const effectiveAutonomy =
@@ -844,6 +861,8 @@ export function composeWorkflow(
           autonomy: step.autonomy,
           resolvedAutonomy: effectiveAutonomy.steps[step.slug]!,
           floor: resolveWorkflowStepFloors(step, resolve),
+          outcomes: step.outcomes,
+          when: selectedEntries[index]?.when,
           deferrable: step.deferrable ?? [],
           expectedStatus: resolveWorkflowStepExpectedStatus(step, resolve),
           requirePullRequest: Boolean(step.requirePullRequest),
@@ -872,16 +891,20 @@ function workflowModesForStep(
 ) {
   const expandedModes = definition.modes.map((mode) => ({
     mode,
-    steps: expandWorkflowSteps(mode.steps, sequences ?? []),
+    steps: expandWorkflowModeSteps(mode.steps, sequences ?? []),
   }))
   const selectedMode = selectedModeSlug
     ? expandedModes.find(({ mode }) => mode.slug === selectedModeSlug)
     : undefined
-  const containingModes = expandedModes.filter(({ steps }) => steps.includes(stepSlug))
+  const containingModes = expandedModes.filter(({ steps }) =>
+    steps.some((step) => step.slug === stepSlug),
+  )
   return {
     selectedMode,
     containingModes,
-    referenced: selectedMode ? selectedMode.steps.includes(stepSlug) : containingModes.length > 0,
+    referenced: selectedMode
+      ? selectedMode.steps.some((step) => step.slug === stepSlug)
+      : containingModes.length > 0,
   }
 }
 
@@ -939,11 +962,17 @@ export function getWorkflowStep(
       key: args.key,
     })
   const templates = resolveWorkflowStepTemplates(step, resolve)
-  const successor = ({ steps }: { steps: string[] }) => {
-    const index = steps.indexOf(stepSlug)
+  const successor = ({ steps }: { steps: ReturnType<typeof expandWorkflowModeSteps> }) => {
+    const index = steps.findIndex((entry) => entry.slug === stepSlug)
     if (index === steps.length - 1) return null
-    const next = catalogue.definition.steps.find((item) => item.slug === steps[index + 1])!
-    return { n: index + 2, slug: next.slug, title: next.title }
+    const nextEntry = steps[index + 1]!
+    const next = catalogue.definition.steps.find((item) => item.slug === nextEntry.slug)!
+    return {
+      n: index + 2,
+      slug: next.slug,
+      title: next.title,
+      ...(nextEntry.when ? { when: nextEntry.when } : {}),
+    }
   }
   const successorModes = selectedMode ? [selectedMode] : containingModes
   const successors = successorModes.map(successor)
