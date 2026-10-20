@@ -9,7 +9,11 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { db, writableDb } from '../database/db.ts'
-import { effectiveProjectSpace } from '../project-space.ts'
+import {
+  effectiveProjectSpace,
+  rememberActiveRecordSpace,
+  rememberProjectSpace,
+} from '../project-space.ts'
 import { readRecordInstallBinding } from '../record/install-binding.ts'
 import { applyLensCatalogueRow } from '../record/record-cache-lens.ts'
 import { fillAbsentProjectSettings, projectCommand } from './project-commands.ts'
@@ -357,6 +361,52 @@ test('empty rename target makes no hosted call', async () => {
   )
   expect(hosted).toBe(0)
   expect(projectByName('empty-src')?.path).toBe('/w/empty-src')
+})
+
+test('project set validates review lenses against the project space catalogue', async () => {
+  const activeSpace = newRecordId()
+  const projectSpace = newRecordId()
+  rememberActiveRecordSpace(db(), activeSpace)
+  for (const [spaceId, key, enabled] of [
+    [activeSpace, 'set-active-only', true],
+    [projectSpace, 'set-project-only', true],
+    [projectSpace, 'set-project-disabled', false],
+  ] as const) {
+    applyLensCatalogueRow(db(), 'lens', {
+      id: newRecordId(),
+      spaceId,
+      key,
+      title: key,
+      question: 'Does this pass?',
+      excludes: 'Nothing.',
+      slots: '{"type":"object","properties":{},"additionalProperties":false}',
+      version: 1,
+      enabled,
+      requiresExecution: false,
+    })
+  }
+  upsertProject({ recordId: newRecordId(), name: 'project-lenses', path: '/w/project-lenses' })
+  rememberProjectSpace(db(), 'project-lenses', projectSpace)
+
+  await expect(
+    runProject(['project', 'set', 'project-lenses'], {
+      settings: JSON.stringify({ review: { lenses: [{ lens: 'set-project-only' }] } }),
+    }),
+  ).resolves.toBe('updated project-lenses')
+  await expect(
+    runProject(['project', 'set', 'project-lenses'], {
+      settings: JSON.stringify({ review: { lenses: [{ lens: 'set-active-only' }] } }),
+    }),
+  ).rejects.toThrow(
+    `unknown or disabled lens "set-active-only"; choose an enabled lens in record space "${projectSpace}"`,
+  )
+  await expect(
+    runProject(['project', 'set', 'project-lenses'], {
+      settings: JSON.stringify({ review: { lenses: [{ lens: 'set-project-disabled' }] } }),
+    }),
+  ).rejects.toThrow(
+    `unknown or disabled lens "set-project-disabled"; choose an enabled lens in record space "${projectSpace}"`,
+  )
 })
 
 test('rename writes hosted once and updates the local name and release ledger', async () => {
