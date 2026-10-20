@@ -7,7 +7,7 @@ import { CHECK_LEGS, STATIC_OMIT_GROUPS } from './check-plan.ts'
 // separately stops a wedged child from hanging the gate indefinitely.
 export const SUITE_RUNTIME_BUDGET_MS = 120_000
 export const SUITE_CPU_BUDGET_MS = 300_000
-export const STATIC_CPU_BUDGET_MS = 180_000
+const STATIC_CPU_BUDGET_MS = 180_000
 export const HUNG_SUITE_TIMEOUT_MS = 900_000
 
 export function cpuBudgetMs(mode: CheckArguments['mode']): number {
