@@ -40,12 +40,25 @@ export type MainStackIdleFacts = {
   idleStopAfterMs: number
 }
 
-export function decideMainStackIdleStop(facts: MainStackIdleFacts): 'stop' | 'keep' | 'report' {
-  if (!facts.recordsAvailable) return 'report'
-  if (!facts.running) return 'keep'
+export type MainStackStopGuardFacts = Pick<
+  MainStackIdleFacts,
+  'execInProgress' | 'liveRun' | 'liveSession'
+>
+
+export function decideMainStackStopGuard(
+  facts: MainStackStopGuardFacts,
+): 'stop' | 'keep' | 'report' {
   if (facts.execInProgress === true) return 'keep'
   if (facts.execInProgress === 'unknown') return 'report'
   if (facts.liveRun || facts.liveSession) return 'keep'
+  return 'stop'
+}
+
+export function decideMainStackIdleStop(facts: MainStackIdleFacts): 'stop' | 'keep' | 'report' {
+  if (!facts.recordsAvailable) return 'report'
+  if (!facts.running) return 'keep'
+  const guard = decideMainStackStopGuard(facts)
+  if (guard !== 'stop') return guard
   const cutoff = facts.nowMs - facts.idleStopAfterMs
   if (facts.lastWorktreeCreatedAtMs !== null && facts.lastWorktreeCreatedAtMs > cutoff)
     return 'keep'
@@ -67,4 +80,18 @@ export function decideMainStackEnsure(input: {
     return required.every((service) => running.has(service)) ? 'skip' : 'start-services'
   }
   return input.observed.runningServices.length === 0 ? 'start-stack' : 'skip'
+}
+
+/** Name only services newly started for one consumer so its release cannot stop prior users. */
+export function newlyStartedMainStackServices(input: {
+  decision: ReturnType<typeof decideMainStackEnsure>
+  before: readonly string[]
+  requiredServices?: readonly string[]
+  after?: readonly string[]
+}): string[] {
+  if (input.decision === 'skip' || input.decision === 'refuse') return []
+  const before = new Set(input.before)
+  const candidates =
+    input.decision === 'start-services' ? (input.requiredServices ?? []) : (input.after ?? [])
+  return candidates.filter((service) => !before.has(service))
 }

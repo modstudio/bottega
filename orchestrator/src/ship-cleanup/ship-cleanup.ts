@@ -7,10 +7,18 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type BranchPruneKeptReason, findRecordedBranchLanding } from '../branch/branch-state.ts'
 import { classifyMintedBranch, pruneBranch } from '../branch/branches.ts'
+import {
+  type RemovedTreeDockerCleanup,
+  reclaimRemovedTreeDockerResources,
+} from '../cleanup/cleanup-sweep-docker.ts'
 import { closeOutRun } from '../close/close-out.ts'
 import { writableDb } from '../database/db.ts'
 import { type HookTreeRemovalResult, removeHookTreeResult } from '../hook-tree/tree.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
+import {
+  type RemovedTreeProcessCleanup,
+  reclaimRemovedTreeProcesses,
+} from '../reclaim/orphan-process-reclaim.ts'
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { STORAGE_WALK_ENTRY_LIMIT, walkStoragePaths } from '../storage-walk.ts'
 import { removalWorkingDirectoryRefusal } from '../worktree/removal-working-directory.ts'
@@ -38,6 +46,7 @@ export type ShipCleanupReport = {
   branch: string
   freed: { artifacts: number; scratch: number; worktrees: number }
   removed: { artifacts: string[]; scratch: string[]; worktrees: string[]; branches: string[] }
+  reclaimed: { processes: string[]; compose: string[] }
   kept: { item: string; reason: string; remedy?: string }[]
   errors: { item: string; detail: string; retry: string }[]
 }
@@ -58,6 +67,8 @@ export type ShipCleanupDependencies = {
   removeLandingTree(path: string): HookTreeRemovalResult
   runsFromTree(path: string): boolean
   remove(path: string): void
+  reclaimProcesses(paths: readonly string[]): RemovedTreeProcessCleanup
+  reclaimCompose(paths: readonly string[]): RemovedTreeDockerCleanup
 }
 
 const dependencies: ShipCleanupDependencies = {
@@ -86,6 +97,8 @@ const dependencies: ShipCleanupDependencies = {
   removeLandingTree: removeHookTreeResult,
   runsFromTree: (path) => removalWorkingDirectoryRefusal(path, '') !== null,
   remove: (path) => rmSync(path, { recursive: true, force: true }),
+  reclaimProcesses: reclaimRemovedTreeProcesses,
+  reclaimCompose: reclaimRemovedTreeDockerResources,
 }
 
 function runFacts(projectRecordId: string, database: Database): ShipCleanupRunFact[] {
@@ -150,6 +163,7 @@ function emptyReport(project: string, branch: string): ShipCleanupReport {
     branch,
     freed: { artifacts: 0, scratch: 0, worktrees: 0 },
     removed: { artifacts: [], scratch: [], worktrees: [], branches: [] },
+    reclaimed: { processes: [], compose: [] },
     kept: [],
     errors: [],
   }
@@ -200,6 +214,7 @@ function closeBranchWorktrees(
   decisions: readonly ShipCleanupRunDecision[],
   report: ShipCleanupReport,
   adapter: ShipCleanupDependencies,
+  removedNow: Set<string>,
 ): Map<string, string> {
   const closeRows = decisions.filter(
     (decision) => decision.worktreeAction === 'close' && decision.worktree,
@@ -209,7 +224,7 @@ function closeBranchWorktrees(
   for (const row of closeRows) {
     if (closedRoots.has(row.root_record_id)) continue
     closedRoots.add(row.root_record_id)
-    const remedy = closeBranchWorktree(branch, row, report, adapter)
+    const remedy = closeBranchWorktree(branch, row, report, adapter, removedNow)
     if (remedy && row.worktree) keptLandingTrees.set(row.worktree, remedy)
   }
   return keptLandingTrees
@@ -220,14 +235,22 @@ function closeBranchWorktree(
   row: ShipCleanupRunDecision,
   report: ShipCleanupReport,
   adapter: ShipCleanupDependencies,
+  removedNow: Set<string>,
 ): string | null {
   try {
     if (row.scope === 'landing-tree' && row.worktree) {
-      return releaseLandingTree(branch, { ...row, worktree: row.worktree }, report, adapter)
+      return releaseLandingTree(
+        branch,
+        { ...row, worktree: row.worktree },
+        report,
+        adapter,
+        removedNow,
+      )
     }
     const result = adapter.closeOut(row.record_id)
     if (result.outcome === 'released' || result.outcome === 'absent') {
       if (row.worktree) report.removed.worktrees.push(row.worktree)
+      if (result.outcome === 'released' && row.worktree) removedNow.add(row.worktree)
       return null
     }
     report.kept.push({ item: `run ${row.number} worktree`, reason: result.detail })
@@ -251,6 +274,7 @@ function releaseLandingTree(
   row: ShipCleanupRunDecision & { worktree: string },
   report: ShipCleanupReport,
   adapter: ShipCleanupDependencies,
+  removedNow: Set<string>,
 ): string | null {
   const remedy = `${PLATFORM_SLUG} tree remove ${row.worktree}, then ${cleanupRetry(branch)}`
   if (adapter.runsFromTree(row.worktree)) {
@@ -264,6 +288,7 @@ function releaseLandingTree(
   const result = adapter.removeLandingTree(row.worktree)
   if (result.outcome === 'released') {
     report.removed.worktrees.push(row.worktree)
+    removedNow.add(row.worktree)
     return null
   }
   if (result.outcome === 'kept') {
@@ -276,6 +301,50 @@ function releaseLandingTree(
     retry: cleanupRetry(branch),
   })
   return null
+}
+
+function reclaimRemovedTreeLeftovers(
+  branch: string,
+  paths: readonly string[],
+  report: ShipCleanupReport,
+  adapter: ShipCleanupDependencies,
+): void {
+  try {
+    const processResult = adapter.reclaimProcesses(paths)
+    report.reclaimed.processes.push(...processResult.reclaimed)
+    report.kept.push(...processResult.kept)
+    report.errors.push(
+      ...processResult.errors.map((detail) => ({
+        item: 'removed-tree processes',
+        detail,
+        retry: cleanupRetry(branch),
+      })),
+    )
+  } catch (cause) {
+    report.errors.push({
+      item: 'removed-tree processes',
+      detail: cause instanceof Error ? cause.message : String(cause),
+      retry: cleanupRetry(branch),
+    })
+  }
+  try {
+    const composeResult = adapter.reclaimCompose(paths)
+    report.reclaimed.compose.push(...composeResult.removed)
+    report.kept.push(...composeResult.kept)
+    report.errors.push(
+      ...composeResult.errors.map((detail) => ({
+        item: 'removed-tree Compose resources',
+        detail,
+        retry: cleanupRetry(branch),
+      })),
+    )
+  } catch (cause) {
+    report.errors.push({
+      item: 'removed-tree Compose resources',
+      detail: cause instanceof Error ? cause.message : String(cause),
+      retry: cleanupRetry(branch),
+    })
+  }
 }
 
 function removeRunStorage(
@@ -412,7 +481,9 @@ export function shipCleanup(
     ),
   ]
   const beforeWorktrees = adapter.measure(worktreePaths)
-  const keptLandingTrees = closeBranchWorktrees(branch, decisions, report, adapter)
+  const removedNow = new Set<string>()
+  const keptLandingTrees = closeBranchWorktrees(branch, decisions, report, adapter, removedNow)
+  reclaimRemovedTreeLeftovers(branch, [...removedNow], report, adapter)
   removeRunStorage(branch, decisions, beforeWorktrees, worktreePaths, report, adapter)
   pruneMergedBranch(branch, report, adapter, keptLandingTrees)
   return report
@@ -422,7 +493,10 @@ export function formatShipCleanup(report: ShipCleanupReport): string {
   const lines = [
     `ship cleanup ${report.project}/${report.branch}`,
     `freed: artifacts ${report.freed.artifacts} bytes; scratch ${report.freed.scratch} bytes; worktrees ${report.freed.worktrees} bytes`,
+    `reclaimed: processes ${report.reclaimed.processes.length}; Compose resources ${report.reclaimed.compose.length}`,
   ]
+  for (const item of report.reclaimed.processes) lines.push(`reclaimed process: ${item}`)
+  for (const item of report.reclaimed.compose) lines.push(`reclaimed Compose resource: ${item}`)
   for (const item of report.kept) {
     lines.push(
       `kept: ${item.item}: ${item.reason}${item.remedy ? `; cleared by: ${item.remedy}` : ''}`,

@@ -244,12 +244,18 @@ type OrphanDockerGroup = {
   workingDirs: string[]
 }
 
-function recordedRunPointsTo(workingDirs: readonly string[]): boolean {
+function recordedRunPointsTo(
+  workingDirs: readonly string[],
+  ignoredWorktrees: ReadonlySet<string> = new Set(),
+): boolean {
   const candidates = new Set(workingDirs.map((path) => resolve(path)))
   const rows = db().query('SELECT worktree FROM run WHERE worktree IS NOT NULL').all() as {
     worktree: string
   }[]
-  return rows.some(({ worktree }) => candidates.has(resolve(worktree)))
+  return rows.some(({ worktree }) => {
+    const normalized = resolve(worktree)
+    return !ignoredWorktrees.has(normalized) && candidates.has(normalized)
+  })
 }
 
 function orphanComposeWorkingDirs(input: {
@@ -294,6 +300,7 @@ function composeContainersByProject(
 function orphanWorktreeDockerGroups(input: {
   selectedProject: Project | null
   inventory: Extract<DockerInventory, { ascertainable: true }>
+  ignoredRunWorktrees?: ReadonlySet<string>
 }): { groups: OrphanDockerGroup[]; mainCheckoutPaths: string[] } {
   const { selectedProject, inventory } = input
   const registered = projects().filter(isProjectRepository)
@@ -315,7 +322,7 @@ function orphanWorktreeDockerGroups(input: {
       gitWorktreePaths: gitPaths.get(project)!,
       mainCheckoutPaths,
     })
-    if (!workingDirs || recordedRunPointsTo(workingDirs)) continue
+    if (!workingDirs || recordedRunPointsTo(workingDirs, input.ignoredRunWorktrees)) continue
     const resources = (inventory.unattributable ?? []).filter(
       (resource) => resource.kind === 'container' && resource.composeProject === composeProject,
     )
@@ -348,8 +355,17 @@ function removeOrphanDockerGroup(input: {
   inventoryErrors: Set<string>
   handled: Set<UnattributableDockerResource>
   handledCompose: Set<UnattributedComposeDockerResource>
+  ignoredRunWorktrees?: ReadonlySet<string>
 }): boolean {
-  const { group, mainCheckoutPaths, presentation, inventoryErrors, handled, handledCompose } = input
+  const {
+    group,
+    mainCheckoutPaths,
+    presentation,
+    inventoryErrors,
+    handled,
+    handledCompose,
+    ignoredRunWorktrees,
+  } = input
   const { project, resources } = group
   const composeProject = resources[0]!.composeProject
   let result: ReturnType<typeof teardownOrphanWorktreeDockerResources>
@@ -362,7 +378,7 @@ function removeOrphanDockerGroup(input: {
           resources,
           mainCheckoutPaths,
           () =>
-            !recordedRunPointsTo(group.workingDirs) &&
+            !recordedRunPointsTo(group.workingDirs, ignoredRunWorktrees) &&
             group.workingDirs.every((workingDir) => directoryPresence(workingDir) === false),
         ),
     )
@@ -423,6 +439,81 @@ function reclaimOrphanWorktreeDockerResources(input: {
     failed ||= groupFailed
   }
   return { failed, handled, handledCompose }
+}
+
+export type RemovedTreeDockerCleanup = {
+  removed: string[]
+  kept: { item: string; reason: string }[]
+  errors: string[]
+}
+
+/** Remove attributable Compose stacks whose worktree was removed by the current cleanup. */
+export function reclaimRemovedTreeDockerResources(
+  treePaths: readonly string[],
+): RemovedTreeDockerCleanup {
+  const result: RemovedTreeDockerCleanup = { removed: [], kept: [], errors: [] }
+  if (treePaths.length === 0) return result
+  const targets = new Set(treePaths.map((path) => resolve(path)))
+  const inventory = dockerRunResources(
+    projects()
+      .filter(isProjectRepository)
+      .map(({ path }) => path),
+  )
+  if (!inventory.ascertainable) {
+    result.errors.push(inventory.reason)
+    return result
+  }
+  const matchingProjects = new Set(
+    (inventory.composeContainers ?? []).flatMap((container) =>
+      container.workingDir && targets.has(resolve(container.workingDir))
+        ? [container.composeProject]
+        : [],
+    ),
+  )
+  const { groups, mainCheckoutPaths } = orphanWorktreeDockerGroups({
+    selectedProject: null,
+    inventory,
+    ignoredRunWorktrees: targets,
+  })
+  const matchingGroups = groups.filter((group) =>
+    group.workingDirs.every((workingDir) => targets.has(resolve(workingDir))),
+  )
+  const groupedProjects = new Set(matchingGroups.map((group) => group.resources[0]!.composeProject))
+  for (const composeProject of matchingProjects) {
+    if (!groupedProjects.has(composeProject)) {
+      result.kept.push({
+        item: `Compose project ${composeProject}`,
+        reason: 'the existing orphan inventory could not attribute its complete stack',
+      })
+    }
+  }
+  for (const group of matchingGroups) {
+    const composeProject = group.resources[0]!.composeProject
+    const inventoryErrors = new Set<string>()
+    const handled = new Set<UnattributableDockerResource>()
+    const handledCompose = new Set<UnattributedComposeDockerResource>()
+    const failed = removeOrphanDockerGroup({
+      group,
+      mainCheckoutPaths,
+      presentation: {
+        log: () => {},
+        error: () => {},
+        setExitCode: () => {},
+        keptBranchLine: () => '',
+      },
+      inventoryErrors,
+      handled,
+      handledCompose,
+      ignoredRunWorktrees: targets,
+    })
+    result.removed.push(...[...handled, ...handledCompose].map((resource) => resource.name))
+    if (failed || inventoryErrors.size > 0) {
+      const reason = [...inventoryErrors].join('; ') || 'the attributable stack was retained'
+      result.kept.push({ item: `Compose project ${composeProject}`, reason })
+      result.errors.push(...inventoryErrors)
+    }
+  }
+  return result
 }
 
 function reportOwnerlessComposeRemnants(input: {

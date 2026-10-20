@@ -1,4 +1,6 @@
 // concern: orphan process reclamation
+
+import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive, pidRecordIdentity, processStartTime } from '../../../shared/process-identity.ts'
 import { liveRuns } from '../database/db.ts'
@@ -53,6 +55,7 @@ const platformProcess = (command: string) => {
 export function automaticOrphanReclaimDecision(
   orphan: OrphanProcess,
   liveWorktrees: ReadonlySet<string>,
+  removedByCurrentCleanup = false,
 ): { reclaim: true } | { reclaim: false; reason: string } {
   if (orphan.match !== 'cwd')
     return { reclaim: false, reason: 'argument-only match requires manual reclaim' }
@@ -60,7 +63,7 @@ export function automaticOrphanReclaimDecision(
     return { reclaim: false, reason: `${PLATFORM_SLUG}/orch lifecycle process` }
   if (liveWorktrees.has(orphan.missingTree))
     return { reclaim: false, reason: 'tree belongs to a live run' }
-  if (orphan.ageSeconds * 1000 < ORPHAN_PROCESS_AUTO_RECLAIM_MIN_AGE_MS)
+  if (!removedByCurrentCleanup && orphan.ageSeconds * 1000 < ORPHAN_PROCESS_AUTO_RECLAIM_MIN_AGE_MS)
     return {
       reclaim: false,
       reason: `younger than ${ORPHAN_PROCESS_AUTO_RECLAIM_MIN_AGE_MS}ms minimum age`,
@@ -146,10 +149,10 @@ function verifyAndPlan(
   }
 }
 
-export async function reclaimOrphanProcess(
+export function reclaimOrphanProcess(
   subject: string,
   dryRun: boolean,
-): Promise<{ ok: boolean; action: string }> {
+): { ok: boolean; action: string } {
   const pid = Number(subject)
   if (!Number.isSafeInteger(pid) || pid <= 1)
     return { ok: false, action: `refused; invalid process id ${subject}` }
@@ -172,7 +175,7 @@ export async function reclaimOrphanProcess(
   const terminated = signalFreshOrphanPlan(first, 'SIGTERM')
   if (!terminated.ok) return { ok: false, action: `refused; ${terminated.reason}` }
   const deadline = Date.now() + RECLAIM_GRACE_MS
-  while (pidAlive(pid) && Date.now() < deadline) await Bun.sleep(50)
+  while (pidAlive(pid) && Date.now() < deadline) Bun.sleepSync(50)
   if (!pidAlive(pid))
     return {
       ok: true,
@@ -180,13 +183,44 @@ export async function reclaimOrphanProcess(
     }
   const killed = signalFreshOrphanPlan(first, 'SIGKILL')
   if (!killed.ok) return { ok: false, action: `refused SIGKILL escalation; ${killed.reason}` }
-  await Bun.sleep(50)
+  Bun.sleepSync(50)
   return pidAlive(pid)
     ? { ok: false, action: `refused; pid ${pid} process tree did not exit after SIGKILL` }
     : {
         ok: true,
         action: `terminated orphan process tree rooted at pid ${pid} for missing tree ${first.missingTree}`,
       }
+}
+
+export type RemovedTreeProcessCleanup = {
+  reclaimed: string[]
+  kept: { item: string; reason: string }[]
+  errors: string[]
+}
+
+/** Reclaim cwd-owned processes for trees this operation itself has just removed. */
+export function reclaimRemovedTreeProcesses(
+  treePaths: readonly string[],
+): RemovedTreeProcessCleanup {
+  const removed = new Set(treePaths.map((path) => resolve(path)))
+  const inventory = currentOrphanProcesses(projects().filter(isProjectRepository))
+  const result: RemovedTreeProcessCleanup = { reclaimed: [], kept: [], errors: [] }
+  if (inventory.error) result.errors.push(`process inventory unavailable: ${inventory.error}`)
+  const liveWorktrees = liveRunWorktrees()
+  const candidates = inventory.orphans.filter((orphan) => removed.has(resolve(orphan.missingTree)))
+  const candidatePids = new Set(candidates.map(({ pid }) => pid))
+  for (const orphan of candidates) {
+    if (candidatePids.has(orphan.ppid)) continue
+    const decision = automaticOrphanReclaimDecision(orphan, liveWorktrees, true)
+    if (!decision.reclaim) {
+      result.kept.push({ item: `process ${orphan.pid}`, reason: decision.reason })
+      continue
+    }
+    const reclaimed = reclaimOrphanProcess(String(orphan.pid), false)
+    if (reclaimed.ok) result.reclaimed.push(reclaimed.action)
+    else result.errors.push(reclaimed.action)
+  }
+  return result
 }
 
 export function liveRunWorktrees(): Set<string> {
