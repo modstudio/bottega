@@ -80,6 +80,8 @@ type Tenant = { url: string } & TenantPrincipal
 type StoredDocRow = Record<string, unknown>
 
 function assertRestoredRecordDoc(
+  scope: string,
+  slug: string,
   body: string,
   kind: DocKind,
   form: DocForm | null,
@@ -87,6 +89,16 @@ function assertRestoredRecordDoc(
 ): void {
   assertDocSections(body, recordDocAudiences(audiences))
   checkRecordCommands({ body }, kind, form, audiences)
+  if (scope === 'resume') {
+    assertWrite(resumeRestoreRefusal(resumeWriteRefusal(slug, body, resumeFrontmatter(body))))
+  }
+}
+
+function assertRecordDocUpsert(input: RecordDocWriteInput): void {
+  assertUpsertAddress(input)
+  if (input.scope === 'resume') {
+    assertWrite(resumeWriteRefusal(input.slug, input.body, resumeFrontmatter(input.body)))
+  }
 }
 
 function assertImportedRecordDoc(
@@ -162,10 +174,7 @@ function revisionArticleFields(fields: Awaited<ReturnType<typeof resolveHostedAr
 export async function upsertRecordDoc(
   input: RecordDocWriteInput,
 ): Promise<{ id: string; revisionId: string } & HostedArticleResponse> {
-  assertUpsertAddress(input)
-  if (input.scope === 'resume') {
-    assertWrite(resumeWriteRefusal(input.slug, input.body, resumeFrontmatter(input.body)))
-  }
+  assertRecordDocUpsert(input)
   return tenant(input, async (tx) => {
     const existing = await tx`
       SELECT id, scope, subject, owner_user_id, slug, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, parent_id, position, latest_revision_id FROM doc
@@ -506,9 +515,6 @@ export async function restoreRecordDoc(
       if (!(error instanceof RecordDocError) || error.status !== 422) throw error
     }
     const body = String(revision.body)
-    if (scope === 'resume') {
-      assertWrite(resumeRestoreRefusal(resumeWriteRefusal(slug, body, resumeFrontmatter(body))))
-    }
     const delivery = String(revision.delivery) as DocDelivery
     const audiences = recordDocAudiences(revision.audiences)
     const parentId = revision.parent_id == null ? null : String(revision.parent_id)
@@ -517,7 +523,7 @@ export async function restoreRecordDoc(
     const status = (revision.status == null ? 'current' : String(revision.status)) as DocStatus
     const kind = (revision.kind == null ? 'working' : String(revision.kind)) as DocKind
     const articleFields = restoredArticleFields(revision)
-    assertRestoredRecordDoc(body, kind, articleFields.form, audiences)
+    assertRestoredRecordDoc(scope, slug, body, kind, articleFields.form, audiences)
     const replacementSlug =
       revision.replacement_slug == null ? null : String(revision.replacement_slug)
     assertWrite(

@@ -121,6 +121,22 @@ import { resolvedDocWriteIdentity } from './doc-write-identity.ts'
 
 export type { DocWriteContext } from './doc-article-fields.ts'
 
+function assertSetDocAllowed(input: DocWriteInput): void {
+  assertWorkerDocStoreWriteAllowed('setDoc')
+  if (input.scope !== 'resume') return
+  const refusal = resumeWriteRefusal(input.slug, input.body, resumeFrontmatter(input.body))
+  if (refusal) throw new Error(refusal)
+}
+
+function assertRestoredDocWriteAllowed(input: Parameters<typeof assertDocWriteAllowed>[0]): void {
+  assertDocWriteAllowed(input)
+  if (input.scope !== 'resume') return
+  const refusal = resumeRestoreRefusal(
+    resumeWriteRefusal(input.slug, input.body, resumeFrontmatter(input.body)),
+  )
+  if (refusal) throw new Error(refusal)
+}
+
 function assertInjectSize(input: {
   scope: string
   subject: string | null
@@ -454,12 +470,7 @@ async function setDocWithOp(
 }
 
 export async function setDoc(input: DocWriteInput): Promise<Doc & { writeWarnings?: string[] }> {
-  assertWorkerDocStoreWriteAllowed('setDoc')
-  if (input.scope === 'resume') {
-    const frontmatter = resumeFrontmatter(input.body)
-    const refusal = resumeWriteRefusal(input.slug, input.body, frontmatter)
-    if (refusal) throw new Error(refusal)
-  }
+  assertSetDocAllowed(input)
   return setDocWithOp(input)
 }
 
@@ -846,19 +857,13 @@ export async function restoreDoc(
   ) {
     throw new Error(`no revision ${revisionId} for ${scope}/${subject ?? '_'}/${slug}`)
   }
-  if (scope === 'resume') {
-    const refusal = resumeRestoreRefusal(
-      resumeWriteRefusal(slug, revision.body, resumeFrontmatter(revision.body)),
-    )
-    if (refusal) throw new Error(refusal)
-  }
   const [expectedCurrent, current] = referenceRestoreState(scope, subject, slug, owner, revision)
   assertLocalRevisionWrite(
     { scope, expectedRevision: context.expectedRevision },
     expectedCurrent,
     false,
   )
-  assertDocWriteAllowed({
+  assertRestoredDocWriteAllowed({
     scope,
     subject,
     owner,

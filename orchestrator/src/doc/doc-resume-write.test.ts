@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { consumeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
@@ -11,7 +12,7 @@ import { getDoc, listDocRevisions, restoreDoc } from './docs.ts'
 const written = '2026-10-20T12:34:56.000Z'
 
 function brief(lines: string[] = [], status = 'open'): string {
-  return `---\nstatus: ${status}\nepic: DEV-1439\nproject: bottega\nwritten: ${written}\n---\n\n${lines.join('\n')}\n`
+  return `---\nstatus: ${status}\nepic: DEV-1439\nproject: ${PLATFORM_SLUG}\nwritten: ${written}\n---\n\n${lines.join('\n')}\n`
 }
 
 function violations(body: string) {
@@ -22,7 +23,7 @@ describe('open resume write decision', () => {
   for (const field of ['epic', 'project', 'written'] as const) {
     test(`reports a missing ${field} alone`, () => {
       const body = brief(['NEXT ACTION: continue']).replace(
-        `${field}: ${field === 'epic' ? 'DEV-1439' : field === 'project' ? 'bottega' : written}\n`,
+        `${field}: ${field === 'epic' ? 'DEV-1439' : field === 'project' ? PLATFORM_SLUG : written}\n`,
         '',
       )
       expect(violations(body)).toEqual([
@@ -34,7 +35,7 @@ describe('open resume write decision', () => {
     })
 
     test(`reports an empty ${field} alone`, () => {
-      const value = field === 'epic' ? 'DEV-1439' : field === 'project' ? 'bottega' : written
+      const value = field === 'epic' ? 'DEV-1439' : field === 'project' ? PLATFORM_SLUG : written
       const body = brief(['NEXT ACTION: continue']).replace(`${field}: ${value}`, `${field}:   `)
       expect(violations(body)).toEqual([
         {
@@ -166,7 +167,7 @@ describe('resume write adapters', () => {
         reason: 'restore old revision',
       }),
     ).rejects.toThrow(
-      'The revision remains readable; cleared by: read the revision, correct its body, then write it with bottega doc set.',
+      `The revision remains readable; cleared by: read the revision, correct its body, then write it with ${PLATFORM_SLUG} doc set.`,
     )
     expect(getDoc('resume', 'resume-restore-rule', stored.slug)?.body).toBe(
       brief(['NEXT ACTION: continue']),
@@ -180,7 +181,7 @@ describe('resume write adapters', () => {
         userId: newRecordId(),
         spaceId: newRecordId(),
         scope: 'resume',
-        subject: 'bottega',
+        subject: PLATFORM_SLUG,
         slug: 'hosted-scratch',
         title: 'Hosted scratch',
         body: brief(['NEXT ACTION: continue', '/orchestrator/runs/123/reply.json']),

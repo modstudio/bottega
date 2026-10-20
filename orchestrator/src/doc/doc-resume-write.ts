@@ -1,6 +1,7 @@
 // concern: doc-resume-write
 /** Decides whether an open resume brief has the metadata and durable handoff shape it requires. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ResumeFrontmatter, resumeFrontmatter } from './doc-resume-frontmatter.ts'
 
 export type OpenResumeViolation = {
@@ -92,5 +93,5 @@ export function resumeWriteRefusal(
 /** Explain how to recover a historical body that cannot become the live open brief. */
 export function resumeRestoreRefusal(refusal: string | null): string | null {
   if (!refusal) return null
-  return `${refusal}\nThe revision remains readable; cleared by: read the revision, correct its body, then write it with bottega doc set.`
+  return `${refusal}\nThe revision remains readable; cleared by: read the revision, correct its body, then write it with ${PLATFORM_SLUG} doc set.`
 }
