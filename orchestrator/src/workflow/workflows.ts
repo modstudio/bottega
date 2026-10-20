@@ -29,7 +29,10 @@ import {
   workflowCompositionFactExtras,
 } from './workflow-project-facts.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
-import { projectWorkflowResolutionSpace } from './workflow-resolution-space.ts'
+import {
+  projectCatalogueResolutionSpace,
+  projectWorkflowResolutionSpace,
+} from './workflow-resolution-space.ts'
 import type { WorkflowModeStepList } from './workflow-step-reference.ts'
 import {
   expandWorkflowSteps,
@@ -312,7 +315,7 @@ function versionRow(
     .get(...(n === undefined ? [slug, spaceId] : [slug, spaceId, n])) as VersionRow | null
   if (!row)
     throw new Error(
-      n === undefined ? `unknown workflow "${slug}"` : `workflow "${slug}" has no version ${n}`,
+      `${n === undefined ? `unknown workflow "${slug}"` : `workflow "${slug}" has no version ${n}`}${spaceId === null ? '' : ` in hosted space ${spaceId}`}`,
     )
   return row
 }
@@ -331,7 +334,10 @@ function productionVersionRow(
     JOIN workflow w ON w.id=v.workflow_id
     WHERE w.slug=? AND w.space_id IS ? AND v.status='production'`)
     .get(slug, spaceId) as VersionRow | null
-  if (!row) throw new Error(`workflow "${slug}" has no production version; promote one`)
+  if (!row)
+    throw new Error(
+      `workflow "${slug}" has no production version${spaceId === null ? '' : ` in hosted space ${spaceId}`}; promote one`,
+    )
   return row
 }
 
@@ -339,15 +345,17 @@ export function listWorkflows(d: Database = db()) {
   return listResolvedWorkflows(null, d)
 }
 
-function workflowSlugs(d: Database): string[] {
+function workflowSlugs(d: Database, spaceId: string | null = null): string[] {
   return (
-    d.query('SELECT DISTINCT slug FROM workflow ORDER BY slug').all() as { slug: string }[]
+    d.query('SELECT slug FROM workflow WHERE space_id IS ? ORDER BY slug').all(spaceId) as {
+      slug: string
+    }[]
   ).map(({ slug }) => slug)
 }
 
 export function listResolvedWorkflows(project: string | null, d: Database = db()) {
-  return workflowSlugs(d).flatMap((slug) => {
-    const spaceId = projectWorkflowResolutionSpace(d, project, slug)
+  const spaceId = projectCatalogueResolutionSpace(d, project)
+  return workflowSlugs(d, spaceId).flatMap((slug) => {
     const row = d
       .query(`SELECT w.id,w.slug,
     (SELECT n FROM workflow_version WHERE workflow_id=w.id AND status='production') production_n,
@@ -682,8 +690,8 @@ export function resolvedWorkflowVersions(slug: string, project: string | null, d
 }
 
 export function resolvedProductionWorkflows(project: string, d: Database = db()) {
-  return workflowSlugs(d).flatMap((slug) => {
-    const spaceId = projectWorkflowResolutionSpace(d, project, slug)
+  const spaceId = projectCatalogueResolutionSpace(d, project)
+  return workflowSlugs(d, spaceId).flatMap((slug) => {
     const exists = d
       .query(
         `SELECT 1 FROM workflow w JOIN workflow_version v ON v.workflow_id=w.id

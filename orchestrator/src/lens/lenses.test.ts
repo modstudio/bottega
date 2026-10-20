@@ -8,7 +8,6 @@ import { upsertProject } from '../project/projects.ts'
 import { rememberProjectSpace } from '../project-space.ts'
 import {
   chooseLensProfile,
-  hostedLensComplete,
   listLenses,
   resolveLens,
   selectProjectProfile,
@@ -218,7 +217,7 @@ describe('lens catalogue', () => {
     })
   })
 
-  test('a project routed to a hosted space without the lens keeps its local catalogue body', async () => {
+  test('a project routed to a hosted space does not read a local-only lens', async () => {
     upsertProject({ recordId: newRecordId(), name: 'routed', path: '/tmp/routed', settings: {} })
     await setProfile({
       lensId: 'correctness',
@@ -236,10 +235,8 @@ describe('lens catalogue', () => {
       reason: 'test',
     })
     rememberProjectSpace(db(), 'routed', newRecordId())
-    expect(resolveLens('correctness', 'routed')!.profiles[0]).toMatchObject({
-      name: 'routed-body',
-      source: 'project',
-    })
+    expect(resolveLens('correctness', 'routed')).toBeNull()
+    expect(resolveLens('correctness', null)!.profiles[0]).toMatchObject({ name: 'default' })
   })
 
   test('a project routed to a hosted space that holds the lens resolves the hosted copy', async () => {
@@ -261,7 +258,6 @@ describe('lens catalogue', () => {
       )
       .run(newRecordId(), space)
     rememberProjectSpace(db(), 'hosted', space)
-    expect(resolveLens('correctness', 'hosted')!.question).not.toBe('Hosted question?')
     const local = db()
       .query(
         "SELECT lens_id,axis,name,version,body,enabled FROM lens_profile WHERE lens_id='correctness' AND enabled=1 AND space_id IS NULL",
@@ -289,8 +285,7 @@ describe('lens catalogue', () => {
           newRecordId(),
           space,
         )
-    // Core and profiles are hosted, but the project's selection is not: still local.
-    expect(resolveLens('correctness', 'hosted')!.question).not.toBe('Hosted question?')
+    expect(resolveLens('correctness', 'hosted')!.question).toBe('Hosted question?')
     db()
       .query(
         `INSERT INTO project_lens_profile (record_id,space_id,project_record_id,lens_id,axis,profile_name,selected_version,selection_version)
@@ -299,20 +294,6 @@ describe('lens catalogue', () => {
       .run(newRecordId(), space, projectRecordId, 'correctness', 'framework', 'default', null, 1)
     expect(resolveLens('correctness', 'hosted')!.question).toBe('Hosted question?')
     expect(resolveLens('correctness', null)!.question).not.toBe('Hosted question?')
-  })
-
-  test('a hosted lens is complete only when it holds the local profiles and selections', () => {
-    const full = {
-      hostedCore: true,
-      localProfiles: 2,
-      hostedProfiles: 2,
-      localSelections: 1,
-      hostedSelections: 1,
-    }
-    expect(hostedLensComplete(full)).toBe(true)
-    expect(hostedLensComplete({ ...full, hostedCore: false })).toBe(false)
-    expect(hostedLensComplete({ ...full, hostedProfiles: 1 })).toBe(false)
-    expect(hostedLensComplete({ ...full, hostedSelections: 0 })).toBe(false)
   })
 
   test('unknown lenses remain free-form while disabled catalogue content refuses', async () => {

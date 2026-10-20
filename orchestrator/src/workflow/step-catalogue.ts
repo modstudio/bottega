@@ -330,7 +330,7 @@ export function selectedStepCatalogue(
   } | null
   if (!row)
     throw new Error(
-      `step catalogue has no ${n === undefined ? 'production version; promote one' : `version ${n}`}`,
+      `step catalogue has no ${n === undefined ? 'production version' : `version ${n}`}${spaceId === null ? '' : ` in hosted space ${spaceId}`}${n === undefined ? '; promote one' : ''}`,
     )
   return compatibleCatalogue({
     ...row,
