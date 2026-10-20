@@ -5,6 +5,7 @@ import {
   classifyHostedChangeUpsert,
   type HostedChangeFamily,
   type HostedChangeRequestOptions,
+  type HostedPreparedPage,
 } from './hosted-change-family.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import { createHostedSendChangeFamily } from './hosted-send-change-family.ts'
@@ -47,9 +48,13 @@ type SpaceCounts = {
   upsertsNoop: number
   deletesApplied: number
   deletesSkipped: number
+  absentParentSkipped: number
   resets: number
 }
-export type HostedChangeLegReport = Omit<SpaceCounts, 'spaceId'> & { spaces: SpaceCounts[] }
+export type HostedChangeLegReport = Omit<SpaceCounts, 'spaceId'> & {
+  spaces: SpaceCounts[]
+  reportAbsentParentSkips?: true
+}
 type PullOptions = {
   baseUrl?: string
   token?: string | null
@@ -63,6 +68,7 @@ const emptyCounts = (spaceId: string): SpaceCounts => ({
   upsertsNoop: 0,
   deletesApplied: 0,
   deletesSkipped: 0,
+  absentParentSkipped: 0,
   resets: 0,
 })
 const addCounts = (left: SpaceCounts, right: SpaceCounts): SpaceCounts => ({
@@ -71,15 +77,17 @@ const addCounts = (left: SpaceCounts, right: SpaceCounts): SpaceCounts => ({
   upsertsNoop: left.upsertsNoop + right.upsertsNoop,
   deletesApplied: left.deletesApplied + right.deletesApplied,
   deletesSkipped: left.deletesSkipped + right.deletesSkipped,
+  absentParentSkipped: left.absentParentSkipped + right.absentParentSkipped,
   resets: left.resets + right.resets,
 })
-function sumCounts(spaces: SpaceCounts[]): HostedChangeLegReport {
-  return spaces.reduce<HostedChangeLegReport>(
+function sumCounts(spaces: SpaceCounts[], reportAbsentParentSkips: boolean): HostedChangeLegReport {
+  const totals = spaces.reduce<HostedChangeLegReport>(
     (totals, space) => ({
       upsertsChanged: totals.upsertsChanged + space.upsertsChanged,
       upsertsNoop: totals.upsertsNoop + space.upsertsNoop,
       deletesApplied: totals.deletesApplied + space.deletesApplied,
       deletesSkipped: totals.deletesSkipped + space.deletesSkipped,
+      absentParentSkipped: totals.absentParentSkipped + space.absentParentSkipped,
       resets: totals.resets + space.resets,
       spaces,
     }),
@@ -88,16 +96,22 @@ function sumCounts(spaces: SpaceCounts[]): HostedChangeLegReport {
       upsertsNoop: 0,
       deletesApplied: 0,
       deletesSkipped: 0,
+      absentParentSkipped: 0,
       resets: 0,
       spaces,
     },
   )
+  return reportAbsentParentSkips ? { ...totals, reportAbsentParentSkips: true } : totals
 }
 export function hostedChangeLegLine(report: HostedChangeLegReport): string {
   return report.spaces
     .map(
       (space) =>
-        `${space.spaceId} ${space.upsertsChanged} changed, ${space.upsertsNoop} no-op, ${space.deletesApplied} deleted, ${space.deletesSkipped} skipped, ${space.resets} reset`,
+        `${space.spaceId} ${space.upsertsChanged} changed, ${space.upsertsNoop} no-op, ${space.deletesApplied} deleted, ${space.deletesSkipped} skipped, ${
+          report.reportAbsentParentSkips
+            ? `${space.absentParentSkipped} absent-parent skipped, `
+            : ''
+        }${space.resets} reset`,
     )
     .join('; ')
 }
@@ -246,10 +260,10 @@ function applyPage(
   page: HostedSpaceChangePage,
   spaceId: string,
   family: HostedChangeFamily,
-  prepared: Array<(conn: Database) => void>,
+  prepared: HostedPreparedPage,
 ) {
   const counts = emptyCounts(spaceId)
-  for (const apply of prepared) apply(conn)
+  for (const apply of prepared.apply) apply(conn)
   const changes = page.changes
     .map((change, index) => ({ change, index }))
     .sort(
@@ -258,6 +272,10 @@ function applyPage(
         left.index - right.index,
     )
   for (const { change } of changes) {
+    if (prepared.skippedForAbsentParent.has(`${change.table}:${change.id}`)) {
+      counts.absentParentSkipped += 1
+      continue
+    }
     applyOneChange(conn, change, spaceId, family, counts)
   }
   family.finish?.(conn)
@@ -306,7 +324,10 @@ async function followSpace(
     const response = await hostedSpaceChanges(cursor, options)
     if (response.resetRequired)
       return addCounts(counts, await startSpace(family, spaceId, options, response.head))
-    const prepared = (await family.preparePage?.(response, options)) ?? []
+    const prepared = (await family.preparePage?.(response, options)) ?? {
+      apply: [],
+      skippedForAbsentParent: new Set<string>(),
+    }
     const pageCounts = writeTransaction((conn) => {
       const applied = applyPage(conn, response, spaceId, family, prepared)
       storeCursor(conn, family, spaceId, response.next)
@@ -342,7 +363,7 @@ async function pullFamily(
   }
   if (failures.length)
     throw new Error(`${family.failureLabel} pulls failed: ${failures.join('; ')}`)
-  return sumCounts(results)
+  return sumCounts(results, family.reportAbsentParentSkips === true)
 }
 
 const NOTE_TABLES = 'hub_note,hub_note_acknowledgement'
@@ -380,7 +401,10 @@ function noteFamily(
         .filter((change) => change.table === 'hub_note_acknowledgement' && change.op === 'upsert')
         .map((change) => change.row as HostedAcknowledgement)
       const fetched = await completeAcknowledgementNotes(noteChanges, acknowledgements, options)
-      return fetched.map((note) => (conn: Database) => applyHostedNote(conn, note))
+      return {
+        apply: fetched.map((note) => (conn: Database) => applyHostedNote(conn, note)),
+        skippedForAbsentParent: new Set<string>(),
+      }
     },
     tableOrder: (table) => (table === 'hub_note' ? 0 : 1),
     accepts: isNoteTable,

@@ -752,6 +752,7 @@ test('one change family failing leaves the other family result intact', async ()
       upsertsNoop: 0,
       deletesApplied: 0,
       deletesSkipped: 0,
+      absentParentSkipped: 0,
       resets: 0,
       spaces: [
         {
@@ -760,6 +761,7 @@ test('one change family failing leaves the other family result intact', async ()
           upsertsNoop: 0,
           deletesApplied: 0,
           deletesSkipped: 0,
+          absentParentSkipped: 0,
           resets: 0,
         },
       ],

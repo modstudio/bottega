@@ -165,6 +165,35 @@ async function request<T>(
   return value as T
 }
 
+class HostedTaskRequestError extends Error {
+  readonly status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+  }
+}
+
+export const isMissingHostedTask = (cause: unknown) =>
+  cause instanceof HostedTaskRequestError && cause.status === 404
+
+export async function hostedGetTask(
+  taskId: string,
+  options?: Parameters<typeof request>[3],
+): Promise<{ task: HostedTask; comments: HostedComment[]; documents: HostedDocument[] }> {
+  const { response, value } = await responseObject(
+    `/v1/tasks/${encodeURIComponent(taskId)}`,
+    'GET',
+    undefined,
+    options,
+  )
+  if (!response.ok)
+    throw new HostedTaskRequestError(
+      response.status,
+      `hosted hub refused the request (${response.status}): ${String(value.error ?? 'unknown error')}`,
+    )
+  return value as { task: HostedTask; comments: HostedComment[]; documents: HostedDocument[] }
+}
+
 export const hostedCreateTask = (body: unknown, options?: Parameters<typeof request>[3]) =>
   request<HostedTask>('/v1/tasks', 'POST', body, options)
 export const hostedCreateOperatorWaitingEmail = (

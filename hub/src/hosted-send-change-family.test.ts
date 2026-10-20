@@ -345,6 +345,7 @@ test('a failed send family leaves both earlier family results intact', async () 
     upsertsNoop: 0,
     deletesApplied: 0,
     deletesSkipped: 0,
+    absentParentSkipped: 0,
     resets: 0,
     spaces: [],
   }

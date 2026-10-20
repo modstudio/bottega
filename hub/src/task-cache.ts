@@ -17,6 +17,27 @@ type HostedChangeRow =
   | HostedChanges['documents'][number]
   | HostedChanges['statusEvents'][number]
 
+type HostedTaskChild = Exclude<HostedChangeRow, HostedChanges['tasks'][number]>
+
+function childTaskRecordId(conn: Database, row: HostedTaskChild) {
+  if (row.task_id) {
+    const parent = conn
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM task WHERE record_id=?')
+      .get(row.task_id)
+    if (parent) return parent.record_id
+  }
+  return taskRecordIdFor(conn, row.task_key, row.project_name)
+}
+
+function requireChildTaskRecordId(conn: Database, kind: string, row: HostedTaskChild) {
+  const taskRecordId = childTaskRecordId(conn, row)
+  if (!taskRecordId)
+    throw new Error(
+      `live task ${kind} ${row.id} for task ${row.task_id ?? row.task_key} has no parent record id`,
+    )
+  return taskRecordId
+}
+
 export function reconcileParentRecordIds(conn: Database) {
   for (const relationship of taskIdentityRelationships) {
     if (relationship.table !== 'task') continue
@@ -92,7 +113,7 @@ export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][numb
 }
 
 function applyComment(conn: Database, row: HostedChanges['comments'][number]) {
-  const taskRecordId = taskRecordIdFor(conn, row.task_key, row.project_name)
+  const taskRecordId = requireChildTaskRecordId(conn, 'comment', row)
   const updated = conn
     .query(
       `UPDATE task_comment SET task_key=?,task_record_id=?,body=?,created_at=?,updated_at=?,deleted_at=?,
@@ -138,8 +159,7 @@ function applyDocument(conn: Database, row: HostedChanges['documents'][number]) 
     conn.query(`DELETE FROM task_document WHERE record_id=?`).run(row.id)
     return
   }
-  const taskRecordId = taskRecordIdFor(conn, row.task_key, row.project_name)
-  if (!taskRecordId) throw new Error(`no task ${row.task_key} in project ${row.project_name}`)
+  const taskRecordId = requireChildTaskRecordId(conn, 'document', row)
   if (row.number === null)
     throw new Error(`live task document ${row.id} for task ${row.task_key} has no number`)
   const collision = conn
@@ -274,11 +294,11 @@ function retargetStatusEvent(
 }
 
 function applyStatusEvent(conn: Database, row: HostedChanges['statusEvents'][number]) {
-  const taskRecordId = taskRecordIdFor(conn, row.task_key, row.project_name)
   if (row.deleted_at) {
     conn.query(`DELETE FROM task_status_event WHERE record_id=?`).run(row.id)
     return
   }
+  const taskRecordId = requireChildTaskRecordId(conn, 'status event', row)
   const existing = conn
     .query<{ record_id: string }, [string]>(
       `SELECT record_id FROM task_status_event WHERE record_id=?`,
