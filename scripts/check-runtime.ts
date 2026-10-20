@@ -1,11 +1,18 @@
 import { type Shard as CheckShard, parseShard } from '../shared/shard.ts'
 import { CHECK_LEGS, STATIC_OMIT_GROUPS } from './check-plan.ts'
 
-// The suite budgets detect runtime regressions. The generous hung-suite bound
+// The suite budgets detect runtime regressions. The CI suite CPU budget sits above
+// the shard-to-shard variance of shared CI runners, so only a large regression
+// fails it. The static budget only reports. The generous hung-suite bound
 // separately stops a wedged child from hanging the gate indefinitely.
 export const SUITE_RUNTIME_BUDGET_MS = 120_000
 export const SUITE_CPU_BUDGET_MS = 300_000
+export const STATIC_CPU_BUDGET_MS = 180_000
 export const HUNG_SUITE_TIMEOUT_MS = 900_000
+
+export function cpuBudgetMs(mode: CheckArguments['mode']): number {
+  return mode === 'suite' ? SUITE_CPU_BUDGET_MS : STATIC_CPU_BUDGET_MS
+}
 
 export type RuntimeBudgetVerdict = 'within' | 'over-informational' | 'over-fatal'
 export type RuntimeMeasure = 'wall' | 'cpu'

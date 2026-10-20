@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   attributeCommandCpu,
+  cpuBudgetMs,
   decideRuntimeBudget,
   HUNG_SUITE_TIMEOUT_MS,
   parseCheckArguments,
@@ -78,8 +79,18 @@ describe('command CPU attribution', () => {
 })
 
 describe('suite runtime budget', () => {
-  test('CPU time over the runner-noise allowance under CI is fatal', () => {
-    expect(SUITE_CPU_BUDGET_MS).toBe(300_000)
+  test('the slowest measured CI shard (214 s on an unchanged test set) stays within the suite CPU budget', () => {
+    expect(
+      decideRuntimeBudget({
+        elapsedMs: 214_000,
+        budgetMs: cpuBudgetMs('suite'),
+        ci: true,
+        measure: 'cpu',
+      }),
+    ).toBe('within')
+  })
+
+  test('CPU time over the suite budget under CI is fatal', () => {
     expect(
       decideRuntimeBudget({
         elapsedMs: SUITE_CPU_BUDGET_MS + 1,
