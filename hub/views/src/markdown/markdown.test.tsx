@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { secondLevelHeadings } from './headings.ts'
 import { Markdown } from './markdown.tsx'
 
 const render = (content: string) => renderToStaticMarkup(<Markdown content={content} />)
@@ -122,4 +123,25 @@ test('keeps a thematic break later in the document', () => {
   const html = render('# Document\n\nBefore\n\n---\n\nAfter')
 
   expect(html).toContain('<p>Before</p>\n<hr/>\n<p>After</p>')
+})
+
+test('frontmatter headings stay out of contents without shifting rendered heading ids', () => {
+  const content = `---
+description: |-
+  Notes may include markdown-looking lines.
+  ## Same
+---
+
+## Same
+
+## Next`
+  const contents = secondLevelHeadings(content)
+  const html = render(content)
+  const renderedIds = [...html.matchAll(/<h2 id="([^"]+)">/g)].map((match) => match[1])
+
+  expect(contents).toEqual([
+    { id: 'same', title: 'Same' },
+    { id: 'next', title: 'Next' },
+  ])
+  expect(renderedIds).toEqual(contents.map(({ id }) => id))
 })
