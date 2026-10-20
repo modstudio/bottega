@@ -102,6 +102,33 @@ describe('open resume write decision', () => {
     ])
   })
 
+  test('does not find NEXT ACTION in frontmatter', () => {
+    const body = brief(['Continue the work.']).replace(
+      'project:',
+      'next_action: NEXT ACTION: hidden\nproject:',
+    )
+    expect(violations(body).map(({ offendingText }) => offendingText)).toContain(
+      'NEXT ACTION: <missing>',
+    )
+  })
+
+  test('does not accept prose beginning with NEXT ACTION', () => {
+    expect(violations(brief(['NEXT ACTION was discussed.']))).toEqual([
+      {
+        offendingText: 'NEXT ACTION: <missing>',
+        remedy: 'add an explicit NEXT ACTION line',
+      },
+    ])
+  })
+
+  test('accepts a NEXT ACTION label with non-empty text', () => {
+    expect(violations(brief(['- **NEXT ACTION**: continue']))).toEqual([])
+  })
+
+  test('accepts a NEXT ACTION heading followed by non-empty content', () => {
+    expect(violations(brief(['### NEXT ACTION', '', 'Continue the work.']))).toEqual([])
+  })
+
   for (const location of [
     '/tmp/session/notes.md',
     '/private/tmp/session/notes.md',
@@ -146,7 +173,7 @@ describe('open resume write decision', () => {
       '**next action**: continue',
       '- NEXT ACTION: continue',
       '1. _NEXT ACTION_: continue',
-      '### NEXT ACTION',
+      '### NEXT ACTION\n\ncontinue',
     ]) {
       const body = brief([line])
       expect(resumeWriteRefusal('clean', body, resumeFrontmatter(body))).toBeNull()

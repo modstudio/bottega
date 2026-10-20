@@ -11,8 +11,9 @@ export type OpenResumeViolation = {
 
 const ISO_8601_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/
 const TRACKER_KEY = /^[A-Z][A-Z0-9]*-[0-9]+$/
-const NEXT_ACTION_LINE =
-  /^[ \t]*(?:#{1,6}[ \t]+|(?:(?:[-+*]|\d+[.)])[ \t]+))?(?:[*_]{1,3})?NEXT ACTION(?:[*_]{1,3})?(?=[ \t:]|$)/im
+const NEXT_ACTION_LABEL =
+  /^[ \t]*(?:(?:[-+*]|\d+[.)])[ \t]+)?(?:[*_]{1,3})?NEXT ACTION(?:[*_]{1,3})?:[ \t]*\S.*$/i
+const NEXT_ACTION_HEADING = /^[ \t]{0,3}#{1,6}[ \t]+NEXT ACTION[ \t]*#*[ \t]*$/i
 const PATH_TOKEN = /\/?[A-Za-z0-9._~:@%+=-]+(?:\/[A-Za-z0-9._~:@%+=-]+)*\/?/g
 
 function isScratchLocation(path: string): boolean {
@@ -30,6 +31,21 @@ function missingField(field: 'project' | 'written'): OpenResumeViolation {
     offendingText: `${field}: <missing or empty>`,
     remedy: `supply a non-empty top-level ${field} field`,
   }
+}
+
+function bodyAfterFrontmatter(body: string): string {
+  const frontmatter = body.match(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/)?.[0]
+  return frontmatter ? body.slice(frontmatter.length) : body
+}
+
+function hasNextAction(body: string): boolean {
+  const lines = bodyAfterFrontmatter(body).split(/\r?\n/)
+  for (const [index, line] of lines.entries()) {
+    if (NEXT_ACTION_LABEL.test(line)) return true
+    if (!NEXT_ACTION_HEADING.test(line)) continue
+    if (lines.slice(index + 1).some((following) => following.trim().length > 0)) return true
+  }
+  return false
 }
 
 /** Return every reason an open resume brief cannot be written. */
@@ -64,7 +80,7 @@ export function openResumeViolations(
       remedy: 'supply written as an ISO 8601 timestamp with a timezone',
     })
   }
-  if (!NEXT_ACTION_LINE.test(body)) {
+  if (!hasNextAction(body)) {
     violations.push({
       offendingText: 'NEXT ACTION: <missing>',
       remedy: 'add an explicit NEXT ACTION line',
