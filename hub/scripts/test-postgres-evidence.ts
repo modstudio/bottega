@@ -119,6 +119,27 @@ async function pushEvidence(
   return outcomes
 }
 
+async function listAllHostedTasks(url: SQL, identity: Parameters<typeof listHostedTasks>[1]) {
+  type Page = Awaited<ReturnType<typeof listHostedTasks>>
+  const rows = {
+    tasks: [] as Page['tasks'],
+    comments: [] as Page['comments'],
+    documents: [] as Page['documents'],
+    statusEvents: [] as Page['statusEvents'],
+  }
+  let cursor: string | undefined
+  for (;;) {
+    const page = await listHostedTasks(url, identity, cursor ? { cursor } : {})
+    rows.tasks.push(...page.tasks)
+    rows.comments.push(...page.comments)
+    rows.documents.push(...page.documents)
+    rows.statusEvents.push(...page.statusEvents)
+    if (!page.more) return rows
+    if (page.cursor === cursor) throw new Error('hosted task list cursor did not advance')
+    cursor = page.cursor
+  }
+}
+
 const pushIntervals = (
   url: SQL,
   identity: { userId: string; spaceId: string },
@@ -486,7 +507,7 @@ try {
     await applyHostedPushChanges(actorUrl, identity, [
       { table: 'hub_task_document', id: document.id, op: 'delete' },
     ])
-    const visible = await listHostedTasks(actorUrl, identity, {})
+    const visible = await listAllHostedTasks(actorUrl, identity)
     if (visible.tasks.length !== 2) throw new Error('mirror re-push was not idempotent')
     if (visible.documents.some((row) => row.id === document.id))
       throw new Error('soft-deleted document was visible in the default list')
@@ -607,7 +628,7 @@ try {
 
     if (await hostedTaskDetail(actorUrl, { userId: USER, spaceId: SPACE_B }, created.key))
       throw new Error('another space observed hosted task detail')
-    const other = await listHostedTasks(actorUrl, { userId: USER, spaceId: SPACE_B }, {})
+    const other = await listAllHostedTasks(actorUrl, { userId: USER, spaceId: SPACE_B })
     if (
       other.tasks.length ||
       other.comments.length ||
