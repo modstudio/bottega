@@ -18,10 +18,45 @@ SPEC.loader.exec_module(heartbeat_decision)
 
 class HeartbeatDecisionTest(unittest.TestCase):
     def test_one_tick_reports_blocked_and_stalled_once(self):
-        lines = heartbeat_decision.heartbeat_lines("12:34:56", 1, 2, 0, 1, "run 7 idle", "ignored")
-        self.assertEqual(len(lines), 2)
-        self.assertIn("BLOCKED - 1 question(s)", lines[0])
-        self.assertEqual(lines[1], "[12:34:56] STALLED - 1 run(s): run 7 idle")
+        decision = heartbeat_decision.heartbeat_decision(
+            "12:34:56", 1, 2, 0, 1, "run 7 idle", "ignored"
+        )
+        self.assertEqual(len(decision.lines), 2)
+        self.assertIn("BLOCKED - 1 question(s)", decision.lines[0])
+        self.assertEqual(decision.lines[1], "[12:34:56] STALLED - 1 run(s): run 7 idle")
+
+    def test_live_runs_keep_looping(self):
+        decision = heartbeat_decision.heartbeat_decision(
+            "12:34:56", 0, 1, 0, 0, "", "run 7 live"
+        )
+        self.assertFalse(decision.should_exit)
+        self.assertIn("WAITING - 1 run(s) and 0 landing(s)", decision.lines[0])
+
+    def test_live_landings_only_keep_looping(self):
+        decision = heartbeat_decision.heartbeat_decision(
+            "12:34:56", 0, 0, 1, 0, "", "landing live"
+        )
+        self.assertFalse(decision.should_exit)
+        self.assertIn("WAITING - 0 run(s) and 1 landing(s)", decision.lines[0])
+
+    def test_asking_keeps_looping(self):
+        decision = heartbeat_decision.heartbeat_decision(
+            "12:34:56", 1, 0, 0, 0, "", ""
+        )
+        self.assertFalse(decision.should_exit)
+        self.assertIn("BLOCKED - 1 question(s)", decision.lines[0])
+
+    def test_stalled_keeps_looping(self):
+        decision = heartbeat_decision.heartbeat_decision(
+            "12:34:56", 0, 0, 0, 1, "run 7 idle", ""
+        )
+        self.assertFalse(decision.should_exit)
+        self.assertIn("STALLED - 1 run(s)", decision.lines[0])
+
+    def test_nothing_live_exits(self):
+        decision = heartbeat_decision.heartbeat_decision("12:34:56", 0, 0, 0, 0, "", "")
+        self.assertTrue(decision.should_exit)
+        self.assertEqual(decision.lines, [])
 
     def test_failure_reason_is_bounded_to_the_first_printable_line(self):
         reason = heartbeat_decision.monitor_failure_reason(
