@@ -134,4 +134,51 @@ postgres('hosted workflow catalogue compare-and-set writers', () => {
       await sql.close()
     }
   })
+
+  for (const kind of ['workflow', 'step_catalogue'] as const) {
+    test(`retires a promoted ${kind} version without changing its promotion timestamp`, async () => {
+      const context = { ...tenant(), author: 'test', reason: 'test', sessionId: null }
+      const slug = `retire-${kind}`
+      await draftRecordWorkflow({
+        ...context,
+        kind,
+        slug,
+        event: 'set',
+        definition: '{}',
+      })
+      const promotion = await promoteRecordWorkflow({
+        ...context,
+        kind,
+        slug,
+        n: 1,
+        expectedProductionVersion: null,
+      })
+
+      const versionId = String(promotion.versions[0]?.id)
+      const sql = new SQL(url!)
+      try {
+        const [promoted] =
+          kind === 'workflow'
+            ? await sql`SELECT promoted_at FROM workflow_version WHERE id=${versionId}::uuid`
+            : await sql`SELECT promoted_at FROM step_catalogue_version WHERE id=${versionId}::uuid`
+        const result = await retireRecordWorkflow({
+          ...context,
+          kind,
+          slug,
+          n: 1,
+          expectedProductionVersion: 1,
+        })
+        const [retired] =
+          kind === 'workflow'
+            ? await sql`SELECT status,promoted_at FROM workflow_version WHERE id=${versionId}::uuid`
+            : await sql`SELECT status,promoted_at FROM step_catalogue_version WHERE id=${versionId}::uuid`
+
+        expect(result.versions[0]).toMatchObject({ status: 'retired' })
+        expect(retired).toMatchObject({ status: 'retired' })
+        expect(retired.promoted_at).toEqual(promoted.promoted_at)
+      } finally {
+        await sql.close()
+      }
+    })
+  }
 })
