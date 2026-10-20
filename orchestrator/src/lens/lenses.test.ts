@@ -426,10 +426,10 @@ describe('lens catalogue', () => {
       live.query('SELECT project_record_id FROM run WHERE record_id=?').get(renamedRunId),
     ).toEqual({
       project_record_id: (
-        live.query(`SELECT record_id AS id FROM project WHERE name='${PLATFORM_SLUG}'`).get() as {
-          id: number
+        live.query(`SELECT record_id FROM project WHERE name='${PLATFORM_SLUG}'`).get() as {
+          record_id: string
         }
-      ).id,
+      ).record_id,
     })
     for (const [table, where] of [
       ['run', 'repo IS NOT NULL'],
