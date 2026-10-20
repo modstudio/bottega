@@ -200,9 +200,13 @@ describe('ACP transport selection', () => {
 
   test('paid ACP agents are allowed and jobs outside the allow-list are refused', () => {
     expect(() => assertAcpAllowed('understand', 'grok')).not.toThrow()
-    expect(() => assertAcpAllowed('review-lens', 'codex')).toThrow('allowed jobs')
+    expect(() => assertAcpAllowed('review-lens', 'codex')).toThrow('named with --agent')
     expect(() => assertAcpAllowed('understand', 'codex')).not.toThrow()
     expect(() => assertAcpAllowed('understand', undefined)).not.toThrow()
+  })
+
+  test('a named ACP agent may run a review lens', () => {
+    expect(() => assertAcpAllowed('review-lens', 'codex', undefined, true)).not.toThrow()
   })
 
   test('installed paid-agent capability rows record native elicitation as unsupported', () => {

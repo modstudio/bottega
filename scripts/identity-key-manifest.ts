@@ -50,6 +50,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'run.probe',
     'run.no_failover',
     'run.automatic_failover',
+    'run.agent_explicit',
     'run.carry_happened',
     'run.mcp',
     'run.mcp_connected',

@@ -244,7 +244,7 @@ function linkedNodeModules(worktree: string): string[] {
   return [...found].sort()
 }
 
-function localHost(baseUrl: string): string[] {
+function endpointHost(baseUrl: string | null | undefined): string[] {
   if (!baseUrl) return []
   try {
     return [new URL(baseUrl).hostname]
@@ -260,7 +260,7 @@ export function readonlyLensProfile(input: {
   project: Project | null
   agent: string
   path?: string
-  localBaseUrl?: string
+  baseUrl?: string | null
   nodeModuleLinks?: string[]
   mcpAllowlist?: string[]
   environment?: ConfigEnvironment
@@ -271,11 +271,7 @@ export function readonlyLensProfile(input: {
     .filter(Boolean)
     .map((path) => resolve(path))
   const vendorDomains =
-    input.agent === 'grok'
-      ? ['cli-chat-proxy.grok.com', 'auth.x.ai', 'api.x.ai']
-      : input.agent === 'qwen36-qwencli'
-        ? localHost(input.localBaseUrl ?? '')
-        : []
+    input.agent === 'grok' ? ['cli-chat-proxy.grok.com', 'auth.x.ai', 'api.x.ai'] : []
   const worktree = resolve(input.worktree)
   const runsDir = resolve(input.runsDir)
   const scratchDir = input.scratchDir ? resolve(input.scratchDir) : null
@@ -303,6 +299,7 @@ export function readonlyLensProfile(input: {
         allowedDomains: [
           ...new Set([
             ...vendorDomains,
+            ...endpointHost(input.baseUrl),
             'localhost',
             '127.0.0.1',
             '[::1]',
@@ -440,7 +437,7 @@ export function selectReadonlySandbox(input: {
   project: Project | null
   override?: string
   path?: string
-  localBaseUrl?: string
+  baseUrl?: string | null
   mcp?: boolean
   mcpAllowlist?: string[]
   environment?: ConfigEnvironment
@@ -473,7 +470,7 @@ export function selectReadonlySandbox(input: {
       project: input.project,
       agent: input.agent,
       path: input.path,
-      localBaseUrl: input.localBaseUrl,
+      baseUrl: input.baseUrl,
       mcpAllowlist: input.mcpAllowlist,
       environment: input.environment,
     }),

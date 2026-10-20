@@ -38,6 +38,7 @@ export type ResolvedTaskBranch = {
 
 export type DetachSpec = {
   agent?: string
+  agentExplicit?: boolean
   schema?: string
   mcp?: McpRequest
   model?: string
@@ -112,7 +113,6 @@ export function detachedRunOptions(
 ) {
   const {
     agent,
-    schema,
     mcp,
     model,
     probe,
@@ -140,10 +140,10 @@ export function detachedRunOptions(
     keepTree,
     resolvedTaskBranch,
   } = spec
-  // Adding a field to DetachSpec must fail typechecking until it is handled here.
   const consumed: Required<Record<keyof DetachSpec, unknown>> = {
     agent,
-    schema,
+    agentExplicit: spec.agentExplicit,
+    schema: spec.schema,
     mcp,
     model,
     probe,
@@ -171,13 +171,13 @@ export function detachedRunOptions(
     keepTree,
     resolvedTaskBranch,
   }
-  void consumed
   return {
     job: jobName,
     prompt,
     reserveId,
     agent,
-    schemaPath: schema,
+    agentExplicit: consumed.agentExplicit as boolean | undefined,
+    schemaPath: spec.schema,
     mcp,
     model,
     probe,

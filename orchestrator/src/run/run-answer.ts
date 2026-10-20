@@ -325,6 +325,39 @@ function latestRetryTurn(
   )
 }
 
+type RetryRunRow = {
+  record_id: string
+  root_record_id: string
+  agent: string
+  job: string
+  cwd: string | null
+  root_cwd: string | null
+  root_base_commit: string | null
+  prompt_path: string | null
+  probe: number
+  status: string
+  failure_kind: string | null
+  mcp: number | null
+  mcp_error: string | null
+  schema_path: string | null
+  model: string | null
+  lens: string | null
+  launch_cwd: string | null
+  launch_seed: string | null
+  launch_key: string | null
+  launch_base: string | null
+  no_failover: number
+  keep_tree: number
+  keep_tree_until: string | null
+  keep_tree_reason: string | null
+  started_at: string
+  repo: string | null
+  project_record_id: string | null
+  branch_kept: string | null
+  agent_explicit: number
+  branch_kept_tip: string | null
+}
+
 export async function retryRun(
   id: string,
   options: { agent?: string; model?: string; flags: RunFlags },
@@ -340,41 +373,11 @@ export async function retryRun(
           requested.launch_seed, requested.launch_key, requested.launch_base, requested.no_failover,
           requested.keep_tree, requested.keep_tree_until, requested.keep_tree_reason,
           requested.started_at, root.repo, root.project_record_id, root.cwd root_cwd,
-          root.base_commit root_base_commit, root.branch_kept, root.branch_kept_tip
+          root.base_commit root_base_commit, root.branch_kept, root.branch_kept_tip, root.agent_explicit
      FROM run requested JOIN run root ON root.record_id=COALESCE(requested.parent_run_record_id,requested.record_id)
      WHERE requested.record_id = ?`,
     )
-    .get(id) as {
-    record_id: string
-    root_record_id: string
-    agent: string
-    job: string
-    cwd: string | null
-    root_cwd: string | null
-    root_base_commit: string | null
-    prompt_path: string | null
-    probe: number
-    status: string
-    failure_kind: string | null
-    mcp: number | null
-    mcp_error: string | null
-    schema_path: string | null
-    model: string | null
-    lens: string | null
-    launch_cwd: string | null
-    launch_seed: string | null
-    launch_key: string | null
-    launch_base: string | null
-    no_failover: number
-    keep_tree: number
-    keep_tree_until: string | null
-    keep_tree_reason: string | null
-    started_at: string
-    repo: string | null
-    project_record_id: string | null
-    branch_kept: string | null
-    branch_kept_tip: string | null
-  } | null
+    .get(id) as RetryRunRow | null
   if (!row) throw new Error(`no run ${id}`)
   assertAgentWorkRun(id, row.job, 'retried')
   // A writing job already has a worktree and a vendor session. Retry would
@@ -504,6 +507,7 @@ export async function retryRun(
       retryPrompt,
       {
         agent,
+        agentExplicit: Boolean(options.agent || row.agent_explicit),
         schema: row.schema_path ?? undefined,
         mcp: mcpRequestFromStored(row.mcp, row.mcp_error),
         model: retryModelForAgent(row.agent, row.model, agent, options.model),
