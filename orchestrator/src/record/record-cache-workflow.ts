@@ -124,12 +124,21 @@ export function applyWorkflowCatalogueRow(
   table: RecordWorkflowTable,
   item: Record<string, unknown>,
 ): void {
+  applyWorkflowCatalogueRowWithResult(local, table, item)
+}
+
+function applyWorkflowCatalogueRowWithResult(
+  local: Database,
+  table: RecordWorkflowTable,
+  item: Record<string, unknown>,
+): boolean {
   const n = names(table),
     recordId = String(item.id),
     spaceId = String(item.spaceId)
-  if (table === n.identity) applyIdentity(local, n, item, recordId, spaceId)
-  else if (table === n.version) applyVersion(local, n, item, recordId, spaceId)
+  if (table === n.identity) return applyIdentity(local, n, item, recordId, spaceId)
+  if (table === n.version) applyVersion(local, n, item, recordId, spaceId)
   else applyEvent(local, n, item, recordId, spaceId)
+  return false
 }
 
 type Names = ReturnType<typeof names>
@@ -139,7 +148,7 @@ function applyIdentity(
   item: Record<string, unknown>,
   recordId: string,
   spaceId: string,
-): void {
+): boolean {
   const byRecordId = local
     .query<{ id: number; generation: number }, [string, string]>(
       `SELECT id,generation FROM ${n.identity} WHERE record_id=? AND space_id=?`,
@@ -153,8 +162,9 @@ function applyIdentity(
       )
       .get(spaceId, String(item.slug))
   const generation = Number(item.generation ?? 1)
+  const reconciled = Boolean(found && (generation !== found.generation || !byRecordId))
   if (found) {
-    if (generation !== found.generation || !byRecordId) {
+    if (reconciled) {
       deleteIdentityHistory(local, n, spaceId, found.id)
       resetIdentityHistoryCursors(local, n, spaceId)
     }
@@ -167,6 +177,7 @@ function applyIdentity(
         `INSERT INTO ${n.identity} (record_id,space_id,slug,generation,created_at) VALUES (?,?,?,?,?)`,
       )
       .run(recordId, spaceId, String(item.slug), generation, String(item.createdAt))
+  return reconciled
 }
 
 function resetIdentityHistoryCursors(local: Database, n: Names, spaceId: string): void {
@@ -304,16 +315,18 @@ function applyEvent(
       .run(...values)
 }
 
-export function applyWorkflowWriteResponse(
+export async function applyWorkflowWriteResponse(
   local: Database,
   kind: RecordWorkflowKind,
   response: RecordWorkflowWriteResponse,
-): void {
+): Promise<void> {
   const prefix = kind === 'workflow' ? 'workflow' : 'step_catalogue'
+  let reconciled = false
   writeTransaction(() => {
-    applyWorkflowCatalogueRow(local, prefix, response.identity)
+    reconciled = applyWorkflowCatalogueRowWithResult(local, prefix, response.identity)
     for (const version of response.versions)
       applyWorkflowCatalogueRow(local, `${prefix}_version`, version)
     for (const event of response.events) applyWorkflowCatalogueRow(local, `${prefix}_event`, event)
   }, local)
+  if (reconciled) await pullWorkflowCatalogue(local, [String(response.identity.spaceId)])
 }

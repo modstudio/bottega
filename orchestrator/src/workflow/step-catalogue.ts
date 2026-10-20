@@ -387,7 +387,7 @@ function catalogueDraft(
         },
         { destinationSpaceId: spaceId },
       )
-      applyWorkflowWriteResponse(d, 'step_catalogue', result)
+      await applyWorkflowWriteResponse(d, 'step_catalogue', result)
       return selectedStepCatalogue(result.versions.at(-1)!.n, d, spaceId)
     },
   })
@@ -419,7 +419,7 @@ export const forkStepCatalogue = (
         },
         { destinationSpaceId: spaceId },
       )
-      applyWorkflowWriteResponse(d, 'step_catalogue', result)
+      await applyWorkflowWriteResponse(d, 'step_catalogue', result)
       return selectedStepCatalogue(result.versions.at(-1)!.n, d, spaceId)
     },
   })
@@ -462,7 +462,7 @@ export const retireStepCatalogue = (
         },
         { destinationSpaceId: spaceId },
       )
-      applyWorkflowWriteResponse(d, 'step_catalogue', result)
+      await applyWorkflowWriteResponse(d, 'step_catalogue', result)
       return selectedStepCatalogue(n, d, spaceId)
     },
   })
@@ -551,7 +551,7 @@ export function promoteStepCatalogue(
         },
         { destinationSpaceId: spaceId },
       )
-      applyWorkflowWriteResponse(d, 'step_catalogue', result)
+      await applyWorkflowWriteResponse(d, 'step_catalogue', result)
       return selectedStepCatalogue(n, d, spaceId)
     },
   })
