@@ -17,7 +17,7 @@ paths:
 Keep concerns separate.`)
 
   expect(html).toContain('<th>description</th>')
-  expect(html).toContain('<td>Rules for files in the hub</td>')
+  expect(html).toContain('>Rules for files in the hub</span>')
   expect(html).toContain('<th>paths</th>')
   expect(html).toContain('<code>hub/**</code>')
   expect(html).toContain('<code>shared/**</code>')

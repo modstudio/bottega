@@ -13,6 +13,7 @@ import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkDirective from 'remark-directive'
 import remarkFrontmatter from 'remark-frontmatter'
 import remarkGfm from 'remark-gfm'
+import { parse } from 'yaml'
 import { secondLevelHeadingIdsByLine } from './headings.ts'
 import { markdownStyles } from './markdown.styles.ts'
 import { githubAlertPlugin, isTone } from './markdown-alerts'
@@ -38,6 +39,80 @@ export function DocTable({ fit = false, children }: { fit?: boolean; children?: 
     <DocOverflow expandLabel="Expand table" title="Table">
       <table data-fit={fit ? '' : undefined}>{children}</table>
     </DocOverflow>
+  )
+}
+
+type FrontmatterNode = {
+  type: string
+  value?: string
+  children?: []
+  data?: { hName?: string; hProperties?: Record<string, unknown> }
+}
+
+function frontmatterPropertiesPlugin() {
+  return (tree: { children?: FrontmatterNode[] }) => {
+    for (const node of tree.children ?? []) {
+      if (node.type !== 'yaml' || typeof node.value !== 'string') continue
+      const source = node.value
+      node.type = 'paragraph'
+      node.children = []
+      node.data = {
+        ...node.data,
+        hName: 'div',
+        hProperties: { ...node.data?.hProperties, 'data-frontmatter': source },
+      }
+    }
+  }
+}
+
+function isPropertyMap(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function FrontmatterValue({ value }: { value: unknown }) {
+  const styles = markdownStyles()
+  if (typeof value === 'boolean') return value ? 'yes' : 'no'
+  if (Array.isArray(value)) {
+    return (
+      <span className={styles.frontmatterItems()}>
+        {value.map((item, index) => (
+          <code key={`${String(item)}-${index}`}>{String(item)}</code>
+        ))}
+      </span>
+    )
+  }
+  if (isPropertyMap(value)) {
+    return (
+      <table className={styles.frontmatterNested()} data-fit="">
+        <PropertyRows properties={value} />
+      </table>
+    )
+  }
+  return <span className={styles.frontmatterValue()}>{value == null ? '' : String(value)}</span>
+}
+
+function PropertyRows({ properties }: { properties: Record<string, unknown> }) {
+  return (
+    <tbody>
+      {Object.entries(properties).map(([key, value]) => (
+        <tr key={key}>
+          <th>{key}</th>
+          <td>
+            <FrontmatterValue value={value} />
+          </td>
+        </tr>
+      ))}
+    </tbody>
+  )
+}
+
+function FrontmatterProperties({ source }: { source: string }) {
+  const properties: unknown = parse(source)
+  if (!isPropertyMap(properties) || Object.keys(properties).length === 0) return null
+  return (
+    <DocTable fit>
+      <PropertyRows properties={properties} />
+    </DocTable>
   )
 }
 
@@ -112,7 +187,10 @@ function DocCallout({
   'data-callout'?: unknown
   'data-tone'?: unknown
   'data-doc-section-audiences'?: unknown
+  'data-frontmatter'?: unknown
 }) {
+  const frontmatter = props['data-frontmatter']
+  if (typeof frontmatter === 'string') return <FrontmatterProperties source={frontmatter} />
   const title = props['data-callout']
   const tone = props['data-tone']
   const sectionAudiences = props['data-doc-section-audiences']
@@ -167,7 +245,13 @@ export function Markdown({ content }: { content: string }) {
   return (
     <div className={markdownStyles().root()}>
       <ReactMarkdown
-        remarkPlugins={[remarkFrontmatter, remarkGfm, remarkDirective, docDirectives]}
+        remarkPlugins={[
+          remarkFrontmatter,
+          frontmatterPropertiesPlugin,
+          remarkGfm,
+          remarkDirective,
+          docDirectives,
+        ]}
         rehypePlugins={[
           githubAlertPlugin,
           ...(highlight
