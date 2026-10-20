@@ -58,7 +58,7 @@ import {
   assertLocalStoredReferenceWrite,
   skipsProseLint,
 } from './doc-reference-write.ts'
-import { resumeWriteRefusal } from './doc-resume-write.ts'
+import { resumeRestoreRefusal, resumeWriteRefusal } from './doc-resume-write.ts'
 import {
   docSubjects,
   validateDocSubject,
@@ -845,6 +845,12 @@ export async function restoreDoc(
     revision.slug !== slug
   ) {
     throw new Error(`no revision ${revisionId} for ${scope}/${subject ?? '_'}/${slug}`)
+  }
+  if (scope === 'resume') {
+    const refusal = resumeRestoreRefusal(
+      resumeWriteRefusal(slug, revision.body, resumeFrontmatter(revision.body)),
+    )
+    if (refusal) throw new Error(refusal)
   }
   const [expectedCurrent, current] = referenceRestoreState(scope, subject, slug, owner, revision)
   assertLocalRevisionWrite(

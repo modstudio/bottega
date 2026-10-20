@@ -9,7 +9,7 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
 import { resumeFrontmatter } from '../doc/doc-resume-frontmatter.ts'
-import { resumeWriteRefusal } from '../doc/doc-resume-write.ts'
+import { resumeRestoreRefusal, resumeWriteRefusal } from '../doc/doc-resume-write.ts'
 import {
   consumeDocBody,
   type DocDelivery,
@@ -506,6 +506,9 @@ export async function restoreRecordDoc(
       if (!(error instanceof RecordDocError) || error.status !== 422) throw error
     }
     const body = String(revision.body)
+    if (scope === 'resume') {
+      assertWrite(resumeRestoreRefusal(resumeWriteRefusal(slug, body, resumeFrontmatter(body))))
+    }
     const delivery = String(revision.delivery) as DocDelivery
     const audiences = recordDocAudiences(revision.audiences)
     const parentId = revision.parent_id == null ? null : String(revision.parent_id)

@@ -78,3 +78,9 @@ export function resumeWriteRefusal(
     ),
   ].join('\n')
 }
+
+/** Explain how to recover a historical body that cannot become the live open brief. */
+export function resumeRestoreRefusal(refusal: string | null): string | null {
+  if (!refusal) return null
+  return `${refusal}\nThe revision remains readable; cleared by: read the revision, correct its body, then write it with bottega doc set.`
+}
