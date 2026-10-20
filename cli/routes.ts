@@ -219,6 +219,7 @@ export const ROUTES = (
       'blockers',
       'monitor',
       'storage',
+      'provisioning',
       'sweep',
       'reclaim',
       'config',
