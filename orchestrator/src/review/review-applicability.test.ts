@@ -65,4 +65,18 @@ describe('applicable review lenses', () => {
       }),
     ).toEqual({ lenses: ['correctness', 'safety'], secondOpinion: 'safety' })
   })
+
+  test('carries the evidence basis for selected rules', () => {
+    expect(
+      applicableReview(3, ['orchestrator/src/review/review-tier.ts'], {
+        lenses: [{ lens: 'correctness', basis: 'yield evidence' }],
+        secondOpinion: { lens: 'correctness', basis: 'escaped defect evidence' },
+      }),
+    ).toEqual({
+      lenses: ['correctness'],
+      lensBases: { correctness: 'yield evidence' },
+      secondOpinion: 'correctness',
+      secondOpinionBasis: 'escaped defect evidence',
+    })
+  })
 })

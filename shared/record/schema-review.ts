@@ -85,6 +85,7 @@ export const reviewFinding = pgTable.withRLS(
     rejectionCategory: text('rejection_category'),
     triagedSeverity: text('triaged_severity'),
     triagedAt: timestamp('triaged_at', { withTimezone: true }),
+    duplicateOfFindingId: uuid('duplicate_of_finding_id'),
     withheldFields: jsonb('withheld_fields'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

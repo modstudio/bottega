@@ -130,11 +130,15 @@ describe('project workflow injection', () => {
         {
           review: {
             lenses: [
-              { lens: 'correctness' },
+              { lens: 'correctness', basis: 'yield evidence' },
               { lens: 'migration-safety', paths: ['**/migrations/**'] },
               { lens: 'craft', minTier: 2 },
             ],
-            secondOpinion: { lens: 'craft' },
+            secondOpinion: { lens: 'craft', basis: 'escaped defect evidence' },
+            risk: {
+              paths: [{ pattern: '^shared/', tier: 3, reason: 'shared schema', basis: 'incident' }],
+              unlisted: 1,
+            },
           },
         },
         undefined,

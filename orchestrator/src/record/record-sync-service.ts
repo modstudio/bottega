@@ -457,6 +457,7 @@ function reviewFindingValues(row: Payload) {
     rejectionCategory: nullableString(row.rejectionCategory),
     triagedSeverity: nullableString(row.triagedSeverity),
     triagedAt: nullableDate(row.triagedAt),
+    duplicateOfFindingId: nullableString(row.duplicateOfFindingId),
   }
 }
 

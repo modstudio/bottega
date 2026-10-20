@@ -32,6 +32,20 @@ export type TriageReviewRow = {
   findings: readonly { recordId: string; ordinal: number; disposition: string | null }[]
 }
 
+export function reviewLensGraded(lens: {
+  reproduced: string | null
+  coverage: string | null
+  limits: string | null
+  overlap: string | null
+}): boolean {
+  return (
+    lens.reproduced !== null &&
+    lens.coverage !== null &&
+    lens.limits !== null &&
+    lens.overlap !== null
+  )
+}
+
 /** The triage floor shared by workflow evidence and project review recording. */
 export function reviewRoundTriageComplete(review: TriageReviewRow): boolean {
   return (
@@ -237,11 +251,7 @@ function reviewsForBranch(
         runId: row.run_record_id,
         lens: row.lens,
         model: row.model,
-        graded:
-          row.reproduced !== null &&
-          row.coverage !== null &&
-          row.limits !== null &&
-          row.overlap !== null,
+        graded: reviewLensGraded(row),
       })
     }
     if (

@@ -1,0 +1,2 @@
+ALTER TABLE review_finding ADD COLUMN duplicate_of_finding_record_id TEXT REFERENCES review_finding(record_id);
+CREATE INDEX review_finding_duplicate_of_finding ON review_finding(duplicate_of_finding_record_id);

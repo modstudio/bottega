@@ -64,11 +64,13 @@ function addFinding(
   disposition: string | null,
   triagedSeverity: string | null = null,
 ) {
+  const findingId = newRecordId()
   db()
     .query(`INSERT INTO review_finding
     (record_id,review_record_id,review_lens_record_id,ordinal,severity,location,evidence,proposed_correction,disposition,triaged_severity)
     VALUES (?,?,?,?,?,'file.ts:1','evidence','fix',?,?)`)
-    .run(newRecordId(), reviewId, lensId, ordinal, severity, disposition, triagedSeverity)
+    .run(findingId, reviewId, lensId, ordinal, severity, disposition, triagedSeverity)
+  return findingId
 }
 
 function fixture() {
@@ -328,5 +330,84 @@ describe('review yield', () => {
       untriaged: 1,
       highOrCriticalPerRun: 1,
     })
+  })
+
+  test('separates the admitted second opinion and reports linked finding lens pairs', () => {
+    const projectId = newRecordId()
+    db()
+      .query('INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?)')
+      .run(
+        projectId,
+        'yield-project',
+        '/yield-project',
+        JSON.stringify({
+          review: {
+            lenses: [{ lens: 'correctness' }, { lens: 'craft' }],
+            secondOpinion: { lens: 'correctness', minTier: 3 },
+          },
+        }),
+      )
+    const firstReview = addReview('2026-09-08T17:00:00Z', 'second-opinion', true, '["a.ts"]')
+    const secondReview = addReview('2026-09-08T17:01:00Z', 'second-opinion', true, '["a.ts"]')
+    const firstLens = addLens(firstReview, {
+      lens: 'correctness',
+      agent: 'codex',
+      model: 'gpt-a',
+      minutes: 10,
+      branch: 'DEV-YIELD-opinions',
+      overlap: 'shared',
+    })
+    const secondLens = addLens(secondReview, {
+      lens: 'correctness',
+      agent: 'grok',
+      model: 'gpt-b',
+      minutes: 20,
+      branch: 'DEV-YIELD-opinions',
+      overlap: 'shared',
+    })
+    const firstFinding = addFinding(firstReview, firstLens, 1, 'high', 'accepted', 'high')
+    const thirdFinding = addFinding(firstReview, firstLens, 2, 'medium', 'accepted', 'medium')
+    const secondFinding = addFinding(secondReview, secondLens, 1, 'high', 'accepted', 'high')
+    for (const reviewId of [firstReview, secondReview]) {
+      db()
+        .query('UPDATE review SET project_record_id=?,tier=3 WHERE record_id=?')
+        .run(projectId, reviewId)
+    }
+    for (const lensId of [firstLens, secondLens]) {
+      db()
+        .query(
+          `UPDATE review_lens SET reproduced='all',coverage='adequate',limits='named'
+            WHERE record_id=?`,
+        )
+        .run(lensId)
+      db()
+        .query(
+          `UPDATE run SET project_record_id=?,repo='yield-project'
+            WHERE record_id=(SELECT run_record_id FROM review_lens WHERE record_id=?)`,
+        )
+        .run(projectId, lensId)
+    }
+    db()
+      .query('UPDATE review_finding SET duplicate_of_finding_record_id=? WHERE record_id=?')
+      .run(secondFinding, firstFinding)
+    db()
+      .query('UPDATE review_finding SET duplicate_of_finding_record_id=? WHERE record_id=?')
+      .run(secondFinding, thirdFinding)
+
+    const report = reviewYield({ project: 'yield-project' }, db())
+    expect(report.lenses.map((row) => row.key)).toEqual([
+      'correctness',
+      'correctness (second opinion)',
+    ])
+    expect(report.lenses.map((row) => row.linkedFindings)).toEqual([2, 1])
+    expect(report.lensPairs).toEqual([
+      {
+        lenses: ['correctness', 'correctness (second opinion)'],
+        linkedFindings: 2,
+        findings: [2, 1],
+        shares: [1, 2],
+      },
+    ])
+    expect(report.notRecorded[0]?.needed).toContain('only reviews with explicit')
   })
 })

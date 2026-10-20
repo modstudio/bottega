@@ -7,6 +7,7 @@ export type ReviewTier = {
   risk: 0 | 1 | 2 | 3
   size: 0 | 1 | 2 | 3
   reasons: string[]
+  riskBasis: string | null
 }
 
 export type ReviewTierFile = { path: string; insertions: number; deletions: number }
@@ -97,7 +98,7 @@ const isReviewExcluded = (path: string) => {
   )
 }
 
-type FileRisk = { tier: 0 | 1 | 2 | 3; reason: string }
+type FileRisk = { tier: 0 | 1 | 2 | 3; reason: string; basis: string | null }
 
 function fileRisk(
   path: string,
@@ -108,7 +109,8 @@ function fileRisk(
   const match =
     AGENT_INSTRUCTION_PATHS.find((entry) => entry.pattern.test(path)) ??
     riskPaths?.find((entry) => entry.pattern.test(path))
-  if (match) return { tier: match.tier, reason: `${path} (${match.reason})` }
+  if (match)
+    return { tier: match.tier, reason: `${path} (${match.reason})`, basis: match.basis ?? null }
   const kind = categorizeFile(path)
   if (kind !== 'product' || isOrdinaryConfig(path)) return null
   const tier = declaredUnlisted ?? 2
@@ -116,13 +118,13 @@ function fileRisk(
     declaredUnlisted === undefined
       ? 'fail-closed default risk 2 applied'
       : `project unlisted risk ${declaredUnlisted} applied`
-  return { tier, reason: `unlisted product path ${path} (${applied})` }
+  return { tier, reason: `unlisted product path ${path} (${applied})`, basis: null }
 }
 
 function classifyRisk(
   files: readonly ReviewTierFile[],
   riskMap: ReviewRiskMap | undefined,
-): { risk: 0 | 1 | 2 | 3; reason: string } {
+): { risk: 0 | 1 | 2 | 3; reason: string; basis: string | null } {
   const riskPaths = riskMap?.paths.map((entry) => ({
     ...entry,
     pattern: new RegExp(entry.pattern),
@@ -133,21 +135,23 @@ function classifyRisk(
       ? 'risk 0: no branch-side change'
       : 'risk 0: only documentation, tests, fixtures, or configuration paths'
   let classified = false
+  let basis: string | null = null
   for (const file of files) {
     const candidate = fileRisk(file.path, riskPaths, riskMap?.unlisted)
     if (!candidate || (classified && candidate.tier <= risk)) continue
     risk = candidate.tier
     reason = `risk ${candidate.tier}: ${candidate.reason}`
+    basis = candidate.basis
     classified = true
   }
-  return { risk, reason }
+  return { risk, reason, basis }
 }
 
 export function classifyReviewTier(input: {
   files: ReviewTierFile[]
   risk?: ReviewRiskMap
 }): ReviewTier {
-  const { risk, reason: riskReason } = classifyRisk(input.files, input.risk)
+  const { risk, reason: riskReason, basis: riskBasis } = classifyRisk(input.files, input.risk)
 
   const productFiles = input.files.filter(
     (file) =>
@@ -164,7 +168,7 @@ export function classifyReviewTier(input: {
     size = (size + 1) as 1 | 2 | 3
     reasons[1] = `size ${size}: ${productLines} product lines across ${productFiles.length} product files (more than 8 raises size one tier)`
   }
-  return { tier: Math.max(risk, size) as 0 | 1 | 2 | 3, risk, size, reasons }
+  return { tier: Math.max(risk, size) as 0 | 1 | 2 | 3, risk, size, reasons, riskBasis }
 }
 
 export function diffNumstat(repo: string, from: string, to: string): ReviewTierFile[] {

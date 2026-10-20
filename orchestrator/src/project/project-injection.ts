@@ -137,6 +137,7 @@ const reviewRiskSchema = strictObject({
         (reason) => typeof reason === 'string' && reason.trim().length > 0,
         'must be a non-empty short phrase; replace it with the reason for this path risk',
       ),
+      basis: z.string().trim().min(1).optional(),
     }),
   ),
   unlisted: z.custom<0 | 1 | 2>(
@@ -151,11 +152,13 @@ const reviewSchema = strictObject({
       lens: z.string().trim().min(1),
       paths: z.array(z.string().trim().min(1)).optional(),
       minTier: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
+      basis: z.string().trim().min(1).optional(),
     }),
   ),
   secondOpinion: strictObject({
     lens: z.string().trim().min(1),
     minTier: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
+    basis: z.string().trim().min(1).optional(),
   }).optional(),
   risk: reviewRiskSchema.optional(),
   record: z.string().trim().min(1).optional(),

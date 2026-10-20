@@ -57,8 +57,8 @@ const REVIEW_LENS_RECORD_PAYLOAD_CONTRACT = contract(
   { projectId: null, projectName: null, withheldFields: null },
 )
 const REVIEW_FINDING_RECORD_PAYLOAD_CONTRACT = contract(
-  'id spaceId projectId projectName reviewId reviewLensId machineId localId ordinal severity location evidence proposedCorrection disposition rejectionCategory triagedSeverity triagedAt withheldFields createdAt updatedAt',
-  { projectId: null, projectName: null, withheldFields: null },
+  'id spaceId projectId projectName reviewId reviewLensId machineId localId ordinal severity location evidence proposedCorrection disposition rejectionCategory triagedSeverity triagedAt duplicateOfFindingId withheldFields createdAt updatedAt',
+  { projectId: null, projectName: null, duplicateOfFindingId: null, withheldFields: null },
 )
 const REVIEW_READ_RECORD_PAYLOAD_CONTRACT = contract(
   'id spaceId projectId projectName machineId localId branch tip patchId pathSet tier note sessionId recordedAt withheldFields createdAt updatedAt',

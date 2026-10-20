@@ -240,6 +240,7 @@ function reviewTierOutput(value: string, cwd: string) {
     },
     lens_profiles: output.lenses.map((id) => ({
       id,
+      basis: output.lensBases?.[id] ?? null,
       profiles: resolveLens(id, project.name)?.profiles ?? [],
     })),
   }
@@ -282,16 +283,20 @@ function printReviewTier(
     const sources = lens.profiles
       .map((profile) => formatLensProfileSource(profile, 'source'))
       .join(', ')
-    log(`lens ${lens.id}${sources ? `  ${sources}` : ''}`)
+    log(`lens ${lens.id}${basisLabel(lens.basis)}${sources ? `  ${sources}` : ''}`)
   }
   if (output.secondOpinion) {
     log(
-      `second opinion ${output.secondOpinion}: dispatch this lens a second time on a different model ` +
+      `second opinion ${output.secondOpinion}${basisLabel(output.secondOpinionBasis)}: dispatch this lens a second time on a different model ` +
         `with --distinct-from <the first run of ${output.secondOpinion} on this tip>`,
     )
   }
-  for (const reason of output.reasons) log(reason)
+  output.reasons.forEach((reason, index) => {
+    log(`${reason}${index === 0 ? basisLabel(output.riskBasis) : ''}`)
+  })
 }
+
+const basisLabel = (basis: string | null | undefined): string => (basis ? `  basis: ${basis}` : '')
 
 export function listReviewCommand(flags: ReviewFlags, presentation: ReviewPresentation): void {
   const { has, flag } = flags
