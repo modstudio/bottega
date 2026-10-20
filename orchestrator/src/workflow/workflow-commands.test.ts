@@ -6,17 +6,19 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { program, run } from '../cli/program.ts'
 import { setRawArgv } from '../commands/support.ts'
 import { db, sessionId } from '../database/db.ts'
-import { upsertProject } from '../project/projects.ts'
+import { projectAt, upsertProject } from '../project/projects.ts'
 import { rememberProjectSpace } from '../project-space.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
-import { commandOutcome, workflowImportLines } from './workflow-commands.ts'
+import { commandOutcome, workflowImportLines, workflowProjectRefusal } from './workflow-commands.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { recordWorkflowExec, recordWorkflowProbe } from './workflow-probe.ts'
 import {
   installHostedWorkflowTreeFixture as installHostedWorkflowTree,
+  hostedWorkflowRepositoryFixture,
   workflowCommandOutcomePresentation as outcomePresentation,
   workflowCommandPresentation as presentation,
+  publishStaleLocalWorkflowFixture as publishStaleLocalWorkflow,
   publishCursorWorkflowFixture as publishCursorWorkflow,
   workflowRecordedArtifact as recordedArtifact,
   registerCurrentWorkflowProject as registerCurrentProject,
@@ -343,56 +345,60 @@ test('workflow inspection reads only the current project space and stays local o
 })
 
 test('workflow hydrate check resolves hosted production from the worktree without ORCH_MAIN_CHECKOUT', async () => {
-  const mainCheckout = process.env.ORCH_MAIN_CHECKOUT ?? resolve(repositoryRoot, '../../..')
+  const fixture = hostedWorkflowRepositoryFixture('hydrate')
   const project = 'hydrate-hosted-worktree'
-  registerOwningProject(project, mainCheckout)
-  installHostedWorkflowTree(project, newRecordId(), repositoryRoot)
-  const stale = setWorkflowLocal(
-    'hydrate-local-only',
-    {
-      title: 'Stale local workflow',
-      description: 'Exists only in the local catalogue.',
-      arguments: [],
-      modes: [],
-    },
-    'local stale fixture',
-    'test',
-  )
-  promoteWorkflowLocal('hydrate-local-only', stale.n, 'publish local stale fixture', 'test')
+  registerOwningProject(project, fixture.mainCheckout)
+  expect(projectAt(fixture.worktree)?.name).toBe(project)
+  installHostedWorkflowTree(project, newRecordId(), fixture.worktree)
+  publishStaleLocalWorkflow('hydrate-local-only')
   const priorMainCheckout = process.env.ORCH_MAIN_CHECKOUT
   const result = outcomePresentation()
   try {
     delete process.env.ORCH_MAIN_CHECKOUT
     await workflowCommand(
-      ['workflow', 'hydrate', '--check', '--cwd', repositoryRoot],
+      ['workflow', 'hydrate', '--check', '--cwd', fixture.worktree],
       result.presentation,
     )
   } finally {
     if (priorMainCheckout === undefined) delete process.env.ORCH_MAIN_CHECKOUT
     else process.env.ORCH_MAIN_CHECKOUT = priorMainCheckout
+    fixture.dispose()
   }
   expect(result.stdout).toEqual([])
   expect(result.exitCodes).toEqual([])
 })
 
 test('workflow import resolves hosted production from the worktree without ORCH_MAIN_CHECKOUT', async () => {
-  const mainCheckout = process.env.ORCH_MAIN_CHECKOUT ?? resolve(repositoryRoot, '../../..')
+  const fixture = hostedWorkflowRepositoryFixture('import')
   const project = 'import-hosted-worktree'
-  registerOwningProject(project, mainCheckout)
-  installHostedWorkflowTree(project, newRecordId(), repositoryRoot)
+  registerOwningProject(project, fixture.mainCheckout)
+  expect(projectAt(fixture.worktree)?.name).toBe(project)
+  installHostedWorkflowTree(project, newRecordId(), fixture.worktree)
+  publishStaleLocalWorkflow('import-local-only')
   const priorMainCheckout = process.env.ORCH_MAIN_CHECKOUT
   const lines: string[] = []
   try {
     delete process.env.ORCH_MAIN_CHECKOUT
     await workflowCommand(
-      ['workflow', 'import', '--cwd', repositoryRoot, '--reason', 'unchanged hosted tree'],
+      ['workflow', 'import', '--cwd', fixture.worktree, '--reason', 'unchanged hosted tree'],
       presentation(lines),
     )
   } finally {
     if (priorMainCheckout === undefined) delete process.env.ORCH_MAIN_CHECKOUT
     else process.env.ORCH_MAIN_CHECKOUT = priorMainCheckout
+    fixture.dispose()
   }
   expect(lines).toEqual(['no changes'])
+})
+
+test('workflow tree project refusal is only required for a configured record without an owner', () => {
+  const input = { command: 'hydrate' as const, root: '/fixture/unowned' }
+  expect(workflowProjectRefusal({ ...input, project: 'owned', recordConfigured: true })).toBeNull()
+  expect(workflowProjectRefusal({ ...input, project: null, recordConfigured: false })).toBeNull()
+  expect(workflowProjectRefusal({ ...input, project: null, recordConfigured: true })).toBe(
+    'refusing workflow hydrate in /fixture/unowned: no registered project owns this directory\n' +
+      "cleared by: run from a registered project's worktree, or pass --cwd for one",
+  )
 })
 
 test('workflow hydrate and import refuse an unowned directory when a record is configured', async () => {

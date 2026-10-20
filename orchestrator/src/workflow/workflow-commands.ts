@@ -8,7 +8,7 @@ import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
-import { projectAt, projects } from '../project/projects.ts'
+import { projectAt, projects, type Project } from '../project/projects.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from './autonomy.ts'
@@ -105,14 +105,17 @@ export function workflowPrint(json: boolean, presentation: WorkflowPresentation)
     presentation.log(json ? JSON.stringify(value) : (line ?? JSON.stringify(value, null, 2)))
 }
 
-const inspectionProject = (options: WorkflowCommandOptions): string | null =>
-  projectAt(resolve(options.cwd ?? process.cwd()))?.name ?? null
+const inspectionProject = (options: WorkflowCommandOptions): Project | null =>
+  projectAt(resolve(options.cwd ?? process.cwd()))
+
+const inspectionProjectName = (options: WorkflowCommandOptions): string | null =>
+  inspectionProject(options)?.name ?? null
 
 export function listWorkflowCommand(
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
 ): void {
-  const rows = listResolvedWorkflows(inspectionProject(options))
+  const rows = listResolvedWorkflows(inspectionProjectName(options))
   print(
     rows,
     rows
@@ -133,7 +136,7 @@ export function showWorkflowCommand(
     showResolvedWorkflow(
       argv[2]!,
       positive(flagValue(argv, 'version'), '--version'),
-      inspectionProject(options),
+      inspectionProjectName(options),
     ),
   )
 }
@@ -176,7 +179,7 @@ export function workflowVersionsCommand(
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
 ): void {
-  print(resolvedWorkflowVersions(argv[2]!, inspectionProject(options)))
+  print(resolvedWorkflowVersions(argv[2]!, inspectionProjectName(options)))
 }
 
 export function renderCheckCommand(json: boolean, presentation: WorkflowPresentation): void {
@@ -612,7 +615,7 @@ export function showCatalogueCommand(
 ): void {
   print(
     showResolvedStepCatalogue(
-      inspectionProject(options),
+      inspectionProjectName(options),
       positive(flagValue(argv, 'version'), '--version'),
     ),
   )
@@ -664,18 +667,38 @@ export function catalogueVersionsCommand(
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
 ): void {
-  print(resolvedStepCatalogueVersions(inspectionProject(options)))
+  print(resolvedStepCatalogueVersions(inspectionProjectName(options)))
 }
 
-function workflowRoot(options: WorkflowCommandOptions): string {
+export function workflowProjectRefusal(input: {
+  command: 'hydrate' | 'import'
+  root: string
+  project: string | null
+  recordConfigured: boolean
+}): string | null {
+  if (input.project || !input.recordConfigured) return null
+  return (
+    `refusing workflow ${input.command} in ${input.root}: no registered project owns this directory\n` +
+    "cleared by: run from a registered project's worktree, or pass --cwd for one"
+  )
+}
+
+function workflowCommandProject(
+  command: 'hydrate' | 'import',
+  options: WorkflowCommandOptions,
+): { root: string; project: Project | null } {
   const resolved = resolve(options.cwd ?? process.cwd())
   const root = gitToplevel(resolved)
   if (!root) throw new Error(`refusing ${resolved}: not a git repository`)
-  return root
-}
-
-function registeredMainCheckout(root: string): string | null {
-  return projects().find((project) => resolvedPathsEqual(root, project.path))?.path ?? null
+  const project = inspectionProject({ ...options, cwd: root })
+  const refusal = workflowProjectRefusal({
+    command,
+    root,
+    project: project?.name ?? null,
+    recordConfigured: Boolean(resolveRecordApiUrl()),
+  })
+  if (refusal) throw new Error(refusal)
+  return { root, project }
 }
 
 export function hydrateCommand(
@@ -683,23 +706,16 @@ export function hydrateCommand(
   presentation: WorkflowPresentation,
   options: WorkflowCommandOptions = {},
 ): void {
-  const root = workflowRoot(options)
-  const main = registeredMainCheckout(root)
-  if (main) {
+  const { root, project } = workflowCommandProject('hydrate', options)
+  if (project && resolvedPathsEqual(root, project.path)) {
     throw new Error(
-      `refusing to hydrate registered main checkout ${main}\n` +
+      `refusing to hydrate registered main checkout ${project.path}\n` +
         'invariant: workflow hydration writes a disposable project tree, never the main checkout\n' +
         'cleared by: pass --cwd for a worktree',
     )
   }
-  const project = inspectionProject({ ...options, cwd: root })
-  if (!project && resolveRecordApiUrl())
-    throw new Error(
-      `refusing workflow hydrate in ${root}: no registered project owns this directory\n` +
-        "cleared by: run from a registered project's worktree, or pass --cwd for one",
-    )
   const plan = planWorkflowHydration({
-    store: productionWorkflowTree(db(), project),
+    store: productionWorkflowTree(db(), project?.name ?? null),
     tree: collectWorkflowTree(root),
   })
   for (const { path } of plan.writes) presentation.log(`write ${path}`)
@@ -729,19 +745,13 @@ export async function importCommand(
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
 ): Promise<void> {
-  const root = workflowRoot(options)
-  const project = inspectionProject({ ...options, cwd: root }) ?? undefined
-  if (!project && resolveRecordApiUrl())
-    throw new Error(
-      `refusing workflow import in ${root}: no registered project owns this directory\n` +
-        "cleared by: run from a registered project's worktree, or pass --cwd for one",
-    )
+  const { root, project } = workflowCommandProject('import', options)
   const result = await importWorkflowTree(
     parseWorkflowTree(collectWorkflowTree(root)),
     flagValue(argv, 'reason'),
     flagValue(argv, 'author'),
     undefined,
-    project,
+    project?.name,
   )
   print(result, workflowImportLines(result).join('\n'))
 }

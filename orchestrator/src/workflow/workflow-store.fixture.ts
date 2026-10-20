@@ -1,5 +1,8 @@
 import type { Database } from 'bun:sqlite'
 import { Command } from 'commander'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { setRawArgv } from '../commands/support.ts'
 import { registerWorkflowCommands } from '../commands/workflow.ts'
@@ -76,6 +79,44 @@ export const registerFixtureWorkflowProject = (name: string) =>
 export const registerCurrentWorkflowProject = (name: string) =>
   registerWorkflowProject(name, process.cwd())
 export const registerOwningWorkflowProject = registerWorkflowProject
+
+export function hostedWorkflowRepositoryFixture(label: string) {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), `workflow-hosted-${label}-`)))
+  const mainCheckout = join(root, 'parent')
+  const worktree = join(mainCheckout, 'child')
+  mkdirSync(join(worktree, '.agents', 'workflows'), { recursive: true })
+  for (const repository of [mainCheckout, worktree]) {
+    const initialized = Bun.spawnSync(['git', 'init', '--quiet'], { cwd: repository })
+    if (initialized.exitCode !== 0) {
+      rmSync(root, { recursive: true, force: true })
+      throw new Error(initialized.stderr.toString().trim() || `git init failed in ${repository}`)
+    }
+  }
+  writeFileSync(
+    join(worktree, '.agents', 'workflows', 'hosted.md'),
+    '---\ntitle: Hosted fixture\narguments: []\nmodes: []\n---\nHosted fixture.\n',
+  )
+  return {
+    mainCheckout,
+    worktree,
+    dispose: () => rmSync(root, { recursive: true, force: true }),
+  }
+}
+
+export function publishStaleLocalWorkflowFixture(slug: string) {
+  const stale = setWorkflowLocal(
+    slug,
+    {
+      title: 'Stale local workflow',
+      description: 'Exists only in the local catalogue.',
+      arguments: [],
+      modes: [],
+    },
+    'local stale fixture',
+    'test',
+  )
+  promoteWorkflowLocal(slug, stale.n, 'publish local stale fixture', 'test')
+}
 
 export const publishCursorWorkflowFixture = (slug: string, modes: WorkflowDefinition['modes']) => {
   const draft = setWorkflowLocal(
