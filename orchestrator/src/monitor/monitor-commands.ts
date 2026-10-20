@@ -192,7 +192,10 @@ async function showHistory(
     for (const row of rows)
       presentation.log(
         formatMonitorPass(
-          `monitor ${row.id}  ${row.started_at}  ${row.trigger}  ${row.findings} found, ${row.errors} errors`,
+          `monitor ${row.id}  ${row.started_at}  ${row.trigger}  ${row.findings} found, ${row.errors} errors` +
+            (row.host_load
+              ? `  host load ${row.host_load.loadavg.toFixed(2)}/${row.host_load.ncpu}, ${row.host_load.liveRuns} live run(s)`
+              : ''),
           displayConditions(row.conditions),
         ).join('\n'),
       )
@@ -226,7 +229,10 @@ async function runMonitor(options: Options, presentation: Presentation): Promise
   if (options.json) await presentation.write(`${JSON.stringify(result)}\n`)
   else {
     const failing = failingCanonEvalSlugs(),
-      lines = [`canon: ${result.canon.findings} stale references in ${result.canon.docs} docs`]
+      lines = [
+        `host: load ${result.hostLoad.loadavg.toFixed(2)}/${result.hostLoad.ncpu} cpu; pressure ${result.hostLoad.pressure}; swap ${Math.round(result.hostLoad.swapUsed / 1024 / 1024)}/${Math.round(result.hostLoad.swapTotal / 1024 / 1024)} MiB; ${result.hostLoad.liveRuns} live run(s)`,
+        `canon: ${result.canon.findings} stale references in ${result.canon.docs} docs`,
+      ]
     if (failing.length) lines.push(`canon evals: ${failing.length} failing (${failing.join(', ')})`)
     if (result.conditions.length || result.errors.length) {
       lines.push(

@@ -9,6 +9,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { boardEscalations } from '../board/board-service.ts'
 import { allInjectChecks, storedPackDrift } from '../canon/canon.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
+import { sampleHostLoad } from '../host-load-sample.ts'
 import { fileIssue } from '../mcp/mcp.ts'
 import { projectLockState } from '../project/project-lock.ts'
 import {
@@ -30,6 +31,7 @@ import {
   orchRunLabelForRun,
 } from '../resources/docker-resources.ts'
 import { gitLocks, worktreeIndexLockForPath } from '../resources/git-locks.ts'
+import { currentOrphanProcesses } from '../resources/process-inventory.ts'
 import { terminalDockerRetentionReasonForRun } from '../resources/resource-ownership.ts'
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
 import { grokTrustHeadings, grokTrustPathFromHeading } from '../sandbox/grok-trust.ts'
@@ -79,11 +81,13 @@ import type {
   MonitorResult,
   UnaddressedMonitorCondition,
 } from './monitor-types.ts'
+import { observedOrphanComposeConditions } from './orphan-compose-observation.ts'
 import {
   orphanDockerNetworkConditions,
   orphanSandboxDirectoryConditions,
   staleTrustEntryConditions,
 } from './orphan-inventory-conditions.ts'
+import { orphanProcessConditions } from './orphan-processes.ts'
 import { observeRatchetedRuleRefills } from './ratcheted-rule-conditions.ts'
 import { observeProjectReleaseLive } from './release-live-observation.ts'
 import { diskPressureObservation } from './storage-report.ts'
@@ -279,14 +283,33 @@ function retainedDockerResourceAction(
 
 function unattributableDockerConditions(inventory: ReturnType<typeof dockerRunResources>) {
   if (!inventory.ascertainable) return []
-  return (inventory.unattributable ?? []).map((resource) => ({
-    kind: 'retained-worktree-docker-resource' as const,
-    subject: resource.name,
-    since: null,
-    severity: 'informational' as const,
-    detail: `${resource.kind} ownership cannot be established: ${resource.reason}`,
-    action: 'report only; add an orch run label or attributable compose identity',
-  }))
+  return (inventory.unattributable ?? []).flatMap((resource) =>
+    resource.composeProject && !existsSync(resource.workingDir)
+      ? []
+      : [
+          {
+            kind: 'retained-worktree-docker-resource' as const,
+            subject: resource.name,
+            since: null,
+            severity: 'informational' as const,
+            detail: `${resource.kind} ownership cannot be established: ${resource.reason}`,
+            action: 'report only; add an orch run label or attributable compose identity',
+          },
+        ],
+  )
+}
+
+function appendOrphanProcessObservations(
+  conditions: MonitorCondition[],
+  errors: string[],
+  clock: number,
+): void {
+  const observed = orphanProcessConditions(
+    currentOrphanProcesses(projects().filter(isProjectRepository)),
+    clock,
+  )
+  conditions.push(...observed.conditions)
+  errors.push(...observed.errors)
 }
 
 export class MonitorStoreBusyError extends Error {
@@ -315,6 +338,21 @@ function startMonitorInvocation(trigger: 'invoked' | 'backstop', startedAt: stri
     throw error
   }
 }
+
+function sampleMonitorHostLoad(database: ReturnType<typeof writableDb>, invocation: number) {
+  const sample = sampleHostLoad(database)
+  database
+    .query('UPDATE monitor_invocation SET host_load=? WHERE id=?')
+    .run(JSON.stringify(sample), invocation)
+  return sample
+}
+
+const observeRunDocker = () =>
+  dockerRunResources(
+    projects()
+      .filter(isProjectRepository)
+      .map(({ path }) => path),
+  )
 
 function trustEntryInventory(database: ReturnType<typeof db>) {
   try {
@@ -556,6 +594,7 @@ export async function monitor(
 ): Promise<MonitorResult> {
   const startedAt = new Date(clock).toISOString()
   const { database, invocation } = startMonitorInvocation(trigger, startedAt)
+  const hostLoad = sampleMonitorHostLoad(database, invocation)
   const { conditions, errors } = await initialMonitorObservations(clock)
   const canonRows = allInjectChecks()
   const canon = {
@@ -624,13 +663,10 @@ export async function monitor(
       ownerSession: run.session_id,
     })
 
-  const runDocker = dockerRunResources(
-    projects()
-      .filter(isProjectRepository)
-      .map(({ path }) => path),
-  )
+  const runDocker = observeRunDocker()
   if (!runDocker.ascertainable) errors.push(runDocker.reason)
   const runDockerResources = runDocker.ascertainable ? runDocker.resources : []
+  conditions.push(...observedOrphanComposeConditions(runDocker))
   unattributableDockerConditions(runDocker).forEach(add)
   const dockerOwnerIds = new Set(runDockerResources.map(({ runId }) => runId))
   const dockerOwners = (
@@ -688,6 +724,7 @@ export async function monitor(
   conditions.push(...staleRunConditions(database, clock))
 
   conditions.push(...terminalProcessAliveConditions(clock))
+  appendOrphanProcessObservations(conditions, errors, clock)
 
   const unscored = unscoredRuns(database)
   for (const run of unscored)
@@ -951,7 +988,7 @@ export async function monitor(
     conditions.length,
     errors.length,
   )
-  return { id: invocation, startedAt, finishedAt, trigger, conditions, errors, canon }
+  return { id: invocation, startedAt, finishedAt, trigger, conditions, errors, canon, hostLoad }
 }
 
 export function monitorHistory(limit = 20): MonitorHistoryRow[] {
@@ -966,8 +1003,15 @@ export function monitorHistory(limit = 20): MonitorHistoryRow[] {
      )) FROM monitor_condition c WHERE c.invocation_id=i.id) conditions
        FROM monitor_invocation i ORDER BY i.id DESC LIMIT ?`,
       )
-      .all(limit) as (Omit<MonitorHistoryRow, 'conditions'> & { conditions: string | null })[]
-  ).map((row) => ({ ...row, conditions: JSON.parse(row.conditions ?? '[]') as unknown[] }))
+      .all(limit) as (Omit<MonitorHistoryRow, 'conditions' | 'host_load'> & {
+      conditions: string | null
+      host_load: string | null
+    })[]
+  ).map((row) => ({
+    ...row,
+    conditions: JSON.parse(row.conditions ?? '[]') as unknown[],
+    host_load: row.host_load ? JSON.parse(row.host_load) : null,
+  }))
 }
 
 /**

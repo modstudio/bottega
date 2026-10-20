@@ -12,6 +12,20 @@ const module = (file: string, allowed: string[]): MonitorModule => ({
 })
 
 export const monitorModules: MonitorModule[] = [
+  module('orchestrator/src/host-load-sample.ts', [
+    'bun:sqlite',
+    './database/db.ts',
+    './gate-load.ts',
+  ]),
+  module('orchestrator/src/resources/process-inventory.ts', [
+    'node:fs',
+    'node:path',
+    '../../../shared/process-identity.ts',
+  ]),
+  module('orchestrator/src/monitor/monitor-types.ts', [
+    '../host-load-sample.ts',
+    '../review/review-vocabulary.ts',
+  ]),
   module('orchestrator/src/monitor/monitor-customer-guides.ts', [
     '../../../shared/brand.ts',
     '../doc/doc-command-check.ts',
@@ -32,6 +46,7 @@ export const monitorModules: MonitorModule[] = [
     '../canon/canon.ts',
     '../board/board-service.ts',
     '../database/db.ts',
+    '../host-load-sample.ts',
     '../resources/docker-resources.ts',
     '../resources/git-locks.ts',
     '../worktree/keep-tree-hold.ts',
@@ -49,6 +64,9 @@ export const monitorModules: MonitorModule[] = [
     './monitor-notices.ts',
     './monitor-outbox.ts',
     './monitor-types.ts',
+    './orphan-compose-observation.ts',
+    '../resources/process-inventory.ts',
+    './orphan-processes.ts',
     './release-live-observation.ts',
     '../../../shared/process-identity.ts',
     '../project/project-lock.ts',
@@ -77,6 +95,17 @@ export const monitorModules: MonitorModule[] = [
     '../storage-walk.ts',
     './storage-conditions.ts',
     './monitor-types.ts',
+  ]),
+  module('orchestrator/src/monitor/orphan-processes.ts', [
+    '../../../shared/brand.ts',
+    '../resources/process-inventory.ts',
+    './monitor-types.ts',
+  ]),
+  module('orchestrator/src/monitor/orphan-compose-observation.ts', [
+    'node:fs',
+    '../resources/docker-resources.ts',
+    './monitor-types.ts',
+    './orphan-inventory-conditions.ts',
   ]),
   module('orchestrator/src/monitor/storage-conditions.ts', ['../storage-walk.ts']),
   module('orchestrator/src/monitor/storage-commands.ts', ['./storage-report.ts']),

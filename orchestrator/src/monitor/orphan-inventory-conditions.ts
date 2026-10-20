@@ -56,6 +56,37 @@ export function orphanDockerNetworkConditions(
   return { conditions, errors: [] }
 }
 
+export type ComposeWorktreeResource = {
+  kind: 'container' | 'compose-project'
+  name: string
+  project: string
+  workingDir: string
+  workingDirExists: boolean
+}
+
+/** Report Compose-owned resources only when their declared worktree directory vanished. */
+export function orphanComposeResourceConditions(
+  resources: readonly ComposeWorktreeResource[],
+): MonitorCondition[] {
+  const reported = new Set<string>()
+  return resources.flatMap((resource): MonitorCondition[] => {
+    if (resource.workingDirExists || !resource.workingDir.includes('/.claude/worktrees/')) return []
+    const subject = `${resource.kind}:${resource.name}`
+    if (reported.has(subject)) return []
+    reported.add(subject)
+    return [
+      {
+        kind: 'orphan-compose-resource',
+        subject,
+        since: null,
+        ageMs: null,
+        detail: `${resource.kind} ${resource.name} belongs to Compose project ${resource.project}; working directory is gone: ${resource.workingDir}`,
+        action: `report only; lifecycle action is docker compose -p ${resource.project} down`,
+      },
+    ]
+  })
+}
+
 /** Report sandbox homes only after every turn in their conversation is terminal. */
 export function orphanSandboxDirectoryConditions(inventory: SandboxDirectoryInventory): {
   conditions: MonitorCondition[]

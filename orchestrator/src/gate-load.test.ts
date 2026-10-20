@@ -8,6 +8,7 @@ import {
   gateHoldConditions,
   holdForGateCapacity,
   parseMacOSMemoryPressure,
+  parseSwapUsage,
   shouldHoldShard,
   withGateSlot,
 } from './gate-load.ts'
@@ -17,12 +18,25 @@ beforeEach(() => {
   trackResidue(join(suiteDir, 'gates'))
 })
 
+test('swap parsing supports macOS and Linux samples', () => {
+  expect(parseSwapUsage('total = 4096.00M  used = 1024.50M  free = 3071.50M')).toEqual({
+    total: 4_294_967_296,
+    used: 1_074_266_112,
+  })
+  expect(parseSwapUsage('SwapTotal:       2048 kB\nSwapFree:         512 kB')).toEqual({
+    total: 2_097_152,
+    used: 1_572_864,
+  })
+})
+
 const idle = (over: Partial<HostLoad> = {}): HostLoad => ({
   gates: 1,
   loadavg: 0.2,
   ncpu: 8,
   freeMem: 8 * 1024 * 1024 * 1024,
   pressure: 'unknown',
+  swapUsed: 0,
+  swapTotal: 0,
   ...over,
 })
 
