@@ -49,6 +49,9 @@ test('automatic reclaim requires cwd evidence, age, non-platform command, and no
       .reclaim,
   ).toBe(false)
   expect(automaticOrphanReclaimDecision(orphan({ ageSeconds: 1 }), new Set()).reclaim).toBe(false)
+  expect(automaticOrphanReclaimDecision(orphan({ ageSeconds: 1 }), new Set(), true)).toEqual({
+    reclaim: true,
+  })
   expect(automaticOrphanReclaimDecision(orphan(), new Set(['/trees/gone'])).reclaim).toBe(false)
 })
 

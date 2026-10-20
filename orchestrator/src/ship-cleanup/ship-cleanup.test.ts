@@ -8,7 +8,7 @@ import type { BranchPruneKeptReason } from '../branch/branch-state.ts'
 import { db } from '../database/db.ts'
 import type { HookTreeRemovalResult } from '../hook-tree/tree.ts'
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
-import { type ShipCleanupDependencies, shipCleanup } from './ship-cleanup.ts'
+import { formatShipCleanup, type ShipCleanupDependencies, shipCleanup } from './ship-cleanup.ts'
 
 function addProject(): string {
   const recordId = newRecordId()
@@ -144,6 +144,16 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
       removed.add(path)
       rmSync(path, { recursive: true, force: true })
     },
+    reclaimProcesses: (paths) => ({
+      reclaimed: paths.map((path) => `stopped ${path}`),
+      kept: [],
+      errors: [],
+    }),
+    reclaimCompose: (paths) => ({
+      removed: paths.map((path) => `stack:${path}`),
+      kept: [],
+      errors: [],
+    }),
     readerCloneArchive: (id) => {
       if (id !== lens || !existsSync(lensPointer)) return null
       return (JSON.parse(readFileSync(lensPointer, 'utf8')) as { path: string }).path
@@ -184,6 +194,20 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
     reason: 'run is live (running)',
   })
   expect(pruned).toEqual([['ship-fixture', 'DEV-1392-c3']])
+  expect(report.reclaimed.processes).toEqual([
+    'stopped /trees/root',
+    'stopped /trees/lens',
+    'stopped /trees/unscored',
+    'stopped /trees/landing',
+  ])
+  expect(report.reclaimed.compose).toEqual([
+    'stack:/trees/root',
+    'stack:/trees/lens',
+    'stack:/trees/unscored',
+    'stack:/trees/landing',
+  ])
+  expect(formatShipCleanup(report)).toContain('reclaimed process: stopped /trees/root')
+  expect(formatShipCleanup(report)).toContain('reclaimed Compose resource: stack:/trees/landing')
   expect(existsSync(runArtifactsDir(lens))).toBe(false)
   expect(existsSync(runScratchDir(lens))).toBe(false)
   expect(existsSync(lensArchive)).toBe(false)
@@ -204,6 +228,8 @@ test('ship cleanup refuses a landed classification without a recorded landing ti
     runsFromTree: () => false,
     removeLandingTree: unavailable,
     remove: unavailable,
+    reclaimProcesses: unavailable,
+    reclaimCompose: unavailable,
   }
 
   expect(() =>
@@ -253,6 +279,8 @@ function landingTreeCleanup(input: {
       return removal
     },
     remove: () => {},
+    reclaimProcesses: () => ({ reclaimed: [], kept: [], errors: [] }),
+    reclaimCompose: () => ({ removed: [], kept: [], errors: [] }),
   }
   return {
     report: shipCleanup('DEV-1392-c3', {

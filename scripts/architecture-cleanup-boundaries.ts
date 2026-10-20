@@ -21,6 +21,8 @@ export const cleanupBoundarySpecs = [
       '../database/db.ts',
       '../hook-tree/tree.ts',
       '../project/projects.ts',
+      '../reclaim/orphan-process-reclaim.ts',
+      '../cleanup/cleanup-sweep-docker.ts',
       '../run/run-artifacts.ts',
       '../storage-walk.ts',
       '../worktree/removal-working-directory.ts',
@@ -28,7 +30,7 @@ export const cleanupBoundarySpecs = [
     ],
     typeOnlyAllowed: [],
     reason:
-      'Keep ship cleanup as the adapter over the pure ruling, existing close-out, exact branch prune, and shared storage walk.',
+      'Keep ship cleanup as the adapter over the pure ruling, existing close-out, exact branch prune, shared storage walk, and the existing attributable leftover reclaimers.',
   },
   {
     name: 'storage-walk-boundary',

@@ -7,7 +7,10 @@ import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { projectByName, upsertProject } from '../project/projects.ts'
 import type { CleanupPresentation } from './cleanup.ts'
-import { reclaimSweptDockerResources } from './cleanup-sweep-docker.ts'
+import {
+  reclaimRemovedTreeDockerResources,
+  reclaimSweptDockerResources,
+} from './cleanup-sweep-docker.ts'
 
 afterEach(() => {
   mock.restore()
@@ -304,6 +307,35 @@ test('an orphan container pulls in its Compose network and volume while remnants
       'would remove orphan worktree Docker container mixed-dead',
     )
     expect(lines.join('\n')).not.toContain('would remove orphan worktree Docker volume mixed_data')
+  } finally {
+    rmSync(projectPath, { recursive: true, force: true })
+  }
+})
+
+test('ship cleanup removes only the attributable Compose stack for its just-removed tree', () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'orch-docker-shipped-'))
+  const shipped = join(projectPath, '.claude/worktrees/DEV-1435-shipped')
+  const other = join(projectPath, '.claude/worktrees/DEV-1435-other')
+  const name = `docker-shipped-group-${Date.now()}`
+  upsertProject({ recordId: newRecordId(), name, path: projectPath, settings: {} })
+  const landing = addRun({ agent: 'claude', job: 'architect', status: 'ok' })
+  db().query('UPDATE run SET worktree=? WHERE record_id=?').run(shipped, landing)
+  const commands: string[] = []
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    const command = args.join(' ')
+    commands.push(command)
+    if (command.endsWith('rev-parse --path-format=absolute --show-toplevel'))
+      return result(projectPath)
+    if (command.startsWith('docker ps -a --format'))
+      return result(`shipped-db\t\tshipped-stack\t${shipped}\nother-db\t\tother-stack\t${other}`)
+    return result('')
+  }) as typeof Bun.spawnSync)
+  try {
+    const cleanup = reclaimRemovedTreeDockerResources([shipped])
+
+    expect(cleanup).toEqual({ removed: ['shipped-db'], kept: [], errors: [] })
+    expect(commands).toContain('docker rm -f shipped-db')
+    expect(commands).not.toContain('docker rm -f other-db')
   } finally {
     rmSync(projectPath, { recursive: true, force: true })
   }

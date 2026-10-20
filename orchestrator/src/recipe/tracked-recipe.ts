@@ -24,11 +24,7 @@ import { type ProvisionSkip, provisionWorktree } from '../worktree/worktree-prov
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { type ComposeSpawn, createCompose, downCompose } from './compose-provision.ts'
 import { composeProjectName } from './compose-provision-plan.ts'
-import {
-  createProvisionedDatabases,
-  type DatabaseOwnership,
-  dropProvisionedDatabases,
-} from './database-provision.ts'
+import { createProvisionedDatabases, dropProvisionedDatabases } from './database-provision.ts'
 import {
   compensationPlan,
   destroyPlan,
@@ -37,6 +33,7 @@ import {
   sharedDeclarations,
   snapshotlessTeardown,
   teardownVars,
+  trackedTeardownFailure,
 } from './recipe-lifecycle.ts'
 import { loadRecipeAtBase } from './recipe-loader.ts'
 import {
@@ -52,21 +49,21 @@ import {
   type StepResult,
 } from './recipe-step.ts'
 import { databaseUrlSecrets, writeTrackedEnvFiles } from './tracked-env-files.ts'
+import {
+  startTrackedTeardownMainStack,
+  stopTrackedTeardownMainStack,
+} from './tracked-recipe-main-stack.ts'
+import type {
+  AllocationAttempt,
+  RecipeAllocations,
+  RecipeSnapshot,
+} from './tracked-recipe-types.ts'
 
-export type RecipeSnapshot = {
-  source: { path: string; commit: string }
-  recipe: TrackedRecipe
-  allocations?: RecipeAllocations
-  databaseOwnership?: DatabaseOwnership
-  composeOwnership?: boolean
-}
-export type RecipeAllocations = {
-  index: number
-  ports: Record<string, number>
-  databases: Record<string, string>
-  strings: Record<string, string>
-}
-export type AllocationAttempt = { allocations: RecipeAllocations; insertedClaimIds: number[] }
+export type {
+  AllocationAttempt,
+  RecipeAllocations,
+  RecipeSnapshot,
+} from './tracked-recipe-types.ts'
 export type TrackedAllocator = {
   allocate(input: {
     runId: string
@@ -716,7 +713,10 @@ export function trackedWorktreeAddArgv(input: {
   ]
 }
 
-/** Missing optional sources are expected; retain diagnostics for every other skip. */
+/**
+ * Missing optional sources are expected; retain diagnostics for every other
+ * provisioning skip.
+ */
 function reportedProvisionSkips(skipped: readonly ProvisionSkip[]): ProvisionSkip[] {
   return skipped.filter((entry) => entry.reason !== 'missing source')
 }
@@ -909,6 +909,90 @@ function settleTrackedTeardown(runId: string): void {
   })
 }
 
+function runTrackedTeardown(input: {
+  runId: string
+  worktree: Worktree
+  stored: {
+    snapshot: RecipeSnapshot
+    key: string | null
+    seed: string | null
+    rootRunId?: string
+    projectName?: string | null
+  }
+  treeExists: boolean
+  runStep: StepRunner
+  runUndo: StepRunner
+}): { results: StepResult[]; stopFailure: string | null; stopNote: string | null } {
+  const { runId, worktree, stored, treeExists, runStep, runUndo } = input
+  let mainStack: ReturnType<typeof startTrackedTeardownMainStack> | null = null
+  let temporaryCwd: string | null = null
+  const results: StepResult[] = []
+  let stopFailure: string | null = null
+  let stopNote: string | null = null
+  try {
+    mainStack = startTrackedTeardownMainStack(worktree)
+    const vars = teardownVars({
+      path: worktree.path,
+      branch: worktree.branch,
+      base: stored.snapshot.source.commit,
+      key: stored.key,
+      seed: stored.seed,
+      main: worktree.repoRoot,
+      label: orchRunLabelForRun(stored.rootRunId ?? readSnapshot(runId).rootRunId),
+      treeExists,
+      allocations: stored.snapshot.allocations,
+      compose: composeVariableIdentity(
+        stored.snapshot.recipe,
+        stored.projectName,
+        stored.rootRunId,
+      ),
+    })
+    temporaryCwd = treeExists ? null : mkdtempSync(join(tmpdir(), 'orch-teardown-'))
+    const context = { treeRoot: temporaryCwd ?? worktree.path, vars }
+    results.push(...serveUndoPlan(stored.snapshot.recipe).map((step) => runUndo(step, context)))
+    for (const { step, phase } of destroyPlan(stored.snapshot.recipe))
+      results.push(phase === 'run' ? runStep(step, context) : runUndo(step, context))
+    results.push(
+      ...dropProvisionedDatabases(
+        stored.snapshot.recipe,
+        {
+          projectRoot: worktree.repoRoot,
+          treeRoot: worktree.path,
+          commandRoot: context.treeRoot,
+          allocations: stored.snapshot.allocations?.databases ?? {},
+        },
+        stored.snapshot.databaseOwnership,
+      ),
+    )
+    if (stored.snapshot.recipe.compose) {
+      const preparedComposeContext = composeContext({
+        runId,
+        treeRoot: worktree.path,
+        commandRoot: context.treeRoot,
+        treeExists,
+      })
+      results.push(
+        preparedComposeContext.ok
+          ? downCompose(
+              stored.snapshot.recipe,
+              preparedComposeContext.context,
+              stored.snapshot.composeOwnership,
+            )
+          : preparedComposeContext.failure,
+      )
+    }
+    for (const step of stored.snapshot.recipe.verifyDown ?? []) results.push(runStep(step, context))
+  } finally {
+    if (temporaryCwd) rmSync(temporaryCwd, { recursive: true, force: true })
+    if (mainStack) {
+      const stopped = stopTrackedTeardownMainStack(mainStack)
+      stopFailure = stopped.failure
+      stopNote = stopped.note
+    }
+  }
+  return { results, stopFailure, stopNote }
+}
+
 export function teardownTrackedRecipe(
   input: {
     runId: string
@@ -945,65 +1029,17 @@ export function teardownTrackedRecipe(
       : removal
   }
   const treeExists = input.treeExists ?? existsSync(input.worktree.path)
-  const vars = teardownVars({
-    path: input.worktree.path,
-    branch: input.worktree.branch,
-    base: stored.snapshot.source.commit,
-    key: stored.key,
-    seed: stored.seed,
-    main: input.worktree.repoRoot,
-    label: orchRunLabelForRun(stored.rootRunId ?? readSnapshot(input.runId).rootRunId),
+  const { results, stopFailure, stopNote } = runTrackedTeardown({
+    runId: input.runId,
+    worktree: input.worktree,
+    stored: { ...stored, snapshot: stored.snapshot },
     treeExists,
-    allocations: stored.snapshot.allocations,
-    compose: composeVariableIdentity(stored.snapshot.recipe, stored.projectName, stored.rootRunId),
+    runStep,
+    runUndo,
   })
-  const temporaryCwd = treeExists ? null : mkdtempSync(join(tmpdir(), 'orch-teardown-'))
-  const context = { treeRoot: temporaryCwd ?? input.worktree.path, vars }
-  let results: StepResult[]
-  try {
-    results = serveUndoPlan(stored.snapshot.recipe).map((step) => runUndo(step, context))
-    for (const { step, phase } of destroyPlan(stored.snapshot.recipe))
-      results.push(phase === 'run' ? runStep(step, context) : runUndo(step, context))
-    results.push(
-      ...dropProvisionedDatabases(
-        stored.snapshot.recipe,
-        {
-          projectRoot: input.worktree.repoRoot,
-          treeRoot: input.worktree.path,
-          commandRoot: context.treeRoot,
-          allocations: stored.snapshot.allocations?.databases ?? {},
-        },
-        stored.snapshot.databaseOwnership,
-      ),
-    )
-    if (stored.snapshot.recipe.compose) {
-      const preparedComposeContext = composeContext({
-        runId: input.runId,
-        treeRoot: input.worktree.path,
-        commandRoot: context.treeRoot,
-        treeExists,
-      })
-      results.push(
-        preparedComposeContext.ok
-          ? downCompose(
-              stored.snapshot.recipe,
-              preparedComposeContext.context,
-              stored.snapshot.composeOwnership,
-            )
-          : preparedComposeContext.failure,
-      )
-    }
-    for (const step of stored.snapshot.recipe.verifyDown ?? []) results.push(runStep(step, context))
-  } finally {
-    if (temporaryCwd) rmSync(temporaryCwd, { recursive: true, force: true })
-  }
-  const failed = lifecycleFailure(results)
-  if (failed) {
-    return {
-      removed: false,
-      detail: `recipe teardown failed at "${failed.name}" (${failed.phase}): ${failed.detail}`,
-    }
-  }
+  const failure = trackedTeardownFailure(results, stopFailure, stopNote)
+  if (failure) return { removed: false, detail: failure }
   settleTrackedTeardown(input.runId)
-  return input.remove()
+  const removal = input.remove()
+  return stopNote ? { ...removal, detail: `${removal.detail}; ${stopNote}` } : removal
 }
