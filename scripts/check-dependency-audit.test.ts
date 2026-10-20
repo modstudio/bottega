@@ -49,16 +49,16 @@ describe('dependency audit command result', () => {
     })
   })
 
-  test('an offline error is unavailable', () => {
+  test('a proxy connection failure with no response is unavailable', () => {
     const stderr =
-      'error: POST https://registry.npmjs.org/-/npm/v1/security/advisories/bulk - FailedToOpenSocket'
+      'error: POST https://registry.npmjs.org/-/npm/v1/security/advisories/bulk - ProxyConnectFailed'
     expect(classifyDependencyAudit(1, '', stderr)).toEqual({
       kind: 'unavailable',
       detail: `bun audit could not reach the advisory service: ${stderr}`,
     })
   })
 
-  test('unparseable output with an accepted exit fails instead of reading as unavailable', () => {
+  test('a malformed JSON response is a failure', () => {
     expect(classifyDependencyAudit(1, 'not json', '')).toEqual({
       kind: 'failure',
       detail: 'bun audit exited 1; output: not json',
