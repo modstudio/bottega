@@ -132,6 +132,14 @@ const axisValue = (axis: string): LensAxis => {
     throw new Error(`axis must be ${LENS_AXES.join(' or ')}`)
   return axis as LensAxis
 }
+
+function lensRecordId(d: Database, lensId: string, spaceId: string | null): string {
+  return (
+    d.query('SELECT record_id FROM lens WHERE id=? AND space_id IS ?').get(lensId, spaceId) as {
+      record_id: string
+    }
+  ).record_id
+}
 function objectJson(value: string, what: string): Record<string, unknown> {
   try {
     const parsed = JSON.parse(value)
@@ -273,13 +281,7 @@ export async function setLens(input: SetLensInput) {
         ).run(
           hosted?.revision?.id ?? newRecordId(),
           spaceId,
-          (
-            d
-              .query('SELECT record_id FROM lens WHERE id=? AND space_id IS ?')
-              .get(input.id, spaceId) as {
-              record_id: string
-            }
-          ).record_id,
+          lensRecordId(d, input.id, spaceId),
           prior.version,
           coreSnapshot(prior),
           input.reason,
@@ -289,14 +291,7 @@ export async function setLens(input: SetLensInput) {
         d.query(
           'UPDATE lens SET record_id=?,title=?,question=?,excludes=?,slots=?,version=?,enabled=?,requires_execution=? WHERE id=? AND space_id IS ?',
         ).run(
-          hosted?.lens.id ??
-            (
-              d
-                .query('SELECT record_id FROM lens WHERE id=? AND space_id IS ?')
-                .get(input.id, spaceId) as {
-                record_id: string
-              }
-            ).record_id,
+          hosted?.lens.id ?? lensRecordId(d, input.id, spaceId),
           input.title,
           input.question,
           input.excludes,
@@ -535,19 +530,13 @@ export async function selectProjectProfile(input: SelectProjectProfileInput) {
       record_id: string
     } | null
     writeTransaction(() => {
-      const lensRecordId = input.lensId
-        ? (
-            d
-              .query('SELECT record_id FROM lens WHERE id=? AND space_id IS ?')
-              .get(input.lensId, spaceId) as { record_id: string }
-          ).record_id
-        : null
+      const selectedLensRecordId = input.lensId ? lensRecordId(d, input.lensId, spaceId) : null
       d.query(`INSERT INTO project_lens_profile (record_id,space_id,project_record_id,lens_record_id,axis,profile_name,selected_version,selection_version) VALUES (?,?,?,?,?,?,?,?)
       ON CONFLICT DO UPDATE SET record_id=excluded.record_id,profile_name=excluded.profile_name,selected_version=excluded.selected_version,selection_version=excluded.selection_version`).run(
         hosted?.selection.id ?? prior?.record_id ?? newRecordId(),
         spaceId,
         project.recordId,
-        lensRecordId,
+        selectedLensRecordId,
         axis,
         input.name,
         input.version ?? null,
@@ -557,7 +546,7 @@ export async function selectProjectProfile(input: SelectProjectProfileInput) {
         .query(
           'SELECT record_id FROM project_lens_profile WHERE project_record_id=? AND lens_record_id IS ? AND axis=? AND space_id IS ?',
         )
-        .get(project.recordId, lensRecordId, axis, spaceId) as { record_id: string }
+        .get(project.recordId, selectedLensRecordId, axis, spaceId) as { record_id: string }
       d.query(`INSERT INTO project_lens_profile_revision
       (record_id,space_id,selection_record_id,prior_profile_name,prior_selected_version,reason,session_id,at) VALUES (?,?,?,?,?,?,?,?)`).run(
         hosted?.revision.id ?? newRecordId(),

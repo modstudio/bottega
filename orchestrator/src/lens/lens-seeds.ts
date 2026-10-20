@@ -2,7 +2,6 @@
 /** Owns the built-in lens definitions shared by local initialization and hosted spaces. */
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { readRecordInstallBinding } from '../record/install-binding.ts'
 import {
   BUILT_IN_LENS_DEFAULT_PROFILE,
   BUILT_IN_LENS_SLOTS,
@@ -10,7 +9,7 @@ import {
 } from './lens-built-ins.ts'
 
 export function seedLenses(local: Database): void {
-  if (readRecordInstallBinding(local).bound) return
+  if (local.query('SELECT 1 FROM record_install_binding WHERE id=1').get()) return
   for (const [key, title, question, excludes] of BUILT_IN_LENSES) {
     local
       .query(`INSERT OR IGNORE INTO lens
