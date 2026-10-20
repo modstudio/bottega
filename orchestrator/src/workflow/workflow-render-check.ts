@@ -243,8 +243,16 @@ export function checkWorkflowRendering(
   }
 }
 
-export function workflowRenderCheckLines(result: WorkflowRenderCheckResult): string[] {
+export function workflowRenderCheckLines(
+  result: WorkflowRenderCheckResult & {
+    checkedSpaces?: { project: string; spaces: (string | null)[] }[]
+  },
+): string[] {
   return [
+    ...(result.checkedSpaces ?? []).map(
+      ({ project, spaces }) =>
+        `${project}  checked workflow spaces: ${spaces.map((space) => space ?? 'local').join(',')}`,
+    ),
     ...result.failures.map(
       (failure) =>
         `${failure.project}  ${failure.workflow}  ${failure.mode}  ${failure.step}  ${failure.field}  ${failure.placeholder}`,

@@ -7,19 +7,18 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
 import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
-import { projects } from '../project/projects.ts'
+import { projectAt, projects } from '../project/projects.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from './autonomy.ts'
 import { resolveProjectAutonomy } from './autonomy-scopes.ts'
 import {
   forkStepCatalogue,
-  productionStepCatalogue,
   promoteStepCatalogue,
+  resolvedStepCatalogueVersions,
   retireStepCatalogue,
   setStepCatalogue,
-  showStepCatalogue,
-  stepCatalogueVersions,
+  showResolvedStepCatalogue,
 } from './step-catalogue.ts'
 import {
   abandonWorkflowCursor,
@@ -50,7 +49,8 @@ import {
   recordWorkflowProbe,
 } from './workflow-probe.ts'
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
-import { checkWorkflowRendering, workflowRenderCheckLines } from './workflow-render-check.ts'
+import { workflowRenderCheckLines } from './workflow-render-check.ts'
+import { checkResolvedWorkflowRendering } from './workflow-render-check-store.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { attachWorkflowText } from './workflow-text.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
@@ -64,14 +64,13 @@ import {
   composeWorkflow,
   forkWorkflow,
   getWorkflowStep,
-  listWorkflows,
-  productionWorkflows,
+  listResolvedWorkflows,
   promoteWorkflow,
+  resolvedWorkflowVersions,
   retireWorkflow,
   setWorkflow,
-  showWorkflow,
+  showResolvedWorkflow,
   workflowModeStepLists,
-  workflowVersions,
 } from './workflows.ts'
 
 export type WorkflowPresentation = {
@@ -103,8 +102,14 @@ export function workflowPrint(json: boolean, presentation: WorkflowPresentation)
     presentation.log(json ? JSON.stringify(value) : (line ?? JSON.stringify(value, null, 2)))
 }
 
-export function listWorkflowCommand(print: WorkflowPrint): void {
-  const rows = listWorkflows()
+const inspectionProject = (options: WorkflowCommandOptions): string | null =>
+  projectAt(resolve(options.cwd ?? process.cwd()))?.name ?? null
+
+export function listWorkflowCommand(
+  print: WorkflowPrint,
+  options: WorkflowCommandOptions = {},
+): void {
+  const rows = listResolvedWorkflows(inspectionProject(options))
   print(
     rows,
     rows
@@ -116,8 +121,18 @@ export function listWorkflowCommand(print: WorkflowPrint): void {
   )
 }
 
-export function showWorkflowCommand(argv: string[], print: WorkflowPrint): void {
-  print(showWorkflow(argv[2]!, positive(flagValue(argv, 'version'), '--version')))
+export function showWorkflowCommand(
+  argv: string[],
+  print: WorkflowPrint,
+  options: WorkflowCommandOptions = {},
+): void {
+  print(
+    showResolvedWorkflow(
+      argv[2]!,
+      positive(flagValue(argv, 'version'), '--version'),
+      inspectionProject(options),
+    ),
+  )
 }
 
 export async function promoteWorkflowCommand(argv: string[], print: WorkflowPrint): Promise<void> {
@@ -153,16 +168,16 @@ export async function forkWorkflowCommand(argv: string[], print: WorkflowPrint):
   )
 }
 
-export function workflowVersionsCommand(argv: string[], print: WorkflowPrint): void {
-  print(workflowVersions(argv[2]!))
+export function workflowVersionsCommand(
+  argv: string[],
+  print: WorkflowPrint,
+  options: WorkflowCommandOptions = {},
+): void {
+  print(resolvedWorkflowVersions(argv[2]!, inspectionProject(options)))
 }
 
 export function renderCheckCommand(json: boolean, presentation: WorkflowPresentation): void {
-  const result = checkWorkflowRendering(
-    productionWorkflows(db()),
-    productionStepCatalogue().definition,
-    projects(),
-  )
+  const result = checkResolvedWorkflowRendering(db(), projects())
   if (json) presentation.log(JSON.stringify(result))
   else for (const line of workflowRenderCheckLines(result)) presentation.log(line)
   if (
@@ -583,8 +598,17 @@ export function cursorsCommand(argv: string[], print: WorkflowPrint): void {
   print(rows, rows.map(renderWorkflowCursorLine).join('\n'))
 }
 
-export function showCatalogueCommand(argv: string[], print: WorkflowPrint): void {
-  print(showStepCatalogue(positive(flagValue(argv, 'version'), '--version')))
+export function showCatalogueCommand(
+  argv: string[],
+  print: WorkflowPrint,
+  options: WorkflowCommandOptions = {},
+): void {
+  print(
+    showResolvedStepCatalogue(
+      inspectionProject(options),
+      positive(flagValue(argv, 'version'), '--version'),
+    ),
+  )
 }
 
 export async function setCatalogueCommand(argv: string[], print: WorkflowPrint): Promise<void> {
@@ -629,8 +653,11 @@ export async function forkCatalogueCommand(argv: string[], print: WorkflowPrint)
   )
 }
 
-export function catalogueVersionsCommand(print: WorkflowPrint): void {
-  print(stepCatalogueVersions())
+export function catalogueVersionsCommand(
+  print: WorkflowPrint,
+  options: WorkflowCommandOptions = {},
+): void {
+  print(resolvedStepCatalogueVersions(inspectionProject(options)))
 }
 
 function workflowRoot(argv: string[]): string {

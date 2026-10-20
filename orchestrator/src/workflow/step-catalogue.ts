@@ -23,6 +23,7 @@ import { versionedLifecycle } from './versioned-lifecycle.ts'
 import type { WorkflowDefinition, WorkflowModeStep } from './workflow-definition.ts'
 import { floorKinds, isFloorKind } from './workflow-floor.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
+import { projectCatalogueResolutionSpace } from './workflow-resolution-space.ts'
 import { inspectWorkflowSteps, validateCatalogueSequences } from './workflow-step-sequences.ts'
 
 export type {
@@ -474,6 +475,35 @@ const retireStepCatalogueLocal = (
   d: Database = writableDb(),
 ) => lifecycle.retire(CATALOGUE, n, reason, author, d)
 export const stepCatalogueVersions = (d: Database = db()) => lifecycle.versions(CATALOGUE, d)
+
+export function showResolvedStepCatalogue(project: string | null, n?: number, d: Database = db()) {
+  return selectedStepCatalogue(n, d, projectCatalogueResolutionSpace(d, project))
+}
+
+export function resolvedStepCatalogueVersions(project: string | null, d: Database = db()) {
+  const spaceId = projectCatalogueResolutionSpace(d, project)
+  const owner = d
+    .query<{ id: number }, [string, string | null]>(
+      'SELECT id FROM step_catalogue WHERE slug=? AND space_id IS ?',
+    )
+    .get(CATALOGUE, spaceId)
+  if (!owner) throw new Error('unknown step catalogue "shared"')
+  const rows = d
+    .query(
+      `SELECT n,status,author,reason,created_at,promoted_at,retired_at
+       FROM step_catalogue_version WHERE catalogue_id=? ORDER BY n`,
+    )
+    .all(owner.id) as Record<string, unknown>[]
+  return rows.map((version) => ({
+    ...version,
+    events: d
+      .query(
+        `SELECT event,author,reason,session_id,at FROM step_catalogue_event
+         WHERE catalogue_id=? AND version_n=? ORDER BY id`,
+      )
+      .all(owner.id, version.n as number),
+  }))
+}
 
 type ProductionWorkflowDefinition = {
   modes?: { slug?: string; steps?: WorkflowModeStep[] }[]

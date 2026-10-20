@@ -336,20 +336,39 @@ function productionVersionRow(
 }
 
 export function listWorkflows(d: Database = db()) {
-  const rows = d
-    .query(`SELECT w.id,w.slug,
+  return listResolvedWorkflows(null, d)
+}
+
+function workflowSlugs(d: Database): string[] {
+  return (
+    d.query('SELECT DISTINCT slug FROM workflow ORDER BY slug').all() as { slug: string }[]
+  ).map(({ slug }) => slug)
+}
+
+export function listResolvedWorkflows(project: string | null, d: Database = db()) {
+  return workflowSlugs(d).flatMap((slug) => {
+    const spaceId = projectWorkflowResolutionSpace(d, project, slug)
+    const row = d
+      .query(`SELECT w.id,w.slug,
     (SELECT n FROM workflow_version WHERE workflow_id=w.id AND status='production') production_n,
     (SELECT MAX(n) FROM workflow_version WHERE workflow_id=w.id AND status='draft') draft_n
-    FROM workflow w WHERE w.space_id IS NULL ORDER BY w.slug`)
-    .all() as { id: number; slug: string; production_n: number | null; draft_n: number | null }[]
-  return rows.map((row) => {
-    const selected = versionRow(row.slug, row.production_n ?? row.draft_n ?? undefined, d)
-    return {
-      slug: row.slug,
-      title: (JSON.parse(selected.definition) as WorkflowDefinition).title,
-      production_n: row.production_n,
-      draft_n: row.draft_n,
-    }
+    FROM workflow w WHERE w.slug=? AND w.space_id IS ?`)
+      .get(slug, spaceId) as {
+      id: number
+      slug: string
+      production_n: number | null
+      draft_n: number | null
+    } | null
+    if (!row) return []
+    const selected = versionRow(row.slug, row.production_n ?? row.draft_n ?? undefined, d, spaceId)
+    return [
+      {
+        slug: row.slug,
+        title: (JSON.parse(selected.definition) as WorkflowDefinition).title,
+        production_n: row.production_n,
+        draft_n: row.draft_n,
+      },
+    ]
   })
 }
 
@@ -368,6 +387,16 @@ export function productionWorkflows(
 }
 export function showWorkflow(slug: string, n?: number, d: Database = db()) {
   return parseVersion(versionRow(slug, n, d))
+}
+
+export function showResolvedWorkflow(
+  slug: string,
+  n: number | undefined,
+  project: string | null,
+  d: Database = db(),
+) {
+  const spaceId = projectWorkflowResolutionSpace(d, project, slug, n)
+  return parseVersion(versionRow(slug, n, d, spaceId))
 }
 
 const workflowLifecycleFor = (knownCatalogue?: StepCatalogueDefinition) =>
@@ -649,6 +678,46 @@ function forkWorkflowLocal(
 }
 export function workflowVersions(slug: string, d: Database = db()) {
   return workflowLifecycle.versions(slug, d)
+}
+
+export function resolvedWorkflowVersions(slug: string, project: string | null, d: Database = db()) {
+  const spaceId = projectWorkflowResolutionSpace(d, project, slug)
+  const owner = d
+    .query<{ id: number }, [string, string | null]>(
+      'SELECT id FROM workflow WHERE slug=? AND space_id IS ?',
+    )
+    .get(slug, spaceId)
+  if (!owner) throw new Error(`unknown workflow "${slug}"`)
+  const rows = d
+    .query(
+      `SELECT n,status,author,reason,created_at,promoted_at,retired_at
+       FROM workflow_version WHERE workflow_id=? ORDER BY n`,
+    )
+    .all(owner.id) as Record<string, unknown>[]
+  return rows.map((version) => ({
+    ...version,
+    events: d
+      .query(
+        `SELECT event,author,reason,session_id,at FROM workflow_event
+         WHERE workflow_id=? AND version_n=? ORDER BY id`,
+      )
+      .all(owner.id, version.n as number),
+  }))
+}
+
+export function resolvedProductionWorkflows(project: string, d: Database = db()) {
+  return workflowSlugs(d).flatMap((slug) => {
+    const spaceId = projectWorkflowResolutionSpace(d, project, slug)
+    const exists = d
+      .query(
+        `SELECT 1 FROM workflow w JOIN workflow_version v ON v.workflow_id=w.id
+         WHERE w.slug=? AND w.space_id IS ? AND v.status='production'`,
+      )
+      .get(slug, spaceId)
+    if (!exists) return []
+    const row = parseVersion(productionVersionRow(slug, d, spaceId))
+    return [{ slug, definition: row.definition, spaceId }]
+  })
 }
 
 type WorkflowNeeds = {
