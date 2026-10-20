@@ -11,7 +11,10 @@
 #   BLOCKED  a worker asked a question; the session must rule and resume it
 #   STALLED  a worker is silent and using no CPU; stop and re-dispatch or wait
 #   WAITING  runs or landings still going, elapsed shown so a hung one is visible
-#   CLEAR    no runs, no landings, and nothing asked -> exits SILENTLY
+#   CLEAR    no runs, no landings, nothing asked, and nothing stalled -> exits SILENTLY
+#
+# heartbeat-decision.py exits with HEARTBEAT_KEEP_LOOP_EXIT_STATUS while this
+# hook should keep watching and HEARTBEAT_CLEAR_EXIT_STATUS only for CLEAR.
 #
 # EMITS ONLY ON STATE CHANGE, plus a keepalive every KEEPALIVE_TICKS.
 #
@@ -70,6 +73,8 @@ INTERVAL="${2:-60}"
 MAX="${3:-60}"
 KEEPALIVE_TICKS="${KEEPALIVE_TICKS:-15}"   # re-announce an unchanged state this often
 NOTICE_TIMEOUT_SECONDS="${NOTICE_TIMEOUT_SECONDS:-5}"
+HEARTBEAT_KEEP_LOOP_EXIT_STATUS=0
+HEARTBEAT_CLEAR_EXIT_STATUS=10
 
 prev_key=""
 since_emit=0
@@ -394,27 +399,32 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
 
   key="$asking|$n|$ids|$landing_n|$landing_ids"
   since_emit=$((since_emit + 1))
-  should_exit=0
   direct_stalled_subjects=""
-  if [ "$key" != "$prev_key" ] || [ "$since_emit" -ge "$KEEPALIVE_TICKS" ]; then
-    prev_key="$key"; since_emit=0
-    combined_detail="$detail"
-    if [ -n "$landing_detail" ]; then
-      [ -z "$combined_detail" ] || combined_detail="$combined_detail | "
-      combined_detail="$combined_detail$landing_detail"
-    fi
-    HEARTBEAT_TIMESTAMP=$(date +%H:%M:%S) \
+  combined_detail="$detail"
+  if [ -n "$landing_detail" ]; then
+    [ -z "$combined_detail" ] || combined_detail="$combined_detail | "
+    combined_detail="$combined_detail$landing_detail"
+  fi
+  decision_output=$(HEARTBEAT_TIMESTAMP=$(date +%H:%M:%S) \
     HEARTBEAT_ASKING="$asking" HEARTBEAT_RUNS="$n" HEARTBEAT_LANDINGS="$landing_n" \
     HEARTBEAT_STALLED="$stalled_n" HEARTBEAT_STALLED_DETAIL="$stalled_detail" \
     HEARTBEAT_WAITING_DETAIL="$combined_detail" \
-      python3 "$ROOT/hooks/heartbeat-decision.py" tick
+      python3 "$ROOT/hooks/heartbeat-decision.py" tick)
+  decision_rc=$?
+  if [ "$decision_rc" -eq "$HEARTBEAT_CLEAR_EXIT_STATUS" ]; then
+    should_exit=1
+  elif [ "$decision_rc" -eq "$HEARTBEAT_KEEP_LOOP_EXIT_STATUS" ]; then
+    should_exit=0
+  else
+    should_exit=0
+    echo "[$(date +%H:%M:%S)] DEGRADED - heartbeat decision step failed with status $decision_rc; continuing to watch."
+  fi
+  if [ "$key" != "$prev_key" ] || [ "$since_emit" -ge "$KEEPALIVE_TICKS" ]; then
+    prev_key="$key"; since_emit=0
+    [ -z "$decision_output" ] || printf '%s\n' "$decision_output"
     if [ "$stalled_n" -gt 0 ]; then
       direct_stalled_subjects="$stalled_subjects"
-    elif [ "$asking" -eq 0 ]; then
-      should_exit=1
     fi
-  elif [ "$asking" -eq 0 ] && [ "$n" -eq 0 ] && [ "$landing_n" -eq 0 ]; then
-    should_exit=1
   fi
 
   # Health above is complete and, when actionable, already on stdout. Only now

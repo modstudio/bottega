@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Pure heartbeat presentation decisions used by the shell adapter."""
+"""Pure heartbeat presentation decisions used by the shell adapter.
+
+Tick exits with HEARTBEAT_KEEP_LOOP_EXIT_STATUS while watching must continue and
+HEARTBEAT_CLEAR_EXIT_STATUS only for CLEAR, when the shell should stop watching.
+"""
 
 import re
 import os
@@ -7,9 +11,13 @@ import sys
 import base64
 import binascii
 import json
+from enum import Enum, auto
+from typing import NamedTuple
 
 NOTICE_REASON_MAX_BYTES = 4096
 NOTICE_REASON_MAX_CHARS = 240
+HEARTBEAT_KEEP_LOOP_EXIT_STATUS = 0
+HEARTBEAT_CLEAR_EXIT_STATUS = 10
 
 SECRET_ASSIGNMENT = re.compile(r"\b(?:token|key|secret|password)\s*=\s*\S+", re.IGNORECASE)
 SECRET_BEARER = re.compile(r"\bBearer\s+\S+", re.IGNORECASE)
@@ -63,7 +71,20 @@ def contains_secret_shaped(text: str) -> bool:
     )
 
 
-def heartbeat_lines(
+class HeartbeatDecision(NamedTuple):
+    lines: list[str]
+    should_exit: bool
+
+
+class HeartbeatState(Enum):
+    BLOCKED = auto()
+    BLOCKED_STALLED = auto()
+    STALLED = auto()
+    WAITING = auto()
+    CLEAR = auto()
+
+
+def heartbeat_decision(
     timestamp: str,
     asking: int,
     run_count: int,
@@ -71,22 +92,33 @@ def heartbeat_lines(
     stalled_count: int,
     stalled_detail: str,
     waiting_detail: str,
-) -> list[str]:
+) -> HeartbeatDecision:
     product = "bottega"
     lines = []
-    if asking > 0:
+    if asking > 0 and stalled_count > 0:
+        state = HeartbeatState.BLOCKED_STALLED
+    elif asking > 0:
+        state = HeartbeatState.BLOCKED
+    elif stalled_count > 0:
+        state = HeartbeatState.STALLED
+    elif run_count > 0 or landing_count > 0:
+        state = HeartbeatState.WAITING
+    else:
+        state = HeartbeatState.CLEAR
+
+    if state in (HeartbeatState.BLOCKED, HeartbeatState.BLOCKED_STALLED):
         lines.append(
             f"[{timestamp}] BLOCKED - {asking} question(s) waiting on you: run '{product} question inbox', "
             f"then '{product} question answer <id>'. {run_count} run(s) and {landing_count} landing(s) live."
         )
-    if stalled_count > 0:
+    if state in (HeartbeatState.STALLED, HeartbeatState.BLOCKED_STALLED):
         lines.append(f"[{timestamp}] STALLED - {stalled_count} run(s): {stalled_detail}")
-    elif asking == 0 and (run_count > 0 or landing_count > 0):
+    elif state == HeartbeatState.WAITING:
         lines.append(
             f"[{timestamp}] WAITING - {run_count} run(s) and {landing_count} landing(s), "
             f"nothing needed from you: {waiting_detail}"
         )
-    return lines
+    return HeartbeatDecision(lines=lines, should_exit=state == HeartbeatState.CLEAR)
 
 
 def monitor_failure_reason(data: bytes) -> str:
@@ -104,18 +136,22 @@ def monitor_failure_reason(data: bytes) -> str:
 
 if __name__ == "__main__":
     if sys.argv[1:] == ["tick"]:
-        rendered = "\n".join(
-            heartbeat_lines(
-                os.environ["HEARTBEAT_TIMESTAMP"],
-                int(os.environ["HEARTBEAT_ASKING"]),
-                int(os.environ["HEARTBEAT_RUNS"]),
-                int(os.environ["HEARTBEAT_LANDINGS"]),
-                int(os.environ["HEARTBEAT_STALLED"]),
-                os.environ["HEARTBEAT_STALLED_DETAIL"],
-                os.environ["HEARTBEAT_WAITING_DETAIL"],
-            )
+        decision = heartbeat_decision(
+            os.environ["HEARTBEAT_TIMESTAMP"],
+            int(os.environ["HEARTBEAT_ASKING"]),
+            int(os.environ["HEARTBEAT_RUNS"]),
+            int(os.environ["HEARTBEAT_LANDINGS"]),
+            int(os.environ["HEARTBEAT_STALLED"]),
+            os.environ["HEARTBEAT_STALLED_DETAIL"],
+            os.environ["HEARTBEAT_WAITING_DETAIL"],
         )
+        rendered = "\n".join(decision.lines)
         if rendered:
             sys.stdout.write(rendered + "\n")
+        raise SystemExit(
+            HEARTBEAT_CLEAR_EXIT_STATUS
+            if decision.should_exit
+            else HEARTBEAT_KEEP_LOOP_EXIT_STATUS
+        )
     else:
         print(monitor_failure_reason(sys.stdin.buffer.read()))
