@@ -56,10 +56,15 @@ function assertWorkerStoreWriteAllowed<T>(
   if (refusal) throw new Error(refusal)
 }
 
-function localOwnerId<T>(config: VersionedStoreConfig<T>, slug: string, d: Database): number {
+function ownerId<T>(
+  config: VersionedStoreConfig<T>,
+  slug: string,
+  d: Database,
+  spaceId: string | null = null,
+): number {
   const row = d
-    .query(`SELECT id FROM ${config.identityTable} WHERE slug=? AND space_id IS NULL`)
-    .get(slug) as { id: number } | null
+    .query(`SELECT id FROM ${config.identityTable} WHERE slug=? AND space_id IS ?`)
+    .get(slug, spaceId) as { id: number } | null
   if (!row) throw new Error(`unknown ${config.noun} "${slug}"`)
   return row.id
 }
@@ -156,7 +161,7 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
     const why = required(reasonValue, 'reason'),
       by = author(authorValue),
       at = nowIso(),
-      id = localOwnerId(config, slug, d)
+      id = ownerId(config, slug, d)
     return writeTransaction(() => {
       const target = show(slug, n, d)
       if (target.status !== 'draft')
@@ -190,7 +195,7 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
     const why = required(reasonValue, 'reason'),
       by = author(authorValue),
       at = nowIso(),
-      id = localOwnerId(config, slug, d)
+      id = ownerId(config, slug, d)
     return writeTransaction(() => {
       const target = show(slug, n, d)
       if (target.status === 'retired')
@@ -202,8 +207,8 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
       return show(slug, n, d)
     }, d)
   }
-  const versions = (slug: string, d: Database) => {
-    const id = localOwnerId(config, slug, d)
+  const versions = (slug: string, d: Database, spaceId: string | null = null) => {
+    const id = ownerId(config, slug, d, spaceId)
     const rows = d
       .query(
         `SELECT n,status,author,reason,created_at,promoted_at,retired_at FROM ${config.versionTable} WHERE ${config.foreignKey}=? ORDER BY n`,

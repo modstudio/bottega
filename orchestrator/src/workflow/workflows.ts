@@ -678,27 +678,7 @@ function forkWorkflowLocal(
 }
 export function resolvedWorkflowVersions(slug: string, project: string | null, d: Database = db()) {
   const spaceId = projectWorkflowResolutionSpace(d, project, slug)
-  const owner = d
-    .query<{ id: number }, [string, string | null]>(
-      'SELECT id FROM workflow WHERE slug=? AND space_id IS ?',
-    )
-    .get(slug, spaceId)
-  if (!owner) throw new Error(`unknown workflow "${slug}"`)
-  const rows = d
-    .query(
-      `SELECT n,status,author,reason,created_at,promoted_at,retired_at
-       FROM workflow_version WHERE workflow_id=? ORDER BY n`,
-    )
-    .all(owner.id) as Omit<ReturnType<typeof workflowLifecycle.versions>[number], 'events'>[]
-  return rows.map((version) => ({
-    ...version,
-    events: d
-      .query(
-        `SELECT event,author,reason,session_id,at FROM workflow_event
-         WHERE workflow_id=? AND version_n=? ORDER BY id`,
-      )
-      .all(owner.id, version.n),
-  }))
+  return workflowLifecycle.versions(slug, d, spaceId)
 }
 
 export function resolvedProductionWorkflows(project: string, d: Database = db()) {

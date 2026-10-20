@@ -49,8 +49,10 @@ import {
   recordWorkflowProbe,
 } from './workflow-probe.ts'
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
-import { workflowRenderCheckLines } from './workflow-render-check.ts'
-import { checkResolvedWorkflowRendering } from './workflow-render-check-store.ts'
+import {
+  checkResolvedWorkflowRendering,
+  resolvedWorkflowRenderCheckLines,
+} from './workflow-render-check-store.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { attachWorkflowText } from './workflow-text.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
@@ -179,7 +181,7 @@ export function workflowVersionsCommand(
 export function renderCheckCommand(json: boolean, presentation: WorkflowPresentation): void {
   const result = checkResolvedWorkflowRendering(db(), projects())
   if (json) presentation.log(JSON.stringify(result))
-  else for (const line of workflowRenderCheckLines(result)) presentation.log(line)
+  else for (const line of resolvedWorkflowRenderCheckLines(result)) presentation.log(line)
   if (
     result.failures.length ||
     result.unresolvedProjects.length ||

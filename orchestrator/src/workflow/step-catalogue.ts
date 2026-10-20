@@ -480,27 +480,7 @@ export function showResolvedStepCatalogue(project: string | null, n?: number, d:
 
 export function resolvedStepCatalogueVersions(project: string | null, d: Database = db()) {
   const spaceId = projectCatalogueResolutionSpace(d, project)
-  const owner = d
-    .query<{ id: number }, [string, string | null]>(
-      'SELECT id FROM step_catalogue WHERE slug=? AND space_id IS ?',
-    )
-    .get(CATALOGUE, spaceId)
-  if (!owner) throw new Error('unknown step catalogue "shared"')
-  const rows = d
-    .query(
-      `SELECT n,status,author,reason,created_at,promoted_at,retired_at
-       FROM step_catalogue_version WHERE catalogue_id=? ORDER BY n`,
-    )
-    .all(owner.id) as Omit<ReturnType<typeof lifecycle.versions>[number], 'events'>[]
-  return rows.map((version) => ({
-    ...version,
-    events: d
-      .query(
-        `SELECT event,author,reason,session_id,at FROM step_catalogue_event
-         WHERE catalogue_id=? AND version_n=? ORDER BY id`,
-      )
-      .all(owner.id, version.n),
-  }))
+  return lifecycle.versions(CATALOGUE, d, spaceId)
 }
 
 type ProductionWorkflowDefinition = {

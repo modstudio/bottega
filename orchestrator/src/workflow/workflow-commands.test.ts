@@ -205,6 +205,82 @@ test('workflow inspection resolves the current project space and falls back to l
     retiredAt: null,
   })
 
+  const secondProject = 'inspection-resolution-second-project'
+  const secondSpaceId = newRecordId()
+  const secondStep = 'second-space-check'
+  const secondWorkflow = 'second-space-workflow'
+  registerFixtureProject(secondProject)
+  rememberProjectSpace(local, secondProject, secondSpaceId)
+  const secondCatalogueId = newRecordId()
+  applyWorkflowCatalogueRow(local, 'step_catalogue', {
+    id: secondCatalogueId,
+    spaceId: secondSpaceId,
+    slug: 'shared',
+    generation: 1,
+    createdAt: at,
+  })
+  applyWorkflowCatalogueRow(local, 'step_catalogue_version', {
+    id: newRecordId(),
+    spaceId: secondSpaceId,
+    ownerId: secondCatalogueId,
+    n: 2,
+    status: 'production',
+    definition: JSON.stringify({
+      ...productionStepCatalogue(local).definition,
+      steps: [
+        ...productionStepCatalogue(local).definition.steps,
+        {
+          slug: secondStep,
+          title: 'Second space check',
+          body: 'Use {{second.only}}.',
+          floor: ['recorded-artifact'],
+          job: null,
+          stage: 'review',
+          autonomy: 'auto',
+          needs: [],
+        },
+      ],
+    }),
+    author: 'hosted',
+    reason: 'second hosted catalogue fixture',
+    createdAt: at,
+    promotedAt: at,
+    retiredAt: null,
+  })
+  const secondWorkflowId = newRecordId()
+  applyWorkflowCatalogueRow(local, 'workflow', {
+    id: secondWorkflowId,
+    spaceId: secondSpaceId,
+    slug: secondWorkflow,
+    generation: 1,
+    createdAt: at,
+  })
+  applyWorkflowCatalogueRow(local, 'workflow_version', {
+    id: newRecordId(),
+    spaceId: secondSpaceId,
+    ownerId: secondWorkflowId,
+    n: 2,
+    status: 'production',
+    definition: JSON.stringify({
+      title: 'Second hosted workflow',
+      description: 'Uses a step available only in the second project space.',
+      arguments: [],
+      modes: [
+        {
+          slug: 'default',
+          title: 'Default',
+          default: true,
+          steps: [secondStep],
+        },
+      ],
+    }),
+    author: 'hosted',
+    reason: 'second hosted workflow fixture',
+    createdAt: at,
+    promotedAt: at,
+    retiredAt: null,
+  })
+
   const inside: string[] = []
   await workflowCommand(['workflow', 'list', '--json'], presentation(inside), {
     cwd: process.cwd(),
@@ -240,6 +316,12 @@ test('workflow inspection resolves the current project space and falls back to l
   expect(renderLines).toContain(`${project}  checked workflow spaces: local,${spaceId}`)
   expect(renderLines).toContain(
     `${project}  ${slug}  default  inspection-check  body  tracker.server`,
+  )
+  expect(renderLines).toContain(
+    `${secondProject}  ${secondWorkflow}  default  ${secondStep}  body  second.only`,
+  )
+  expect(renderLines).not.toContain(
+    `${project}  ${secondWorkflow}  default  ${secondStep}  body  second.only`,
   )
 
   const outside: string[] = []

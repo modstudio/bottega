@@ -3,11 +3,27 @@
 import type { Database } from 'bun:sqlite'
 import type { Project } from '../project/projects.ts'
 import { selectedStepCatalogue } from './step-catalogue.ts'
-import { checkWorkflowRendering, type WorkflowRenderCheckResult } from './workflow-render-check.ts'
+import {
+  checkWorkflowRendering,
+  type WorkflowRenderCheckResult,
+  workflowRenderCheckLines,
+} from './workflow-render-check.ts'
 import { resolvedProductionWorkflows } from './workflows.ts'
 
 export type ResolvedWorkflowRenderCheckResult = WorkflowRenderCheckResult & {
   checkedSpaces: { project: string; spaces: (string | null)[] }[]
+}
+
+export function resolvedWorkflowRenderCheckLines(
+  result: ResolvedWorkflowRenderCheckResult,
+): string[] {
+  return [
+    ...result.checkedSpaces.map(
+      ({ project, spaces }) =>
+        `${project}  checked workflow spaces: ${spaces.map((space) => space ?? 'local').join(',')}`,
+    ),
+    ...workflowRenderCheckLines(result),
+  ]
 }
 
 export function checkResolvedWorkflowRendering(
