@@ -419,7 +419,21 @@ export function acpLeaderSocketPath(outPath: string, runtimeDir?: string): strin
   return runtimeDir ? join(runtimeDir, 'grok-leader.sock') : `${outPath}.leader.sock`
 }
 
-function acpEnvironment(opts: TransportStartOpts): Record<string, string> {
+function opencodeConfigContent(baseUrl: string, model: string, apiKey: string): string {
+  return JSON.stringify({
+    model: `orch-local/${model}`,
+    provider: {
+      'orch-local': {
+        npm: '@ai-sdk/openai-compatible',
+        name: 'orch local backend',
+        options: { baseURL: baseUrl, apiKey },
+        models: { [model]: { name: model } },
+      },
+    },
+  })
+}
+
+export function acpEnvironment(opts: TransportStartOpts): Record<string, string> {
   const env: Record<string, string> = {
     ...opts.env,
     ...opts.recipeEnvironment,
@@ -428,17 +442,11 @@ function acpEnvironment(opts: TransportStartOpts): Record<string, string> {
   }
   if (opts.model) env.CODEX_CONFIG = JSON.stringify({ model: opts.model })
   if (opts.agent.harness === 'opencode' && opts.agent.baseUrl && opts.model) {
-    env.OPENCODE_CONFIG_CONTENT = JSON.stringify({
-      model: `orch-local/${opts.model}`,
-      provider: {
-        'orch-local': {
-          npm: '@ai-sdk/openai-compatible',
-          name: 'orch local backend',
-          options: { baseURL: opts.agent.baseUrl, apiKey: 'local' },
-          models: { [opts.model]: { name: opts.model } },
-        },
-      },
-    })
+    env.OPENCODE_CONFIG_CONTENT = opencodeConfigContent(
+      opts.agent.baseUrl,
+      opts.model,
+      opts.env.OPENAI_API_KEY!,
+    )
   }
   if (opts.agent.harness === 'goose') {
     const stateDir = opts.srt?.runtimeDir ?? dirname(opts.outPath)

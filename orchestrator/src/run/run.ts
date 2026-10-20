@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { type Agent, minimumCliVersionRefusal } from '../agent/agents.ts'
+import { resolveEndpointApiKeyEnv } from '../agent/endpoint-api-key.ts'
 import { ensureLocalHealth, modelHostUrl, tryWake } from '../agent/model-host.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import type { AskLoopback } from '../ask/ask.ts'
@@ -758,7 +759,7 @@ export async function run(opts: {
       runNumber: claim.number,
       runRecordId: claim.recordId,
       runToken,
-      environment: gitConfigEnvironment ?? {},
+      environment: { ...(gitConfigEnvironment ?? {}), ...(await resolveEndpointApiKeyEnv(a)) },
       grokEnvironment: grokMcpEnvironment,
       includeStore: repoJob,
       codexMcpScope,
@@ -1045,8 +1046,8 @@ export async function run(opts: {
       writableRoots,
       gitConfigEnvironment,
       sandboxRunDir,
-      grokMcpEnvironment,
       recipeEnvironment,
+      launchEnvironment: mcpEnvironment,
       scratchDir,
       writesJob,
       codexSandbox,

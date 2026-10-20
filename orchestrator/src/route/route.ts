@@ -61,6 +61,15 @@ export type Candidate = {
   maxConcurrent: number | null
   runningRunIds: string[]
 }
+
+function excludesMeteredRoute(
+  billing: string,
+  name: string,
+  explicitlyNamedAgent: string | undefined,
+): boolean {
+  return billing === 'metered' && explicitlyNamedAgent !== name
+}
+
 const RUNNING_RUNS_SQL =
   "SELECT record_id FROM run WHERE agent=? AND status='running' AND probe=0 ORDER BY number"
 
@@ -424,6 +433,7 @@ export function candidates(
   coolingProbeAgent?: string,
   lens?: string | null,
   requiredMcp?: RequiredMcpServer,
+  explicitlyNamedAgent?: string,
 ): Candidate[] {
   const j = job(jobName)
   // probe = 0: calibration traffic is deliberately trivial, so counting it would
@@ -619,7 +629,7 @@ export function candidates(
     } else if (unavailable) {
       eligible = false
       why = unavailable
-    } else if (a.billing === 'metered') {
+    } else if (excludesMeteredRoute(a.billing, name, explicitlyNamedAgent)) {
       eligible = false
       why = 'metered billing'
     } else if (!a.probedAt) {
@@ -987,21 +997,20 @@ export function pick(
     if (avoid.agents?.includes(override)) {
       throw new Error(`--agent ${override} contradicts --avoid ${override}`)
     }
-    // Keep candidates()' reporting view unchanged: cooling remains an exclusion
-    // in guide and hub. Only this explicit probe route gets a candidate whose
-    // other exclusions are evaluated without the cooling circuit in front.
-    const probeCandidates = probe
-      ? candidates(
-          jobName,
-          promptBytes,
-          ev.level === 'stack' ? ev.stack : undefined,
-          avoid.model,
-          override,
-          ev.level === 'lens' ? ev.lens : undefined,
-          avoid.requiredMcp,
-        )
-      : cands
-    const c = probeCandidates.find((x) => x.agent === override)
+    // Keep candidates()' reporting view unchanged: metered billing and cooling
+    // remain routing exclusions in guide and hub. A named route may spend the
+    // former, while only an explicit probe bypasses the latter.
+    const namedCandidates = candidates(
+      jobName,
+      promptBytes,
+      ev.level === 'stack' ? ev.stack : undefined,
+      avoid.model,
+      probe ? override : undefined,
+      ev.level === 'lens' ? ev.lens : undefined,
+      avoid.requiredMcp,
+      override,
+    )
+    const c = namedCandidates.find((x) => x.agent === override)
     if (!c) throw new Error(`unknown agent "${override}"`)
     if (c.maxConcurrent !== null && c.runningRunIds.length >= c.maxConcurrent) {
       throw new Error(capacityRefusal(c))

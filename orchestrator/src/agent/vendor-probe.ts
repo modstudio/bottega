@@ -17,6 +17,7 @@ import {
   withTransportDeadline,
 } from '../transport/transport.ts'
 import { agentRows, HARNESSES, type Harness, rowAgent } from './agent-registry.ts'
+import { resolveEndpointApiKeyEnv } from './endpoint-api-key.ts'
 
 const VENDOR_PROBE_PROMPT = 'Reply with exactly: ok'
 const VENDOR_PROBE_JOB = 'vendor-probe'
@@ -86,6 +87,7 @@ async function collectProbe(name: string, agent: ReturnType<typeof rowAgent>, sc
     env: {
       ...processEnv(),
       ...(agent.env?.() ?? {}),
+      ...(await resolveEndpointApiKeyEnv(agent)),
       ORCH_SCRATCH: scratch,
     },
   })

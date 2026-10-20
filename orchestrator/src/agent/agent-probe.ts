@@ -18,6 +18,7 @@ import {
   rowAgent,
 } from './agent-registry.ts'
 import type { Caps } from './capabilities.ts'
+import { resolveEndpointApiKeyEnv } from './endpoint-api-key.ts'
 import { localReachable } from './model-host.ts'
 
 const REGISTRATION_PROBE_FILE = 'probe.txt'
@@ -85,6 +86,22 @@ async function drainTransportEvents(events: AsyncIterable<unknown>): Promise<voi
     }
   } catch {
     /* event observation never replaces the probe outcome */
+  }
+}
+
+async function probeEnvironment(
+  agent: ReturnType<typeof rowAgent>,
+  scratch: string,
+): Promise<Record<string, string>> {
+  return {
+    ...Object.fromEntries(
+      Object.entries(process.env).filter(
+        (entry): entry is [string, string] => entry[1] !== undefined,
+      ),
+    ),
+    ...(agent.env?.() ?? {}),
+    ...(await resolveEndpointApiKeyEnv(agent)),
+    ORCH_SCRATCH: scratch,
   }
 }
 
@@ -207,13 +224,7 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
         sandbox: 'workspace-write',
         writableRoots: [scratch],
         mcp,
-        env: {
-          ...Object.fromEntries(
-            Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined),
-          ),
-          ...(agent.env?.() ?? {}),
-          ORCH_SCRATCH: scratch,
-        },
+        env: await probeEnvironment(agent, scratch),
       })
       const draining = drainTransportEvents(handle.events())
       try {

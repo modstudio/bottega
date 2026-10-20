@@ -31,9 +31,17 @@ const parseJobs = (value: string | undefined) =>
       ? null
       : value.split(',').map((entry) => entry.trim())
 
+function assertApiKeyFlags(argv: string[], value: string | undefined): void {
+  if (value !== undefined && argv.includes('--clear-api-key-secret'))
+    throw new Error('--api-key-secret and --clear-api-key-secret are mutually exclusive')
+}
+
 function mutation(argv: string[]): AgentMutation {
   const flag = (name: string) => flagValue(argv, name)
+  const apiKeySecret = flag('api-key-secret')
+  assertApiKeyFlags(argv, apiKeySecret)
   const enabled = flag('enabled')
+  const billing = flag('billing')
   if (enabled !== undefined && enabled !== 'true' && enabled !== 'false')
     throw new Error('--enabled must be true or false')
   const context = flag('context-tokens'),
@@ -45,6 +53,9 @@ function mutation(argv: string[]): AgentMutation {
     ...(flag('backend') ? { backend: flag('backend') as Backend } : {}),
     ...(flag('model') ? { model: flag('model')! } : {}),
     ...(flag('base-url') ? { baseUrl: flag('base-url')! } : {}),
+    ...(apiKeySecret ? { apiKeySecret } : {}),
+    ...(argv.includes('--clear-api-key-secret') ? { apiKeySecret: null } : {}),
+    ...(billing ? { billing: billing as AgentMutation['billing'] } : {}),
     ...(context ? { contextTokens: Number(context) } : {}),
     ...(enabled !== undefined ? { enabled: enabled === 'true' } : {}),
     ...(flag('reason') !== undefined ? { reason: flag('reason')! } : {}),
@@ -132,6 +143,7 @@ function listedRow(row: ReturnType<typeof agentRows>[number]) {
     backend: row.backend,
     model: row.model,
     baseUrl: row.base_url,
+    apiKeySecret: row.api_key_secret,
     transport: row.transport,
     caps,
     billing: row.billing,

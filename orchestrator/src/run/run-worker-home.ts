@@ -138,6 +138,7 @@ export async function prepareWorkerHomeLaunch(input: {
     },
     input.includeStore,
     input.runNumber,
+    input.environment,
   )
   const codexMcpCatalogues = await preflightCodexMcpCatalogues(input.codexMcpScope, environment)
   return {

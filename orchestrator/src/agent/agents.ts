@@ -34,6 +34,7 @@ export type Agent = {
   harness?: string
   backend?: string | null
   baseUrl?: string | null
+  apiKeySecret?: string | null
   enabled?: boolean
   disabledReason?: string | null
   probedAt?: string | null

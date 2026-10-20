@@ -23,9 +23,8 @@ export const settingsModules: SettingsModule[] = [
   module('orchestrator/src/project/review-record-template.ts', []),
   module('orchestrator/src/config/secret-run.ts', [
     '../../../shared/brand.ts',
-    '../../../shared/config-client.ts',
     '../../../shared/env-source.ts',
-    '../../../shared/hosted-secrets.ts',
+    '../../../shared/secret-resolution-failure.ts',
     '../sandbox/record-connection-env.ts',
   ]),
   module('orchestrator/src/config/config-service.ts', [

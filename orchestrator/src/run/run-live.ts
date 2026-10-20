@@ -83,6 +83,17 @@ function replyContract(schemaPath: string | undefined, textContract: boolean): R
   return textContract ? 'text' : 'none'
 }
 
+function liveChildEnv(
+  agent: Agent,
+  runRecordId: string,
+  runToken: string,
+  extra: Record<string, string>,
+  includeStore: boolean,
+  runNumber: number,
+): Record<string, string> {
+  return childEnv(agent, runRecordId, runToken, extra, includeStore, runNumber)
+}
+
 function recordConfiguredAsk(input: {
   runId: string
   sandbox: SandboxSelection['sandbox']
@@ -176,8 +187,8 @@ export type LiveInput = {
   writableRoots: string[]
   gitConfigEnvironment: Record<string, string> | undefined
   sandboxRunDir: string
-  grokMcpEnvironment: Record<string, string>
   recipeEnvironment: Record<string, string>
+  launchEnvironment: Record<string, string>
   scratchDir: string
   writesJob: boolean
   codexSandbox: {
@@ -322,8 +333,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     writableRoots,
     gitConfigEnvironment,
     sandboxRunDir,
-    grokMcpEnvironment,
     recipeEnvironment,
+    launchEnvironment,
     scratchDir,
     writesJob,
     codexSandbox,
@@ -451,15 +462,12 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         : undefined,
       resume: resumeFacts(opts.resume?.kind ?? null, claim.id, opts.resume?.parent ?? null)
         .carriesVendorSession,
-      env: childEnv(
+      env: liveChildEnv(
         a,
         claim.recordId,
         runToken,
         {
-          ...(gitConfigEnvironment ?? {}),
-          ...sandboxEnvironment,
-          ...grokMcpEnvironment,
-          ...recipeEnvironment,
+          ...launchEnvironment,
           ORCH_SCRATCH: scratchDir,
           ...(askLoopback ? { ORCH_ASK_URL: askLoopback.url } : {}),
         },
