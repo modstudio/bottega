@@ -13,7 +13,11 @@ import { productionStepCatalogue } from '../workflow/step-catalogue.ts'
 import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
 import { productionWorkflows } from '../workflow/workflows.ts'
 import { pullRecordCache } from './record-cache.ts'
-import { applyWorkflowCatalogueRow, pullWorkflowCatalogue } from './record-cache-workflow.ts'
+import {
+  applyWorkflowCatalogueRow,
+  applyWorkflowWriteResponse,
+  pullWorkflowCatalogue,
+} from './record-cache-workflow.ts'
 import { encodeRecordCursor } from './record-cursor.ts'
 
 afterEach(() => installRecordApiClient(createMemoryRecordApiClient()))
@@ -202,6 +206,154 @@ const catalogueKinds = [
   ['step catalogue', 'step_catalogue', 'step_catalogue_version', 'step_catalogue_event', 'shared'],
 ] as const
 
+const identityDisagreements = catalogueKinds.flatMap(
+  ([kind, identityTable, versionTable, eventTable, slug]) => [
+    [kind, 'lower generation', identityTable, versionTable, eventTable, slug, false] as const,
+    [kind, 'different identity id', identityTable, versionTable, eventTable, slug, true] as const,
+  ],
+)
+
+test.each(identityDisagreements)(
+  'pull with persisted cursors replays a %s after a %s',
+  async (_kind, _case, identityTable, versionTable, eventTable, slug, replaceId) => {
+    const local = db(),
+      space = newRecordId(),
+      cachedId = newRecordId(),
+      hostedId = replaceId ? newRecordId() : cachedId,
+      cachedIdentity = { ...identity(space, slug, cachedId), generation: replaceId ? 1 : 2 },
+      retired = {
+        ...version(space, cachedId, { title: 'Retired cache' }),
+        status: 'retired',
+        promotedAt: null,
+        retiredAt: at,
+      },
+      production = {
+        ...version(space, cachedId, { title: 'Production cache' }),
+        n: 69,
+      },
+      hostedIdentity = {
+        ...identity(space, slug, hostedId),
+        updatedAt: '2026-10-20T12:00:00.000Z',
+      },
+      hostedVersion = version(space, hostedId, { title: 'Hosted' }),
+      hostedEvent = event(space, hostedVersion.id),
+      consumed = { at: '2026-10-19T12:00:00.000Z', id: newRecordId() }
+    applyWorkflowCatalogueRow(local, identityTable, cachedIdentity)
+    applyWorkflowCatalogueRow(local, versionTable, retired)
+    applyWorkflowCatalogueRow(local, versionTable, production)
+    applyWorkflowCatalogueRow(local, eventTable, event(space, retired.id))
+    applyWorkflowCatalogueRow(local, eventTable, event(space, production.id))
+    for (const table of [identityTable, versionTable, eventTable])
+      local
+        .query('INSERT INTO schema_meta (key,value) VALUES (?,?)')
+        .run(`record_workflow_cursor:${space}:${table}`, JSON.stringify(consumed))
+
+    installRecordApiClient({
+      ...createMemoryRecordApiClient(),
+      async listWorkflowCatalogue(table, query) {
+        if (table === identityTable) {
+          expect(query.cursor).toBe(encodeRecordCursor(consumed))
+          return { items: [hostedIdentity], nextCursor: null }
+        }
+        if (table === versionTable) {
+          expect(query.cursor).toBeUndefined()
+          return { items: [hostedVersion], nextCursor: null }
+        }
+        if (table === eventTable) {
+          expect(query.cursor).toBeUndefined()
+          return { items: [hostedEvent], nextCursor: null }
+        }
+        return { items: [], nextCursor: null }
+      },
+    })
+
+    expect(await pullWorkflowCatalogue(local, [space])).toEqual({
+      count: 3,
+      completedSpaces: new Set([space]),
+    })
+    expect(
+      local
+        .query(`SELECT record_id,generation FROM ${identityTable} WHERE space_id=? AND slug=?`)
+        .all(space, slug),
+    ).toEqual([{ record_id: hostedId, generation: 1 }])
+    expect(
+      local.query(`SELECT record_id,n,status FROM ${versionTable} WHERE space_id=?`).all(space),
+    ).toEqual([{ record_id: hostedVersion.id, n: 1, status: 'production' }])
+    expect(local.query(`SELECT record_id FROM ${eventTable} WHERE space_id=?`).all(space)).toEqual([
+      { record_id: hostedEvent.id },
+    ])
+  },
+)
+
+const writeReconciliations = catalogueKinds.flatMap(
+  ([label, identityTable, versionTable, eventTable, slug]) => [
+    [label, 'lower generation', identityTable, versionTable, eventTable, slug, false] as const,
+    [label, 'different identity id', identityTable, versionTable, eventTable, slug, true] as const,
+  ],
+)
+
+test.each(writeReconciliations)(
+  'hosted %s write completes event replay after a %s reconciliation',
+  async (_label, _case, identityTable, versionTable, eventTable, slug, replaceId) => {
+    const local = db(),
+      space = newRecordId(),
+      cachedId = newRecordId(),
+      hostedId = replaceId ? newRecordId() : cachedId,
+      cachedIdentity = { ...identity(space, slug, cachedId), generation: replaceId ? 1 : 2 },
+      cachedVersion = version(space, cachedId, { title: 'Cached' }),
+      hostedIdentity = identity(space, slug, hostedId),
+      hostedVersion = {
+        ...version(space, hostedId, { title: 'Hosted' }),
+        status: 'production' as const,
+      },
+      historicalEvent = { ...event(space, hostedVersion.id), event: 'set' as const },
+      changedEvent = { ...event(space, hostedVersion.id), event: 'promote' as const },
+      consumed = { at: '2026-10-19T12:00:00.000Z', id: newRecordId() }
+    applyWorkflowCatalogueRow(local, identityTable, cachedIdentity)
+    applyWorkflowCatalogueRow(local, versionTable, cachedVersion)
+    applyWorkflowCatalogueRow(local, eventTable, event(space, cachedVersion.id))
+    for (const table of [identityTable, versionTable, eventTable])
+      local
+        .query('INSERT INTO schema_meta (key,value) VALUES (?,?)')
+        .run(`record_workflow_cursor:${space}:${table}`, JSON.stringify(consumed))
+
+    installRecordApiClient({
+      ...createMemoryRecordApiClient(),
+      async listWorkflowCatalogue(table, query) {
+        if (table === versionTable) {
+          expect(query.cursor).toBeUndefined()
+          return { items: [hostedVersion], nextCursor: null }
+        }
+        if (table === eventTable) {
+          expect(query.cursor).toBeUndefined()
+          return { items: [historicalEvent, changedEvent], nextCursor: null }
+        }
+        return { items: [], nextCursor: null }
+      },
+    })
+
+    await applyWorkflowWriteResponse(local, identityTable, {
+      identity: hostedIdentity,
+      versions: [hostedVersion],
+      events: [changedEvent],
+    })
+
+    expect(
+      local.query(`SELECT record_id FROM ${identityTable} WHERE space_id=?`).all(space),
+    ).toEqual([{ record_id: hostedId }])
+    expect(
+      local.query(`SELECT record_id FROM ${versionTable} WHERE space_id=?`).all(space),
+    ).toEqual([{ record_id: hostedVersion.id }])
+    expect(
+      local
+        .query(`SELECT record_id FROM ${eventTable} WHERE space_id=? ORDER BY record_id`)
+        .all(space),
+    ).toEqual(
+      [historicalEvent.id, changedEvent.id].sort().map((recordId) => ({ record_id: recordId })),
+    )
+  },
+)
+
 test.each(catalogueKinds)(
   'pull with persisted cursors replaces a cached %s seed with the complete paged history',
   async (_kind, identityTable, versionTable, eventTable, slug) => {
@@ -271,9 +423,7 @@ test.each(catalogueKinds)(
           }
         }
         if (table === versionTable) {
-          expect(query.cursor).toBe(
-            encodeRecordCursor(call === 0 ? versionCursor : versionPageCursor),
-          )
+          expect(query.cursor).toBe(call === 0 ? undefined : encodeRecordCursor(versionPageCursor))
           const items = call === 0 ? replacements.slice(0, 100) : replacements.slice(100)
           return {
             items,
@@ -285,7 +435,7 @@ test.each(catalogueKinds)(
           }
         }
         if (table === eventTable) {
-          expect(query.cursor).toBe(encodeRecordCursor(call === 0 ? eventCursor : eventPageCursor))
+          expect(query.cursor).toBe(call === 0 ? undefined : encodeRecordCursor(eventPageCursor))
           const items = call === 0 ? importedEvents.slice(0, 100) : importedEvents.slice(100)
           return {
             items,

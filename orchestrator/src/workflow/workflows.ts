@@ -477,7 +477,7 @@ function hostedDraft(
         },
         { destinationSpaceId: spaceId },
       )
-      applyWorkflowWriteResponse(d, 'workflow', result)
+      await applyWorkflowWriteResponse(d, 'workflow', result)
       return hostedWorkflowRow(slug, result.versions.at(-1)!.n, d, spaceId)
     },
   })
@@ -515,7 +515,7 @@ export function promoteWorkflow(
         },
         { destinationSpaceId: spaceId },
       )
-      applyWorkflowWriteResponse(d, 'workflow', result)
+      await applyWorkflowWriteResponse(d, 'workflow', result)
       return hostedWorkflowRow(slug, n, d, spaceId)
     },
   })
@@ -589,7 +589,7 @@ export function retireWorkflow(
         },
         { destinationSpaceId: spaceId },
       )
-      applyWorkflowWriteResponse(d, 'workflow', result)
+      await applyWorkflowWriteResponse(d, 'workflow', result)
       return hostedWorkflowRow(slug, n, d, spaceId)
     },
   })
@@ -628,7 +628,7 @@ export function forkWorkflow(
         },
         { destinationSpaceId: spaceId },
       )
-      applyWorkflowWriteResponse(d, 'workflow', result)
+      await applyWorkflowWriteResponse(d, 'workflow', result)
       return hostedWorkflowRow(slug, result.versions.at(-1)!.n, d, spaceId)
     },
   })
