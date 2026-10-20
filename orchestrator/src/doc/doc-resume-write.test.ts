@@ -152,6 +152,18 @@ describe('open resume write decision', () => {
     )
   })
 
+  test('accepts URLs whose paths name scratch and run-artifact locations', () => {
+    expect(
+      violations(
+        brief([
+          'NEXT ACTION: continue',
+          'https://example.test/docs/scratchpad/handoff',
+          'custom+https://example.test/state/orchestrator/runs/123/reply.json',
+        ]),
+      ),
+    ).toEqual([])
+  })
+
   test('returns all violations together', () => {
     const body = `---\nstatus: open\nepic:\nproject:\nwritten:\n---\n\n/tmp/a /private/tmp/b /var/folders/c notes/scratchpad/d /state/orchestrator/runs/e\n`
     expect(violations(body).map(({ offendingText }) => offendingText)).toEqual([

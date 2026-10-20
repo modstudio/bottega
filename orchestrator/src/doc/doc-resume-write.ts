@@ -15,6 +15,7 @@ const NEXT_ACTION_LABEL =
   /^[ \t]*(?:(?:[-+*]|\d+[.)])[ \t]+)?(?:[*_]{1,3})?NEXT ACTION(?:[*_]{1,3})?:[ \t]*\S.*$/i
 const NEXT_ACTION_HEADING = /^[ \t]{0,3}#{1,6}[ \t]+NEXT ACTION[ \t]*#*[ \t]*$/i
 const PATH_TOKEN = /\/?[A-Za-z0-9._~:@%+=-]+(?:\/[A-Za-z0-9._~:@%+=-]+)*\/?/g
+const URL_SPAN = /\b[A-Za-z][A-Za-z0-9+.-]*:\/\/\S+/g
 
 function isScratchLocation(path: string): boolean {
   return (
@@ -86,7 +87,12 @@ export function openResumeViolations(
       remedy: 'add an explicit NEXT ACTION line',
     })
   }
+  const urlSpans = [...body.matchAll(URL_SPAN)].map((match) => ({
+    start: match.index!,
+    end: match.index! + match[0].length,
+  }))
   for (const match of body.matchAll(PATH_TOKEN)) {
+    if (urlSpans.some(({ start, end }) => match.index! >= start && match.index! < end)) continue
     if (!isScratchLocation(match[0])) continue
     violations.push({
       offendingText: match[0],
