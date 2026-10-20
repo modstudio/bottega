@@ -22,8 +22,8 @@ Keep concerns separate.`)
   expect(html).toMatch(key('description'))
   expect(html).toContain('>Rules for files in the hub</span>')
   expect(html).toMatch(key('paths'))
-  expect(html).toContain('<span>hub/**</span>')
-  expect(html).toContain('<span>shared/**</span>')
+  expect(html).toContain('>hub/**</span>')
+  expect(html).toContain('>shared/**</span>')
   expect(html).toContain('<h2 id="rule">Rule</h2>')
   expect(html).not.toContain('<hr')
 })
@@ -96,6 +96,22 @@ owner:
   expect(html).toMatch(key('name'))
   expect(html).toMatch(key('active'))
   expect(html).toMatch(detail('yes'))
+})
+
+test('renders maps and lists inside frontmatter lists structurally', () => {
+  const html = render(`---
+values:
+  - nested: value
+  - [one, two]
+---`)
+
+  expect(html).toMatch(key('values'))
+  expect(html).toMatch(key('nested'))
+  expect(html).toContain('>value</span>')
+  expect(html).toContain('>one</span>')
+  expect(html).toContain('>two</span>')
+  expect(html).not.toContain('[object Object]')
+  expect(html).not.toContain('one,two')
 })
 
 test('shows unparseable frontmatter verbatim instead of rendering it as markdown', () => {

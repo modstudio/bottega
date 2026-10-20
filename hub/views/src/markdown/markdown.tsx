@@ -73,15 +73,13 @@ function isPropertyMap(value: unknown): value is Record<string, unknown> {
 function FrontmatterValue({ value }: { value: unknown }) {
   if (typeof value === 'boolean') return value ? 'yes' : 'no'
   if (Array.isArray(value)) {
-    const occurrences = new Map<string, number>()
     return (
       <span className={markdownStyles().frontmatterItems()}>
-        {value.map((item) => {
-          const label = String(item)
-          const occurrence = (occurrences.get(label) ?? 0) + 1
-          occurrences.set(label, occurrence)
-          return <span key={`${label}-${occurrence}`}>{label}</span>
-        })}
+        {value.map((item, index) => (
+          <span key={index}>
+            <FrontmatterValue value={item} />
+          </span>
+        ))}
       </span>
     )
   }
