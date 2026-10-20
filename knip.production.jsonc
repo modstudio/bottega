@@ -119,7 +119,9 @@
       "entry": [".storybook/preview.css!"]
     },
     "hub/views": {
-      "entry": [".storybook/preview.css!"]
+      "entry": [".storybook/preview.css!"],
+      // Vite resolves codemirror-lang-mermaid's undeclared import through hub/web's alias.
+      "ignoreDependencies": ["@lezer/common"]
     },
     "hub/site": {
       "project": ["src/**/*.{ts,tsx}!", "!src/**/*.test.{ts,tsx}"]

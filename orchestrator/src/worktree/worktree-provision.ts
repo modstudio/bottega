@@ -10,10 +10,11 @@ import {
   symlinkSync,
 } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
+import { validateProvisionGroups } from './provision-group-validation.ts'
 
 export type ProvisionEntry = {
   path: string
-  method: 'link' | 'clone'
+  method: 'link' | 'clone' | 'install'
   required?: boolean
   lockfile?: string
   install?: string
@@ -21,10 +22,10 @@ export type ProvisionEntry = {
 export type WorktreeProvision = ProvisionEntry[]
 export type ReadonlyProvision = WorktreeProvision
 export type ProvisionDecision = 'provision' | 'skip' | 'fail'
-export type ProvisionGroupDecision = {
-  action: 'provision' | 'install'
-  entries: ProvisionEntry[]
-}
+export type ProvisionGroupDecision =
+  | { action: 'provision'; entries: ProvisionEntry[] }
+  | { action: 'install'; entries: ProvisionEntry[] }
+  | { action: 'clone-and-install'; entries: ProvisionEntry[] }
 export type ProvisionSkip = {
   path: string
   reason: 'missing source' | 'existing target'
@@ -100,11 +101,14 @@ export function decideProvisionGroup(
   treeLockfile: string | null,
   sourceLockfile: string | null,
 ): ProvisionGroupDecision {
+  if (entries.some((entry) => entry.method === 'install')) {
+    return { action: 'install', entries }
+  }
   if (sourceLockfile !== null && treeLockfile === sourceLockfile) {
     return { action: 'provision', entries }
   }
   return {
-    action: 'install',
+    action: 'clone-and-install',
     entries: entries.map((entry) => ({ ...entry, method: 'clone' as const })),
   }
 }
@@ -141,6 +145,9 @@ function placeProvision(
   if (provision.method === 'link') {
     linkProvision(source, target)
     return
+  }
+  if (provision.method === 'install') {
+    throw new Error(`install provision "${provision.path}" must be run as a command`)
   }
   const copy = Bun.spawnSync(['cp', '-c', '-R', source, target], {
     stdout: 'pipe',
@@ -189,11 +196,24 @@ function installProvisionGroup(
     stderr: 'pipe',
     timeout: timeoutMs,
   })
-  if (result.exitCode === 0) return
-  const stderr = result.stderr.toString().trim().slice(-1500) || `exit ${result.exitCode}`
+  if (result.exitCode === 0) {
+    for (const entry of entries) {
+      if (entry.required === true && !targetExists(join(tree, entry.path))) {
+        throw new Error(
+          `required install provision "${entry.path}" is missing after running "${install}"`,
+        )
+      }
+    }
+    return
+  }
+  const output = [result.stdout.toString().trim(), result.stderr.toString().trim()]
+    .filter(Boolean)
+    .join('\n')
+    .slice(-1500)
+  const detail = output || `exit ${result.exitCode}`
   const group = entries.map((entry) => entry.path).join(', ')
   throw new Error(
-    `provision group [${group}] for lockfile "${lockfile}" failed running "${install}": ${stderr}`,
+    `provision group [${group}] for lockfile "${lockfile}" failed running "${install}": ${detail}`,
   )
 }
 
@@ -221,7 +241,7 @@ function assertInstallGroupsSafe(
   decisions: ReadonlyMap<string, ProvisionGroupDecision>,
 ): void {
   for (const decision of decisions.values()) {
-    if (decision.action !== 'install') continue
+    if (decision.action === 'provision') continue
     for (const entry of decision.entries) assertInstallTargetSafe(tree, entry)
   }
 }
@@ -234,23 +254,26 @@ function materializeInstallGroups(
   skipped: ProvisionSkip[],
 ): void {
   for (const decision of decisions.values()) {
-    if (decision.action !== 'install') continue
-    for (const entry of decision.entries) {
+    if (decision.action !== 'clone-and-install') continue
+    for (const entry of decision.entries)
       placeProvision(main, tree, entry, declarationSource, skipped)
-    }
   }
 }
 
 function runInstallGroups(
   tree: string,
-  grouped: ReadonlyMap<string, ProvisionEntry[]>,
   decisions: ReadonlyMap<string, ProvisionGroupDecision>,
   timeoutMs: number | undefined,
 ): void {
   for (const [lockfile, decision] of decisions) {
-    if (decision.action !== 'install') continue
-    const entries = grouped.get(lockfile) ?? []
-    installProvisionGroup(tree, lockfile, entries[0]!.install!, entries, timeoutMs)
+    if (decision.action === 'provision') continue
+    installProvisionGroup(
+      tree,
+      lockfile,
+      decision.entries[0]!.install!,
+      decision.entries,
+      timeoutMs,
+    )
   }
 }
 
@@ -300,7 +323,7 @@ export function provisionWorktree(
   // install target first, then clone all install groups before starting any command.
   assertInstallGroupsSafe(tree, decisions)
   materializeInstallGroups(main, tree, decisions, declarationSource, skipped)
-  runInstallGroups(tree, grouped, decisions, timeoutMs)
+  runInstallGroups(tree, decisions, timeoutMs)
 
   // Once every install has finished, preserve declaration order for ordinary entries and
   // lockfile groups whose content matched the source checkout.
@@ -317,10 +340,7 @@ function provisionPathProblem(path: string): boolean {
   )
 }
 
-function validateLockfileProvision(
-  candidate: Record<string, unknown>,
-  lockfileInstalls: Map<string, string>,
-): string[] {
+function validateLockfileProvision(candidate: Record<string, unknown>): string[] {
   const problems: string[] = []
   const hasLockfile = candidate.lockfile !== undefined
   const hasInstall = candidate.install !== undefined
@@ -338,16 +358,35 @@ function validateLockfileProvision(
   if (hasLockfile !== hasInstall) {
     problems.push('worktree.readonly_provision lockfile and install must be declared together')
   }
-  if (!validLockfile || !validInstall) return problems
-  const declared = lockfileInstalls.get(candidate.lockfile as string)
-  if (declared !== undefined && declared !== candidate.install) {
-    problems.push(
-      `worktree.readonly_provision entries for lockfile "${candidate.lockfile}" must agree on install`,
-    )
-  } else {
-    lockfileInstalls.set(candidate.lockfile as string, candidate.install as string)
-  }
   return problems
+}
+
+function validateProvisionMethod(candidate: Record<string, unknown>): string[] {
+  if (
+    candidate.method !== 'link' &&
+    candidate.method !== 'clone' &&
+    candidate.method !== 'install'
+  ) {
+    return ["worktree.readonly_provision method must be 'link', 'clone', or 'install'"]
+  }
+  if (
+    candidate.method === 'install' &&
+    (candidate.lockfile === undefined || candidate.install === undefined)
+  ) {
+    return ['worktree.readonly_provision install method requires lockfile and install']
+  }
+  return []
+}
+
+function provisionGroupValidationEntry(candidate: Record<string, unknown>): ProvisionEntry | null {
+  const validMethod =
+    candidate.method === 'link' || candidate.method === 'clone' || candidate.method === 'install'
+  const validLockfile = candidate.lockfile === undefined || typeof candidate.lockfile === 'string'
+  const validInstall = candidate.install === undefined || typeof candidate.install === 'string'
+  if (typeof candidate.path !== 'string' || !validMethod || !validLockfile || !validInstall) {
+    return null
+  }
+  return candidate as ProvisionEntry
 }
 
 /** Validate the register-owned reader declaration at its input boundary. */
@@ -356,7 +395,7 @@ export function validateReadonlyProvision(value: unknown): string[] {
   if (!Array.isArray(value)) return ['worktree.readonly_provision must be an array']
   const problems: string[] = []
   const paths = new Set<string>()
-  const lockfileInstalls = new Map<string, string>()
+  const validEntries: ProvisionEntry[] = []
   for (const entry of value) {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
       problems.push('worktree.readonly_provision entries must be objects')
@@ -370,13 +409,14 @@ export function validateReadonlyProvision(value: unknown): string[] {
     } else {
       paths.add(candidate.path)
     }
-    if (candidate.method !== 'link' && candidate.method !== 'clone') {
-      problems.push("worktree.readonly_provision method must be 'link' or 'clone'")
-    }
+    problems.push(...validateProvisionMethod(candidate))
     if (candidate.required !== undefined && typeof candidate.required !== 'boolean') {
       problems.push('worktree.readonly_provision required must be a boolean')
     }
-    problems.push(...validateLockfileProvision(candidate, lockfileInstalls))
+    problems.push(...validateLockfileProvision(candidate))
+    const validEntry = provisionGroupValidationEntry(candidate)
+    if (validEntry) validEntries.push(validEntry)
   }
+  problems.push(...validateProvisionGroups(validEntries, 'worktree.readonly_provision'))
   return problems
 }

@@ -687,7 +687,12 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'recipe-schema-boundary',
     'orchestrator/src/recipe/recipe-schema.ts',
-    ['zod', './database-provision-schema.ts', './recipe-exec-schema.ts'],
+    [
+      'zod',
+      './database-provision-schema.ts',
+      './recipe-exec-schema.ts',
+      '../worktree/provision-group-validation.ts',
+    ],
     'Keep the recipe schema pure and independent of file, register, and execution concerns.',
   ),
   boundary(

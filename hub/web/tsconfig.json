@@ -8,7 +8,13 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "noUnusedParameters": true,
-    "paths": { "@/*": ["./src/*"] }
+    "paths": {
+      "@/*": ["./src/*"],
+      "react": ["./node_modules/@types/react/index.d.ts"],
+      "react/*": ["./node_modules/@types/react/*"],
+      "react-dom": ["./node_modules/@types/react-dom/index.d.ts"],
+      "react-dom/*": ["./node_modules/@types/react-dom/*"]
+    }
   },
   "include": ["src", "vite.config.ts"]
 }
