@@ -306,6 +306,15 @@ function boundRuling(d: Database, answeredAt = new Date(Date.now() + 1000).toISO
     )!.number
 }
 
+function setLastReentryAt(d: Database, at: string): void {
+  const row = d.query<{ closed: string }, []>('SELECT closed FROM workflow_cursor').get()!
+  const closed = JSON.parse(row.closed) as Array<{ reentered?: unknown; at: string }>
+  const last = closed.findLast((entry) => entry.reentered)
+  if (!last) throw new Error('expected a re-entry close')
+  last.at = at
+  d.query('UPDATE workflow_cursor SET closed=?').run(JSON.stringify(closed))
+}
+
 function insertGradedReview(d: Database): string {
   const project = (
     d.query<{ id: string }, [string]>('SELECT record_id AS id FROM project WHERE name=?').get(
@@ -438,7 +447,8 @@ describe('ruling outcomes and bounded re-entry', () => {
     expect(() =>
       closeStep(d, 'reentry-bound', 'changed', undefined, { review: insertGradedReview(d) }),
     ).toThrow(/automatic re-entry bound is reached/)
-    const rulingN = boundRuling(d)
+    setLastReentryAt(d, '2026-01-01T00:00:00.000Z')
+    const rulingN = boundRuling(d, '2026-01-01T00:00:01.000Z')
     const second = closeStep(d, 'reentry-bound', 'changed', rulingN)
     expect(second).toContain('Flow so far: Pass 3')
     expect(d.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({
