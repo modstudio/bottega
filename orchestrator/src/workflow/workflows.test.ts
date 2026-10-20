@@ -14,11 +14,11 @@ import {
   getWorkflowStep,
   importWorkflowLocal,
   promoteWorkflowLocal,
+  resolvedWorkflowVersions,
   setWorkflowLocal,
   showWorkflow,
   validateWorkflowDefinition,
   type WorkflowDefinition,
-  workflowVersions,
 } from './workflows.ts'
 
 const valid = (): WorkflowDefinition => ({
@@ -567,7 +567,7 @@ describe('workflow versions and project composition', () => {
     promoteWorkflowLocal('test-flow', first.n, 'publish', 'architect', d)
     promoteWorkflowLocal('test-flow', second.n, 'replace', 'architect', d)
     expect(showWorkflow('test-flow', first.n, d).status).toBe('retired')
-    expect(workflowVersions('test-flow', d)).toHaveLength(2)
+    expect(resolvedWorkflowVersions('test-flow', null, d)).toHaveLength(2)
   })
   test('renders the project trunk and refuses a missing trunk with its remedy', () => {
     const d = database()

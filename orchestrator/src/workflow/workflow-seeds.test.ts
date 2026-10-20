@@ -6,17 +6,17 @@ import {
   forkStepCatalogueLocal,
   productionStepCatalogue,
   promoteStepCatalogueLocal,
+  resolvedStepCatalogueVersions,
   showStepCatalogue,
-  stepCatalogueVersions,
   validateStepCatalogue,
 } from './step-catalogue.ts'
 import { mergeSeededSteps, seedMayPromote } from './workflow-built-ins.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import {
   listWorkflows,
+  resolvedWorkflowVersions,
   showWorkflow,
   validateWorkflowDefinition,
-  workflowVersions,
 } from './workflows.ts'
 
 const database = () => {
@@ -264,7 +264,7 @@ describe('workflow projection and seeds', () => {
     d.query(
       "UPDATE step_catalogue_event SET reason='seed r1' WHERE catalogue_id=? AND author='seed'",
     ).run(catalogue.owner_id)
-    const beforeVersions = stepCatalogueVersions(d).length,
+    const beforeVersions = resolvedStepCatalogueVersions(null, d).length,
       beforeEvents = (
         d
           .query('SELECT COUNT(*) AS count FROM step_catalogue_event WHERE catalogue_id=?')
@@ -273,7 +273,7 @@ describe('workflow projection and seeds', () => {
 
     seedWorkflows(d)
 
-    expect(stepCatalogueVersions(d)).toHaveLength(beforeVersions)
+    expect(resolvedStepCatalogueVersions(null, d)).toHaveLength(beforeVersions)
     expect(
       d
         .query('SELECT COUNT(*) AS count FROM step_catalogue_event WHERE catalogue_id=?')
@@ -285,7 +285,7 @@ describe('workflow projection and seeds', () => {
   test('an unchanged merge records no new version or event (catches promoting a duplicate on every initialize)', () => {
     const d = database(),
       catalogue = productionStepCatalogue(d),
-      beforeVersions = stepCatalogueVersions(d).length,
+      beforeVersions = resolvedStepCatalogueVersions(null, d).length,
       beforeEvents = (
         d
           .query('SELECT COUNT(*) AS count FROM step_catalogue_event WHERE catalogue_id=?')
@@ -297,7 +297,7 @@ describe('workflow projection and seeds', () => {
 
     seedWorkflows(d)
 
-    expect(stepCatalogueVersions(d)).toHaveLength(beforeVersions)
+    expect(resolvedStepCatalogueVersions(null, d)).toHaveLength(beforeVersions)
     expect(
       d
         .query('SELECT COUNT(*) AS count FROM step_catalogue_event WHERE catalogue_id=?')
@@ -366,7 +366,7 @@ describe('workflow projection and seeds', () => {
       n: 0,
     })
     expect(d.query("SELECT id FROM workflow WHERE slug='fix-defect'").get()).toEqual({ id })
-    expect(workflowVersions('fix-defect', d).map(({ n }) => n)).toEqual([1, 2, 3])
+    expect(resolvedWorkflowVersions('fix-defect', null, d).map(({ n }) => n)).toEqual([1, 2, 3])
     expect(showWorkflow('fix-defect', 2, d).author).toBe('architect')
     expect(showWorkflow('fix-defect', 3, d).reason).toBe('seed r5')
     expect(
@@ -378,8 +378,10 @@ describe('workflow projection and seeds', () => {
     makeLegacy(d, 'fix-defect', 1)
     seedWorkflows(d)
     seedWorkflows(d)
-    expect(workflowVersions('fix-defect', d).map((version) => version.n)).toEqual([1, 2])
-    expect(stepCatalogueVersions(d).map((version) => version.n)).toEqual([1])
+    expect(resolvedWorkflowVersions('fix-defect', null, d).map((version) => version.n)).toEqual([
+      1, 2,
+    ])
+    expect(resolvedStepCatalogueVersions(null, d).map((version) => version.n)).toEqual([1])
   })
   test('seed revision replaces but retains an operator production version', () => {
     const d = database()

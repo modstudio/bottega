@@ -219,9 +219,14 @@ test('workflow inspection resolves the current project space and falls back to l
     cwd: process.cwd(),
   })
   expect(
-    (JSON.parse(inside[0]!) as { slug: string; title: string; production_n: number }[]).find(
-      (row) => row.slug === slug,
-    ),
+    (
+      JSON.parse(inside[0]!) as {
+        slug: string
+        title: string
+        production_n: number
+        draft_n: number | null
+      }[]
+    ).find((row) => row.slug === slug),
   ).toEqual({ slug, title: 'Hosted inspection', production_n: 4, draft_n: 5 })
   expect(JSON.parse(inside[1]!).definition.title).toBe('Hosted inspection')
   expect(JSON.parse(inside[2]!)).toEqual([

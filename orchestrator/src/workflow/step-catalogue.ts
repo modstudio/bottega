@@ -474,8 +474,6 @@ const retireStepCatalogueLocal = (
   author?: string,
   d: Database = writableDb(),
 ) => lifecycle.retire(CATALOGUE, n, reason, author, d)
-export const stepCatalogueVersions = (d: Database = db()) => lifecycle.versions(CATALOGUE, d)
-
 export function showResolvedStepCatalogue(project: string | null, n?: number, d: Database = db()) {
   return selectedStepCatalogue(n, d, projectCatalogueResolutionSpace(d, project))
 }
@@ -493,7 +491,7 @@ export function resolvedStepCatalogueVersions(project: string | null, d: Databas
       `SELECT n,status,author,reason,created_at,promoted_at,retired_at
        FROM step_catalogue_version WHERE catalogue_id=? ORDER BY n`,
     )
-    .all(owner.id) as Record<string, unknown>[]
+    .all(owner.id) as Omit<ReturnType<typeof lifecycle.versions>[number], 'events'>[]
   return rows.map((version) => ({
     ...version,
     events: d
@@ -501,7 +499,7 @@ export function resolvedStepCatalogueVersions(project: string | null, d: Databas
         `SELECT event,author,reason,session_id,at FROM step_catalogue_event
          WHERE catalogue_id=? AND version_n=? ORDER BY id`,
       )
-      .all(owner.id, version.n as number),
+      .all(owner.id, version.n),
   }))
 }
 

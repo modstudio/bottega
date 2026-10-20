@@ -676,10 +676,6 @@ function forkWorkflowLocal(
   ).definition
   return writeDraftLocal(slug, definition, reason, author, 'fork', d)
 }
-export function workflowVersions(slug: string, d: Database = db()) {
-  return workflowLifecycle.versions(slug, d)
-}
-
 export function resolvedWorkflowVersions(slug: string, project: string | null, d: Database = db()) {
   const spaceId = projectWorkflowResolutionSpace(d, project, slug)
   const owner = d
@@ -693,7 +689,7 @@ export function resolvedWorkflowVersions(slug: string, project: string | null, d
       `SELECT n,status,author,reason,created_at,promoted_at,retired_at
        FROM workflow_version WHERE workflow_id=? ORDER BY n`,
     )
-    .all(owner.id) as Record<string, unknown>[]
+    .all(owner.id) as Omit<ReturnType<typeof workflowLifecycle.versions>[number], 'events'>[]
   return rows.map((version) => ({
     ...version,
     events: d
@@ -701,7 +697,7 @@ export function resolvedWorkflowVersions(slug: string, project: string | null, d
         `SELECT event,author,reason,session_id,at FROM workflow_event
          WHERE workflow_id=? AND version_n=? ORDER BY id`,
       )
-      .all(owner.id, version.n as number),
+      .all(owner.id, version.n),
   }))
 }
 
