@@ -230,7 +230,7 @@ test('port pull caches unregistered catalogue rows and continues to a registered
   ).toEqual({ source_project_record_id: unregisteredSource })
 })
 
-test('port tombstones remove only hosted refs and replaced sources', async () => {
+test('port tombstones do not reveal local refs and remove replaced hosted sources', async () => {
   const local = db()
   const space = newRecordId()
   const sourceId = newRecordId()
@@ -319,17 +319,14 @@ test('port tombstones remove only hosted refs and replaced sources', async () =>
     completedSpaces: new Set([space]),
   })
 
-  expect(ledgerRef(targetId, 'DEV-DELETE')).toMatchObject({ note: 'local DEV-DELETE' })
+  expect(ledgerRef(targetId, 'DEV-DELETE')).toBeNull()
   expect(ledgerRef(targetId, 'DEV-SOURCE')).toMatchObject({
     note: 'hosted DEV-SOURCE',
     sources: [],
   })
-  expect(listLedgerRefs(true)).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ task_key: 'DEV-DELETE', note: 'local DEV-DELETE' }),
-      expect.objectContaining({ task_key: 'DEV-SOURCE', note: 'hosted DEV-SOURCE', sources: [] }),
-    ]),
-  )
+  expect(listLedgerRefs(true)).toEqual([
+    expect.objectContaining({ task_key: 'DEV-SOURCE', note: 'hosted DEV-SOURCE', sources: [] }),
+  ])
   expect(
     local.query('SELECT 1 FROM port_ref WHERE record_id=? AND space_id=?').get(deleteRefId, space),
   ).toBeNull()

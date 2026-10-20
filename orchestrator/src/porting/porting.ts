@@ -75,7 +75,13 @@ function assertPortWriteAllowed(operation: string): void {
 }
 
 export function pairByProjects(sourceProjectId: string, targetProjectId: string): PortPair | null {
-  const spaceId = projectSpace(targetProjectId)
+  return pairByProjectsInSpace(sourceProjectId, targetProjectId, projectSpace(targetProjectId))
+}
+function pairByProjectsInSpace(
+  sourceProjectId: string,
+  targetProjectId: string,
+  spaceId: string | null,
+): PortPair | null {
   const selected = db()
     .query(
       'SELECT id,source_project_record_id,target_project_record_id,created_at,space_id FROM port_pair WHERE source_project_record_id=? AND target_project_record_id=? AND space_id IS ?',
@@ -101,7 +107,7 @@ export function addPairLocal(
        VALUES (?,?,?,?) ON CONFLICT(source_project_record_id, target_project_record_id) WHERE space_id IS NULL DO NOTHING`,
       )
       .run(newRecordId(), sourceProjectId, targetProjectId, at)
-    const pair = pairByProjects(sourceProjectId, targetProjectId)!
+    const pair = pairByProjectsInSpace(sourceProjectId, targetProjectId, null)!
     db()
       .query(
         `INSERT INTO port_baseline (record_id, pair_id, source_commit, scanned_at) VALUES (?,?,NULL,NULL)
@@ -109,7 +115,7 @@ export function addPairLocal(
       )
       .run(newRecordId(), pair.id)
   })
-  return pairByProjects(sourceProjectId, targetProjectId)!
+  return pairByProjectsInSpace(sourceProjectId, targetProjectId, null)!
 }
 
 export function baselineForPair(pairId: number): PortBaseline | null {
@@ -185,7 +191,13 @@ function parseStringArray(value: string): string[] {
 }
 
 export function ledgerRef(targetProjectId: string, taskKey: string): LedgerRef | null {
-  const spaceId = projectSpace(targetProjectId)
+  return ledgerRefInSpace(targetProjectId, taskKey, projectSpace(targetProjectId))
+}
+function ledgerRefInSpace(
+  targetProjectId: string,
+  taskKey: string,
+  spaceId: string | null,
+): LedgerRef | null {
   const ref = db()
     .query(
       'SELECT task_key,target_project_record_id,note,created_at,resolved_at,space_id FROM port_ref WHERE target_project_record_id=? AND task_key=? AND space_id IS ?',
@@ -288,7 +300,7 @@ export function setLedgerRefLocal(input: {
       )
     }
   })
-  return ledgerRef(input.targetProjectId, input.taskKey)!
+  return ledgerRefInSpace(input.targetProjectId, input.taskKey, null)!
 }
 
 function removeLedgerRefLocal(targetProjectId: string, taskKey: string): boolean {
@@ -306,14 +318,14 @@ export function resolveLedgerRefLocal(
   resolvedAt = nowIso(),
 ): LedgerRef | null {
   writableDb()
-  const existing = ledgerRef(targetProjectId, taskKey)
+  const existing = ledgerRefInSpace(targetProjectId, taskKey, null)
   if (!existing || existing.resolved_at) return existing
   db()
     .query(
       'UPDATE port_ref SET resolved_at=? WHERE target_project_record_id=? AND task_key=? AND resolved_at IS NULL',
     )
     .run(resolvedAt, targetProjectId, taskKey)
-  return ledgerRef(targetProjectId, taskKey)
+  return ledgerRefInSpace(targetProjectId, taskKey, null)
 }
 
 export function listDoctrineRules(includeRetired = true): DoctrineRule[] {
