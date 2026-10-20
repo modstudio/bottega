@@ -76,6 +76,10 @@ export type BranchLanding =
       state: 'landed'
       landedBy: { type: 'turn'; branch: string }
     }
+  | {
+      state: 'landed'
+      landedBy: { type: 'contained'; branch: string }
+    }
   | { state: 'empty' | 'superseded' | 'unlanded' }
   | { state: 'unknown'; error?: string }
 
@@ -107,6 +111,7 @@ export function decideBranchState(input: {
   patchEquivalent: PatchEquivalentForm | null
   pullRequestCommitCheck: PullRequestCommitCheck
   recordedLanding: StoredRecordedBranchLanding | null
+  containingBranch: string | null
   laterTurnBranches: readonly LaterTurnBranch[]
   superseded: boolean
 }): BranchStateDecision {
@@ -144,6 +149,12 @@ export function decideBranchState(input: {
     return decide({
       state: 'landed',
       landedBy: { type: 'pr-commits', number: input.pullRequestCommitCheck.number },
+    })
+  }
+  if (input.containingBranch) {
+    return decide({
+      state: 'landed',
+      landedBy: { type: 'contained', branch: input.containingBranch },
     })
   }
   const landedTurn = input.laterTurnBranches.find(

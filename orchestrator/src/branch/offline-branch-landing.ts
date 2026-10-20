@@ -94,6 +94,7 @@ function classifyExistingBranch(input: {
     patchEquivalent,
     pullRequestCommitCheck: null,
     recordedLanding,
+    containingBranch: null,
     laterTurnBranches: [],
     superseded: false,
   })

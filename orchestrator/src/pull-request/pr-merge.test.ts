@@ -59,6 +59,7 @@ function adapter(
       prNumber: number,
       database: ReturnType<typeof db>,
     ) => string | null
+    recordLandings?: () => void
     shipCleanup?: () => string
   } = {},
 ): PullRequestMergeAdapter {
@@ -79,6 +80,7 @@ function adapter(
       })),
     recordAdmission: (change, decision, prNumber, database) =>
       input.recordAdmission?.(change, decision, prNumber, database) ?? null,
+    ...(input.recordLandings ? { recordLandings: input.recordLandings } : {}),
     merge: (_cwd, _number, method, subject, headCommit) =>
       input.merge?.(method, subject, headCommit) ?? 'merge-commit',
     queueState: () => ({
@@ -143,6 +145,49 @@ test('a cleanup failure reports its retry without undoing a successful merge', (
   expect(output).toBe(
     `merge-commit\nship cleanup failed for ${pullRequest.headBranch}: close-out unavailable; retry: ${PLATFORM_SLUG} tree ship-cleanup ${pullRequest.headBranch}`,
   )
+})
+
+test('a successful merge records contained branches before cleanup can delete them', () => {
+  registerProject(['test'])
+  const calls: string[] = []
+  mergePullRequest(
+    '42',
+    cwd,
+    adapter({
+      checks: [{ name: 'test', bucket: 'pass', state: 'SUCCESS', link: '' }],
+      merge: () => {
+        calls.push('merge')
+        return 'merge-commit'
+      },
+      recordLandings: () => calls.push('record-landings'),
+      shipCleanup: () => {
+        calls.push('cleanup')
+        return 'cleaned'
+      },
+    }),
+  )
+  expect(calls).toEqual(['merge', 'record-landings', 'cleanup'])
+})
+
+test('a landing-record failure preserves branches by skipping cleanup', () => {
+  registerProject(['test'])
+  let cleaned = false
+  const output = mergePullRequest(
+    '42',
+    cwd,
+    adapter({
+      checks: [{ name: 'test', bucket: 'pass', state: 'SUCCESS', link: '' }],
+      recordLandings: () => {
+        throw new Error('local refs unavailable')
+      },
+      shipCleanup: () => {
+        cleaned = true
+        return 'unexpected'
+      },
+    }),
+  )
+  expect(output).toContain('landing recording failed')
+  expect(cleaned).toBe(false)
 })
 
 test('an injected forge adapter exposes a pending required check without merging', () => {

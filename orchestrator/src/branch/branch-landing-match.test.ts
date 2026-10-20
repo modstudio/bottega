@@ -105,6 +105,7 @@ describe('automatic branch landing tip decision', () => {
       patchEquivalent: null,
       pullRequestCommitCheck: null,
       recordedLanding: null,
+      containingBranch: null,
       laterTurnBranches: [],
       superseded: false,
     })

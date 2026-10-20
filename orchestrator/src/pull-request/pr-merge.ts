@@ -6,7 +6,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { recordBranchLanding } from '../branch/branch-landing-service.ts'
+import { recordMergeBranchLandings } from '../branch/branch-landing-service.ts'
 import { writableDb } from '../database/db.ts'
 import { passingGateForCommit } from '../gate/gate-passed.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
@@ -69,6 +69,11 @@ export type PullRequestMergeAdapter = {
     prNumber: number,
     database: Database,
   ): string | null
+  recordLandings?(
+    change: PullRequestChange,
+    pullRequest: PullRequestMergeFacts,
+    database: Database,
+  ): void
   merge(
     cwd: string,
     number: number,
@@ -221,6 +226,14 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
   recordAdmission(change, decision, prNumber, database) {
     return recordMergeAdmission(change, decision, prNumber, database)
   },
+  recordLandings(change, pullRequest) {
+    recordMergeBranchLandings({
+      project: change.project,
+      taskBranch: pullRequest.headBranch,
+      admittedHead: pullRequest.headCommit,
+      number: pullRequest.number,
+    })
+  },
   merge(cwd, number, method, subject, headCommit) {
     successful(
       cwd,
@@ -260,8 +273,7 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
   wait(milliseconds) {
     Bun.sleepSync(milliseconds)
   },
-  shipCleanup(project, branch, prNumber, database) {
-    recordBranchLanding(branch, prNumber)
+  shipCleanup(project, branch, _prNumber, database) {
     return formatShipCleanup(shipCleanup(branch, { project, confirmedLanded: true, database }))
   },
 }
@@ -412,7 +424,11 @@ function mergedPullRequestOutput(input: {
   branch: string
   prNumber: number
   mergeCommit: string
+  landingRecordingError?: string
 }): string {
+  if (input.landingRecordingError) {
+    return `${input.mergeCommit}\nlanding recording failed for ${input.branch}: ${input.landingRecordingError}; cleanup was not run`
+  }
   if (!input.adapter.shipCleanup) return input.mergeCommit
   try {
     return `${input.mergeCommit}\n${input.adapter.shipCleanup(input.project, input.branch, input.prNumber, input.database)}`
@@ -447,6 +463,7 @@ export function mergePullRequest(
 
   let pullRequest: PullRequestMergeFacts
   let mergeCommit: string
+  let admittedChange: PullRequestChange
   try {
     pullRequest = adapter.view(cwd, target)
     const identityDecision = decidePullRequestIdentity({
@@ -462,6 +479,7 @@ export function mergePullRequest(
     if (!admission.decision.admitted) {
       throw new Error(`refusing merge: ${admission.decision.refusal}`)
     }
+    admittedChange = admission.checked!.change
     const input = collectMergeProof(
       pullRequest,
       landingBranch,
@@ -498,6 +516,12 @@ export function mergePullRequest(
       `refusing merge because the pull request proof was not checked: ${message}; cleared by: restore forge and repository access, then ${PLATFORM_SLUG} pr merge ${target}`,
     )
   }
+  let landingRecordingError: string | undefined
+  try {
+    adapter.recordLandings?.(admittedChange!, pullRequest, database)
+  } catch (cause) {
+    landingRecordingError = cause instanceof Error ? cause.message : String(cause)
+  }
   return mergedPullRequestOutput({
     adapter,
     database,
@@ -505,5 +529,6 @@ export function mergePullRequest(
     branch: pullRequest.headBranch,
     prNumber: pullRequest.number,
     mergeCommit,
+    landingRecordingError,
   })
 }
