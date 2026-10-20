@@ -37,7 +37,7 @@
     "drizzle-orm": "1.0.0-rc.4",
     "execa": "10.0.1",
     "github-slugger": "^2.0.0",
-    "hono": "4.13.8",
+    "hono": "4.13.13",
     "hono-rate-limiter": "^0.5.4",
     "package-manager-detector": "^1.8.0",
     "zod": "^4"
