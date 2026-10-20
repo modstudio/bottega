@@ -1,6 +1,7 @@
 import { Callout } from '@bottega/hub-ui/callout'
 import {
   createContext,
+  Fragment,
   isValidElement,
   type ReactNode,
   useCallback,
@@ -79,16 +80,14 @@ function FrontmatterValue({ value }: { value: unknown }) {
           const label = String(item)
           const occurrence = (occurrences.get(label) ?? 0) + 1
           occurrences.set(label, occurrence)
-          return <code key={`${label}-${occurrence}`}>{label}</code>
+          return <span key={`${label}-${occurrence}`}>{label}</span>
         })}
       </span>
     )
   }
   if (isPropertyMap(value)) {
     return (
-      <table className={markdownStyles().frontmatterNested()} data-fit="">
-        <PropertyRows properties={value} />
-      </table>
+      <PropertyList properties={value} nested />
     )
   }
   return (
@@ -98,18 +97,25 @@ function FrontmatterValue({ value }: { value: unknown }) {
   )
 }
 
-function PropertyRows({ properties }: { properties: Record<string, unknown> }) {
+function PropertyList({
+  properties,
+  nested = false,
+}: {
+  properties: Record<string, unknown>
+  nested?: boolean
+}) {
+  const styles = markdownStyles({ nested })
   return (
-    <tbody>
+    <dl className={styles.frontmatterList()}>
       {Object.entries(properties).map(([key, value]) => (
-        <tr key={key}>
-          <th>{key}</th>
-          <td>
+        <Fragment key={key}>
+          <dt className={styles.frontmatterKey()}>{key}</dt>
+          <dd className={styles.frontmatterDetail()}>
             <FrontmatterValue value={value} />
-          </td>
-        </tr>
+          </dd>
+        </Fragment>
       ))}
-    </tbody>
+    </dl>
   )
 }
 
@@ -124,9 +130,9 @@ function FrontmatterProperties({ source }: { source: string }) {
   if (!isPropertyMap(properties)) return <UnreadableFrontmatter source={source} />
   if (Object.keys(properties).length === 0) return null
   return (
-    <DocTable fit>
-      <PropertyRows properties={properties} />
-    </DocTable>
+    <div className={markdownStyles().frontmatter()}>
+      <PropertyList properties={properties} />
+    </div>
   )
 }
 

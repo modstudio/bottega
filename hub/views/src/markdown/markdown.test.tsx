@@ -3,6 +3,8 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { Markdown } from './markdown.tsx'
 
 const render = (content: string) => renderToStaticMarkup(<Markdown content={content} />)
+const key = (name: string) => new RegExp(`<dt[^>]*>${name}</dt>`)
+const detail = (text: string) => new RegExp(`<dd[^>]*>${text}</dd>`)
 
 test('renders canon frontmatter with paths as document properties', () => {
   const html = render(`---
@@ -16,11 +18,11 @@ paths:
 
 Keep concerns separate.`)
 
-  expect(html).toContain('<th>description</th>')
+  expect(html).toMatch(key('description'))
   expect(html).toContain('>Rules for files in the hub</span>')
-  expect(html).toContain('<th>paths</th>')
-  expect(html).toContain('<code>hub/**</code>')
-  expect(html).toContain('<code>shared/**</code>')
+  expect(html).toMatch(key('paths'))
+  expect(html).toContain('<span>hub/**</span>')
+  expect(html).toContain('<span>shared/**</span>')
   expect(html).toContain('<h2 id="rule">Rule</h2>')
   expect(html).not.toContain('<hr')
 })
@@ -33,8 +35,8 @@ always: true
 
 ## Rule`)
 
-  expect(html).toContain('<th>always</th>')
-  expect(html).toContain('<td>yes</td>')
+  expect(html).toMatch(key('always'))
+  expect(html).toMatch(detail('yes'))
   expect(html).toContain('<h2 id="rule">Rule</h2>')
 })
 
@@ -51,10 +53,11 @@ updated: 2026-10-20
 
 Resume here.`)
 
-  expect(html).toContain('<th>status</th>')
+  expect(html).toMatch(key('status'))
   expect(html).toContain('>paused</span>')
   expect(html).toContain('>2026-10-20T14:05:06Z</span>')
-  expect(html).toContain('<th>consumed</th><td>no</td>')
+  expect(html).toMatch(key('consumed'))
+  expect(html).toMatch(detail('no'))
   expect(html).toContain('<p>Resume here.</p>')
 })
 
@@ -87,10 +90,11 @@ owner:
   active: true
 ---`)
 
-  expect(html).toContain('<th>owner</th>')
-  expect(html).toContain('class="ml-3" data-fit=""')
-  expect(html).toContain('<th>name</th>')
-  expect(html).toContain('<th>active</th><td>yes</td>')
+  expect(html).toMatch(key('owner'))
+  expect(html.match(/<dl /g)).toHaveLength(2)
+  expect(html).toMatch(key('name'))
+  expect(html).toMatch(key('active'))
+  expect(html).toMatch(detail('yes'))
 })
 
 test('shows unparseable frontmatter verbatim instead of rendering it as markdown', () => {
