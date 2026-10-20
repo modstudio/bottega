@@ -68,7 +68,10 @@ function ownerId<T>(
       space_id: string | null
     }[]
   ).find((candidate) => candidate.space_id === spaceId)
-  if (!row) throw new Error(`unknown ${config.noun} "${slug}"`)
+  if (!row)
+    throw new Error(
+      `unknown ${config.noun} "${slug}"${spaceId === null ? '' : ` in hosted space ${spaceId}`}`,
+    )
   return row.id
 }
 

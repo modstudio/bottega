@@ -5,7 +5,6 @@ import { recordApiClient } from '../record/record-api-client.ts'
 import { applyPortWriteResponse } from '../record/record-cache-port.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { workerStoreWriteRefusal } from '../worker-store-write.ts'
-import { overlayPortItems } from './port-overlay.ts'
 
 export type PortPair = {
   id: number
@@ -76,18 +75,20 @@ function assertPortWriteAllowed(operation: string): void {
 }
 
 export function pairByProjects(sourceProjectId: string, targetProjectId: string): PortPair | null {
-  const rows = db()
+  return pairByProjectsInSpace(sourceProjectId, targetProjectId, projectSpace(targetProjectId))
+}
+function pairByProjectsInSpace(
+  sourceProjectId: string,
+  targetProjectId: string,
+  spaceId: string | null,
+): PortPair | null {
+  const selected = db()
     .query(
-      'SELECT id,source_project_record_id,target_project_record_id,created_at,space_id FROM port_pair WHERE source_project_record_id=? AND target_project_record_id=?',
+      'SELECT id,source_project_record_id,target_project_record_id,created_at,space_id FROM port_pair WHERE source_project_record_id=? AND target_project_record_id=? AND space_id IS ?',
     )
-    .all(sourceProjectId, targetProjectId) as (PortPair & { space_id: string | null })[]
-  const spaceId = projectSpace(targetProjectId)
-  const selected =
-    overlayPortItems(
-      rows.filter((row) => row.space_id === null),
-      rows.filter((row) => row.space_id === spaceId),
-      (row) => `${row.source_project_record_id}:${row.target_project_record_id}`,
-    )[0] ?? null
+    .get(sourceProjectId, targetProjectId, spaceId) as
+    | (PortPair & { space_id: string | null })
+    | null
   if (!selected) return null
   const { space_id: _spaceId, ...pair } = selected
   return pair
@@ -106,7 +107,7 @@ export function addPairLocal(
        VALUES (?,?,?,?) ON CONFLICT(source_project_record_id, target_project_record_id) WHERE space_id IS NULL DO NOTHING`,
       )
       .run(newRecordId(), sourceProjectId, targetProjectId, at)
-    const pair = pairByProjects(sourceProjectId, targetProjectId)!
+    const pair = pairByProjectsInSpace(sourceProjectId, targetProjectId, null)!
     db()
       .query(
         `INSERT INTO port_baseline (record_id, pair_id, source_commit, scanned_at) VALUES (?,?,NULL,NULL)
@@ -114,7 +115,7 @@ export function addPairLocal(
       )
       .run(newRecordId(), pair.id)
   })
-  return pairByProjects(sourceProjectId, targetProjectId)!
+  return pairByProjectsInSpace(sourceProjectId, targetProjectId, null)!
 }
 
 export function baselineForPair(pairId: number): PortBaseline | null {
@@ -152,17 +153,13 @@ export function listSkips(pairId: number): PortSkip[] {
       `SELECT s.id,s.pair_id,s.candidate,s.reason,s.skipped_at,p.space_id
        FROM port_skip s JOIN port_pair p ON p.id=s.pair_id
        WHERE p.source_project_record_id=? AND p.target_project_record_id=?
-         AND (p.space_id IS NULL OR p.space_id IS ?)
+         AND p.space_id IS ?
        ORDER BY s.id`,
     )
     .all(pair.source_project_record_id, pair.target_project_record_id, spaceId) as (PortSkip & {
     space_id: string | null
   })[]
-  return overlayPortItems(
-    rows.filter((row) => row.space_id === null),
-    rows.filter((row) => row.space_id === spaceId),
-    (row) => row.candidate,
-  ).map(({ space_id: _spaceId, ...row }) => row)
+  return rows.map(({ space_id: _spaceId, ...row }) => row)
 }
 
 export function addSkipLocal(
@@ -194,17 +191,20 @@ function parseStringArray(value: string): string[] {
 }
 
 export function ledgerRef(targetProjectId: string, taskKey: string): LedgerRef | null {
-  const rows = db()
+  return ledgerRefInSpace(targetProjectId, taskKey, projectSpace(targetProjectId))
+}
+function ledgerRefInSpace(
+  targetProjectId: string,
+  taskKey: string,
+  spaceId: string | null,
+): LedgerRef | null {
+  const ref = db()
     .query(
-      'SELECT task_key,target_project_record_id,note,created_at,resolved_at,space_id FROM port_ref WHERE target_project_record_id=? AND task_key=?',
+      'SELECT task_key,target_project_record_id,note,created_at,resolved_at,space_id FROM port_ref WHERE target_project_record_id=? AND task_key=? AND space_id IS ?',
     )
-    .all(targetProjectId, taskKey) as (Omit<LedgerRef, 'sources'> & { space_id: string | null })[]
-  const spaceId = projectSpace(targetProjectId)
-  const ref = overlayPortItems(
-    rows.filter((row) => row.space_id === null),
-    rows.filter((row) => row.space_id === spaceId),
-    (row) => `${row.target_project_record_id}:${row.task_key}`,
-  )[0]
+    .get(targetProjectId, taskKey, spaceId) as
+    | (Omit<LedgerRef, 'sources'> & { space_id: string | null })
+    | null
   if (!ref) return null
   const sourceRows = db()
     .query(
@@ -230,18 +230,25 @@ export function ledgerRef(targetProjectId: string, taskKey: string): LedgerRef |
 }
 
 export function listLedgerRefs(includeResolved = false): LedgerRef[] {
-  const keys = db()
-    .query(
-      `SELECT r.target_project_record_id,r.task_key
-       FROM port_ref r
-       JOIN project p ON p.record_id=r.target_project_record_id
-       ${includeResolved ? '' : 'WHERE r.resolved_at IS NULL'}
-       ORDER BY r.target_project_record_id,r.task_key`,
-    )
-    .all() as { target_project_record_id: string; task_key: string }[]
-  const unique = new Map<string, { target_project_record_id: string; task_key: string }>()
-  for (const key of keys) unique.set(`${key.target_project_record_id}:${key.task_key}`, key)
-  return [...unique.values()]
+  const keys = (
+    db().query('SELECT record_id,name FROM project ORDER BY record_id').all() as {
+      record_id: string
+      name: string
+    }[]
+  ).flatMap((project) => {
+    const spaceId = effectiveProjectSpace(db(), project.name)
+    return db()
+      .query(
+        `SELECT target_project_record_id,task_key FROM port_ref
+         WHERE target_project_record_id=? AND space_id IS ? ${includeResolved ? '' : 'AND resolved_at IS NULL'}
+         ORDER BY task_key`,
+      )
+      .all(project.record_id, spaceId) as {
+      target_project_record_id: string
+      task_key: string
+    }[]
+  })
+  return keys
     .map(({ target_project_record_id, task_key }) => ledgerRef(target_project_record_id, task_key))
     .filter((row): row is LedgerRef => Boolean(row && (includeResolved || !row.resolved_at)))
 }
@@ -293,7 +300,7 @@ export function setLedgerRefLocal(input: {
       )
     }
   })
-  return ledgerRef(input.targetProjectId, input.taskKey)!
+  return ledgerRefInSpace(input.targetProjectId, input.taskKey, null)!
 }
 
 function removeLedgerRefLocal(targetProjectId: string, taskKey: string): boolean {
@@ -311,28 +318,24 @@ export function resolveLedgerRefLocal(
   resolvedAt = nowIso(),
 ): LedgerRef | null {
   writableDb()
-  const existing = ledgerRef(targetProjectId, taskKey)
+  const existing = ledgerRefInSpace(targetProjectId, taskKey, null)
   if (!existing || existing.resolved_at) return existing
   db()
     .query(
       'UPDATE port_ref SET resolved_at=? WHERE target_project_record_id=? AND task_key=? AND resolved_at IS NULL',
     )
     .run(resolvedAt, targetProjectId, taskKey)
-  return ledgerRef(targetProjectId, taskKey)
+  return ledgerRefInSpace(targetProjectId, taskKey, null)
 }
 
 export function listDoctrineRules(includeRetired = true): DoctrineRule[] {
+  const spaceId = activeRecordSpace(db())
   const rows = db()
     .query(
-      'SELECT number,title,body,created_at,retired_at,space_id FROM port_doctrine ORDER BY number',
+      'SELECT number,title,body,created_at,retired_at,space_id FROM port_doctrine WHERE space_id IS ? ORDER BY number',
     )
-    .all() as (DoctrineRule & { space_id: string | null })[]
-  const spaceId = activeRecordSpace(db())
-  return overlayPortItems(
-    rows.filter((row) => row.space_id === null),
-    rows.filter((row) => row.space_id === spaceId),
-    (row) => String(row.number),
-  )
+    .all(spaceId) as (DoctrineRule & { space_id: string | null })[]
+  return rows
     .filter((row) => includeRetired || row.retired_at === null)
     .map(({ space_id: _spaceId, ...row }) => row)
 }

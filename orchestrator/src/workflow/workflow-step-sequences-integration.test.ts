@@ -79,7 +79,7 @@ test('sequence and flat modes compose, look up, and number identically', () => {
   expect(
     getWorkflowStep('sequence-fixture', 'fixture', 'lens', args, d, { mode: 'default' }).next,
   ).toEqual(getWorkflowStep('flat-fixture', 'fixture', 'lens', args, d, { mode: 'default' }).next)
-  expect(resolveWorkflowStepReference('3', workflowModeStepLists('sequence-fixture', d))).toBe(
-    'score',
-  )
+  expect(
+    resolveWorkflowStepReference('3', workflowModeStepLists('sequence-fixture', 'fixture', d)),
+  ).toBe('score')
 })

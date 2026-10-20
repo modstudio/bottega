@@ -4,6 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { isDeepStrictEqual } from 'node:util'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
+import { effectiveProjectSpace } from '../project-space.ts'
 import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
 import {
   type CatalogueSequence,
@@ -13,7 +14,6 @@ import {
   stepCatalogueLocalLifecycle,
   validateStepCatalogue,
 } from './step-catalogue.ts'
-import { projectCatalogueResolutionSpace } from './workflow-resolution-space.ts'
 import type { WorkflowTreeStore } from './workflow-tree.ts'
 import {
   importWorkflow,
@@ -26,7 +26,7 @@ export function productionWorkflowTree(
   d: Database = db(),
   project: string | null = null,
 ): WorkflowTreeStore {
-  const spaceId = projectCatalogueResolutionSpace(d, project)
+  const spaceId = effectiveProjectSpace(d, project)
   const catalogue = selectedStepCatalogue(undefined, d, spaceId)
   return {
     steps: catalogue.definition.steps,

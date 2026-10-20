@@ -29,7 +29,6 @@ import {
   workflowCompositionFactExtras,
 } from './workflow-project-facts.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
-import { projectWorkflowResolutionSpace } from './workflow-resolution-space.ts'
 import type { WorkflowModeStepList } from './workflow-step-reference.ts'
 import {
   expandWorkflowSteps,
@@ -312,7 +311,7 @@ function versionRow(
     .get(...(n === undefined ? [slug, spaceId] : [slug, spaceId, n])) as VersionRow | null
   if (!row)
     throw new Error(
-      n === undefined ? `unknown workflow "${slug}"` : `workflow "${slug}" has no version ${n}`,
+      `${n === undefined ? `unknown workflow "${slug}"` : `workflow "${slug}" has no version ${n}`}${spaceId === null ? '' : ` in hosted space ${spaceId}`}`,
     )
   return row
 }
@@ -331,7 +330,10 @@ function productionVersionRow(
     JOIN workflow w ON w.id=v.workflow_id
     WHERE w.slug=? AND w.space_id IS ? AND v.status='production'`)
     .get(slug, spaceId) as VersionRow | null
-  if (!row) throw new Error(`workflow "${slug}" has no production version; promote one`)
+  if (!row)
+    throw new Error(
+      `workflow "${slug}" has no production version${spaceId === null ? '' : ` in hosted space ${spaceId}`}; promote one`,
+    )
   return row
 }
 
@@ -339,15 +341,17 @@ export function listWorkflows(d: Database = db()) {
   return listResolvedWorkflows(null, d)
 }
 
-function workflowSlugs(d: Database): string[] {
+function workflowSlugs(d: Database, spaceId: string | null = null): string[] {
   return (
-    d.query('SELECT DISTINCT slug FROM workflow ORDER BY slug').all() as { slug: string }[]
+    d.query('SELECT slug FROM workflow WHERE space_id IS ? ORDER BY slug').all(spaceId) as {
+      slug: string
+    }[]
   ).map(({ slug }) => slug)
 }
 
 export function listResolvedWorkflows(project: string | null, d: Database = db()) {
-  return workflowSlugs(d).flatMap((slug) => {
-    const spaceId = projectWorkflowResolutionSpace(d, project, slug)
+  const spaceId = effectiveProjectSpace(d, project)
+  return workflowSlugs(d, spaceId).flatMap((slug) => {
     const row = d
       .query(`SELECT w.id,w.slug,
     (SELECT n FROM workflow_version WHERE workflow_id=w.id AND status='production') production_n,
@@ -395,7 +399,7 @@ export function showResolvedWorkflow(
   project: string | null,
   d: Database = db(),
 ) {
-  const spaceId = projectWorkflowResolutionSpace(d, project, slug, n)
+  const spaceId = effectiveProjectSpace(d, project)
   return parseVersion(versionRow(slug, n, d, spaceId))
 }
 
@@ -677,13 +681,13 @@ function forkWorkflowLocal(
   return writeDraftLocal(slug, definition, reason, author, 'fork', d)
 }
 export function resolvedWorkflowVersions(slug: string, project: string | null, d: Database = db()) {
-  const spaceId = projectWorkflowResolutionSpace(d, project, slug)
+  const spaceId = effectiveProjectSpace(d, project)
   return workflowLifecycle.versions(slug, d, spaceId)
 }
 
 export function resolvedProductionWorkflows(project: string, d: Database = db()) {
-  return workflowSlugs(d).flatMap((slug) => {
-    const spaceId = projectWorkflowResolutionSpace(d, project, slug)
+  const spaceId = effectiveProjectSpace(d, project)
+  return workflowSlugs(d, spaceId).flatMap((slug) => {
     const exists = d
       .query(
         `SELECT 1 FROM workflow w JOIN workflow_version v ON v.workflow_id=w.id
@@ -730,11 +734,13 @@ export function resolveWorkflowMode(
 
 export function workflowModeStepLists(
   slug: string,
+  project: string,
   d: Database = db(),
   selection: WorkflowSelection = {},
 ): WorkflowModeStepList[] {
-  const workflow = selectedWorkflow(slug, selection.version, d)
-  const catalogue = selectedCatalogue(selection.catalogueVersion, d)
+  const spaceId = effectiveProjectSpace(d, project)
+  const workflow = selectedWorkflow(slug, selection.version, d, spaceId)
+  const catalogue = selectedCatalogue(selection.catalogueVersion, d, spaceId)
   return workflow.definition.modes.map((mode) => ({
     mode: mode.slug,
     steps: expandWorkflowSteps(mode.steps, catalogue.definition.sequences ?? []),
@@ -774,7 +780,7 @@ export function composeWorkflow(
   selection: WorkflowSelection = {},
   autonomy?: WorkflowAutonomyResolution,
 ) {
-  const spaceId = projectWorkflowResolutionSpace(d, projectName, slug, selection.version)
+  const spaceId = effectiveProjectSpace(d, projectName)
   const row = selectedWorkflow(slug, selection.version, d, spaceId),
     definition = row.definition,
     catalogue = selectedCatalogue(selection.catalogueVersion, d, spaceId)
@@ -888,7 +894,7 @@ export function getWorkflowStep(
   selection: WorkflowSelection = {},
   autonomy?: WorkflowAutonomyResolution,
 ) {
-  const spaceId = projectWorkflowResolutionSpace(d, projectName, slug, selection.version)
+  const spaceId = effectiveProjectSpace(d, projectName)
   const row = selectedWorkflow(slug, selection.version, d, spaceId),
     definition = row.definition,
     catalogue = selectedCatalogue(selection.catalogueVersion, d, spaceId),

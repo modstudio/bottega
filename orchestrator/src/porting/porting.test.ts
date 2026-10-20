@@ -246,9 +246,10 @@ describe('porting data model', () => {
     ])
     expect(() => addDoctrineRuleLocal(7, 'Replacement', 'Must not reuse seven.')).toThrow()
   })
-  test('a hosted doctrine retirement hides the matching active local rule', () => {
+  test('an active hosted space does not read local-only doctrine', () => {
     const space = newRecordId()
     addDoctrineRuleLocal(8, 'Local rule', 'Local body.', '2026-09-01T00:00:00.000Z')
+    addDoctrineRuleLocal(9, 'Local only', 'Must stay local.', '2026-09-01T00:00:00.000Z')
     rememberActiveRecordSpace(db(), space)
     applyPortCatalogueRow(db(), 'port_doctrine', {
       id: newRecordId(),
@@ -266,8 +267,9 @@ describe('porting data model', () => {
     expect(listDoctrineRules(true)).toMatchObject([
       { number: 8, title: 'Hosted rule', retired_at: '2026-09-02T00:00:00.000Z' },
     ])
+    expect(listDoctrineRules(true)).toHaveLength(1)
   })
-  test('a local skip survives when routing selects a hosted pair', () => {
+  test('a routed project does not read a local-only pair or skip', () => {
     const sourceId = newRecordId()
     const targetId = newRecordId()
     const space = newRecordId()
@@ -276,6 +278,7 @@ describe('porting data model', () => {
     const localPair = addPairLocal(sourceId, targetId)
     addSkipLocal(localPair.id, 'local-candidate', 'keep this skip')
     rememberProjectSpace(db(), 'skip-target', space)
+    expect(pairByProjects(sourceId, targetId)).toBeNull()
     applyPortCatalogueRow(db(), 'port_pair', {
       id: newRecordId(),
       spaceId: space,
@@ -286,8 +289,29 @@ describe('porting data model', () => {
 
     const routedPair = pairByProjects(sourceId, targetId)!
     expect(routedPair.id).not.toBe(localPair.id)
-    expect(listSkips(routedPair.id)).toMatchObject([
-      { candidate: 'local-candidate', reason: 'keep this skip' },
-    ])
+    expect(listSkips(routedPair.id)).toEqual([])
+  })
+  test('a routed project does not read a local-only ledger ref or its sources', () => {
+    const sourceId = newRecordId()
+    const targetId = newRecordId()
+    upsertProject({ recordId: sourceId, name: 'ref-source', path: '/w/ref-source', settings: {} })
+    upsertProject({ recordId: targetId, name: 'ref-target', path: '/w/ref-target', settings: {} })
+    setLedgerRefLocal({
+      taskKey: 'REF-1',
+      targetProjectId: targetId,
+      note: 'local only',
+      sources: [
+        {
+          source_project_record_id: sourceId,
+          commits: ['abc'],
+          paths: ['src/a.ts'],
+          note: 'local source',
+        },
+      ],
+    })
+    rememberProjectSpace(db(), 'ref-target', newRecordId())
+
+    expect(ledgerRef(targetId, 'REF-1')).toBeNull()
+    expect(listLedgerRefs(true)).toEqual([])
   })
 })

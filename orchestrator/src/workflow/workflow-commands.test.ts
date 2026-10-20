@@ -18,7 +18,13 @@ import {
 } from './workflow-commands.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { recordWorkflowExec, recordWorkflowProbe } from './workflow-probe.ts'
-import { promoteWorkflowLocal, setWorkflowLocal, type WorkflowDefinition } from './workflows.ts'
+import {
+  promoteWorkflowLocal,
+  resolvedWorkflowVersions,
+  setWorkflowLocal,
+  showResolvedWorkflow,
+  type WorkflowDefinition,
+} from './workflows.ts'
 
 const presentation = (lines: string[]) => ({
   log: (line: string) => lines.push(line),
@@ -96,7 +102,7 @@ const registerCurrentProject = (name: string) =>
     settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
   })
 
-test('workflow inspection resolves the current project space and falls back to local outside it', async () => {
+test('workflow inspection reads only the current project space and stays local outside it', async () => {
   const local = db()
   const slug = 'inspection-resolution'
   const localDraft = setWorkflowLocal(
@@ -105,12 +111,37 @@ test('workflow inspection resolves the current project space and falls back to l
       title: 'Local inspection',
       description: 'Local catalogue definition.',
       arguments: [],
-      modes: [],
+      modes: [
+        {
+          slug: 'local',
+          title: 'Local',
+          default: true,
+          steps: ['verify'],
+        },
+      ],
     },
     'local inspection fixture',
     'test',
   )
   promoteWorkflowLocal(slug, localDraft.n, 'publish local inspection fixture', 'test')
+  const localOnlySlug = 'inspection-local-only'
+  const localOnlyDraft = setWorkflowLocal(
+    localOnlySlug,
+    {
+      title: 'Local only inspection',
+      description: 'Must not be visible inside a hosted-routed project.',
+      arguments: [],
+      modes: [],
+    },
+    'local-only inspection fixture',
+    'test',
+  )
+  promoteWorkflowLocal(
+    localOnlySlug,
+    localOnlyDraft.n,
+    'publish local-only inspection fixture',
+    'test',
+  )
 
   const project = 'inspection-resolution-project'
   const spaceId = newRecordId()
@@ -135,6 +166,16 @@ test('workflow inspection resolves the current project space and falls back to l
       ...productionStepCatalogue(local).definition,
       steps: [
         ...productionStepCatalogue(local).definition.steps,
+        {
+          slug: 'hosted-ordinal-check',
+          title: 'Hosted ordinal check',
+          body: 'This step exists only in the hosted mode layout.',
+          floor: [],
+          job: null,
+          stage: 'review',
+          autonomy: 'auto',
+          needs: [],
+        },
         {
           slug: 'inspection-check',
           title: 'Inspection check',
@@ -176,7 +217,7 @@ test('workflow inspection resolves the current project space and falls back to l
           slug: 'default',
           title: 'Default',
           default: true,
-          steps: ['inspection-check'],
+          steps: ['hosted-ordinal-check', 'inspection-check'],
         },
       ],
     }),
@@ -310,10 +351,26 @@ test('workflow inspection resolves the current project space and falls back to l
     expect.objectContaining({ n: 5 }),
   ])
   expect(JSON.parse(inside[3]!).n).toBe(3)
+  expect(
+    (JSON.parse(inside[0]!) as { slug: string }[]).some((row) => row.slug === localOnlySlug),
+  ).toBe(false)
+  expect(() => showResolvedWorkflow(localOnlySlug, undefined, project, local)).toThrow(
+    `unknown workflow "${localOnlySlug}" in hosted space ${spaceId}`,
+  )
+  expect(() => resolvedWorkflowVersions(localOnlySlug, project, local)).toThrow(
+    `unknown workflow "${localOnlySlug}" in hosted space ${spaceId}`,
+  )
+
+  const stepLines: string[] = []
+  await workflowCommand(
+    ['workflow', 'step', slug, '1', '--project', project],
+    presentation(stepLines),
+  )
+  expect(stepLines.join('\n')).toContain('This step exists only in the hosted mode layout.')
 
   const renderLines: string[] = []
   await workflowCommand(['workflow', 'render-check'], presentation(renderLines))
-  expect(renderLines).toContain(`${project}  checked workflow spaces: local,${spaceId}`)
+  expect(renderLines).toContain(`${project}  checked workflow spaces: ${spaceId}`)
   expect(renderLines).toContain(
     `${project}  ${slug}  default  inspection-check  body  tracker.server`,
   )
@@ -336,6 +393,9 @@ test('workflow inspection resolves the current project space and falls back to l
       ?.title,
   ).toBe('Local inspection')
   expect(JSON.parse(outside[1]!).definition.title).toBe('Local inspection')
+  expect(
+    (JSON.parse(outside[0]!) as { slug: string }[]).some((row) => row.slug === localOnlySlug),
+  ).toBe(true)
 })
 
 test('workflow import reports a sequence-only draft as a change', () => {
