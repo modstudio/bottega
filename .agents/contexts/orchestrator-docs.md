@@ -34,7 +34,7 @@ An acknowledgement-required notice reaches only sessions already running when it
 
 A long architect session loses its thread at a `/clear` or a compaction, so "where we are and what is next" lives outside the conversation, in the doc store, and is re-offered when a new session starts.
 
-A resume brief is a doc at `scope = resume`, `subject = <project>`, `slug = <epic>`. Status lives in the body's frontmatter, not in the address — a consumed brief keeps the same name so it stays readable. Frontmatter keys: `status` (`open` | `consumed`), `epic`, `project`, `written` (ISO `8601`), `consumed` (ISO `8601`, absent while open).
+A resume brief is a doc at `scope = resume`, `subject = <project>`, `slug = <epic>`. Status lives in the body's frontmatter, not in the address — a consumed brief keeps the same name so it stays readable. Frontmatter keys: `status` (`open` | `consumed`); `epic` or `task`, holding a tracker key (the epic's key, or the task's key when the work has no epic); `project`; `written` (ISO `8601`); `consumed` (ISO `8601`, absent while open). Writing an open brief refuses one without these keys or a `NEXT ACTION` line, or one that names a scratch location (`orchestrator/src/doc/doc-resume-write.ts`).
 
 **Writing.** At a task or epic boundary, draft the brief **in the conversation as markdown**, and write it only after the operator approves. Never draft-then-store-then-show; the approval must precede the write. Writes go through `set_doc`.
 

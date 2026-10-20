@@ -58,6 +58,7 @@ import {
   assertLocalStoredReferenceWrite,
   skipsProseLint,
 } from './doc-reference-write.ts'
+import { resumeRestoreRefusal, resumeWriteRefusal } from './doc-resume-write.ts'
 import {
   docSubjects,
   validateDocSubject,
@@ -119,6 +120,22 @@ import {
 import { resolvedDocWriteIdentity } from './doc-write-identity.ts'
 
 export type { DocWriteContext } from './doc-article-fields.ts'
+
+function assertSetDocAllowed(input: DocWriteInput): void {
+  assertWorkerDocStoreWriteAllowed('setDoc')
+  if (input.scope !== 'resume') return
+  const refusal = resumeWriteRefusal(input.slug, input.body, resumeFrontmatter(input.body))
+  if (refusal) throw new Error(refusal)
+}
+
+function assertRestoredDocWriteAllowed(input: Parameters<typeof assertDocWriteAllowed>[0]): void {
+  assertDocWriteAllowed(input)
+  if (input.scope !== 'resume') return
+  const refusal = resumeRestoreRefusal(
+    resumeWriteRefusal(input.slug, input.body, resumeFrontmatter(input.body)),
+  )
+  if (refusal) throw new Error(refusal)
+}
 
 function assertInjectSize(input: {
   scope: string
@@ -453,24 +470,7 @@ async function setDocWithOp(
 }
 
 export async function setDoc(input: DocWriteInput): Promise<Doc & { writeWarnings?: string[] }> {
-  assertWorkerDocStoreWriteAllowed('setDoc')
-  if (input.scope === 'resume') {
-    const frontmatter = resumeFrontmatter(input.body)
-    if (!frontmatter?.top.status) {
-      throw new Error(
-        `resume doc "${input.slug}" requires readable top-level YAML frontmatter in the shape "status: open" or "status: consumed"`,
-      )
-    }
-    if (frontmatter.status?.occurrences && frontmatter.status.occurrences > 1) {
-      throw new Error(`resume doc "${input.slug}" has more than one top-level status field`)
-    }
-    const status = frontmatter.top.status
-    if (status !== 'open' && status !== 'consumed') {
-      throw new Error(
-        `resume doc "${input.slug}" has unrecognized status "${status}"; permitted values are "open" and "consumed"`,
-      )
-    }
-  }
+  assertSetDocAllowed(input)
   return setDocWithOp(input)
 }
 
@@ -863,7 +863,7 @@ export async function restoreDoc(
     expectedCurrent,
     false,
   )
-  assertDocWriteAllowed({
+  assertRestoredDocWriteAllowed({
     scope,
     subject,
     owner,

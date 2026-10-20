@@ -50,6 +50,10 @@ export const docModules: DocModule[] = [
     './doc-write-allowed.ts',
   ]),
   module('orchestrator/src/doc/doc-resume-frontmatter.ts', []),
+  module('orchestrator/src/doc/doc-resume-write.ts', [
+    '../../../shared/brand.ts',
+    './doc-resume-frontmatter.ts',
+  ]),
   module('orchestrator/src/doc/doc-article-fields.ts', [
     '../../../shared/brand.ts',
     '../../../shared/docs.ts',
