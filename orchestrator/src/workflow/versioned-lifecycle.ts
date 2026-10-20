@@ -62,9 +62,12 @@ function ownerId<T>(
   d: Database,
   spaceId: string | null = null,
 ): number {
-  const row = d
-    .query(`SELECT id FROM ${config.identityTable} WHERE slug=? AND space_id IS ?`)
-    .get(slug, spaceId) as { id: number } | null
+  const row = (
+    d.query(`SELECT id,space_id FROM ${config.identityTable} WHERE slug=?`).all(slug) as {
+      id: number
+      space_id: string | null
+    }[]
+  ).find((candidate) => candidate.space_id === spaceId)
   if (!row) throw new Error(`unknown ${config.noun} "${slug}"`)
   return row.id
 }
