@@ -1,10 +1,151 @@
 import type { Database } from 'bun:sqlite'
+import { Command } from 'commander'
+import { newRecordId } from '../../../shared/record/schema.ts'
+import { setRawArgv } from '../commands/support.ts'
+import { registerWorkflowCommands } from '../commands/workflow.ts'
+import { db } from '../database/db.ts'
+import { upsertProject } from '../project/projects.ts'
+import { rememberProjectSpace } from '../project-space.ts'
+import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.ts'
 import {
   productionStepCatalogue,
   promoteStepCatalogueLocal,
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
-import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
+import type { WorkflowCommandOptions, WorkflowPresentation } from './workflow-commands.ts'
+import { parseWorkflowTree } from './workflow-tree.ts'
+import { collectWorkflowTree } from './workflow-tree-files.ts'
+import { promoteWorkflowLocal, setWorkflowLocal, type WorkflowDefinition } from './workflows.ts'
+
+export const workflowCommandPresentation = (lines: string[]) => ({
+  log: (line: string) => lines.push(line),
+  error: () => {},
+  setExitCode: () => {},
+})
+
+export const workflowCommandOutcomePresentation = () => {
+  const stdout: string[] = []
+  const stderr: string[] = []
+  const exitCodes: number[] = []
+  return {
+    stdout,
+    stderr,
+    exitCodes,
+    presentation: {
+      log: (line: string) => stdout.push(line),
+      error: (line: string) => stderr.push(line),
+      setExitCode: (code: number) => exitCodes.push(code),
+    },
+  }
+}
+
+export const workflowRecordedArtifact = (project: string) => {
+  const row = db()
+    .query<{ record_id: string }, [string, string, string]>(
+      `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_record_id,record_id)
+       SELECT 'project', ?, 'floor-artifact', 't', 'b', 'inject', '["technical"]', 't', 't', record_id, ?
+         FROM project WHERE name=?
+       RETURNING record_id`,
+    )
+    .get(project, newRecordId(), project) as { record_id: string }
+  return [`--artifact`, `doc:${row.record_id}`] as const
+}
+
+export async function runWorkflowCommand(
+  argv: string[],
+  shown: WorkflowPresentation,
+  options: WorkflowCommandOptions = {},
+): Promise<void> {
+  const command = new Command().exitOverride().enablePositionalOptions()
+  registerWorkflowCommands(command, shown, options)
+  setRawArgv(argv)
+  await command.parseAsync(['node', 'orch', ...argv])
+}
+
+const registerWorkflowProject = (name: string, path: string) =>
+  upsertProject({
+    recordId: newRecordId(),
+    name,
+    path,
+    stack: 'bun',
+    settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
+  })
+
+export const registerFixtureWorkflowProject = (name: string) =>
+  registerWorkflowProject(name, `/fixture/${name}`)
+export const registerCurrentWorkflowProject = (name: string) =>
+  registerWorkflowProject(name, process.cwd())
+export const registerOwningWorkflowProject = registerWorkflowProject
+
+export const publishCursorWorkflowFixture = (slug: string, modes: WorkflowDefinition['modes']) => {
+  const draft = setWorkflowLocal(
+    slug,
+    {
+      title: `Cursor command ${slug}`,
+      description: 'Exercises cursor mode resolution.',
+      arguments: [{ name: 'key', required: true, description: 'Task key.' }],
+      modes,
+    },
+    'test cursor mode resolution',
+    'test',
+  )
+  promoteWorkflowLocal(slug, draft.n, 'publish', 'test')
+}
+
+export const installHostedWorkflowTreeFixture = (
+  project: string,
+  spaceId: string,
+  repositoryRoot: string,
+) => {
+  const local = db()
+  const tree = parseWorkflowTree(collectWorkflowTree(repositoryRoot))
+  const at = '2026-10-20T12:00:00.000Z'
+  const catalogueId = newRecordId()
+  applyWorkflowCatalogueRow(local, 'step_catalogue', {
+    id: catalogueId,
+    spaceId,
+    slug: 'shared',
+    generation: 1,
+    createdAt: at,
+  })
+  applyWorkflowCatalogueRow(local, 'step_catalogue_version', {
+    id: newRecordId(),
+    spaceId,
+    ownerId: catalogueId,
+    n: 1,
+    status: 'production',
+    definition: JSON.stringify({ steps: tree.steps, sequences: tree.sequences }),
+    author: 'hosted',
+    reason: 'hosted tree fixture',
+    createdAt: at,
+    promotedAt: at,
+    retiredAt: null,
+  })
+  for (const { slug, definition } of tree.workflows) {
+    const workflowId = newRecordId()
+    applyWorkflowCatalogueRow(local, 'workflow', {
+      id: workflowId,
+      spaceId,
+      slug,
+      generation: 1,
+      createdAt: at,
+    })
+    applyWorkflowCatalogueRow(local, 'workflow_version', {
+      id: newRecordId(),
+      spaceId,
+      ownerId: workflowId,
+      n: 1,
+      status: 'production',
+      definition: JSON.stringify(definition),
+      author: 'hosted',
+      reason: 'hosted tree fixture',
+      createdAt: at,
+      promotedAt: at,
+      retiredAt: null,
+    })
+  }
+  rememberProjectSpace(local, project, spaceId)
+}
 
 /** Installs a neutral multi-step workflow for tests of generic workflow behavior. */
 export function installWorkflowStoreFixture(d: Database): void {
