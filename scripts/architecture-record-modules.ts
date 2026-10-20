@@ -19,7 +19,6 @@ export const recordModules: RecordModule[] = [
     './lens-built-ins.ts',
   ]),
   module('orchestrator/src/project-space.ts', ['bun:sqlite']),
-  module('orchestrator/src/porting/port-overlay.ts', []),
   module('orchestrator/src/porting/port-import-authority.ts', [
     '../record/record-write-authority.ts',
     '../worker-store-write.ts',

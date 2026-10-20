@@ -17,13 +17,6 @@ export const portBoundarySpecs = [
     reason: 'Keep port commands independent of runs, routing, transports, the CLI, and worktrees.',
   },
   {
-    name: 'port-overlay-boundary',
-    file: 'orchestrator/src/porting/port-overlay.ts',
-    allowed: [],
-    typeOnlyAllowed: [],
-    reason: 'Keep port overlay selection pure and independent of stores and transports.',
-  },
-  {
     name: 'port-import-authority-boundary',
     file: 'orchestrator/src/porting/port-import-authority.ts',
     allowed: ['../record/record-write-authority.ts', '../worker-store-write.ts'],
