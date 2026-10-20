@@ -11,6 +11,14 @@ import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { job } from '../jobs/jobs.ts'
 import { judgeRun, scoreRun } from '../judgment.ts'
 import { parseDuplicateFinding } from '../review/review-duplicate-link.ts'
+import { DISPOSITIONS } from '../review/review-triage.ts'
+import {
+  REVIEW_COVERAGE,
+  REVIEW_LIMITS,
+  REVIEW_OVERLAP,
+  REVIEW_REPRODUCED,
+  REVIEW_SEVERITY,
+} from '../review/review-vocabulary.ts'
 import { authorizeRunMutation } from '../run/run-authority.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { recalibrate } from '../score/recalibration.ts'
@@ -98,7 +106,12 @@ const cleanupPresentation: CleanupPresentation = {
 }
 
 function addJudgmentOptions(command: Command): Command {
-  command.option('--finding <value>', 'record a finding disposition', collect, [])
+  command.option(
+    '--finding <value>',
+    `record N=<${DISPOSITIONS.join('|')}>:<detail>; accepted/modified/skipped detail is ${REVIEW_SEVERITY.join('|')}; rejected detail is a lowercase stable category ID of 1-64 characters`,
+    collect,
+    [],
+  )
   command.option('--duplicate <value>', 'link N to the same finding in another run', collect, [])
   const descriptions: Record<
     Exclude<(typeof commonValueFlags)[number], '--finding' | '--duplicate'>,
@@ -109,10 +122,10 @@ function addJudgmentOptions(command: Command): Command {
     '--better-than': 'record that this run is better than these runs',
     '--worse-than': 'record that this run is worse than these runs',
     '--same-as': 'record that this run is tied with these runs',
-    '--reproduced': 'record whether review findings were reproduced',
-    '--coverage': 'record the review coverage verdict',
-    '--limits': 'record the review limits verdict',
-    '--overlap': 'record the review overlap verdict',
+    '--reproduced': `record whether review findings were reproduced: ${REVIEW_REPRODUCED.join('|')}`,
+    '--coverage': `record the review coverage verdict: ${REVIEW_COVERAGE.join('|')}`,
+    '--limits': `record the review limits verdict: ${REVIEW_LIMITS.join('|')}`,
+    '--overlap': `record the review overlap verdict: ${REVIEW_OVERLAP.join('|')}`,
   }
   for (const name of commonValueFlags.filter(
     (name) => name !== '--finding' && name !== '--duplicate',

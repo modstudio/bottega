@@ -19,6 +19,7 @@ import { enqueueReview, enqueueReviewFinding } from './review/review-outbox.ts'
 import {
   assertRunReviewFindingIntegrity,
   completeReview,
+  DISPOSITIONS,
   type Disposition,
   gradeReviewLens,
   type ReviewGrades,
@@ -431,6 +432,25 @@ function recordDuplicateFindingLink(currentRunId: string, link: ParsedDuplicateF
   enqueueReviewFinding(db(), current!.record_id)
 }
 
+const REVIEW_GRADE_VALUES = {
+  reproduced: REVIEW_REPRODUCED,
+  coverage: REVIEW_COVERAGE,
+  limits: REVIEW_LIMITS,
+  overlap: REVIEW_OVERLAP,
+} as const
+
+function missingReviewGradeFlag(name: keyof typeof REVIEW_GRADE_VALUES): string {
+  return `--${name} ${REVIEW_GRADE_VALUES[name].join(' | ')}`
+}
+
+function missingReviewFindingFlag(ordinal: number): string {
+  return (
+    `--finding ${ordinal}=<${DISPOSITIONS.join('|')}>:<detail> ` +
+    `(accepted/modified/skipped: ${REVIEW_SEVERITY.join('|')}; ` +
+    'rejected: lowercase stable category ID of 1-64 characters)'
+  )
+}
+
 function completeReviewWithoutFindings(reviewRecordId: string, scoredAt: string): void {
   db().query('UPDATE review SET completed_at=? WHERE record_id=?').run(scoredAt, reviewRecordId)
   enqueueReview(db(), reviewRecordId)
@@ -536,16 +556,10 @@ export async function judgeRun(
     limits: flags.flag('limits'),
     overlap: flags.flag('overlap'),
   }
-  const validGrades = {
-    reproduced: REVIEW_REPRODUCED,
-    coverage: REVIEW_COVERAGE,
-    limits: REVIEW_LIMITS,
-    overlap: REVIEW_OVERLAP,
-  } as const
   for (const name of gradeNames) {
     const value = suppliedGrades[name]
-    if (value !== undefined && !(validGrades[name] as readonly string[]).includes(value)) {
-      throw new Error(`--${name} must be: ${validGrades[name].join(' | ')}`)
+    if (value !== undefined && !(REVIEW_GRADE_VALUES[name] as readonly string[]).includes(value)) {
+      throw new Error(`--${name} must be: ${REVIEW_GRADE_VALUES[name].join(' | ')}`)
     }
   }
   let parsedOutput: ReturnType<typeof parseReviewOutput> = null
@@ -594,7 +608,8 @@ export async function judgeRun(
   const comparison = suppliedComparisons[0]
   const comparisonIds = comparison ? parseRunIds(flags.flag(comparison)!, `--${comparison}`) : []
   if (findingsJob && delivery !== 'none') {
-    for (const name of gradeNames) if (!gradeValues[name]) missing.push(`--${name}`)
+    for (const name of gradeNames)
+      if (!gradeValues[name]) missing.push(missingReviewGradeFlag(name))
     const allowed = reviewRecordId
       ? reviewFindings.map((finding) => finding.ordinal)
       : parsedOutput!.findings.map((_, index) => index + 1)
@@ -605,7 +620,7 @@ export async function judgeRun(
       : allowed
     for (const ordinal of expected) {
       if (!parsedFindings.some((finding) => finding.ordinal === ordinal)) {
-        missing.push(`--finding ${ordinal}=<disposition>:<severity-or-category>`)
+        missing.push(missingReviewFindingFlag(ordinal))
       }
     }
     const unexpected = parsedFindings.find((finding) => !allowed.includes(finding.ordinal))

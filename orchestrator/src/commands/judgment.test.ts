@@ -1,10 +1,16 @@
 import { expect, test } from 'bun:test'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { trackedTestResidue } from '../../test/residue.ts'
 import { db } from '../database/db.ts'
+import { DISPOSITIONS } from '../review/review-triage.ts'
+import { REVIEW_SEVERITY } from '../review/review-vocabulary.ts'
 import {
+  register,
   resolveComparisonRunIds,
   resolveDuplicateRunIds,
   scoreNote,
@@ -17,6 +23,32 @@ const flags = (values: Record<string, string>) =>
   ({
     flag: (name: string) => values[name],
   }) as Parameters<typeof scoreNote>[0]
+
+test('score help names every review grade and finding disposition value', () => {
+  const program = new Command().name(PLATFORM_SLUG)
+  register(program)
+  const help = program.commands
+    .find((command) => command.name() === 'score')!
+    .helpInformation()
+    .replace(/\s+/g, ' ')
+  expect(help).toContain(
+    'record N=<accepted|modified|rejected|skipped>:<detail>; accepted/modified/skipped detail is critical|high|medium|low; rejected detail is a lowercase stable category ID of 1-64 characters',
+  )
+  expect(help).toContain('record whether review findings were reproduced: none|some|all')
+  expect(help).toContain('record the review coverage verdict: empty|partial|adequate')
+  expect(help).toContain('record the review limits verdict: named|absent')
+  expect(help).toContain('record the review overlap verdict: unique|shared|none|alone')
+})
+
+test('score reminder names every finding disposition value', () => {
+  const hook = readFileSync(
+    fileURLToPath(new URL('../../hooks/score-reminder.py', import.meta.url)),
+    'utf8',
+  )
+  expect(hook).toContain(`--finding {ordinal}=<${DISPOSITIONS.join('|')}>:<detail>`)
+  expect(hook).toContain(`accepted/modified/skipped: ${REVIEW_SEVERITY.join('|')}`)
+  expect(hook).toContain('rejected: lowercase stable category ID of 1-64 characters')
+})
 
 test('inline score notes accept ordinary punctuation and quoted strings', () => {
   expect(scoreNote(flags({ note: 'The households\' reports quote "caught value".' }))).toBe(

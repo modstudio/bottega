@@ -259,7 +259,9 @@ def main() -> int:
                 (review_id,),
             ).fetchall()
             missing.extend(
-                f"--finding {ordinal}=<disposition>:<severity-or-category>"
+                f"--finding {ordinal}=<accepted|modified|rejected|skipped>:<detail> "
+                f"(accepted/modified/skipped: critical|high|medium|low; "
+                f"rejected: lowercase stable category ID of 1-64 characters)"
                 for (ordinal,) in ordinals
             )
         pair_entry = pairs_by_run.pop(i, None)
