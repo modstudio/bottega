@@ -15,6 +15,7 @@ import { RefusalError } from '../refusal-error.ts'
 import { calibrationFor } from '../runtime/calibration-port.ts'
 import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
+import { transportPinIneligibility } from '../transport/transport.ts'
 
 export type Candidate = {
   agent: string
@@ -60,14 +61,6 @@ export type Candidate = {
   preferred: boolean
   maxConcurrent: number | null
   runningRunIds: string[]
-}
-
-function excludesMeteredRoute(
-  billing: string,
-  name: string,
-  explicitlyNamedAgent: string | undefined,
-): boolean {
-  return billing === 'metered' && explicitlyNamedAgent !== name
 }
 
 const RUNNING_RUNS_SQL =
@@ -611,15 +604,15 @@ export function candidates(
     const failures = recent.failures
     const evidence = scored + failures
     const score = evidence > 0 ? (recent.pts + weigh('none', null) * failures) / evidence : null
-    let eligible = true
-    let why = ''
     const mcpWhy = mcpCandidateIneligibility(a.mcpToolNamePattern, requiredMcp)
+    const policy = routePolicyEligibility(jobName, a, j, explicitlyNamedAgent)
+    let eligible = true,
+      why = policy.why
     const unavailable = unavailableReason(name)
     const runningRunIds = (db().query(RUNNING_RUNS_SQL).all(name) as { record_id: string }[]).map(
       (row) => row.record_id,
     )
     const declared = a.jobs ?? null
-    const preferred = Boolean(a.preferredJobs?.includes(jobName))
     if (declared && !declared.includes(jobName)) {
       eligible = false
       why = `not declared for ${jobName}`
@@ -629,9 +622,9 @@ export function candidates(
     } else if (unavailable) {
       eligible = false
       why = unavailable
-    } else if (excludesMeteredRoute(a.billing, name, explicitlyNamedAgent)) {
+    } else if (!policy.eligible) {
       eligible = false
-      why = 'metered billing'
+      why = policy.why
     } else if (!a.probedAt) {
       eligible = false
       why = `unprobed agent is ineligible for all jobs; run ${PLATFORM_SLUG} agent show probe ${name}`
@@ -689,7 +682,7 @@ export function candidates(
       why,
       cooling,
       declared,
-      preferred,
+      preferred: Boolean(a.preferredJobs?.includes(jobName)),
       maxConcurrent: a.maxConcurrent ?? null,
       runningRunIds,
     }
@@ -1147,4 +1140,81 @@ export function pick(
     agent: chosen.agent,
     reason: withConstraint(`${policy}; ${pct}, tied with ${selected.tied - 1} other — ${edge}`),
   }
+}
+
+export function meteredRouteEligibility(input: {
+  billing: string
+  routeMetered: boolean
+  writesRepo: boolean
+  name: string
+  explicitlyNamedAgent?: string
+}): { eligible: boolean; why: string; mayAutoRouteNamedJob: boolean } {
+  if (input.billing !== 'metered' || input.explicitlyNamedAgent === input.name)
+    return {
+      eligible: true,
+      why: '',
+      mayAutoRouteNamedJob: input.explicitlyNamedAgent === input.name,
+    }
+  if (!input.routeMetered)
+    return {
+      eligible: false,
+      why: 'metered billing is not opted in for automatic routing',
+      mayAutoRouteNamedJob: false,
+    }
+  if (input.writesRepo)
+    return {
+      eligible: false,
+      why: 'metered routing opt-in is limited to jobs that do not write the repository',
+      mayAutoRouteNamedJob: false,
+    }
+  return { eligible: true, why: '', mayAutoRouteNamedJob: true }
+}
+
+function routePolicyEligibility(
+  jobName: string,
+  agent: { billing: string; routeMetered?: boolean; name: string; defaultTransport: 'cli' | 'acp' },
+  routedJob: { needs: { writesRepo?: boolean } },
+  explicitlyNamedAgent: string | undefined,
+) {
+  const metered = meteredRouteEligibility({
+    billing: agent.billing,
+    routeMetered: Boolean(agent.routeMetered),
+    writesRepo: Boolean(routedJob.needs.writesRepo),
+    name: agent.name,
+    explicitlyNamedAgent,
+  })
+  if (!metered.eligible) return metered
+  const transportWhy =
+    agent.defaultTransport === 'acp'
+      ? transportPinIneligibility(
+          jobName,
+          agent.name,
+          AGENTS[agent.name]!,
+          agent.defaultTransport,
+          metered.mayAutoRouteNamedJob,
+        )
+      : null
+  return transportWhy ? { ...metered, eligible: false, why: transportWhy } : metered
+}
+
+export function agentsIneligibleForTransport(jobName: string, transport: 'cli' | 'acp'): string[] {
+  return Object.values(AGENTS)
+    .filter((agent) => {
+      const policy = meteredRouteEligibility({
+        billing: agent.billing,
+        routeMetered: Boolean(agent.routeMetered),
+        writesRepo: Boolean(job(jobName).needs.writesRepo),
+        name: agent.name,
+      })
+      return (
+        transportPinIneligibility(
+          jobName,
+          agent.name,
+          agent,
+          transport,
+          policy.mayAutoRouteNamedJob,
+        ) !== null
+      )
+    })
+    .map((agent) => agent.name)
 }

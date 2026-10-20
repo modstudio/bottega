@@ -29,6 +29,7 @@ export type AgentRow = {
   jobs: string | null
   preferred_jobs: string | null
   max_concurrent: number | null
+  route_metered: number
 }
 
 export function rowAgent(row: AgentRow): Agent {
@@ -89,6 +90,7 @@ export function rowAgent(row: AgentRow): Agent {
     jobs: row.jobs ? JSON.parse(row.jobs) : null,
     preferredJobs: row.preferred_jobs ? JSON.parse(row.preferred_jobs) : [],
     maxConcurrent: row.max_concurrent,
+    routeMetered: Boolean(row.route_metered),
     ...(row.base_url
       ? {
           env: () => ({
@@ -220,6 +222,7 @@ export type AgentMutation = {
   jobs?: string[] | null
   preferredJobs?: string[]
   maxConcurrent?: number | null
+  routeMetered?: boolean
 }
 
 function assertApiKeySecret(value: string | null | undefined): void {
@@ -291,8 +294,8 @@ export function addAgent(name: string, input: AgentMutation): AgentRow {
   }
   writableDb()
     .query(
-      `INSERT INTO agent (record_id,name,harness,backend,model,base_url,api_key_secret,transport,caps,billing,operated_by,enabled,disabled_reason,jobs,preferred_jobs,max_concurrent)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO agent (record_id,name,harness,backend,model,base_url,api_key_secret,transport,caps,billing,operated_by,enabled,disabled_reason,jobs,preferred_jobs,max_concurrent,route_metered)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
       newRecordId(),
@@ -312,6 +315,7 @@ export function addAgent(name: string, input: AgentMutation): AgentRow {
       input.jobs == null ? null : JSON.stringify(input.jobs),
       input.preferredJobs === undefined ? null : JSON.stringify(input.preferredJobs),
       input.maxConcurrent ?? null,
+      input.routeMetered ? 1 : 0,
     )
   refreshAgents()
   return agentRows().find((row) => row.name === name)!
@@ -331,18 +335,24 @@ function agentIdentityChanged(current: AgentRow, input: AgentMutation): boolean 
   )
 }
 
+function agentEnabledFields(current: AgentRow, input: AgentMutation) {
+  return {
+    enabled: input.enabled === undefined ? current.enabled : input.enabled ? 1 : 0,
+    reason:
+      input.enabled === false
+        ? input.reason!.trim()
+        : input.enabled === true
+          ? null
+          : current.disabled_reason,
+  }
+}
+
 export function setAgent(name: string, input: AgentMutation): AgentRow {
   assertAgentMutation(input, false)
   const current = agentRows().find((row) => row.name === name)
   if (!current) throw new Error(`unknown agent "${name}"`)
   let caps = JSON.parse(current.caps) as Record<string, unknown>
-  const enabled = input.enabled === undefined ? current.enabled : input.enabled ? 1 : 0
-  const reason =
-    input.enabled === false
-      ? input.reason!.trim()
-      : input.enabled === true
-        ? null
-        : current.disabled_reason
+  const { enabled, reason } = agentEnabledFields(current, input)
   const identityChanged = agentIdentityChanged(current, input)
   let probedAt = current.probed_at
   let probeResult = current.probe_result
@@ -396,7 +406,7 @@ export function setAgent(name: string, input: AgentMutation): AgentRow {
   }
   writableDb()
     .query(
-      `UPDATE agent SET harness=?,backend=?,model=?,base_url=?,api_key_secret=?,transport=?,caps=?,billing=?,enabled=?,disabled_reason=?,probed_at=?,probe_result=?,jobs=?,preferred_jobs=?,max_concurrent=? WHERE name=?`,
+      `UPDATE agent SET harness=?,backend=?,model=?,base_url=?,api_key_secret=?,transport=?,caps=?,billing=?,enabled=?,disabled_reason=?,probed_at=?,probe_result=?,jobs=?,preferred_jobs=?,max_concurrent=?,route_metered=? WHERE name=?`,
     )
     .run(
       input.harness ?? current.harness,
@@ -420,6 +430,7 @@ export function setAgent(name: string, input: AgentMutation): AgentRow {
         ? current.preferred_jobs
         : JSON.stringify(input.preferredJobs),
       input.maxConcurrent === undefined ? current.max_concurrent : input.maxConcurrent,
+      input.routeMetered === undefined ? current.route_metered : input.routeMetered ? 1 : 0,
       name,
     )
   refreshAgents()

@@ -26,7 +26,7 @@ import {
   failoverSuccessorAgent,
   MAX_FAILOVER_ATTEMPTS,
 } from '../route/failover.ts'
-import { pick } from '../route/route.ts'
+import { agentsIneligibleForTransport, pick } from '../route/route.ts'
 import type { TransportName } from '../transport/transport.ts'
 import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import type { Changes } from '../worktree/worktree-remove.ts'
@@ -111,6 +111,86 @@ function hasFailoverSuccessor(id: string): boolean {
   return Boolean(db().query('SELECT record_id FROM run WHERE retry_of_record_id=?').get(id))
 }
 
+export function failoverSelectionConstraints(input: {
+  transport: TransportName | null
+  transportExplicit: number
+  avoided: string[] | undefined
+  tried: string[]
+  transportExcluded: string[]
+}): {
+  pinnedTransport: TransportName | null
+  successorTransport: TransportName | undefined
+  avoidedAgents: string[]
+} {
+  const pinnedTransport = input.transportExplicit ? input.transport : null
+  return {
+    pinnedTransport,
+    successorTransport: pinnedTransport ?? undefined,
+    avoidedAgents: [
+      ...new Set([
+        ...(input.avoided ?? []),
+        ...input.tried,
+        ...(pinnedTransport ? input.transportExcluded : []),
+      ]),
+    ],
+  }
+}
+
+function storedFailoverSelectionConstraints(
+  first: { transport: TransportName | null; transport_explicit: number },
+  opts: Pick<CloseOptions, 'job' | 'avoid'>,
+  tried: string[],
+) {
+  return failoverSelectionConstraints({
+    transport: first.transport,
+    transportExplicit: first.transport_explicit,
+    avoided: opts.avoid,
+    tried,
+    transportExcluded: first.transport
+      ? agentsIneligibleForTransport(opts.job, first.transport)
+      : [],
+  })
+}
+
+function selectFailoverSuccessor(input: {
+  job: string
+  prompt: string
+  findings: boolean | undefined
+  lens: string | null
+  launchCwd: string | null
+  callerCwd: string
+  repo: string | null
+  mcp: number | null
+  mcpError: string | null
+  pinnedTransport: TransportName | null
+  avoidedAgents: string[]
+}) {
+  try {
+    return pick(
+      input.job,
+      undefined,
+      Buffer.byteLength(input.prompt) + (input.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0),
+      true,
+      stackAt(input.launchCwd ?? input.callerCwd),
+      {
+        agents: input.avoidedAgents,
+        requiredMcp: requiredMcpServer(
+          mcpRequestFromStored(input.mcp, input.mcpError),
+          input.launchCwd ?? input.callerCwd,
+          input.repo ?? undefined,
+        ),
+      },
+      false,
+      input.lens ?? undefined,
+    )
+  } catch (error) {
+    if (!input.pinnedTransport) throw error
+    throw new Error(
+      `pinned ${input.pinnedTransport} transport left no eligible agent: ${String((error as Error).message ?? error)}`,
+    )
+  }
+}
+
 function notifyFailureRequiringHuman(input: {
   failureKind: ReturnType<typeof classify> | null
   name: string
@@ -173,7 +253,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
       .query(
         `SELECT prompt_path, launch_cwd, launch_seed, launch_key, launch_base,
               no_failover, session_id, mcp, mcp_error, schema_path, probe, label, lens, repo,
-              base_commit, head_commit, review_ref, transport
+              base_commit, head_commit, review_ref, transport, transport_explicit
          FROM run WHERE record_id=?`,
       )
       .get(attempts[0]!.record_id) as {
@@ -195,6 +275,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
       head_commit: string | null
       review_ref: string | null
       transport: TransportName | null
+      transport_explicit: number
     }
     const treeName = worktree?.path ?? '(none — read-only job)'
     const failoverFacts = {
@@ -216,24 +297,20 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
     } else {
       try {
         const originalPrompt = readFileSync(first.prompt_path!, 'utf8')
-        const selected = pick(
-          opts.job,
-          undefined,
-          Buffer.byteLength(originalPrompt) +
-            (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0),
-          true,
-          stackAt(first.launch_cwd ?? callerCwd),
-          {
-            agents: [...new Set([...(opts.avoid ?? []), ...tried])],
-            requiredMcp: requiredMcpServer(
-              mcpRequestFromStored(first.mcp, first.mcp_error),
-              first.launch_cwd ?? callerCwd,
-              first.repo ?? undefined,
-            ),
-          },
-          false,
-          first.lens ?? undefined,
-        )
+        const transportConstraints = storedFailoverSelectionConstraints(first, opts, tried)
+        const selected = selectFailoverSuccessor({
+          job: opts.job,
+          prompt: originalPrompt,
+          findings: requestedJob.findings,
+          lens: first.lens,
+          launchCwd: first.launch_cwd,
+          callerCwd,
+          repo: first.repo,
+          mcp: first.mcp,
+          mcpError: first.mcp_error,
+          pinnedTransport: transportConstraints.pinnedTransport,
+          avoidedAgents: transportConstraints.avoidedAgents,
+        })
         const successorAgent = failoverSuccessorAgent(
           decideFailover({ ...failoverFacts, successor: selected }),
         )
@@ -251,8 +328,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
           job: opts.job,
           prompt: originalPrompt,
           agent: successorAgent,
-          transport:
-            first.transport === 'cli' || first.transport === 'acp' ? first.transport : undefined,
+          transport: transportConstraints.successorTransport,
           schemaPath: first.schema_path ?? undefined,
           mcp: mcpRequestFromStored(first.mcp, first.mcp_error),
           probe: !!first.probe,
