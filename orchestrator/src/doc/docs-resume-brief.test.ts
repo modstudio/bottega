@@ -32,7 +32,7 @@ describe('scoped operator docs', () => {
       subject: 'resume-restore',
       slug: 'restore-project-id',
       title: 'Resume',
-      body: '---\nstatus: open\nepic: restore-project-id\nproject: resume-restore\nwritten: 2026-10-20T12:00:00.000Z\n---\n\nOriginal.\n\nNEXT ACTION: continue\n',
+      body: '---\nstatus: open\nepic: DEV-1439\nproject: resume-restore\nwritten: 2026-10-20T12:00:00.000Z\n---\n\nOriginal.\n\nNEXT ACTION: continue\n',
     })
     const createRevision = listDocRevisions('resume', 'resume-restore', 'restore-project-id')[0]!
     db().query('UPDATE doc SET project_record_id=NULL WHERE record_id=?').run(created.record_id)
@@ -93,7 +93,7 @@ describe('scoped operator docs', () => {
   })
 
   const resumeBody = (status: string, written = '2026-09-03T00:00:00.000Z') => {
-    return `---\nstatus: ${status}\nepic: demo\nproject: known\nwritten: ${written}\n---\n\nNEXT ACTION\n`
+    return `---\nstatus: ${status}\nepic: DEV-1439\nproject: known\nwritten: ${written}\n---\n\nNEXT ACTION: continue\n`
   }
 
   test('resumeAge uses a single largest unit', () => {
@@ -114,7 +114,7 @@ describe('scoped operator docs', () => {
     expect(parseResumeFrontmatter('---\nstatus open\n---\n')).toEqual({})
     expect(parseResumeFrontmatter(resumeBody('open', '2026-09-03T00:00:00.000Z'))).toEqual({
       status: 'open',
-      epic: 'demo',
+      epic: 'DEV-1439',
       project: 'known',
       written: '2026-09-03T00:00:00.000Z',
     })
