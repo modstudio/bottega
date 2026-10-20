@@ -86,9 +86,7 @@ function FrontmatterValue({ value }: { value: unknown }) {
     )
   }
   if (isPropertyMap(value)) {
-    return (
-      <PropertyList properties={value} nested />
-    )
+    return <PropertyList properties={value} nested />
   }
   return (
     <span className={markdownStyles().frontmatterValue()}>
