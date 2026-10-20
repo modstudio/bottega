@@ -556,6 +556,7 @@ type ProjectSettingsValidationContext = {
   projectNameAfterWrite?: string
   register?: Pick<Project, 'name' | 'settings'>[]
   enabledLensIds?: readonly string[]
+  enabledLensSpaceId?: string | null
 }
 
 function keyPrefixProblems(value: unknown, context: ProjectSettingsValidationContext): string[] {
@@ -594,19 +595,24 @@ function keyPrefixProblems(value: unknown, context: ProjectSettingsValidationCon
 function reviewLensProblems(
   review: ProjectSettings['review'],
   enabledLensIds: readonly string[] | undefined,
+  enabledLensSpaceId: string | null | undefined,
 ): string[] {
   if (!review || !Array.isArray(review.lenses) || enabledLensIds === undefined) return []
   const enabled = new Set(enabledLensIds)
+  const remedy =
+    enabledLensSpaceId === undefined
+      ? `choose an enabled lens from ${PLATFORM_SLUG} review lens list`
+      : enabledLensSpaceId === null
+        ? 'choose an enabled lens from the local catalogue (no record space)'
+        : `choose an enabled lens in record space "${enabledLensSpaceId}"`
   const problems = review.lenses.flatMap((entry, index) =>
     entry && typeof entry === 'object' && typeof entry.lens === 'string' && !enabled.has(entry.lens)
-      ? [
-          `review.lenses.${index}.lens: unknown or disabled lens "${entry.lens}"; choose an enabled lens from ${PLATFORM_SLUG} review lens list`,
-        ]
+      ? [`review.lenses.${index}.lens: unknown or disabled lens "${entry.lens}"; ${remedy}`]
       : [],
   )
   if (review.secondOpinion && !enabled.has(review.secondOpinion.lens)) {
     problems.push(
-      `review.secondOpinion.lens: unknown or disabled lens "${review.secondOpinion.lens}"; choose an enabled lens from ${PLATFORM_SLUG} review lens list`,
+      `review.secondOpinion.lens: unknown or disabled lens "${review.secondOpinion.lens}"; ${remedy}`,
     )
   }
   return problems
@@ -673,7 +679,7 @@ export function validateProjectSettings(
     ...projectSearchProblems(settings.search),
     ...keyPrefixProblems(settings.keyPrefixes, context),
     ...mainStackProblems(settings.mainStack),
-    ...reviewLensProblems(settings.review, context.enabledLensIds),
+    ...reviewLensProblems(settings.review, context.enabledLensIds, context.enabledLensSpaceId),
     ...mcpSettingsProblems(settings.mcp),
     ...focusedTestsProblems(settings.focusedTests),
   ]

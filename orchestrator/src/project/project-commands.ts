@@ -8,7 +8,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, tryWriteContention, writeTransaction } from '../database/db.ts'
 import { listLenses, selectProjectProfile } from '../lens/lenses.ts'
-import { rememberProjectSpace } from '../project-space.ts'
+import { effectiveProjectSpace, rememberProjectSpace } from '../project-space.ts'
 import {
   pullRecordCataloguesForSpace,
   RecordCataloguePullError,
@@ -46,7 +46,7 @@ type ProjectFlags = {
 }
 type ProjectPresentation = { log(...values: unknown[]): void; cwd(): string }
 
-const enabledLensIds = (spaceId: string | null = null): string[] =>
+const enabledLensIds = (spaceId: string | null): string[] =>
   listLenses(db(), spaceId)
     .filter((lens) => lens.enabled)
     .map((lens) => lens.id)
@@ -308,11 +308,13 @@ function validatedFillCandidate(current: Project, input: FillAbsentProjectInput)
     throw new Error(`cannot fill stack for ${input.name}: stack is no longer absent`)
   }
   const settings = fillAbsentSettings(current, input)
+  const lensSpaceId = effectiveProjectSpace(db(), current.name)
   const malformed = validateProjectSettings(settings, current.path, {
     validateKeyPrefixes: Object.hasOwn(input.fill.settings, 'keyPrefixes'),
     currentProjectName: current.name,
     register: projects(),
-    enabledLensIds: enabledLensIds(),
+    enabledLensIds: enabledLensIds(lensSpaceId),
+    enabledLensSpaceId: lensSpaceId,
   })
   if (malformed.length) throw new Error(malformed.join('\n'))
   const candidate = {
@@ -515,6 +517,7 @@ async function setProjectCommand(
     retiredAt: project.retiredAt,
     settings,
   }
+  const lensSpaceId = effectiveProjectSpace(db(), name)
   const malformed = validateProjectSettings(candidate.settings, candidate.path, {
     validateKeyPrefixes:
       writesKeyPrefixes(flags.flag('settings')) ||
@@ -522,7 +525,8 @@ async function setProjectCommand(
     currentProjectName: name,
     projectNameAfterWrite: nextName,
     register: projects(),
-    enabledLensIds: enabledLensIds(),
+    enabledLensIds: enabledLensIds(lensSpaceId),
+    enabledLensSpaceId: lensSpaceId,
   }).filter((problem) => !skipLegacyCreateMigration(project, candidate, problem))
   if (malformed.length) throw new Error(malformed.join('\n'))
   const incomplete = incompleteWorktreeProblems(candidate)
