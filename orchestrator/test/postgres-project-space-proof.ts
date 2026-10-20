@@ -127,6 +127,7 @@ export function registerProjectSpaceProofs(input: ProjectSpaceProofInput): void 
     const noteAcknowledgement = newRecordId()
     const builtInSelection = newRecordId()
     const customSelection = newRecordId()
+    const selectionRevision = newRecordId()
     const customProfile = newRecordId()
     const customProfileRevision = newRecordId()
     const pair = newRecordId()
@@ -136,6 +137,7 @@ export function registerProjectSpaceProofs(input: ProjectSpaceProofInput): void 
     const portRef = newRecordId()
     const portRefSource = newRecordId()
     const subscription = newRecordId()
+    const subscriptionProject = newRecordId()
     const send = newRecordId()
     const sendRecipient = newRecordId()
     const task = `MOVE-${newRecordId().slice(-6)}`
@@ -209,6 +211,10 @@ export function registerProjectSpaceProofs(input: ProjectSpaceProofInput): void 
          (id,space_id,project_id,lens_id,axis,profile_name,selected_version,selection_version,updated_at)
          SELECT '${customSelection}','${source}','${project}',id,'architecture','move-custom',NULL,1,now()
          FROM lens WHERE space_id='${source}' ORDER BY key LIMIT 1;
+       INSERT INTO project_lens_profile_revision
+         (id,space_id,selection_id,prior_profile_name,prior_selected_version,reason,session_id,at)
+         VALUES ('${selectionRevision}','${source}','${customSelection}','default',3,
+           'move proof selection history','move-session',now());
        INSERT INTO port_pair(id,space_id,source_project_id,target_project_id,created_at) VALUES
          ('${pair}','${source}','${otherProject}','${project}',now()),
          ('${sourceOnlyPair}','${source}','${project}','${otherProject}',now());
@@ -233,6 +239,10 @@ export function registerProjectSpaceProofs(input: ProjectSpaceProofInput): void 
        INSERT INTO hub_report_subscription
          (id,space_id,scope_kind,project_name,cadence,hour,zone,enabled,created_at,updated_at)
          VALUES ('${subscription}','${source}','project','move-proof','daily',9,'UTC',1,now(),now());
+       INSERT INTO hub_report_subscription_project
+         (id,space_id,subscription_id,project_id,project_space_id,project_name,created_at)
+         VALUES ('${subscriptionProject}','${source}','${subscription}','${project}','${source}',
+           'move-proof',now());
        INSERT INTO hub_send
          (id,space_id,at,"window",recipients,projects,items,status,test,created_at,machine,
           subscription_id,period_start,period_end)
@@ -303,6 +313,7 @@ export function registerProjectSpaceProofs(input: ProjectSpaceProofInput): void 
        SELECT count(*) FROM hub_note WHERE id='${note}';
        SELECT count(*) FROM hub_note_acknowledgement WHERE id='${noteAcknowledgement}';
        SELECT count(*) FROM project_lens_profile WHERE id IN ('${builtInSelection}','${customSelection}');
+       SELECT count(*) FROM project_lens_profile_revision WHERE id='${selectionRevision}';
        SELECT count(*) FROM port_pair WHERE id='${pair}';
        SELECT count(*) FROM port_baseline WHERE id='${baseline}';
        SELECT count(*) FROM port_skip WHERE id='${skip}';
@@ -317,6 +328,7 @@ export function registerProjectSpaceProofs(input: ProjectSpaceProofInput): void 
     )
     expect(sourceFacts.code, sourceFacts.stderr).toBe(0)
     expect(sourceFacts.stdout.split('\n')).toEqual([
+      '0',
       '0',
       '0',
       '0',
@@ -359,6 +371,10 @@ export function registerProjectSpaceProofs(input: ProjectSpaceProofInput): void 
        SELECT count(*) FROM hub_note WHERE id='${note}';
        SELECT count(*) FROM hub_note_acknowledgement WHERE id='${noteAcknowledgement}';
        SELECT count(*) FROM project_lens_profile WHERE id IN ('${builtInSelection}','${customSelection}');
+       SELECT count(*) FROM project_lens_profile_revision
+         WHERE id='${selectionRevision}' AND selection_id='${customSelection}'
+           AND prior_profile_name='default' AND prior_selected_version=3
+           AND reason='move proof selection history' AND session_id='move-session';
        SELECT count(*) FROM lens_profile p JOIN lens l ON l.id=p.lens_id
          WHERE p.space_id='${destination.id}' AND p.axis='architecture' AND p.name='move-custom'
            AND p.body='{"guidance":"custom move profile"}';
@@ -373,28 +389,36 @@ export function registerProjectSpaceProofs(input: ProjectSpaceProofInput): void 
     )
     expect(destinationFacts.code, destinationFacts.stderr).toBe(0)
     expect(destinationFacts.stdout.split('\n')).toEqual([
-      '1',
-      '1',
-      '1',
-      '1',
-      '1',
-      '1',
-      '1',
-      '2',
-      '1',
-      '1',
-      '1',
-      '1',
-      '2',
-      '1',
-      '1',
-      '1',
-      '1',
-      '1',
-      '1',
-      '1',
-      '1',
+      '1', // project
+      '1', // run
+      '1', // task
+      '1', // review
+      '1', // review lens
+      '1', // finding
+      '1', // landing
+      '2', // contentions
+      '1', // document
+      '1', // document revision
+      '1', // note
+      '1', // note acknowledgement
+      '2', // selections
+      '1', // selection revision
+      '1', // copied custom profile
+      '1', // copied custom profile revision
+      '1', // pair
+      '1', // baseline
+      '1', // skip
+      '1', // ref
+      '1', // ref source
+      '1', // sequence
     ])
+
+    expect(
+      input.admin(
+        `SELECT concat_ws('|',id,subscription_id,project_space_id)
+         FROM hub_report_subscription_project WHERE id='${subscriptionProject}';`,
+      ),
+    ).toBe(`${subscriptionProject}|${subscription}|${destination.id}`)
 
     // The move turns FORCE RLS off per table to rewrite space_id, and this move
     // COMMITTED, so nothing would put it back. A table left unforced lets its
