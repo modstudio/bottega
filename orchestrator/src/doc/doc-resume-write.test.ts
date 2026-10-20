@@ -82,6 +82,12 @@ describe('open resume write decision', () => {
     })
   }
 
+  test('accepts the word scratchpad in prose, which names no location', () => {
+    expect(violations(brief(['NEXT ACTION: continue', 'The session scratchpad holds nothing the next session needs']))).toEqual(
+      [],
+    )
+  })
+
   test('returns all violations together', () => {
     const body = `---\nstatus: open\nepic:\nproject:\nwritten:\n---\n\n/tmp/a /private/tmp/b /var/folders/c notes/scratchpad/d /state/orchestrator/runs/e\n`
     expect(violations(body).map(({ offendingText }) => offendingText)).toEqual([

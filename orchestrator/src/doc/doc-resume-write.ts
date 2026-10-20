@@ -20,7 +20,7 @@ function isScratchLocation(path: string): boolean {
     path.startsWith('/private/tmp/') ||
     path.startsWith('/var/folders/') ||
     path.includes('/orchestrator/runs/') ||
-    path.split('/').includes('scratchpad')
+    (path.includes('/') && path.split('/').includes('scratchpad'))
   )
 }
 
