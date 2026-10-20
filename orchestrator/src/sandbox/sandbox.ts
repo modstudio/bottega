@@ -34,6 +34,7 @@ import { disabledProjectMcpServers } from '../mcp/mcp-probe.ts'
 import { createNoFollowFile } from '../no-follow-file.ts'
 import { type Project, projectAt } from '../project/projects.ts'
 import { launchWithSandboxRuntime, resetSandboxRuntime } from './sandbox-runtime.ts'
+import { decideWeakerNetworkIsolation, endpointHost } from './weaker-network-isolation.ts'
 
 export type SandboxRuntimeConfig = {
   network: {
@@ -49,6 +50,8 @@ export type SandboxRuntimeConfig = {
     allowWrite: string[]
     denyWrite: string[]
   }
+  /** SRT option that lets macOS trustd verify public TLS certificates. Default off. */
+  enableWeakerNetworkIsolation?: boolean
 }
 
 export type RunSandbox = 'host' | 'srt'
@@ -94,6 +97,7 @@ export function createSandboxRuntimeConfig(
 ): SandboxRuntimeConfig {
   return {
     ...profile,
+    enableWeakerNetworkIsolation: profile.enableWeakerNetworkIsolation === true,
     filesystem: {
       ...profile.filesystem,
       denyRead: [
@@ -244,15 +248,6 @@ function linkedNodeModules(worktree: string): string[] {
   return [...found].sort()
 }
 
-function endpointHost(baseUrl: string | null | undefined): string[] {
-  if (!baseUrl) return []
-  try {
-    return [new URL(baseUrl).hostname]
-  } catch {
-    return []
-  }
-}
-
 export function readonlyLensProfile(input: {
   worktree: string
   runsDir: string
@@ -293,8 +288,10 @@ export function readonlyLensProfile(input: {
   const allowWithinDeny = candidateAllows.filter(
     (allowed) => !protectedDenies.some((denied) => isAtOrBelow(allowed, denied)),
   )
+  const isolation = decideWeakerNetworkIsolation({ base_url: input.baseUrl })
   return createSandboxRuntimeConfig(
     {
+      enableWeakerNetworkIsolation: isolation.enabled,
       network: {
         allowedDomains: [
           ...new Set([
@@ -370,6 +367,11 @@ export type SandboxSelection = {
   sandbox: RunSandbox
   profile: SandboxRuntimeConfig | null
   reason: string | null
+}
+
+/** Host-run reasons stay labeled as host; SRT profile notes use sandbox. */
+export function sandboxReasonPrefix(sandbox: RunSandbox): 'sandbox host' | 'sandbox' {
+  return sandbox === 'host' ? 'sandbox host' : 'sandbox'
 }
 
 export function isReadonlySandboxCandidate(input: {
@@ -460,9 +462,10 @@ export function selectReadonlySandbox(input: {
   if (kind.sandbox !== 'srt') {
     return { sandbox: kind.sandbox, profile: null, reason: kind.reason }
   }
+  const isolation = decideWeakerNetworkIsolation({ base_url: input.baseUrl })
   return {
     sandbox: 'srt',
-    reason: kind.reason,
+    reason: isolation.enabled ? isolation.reason : kind.reason,
     profile: readonlyLensProfile({
       worktree: input.worktree!,
       runsDir: input.runsDir,
@@ -482,6 +485,7 @@ export function sandboxRuntimeConfig(profile: SandboxRuntimeConfig): LibrarySand
   const { allowWithinDeny, ...filesystem } = profile.filesystem
   return {
     ...profile,
+    enableWeakerNetworkIsolation: profile.enableWeakerNetworkIsolation === true,
     filesystem: {
       denyRead: filesystem.denyRead,
       allowRead: allowWithinDeny,

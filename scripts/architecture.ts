@@ -618,18 +618,6 @@ export const modules: ArchitectureModule[] = [
     'node:path',
     'node:stream',
   ]),
-  module('orchestrator/src/sandbox/sandbox.ts', [
-    '../../../shared/brand.ts',
-    '../../../shared/embedded-assets.ts',
-    '../../../shared/self-spawn.ts',
-    '../../../shared/config-directory.ts',
-    '../../../shared/state-directory.ts',
-    '../database/db.ts',
-    '../mcp/mcp-probe.ts',
-    '../no-follow-file.ts',
-    '../project/projects.ts',
-    './sandbox-runtime.ts',
-  ]),
   ...confinementModules,
   module('orchestrator/src/setup/setup-facts.ts', [
     'node:fs',

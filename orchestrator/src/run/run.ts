@@ -82,6 +82,7 @@ import {
   removeNewSandboxHomeAfterFailure,
   resetSandbox,
   sandboxLaunchArgv,
+  sandboxReasonPrefix,
   selectReadonlySandbox,
 } from '../sandbox/sandbox.ts'
 import {
@@ -786,7 +787,7 @@ export async function run(opts: {
   }
   mcpSetupHeader = codexMcpSetupHeader(mcpSetupHeader, codexMcpScope, codexMcpCatalogues)
   const sandboxRouteReason = sandboxSelection.reason
-    ? `${reason}; sandbox host: ${sandboxSelection.reason}`
+    ? `${reason}; ${sandboxReasonPrefix(sandboxSelection.sandbox)}: ${sandboxSelection.reason}`
     : reason
   writeTransaction(() => {
     db()
@@ -804,7 +805,7 @@ export async function run(opts: {
     }
   })
   if (sandboxSelection.reason) {
-    const header = `sandbox host: ${sandboxSelection.reason}`
+    const header = `${sandboxReasonPrefix(sandboxSelection.sandbox)}: ${sandboxSelection.reason}`
     mcpSetupHeader = mcpSetupHeader ? `${mcpSetupHeader}\n${header}` : header
     console.error(`orch: run ${claim.id} ${header}`)
   }
