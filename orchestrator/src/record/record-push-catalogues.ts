@@ -498,7 +498,6 @@ function portPlan(
   const plans = new Map<string, RecordPortImportInput>(),
     active = emptyPort(),
     now = iso()
-  plans.set(activeSpaceId, active)
   active.port_doctrine = (
     local
       .query(
@@ -516,6 +515,7 @@ function portPlan(
     version: Number(r.version),
     updatedAt: String(r.created_at),
   }))
+  if (active.port_doctrine.length) plans.set(activeSpaceId, active)
   const pairSpace = new Map<string, string>(),
     refSpace = new Map<string, string>()
   const context: PortPlanContext = {

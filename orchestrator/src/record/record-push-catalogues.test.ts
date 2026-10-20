@@ -190,6 +190,50 @@ test('dry run logs its local plan without calling hosted methods', async () => {
   )
 })
 
+test('a bound store with no local lens or port rows reports nothing to push without importing', async () => {
+  const local = db()
+  local.exec(`
+    DELETE FROM project_lens_profile_revision WHERE space_id IS NULL;
+    DELETE FROM project_lens_profile WHERE space_id IS NULL;
+    DELETE FROM lens_profile_revision WHERE space_id IS NULL;
+    DELETE FROM lens_profile WHERE space_id IS NULL;
+    DELETE FROM lens_revision WHERE space_id IS NULL;
+    DELETE FROM lens WHERE space_id IS NULL;
+    DELETE FROM port_ref_source WHERE space_id IS NULL;
+    DELETE FROM port_ref WHERE space_id IS NULL;
+    DELETE FROM port_skip WHERE space_id IS NULL;
+    DELETE FROM port_baseline WHERE space_id IS NULL;
+    DELETE FROM port_pair WHERE space_id IS NULL;
+    DELETE FROM port_doctrine WHERE space_id IS NULL;
+    DELETE FROM project;
+    INSERT OR REPLACE INTO record_install_binding(id,bound_at) VALUES (1,'2026-10-20T00:00:00.000Z');
+  `)
+  const logs: string[] = []
+  let imports = 0
+  const client = fakeCatalogueClient()
+  client.importLensCatalogue = async () => {
+    imports++
+    throw new Error('lens import must not be called')
+  }
+  client.importWorkflowCatalogue = async () => {
+    imports++
+    throw new Error('workflow import must not be called')
+  }
+  client.importPortCatalogue = async () => {
+    imports++
+    throw new Error('port import must not be called')
+  }
+
+  await pushCataloguesCommand(
+    { dryRun: false },
+    { log: (line) => logs.push(line) },
+    { local, client, sync: async () => undefined },
+  )
+
+  expect(logs).toContain('nothing to push for lens and port catalogues')
+  expect(imports).toBe(0)
+})
+
 test('pushes complete workflow history to every registered project space and lists both in dry run', async () => {
   const local = db(),
     remoteSpace = newRecordId(),
