@@ -107,12 +107,30 @@ function PropertyRows({ properties }: { properties: Record<string, unknown> }) {
 }
 
 function FrontmatterProperties({ source }: { source: string }) {
-  const properties: unknown = parse(source)
-  if (!isPropertyMap(properties) || Object.keys(properties).length === 0) return null
+  let properties: unknown
+  try {
+    properties = parse(source)
+  } catch {
+    return <UnreadableFrontmatter source={source} />
+  }
+  if (properties == null) return null
+  if (!isPropertyMap(properties)) return <UnreadableFrontmatter source={source} />
+  if (Object.keys(properties).length === 0) return null
   return (
     <DocTable fit>
       <PropertyRows properties={properties} />
     </DocTable>
+  )
+}
+
+function UnreadableFrontmatter({ source }: { source: string }) {
+  return (
+    <div>
+      <p className={markdownStyles().frontmatterError()}>Frontmatter could not be read.</p>
+      <pre>
+        <code>{`---\n${source}\n---`}</code>
+      </pre>
+    </div>
   )
 }
 
