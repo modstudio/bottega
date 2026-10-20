@@ -11,6 +11,7 @@ import {
 } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkDirective from 'remark-directive'
+import remarkFrontmatter from 'remark-frontmatter'
 import remarkGfm from 'remark-gfm'
 import { secondLevelHeadingIdsByLine } from './headings.ts'
 import { markdownStyles } from './markdown.styles.ts'
@@ -166,7 +167,7 @@ export function Markdown({ content }: { content: string }) {
   return (
     <div className={markdownStyles().root()}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkDirective, docDirectives]}
+        remarkPlugins={[remarkFrontmatter, remarkGfm, remarkDirective, docDirectives]}
         rehypePlugins={[
           githubAlertPlugin,
           ...(highlight
