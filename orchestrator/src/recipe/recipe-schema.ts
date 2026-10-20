@@ -1,6 +1,7 @@
 // concern: tracked worktree recipe schema
 /** Knows only the stored recipe grammar and its refusal rules. Must not read files, execute steps, or know the project register. */
 import { z } from 'zod'
+import { validateProvisionGroups } from '../worktree/provision-group-validation.ts'
 import {
   databaseAllocationDefaults,
   databaseAllocationSchema,
@@ -10,22 +11,39 @@ import { execContextSchema } from './recipe-exec-schema.ts'
 const strictObject = <Shape extends z.core.$ZodLooseShape>(shape: Shape) =>
   z.strictObject(shape, { error: 'unknown-key rule: objects may not contain unknown keys' })
 
+const validProvisionPath = (path: string) =>
+  Boolean(path.trim()) &&
+  !/^[\\/]/.test(path) &&
+  !/^[A-Za-z]:[\\/]/.test(path) &&
+  !path.split(/[\\/]+/).includes('..')
+
 const provisionEntrySchema = strictObject({
-  path: z
+  path: z.string().min(1).refine(validProvisionPath, {
+    error: 'provision path must be a non-empty relative path without ..',
+  }),
+  method: z.enum(['link', 'clone', 'install']),
+  required: z.boolean().optional(),
+  lockfile: z
     .string()
     .min(1)
-    .refine(
-      (path) =>
-        !(
-          !path.trim() ||
-          /^[\\/]/.test(path) ||
-          /^[A-Za-z]:[\\/]/.test(path) ||
-          path.split(/[\\/]+/).includes('..')
-        ),
-      { error: 'provision path must be a non-empty relative path without ..' },
-    ),
-  method: z.enum(['link', 'clone']),
-  required: z.boolean().optional(),
+    .refine(validProvisionPath, {
+      error: 'provision lockfile must be a non-empty relative path without ..',
+    })
+    .optional(),
+  install: z.string().min(1).optional(),
+}).superRefine((entry, context) => {
+  if ((entry.lockfile === undefined) !== (entry.install === undefined)) {
+    context.addIssue({
+      code: 'custom',
+      message: 'provision lockfile and install must be declared together',
+    })
+  }
+  if (entry.method === 'install' && entry.lockfile === undefined) {
+    context.addIssue({
+      code: 'custom',
+      message: 'install provision requires lockfile and install',
+    })
+  }
 })
 
 const placeholderName = z.enum(['branch', 'name', 'base', 'seed', 'key', 'path', 'main', 'index'])
@@ -152,7 +170,7 @@ const recipeShape = strictObject({
   provision: z
     .array(provisionEntrySchema)
     .describe(
-      "Dependency paths placed in the writer tree before env files and create steps. link shares the main checkout's immediate entries, so writes through a link reach the main checkout; clone makes an independent copy-on-write copy.",
+      "Dependencies prepared in the writer tree before env files and create steps. link shares the main checkout's immediate entries, so writes through a link reach the main checkout; clone makes an independent copy-on-write copy; install runs the declared install command in the tree.",
     )
     .optional(),
   env: z.array(envFileSchema).optional(),
@@ -527,6 +545,9 @@ function validateProvisionPaths(recipe: RecipeInput, context: z.RefinementCtx): 
       })
     }
     paths.add(entry.path)
+  }
+  for (const problem of validateProvisionGroups(recipe.provision ?? [], 'provision')) {
+    context.addIssue({ code: 'custom', path: ['provision'], message: problem })
   }
 }
 

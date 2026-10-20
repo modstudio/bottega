@@ -51,7 +51,12 @@ export const worktreeModules: WorktreeModule[] = [
     './provisioning-measurement.ts',
     './worktree-types.ts',
   ]),
-  module('orchestrator/src/worktree/worktree-provision.ts', ['node:fs', 'node:path']),
+  module('orchestrator/src/worktree/provision-group-validation.ts', []),
+  module('orchestrator/src/worktree/worktree-provision.ts', [
+    'node:fs',
+    'node:path',
+    './provision-group-validation.ts',
+  ]),
   module('orchestrator/src/worktree/provisioning-measurement.ts', [
     'node:fs',
     'node:path',

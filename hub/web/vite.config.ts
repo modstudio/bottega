@@ -21,7 +21,13 @@ try {
 export default defineConfig({
   base: '/',
   plugins: [tanstackRouter({ target: 'react', autoCodeSplitting: true }), react(), tailwindcss()],
-  resolve: { alias: { '@': path.resolve(__dirname, './src') } },
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+      // codemirror-lang-mermaid imports @lezer/common without declaring it.
+      '@lezer/common': path.resolve(__dirname, '../views/node_modules/@lezer/common'),
+    },
+  },
   server: {
     proxy: {
       ...Object.fromEntries(
