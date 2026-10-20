@@ -25,6 +25,7 @@ export function childEnv(
   extra: Record<string, string> = {},
   includeStore = true,
   runNumber?: number,
+  endpointEnvironment: Record<string, string> = {},
 ): Record<string, string> {
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) {
@@ -67,6 +68,7 @@ export function childEnv(
     ...env,
     ...(a.env?.() ?? {}),
     ...extra,
+    ...endpointEnvironment,
     ...workerLaunchEnv(workerHarnessName(a)),
   }
   if (!includeStore) delete child.ORCH_DB

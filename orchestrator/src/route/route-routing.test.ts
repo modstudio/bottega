@@ -19,6 +19,24 @@ import {
   scoreboard,
 } from './route.ts'
 
+test('automatic routing excludes metered billing while a named agent may spend it', () => {
+  const original = db().query("SELECT billing FROM agent WHERE name='codex'").get() as {
+    billing: string
+  }
+  try {
+    db().query("UPDATE agent SET billing='metered' WHERE name='codex'").run()
+    refreshAgents()
+    expect(candidates('summarize').find((candidate) => candidate.agent === 'codex')).toMatchObject({
+      eligible: false,
+      why: 'metered billing',
+    })
+    expect(pick('summarize', 'codex')).toEqual({ agent: 'codex', reason: 'explicit --agent' })
+  } finally {
+    db().query("UPDATE agent SET billing=? WHERE name='codex'").run(original.billing)
+    refreshAgents()
+  }
+})
+
 test('the registration probe gates inline and repository jobs', () => {
   const original = db()
     .query("SELECT caps, probed_at, probe_result FROM agent WHERE name = 'codex'")

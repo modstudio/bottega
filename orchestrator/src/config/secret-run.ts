@@ -2,9 +2,8 @@
 /** Resolves named secrets into a child environment and runs the requested command. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { ConfigClientError } from '../../../shared/config-client.ts'
 import { readEnvValuesWithHosted } from '../../../shared/env-source.ts'
-import { HostedSecretError } from '../../../shared/hosted-secrets.ts'
+import { secretResolutionFailure } from '../../../shared/secret-resolution-failure.ts'
 import { assertRecordConnectionResolutionAllowed } from '../sandbox/record-connection-env.ts'
 export const SECRET_RUN_WORKING_FORM = `${PLATFORM_SLUG} machine config secret run --name <KEY> [--name <KEY> ...] -- <argv...>`
 
@@ -89,18 +88,14 @@ function namedSecretUnresolvedRefusal(unresolved: readonly string[]): string {
   )
 }
 
-function hostedStoreUnread(error: unknown): boolean {
-  if (error instanceof ConfigClientError) return error.reason !== 'not-configured'
-  return error instanceof HostedSecretError
-}
-
 export async function runNamedSecrets(input: SecretRunInvocation): Promise<number> {
   assertRecordConnectionResolutionAllowed(input.names, process.env)
   let resolved: Record<string, string | undefined>
   try {
     resolved = await readEnvValuesWithHosted(input.names)
   } catch (error) {
-    if (hostedStoreUnread(error)) throw new Error('hosted secret store could not be read')
+    const failure = secretResolutionFailure(error)
+    if (failure) throw new Error(failure)
     throw error
   }
   const child = childEnvironmentForNamedSecrets(input.names, resolved, process.env)

@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
+import { decideEndpointApiKey } from '../agent/endpoint-api-key.ts'
 import {
   ACP_PILOT_TASK,
   acpRuntimeGaps,
@@ -42,6 +43,7 @@ import {
   ACP_FIXTURE_TRUNCATED_TEXT,
 } from './transport-acp.fixtures.ts'
 import {
+  acpEnvironment,
   acpHarnessArgv,
   acpLeaderSocketPath,
   acpSandboxProfile,
@@ -52,6 +54,36 @@ import {
   persistAcpUpdates,
   resolveAcpEditLocations,
 } from './transport-acp.ts'
+
+test.each([
+  ['resolved endpoint key', { apiKeySecret: 'ENDPOINT_KEY' }, 'resolved-key'],
+  ['local endpoint placeholder', {}, undefined],
+] as const)('opencode receives the %s in its child configuration', (_label, row, resolved) => {
+  const agent = {
+    ...AGENTS.codex!,
+    harness: 'opencode',
+    baseUrl: 'https://example.test/v1',
+    ...row,
+  }
+  const decision = decideEndpointApiKey(agent, resolved)
+  expect(decision.ok).toBe(true)
+  if (!decision.ok) return
+  const environment = acpEnvironment({
+    agent,
+    cwd: '/tmp',
+    env: decision.env,
+    prompt: 'test',
+    outPath: '/tmp/out',
+    model: 'open/model',
+    startedAt: 0,
+    recipeEnvironment: {},
+  })
+  const config = JSON.parse(environment.OPENCODE_CONFIG_CONTENT!)
+  expect(config.provider['orch-local'].options).toEqual({
+    baseURL: 'https://example.test/v1',
+    apiKey: resolved ?? 'local',
+  })
+})
 
 const ORCHESTRATOR_PACKAGE_NAME = `@${PLATFORM_SLUG}/orchestrator`
 
