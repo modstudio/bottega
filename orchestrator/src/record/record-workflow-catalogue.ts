@@ -242,7 +242,7 @@ async function updateTransitionVersion(
   now: string,
 ) {
   const status = action === 'promote' ? 'production' : 'retired'
-  const promotedAt = action === 'promote' ? now : nullable(target.promoted_at)
+  const promotedAt = action === 'promote' ? now : nullableIso(target.promoted_at)
   const retiredAt = action === 'retire' ? now : null
   if (input.kind === 'workflow')
     await tx`UPDATE workflow_version SET status=${status},promoted_at=${promotedAt}::timestamptz,retired_at=${retiredAt}::timestamptz,updated_at=${now}::timestamptz WHERE id=${text(target.id)}::uuid`
