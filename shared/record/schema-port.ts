@@ -76,7 +76,9 @@ export const portPair = pgTable.withRLS(
       columns: [table.spaceId, table.targetProjectId],
       foreignColumns: [project.spaceId, project.id],
       name: 'port_pair_same_space_target_project_fk',
-    }).onDelete('restrict'),
+    })
+      .onDelete('restrict')
+      .onUpdate('cascade'),
     ...tenantPolicies('port_pair', table.spaceId),
   ],
 )
@@ -103,7 +105,9 @@ export const portBaseline = pgTable.withRLS(
       columns: [table.spaceId, table.pairId],
       foreignColumns: [portPair.spaceId, portPair.id],
       name: 'port_baseline_same_space_pair_fk',
-    }).onDelete('cascade'),
+    })
+      .onDelete('cascade')
+      .onUpdate('cascade'),
     ...tenantPolicies('port_baseline', table.spaceId),
   ],
 )
@@ -134,7 +138,9 @@ export const portRef = pgTable.withRLS(
       columns: [table.spaceId, table.targetProjectId],
       foreignColumns: [project.spaceId, project.id],
       name: 'port_ref_same_space_target_project_fk',
-    }).onDelete('restrict'),
+    })
+      .onDelete('restrict')
+      .onUpdate('cascade'),
     ...tenantPolicies('port_ref', table.spaceId),
   ],
 )
@@ -164,7 +170,9 @@ export const portRefSource = pgTable.withRLS(
       columns: [table.spaceId, table.refId],
       foreignColumns: [portRef.spaceId, portRef.id],
       name: 'port_ref_source_same_space_ref_fk',
-    }).onDelete('cascade'),
+    })
+      .onDelete('cascade')
+      .onUpdate('cascade'),
     foreignKey({
       columns: [table.sourceProjectId],
       foreignColumns: [project.id],
@@ -195,7 +203,9 @@ export const portSkip = pgTable.withRLS(
       columns: [table.spaceId, table.pairId],
       foreignColumns: [portPair.spaceId, portPair.id],
       name: 'port_skip_same_space_pair_fk',
-    }).onDelete('cascade'),
+    })
+      .onDelete('cascade')
+      .onUpdate('cascade'),
     ...tenantPolicies('port_skip', table.spaceId),
   ],
 )

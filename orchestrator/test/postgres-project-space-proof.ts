@@ -3,12 +3,13 @@ import { newRecordId } from '../../shared/record/schema.ts'
 import { upsertRecordProject } from '../src/record/record-projects.ts'
 import { createRecordSpace, recordMemberships } from '../src/record/record-space.ts'
 import { moveRecordProjectSpace } from '../src/record/record-space-move.ts'
+import { registerProjectSpaceDryRunProofs } from './postgres-project-space-dry-run-proof.ts'
 import { proveProjectSpaceRecordSync, SYNC_PROOF_MACHINE } from './postgres-score-proof.ts'
 import { registerHostedSyncAuthorizationProofs } from './postgres-sync-authorization-proof.ts'
 
 type PsqlResult = { code: number; stdout: string; stderr: string }
 
-export function registerProjectSpaceProofs(input: {
+export type ProjectSpaceProofInput = {
   actorUrl: string
   actorRole: string
   machineId: string
@@ -22,7 +23,9 @@ export function registerProjectSpaceProofs(input: {
   setToken(token: string): void
   asSpace(user: string, password: string, spaceId: string, statement: string): PsqlResult
   admin(statement: string): string
-}): void {
+}
+
+export function registerProjectSpaceProofs(input: ProjectSpaceProofInput): void {
   test('space creation grants ownership and duplicate slug names the existing id', async () => {
     input.setToken(input.token())
     const created = await createRecordSpace('DEV 741 Team', 'dev-741-team')
@@ -116,7 +119,22 @@ export function registerProjectSpaceProofs(input: {
     const reviewLens = newRecordId()
     const finding = newRecordId()
     const landing = newRecordId()
+    const runContention = newRecordId()
+    const landingContention = newRecordId()
     const document = newRecordId()
+    const documentRevision = newRecordId()
+    const note = newRecordId()
+    const noteAcknowledgement = newRecordId()
+    const builtInSelection = newRecordId()
+    const customSelection = newRecordId()
+    const customProfile = newRecordId()
+    const customProfileRevision = newRecordId()
+    const pair = newRecordId()
+    const baseline = newRecordId()
+    const skip = newRecordId()
+    const sourceOnlyPair = newRecordId()
+    const portRef = newRecordId()
+    const portRefSource = newRecordId()
     const subscription = newRecordId()
     const send = newRecordId()
     const sendRecipient = newRecordId()
@@ -151,10 +169,59 @@ export function registerProjectSpaceProofs(input: {
          (id,space_id,project_id,machine_id,branch,status,started_at,created_at,updated_at)
          VALUES ('${landing}','${source}','${project}','${input.machineId}',
           'DEV-747-proof','landed',now(),now(),now());
+       INSERT INTO contention
+         (id,space_id,machine_id,at,resource_kind,resource_key,event_kind,run_id,created_at,updated_at)
+         VALUES ('${runContention}','${source}','${input.machineId}',now(),'run','move-run','wait','${run}',now(),now());
+       INSERT INTO contention
+         (id,space_id,machine_id,at,resource_kind,resource_key,event_kind,landing_id,created_at,updated_at)
+         VALUES ('${landingContention}','${source}','${input.machineId}',now(),'landing','move-landing','wait','${landing}',now(),now());
        INSERT INTO doc
          (id,space_id,scope,subject,slug,title,body,delivery,audiences,project_id,created_at,updated_at)
          VALUES ('${document}','${source}','project','move-proof','move-proof','Move proof',
           'Body','demand',ARRAY['technical'],'${project}',now(),now());
+       INSERT INTO doc_revision
+         (id,space_id,doc_id,scope,subject,slug,op,title,body,delivery,author,reason,at,audiences,project_id)
+         VALUES ('${documentRevision}','${source}','${document}','project','move-proof',
+          'move-proof','create','Move proof','Body','demand','proof','proof',now(),
+          ARRAY['technical'],'${project}');
+       INSERT INTO hub_note
+         (id,space_id,project_name,project_id,number,project,text,anchors,sightings,created_at,last_seen_at,updated_at)
+         VALUES ('${note}','${source}','move-proof','${project}',1,'move-proof','move note',
+          '[]',1,now(),now(),now());
+       INSERT INTO hub_note_acknowledgement
+         (id,space_id,project_name,project_id,note_id,session_id,acknowledged_at,sightings,created_at,updated_at)
+         VALUES ('${noteAcknowledgement}','${source}','move-proof','${project}','${note}',
+          'move-session',now(),1,now(),now());
+       INSERT INTO lens_profile
+         (id,space_id,lens_id,axis,name,version,body,enabled,updated_at)
+         SELECT '${customProfile}','${source}',id,'architecture','move-custom',2,
+          '{"guidance":"custom move profile"}',true,now() FROM lens
+         WHERE space_id='${source}' ORDER BY key LIMIT 1;
+       INSERT INTO lens_profile_revision
+         (id,space_id,profile_id,version,prior_body,reason,session_id,at)
+         VALUES ('${customProfileRevision}','${source}','${customProfile}',1,
+          '{"body":{"guidance":"prior"},"enabled":true}','proof','move-session',now());
+       INSERT INTO project_lens_profile
+         (id,space_id,project_id,lens_id,axis,profile_name,selected_version,selection_version,updated_at)
+         SELECT '${builtInSelection}','${source}','${project}',id,'framework','default',NULL,1,now()
+         FROM lens WHERE space_id='${source}' ORDER BY key LIMIT 1;
+       INSERT INTO project_lens_profile
+         (id,space_id,project_id,lens_id,axis,profile_name,selected_version,selection_version,updated_at)
+         SELECT '${customSelection}','${source}','${project}',id,'architecture','move-custom',NULL,1,now()
+         FROM lens WHERE space_id='${source}' ORDER BY key LIMIT 1;
+       INSERT INTO port_pair(id,space_id,source_project_id,target_project_id,created_at) VALUES
+         ('${pair}','${source}','${otherProject}','${project}',now()),
+         ('${sourceOnlyPair}','${source}','${project}','${otherProject}',now());
+       INSERT INTO port_baseline(id,space_id,pair_id,source_commit,scanned_at,version,updated_at)
+         VALUES ('${baseline}','${source}','${pair}','abc123',now(),1,now());
+       INSERT INTO port_skip(id,space_id,pair_id,candidate,reason,skipped_at)
+         VALUES ('${skip}','${source}','${pair}','def456','proof',now());
+       INSERT INTO port_ref(id,space_id,task_key,target_project_id,note,created_at,version,updated_at)
+         VALUES ('${portRef}','${source}','${task}','${project}','proof',now(),1,now());
+       INSERT INTO port_ref_source
+         (id,space_id,ref_id,source_project_id,commits,paths,note,updated_at)
+         VALUES ('${portRefSource}','${source}','${portRef}','${otherProject}',
+          '["abc123"]','["proof.ts"]','proof',now());
        INSERT INTO seq(space_id,project_id,name,next) VALUES
          ('${source}','${project}','task:MOVE',2),('${source}','${otherProject}','task:STAY',2);
        INSERT INTO hub_task
@@ -230,7 +297,18 @@ export function registerProjectSpaceProofs(input: {
        SELECT count(*) FROM review_lens WHERE id='${reviewLens}';
        SELECT count(*) FROM review_finding WHERE id='${finding}';
        SELECT count(*) FROM landing WHERE id='${landing}';
+       SELECT count(*) FROM contention WHERE id IN ('${runContention}','${landingContention}');
        SELECT count(*) FROM doc WHERE id='${document}';
+       SELECT count(*) FROM doc_revision WHERE id='${documentRevision}';
+       SELECT count(*) FROM hub_note WHERE id='${note}';
+       SELECT count(*) FROM hub_note_acknowledgement WHERE id='${noteAcknowledgement}';
+       SELECT count(*) FROM project_lens_profile WHERE id IN ('${builtInSelection}','${customSelection}');
+       SELECT count(*) FROM port_pair WHERE id='${pair}';
+       SELECT count(*) FROM port_baseline WHERE id='${baseline}';
+       SELECT count(*) FROM port_skip WHERE id='${skip}';
+       SELECT count(*) FROM port_ref WHERE id='${portRef}';
+       SELECT count(*) FROM port_ref_source WHERE id='${portRefSource}';
+       SELECT count(*) FROM port_pair WHERE id='${sourceOnlyPair}';
        SELECT count(*) FROM project WHERE id='${otherProject}';
        SELECT count(*) FROM run WHERE id='${otherRun}';
        SELECT count(*) FROM hub_day WHERE day='2099-07-47';
@@ -247,6 +325,17 @@ export function registerProjectSpaceProofs(input: {
       '0',
       '0',
       '0',
+      '0',
+      '0',
+      '0',
+      '0',
+      '0',
+      '0',
+      '0',
+      '0',
+      '0',
+      '0',
+      '1',
       '1',
       '1',
       '1',
@@ -264,12 +353,39 @@ export function registerProjectSpaceProofs(input: {
        SELECT count(*) FROM review_lens WHERE id='${reviewLens}';
        SELECT count(*) FROM review_finding WHERE id='${finding}';
        SELECT count(*) FROM landing WHERE id='${landing}';
+       SELECT count(*) FROM contention WHERE id IN ('${runContention}','${landingContention}');
        SELECT count(*) FROM doc WHERE id='${document}';
+       SELECT count(*) FROM doc_revision WHERE id='${documentRevision}';
+       SELECT count(*) FROM hub_note WHERE id='${note}';
+       SELECT count(*) FROM hub_note_acknowledgement WHERE id='${noteAcknowledgement}';
+       SELECT count(*) FROM project_lens_profile WHERE id IN ('${builtInSelection}','${customSelection}');
+       SELECT count(*) FROM lens_profile p JOIN lens l ON l.id=p.lens_id
+         WHERE p.space_id='${destination.id}' AND p.axis='architecture' AND p.name='move-custom'
+           AND p.body='{"guidance":"custom move profile"}';
+       SELECT count(*) FROM lens_profile_revision r JOIN lens_profile p ON p.id=r.profile_id
+         WHERE r.space_id='${destination.id}' AND p.name='move-custom' AND r.version=1;
+       SELECT count(*) FROM port_pair WHERE id='${pair}';
+       SELECT count(*) FROM port_baseline WHERE id='${baseline}';
+       SELECT count(*) FROM port_skip WHERE id='${skip}';
+       SELECT count(*) FROM port_ref WHERE id='${portRef}';
+       SELECT count(*) FROM port_ref_source WHERE id='${portRefSource}';
        SELECT count(*) FROM seq WHERE project_id='${project}';`,
     )
     expect(destinationFacts.code, destinationFacts.stderr).toBe(0)
     expect(destinationFacts.stdout.split('\n')).toEqual([
       '1',
+      '1',
+      '1',
+      '1',
+      '1',
+      '1',
+      '1',
+      '2',
+      '1',
+      '1',
+      '1',
+      '1',
+      '2',
       '1',
       '1',
       '1',
@@ -290,6 +406,266 @@ export function registerProjectSpaceProofs(input: {
     )
     expect(unforced.trim()).toBe('0')
   })
+
+  test('a dry run refuses a destination lens profile with different current content', async () => {
+    input.setToken(input.token())
+    const source = (await recordMemberships()).activeSpaceId
+    if (!source) throw new Error('profile conflict proof has no active source space')
+    const destination = await createRecordSpace(
+      'DEV 1214 Profile Conflict',
+      `dev-1214-${newRecordId().slice(-8)}`,
+    )
+    const project = newRecordId()
+    const sourceProfile = newRecordId()
+    const destinationProfile = newRecordId()
+    const selection = newRecordId()
+    input.admin(
+      `INSERT INTO project(id,space_id,name,created_at)
+         VALUES ('${project}','${source}','profile-conflict-proof',now());
+       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,body,enabled,updated_at)
+         SELECT '${sourceProfile}','${source}',id,'architecture','conflicting-profile',1,
+           '{"guidance":"source"}',true,now() FROM lens
+         WHERE space_id='${source}' ORDER BY key LIMIT 1;
+       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,body,enabled,updated_at)
+         SELECT '${destinationProfile}','${destination.id}',id,'architecture','conflicting-profile',1,
+           '{"guidance":"destination"}',true,now() FROM lens
+         WHERE space_id='${destination.id}' ORDER BY key LIMIT 1;
+       INSERT INTO project_lens_profile
+         (id,space_id,project_id,lens_id,axis,profile_name,selected_version,selection_version,updated_at)
+         SELECT '${selection}','${source}','${project}',id,'architecture','conflicting-profile',NULL,1,now()
+         FROM lens WHERE space_id='${source}' ORDER BY key LIMIT 1;`,
+    )
+    await expect(
+      moveRecordProjectSpace({
+        url: input.actorUrl,
+        project: 'profile-conflict-proof',
+        source,
+        destination: destination.slug,
+      }),
+    ).rejects.toThrow(
+      `project profile-conflict-proof cannot move from space ${source} to space ${destination.id} because lens profiles have different current content`,
+    )
+    expect(
+      input
+        .admin(
+          `SELECT space_id FROM project WHERE id='${project}';
+         SELECT space_id FROM project_lens_profile WHERE id='${selection}';`,
+        )
+        .trim()
+        .split('\n'),
+    ).toEqual([source, source])
+  })
+
+  test('an unpinned selection re-points without merging divergent profile history', async () => {
+    input.setToken(input.token())
+    const source = (await recordMemberships()).activeSpaceId
+    if (!source) throw new Error('unpinned history proof has no active source space')
+    const destination = await createRecordSpace(
+      'DEV 1214 Unpinned History',
+      `dev-1214-${newRecordId().slice(-8)}`,
+    )
+    const project = newRecordId()
+    const sourceProfile = newRecordId()
+    const destinationProfile = newRecordId()
+    const selection = newRecordId()
+    input.admin(
+      `INSERT INTO project(id,space_id,name,created_at)
+         VALUES ('${project}','${source}','unpinned-history-proof',now());
+       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,body,enabled,updated_at)
+         SELECT '${sourceProfile}','${source}',id,'architecture','history-profile',2,
+           '{"guidance":"current"}',true,now() FROM lens
+         WHERE space_id='${source}' ORDER BY key LIMIT 1;
+       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,body,enabled,updated_at)
+         SELECT '${destinationProfile}','${destination.id}',id,'architecture','history-profile',2,
+           '{"guidance":"current"}',true,now() FROM lens
+         WHERE space_id='${destination.id}' ORDER BY key LIMIT 1;
+       INSERT INTO lens_profile_revision(id,space_id,profile_id,version,prior_body,reason,at) VALUES
+         ('${newRecordId()}','${source}','${sourceProfile}',1,
+          '{"body":{"guidance":"source prior"},"enabled":true}','proof',now()),
+         ('${newRecordId()}','${destination.id}','${destinationProfile}',1,
+          '{"body":{"guidance":"destination prior"},"enabled":true}','proof',now());
+       INSERT INTO project_lens_profile
+         (id,space_id,project_id,lens_id,axis,profile_name,selected_version,selection_version,updated_at)
+         SELECT '${selection}','${source}','${project}',id,'architecture','history-profile',NULL,1,now()
+         FROM lens WHERE space_id='${source}' ORDER BY key LIMIT 1;`,
+    )
+    const dry = await moveRecordProjectSpace({
+      url: input.actorUrl,
+      project: 'unpinned-history-proof',
+      source,
+      destination: destination.slug,
+    })
+    await moveRecordProjectSpace({
+      url: input.actorUrl,
+      project: 'unpinned-history-proof',
+      source,
+      destination: destination.slug,
+      confirm: dry.total,
+    })
+    expect(
+      input
+        .admin(
+          `SELECT count(*) FROM project_lens_profile s JOIN lens l ON l.id=s.lens_id
+             WHERE s.id='${selection}' AND s.space_id='${destination.id}' AND l.space_id='${destination.id}';
+           SELECT count(*) FROM lens_profile_revision
+             WHERE profile_id='${destinationProfile}' AND prior_body::jsonb =
+               '{"body":{"guidance":"destination prior"},"enabled":true}'::jsonb;
+           SELECT count(*) FROM lens_profile_revision WHERE profile_id='${destinationProfile}';`,
+        )
+        .trim()
+        .split('\n'),
+    ).toEqual(['1', '1', '1'])
+  })
+
+  test('a pinned selection refuses equal current content with divergent history', async () => {
+    input.setToken(input.token())
+    const source = (await recordMemberships()).activeSpaceId
+    if (!source) throw new Error('pinned history proof has no active source space')
+    const destination = await createRecordSpace(
+      'DEV 1214 Pinned History',
+      `dev-1214-${newRecordId().slice(-8)}`,
+    )
+    const project = newRecordId()
+    const sourceProfile = newRecordId()
+    const destinationProfile = newRecordId()
+    const selection = newRecordId()
+    input.admin(
+      `INSERT INTO project(id,space_id,name,created_at)
+         VALUES ('${project}','${source}','pinned-history-proof',now());
+       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,body,enabled,updated_at)
+         SELECT '${sourceProfile}','${source}',id,'architecture','pinned-history',2,
+           '{"guidance":"current"}',true,now() FROM lens
+         WHERE space_id='${source}' ORDER BY key LIMIT 1;
+       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,body,enabled,updated_at)
+         SELECT '${destinationProfile}','${destination.id}',id,'architecture','pinned-history',2,
+           '{"guidance":"current"}',true,now() FROM lens
+         WHERE space_id='${destination.id}' ORDER BY key LIMIT 1;
+       INSERT INTO lens_profile_revision(id,space_id,profile_id,version,prior_body,reason,at) VALUES
+         ('${newRecordId()}','${source}','${sourceProfile}',1,
+          '{"body":{"guidance":"source prior"},"enabled":true}','proof',now()),
+         ('${newRecordId()}','${destination.id}','${destinationProfile}',1,
+          '{"body":{"guidance":"destination prior"},"enabled":true}','proof',now());
+       INSERT INTO project_lens_profile
+         (id,space_id,project_id,lens_id,axis,profile_name,selected_version,selection_version,updated_at)
+         SELECT '${selection}','${source}','${project}',id,'architecture','pinned-history',1,1,now()
+         FROM lens WHERE space_id='${source}' ORDER BY key LIMIT 1;`,
+    )
+    await expect(
+      moveRecordProjectSpace({
+        url: input.actorUrl,
+        project: 'pinned-history-proof',
+        source,
+        destination: destination.slug,
+      }),
+    ).rejects.toThrow(
+      `project pinned-history-proof lens correctness profile pinned-history version 1 from space ${source} differs from or is missing in space ${destination.id}`,
+    )
+    expect(input.admin(`SELECT space_id FROM project WHERE id='${project}';`).trim()).toBe(source)
+  })
+
+  test('a pinned selection refuses when the destination profile lacks that version', async () => {
+    input.setToken(input.token())
+    const source = (await recordMemberships()).activeSpaceId
+    if (!source) throw new Error('missing pinned version proof has no active source space')
+    const destination = await createRecordSpace(
+      'DEV 1214 Missing Pinned Version',
+      `dev-1214-${newRecordId().slice(-8)}`,
+    )
+    const project = newRecordId()
+    const sourceProfile = newRecordId()
+    const destinationProfile = newRecordId()
+    const selection = newRecordId()
+    input.admin(
+      `INSERT INTO project(id,space_id,name,created_at)
+         VALUES ('${project}','${source}','missing-version-proof',now());
+       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,body,enabled,updated_at)
+         SELECT '${sourceProfile}','${source}',id,'architecture','missing-version',2,
+           '{"guidance":"current"}',true,now() FROM lens
+         WHERE space_id='${source}' ORDER BY key LIMIT 1;
+       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,body,enabled,updated_at)
+         SELECT '${destinationProfile}','${destination.id}',id,'architecture','missing-version',2,
+           '{"guidance":"current"}',true,now() FROM lens
+         WHERE space_id='${destination.id}' ORDER BY key LIMIT 1;
+       INSERT INTO lens_profile_revision(id,space_id,profile_id,version,prior_body,reason,at)
+         VALUES ('${newRecordId()}','${source}','${sourceProfile}',1,
+          '{"body":{"guidance":"prior"},"enabled":true}','proof',now());
+       INSERT INTO project_lens_profile
+         (id,space_id,project_id,lens_id,axis,profile_name,selected_version,selection_version,updated_at)
+         SELECT '${selection}','${source}','${project}',id,'architecture','missing-version',1,1,now()
+         FROM lens WHERE space_id='${source}' ORDER BY key LIMIT 1;`,
+    )
+    await expect(
+      moveRecordProjectSpace({
+        url: input.actorUrl,
+        project: 'missing-version-proof',
+        source,
+        destination: destination.slug,
+      }),
+    ).rejects.toThrow(
+      `project missing-version-proof lens correctness profile missing-version version 1 from space ${source} differs from or is missing in space ${destination.id}`,
+    )
+    expect(input.admin(`SELECT space_id FROM project WHERE id='${project}';`).trim()).toBe(source)
+  })
+
+  test('a dry run reports port pair and ref destination unique-key collisions atomically', async () => {
+    input.setToken(input.token())
+    const source = (await recordMemberships()).activeSpaceId
+    if (!source) throw new Error('port collision proof has no active source space')
+    const destination = await createRecordSpace(
+      'DEV 1214 Port Collision',
+      `dev-1214-${newRecordId().slice(-8)}`,
+    )
+    const project = newRecordId()
+    const sourceProject = newRecordId()
+    const sourcePair = newRecordId()
+    const destinationPair = newRecordId()
+    const sourceRef = newRecordId()
+    const destinationRef = newRecordId()
+    const taskKey = `PORT-${newRecordId().slice(-6)}`
+    input.admin(
+      `INSERT INTO project(id,space_id,name,created_at) VALUES
+         ('${project}','${source}','port-collision-proof',now()),
+         ('${sourceProject}','${source}','port-collision-source',now());
+       INSERT INTO port_pair(id,space_id,source_project_id,target_project_id,created_at)
+         VALUES ('${sourcePair}','${source}','${sourceProject}','${project}',now());
+       INSERT INTO port_ref(id,space_id,task_key,target_project_id,note,created_at,version,updated_at)
+         VALUES ('${sourceRef}','${source}','${taskKey}','${project}','source',now(),1,now());
+       SET session_replication_role=replica;
+       INSERT INTO port_pair(id,space_id,source_project_id,target_project_id,created_at)
+         VALUES ('${destinationPair}','${destination.id}','${sourceProject}','${project}',now());
+       INSERT INTO port_ref(id,space_id,task_key,target_project_id,note,created_at,version,updated_at)
+         VALUES ('${destinationRef}','${destination.id}','${taskKey}','${project}','destination',now(),1,now());
+       SET session_replication_role=origin;`,
+    )
+    let message = ''
+    try {
+      await moveRecordProjectSpace({
+        url: input.actorUrl,
+        project: 'port-collision-proof',
+        source,
+        destination: destination.slug,
+      })
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error)
+    }
+    expect(message).toContain('destination unique keys conflict')
+    expect(message).toContain('port_pair (port_pair_space_projects_unique)')
+    expect(message).toContain('port_ref (port_ref_space_target_task_unique)')
+    expect(message).toContain(source)
+    expect(message).toContain(destination.id)
+    expect(
+      input
+        .admin(
+          `SELECT space_id FROM project WHERE id='${project}';
+           SELECT space_id FROM port_pair WHERE id='${sourcePair}';
+           SELECT space_id FROM port_ref WHERE id='${sourceRef}';`,
+        )
+        .trim()
+        .split('\n'),
+    ).toEqual([source, source, source])
+  })
+
+  registerProjectSpaceDryRunProofs(input)
 
   test('a task collision is named and a mid-move failure rolls the whole move back', async () => {
     input.setToken(input.token())
