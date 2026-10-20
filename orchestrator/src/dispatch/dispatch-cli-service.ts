@@ -44,6 +44,7 @@ import {
   assertAcpReady,
   resolveTransportName,
   selectAgentForTransport,
+  type TransportName,
 } from '../transport/transport.ts'
 import {
   callerDrift,
@@ -339,6 +340,10 @@ const duration = (ms: number | null | undefined) => {
 }
 const argvResumeLimit = (agentName: string) =>
   AGENTS[agentName]?.resumeArgv ? resumePromptByteLimit(AGENTS[agentName]!) : undefined
+const selectedAgentOptions = (transport: TransportName, agent: string | undefined) => ({
+  agent: selectAgentForTransport(transport, agent),
+  agentExplicit: Boolean(agent),
+})
 
 export async function doCommand(argv: string[], presentation: Presentation): Promise<void> {
   await ensureLocalHealth()
@@ -360,11 +365,11 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       transport =
         !explicit && selected ? selected.defaultTransport : resolveTransportName(transportFlag)
     if (transport === 'acp') {
-      assertAcpAllowed(jobName, flag('agent'), selected)
+      assertAcpAllowed(jobName, flag('agent'), selected, Boolean(flag('agent')))
       assertAcpReady(flag('agent') ?? 'codex', selected)
     }
     return {
-      agent: selectAgentForTransport(transport, flag('agent')),
+      ...selectedAgentOptions(transport, flag('agent')),
       transport,
       transportExplicit: explicit,
       ...(await routeConstraints(argv, flag('agent'))),
@@ -456,7 +461,12 @@ export async function pickPreviewCommand(
     warnCallerDrift(presentation.cwd(), undefined, presentation.error)
   const transport = resolveTransportName(flag('transport'))
   if (transport === 'acp')
-    assertAcpAllowed(jobName, flag('agent'), flag('agent') ? AGENTS[flag('agent')!] : undefined)
+    assertAcpAllowed(
+      jobName,
+      flag('agent'),
+      flag('agent') ? AGENTS[flag('agent')!] : undefined,
+      Boolean(flag('agent')),
+    )
   pickCommand(
     {
       jobName,

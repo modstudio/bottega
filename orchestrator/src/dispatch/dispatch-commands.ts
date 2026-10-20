@@ -122,6 +122,7 @@ async function compose(
 
 type DispatchOptions = {
   agent: string | undefined
+  agentExplicit: boolean
   transport: TransportName
   transportExplicit: boolean
   avoid: string[]
@@ -369,7 +370,7 @@ export async function dispatchCommand(
     throw new Error('--porcelain cannot be combined with --follow')
   }
   const requested = job(jobName)
-  const { agent, transport, transportExplicit, avoid, distinctModels, mcp } =
+  const { agent, agentExplicit, transport, transportExplicit, avoid, distinctModels, mcp } =
     await resolveDispatchOptions(jobName)
   const requestedCwd = flag('cwd')
   if (requestedCwd && !existsSync(requestedCwd))
@@ -511,7 +512,7 @@ export async function dispatchCommand(
   const detachByDefault = !has('follow')
   if (has('detach') || detachByDefault) {
     const id = await detach(jobName, prompt, {
-      agent,
+      ...{ agent, agentExplicit },
       schema,
       label: flag('label'),
       lens,
@@ -572,7 +573,7 @@ export async function dispatchCommand(
    * genuinely stuck run still returns control rather than hanging for ever.
    */
   const id = await detach(jobName, prompt, {
-    agent,
+    ...{ agent, agentExplicit },
     schema,
     label: flag('label'),
     lens,
@@ -598,6 +599,5 @@ export async function dispatchCommand(
   })
   recordTaskKeyWarning(id, taskKeyWarning, recordRunWarning)
   warnImplementContractConflicts(conflicts, id)
-
   await follow(id, has('quiet'))
 }

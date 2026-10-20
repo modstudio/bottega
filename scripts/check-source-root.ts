@@ -43,17 +43,17 @@ export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
   },
   {
     path: 'orchestrator/src/sandbox/sandbox.ts',
-    line: 292,
+    line: 288,
     reason: 'the source-root sandbox carveout is explicitly omitted for embedded distributions',
   },
   {
     path: 'orchestrator/src/transport/transport.ts',
-    line: 381,
+    line: 391,
     reason: 'the checkout codex-acp candidate is guarded by the embedded-manifest branch',
   },
   {
     path: 'orchestrator/src/transport/transport.ts',
-    line: 437,
+    line: 447,
     reason:
       'ACP SDK presence is resolved for doctor; the SDK is imported by the ACP transport, not loaded as the compiled schema validator',
   },

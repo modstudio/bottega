@@ -28,6 +28,10 @@ export function resumeFacts(
   }
 }
 
+export function namedAgentTurn(agentExplicit: boolean | undefined, firstTurn: boolean): boolean {
+  return Boolean(agentExplicit || !firstTurn)
+}
+
 export function checkpointRoot(resume: ResumeIdentityInput | undefined, claimId: string): string {
   return resume?.kind === 'continue' || resume?.kind === 'fresh-session' ? resume.parent : claimId
 }

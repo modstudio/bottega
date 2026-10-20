@@ -13,7 +13,7 @@ const requireTransport = createRequire(import.meta.url)
 /** Task that owns the ACP go/no-go. Named in every refusal. */
 export const ACP_PILOT_TASK = 'DEV-352'
 
-/** Read-only jobs the ACP pilot may run. Anything else is refused. */
+/** Jobs eligible for automatic ACP routing. Named review lenses are handled by acpJobAllowed. */
 const ACP_PILOT_JOBS = [
   'understand',
   'file-question',
@@ -21,6 +21,8 @@ const ACP_PILOT_JOBS = [
   'verify-claim',
   'summarize',
 ] as const
+
+const NAMED_ACP_JOBS = ['review-lens', 'review-lens-inline'] as const
 
 export type AcpPilotJob = (typeof ACP_PILOT_JOBS)[number]
 
@@ -310,6 +312,13 @@ export function isAcpPilotJob(name: string): name is AcpPilotJob {
   return (ACP_PILOT_JOBS as readonly string[]).includes(name)
 }
 
+function acpJobAllowed(jobName: string, agentExplicit: boolean): boolean {
+  return (
+    isAcpPilotJob(jobName) ||
+    (agentExplicit && (NAMED_ACP_JOBS as readonly string[]).includes(jobName))
+  )
+}
+
 export function resolveTransportName(
   explicit?: string | null,
   env = process.env.ORCH_TRANSPORT,
@@ -332,14 +341,15 @@ export function selectAgentForTransport(
 /**
  * Refuse an ACP opt-in that the pilot does not cover.
  *
- * Writing jobs name the pilot task explicitly. Other jobs outside the
- * allow-list are refused too — the spec listed four read-only jobs, not
- * every job that happens not to write.
+ * Writing jobs name the pilot task explicitly. Other jobs outside the one
+ * complete rule in acpJobAllowed are refused too.
+ * This assertion is the sole job-eligibility decision for ACP launches.
  */
 export function assertAcpAllowed(
   jobName: string,
   agentName: string | undefined,
   registered?: TransportAgent,
+  agentExplicit = false,
 ): void {
   if (
     agentName &&
@@ -350,14 +360,14 @@ export function assertAcpAllowed(
       `ACP transport is a ${ACP_PILOT_TASK} pilot and is only available for registered ACP agents`,
     )
   }
-  if (isAcpPilotJob(jobName)) return
+  if (acpJobAllowed(jobName, agentExplicit)) return
   if (job(jobName).needs.writesRepo) {
     throw new Error(
       `ACP transport is a ${ACP_PILOT_TASK} pilot and is not available for writing jobs`,
     )
   }
   throw new Error(
-    `ACP transport is a ${ACP_PILOT_TASK} pilot; allowed jobs: ${ACP_PILOT_JOBS.join(', ')}`,
+    `ACP transport is a ${ACP_PILOT_TASK} pilot; routed jobs: ${ACP_PILOT_JOBS.join(', ')}; ${NAMED_ACP_JOBS.join(' and ')} require an agent named with --agent`,
   )
 }
 

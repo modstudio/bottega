@@ -165,9 +165,9 @@ export async function detach(
     refuseLiveRetryOwner(spec)
     const inserted = db()
       .query(
-        `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, parent_run_record_id, turn, mcp,
+        `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, agent_explicit, parent_run_record_id, turn, mcp,
                       vendor_session, started_by_user_id)
-       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?
+       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?
         WHERE ? IS NULL OR (
           EXISTS (SELECT 1 FROM run root WHERE root.record_id = ? AND root.status <> 'stale')
           AND NOT EXISTS (
@@ -192,6 +192,7 @@ export async function detach(
         spec.label ?? null,
         sessionId(),
         spec.probe ? 1 : 0,
+        spec.agentExplicit ? 1 : 0,
         identity.parent_run_record_id,
         identity.turn,
         storedMcpRequest(mcpRequest),
@@ -254,7 +255,6 @@ export async function detach(
     )
   }
   const recordId = claimed.record_id
-  const id = recordId
   let coordinatorLogFd: number | null = null
   let handoffStep = 'write prompt artifact'
   try {
@@ -262,7 +262,7 @@ export async function detach(
     // also stored on the row for run() to reuse rather than creating a second file.
     const promptPath = writeDetachedPrompt(runsDir, recordId, prompt)
     handoffStep = 'record prompt artifact'
-    db().query('UPDATE run SET prompt_path=? WHERE record_id=?').run(promptPath, id)
+    db().query('UPDATE run SET prompt_path=? WHERE record_id=?').run(promptPath, recordId)
 
     /**
      * Spawned into its OWN SESSION, which is the whole point and was missing.
@@ -294,7 +294,7 @@ export async function detach(
        * that. `exec.ts` imports almost nothing and pulls the rest in inside a
        * catch, turning a broken sibling into a recorded failure with a reason.
        */
-      String(id),
+      String(recordId),
       promptPath,
       jobName,
       JSON.stringify({ ...spec, seed }),
@@ -345,17 +345,17 @@ export async function detach(
     // for fifteen minutes.
     handoffStep = 'record coordinator pid'
     if (!child.pid) throw new Error('spawned coordinator has no pid')
-    const pidUpdate = db().query('UPDATE run SET pid=? WHERE record_id=?').run(child.pid, id)
+    const pidUpdate = db().query('UPDATE run SET pid=? WHERE record_id=?').run(child.pid, recordId)
     if (pidUpdate.changes !== 1) {
       throw new Error(`coordinator pid update changed ${pidUpdate.changes} rows`)
     }
     child.unref()
-    return id
+    return recordId
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     db()
       .query(`UPDATE run SET status='failed', failure_kind='harness', error=? WHERE record_id=?`)
-      .run(`detach handoff failed during ${handoffStep}: ${message}`, id)
+      .run(`detach handoff failed during ${handoffStep}: ${message}`, recordId)
     throw error
   } finally {
     if (coordinatorLogFd !== null) closeSync(coordinatorLogFd)

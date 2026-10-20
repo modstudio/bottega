@@ -6,7 +6,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { type Agent, minimumCliVersionRefusal } from '../agent/agents.ts'
 import { resolveEndpointApiKeyEnv } from '../agent/endpoint-api-key.ts'
-import { ensureLocalHealth, modelHostUrl, tryWake } from '../agent/model-host.ts'
+import { ensureLocalHealth, tryWake } from '../agent/model-host.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import type { AskLoopback } from '../ask/ask.ts'
 import { compilePack, type Pack, recordPack } from '../canon/canon.ts'
@@ -128,7 +128,7 @@ import { refuseUnstartedRun } from './run-prelaunch-refusal.ts'
 import { bindSignals, sha } from './run-process.ts'
 import { readOnlyBaseProjectPath, repoOf } from './run-project-context.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
-import { resumeFacts } from './run-resume-kind.ts'
+import { namedAgentTurn, resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
 import { finishRun, type TerminalInput } from './run-terminal.ts'
@@ -201,6 +201,8 @@ export async function run(opts: {
   job: string
   prompt: string
   agent?: string
+  /** True only when the caller selected the agent rather than routing it. */
+  agentExplicit?: boolean
   schemaPath?: string
   mcp?: McpRequest
   /** A calibration probe: recorded and scorable, but never routing evidence. */
@@ -422,7 +424,6 @@ export async function run(opts: {
   })
   const originalPrompt = opts.prompt
   const resolvedDialect = resolveReplyDialect(requestedJob)
-  const generatedSchema = resolvedDialect.schema
   const replySchemaName = opts.schemaPath ? basename(opts.schemaPath) : resolvedDialect.schemaName
   const runProjectId = runProjectName ? (projectByName(runProjectName)?.recordId ?? null) : null
   let pack: ReturnType<typeof compilePack> | null = null
@@ -443,7 +444,7 @@ export async function run(opts: {
         failedId = (
           db()
             .query(
-              `INSERT INTO run (record_id,number,started_at,agent,job,repo,project_record_id,cwd,prompt_sha,spec_sha,prompt_bytes,prompt_head,status,session_id,failure_kind,error,docs_injected,mcp,started_by_user_id) VALUES (?,?,?,'(pending)',?,?,?,?,?,?,?,?,'failed',?,'harness',?,0,?,?) RETURNING record_id`,
+              `INSERT INTO run (record_id,number,started_at,agent,job,repo,project_record_id,cwd,prompt_sha,spec_sha,prompt_bytes,prompt_head,status,session_id,failure_kind,error,docs_injected,mcp,started_by_user_id,agent_explicit) VALUES (?,?,?,'(pending)',?,?,?,?,?,?,?,?,'failed',?,'harness',?,0,?,?,?) RETURNING record_id`,
             )
             .get(
               ...[newRecordId(), nextRunNumber(db()), nowIso()],
@@ -459,6 +460,7 @@ export async function run(opts: {
               message,
               storedMcpRequest(mcpRequest),
               startedByUserId,
+              Number(Boolean(opts.agentExplicit)),
             ) as { record_id: string }
         ).record_id
       throw Object.assign(new Error(`run ${failedId} could not start: ${message}`), {
@@ -560,7 +562,7 @@ export async function run(opts: {
   }
   if (transportName === 'acp') {
     try {
-      assertAcpAllowed(opts.job, name, a)
+      assertAcpAllowed(opts.job, name, a, namedAgentTurn(opts.agentExplicit, resume.isFirstTurn))
       assertAcpReady(name, a)
     } catch (e) {
       if (opts.reserveId) db().query('DELETE FROM run WHERE record_id=?').run(opts.reserveId)
@@ -668,7 +670,7 @@ export async function run(opts: {
     runsDir: RUNS_DIR,
     stamp,
     name,
-    generatedSchema,
+    generatedSchema: resolvedDialect.schema,
     originalPrompt,
     prompt,
     callerCwd,
@@ -748,7 +750,7 @@ export async function run(opts: {
       project: projectAt(callerCwd),
       override: process.env.ORCH_SANDBOX,
       path: process.env.PATH,
-      localBaseUrl: modelHostUrl(),
+      baseUrl: a.baseUrl,
       mcp: Boolean(mcpMode),
       mcpAllowlist: mcpMode ? mcpAllowlist : [],
     })
