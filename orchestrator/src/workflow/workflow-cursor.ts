@@ -1,6 +1,5 @@
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { notifyWaitingItem } from '../operator/operator-waiting.ts'
@@ -14,7 +13,10 @@ import {
 import { questionOpenSql } from '../run/question-open.ts'
 import type { AutonomyResolution } from './autonomy.ts'
 import { adoptWorkflowTask, vacateRetiredWorkflowKeySlot } from './workflow-cursor-adoption.ts'
-import { persistWorkflowAdvance } from './workflow-cursor-advance.ts'
+import {
+  renderWorkflowAdvanceResult,
+  renderWorkflowCursorRemedy,
+} from './workflow-cursor-result.ts'
 import { applyCursorArguments, workflowKeyOf as keyOf } from './workflow-cursor-arguments.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import {
@@ -22,8 +24,6 @@ import {
   formatCursorOpened,
   formatCursorResumed,
   renderWorkflowCursorLine,
-  shellWord,
-  workflowCursorReference,
 } from './workflow-cursor-format.ts'
 import {
   LISTED_CURSOR_COLUMNS,
@@ -284,18 +284,6 @@ function cursorComposition(row: CursorRow, d: Database) {
   )
 }
 
-function remedy(row: CursorRow, composition: ReturnType<typeof composeWorkflow>): string {
-  const active = composition.steps[row.ordinal]!
-  const args = Object.entries(JSON.parse(row.args) as Record<string, string>)
-    .map(([name, value]) => ` --arg ${shellWord(`${name}=${value}`)}`)
-    .join('')
-  return (
-    `${cursorName(row.workflow_slug, row.mode_slug, row.workflow_key)} is at step ${active.n} ${active.slug}; ` +
-    `fetch that step, or close it with: ${PLATFORM_SLUG} workflow next ${row.workflow_slug} --project ${row.project} ` +
-    `--mode ${row.mode_slug}${workflowCursorReference(row.id).cli}${args} --note "<how its floor was met>"`
-  )
-}
-
 function cursorCompositionInput(row: CursorRow | null, args: Record<string, string>, mode: string) {
   const startDecision = decideCursorStart(row?.state ?? null)
   if (!row || startDecision === 'retire') {
@@ -331,7 +319,7 @@ function refuseInvalidServe(
       `${cursorName(slug, mode, row!.workflow_key)} is ${row!.state}; compose it again to start a new run`,
     )
   }
-  throw new Error(remedy(row!, composition))
+  throw new Error(renderWorkflowCursorRemedy(row!, composition.steps[row!.ordinal]!))
 }
 
 function refuseTerminalCursor(row: CursorRow): void {
@@ -711,16 +699,26 @@ function nextWorkflowStepImpl(
   appendWorkflowClose(row, composition, closed, note.trim(), outcome, floor, advance.skipped, at, d)
   if (advance.ordinal === null || composition.steps[row.ordinal]!.needs.includes('workflow-text'))
     deleteWorkflowText(row.id, d)
-  return persistWorkflowAdvance({
+  if (advance.ordinal === null) {
+    d.query(
+      `UPDATE workflow_cursor SET state='done',closed=?,question=NULL,
+       session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
+    ).run(JSON.stringify(closed), context.session ?? null, at, row.id)
+  } else {
+    const next = composition.steps[advance.ordinal]!
+    d.query(
+      `UPDATE workflow_cursor SET ordinal=?,step_slug=?,state='running',closed=?,question=NULL,
+       session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
+    ).run(advance.ordinal, next.slug, JSON.stringify(closed), context.session ?? null, at, row.id)
+  }
+  return renderWorkflowAdvanceResult({
     row,
     composition,
     closed,
     advance,
-    context,
     slug,
     project,
     mode,
-    at,
     selfRuling,
     d,
   })

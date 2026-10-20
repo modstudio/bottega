@@ -44,6 +44,9 @@ const rulingsHeader = (result: WorkflowComposition) =>
 const shellWord = (value: string) =>
   /^[A-Za-z0-9_@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`
 
+const conditionText = (condition: { step: string; outcome: string[] }) =>
+  `only when ${condition.step} is ${condition.outcome.join(' or ')}`
+
 export function renderWorkflowComposition(result: WorkflowComposition): string {
   if (result.mode && result.steps.length && !result.needs.arguments)
     return renderRunnableComposition(result)
@@ -84,7 +87,7 @@ function renderRunnableComposition(result: WorkflowComposition): string {
     `facts: ${JSON.stringify(result.facts)}`,
     ...result.steps.map(
       (step) =>
-        `${step.n}. ${step.slug} — ${step.title}${step.when ? `; only when ${step.when.step} is ${step.when.outcome.join(' or ')}` : ''} [job=${step.job ?? '-'} autonomy=${step.resolvedAutonomy.value}(${step.resolvedAutonomy.scope}) floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
+        `${step.n}. ${step.slug} — ${step.title}${step.when ? `; ${conditionText(step.when)}` : ''} [job=${step.job ?? '-'} autonomy=${step.resolvedAutonomy.value}(${step.resolvedAutonomy.scope}) floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
     ),
   ].join('\n')
 }
@@ -124,7 +127,7 @@ function renderIncompleteComposition(result: WorkflowComposition): string {
     ...facts,
     ...result.steps.map(
       (step) =>
-        `${step.n}. ${step.slug} — ${step.title}${step.when ? `; only when ${step.when.step} is ${step.when.outcome.join(' or ')}` : ''} [job=${step.job ?? '-'} autonomy=${step.resolvedAutonomy.value}(${step.resolvedAutonomy.scope}) floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
+        `${step.n}. ${step.slug} — ${step.title}${step.when ? `; ${conditionText(step.when)}` : ''} [job=${step.job ?? '-'} autonomy=${step.resolvedAutonomy.value}(${step.resolvedAutonomy.scope}) floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
     ),
   ].join('\n')
 }
@@ -168,7 +171,9 @@ export function renderWorkflowStep(step: WorkflowStep): string {
     step.next === undefined
       ? `${close} that serves the following step from the workflow's step list.`
       : step.next
-        ? `${close} that serves step ${step.next.n} ${step.next.slug} — ${step.next.title}.`
+        ? step.next.when
+          ? `${close} step ${step.next.n} ${step.next.slug} — ${step.next.title} runs ${conditionText(step.next.when)}; otherwise closing skips it and serves the next eligible step.`
+          : `${close} that serves step ${step.next.n} ${step.next.slug} — ${step.next.title}.`
         : step.mode
           ? `${close} this is the last step of ${step.workflow} (${step.mode}), and closing it finishes the workflow.`
           : `${close} this is the last step of ${step.workflow} in every mode that contains it, and closing it finishes the workflow.`

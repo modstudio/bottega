@@ -1,10 +1,10 @@
 // concern: workflows
-/** Persists an already-decided cursor advance and renders its next public state. */
+/** Renders the public result of an already-persisted cursor advance. */
 
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
-import { cursorName } from './workflow-cursor-format.ts'
-import type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
+import { cursorName, shellWord, workflowCursorReference } from './workflow-cursor-format.ts'
 import {
   type CursorTrailEntry,
   completedWorkflowSummary,
@@ -28,36 +28,42 @@ type AdvanceRow = {
   autonomy: string | null
 }
 
-export function persistWorkflowAdvance(input: {
+export function renderWorkflowCursorRemedy(
+  row: Pick<
+    AdvanceRow,
+    'id' | 'workflow_slug' | 'project' | 'mode_slug' | 'workflow_key' | 'args'
+  > & { ordinal: number },
+  active: { n: number; slug: string },
+): string {
+  const args = Object.entries(JSON.parse(row.args) as Record<string, string>)
+    .map(([name, value]) => ` --arg ${shellWord(`${name}=${value}`)}`)
+    .join('')
+  return (
+    `${cursorName(row.workflow_slug, row.mode_slug, row.workflow_key)} is at step ${active.n} ${active.slug}; ` +
+    `fetch that step, or close it with: ${PLATFORM_SLUG} workflow next ${row.workflow_slug} --project ${row.project} ` +
+    `--mode ${row.mode_slug}${workflowCursorReference(row.id).cli}${args} --note "<how its floor was met>"`
+  )
+}
+
+export function renderWorkflowAdvanceResult(input: {
   row: AdvanceRow
   composition: ReturnType<typeof composeWorkflow>
   closed: CursorTrailEntry[]
   advance: ReturnType<typeof decideConditionalAdvance>
-  context: WorkflowCursorContext
   slug: string
   project: string
   mode: string
-  at: string
   selfRuling?: WorkflowSelfRulingInput
   d: Database
 }): string {
-  const { row, composition, closed, advance, context, slug, project, mode, at, selfRuling, d } =
-    input
+  const { row, composition, closed, advance, slug, project, mode, selfRuling, d } = input
   if (advance.ordinal === null) {
-    d.query(
-      `UPDATE workflow_cursor SET state='done',closed=?,question=NULL,
-       session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
-    ).run(JSON.stringify(closed), context.session ?? null, at, row.id)
     return withSelfRuling(
       completedWorkflowSummary(cursorName(slug, mode, row.workflow_key, true), closed),
       selfRuling,
     )
   }
   const next = composition.steps[advance.ordinal]!
-  d.query(
-    `UPDATE workflow_cursor SET ordinal=?,step_slug=?,state='running',closed=?,question=NULL,
-     session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
-  ).run(advance.ordinal, next.slug, JSON.stringify(closed), context.session ?? null, at, row.id)
   const rendered = renderWorkflowStep({
     ...withWorkflowTextFacts(
       getWorkflowStep(

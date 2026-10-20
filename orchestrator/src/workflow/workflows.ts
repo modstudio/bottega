@@ -891,16 +891,20 @@ function workflowModesForStep(
 ) {
   const expandedModes = definition.modes.map((mode) => ({
     mode,
-    steps: expandWorkflowSteps(mode.steps, sequences ?? []),
+    steps: expandWorkflowModeSteps(mode.steps, sequences ?? []),
   }))
   const selectedMode = selectedModeSlug
     ? expandedModes.find(({ mode }) => mode.slug === selectedModeSlug)
     : undefined
-  const containingModes = expandedModes.filter(({ steps }) => steps.includes(stepSlug))
+  const containingModes = expandedModes.filter(({ steps }) =>
+    steps.some((step) => step.slug === stepSlug),
+  )
   return {
     selectedMode,
     containingModes,
-    referenced: selectedMode ? selectedMode.steps.includes(stepSlug) : containingModes.length > 0,
+    referenced: selectedMode
+      ? selectedMode.steps.some((step) => step.slug === stepSlug)
+      : containingModes.length > 0,
   }
 }
 
@@ -958,11 +962,17 @@ export function getWorkflowStep(
       key: args.key,
     })
   const templates = resolveWorkflowStepTemplates(step, resolve)
-  const successor = ({ steps }: { steps: string[] }) => {
-    const index = steps.indexOf(stepSlug)
+  const successor = ({ steps }: { steps: ReturnType<typeof expandWorkflowModeSteps> }) => {
+    const index = steps.findIndex((entry) => entry.slug === stepSlug)
     if (index === steps.length - 1) return null
-    const next = catalogue.definition.steps.find((item) => item.slug === steps[index + 1])!
-    return { n: index + 2, slug: next.slug, title: next.title }
+    const nextEntry = steps[index + 1]!
+    const next = catalogue.definition.steps.find((item) => item.slug === nextEntry.slug)!
+    return {
+      n: index + 2,
+      slug: next.slug,
+      title: next.title,
+      ...(nextEntry.when ? { when: nextEntry.when } : {}),
+    }
   }
   const successorModes = selectedMode ? [selectedMode] : containingModes
   const successors = successorModes.map(successor)

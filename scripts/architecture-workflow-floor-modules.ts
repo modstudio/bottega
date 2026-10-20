@@ -105,7 +105,6 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../sandbox/sandbox-runtime.ts',
   ]),
   module('orchestrator/src/workflow/workflow-cursor.ts', [
-    '../../../shared/brand.ts',
     'bun:sqlite',
     'node:crypto',
     '../../../shared/record-id.ts',
@@ -119,13 +118,12 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-floor.ts',
     './workflow-floor-evidence.ts',
     './workflow-floor-evidence-replay.ts',
-    './workflow-render.ts',
     './workflow-self-ruling-mutation.ts',
     './workflows.ts',
     './workflow-cursor-transition.ts',
     './workflow-cursor-trail.ts',
     './workflow-cursor-arguments.ts',
-    './workflow-cursor-advance.ts',
+    './workflow-cursor-result.ts',
     './workflow-cursor-autonomy.ts',
     './workflow-cursor-adoption.ts',
     './workflow-cursor-format.ts',
@@ -133,7 +131,8 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-step-reference.ts',
     './workflow-text.ts',
   ]),
-  module('orchestrator/src/workflow/workflow-cursor-advance.ts', [
+  module('orchestrator/src/workflow/workflow-cursor-result.ts', [
+    '../../../shared/brand.ts',
     'bun:sqlite',
     './workflow-cursor-autonomy.ts',
     './workflow-cursor-format.ts',

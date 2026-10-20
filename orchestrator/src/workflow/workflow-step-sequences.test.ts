@@ -1,6 +1,5 @@
 import { expect, test } from 'bun:test'
 import {
-  expandWorkflowModeSteps,
   expandWorkflowSteps,
   inspectWorkflowSteps,
   workflowModeStepError,
@@ -28,15 +27,6 @@ test('a sequence reference omits named members and rejects a non-member', () => 
       new Set(['review', 'verify']),
     ).invalidOmissions,
   ).toEqual([{ sequence: 'quality', step: 'absent' }])
-})
-
-test('conditional steps retain their condition at their expanded position', () => {
-  expect(
-    expandWorkflowModeSteps(
-      ['choose', { step: 'review', when: { step: 'choose', outcome: ['needed'] } }],
-      [],
-    ),
-  ).toEqual([{ slug: 'choose' }, { slug: 'review', when: { step: 'choose', outcome: ['needed'] } }])
 })
 
 test('a workflow step entry accepts only a slug or an exact sequence reference', () => {

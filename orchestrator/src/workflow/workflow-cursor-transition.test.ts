@@ -43,6 +43,22 @@ describe('workflow cursor transition', () => {
     expect(
       decideConditionalAdvance(steps.slice(0, 2), [{ slug: 'choose', outcome: 'no' }], 1),
     ).toEqual({ ordinal: null, skipped: [{ ordinal: 1, step: steps[1]! }] })
+
+    const skippedDependency = [
+      { slug: 'choose' },
+      { slug: 'one', when: { step: 'choose', outcome: ['yes'] } },
+      { slug: 'two', when: { step: 'one', outcome: ['done'] } },
+      { slug: 'finish' },
+    ]
+    expect(
+      decideConditionalAdvance(skippedDependency, [{ slug: 'choose', outcome: 'no' }], 1),
+    ).toEqual({
+      ordinal: 3,
+      skipped: [
+        { ordinal: 1, step: skippedDependency[1]! },
+        { ordinal: 2, step: skippedDependency[2]! },
+      ],
+    })
   })
   test('retires terminal cursors before starting and reuses active cursors', () => {
     expect(decideCursorStart(null)).toBe('insert')

@@ -91,6 +91,13 @@ describe('workflow rendering', () => {
         getWorkflowStep('render-flow', 'fixture', 'lens', {}, d, { mode: 'default' }),
       ),
     ).toContain('Choose one allowed outcome (needed, clear)')
+    expect(
+      renderWorkflowStep(
+        getWorkflowStep('render-flow', 'fixture', 'lens', {}, d, { mode: 'default' }),
+      ),
+    ).toContain(
+      'step 2 score — Score the lenses runs only when lens is needed or clear; otherwise closing skips it and serves the next eligible step.',
+    )
   })
   test('every floor kind has generated evidence guidance', () => {
     expect(floorKinds.filter((kind) => !floorGuidance[kind]?.trim())).toEqual([])
