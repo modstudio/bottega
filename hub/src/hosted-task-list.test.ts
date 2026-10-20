@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import { PLATFORM_NAME } from '../../shared/brand.ts'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
+import { HOSTED_PULL_BODY_BYTE_BUDGET } from './hosted-pull-page.ts'
 import { listHostedTasks } from './hosted-task-list.ts'
 
 const spaceId = '01990000-0000-7000-8000-000000001510'
@@ -10,6 +11,7 @@ const at = '2026-10-19T12:00:00.123456Z'
 let database: PGlite
 
 const id = (value: number) => `01990000-0000-7000-8000-${String(value).padStart(12, '0')}`
+const largeDocumentIds = Array.from({ length: 6 }, (_, index) => id(1540 + index))
 
 beforeAll(async () => {
   database = await createHostedRecordFixture({ spaceId, userId })
@@ -35,6 +37,19 @@ beforeAll(async () => {
       ('${id(1531)}','${spaceId}','${PLATFORM_NAME}','DEV-2','${id(1513)}',1,'handoff','Doc 2','Body','v1','${at}','${at}');
     SET ROLE record_actor;
   `)
+  for (const [index, documentId] of largeDocumentIds.entries()) {
+    const body = 'x'.repeat(
+      index === largeDocumentIds.length - 1
+        ? HOSTED_PULL_BODY_BYTE_BUDGET + 1
+        : HOSTED_PULL_BODY_BYTE_BUDGET / 2,
+    )
+    await database.query(
+      `INSERT INTO hub_task_document
+        (id,space_id,project_name,task_key,task_id,number,role,title,body,version,created_at,updated_at)
+       VALUES ($1,$2,$3,'DEV-1',$4,$5,'handoff',$6,$7,'v1',$8,$8)`,
+      [documentId, spaceId, PLATFORM_NAME, id(1512), index + 2, `Large doc ${index}`, body, at],
+    )
+  }
 })
 
 afterAll(async () => {
@@ -74,7 +89,43 @@ test('a first task pull pages shared timestamps without repeating rows or exposi
     ...page.comments.map((row) => `comment:${row.id}`),
     ...page.documents.map((row) => `document:${row.id}`),
   ])
-  expect(received).toHaveLength(9)
+  expect(received).toHaveLength(9 + largeDocumentIds.length)
   expect(new Set(received).size).toBe(received.length)
   expect(received.slice(0, 5).every((row) => row.startsWith('task:'))).toBe(true)
+})
+
+test('document pull pages enforce the body byte budget and include one oversized row', async () => {
+  const pages = []
+  let cursor: string | undefined
+  do {
+    const page = await listHostedTasks(
+      pgliteSql(database),
+      { userId, spaceId },
+      { includeDeleted: true, cursor },
+    )
+    pages.push(page)
+    cursor = page.cursor
+  } while (pages.at(-1)!.more)
+
+  const documentPages = pages.filter((page) => page.documents.length > 0)
+  const received = documentPages.flatMap((page) => page.documents.map((row) => row.id))
+  const bodyBytes = documentPages.map((page) =>
+    page.documents.reduce((total, row) => total + Buffer.byteLength(row.body), 0),
+  )
+  const largestPageJsonBytes = Math.max(
+    ...documentPages.map((page) => Buffer.byteLength(JSON.stringify(page))),
+  )
+  console.info(`largest hosted document page JSON: ${largestPageJsonBytes} bytes`)
+
+  expect(received).toHaveLength(2 + largeDocumentIds.length)
+  expect(new Set(received).size).toBe(received.length)
+  expect(largeDocumentIds.every((documentId) => received.includes(documentId))).toBe(true)
+  expect(
+    documentPages.every(
+      (page, index) =>
+        bodyBytes[index]! <= HOSTED_PULL_BODY_BYTE_BUDGET ||
+        (page.documents.length === 1 &&
+          Buffer.byteLength(page.documents[0]!.body) > HOSTED_PULL_BODY_BYTE_BUDGET),
+    ),
+  ).toBe(true)
 })
