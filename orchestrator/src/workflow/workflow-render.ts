@@ -4,7 +4,6 @@ import {
   formatCursorResumed,
   workflowCursorReference,
 } from './workflow-cursor-format.ts'
-import type { ClosedStep } from './workflow-cursor-trail.ts'
 import { evidenceGuidance, type FloorKind } from './workflow-floor.ts'
 import type { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
@@ -21,7 +20,7 @@ type WorkflowComposition = ReturnType<typeof composeWorkflow> & {
 type WorkflowStep = ReturnType<typeof getWorkflowStep> & {
   cursor?: number
   notice?: string
-  flow?: ClosedStep[]
+  flow?: Array<{ slug: string; outcome?: string; skipped?: unknown }>
 }
 
 export function withSelfRuling(

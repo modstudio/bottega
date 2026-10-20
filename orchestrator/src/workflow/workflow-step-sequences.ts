@@ -40,6 +40,25 @@ export function isConditionalStep(
   )
 }
 
+function expandSequenceReference(
+  entry: { sequence: string; omit?: string[] },
+  bySlug: ReadonlyMap<string, string[]>,
+): {
+  steps: ExpandedWorkflowStep[]
+  missing?: string
+  invalidOmissions: { sequence: string; step: string }[]
+} {
+  const members = bySlug.get(entry.sequence)
+  if (!members) return { steps: [], missing: entry.sequence, invalidOmissions: [] }
+  const omitted = new Set(entry.omit ?? [])
+  return {
+    steps: members.filter((step) => !omitted.has(step)).map((slug) => ({ slug })),
+    invalidOmissions: [...omitted]
+      .filter((step) => !members.includes(step))
+      .map((step) => ({ sequence: entry.sequence, step })),
+  }
+}
+
 function expandEntries(
   entries: readonly WorkflowModeStep[],
   sequences: readonly CatalogueSequence[],
@@ -52,14 +71,10 @@ function expandEntries(
     if (typeof entry === 'string') detailed.push({ slug: entry })
     else if (isConditionalStep(entry)) detailed.push({ slug: entry.step, when: entry.when })
     else {
-      const steps = bySlug.get(entry.sequence)
-      if (!steps) missingSequences.push(entry.sequence)
-      else {
-        const omitted = new Set(entry.omit ?? [])
-        for (const step of omitted)
-          if (!steps.includes(step)) invalidOmissions.push({ sequence: entry.sequence, step })
-        detailed.push(...steps.filter((step) => !omitted.has(step)).map((slug) => ({ slug })))
-      }
+      const expansion = expandSequenceReference(entry, bySlug)
+      detailed.push(...expansion.steps)
+      invalidOmissions.push(...expansion.invalidOmissions)
+      if (expansion.missing) missingSequences.push(expansion.missing)
     }
   }
   return { detailed, missingSequences: [...new Set(missingSequences)], invalidOmissions }

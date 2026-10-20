@@ -12,6 +12,7 @@ const module = (file: string, allowed: string[]): McpModule => ({
 })
 
 export const mcpModules: McpModule[] = [
+  module('orchestrator/src/mcp/mcp-workflow-input.ts', ['zod']),
   module('orchestrator/src/mcp/mcp-setup-tools.ts', [
     'node:fs',
     'node:path',

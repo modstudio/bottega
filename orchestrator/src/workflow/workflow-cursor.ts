@@ -14,6 +14,7 @@ import {
 import { questionOpenSql } from '../run/question-open.ts'
 import type { AutonomyResolution } from './autonomy.ts'
 import { adoptWorkflowTask, vacateRetiredWorkflowKeySlot } from './workflow-cursor-adoption.ts'
+import { persistWorkflowAdvance } from './workflow-cursor-advance.ts'
 import { applyCursorArguments, workflowKeyOf as keyOf } from './workflow-cursor-arguments.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import {
@@ -34,7 +35,6 @@ import {
 import {
   type ClosedStep,
   type CursorTrailEntry,
-  completedWorkflowSummary,
   currentStepActivatedAt,
   isClosedStep,
 } from './workflow-cursor-trail.ts'
@@ -63,7 +63,6 @@ import {
   type WorkflowEvidenceInput,
 } from './workflow-floor-evidence.ts'
 import { withReplayedFloorEvidence } from './workflow-floor-evidence-replay.ts'
-import { renderWorkflowStep, withSelfRuling } from './workflow-render.ts'
 import {
   recordWorkflowSelfRuling,
   type WorkflowSelfRulingInput,
@@ -631,56 +630,6 @@ function appendWorkflowClose(
       skipped: condition,
     })
   }
-}
-
-function persistWorkflowAdvance(input: {
-  row: CursorRow
-  composition: ReturnType<typeof composeWorkflow>
-  closed: CursorTrailEntry[]
-  advance: ReturnType<typeof decideConditionalAdvance>
-  context: WorkflowCursorContext
-  slug: string
-  project: string
-  mode: string
-  at: string
-  selfRuling?: WorkflowSelfRulingInput
-  d: Database
-}): string {
-  const { row, composition, closed, advance, context, slug, project, mode, at, selfRuling, d } =
-    input
-  if (advance.ordinal === null) {
-    d.query(
-      `UPDATE workflow_cursor SET state='done',closed=?,question=NULL,
-       session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
-    ).run(JSON.stringify(closed), context.session ?? null, at, row.id)
-    return withSelfRuling(
-      completedWorkflowSummary(cursorName(slug, mode, row.workflow_key, true), closed),
-      selfRuling,
-    )
-  }
-  const next = composition.steps[advance.ordinal]!
-  d.query(
-    `UPDATE workflow_cursor SET ordinal=?,step_slug=?,state='running',closed=?,question=NULL,
-     session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
-  ).run(advance.ordinal, next.slug, JSON.stringify(closed), context.session ?? null, at, row.id)
-  const rendered = renderWorkflowStep({
-    ...withWorkflowTextFacts(
-      getWorkflowStep(
-        slug,
-        project,
-        next.slug,
-        JSON.parse(row.args),
-        d,
-        { mode, version: row.workflow_version, catalogueVersion: row.catalogue_version },
-        cursorAutonomy(row),
-      ),
-      row.id,
-      d,
-    ),
-    cursor: row.id,
-    flow: closed.filter(isClosedStep),
-  })
-  return withSelfRuling(rendered, selfRuling)
 }
 
 function nextWorkflowStepImpl(

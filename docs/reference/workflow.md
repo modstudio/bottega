@@ -381,7 +381,7 @@ list workflow definitions
 
 ## bottega workflow next
 
-**Synopsis:** `bottega workflow next [workflow] [--cursor <value>] [--mode <value>] [--project <value>] [--note <value>] [--question <value>] [--self-ruling <value>] [--basis <value>] [--ruling <value>] [--review <value>] [--gate <value>] [--run <value>] [--artifact <value>] [--task <value>] [--defer <value>] [--satisfies <value>] [--arg <value>] [--json]`
+**Synopsis:** `bottega workflow next [workflow] [--cursor <value>] [--mode <value>] [--project <value>] [--note <value>] [--outcome <value>] [--question <value>] [--self-ruling <value>] [--basis <value>] [--ruling <value>] [--review <value>] [--gate <value>] [--run <value>] [--artifact <value>] [--task <value>] [--defer <value>] [--satisfies <value>] [--arg <value>] [--json]`
 
 close the current step and advance a workflow cursor
 
@@ -391,6 +391,7 @@ close the current step and advance a workflow cursor
 - `--mode <value>`: select this workflow mode
 - `--project <value>`: select this registered project
 - `--note <value>`: record how the current step was completed
+- `--outcome <value>`: record the current step outcome
 - `--question <value>`: record the self-ruling question
 - `--self-ruling <value>`: record the self-ruling answer
 - `--basis <value>`: record the basis for a self-ruling

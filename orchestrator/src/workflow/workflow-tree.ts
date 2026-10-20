@@ -132,6 +132,11 @@ const expectedStatusFrom = (frontMatter: Record<string, unknown>) =>
     ? {}
     : { expectedStatus: frontMatter.expectedStatus as CatalogueStep['expectedStatus'] }
 
+const outcomesFrom = (frontMatter: Record<string, unknown>) =>
+  frontMatter.outcomes === undefined
+    ? {}
+    : { outcomes: frontMatter.outcomes as CatalogueStep['outcomes'] }
+
 const stepBooleanOptionsFrom = (frontMatter: Record<string, unknown>) => ({
   ...(frontMatter.requirePullRequest === undefined
     ? {}
@@ -167,9 +172,7 @@ export function parseWorkflowTree(tree: WorkflowTreeFile[]): WorkflowTreeStore {
         title: frontMatter.title as string,
         stage: frontMatter.stage as CatalogueStep['stage'],
         floor: frontMatter.floor as CatalogueStep['floor'],
-        ...(frontMatter.outcomes === undefined
-          ? {}
-          : { outcomes: frontMatter.outcomes as CatalogueStep['outcomes'] }),
+        ...outcomesFrom(frontMatter),
         ...(frontMatter.deferrable === undefined
           ? {}
           : { deferrable: frontMatter.deferrable as CatalogueStep['deferrable'] }),
