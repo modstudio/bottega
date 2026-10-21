@@ -16,6 +16,7 @@ import {
   decideBranchDisposal,
   disposalTaskState,
 } from './branch-disposal-decision.ts'
+import { assertBranchRefMayBeCreated, assertBranchRefMayBeDeleted } from './branch-ref-guard.ts'
 import { settleDeletedBranch } from './branch-settlement.ts'
 import { branchesReport } from './branches.ts'
 import { observeTaskStatus } from './task-status-observation.ts'
@@ -63,7 +64,10 @@ function pruneExpiredArchive(
     const current = git(project.path, ['rev-parse', '--verify', row.archive_ref])
     if (current !== row.tip)
       throw new Error(`archive ref moved from recorded tip ${row.tip} to ${current}`)
-    if (!input.dryRun) git(project.path, ['update-ref', '-d', row.archive_ref, row.tip])
+    if (!input.dryRun) {
+      // branch-ref-guard: non-local refs/orch/
+      git(project.path, ['update-ref', '-d', row.archive_ref, row.tip])
+    }
     input.log(
       `${input.dryRun ? 'would expire' : 'expired'} branch disposal archive ${row.archive_ref} for ${row.project}:${row.branch}`,
     )
@@ -274,6 +278,8 @@ export function disposeBranch(
       throw new Error(
         `branch ${plan.branch} moved while disposal was being ruled; inspect it and retry`,
       )
+    assertBranchRefMayBeDeleted(plan.project.path, plan.branch)
+    // branch-ref-guard: assertBranchRefMayBeDeleted
     git(
       plan.project.path,
       ['update-ref', '--stdin'],
@@ -290,6 +296,8 @@ export function disposeBranch(
       }, database)
     } catch (cause) {
       try {
+        assertBranchRefMayBeCreated(plan.project.path, plan.branch)
+        // branch-ref-guard: assertBranchRefMayBeCreated
         git(
           plan.project.path,
           ['update-ref', '--stdin'],

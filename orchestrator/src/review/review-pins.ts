@@ -121,6 +121,7 @@ export function pinReviewedCommits(runs: RunRow[], database: Database): void {
         warn(`commit ${run.head_commit} is missing from ${repo}`)
         continue
       }
+      // branch-ref-guard: non-local refs/orch/
       const updated = git(repo, ['update-ref', pinRef(run.record_id), run.head_commit])
       if (!updated.ok) warn(`git update-ref failed: ${updated.err}`)
     } catch (cause) {
@@ -213,6 +214,7 @@ export function reviewPins(prune = false, database: Database = db()): ReviewPin[
     )
     let deleted = false
     if (prune && row.completed_at !== null && landed) {
+      // branch-ref-guard: non-local refs/orch/
       const removal = git(project.path, ['update-ref', '-d', pinRef(row.run_record_id)])
       if (!removal.ok)
         throw new Error(`git update-ref -d ${pinRef(row.run_record_id)} failed: ${removal.err}`)

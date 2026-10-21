@@ -8,6 +8,10 @@ import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
+import {
+  assertBranchRefMayBeCreated,
+  assertBranchRefMayBeDeleted,
+} from '../branch/branch-ref-guard.ts'
 import { closeOutRun } from '../close/close-out.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
@@ -166,6 +170,8 @@ export const systemCanonMirrorPort: CanonMirrorPort = {
   refTip: (p, ref) => command(p.path, ['git', 'rev-parse', ref]),
   createTree: ({ project, path, branch, base, record }) => {
     mkdirSync(dirname(path), { recursive: true })
+    assertBranchRefMayBeCreated(project.path, branch)
+    // branch-ref-guard: assertBranchRefMayBeCreated
     const child = spawn(project.path, ['git', 'worktree', 'add', '-B', branch, path, base])
     if (existsSync(path)) record(base)
     if (child.exitCode !== 0) {
@@ -233,6 +239,8 @@ export const systemCanonMirrorPort: CanonMirrorPort = {
     command(path, canonMirrorMergeArgs(number, commit))
   },
   releaseBranch: (p, branch, expected) => {
+    assertBranchRefMayBeDeleted(p.path, branch)
+    // branch-ref-guard: assertBranchRefMayBeDeleted
     command(p.path, ['git', 'update-ref', '-d', `refs/heads/${branch}`, expected])
   },
   releaseRun: (runId) => closeOutRun(runId, { intent: 'tree-remove' }),

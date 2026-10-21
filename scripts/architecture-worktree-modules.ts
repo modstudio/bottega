@@ -21,6 +21,7 @@ export const worktreeModules: WorktreeModule[] = [
     './worktree-types.ts',
   ]),
   module('orchestrator/src/worktree/worktree-create.ts', [
+    '../branch/branch-ref-guard.ts',
     '../branch/create-time-settlement.ts',
     '../database/db.ts',
     '../project/projects.ts',
@@ -42,6 +43,7 @@ export const worktreeModules: WorktreeModule[] = [
     '../git/git-environment.ts',
   ]),
   module('orchestrator/src/worktree/worktree-readonly.ts', [
+    '../branch/branch-ref-guard.ts',
     '../project/projects.ts',
     './worktree-provision.ts',
     './worktree-template.ts',
@@ -67,6 +69,7 @@ export const worktreeModules: WorktreeModule[] = [
   ]),
   module('orchestrator/src/worktree/worktree-remove.ts', [
     '../../../shared/brand.ts',
+    '../branch/branch-ref-guard.ts',
     '../database/db.ts',
     '../project/projects.ts',
     '../recipe/recipe.ts',

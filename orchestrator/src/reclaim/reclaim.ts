@@ -2,12 +2,13 @@ import { existsSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
+import { assertBranchRefMayBeDeleted, restoreBranch } from '../branch/branch-ref-guard.ts'
 import { branchRows, type ReclaimRun, settleDeletedBranch } from '../branch/branch-settlement.ts'
 import { type BranchLanding, isPruneSafeLandingState } from '../branch/branch-state.ts'
 import { classifyMintedBranch } from '../branch/branches.ts'
 import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
-import { restoreBranch, targetGitEnvironment } from '../git/git-environment.ts'
+import { targetGitEnvironment } from '../git/git-environment.ts'
 import {
   withCleanupLock,
   withWorktreeCreateLock,
@@ -34,6 +35,11 @@ type ReclaimWorktreeOptions = {
   clock?: number
   allowDirty?: boolean
   beforeLockedProof?: () => void
+}
+
+function prepareExactBranchDeletion(repoRoot: string, branch: string): void {
+  writableDb()
+  assertBranchRefMayBeDeleted(repoRoot, branch)
 }
 const CLEAR_RETAINED_BRANCH_SQL =
   'UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE record_id=?'
@@ -454,8 +460,8 @@ export function reclaimBranch(
           const lockedProof = prove()
           if (!lockedProof.result.ok) return lockedProof.result
           const tip = lockedProof.tip!
-
-          writableDb()
+          prepareExactBranchDeletion(project.path, branch)
+          // branch-ref-guard: assertBranchRefMayBeDeleted
           const deleted = git(project.path, ['update-ref', '-d', `refs/heads/${branch}`, tip])
           if (!deleted.ok || branchTip(project.path, branch) !== null) {
             return refuse(

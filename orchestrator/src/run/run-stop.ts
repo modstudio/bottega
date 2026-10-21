@@ -425,7 +425,8 @@ export async function abandonRun(
       return
     }
     const snapshot = branchTip(repoRoot, cleanupRow.branch!)
-    const removed = removeBranch(repoRoot, cleanupRow.branch!)
+    // The snapshot is the tip discard classified when it decided to delete.
+    const removed = removeBranch(repoRoot, cleanupRow.branch!, snapshot)
     const ownersAfter = evidenceOwningBranchOwners(cleanupRow, repoRoot, snapshot)
     const outcome = verifyBranchOwnershipAfterCleanup(
       cleanupRow.record_id,

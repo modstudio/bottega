@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -12,12 +13,19 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { upsertProject } from '../project/projects.ts'
-import { changesInIndex, readOnlyRemovalRefusal, removeFor } from './worktree-remove.ts'
+import {
+  branchTip,
+  changesInIndex,
+  checkedOutBranchPath,
+  readOnlyRemovalRefusal,
+  removeBranch,
+  removeFor,
+} from './worktree-remove.ts'
 
 const directories: string[] = []
 const originalPath = process.env.PATH
 
-function fakeGit(): { log: string } {
+function fakeGit(localRefs = ''): { log: string } {
   const root = mkdtempSync(join(tmpdir(), 'orch-fake-git-'))
   const bin = join(root, 'bin')
   const log = join(root, 'calls')
@@ -27,6 +35,7 @@ function fakeGit(): { log: string } {
     `#!/bin/sh
 printf '%s\\n' "$*" >> '${log}'
 case "$1" in
+  for-each-ref) printf '${localRefs}' ;;
   rev-parse) printf 'tip\\n' ;;
   symbolic-ref) printf 'DEV-668-test\\n' ;;
   status) ;;
@@ -113,6 +122,28 @@ test('observed changes without an explicit bound still use the trunk merge-base'
 })
 
 describe('worktree removal safety', () => {
+  test('finds an exact branch that remains checked out in a registered worktree', () => {
+    const porcelain = `worktree /projects/example
+HEAD aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+branch refs/heads/main
+
+worktree /projects/example/.claude/worktrees/dev-1470
+HEAD bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+branch refs/heads/DEV-1470-guard
+`
+
+    expect(checkedOutBranchPath(porcelain, 'DEV-1470-guard')).toBe(
+      '/projects/example/.claude/worktrees/dev-1470',
+    )
+    expect(checkedOutBranchPath(porcelain, 'dev-1470-guard')).toBeNull()
+  })
+
+  test('a branch tip read tolerates a missing repository', () => {
+    const missing = join(tmpdir(), `orch-missing-repository-${crypto.randomUUID()}`)
+
+    expect(branchTip(missing, 'DEV-1470-missing')).toBeNull()
+  })
+
   test('reader deletion accepts only this project clone or its partial reader directory', () => {
     const repoRoot = '/projects/alpha'
     expect(
@@ -234,5 +265,48 @@ describe('worktree removal safety', () => {
 
     expect(outcome).toEqual({ removed: true, detail: `${path} was already gone` })
     expect(readFileSync(git.log, 'utf8')).not.toContain('branch -D DEV-668-test')
+  })
+
+  test('a case peer prevents the project remover from running when the exact branch is absent', () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'orch-remove-case-peer-'))
+    const path = join(repoRoot, 'tree')
+    const removerRan = join(repoRoot, 'remover-ran')
+    mkdirSync(path)
+    directories.push(repoRoot)
+    fakeGit('worktree-DEV-1470-case\\tpeer-tip\\n')
+    upsertProject({
+      recordId: newRecordId(),
+      name: `remove-case-peer-${Date.now()}`,
+      path: repoRoot,
+      settings: { worktree: { remove: `touch '${removerRan}'` } },
+    })
+
+    const outcome = removeFor(
+      {
+        path,
+        branch: 'worktree-dev-1470-case',
+        base: 'base',
+        repoRoot,
+        source: 'recipe',
+        mintedBranch: 'worktree-dev-1470-case',
+      },
+      repoRoot,
+    )
+
+    expect(outcome.removed).toBeFalse()
+    expect(outcome.detail).toContain('worktree-dev-1470-case')
+    expect(outcome.detail).toContain('worktree-DEV-1470-case')
+    expect(existsSync(removerRan)).toBeFalse()
+  })
+
+  test('branch deletion refuses when the exact tip moved after classification', () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'orch-remove-moved-tip-'))
+    directories.push(repoRoot)
+    const git = fakeGit('DEV-1470-moved\\tnew-tip\\n')
+
+    expect(() => removeBranch(repoRoot, 'DEV-1470-moved', 'classified-tip')).toThrow(
+      'branch moved since it was classified',
+    )
+    expect(readFileSync(git.log, 'utf8')).not.toContain('update-ref -d')
   })
 })

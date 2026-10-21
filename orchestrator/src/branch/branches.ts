@@ -17,6 +17,7 @@ import {
   type RecordedLandingReport,
   recordAutomaticBranchLandingEvidence,
 } from './branch-landing-service.ts'
+import { assertBranchRefMayBeDeleted } from './branch-ref-guard.ts'
 import { settleDeletedBranch } from './branch-settlement.ts'
 import {
   type BranchLandingRecord,
@@ -590,6 +591,8 @@ function deleteAndSettleBranch(
         return
       }
       writableDb()
+      assertBranchRefMayBeDeleted(project.path, row.branch)
+      // branch-ref-guard: assertBranchRefMayBeDeleted
       command(
         project.path,
         ['git', 'update-ref', '-d', `refs/heads/${row.branch}`, row.tip],
@@ -781,6 +784,8 @@ function deleteOtherBranch(
   try {
     withWorktreeCreateLock(project.path, () => {
       if (keepLiveBaseClaim(project, row.branch, report)) return
+      assertBranchRefMayBeDeleted(project.path, row.branch)
+      // branch-ref-guard: assertBranchRefMayBeDeleted
       command(
         project.path,
         ['git', 'update-ref', '-d', `refs/heads/${row.branch}`, row.tip],

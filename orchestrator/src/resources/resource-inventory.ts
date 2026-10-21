@@ -237,6 +237,7 @@ export function applyRetainedRefMigration(
       'commit',
       '',
     ].join('\n')
+    // branch-ref-guard: non-local refs/orch/
     const updated = git(move.payload.projectPath, ['update-ref', '--stdin'], transaction)
     if (!updated.ok) {
       throw new Error(`${move.source}: retained ref transaction failed: ${updated.reason}`)

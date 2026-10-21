@@ -2,9 +2,10 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { restoreBranch } from '../branch/branch-ref-guard.ts'
 import { db, sessionId, writeTransaction } from '../database/db.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
-import { repoRootOf, restoreBranch, targetGitEnvironment } from '../git/git-environment.ts'
+import { repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
 import { withCleanupLock as takeCleanupLock, withWorktreeLease } from '../project/project-lock.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { leakedResourceLines, resourcesForRuns } from '../resources/docker-resources.ts'
@@ -732,7 +733,8 @@ export async function discardRun(id: string, options: CleanupOptions): Promise<v
       }
       authority = adoptRunMutation(authority, 'discard')
       const snapshot = branchTip(repoRoot, row.branch_kept!)
-      const removed = removeBranch(repoRoot, row.branch_kept!)
+      // The snapshot is the tip cleanup classified when it decided to delete.
+      const removed = removeBranch(repoRoot, row.branch_kept!, snapshot)
       const ownersAfter = evidenceOwningBranchOwners(ownerRow, repoRoot, snapshot)
       const outcome = verifyBranchOwnershipAfterCleanup(
         row.record_id,

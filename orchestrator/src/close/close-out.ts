@@ -7,8 +7,9 @@
 import { existsSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { restoreBranch } from '../branch/branch-ref-guard.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
-import { gitContext, restoreBranch, targetGitEnvironment } from '../git/git-environment.ts'
+import { gitContext, targetGitEnvironment } from '../git/git-environment.ts'
 import { hookTreeHoldDecision } from '../hook-tree/hook-tree.ts'
 import { isGroupKillablePgid, runHasLiveDescendants } from '../idle-kill.ts'
 import { landingTreeHoldDecision } from '../landing-tree/landing-tree.ts'
@@ -841,6 +842,7 @@ function attemptCloseOutRun(
               }
             }
             if (retainedRef) {
+              // branch-ref-guard: non-local refs/orch/
               const unpinned = Bun.spawnSync(
                 ['git', 'update-ref', '-d', retainedRef, branchSnapshot!],
                 {
