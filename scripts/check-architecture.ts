@@ -6,12 +6,18 @@ import { Glob } from 'bun'
 import type { ICruiseResult } from 'dependency-cruiser'
 import { CONCERNS } from '../shared/brand.ts'
 import { architectureRules, modules } from './architecture.ts'
-import { ARCHITECTURE_CRUISE_ROOTS, runArchitectureCruise } from './architecture-cruise.ts'
+import {
+  architectureCruiseCoverageViolations,
+  ARCHITECTURE_CRUISE_ENTRIES,
+  ARCHITECTURE_CRUISE_ROOTS,
+  runArchitectureCruise,
+} from './architecture-cruise.ts'
 import {
   hubViewsDocsModeLiteralLines,
   hubViewsDocsModeLiteralRuleName,
 } from './architecture-hub-data.ts'
 import { importSpecifiers } from './import-scanner.ts'
+import { architectureViolationRatchet } from './architecture-violation-baseline.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const CONCERN = /^\/\/ concern: ([a-z0-9-]+)$/
@@ -84,32 +90,51 @@ function architectureResult(stdout: string): ICruiseResult {
     typeof result.summary !== 'object' ||
     result.summary === null ||
     !('violations' in result.summary) ||
-    !Array.isArray(result.summary.violations)
+    !Array.isArray(result.summary.violations) ||
+    !('modules' in result) ||
+    !Array.isArray(result.modules)
   ) {
-    throw new Error('dependency-cruiser JSON has no summary.violations array')
+    throw new Error('dependency-cruiser JSON has no modules or summary.violations array')
   }
   return result as ICruiseResult
 }
 
 const startedAt = performance.now()
 const cruise = await runArchitectureCruise({
-  entries: ARCHITECTURE_CRUISE_ROOTS,
+  entries: ARCHITECTURE_CRUISE_ENTRIES,
   extraArgs: ['--output-type', 'json'],
   stdout: 'pipe',
 })
 
 const result = architectureResult(cruise.stdout)
+const coverageViolations = architectureCruiseCoverageViolations({
+  moduleSources: result.modules.map(({ source }) => source),
+  manifestCount: modules.length,
+  roots: ARCHITECTURE_CRUISE_ROOTS,
+})
+if (coverageViolations.length) {
+  for (const violation of coverageViolations) console.error(`check-architecture: ${violation}`)
+  process.exit(1)
+}
 const current = result.summary.violations
 const errorViolations = current.filter(({ rule }) => rule.severity === 'error')
+const ratchet = architectureViolationRatchet(
+  errorViolations.map(({ rule, from, to }) => ({ rule: rule.name, from, to })),
+)
 
-if (errorViolations.length) {
+if (ratchet.newViolations.length || ratchet.fixedBaseline.length) {
+  for (const edge of ratchet.fixedBaseline) {
+    console.error(
+      `check-architecture: baselined violation is fixed; remove it from the baseline: ${edge.rule} ${edge.from} -> ${edge.to}`,
+    )
+  }
   await runArchitectureCruise({
-    entries: ARCHITECTURE_CRUISE_ROOTS,
+    entries: ARCHITECTURE_CRUISE_ENTRIES,
     extraArgs: ['--output-type', 'err-long'],
   })
   process.exit(1)
 }
 
 console.log(
-  `check-architecture: ok (${modules.length} manifest modules, depcruise ${((performance.now() - startedAt) / 1000).toFixed(2)}s)`,
+  `check-architecture: ok (${modules.length} manifest modules, ${result.modules.length} cruised modules, depcruise ${((performance.now() - startedAt) / 1000).toFixed(2)}s)`,
 )

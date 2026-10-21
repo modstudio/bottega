@@ -71,6 +71,7 @@ export const branchModuleSpecs = [
       '../database/db.ts',
       '../git/git-environment.ts',
       '../project/projects.ts',
+      './branch-landing-records.ts',
       './branch-state.ts',
       './task-branch.ts',
     ],

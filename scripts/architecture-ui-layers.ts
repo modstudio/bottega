@@ -105,9 +105,9 @@ export function uiArchitectureRules(
       severity: 'error',
       comment:
         'Stories import their subject through a relative path and otherwise use only Storybook packages.',
-      from: { path: '^hub/ui/src/.*\\.stories\\.tsx$' },
+      from: { path: '^hub/ui/src/([^/]+)/.*\\.stories\\.tsx$' },
       to: {
-        path: '^(?!hub/ui/src/|node_modules/.*/node_modules/(?:@storybook/|storybook/))',
+        path: '^(?!hub/ui/src/$1/|node_modules/.*/node_modules/(?:@storybook/|storybook/))',
       },
     },
     {
