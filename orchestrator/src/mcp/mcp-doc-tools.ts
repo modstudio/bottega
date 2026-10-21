@@ -222,8 +222,8 @@ export function registerDocTools(
       if (!user && !scope) throw new Error('scope is required unless user is true')
       const resolvedScope = user ? 'canon' : scope!
       const doc = audience
-        ? getDocForAudience(resolvedScope, user ? null : (subject ?? null), slug, audience, owner)
-        : getDoc(resolvedScope, user ? null : (subject ?? null), slug, owner)
+        ? getDocForAudience(resolvedScope, user ? null : subject, slug, audience, owner)
+        : getDoc(resolvedScope, user ? null : subject, slug, owner)
       if (!doc) throw new Error(`no ${scope} doc "${slug}"`)
       return text({ ...doc, ...effectiveDocSummary(doc.summary, doc.body) })
     },

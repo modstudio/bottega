@@ -121,6 +121,14 @@ async function command(args: string[], stdin = '') {
 }
 
 describe('scoped operator docs', () => {
+  test(`${PLATFORM_SLUG} doc get keeps the not-found message when an omitted subject has no match`, async () => {
+    const result = await command(['doc', 'get', 'absent-brief', '--scope', 'resume'])
+    expect(result.code).toBe(1)
+    expect(result.err).toBe(
+      `no resume doc "absent-brief"; use ${PLATFORM_SLUG} doc list --scope resume`,
+    )
+  })
+
   test(`${PLATFORM_SLUG} doc list keyword filters return the union as full documents`, async () => {
     await setDoc({
       scope: 'global',
