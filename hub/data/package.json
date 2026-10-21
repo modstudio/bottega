@@ -41,21 +41,21 @@
     "./window": "./src/window.ts"
   },
   "dependencies": {
-    "@tanstack/react-query": "^5.100.9",
-    "@trpc/client": "^11.17.0",
-    "@trpc/server": "^11.17.0",
-    "@trpc/tanstack-react-query": "^11.17.0",
-    "lucide-react": "^1.14.0",
-    "react": "^19.2.6"
+    "@tanstack/react-query": "^5.104.5",
+    "@trpc/client": "^11.19.0",
+    "@trpc/server": "^11.19.0",
+    "@trpc/tanstack-react-query": "^11.19.0",
+    "lucide-react": "^1.61.0",
+    "react": "^19.3.1"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "20.14.5",
     "@testing-library/react": "16.3.3",
     "@types/bun": "latest",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "react-dom": "^19.2.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "react-dom": "^19.3.1",
     "typescript": "^6.0.3",
-    "vite": "^8.3.3"
+    "vite": "^8.3.5"
   }
 }
