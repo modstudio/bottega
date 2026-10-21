@@ -10,6 +10,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { resolveHubDatabase } from '../../../shared/state-directory.ts'
 import type { Agent } from '../agent/agents.ts'
 import { grokAskCommandFromConfig, grokAskServerCommand } from '../sandbox/sandbox.ts'
 import { prepareClaimedWorkerMcpConfig, prepareWorkerHomeLaunch } from './run-worker-home.ts'
@@ -53,6 +54,7 @@ test('a writer gets cwd-discovered MCP configuration and a reader does not', () 
 const grokAgent = { name: 'grok', harness: 'grok' } as Agent
 
 test('Grok launch scopes only a reader home while leaving a writer direct', async () => {
+  const operatorHub = resolveHubDatabase(process.env)
   const root = mkdtempSync(join(tmpdir(), 'orch-grok-launch-'))
   roots.push(root)
   const readerRun = join(root, 'reader-run')
@@ -89,7 +91,7 @@ test('Grok launch scopes only a reader home while leaving a writer direct', asyn
     runToken: 'token',
     environment: {},
     grokEnvironment: {},
-    includeStore: false,
+    includeStore: true,
     codexMcpScope: null,
     grokReaderServers: proxies,
   })
@@ -102,6 +104,8 @@ test('Grok launch scopes only a reader home while leaving a writer direct', asyn
   expect(readFileSync(join(reader, '.mcp.json'), 'utf8')).toContain('mcp-direct')
   expect(readFileSync(join(reader, '.cursor', 'mcp.json'), 'utf8')).toContain('cursor-direct')
   expect(readerLaunch.environment.GROK_CURSOR_MCPS_ENABLED).toBe('0')
+  expect(readerLaunch.environment.HOME).toBe(join(readerRun, 'home'))
+  expect(readerLaunch.environment.HUB_DB).toBe(operatorHub)
 
   const writerRun = join(root, 'writer-run')
   const writer = join(root, 'writer')
