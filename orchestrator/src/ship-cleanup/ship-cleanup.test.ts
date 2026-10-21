@@ -120,7 +120,10 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
   const closed: string[] = []
   const pruned: string[][] = []
   const dependencies: ShipCleanupDependencies = {
-    landingState: () => 'landed',
+    landingState: () => ({
+      state: 'landed',
+      landedBy: { type: 'patch-equivalent', form: 'squash' },
+    }),
     closeOut: (id) => {
       closed.push(id)
       if (id === lens) {
@@ -149,8 +152,8 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
       kept: [],
       errors: [],
     }),
-    reclaimCompose: (paths) => ({
-      removed: paths.map((path) => `stack:${path}`),
+    reclaimCompose: (trees) => ({
+      removed: trees.map(({ path }) => `stack:${path}`),
       kept: [],
       errors: [],
     }),
@@ -187,11 +190,13 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
   expect(report.kept).toContainEqual({
     item: `run ${numberOf(unscored)} artifacts and scratch`,
     reason: 'run has no recorded verdict',
+    reasonKind: 'unjudged-run',
     remedy: `${PLATFORM_SLUG} score ${numberOf(unscored)}`,
   })
   expect(report.kept).toContainEqual({
     item: `run ${numberOf(live)} artifacts and scratch and worktree`,
     reason: 'run is live (running)',
+    reasonKind: 'live-run',
   })
   expect(pruned).toEqual([['ship-fixture', 'DEV-1392-c3']])
   expect(report.reclaimed.processes).toEqual([
@@ -220,7 +225,10 @@ test('ship cleanup refuses a landed classification without a recorded landing ti
     throw new Error('cleanup should not start')
   }
   const dependencies: ShipCleanupDependencies = {
-    landingState: () => 'landed',
+    landingState: () => ({
+      state: 'landed',
+      landedBy: { type: 'patch-equivalent', form: 'squash' },
+    }),
     closeOut: unavailable,
     prune: unavailable,
     measure: unavailable,
@@ -264,7 +272,10 @@ function landingTreeCleanup(input: {
   const removedTrees: string[] = []
   const closed: string[] = []
   const dependencies: ShipCleanupDependencies = {
-    landingState: () => 'landed',
+    landingState: () => ({
+      state: 'landed',
+      landedBy: { type: 'patch-equivalent', form: 'squash' },
+    }),
     closeOut: (id) => {
       closed.push(id)
       return { outcome: 'released', detail: 'released' }
@@ -309,11 +320,13 @@ test('ship cleanup keeps its current landing tree and checked-out branch without
   expect(result.report.kept).toContainEqual({
     item: expect.stringMatching(/^run \d+ worktree$/),
     reason: 'the command runs from this tree',
+    reasonKind: 'command-tree',
     remedy,
   })
   expect(result.report.kept).toContainEqual({
     item: 'branch DEV-1392-c3',
     reason: 'checked-out',
+    reasonKind: 'safety-hold',
     remedy,
   })
   expect(result.report.errors).toEqual([])
@@ -331,6 +344,7 @@ test('ship cleanup keeps a dirty landing tree and names its dirty paths', () => 
   expect(result.report.kept).toContainEqual({
     item: expect.stringMatching(/^run \d+ worktree$/),
     reason: 'landing tree held by its invoking session: tree is dirty: tracked.ts, new file.ts',
+    reasonKind: 'safety-hold',
     remedy:
       `${PLATFORM_SLUG} tree remove ${result.landingTree}, then ` +
       `${PLATFORM_SLUG} tree ship-cleanup DEV-1392-c3`,

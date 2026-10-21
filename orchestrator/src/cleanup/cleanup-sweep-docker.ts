@@ -246,16 +246,30 @@ type OrphanDockerGroup = {
 
 function recordedRunPointsTo(
   workingDirs: readonly string[],
-  ignoredWorktrees: ReadonlySet<string> = new Set(),
+  permittedRunIdsByWorktree: ReadonlyMap<string, ReadonlySet<string>> = new Map(),
 ): boolean {
   const candidates = new Set(workingDirs.map((path) => resolve(path)))
-  const rows = db().query('SELECT worktree FROM run WHERE worktree IS NOT NULL').all() as {
+  const rows = db()
+    .query('SELECT record_id,worktree FROM run WHERE worktree IS NOT NULL')
+    .all() as {
+    record_id: string
     worktree: string
   }[]
-  return rows.some(({ worktree }) => {
+  return rows.some(({ record_id, worktree }) => {
     const normalized = resolve(worktree)
-    return !ignoredWorktrees.has(normalized) && candidates.has(normalized)
+    return (
+      candidates.has(normalized) &&
+      !(permittedRunIdsByWorktree.get(normalized) ?? new Set()).has(record_id)
+    )
   })
+}
+
+/** One ownership rule for both monitor advertisement and destructive reclamation. */
+export function recordedRunClaimsWorktree(
+  workingDir: string,
+  permittedRunIds: ReadonlySet<string> = new Set(),
+): boolean {
+  return recordedRunPointsTo([workingDir], new Map([[resolve(workingDir), permittedRunIds]]))
 }
 
 function orphanComposeWorkingDirs(input: {
@@ -300,7 +314,7 @@ function composeContainersByProject(
 function orphanWorktreeDockerGroups(input: {
   selectedProject: Project | null
   inventory: Extract<DockerInventory, { ascertainable: true }>
-  ignoredRunWorktrees?: ReadonlySet<string>
+  permittedRunIdsByWorktree?: ReadonlyMap<string, ReadonlySet<string>>
 }): { groups: OrphanDockerGroup[]; mainCheckoutPaths: string[] } {
   const { selectedProject, inventory } = input
   const registered = projects().filter(isProjectRepository)
@@ -322,7 +336,7 @@ function orphanWorktreeDockerGroups(input: {
       gitWorktreePaths: gitPaths.get(project)!,
       mainCheckoutPaths,
     })
-    if (!workingDirs || recordedRunPointsTo(workingDirs, input.ignoredRunWorktrees)) continue
+    if (!workingDirs || recordedRunPointsTo(workingDirs, input.permittedRunIdsByWorktree)) continue
     const resources = (inventory.unattributable ?? []).filter(
       (resource) => resource.kind === 'container' && resource.composeProject === composeProject,
     )
@@ -355,7 +369,7 @@ function removeOrphanDockerGroup(input: {
   inventoryErrors: Set<string>
   handled: Set<UnattributableDockerResource>
   handledCompose: Set<UnattributedComposeDockerResource>
-  ignoredRunWorktrees?: ReadonlySet<string>
+  permittedRunIdsByWorktree?: ReadonlyMap<string, ReadonlySet<string>>
 }): boolean {
   const {
     group,
@@ -364,7 +378,7 @@ function removeOrphanDockerGroup(input: {
     inventoryErrors,
     handled,
     handledCompose,
-    ignoredRunWorktrees,
+    permittedRunIdsByWorktree,
   } = input
   const { project, resources } = group
   const composeProject = resources[0]!.composeProject
@@ -378,7 +392,7 @@ function removeOrphanDockerGroup(input: {
           resources,
           mainCheckoutPaths,
           () =>
-            !recordedRunPointsTo(group.workingDirs, ignoredRunWorktrees) &&
+            !recordedRunPointsTo(group.workingDirs, permittedRunIdsByWorktree) &&
             group.workingDirs.every((workingDir) => directoryPresence(workingDir) === false),
         ),
     )
@@ -447,13 +461,18 @@ export type RemovedTreeDockerCleanup = {
   errors: string[]
 }
 
+export type RemovedRunTree = { path: string; removedRunIds: ReadonlySet<string> }
+
 /** Remove attributable Compose stacks whose worktree was removed by the current cleanup. */
 export function reclaimRemovedTreeDockerResources(
-  treePaths: readonly string[],
+  trees: readonly RemovedRunTree[],
 ): RemovedTreeDockerCleanup {
   const result: RemovedTreeDockerCleanup = { removed: [], kept: [], errors: [] }
-  if (treePaths.length === 0) return result
-  const targets = new Set(treePaths.map((path) => resolve(path)))
+  if (trees.length === 0) return result
+  const targets = new Set(trees.map(({ path }) => resolve(path)))
+  const permittedRunIdsByWorktree = new Map(
+    trees.map(({ path, removedRunIds }) => [resolve(path), removedRunIds] as const),
+  )
   const inventory = dockerRunResources(
     projects()
       .filter(isProjectRepository)
@@ -463,21 +482,46 @@ export function reclaimRemovedTreeDockerResources(
     result.errors.push(inventory.reason)
     return result
   }
-  const matchingProjects = new Set(
-    (inventory.composeContainers ?? []).flatMap((container) =>
+  const matchingProjects = new Set([
+    ...(inventory.composeContainers ?? []).flatMap((container) =>
       container.workingDir && targets.has(resolve(container.workingDir))
         ? [container.composeProject]
         : [],
     ),
-  )
+    ...(inventory.unattributable ?? []).flatMap((resource) =>
+      resource.composeProject && targets.has(resolve(resource.workingDir))
+        ? [resource.composeProject]
+        : [],
+    ),
+  ])
   const { groups, mainCheckoutPaths } = orphanWorktreeDockerGroups({
     selectedProject: null,
     inventory,
-    ignoredRunWorktrees: targets,
+    permittedRunIdsByWorktree,
   })
   const matchingGroups = groups.filter((group) =>
     group.workingDirs.every((workingDir) => targets.has(resolve(workingDir))),
   )
+  const grouped = new Set(matchingGroups.map((group) => group.resources[0]!.composeProject))
+  for (const composeProject of matchingProjects) {
+    if (grouped.has(composeProject)) continue
+    const resources = [
+      ...(inventory.unattributable ?? []).filter(
+        (resource) =>
+          resource.composeProject === composeProject && targets.has(resolve(resource.workingDir)),
+      ),
+      ...(inventory.unattributedComposeResources ?? []).filter(
+        (resource) => resource.composeProject === composeProject && !resource.mainCheckout,
+      ),
+    ]
+    if (resources.length > 0) {
+      matchingGroups.push({
+        project: projectForWorktreeDirectory(resources[0]!.workingDir ?? '', projects())!,
+        resources,
+        workingDirs: [...new Set(resources.flatMap(({ workingDir }) => workingDir ?? []))],
+      })
+    }
+  }
   const groupedProjects = new Set(matchingGroups.map((group) => group.resources[0]!.composeProject))
   for (const composeProject of matchingProjects) {
     if (!groupedProjects.has(composeProject)) {
@@ -504,7 +548,7 @@ export function reclaimRemovedTreeDockerResources(
       inventoryErrors,
       handled,
       handledCompose,
-      ignoredRunWorktrees: targets,
+      permittedRunIdsByWorktree,
     })
     result.removed.push(...[...handled, ...handledCompose].map((resource) => resource.name))
     if (failed || inventoryErrors.size > 0) {
@@ -514,6 +558,68 @@ export function reclaimRemovedTreeDockerResources(
     }
   }
   return result
+}
+
+/** Remove one volume only after its Compose working directory is proven to be a vanished run tree. */
+export function reclaimOrphanDockerVolume(name: string, dryRun = false): string {
+  const inventory = dockerRunResources(
+    projects()
+      .filter(isProjectRepository)
+      .map(({ path }) => path),
+  )
+  if (!inventory.ascertainable) throw new Error(inventory.reason)
+  const resource = (inventory.unattributable ?? []).find(
+    (candidate) => candidate.kind === 'volume' && candidate.name === name,
+  )
+  if (!resource) throw new Error(`volume ${name} is not attributable to a run worktree`)
+  const project = projectForWorktreeDirectory(resource.workingDir, projects())
+  if (!project) throw new Error(`volume ${name} does not belong to a registered project worktree`)
+  const removable = isOrphanWorktreeDockerResource({
+    workingDir: resource.workingDir,
+    projectPath: project.path,
+    directoryExists: directoryPresence(resource.workingDir),
+    gitWorktreePaths: listedWorktreePaths(project),
+    mainCheckoutPaths: projects().map(({ path }) => path),
+    registeredMainCheckout: resource.mainCheckout,
+  })
+  const decision = decideOrphanDockerVolumeRemoval({
+    name,
+    attributable: true,
+    orphanWorktree: removable,
+    recordedRunClaim: recordedRunClaimsWorktree(resource.workingDir),
+    dryRun,
+  })
+  if (!decision.allowed) throw new Error(decision.reason)
+  if (dryRun) return decision.text
+  const result = teardownOrphanWorktreeDockerResources(
+    [resource],
+    projects().map(({ path }) => path),
+    () =>
+      !recordedRunClaimsWorktree(resource.workingDir) &&
+      directoryPresence(resource.workingDir) === false,
+  )
+  if (!result.complete) throw new Error(result.errors.join('; ') || `volume ${name} was retained`)
+  return `removed orphan Docker volume ${name}`
+}
+
+export function decideOrphanDockerVolumeRemoval(input: {
+  name: string
+  attributable: boolean
+  orphanWorktree: boolean
+  recordedRunClaim: boolean
+  dryRun: boolean
+}): { allowed: true; text: string } | { allowed: false; reason: string } {
+  if (!input.attributable)
+    return { allowed: false, reason: `volume ${input.name} is not attributable to a run worktree` }
+  if (!input.orphanWorktree || input.recordedRunClaim)
+    return {
+      allowed: false,
+      reason: `volume ${input.name} is still claimed by a worktree or recorded run`,
+    }
+  return {
+    allowed: true,
+    text: `${input.dryRun ? 'would remove' : 'removed'} orphan Docker volume ${input.name}`,
+  }
 }
 
 function reportOwnerlessComposeRemnants(input: {

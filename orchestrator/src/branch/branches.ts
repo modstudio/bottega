@@ -10,6 +10,7 @@ import { isProjectRepository, projectByName, projects } from '../project/project
 import { liveBaseClaim } from './branch-base-claim.ts'
 import { type BranchReportRow, type BranchReportRun, branchKeyReport } from './branch-key-report.ts'
 import { matchBranchLandings } from './branch-landing-match.ts'
+import { readBranchLandingRecords } from './branch-landing-records.ts'
 import {
   type AutomaticLandingPreview,
   previewAutomaticBranchLandingEvidence,
@@ -93,15 +94,6 @@ export type BranchPruneReport = {
   errors: string[]
 }
 
-type BranchLandingRecordRow = {
-  project: string
-  branch: string
-  tip: string
-  pr_number: number
-  merge_commit: string | null
-  merged_at: string
-}
-
 function command(cwd: string, argv: string[], label: string): string {
   let process: ReturnType<typeof Bun.spawnSync>
   try {
@@ -129,21 +121,7 @@ function git(cwd: string, ...args: string[]): string {
 }
 
 function recordedBranchLandings(): BranchLandingRecord[] {
-  const rows = db()
-    .query(
-      `SELECT project,branch,tip,pr_number,merge_commit,merged_at
-         FROM branch_landing_record
-        ORDER BY project,branch`,
-    )
-    .all() as BranchLandingRecordRow[]
-  return rows.map((row) => ({
-    project: row.project,
-    branch: row.branch,
-    tip: row.tip,
-    number: row.pr_number,
-    mergeCommit: row.merge_commit,
-    mergedAt: row.merged_at,
-  }))
+  return readBranchLandingRecords()
 }
 
 function projectRuns(project: Project): RunRow[] {

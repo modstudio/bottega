@@ -3,10 +3,12 @@ import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
+import type { ShipCleanupReport } from '../ship-cleanup/ship-cleanup.ts'
 import type { AdmissionDecision } from './admission-decision.ts'
 import type { PullRequestCheck } from './merge-decision.ts'
 import { type PullRequestChange, recordMergeAdmission } from './pr-admission.ts'
 import {
+  MERGED_WITH_RESIDUE_EXIT_CODE,
   mergePullRequest,
   type PullRequestMergeAdapter,
   type PullRequestMergeFacts,
@@ -60,7 +62,7 @@ function adapter(
       database: ReturnType<typeof db>,
     ) => string | null
     recordLandings?: () => void
-    shipCleanup?: () => string
+    shipCleanup?: () => ShipCleanupReport
   } = {},
 ): PullRequestMergeAdapter {
   return {
@@ -95,6 +97,22 @@ function adapter(
   }
 }
 
+const cleanupReport = (
+  overrides: Partial<Pick<ShipCleanupReport, 'kept' | 'errors'>> = {},
+): ShipCleanupReport => ({
+  project: 'merge-fixture',
+  branch: pullRequest.headBranch,
+  freed: { artifacts: 0, scratch: 0, worktrees: 0 },
+  removed: { artifacts: [], scratch: [], worktrees: [], branches: [] },
+  reclaimed: { processes: [], compose: [] },
+  kept: overrides.kept ?? [],
+  errors: overrides.errors ?? [],
+  verdict:
+    (overrides.errors?.length ?? 0) > 0 || (overrides.kept?.length ?? 0) > 0
+      ? { clean: false, reason: 'unexpected-kept-item' }
+      : { clean: true },
+})
+
 function recordPassingGate(): void {
   db()
     .query(
@@ -126,13 +144,13 @@ test('an injected forge adapter merges all-passing checks with the method, subje
       },
     }),
   )
-  expect(commit).toBe('merged-oid')
+  expect(commit.output).toBe('merged-oid')
   expect(calls).toEqual([['squash', 'Prove the pull request head (#42)', 'head-commit']])
 })
 
 test('a cleanup failure reports its retry without undoing a successful merge', () => {
   registerProject(['test'])
-  const output = mergePullRequest(
+  const outcome = mergePullRequest(
     '42',
     cwd,
     adapter({
@@ -142,9 +160,27 @@ test('a cleanup failure reports its retry without undoing a successful merge', (
       },
     }),
   )
-  expect(output).toBe(
+  expect(outcome.output).toBe(
     `merge-commit\nship cleanup failed for ${pullRequest.headBranch}: close-out unavailable; retry: ${PLATFORM_SLUG} tree ship-cleanup ${pullRequest.headBranch}`,
   )
+  expect(outcome.exitCode).toBe(MERGED_WITH_RESIDUE_EXIT_CODE)
+})
+
+test('a merge reports residue when cleanup keeps anything beyond its command tree', () => {
+  registerProject(['test'])
+  const outcome = mergePullRequest(
+    '42',
+    cwd,
+    adapter({
+      checks: [{ name: 'test', bucket: 'pass', state: 'SUCCESS', link: '' }],
+      shipCleanup: () =>
+        cleanupReport({
+          kept: [{ item: 'branch DEV-1-a', reason: 'live', reasonKind: 'safety-hold' }],
+        }),
+    }),
+  )
+  expect(outcome.exitCode).toBe(MERGED_WITH_RESIDUE_EXIT_CODE)
+  expect(outcome.output.startsWith('merge-commit\n')).toBe(true)
 })
 
 test('a successful merge records contained branches before cleanup can delete them', () => {
@@ -162,7 +198,7 @@ test('a successful merge records contained branches before cleanup can delete th
       recordLandings: () => calls.push('record-landings'),
       shipCleanup: () => {
         calls.push('cleanup')
-        return 'cleaned'
+        return cleanupReport()
       },
     }),
   )
@@ -182,11 +218,11 @@ test('a landing-record failure preserves branches by skipping cleanup', () => {
       },
       shipCleanup: () => {
         cleaned = true
-        return 'unexpected'
+        return cleanupReport()
       },
     }),
   )
-  expect(output).toContain('landing recording failed')
+  expect(output.output).toContain('landing recording failed')
   expect(cleaned).toBe(false)
 })
 

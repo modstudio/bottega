@@ -5,9 +5,17 @@ import type { Database } from 'bun:sqlite'
 import { readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { type BranchPruneKeptReason, findRecordedBranchLanding } from '../branch/branch-state.ts'
-import { classifyMintedBranch, pruneBranch } from '../branch/branches.ts'
+import { readBranchLandingRecords } from '../branch/branch-landing-records.ts'
 import {
+  type BranchLandingRecord,
+  type BranchPruneKeptReason,
+  type BranchStateDecision,
+  findRecordedBranchLanding,
+} from '../branch/branch-state.ts'
+import { classifyMintedBranch, pruneBranch } from '../branch/branches.ts'
+import { taskKeyToken } from '../branch/other-branch-state.ts'
+import {
+  type RemovedRunTree,
   type RemovedTreeDockerCleanup,
   reclaimRemovedTreeDockerResources,
 } from '../cleanup/cleanup-sweep-docker.ts'
@@ -24,6 +32,9 @@ import { STORAGE_WALK_ENTRY_LIMIT, walkStoragePaths } from '../storage-walk.ts'
 import { removalWorkingDirectoryRefusal } from '../worktree/removal-working-directory.ts'
 import {
   decideShipCleanup,
+  decideShipCleanupVerdict,
+  decideTaskBranchesToPrune,
+  type ShipCleanupKeptReasonKind,
   type ShipCleanupRunDecision,
   type ShipCleanupRunFact,
 } from './ship-cleanup-decision.ts'
@@ -36,6 +47,7 @@ type RunRow = {
   job: string
   status: string
   branch: string | null
+  minted_branch: string | null
   launch_key: string | null
   evidence_excluded: string | null
   worktree: string | null
@@ -47,12 +59,13 @@ export type ShipCleanupReport = {
   freed: { artifacts: number; scratch: number; worktrees: number }
   removed: { artifacts: string[]; scratch: string[]; worktrees: string[]; branches: string[] }
   reclaimed: { processes: string[]; compose: string[] }
-  kept: { item: string; reason: string; remedy?: string }[]
+  kept: { item: string; reason: string; reasonKind: ShipCleanupKeptReasonKind; remedy?: string }[]
   errors: { item: string; detail: string; retry: string }[]
+  verdict: import('./ship-cleanup-decision.ts').ShipCleanupVerdict
 }
 
 export type ShipCleanupDependencies = {
-  landingState(project: string, branch: string): string
+  landingState(project: string, branch: string): BranchStateDecision
   closeOut(runId: string): { outcome: string; detail: string }
   prune(
     project: string,
@@ -68,11 +81,11 @@ export type ShipCleanupDependencies = {
   runsFromTree(path: string): boolean
   remove(path: string): void
   reclaimProcesses(paths: readonly string[]): RemovedTreeProcessCleanup
-  reclaimCompose(paths: readonly string[]): RemovedTreeDockerCleanup
+  reclaimCompose(trees: readonly RemovedRunTree[]): RemovedTreeDockerCleanup
 }
 
 const dependencies: ShipCleanupDependencies = {
-  landingState: (project, branch) => classifyMintedBranch(project, branch).state,
+  landingState: (project, branch) => classifyMintedBranch(project, branch),
   closeOut: (runId) => closeOutRun(runId, { intent: 'explicit' }),
   prune: (project, branch) => pruneBranch({ project, branch }),
   measure: (paths) => {
@@ -104,7 +117,7 @@ const dependencies: ShipCleanupDependencies = {
 function runFacts(projectRecordId: string, database: Database): ShipCleanupRunFact[] {
   const rows = database
     .query(
-      `SELECT record_id,number,parent_run_record_id,started_at,job,status,branch,launch_key,evidence_excluded,worktree
+      `SELECT record_id,number,parent_run_record_id,started_at,job,status,branch,minted_branch,launch_key,evidence_excluded,worktree
          FROM run WHERE project_record_id=? ORDER BY number`,
     )
     .all(projectRecordId) as RunRow[]
@@ -133,6 +146,7 @@ function runFacts(projectRecordId: string, database: Database): ShipCleanupRunFa
       job: row.job,
       status: row.status,
       branch: row.branch,
+      mintedBranch: row.minted_branch,
       launchKey: row.launch_key,
       judged: scored.has(rootId) || excludedRoots.has(rootId),
       worktree: row.worktree,
@@ -140,20 +154,11 @@ function runFacts(projectRecordId: string, database: Database): ShipCleanupRunFa
   })
 }
 
-function recordedLanding(project: string, branch: string, database: Database): string | null {
-  const records = database
-    .query(
-      `SELECT project,branch,tip,pr_number AS number,merge_commit AS mergeCommit,merged_at AS mergedAt
-         FROM branch_landing_record WHERE project=? AND branch=?`,
-    )
-    .all(project, branch) as Array<{
-    project: string
-    branch: string
-    tip: string
-    number: number
-    mergeCommit: string | null
-    mergedAt: string
-  }>
+function recordedLanding(
+  project: string,
+  branch: string,
+  records: readonly BranchLandingRecord[],
+): string | null {
   return findRecordedBranchLanding(records, project, branch)?.mergedAt ?? null
 }
 
@@ -166,6 +171,7 @@ function emptyReport(project: string, branch: string): ShipCleanupReport {
     reclaimed: { processes: [], compose: [] },
     kept: [],
     errors: [],
+    verdict: { clean: true },
   }
 }
 
@@ -202,6 +208,7 @@ function reportKeptRuns(
         `run ${decision.number} artifacts and scratch` +
         (decision.worktreeAction === 'keep' && decision.worktree ? ' and worktree' : ''),
       reason: decision.reason,
+      reasonKind: decision.worktreeAction === 'keep' ? 'live-run' : 'unjudged-run',
       ...(!decision.judged && decision.worktreeAction === 'close'
         ? { remedy: `${PLATFORM_SLUG} score ${decision.number}` }
         : {}),
@@ -214,7 +221,8 @@ function closeBranchWorktrees(
   decisions: readonly ShipCleanupRunDecision[],
   report: ShipCleanupReport,
   adapter: ShipCleanupDependencies,
-  removedNow: Set<string>,
+  removedNow: Map<string, ReadonlySet<string>>,
+  runIdsByTree: ReadonlyMap<string, ReadonlySet<string>>,
 ): Map<string, string> {
   const closeRows = decisions.filter(
     (decision) => decision.worktreeAction === 'close' && decision.worktree,
@@ -224,7 +232,7 @@ function closeBranchWorktrees(
   for (const row of closeRows) {
     if (closedRoots.has(row.root_record_id)) continue
     closedRoots.add(row.root_record_id)
-    const remedy = closeBranchWorktree(branch, row, report, adapter, removedNow)
+    const remedy = closeBranchWorktree(branch, row, report, adapter, removedNow, runIdsByTree)
     if (remedy && row.worktree) keptLandingTrees.set(row.worktree, remedy)
   }
   return keptLandingTrees
@@ -235,7 +243,8 @@ function closeBranchWorktree(
   row: ShipCleanupRunDecision,
   report: ShipCleanupReport,
   adapter: ShipCleanupDependencies,
-  removedNow: Set<string>,
+  removedNow: Map<string, ReadonlySet<string>>,
+  runIdsByTree: ReadonlyMap<string, ReadonlySet<string>>,
 ): string | null {
   try {
     if (row.scope === 'landing-tree' && row.worktree) {
@@ -245,15 +254,21 @@ function closeBranchWorktree(
         report,
         adapter,
         removedNow,
+        runIdsByTree,
       )
     }
     const result = adapter.closeOut(row.record_id)
     if (result.outcome === 'released' || result.outcome === 'absent') {
       if (row.worktree) report.removed.worktrees.push(row.worktree)
-      if (result.outcome === 'released' && row.worktree) removedNow.add(row.worktree)
+      if (result.outcome === 'released' && row.worktree)
+        removedNow.set(row.worktree, runIdsByTree.get(row.worktree) ?? new Set([row.record_id]))
       return null
     }
-    report.kept.push({ item: `run ${row.number} worktree`, reason: result.detail })
+    report.kept.push({
+      item: `run ${row.number} worktree`,
+      reason: result.detail,
+      reasonKind: 'cleanup-failure',
+    })
     report.errors.push({
       item: `run ${row.number} worktree`,
       detail: `close-out ${result.outcome}: ${result.detail}`,
@@ -274,13 +289,15 @@ function releaseLandingTree(
   row: ShipCleanupRunDecision & { worktree: string },
   report: ShipCleanupReport,
   adapter: ShipCleanupDependencies,
-  removedNow: Set<string>,
+  removedNow: Map<string, ReadonlySet<string>>,
+  runIdsByTree: ReadonlyMap<string, ReadonlySet<string>>,
 ): string | null {
   const remedy = `${PLATFORM_SLUG} tree remove ${row.worktree}, then ${cleanupRetry(branch)}`
   if (adapter.runsFromTree(row.worktree)) {
     report.kept.push({
       item: `run ${row.number} worktree`,
       reason: 'the command runs from this tree',
+      reasonKind: 'command-tree',
       remedy,
     })
     return remedy
@@ -288,11 +305,16 @@ function releaseLandingTree(
   const result = adapter.removeLandingTree(row.worktree)
   if (result.outcome === 'released') {
     report.removed.worktrees.push(row.worktree)
-    removedNow.add(row.worktree)
+    removedNow.set(row.worktree, runIdsByTree.get(row.worktree) ?? new Set([row.record_id]))
     return null
   }
   if (result.outcome === 'kept') {
-    report.kept.push({ item: `run ${row.number} worktree`, reason: result.reason, remedy })
+    report.kept.push({
+      item: `run ${row.number} worktree`,
+      reason: result.reason,
+      reasonKind: 'safety-hold',
+      remedy,
+    })
     return remedy
   }
   report.errors.push({
@@ -305,14 +327,16 @@ function releaseLandingTree(
 
 function reclaimRemovedTreeLeftovers(
   branch: string,
-  paths: readonly string[],
+  trees: readonly RemovedRunTree[],
   report: ShipCleanupReport,
   adapter: ShipCleanupDependencies,
 ): void {
   try {
-    const processResult = adapter.reclaimProcesses(paths)
+    const processResult = adapter.reclaimProcesses(trees.map(({ path }) => path))
     report.reclaimed.processes.push(...processResult.reclaimed)
-    report.kept.push(...processResult.kept)
+    report.kept.push(
+      ...processResult.kept.map((item) => ({ ...item, reasonKind: 'safety-hold' as const })),
+    )
     report.errors.push(
       ...processResult.errors.map((detail) => ({
         item: 'removed-tree processes',
@@ -328,9 +352,11 @@ function reclaimRemovedTreeLeftovers(
     })
   }
   try {
-    const composeResult = adapter.reclaimCompose(paths)
+    const composeResult = adapter.reclaimCompose(trees)
     report.reclaimed.compose.push(...composeResult.removed)
-    report.kept.push(...composeResult.kept)
+    report.kept.push(
+      ...composeResult.kept.map((item) => ({ ...item, reasonKind: 'safety-hold' as const })),
+    )
     report.errors.push(
       ...composeResult.errors.map((detail) => ({
         item: 'removed-tree Compose resources',
@@ -400,51 +426,105 @@ function removeRunStorage(
   reportMeasurementErrors(branch, 'worktrees', afterWorktrees, report)
 }
 
-function pruneMergedBranch(
-  branch: string,
+function pruneMergedBranches(
+  branches: readonly string[],
   report: ShipCleanupReport,
   adapter: ShipCleanupDependencies,
   keptLandingTrees: ReadonlyMap<string, string>,
 ): void {
-  try {
-    const pruned = adapter.prune(report.project, branch)
-    report.removed.branches.push(...pruned.deleted)
-    const landingTreeRemedy = keptLandingTrees.values().next().value
-    report.kept.push(
-      ...pruned.kept.map((item) => ({
-        item: `branch ${item.branch}`,
-        reason: item.reason,
-        ...(item.reason === 'checked-out' && landingTreeRemedy
-          ? { remedy: landingTreeRemedy }
-          : {}),
-      })),
-    )
-    report.errors.push(
-      ...pruned.errors.map((detail) => ({
+  for (const branch of branches) {
+    try {
+      const pruned = adapter.prune(report.project, branch)
+      report.removed.branches.push(...pruned.deleted)
+      const landingTreeRemedy = keptLandingTrees.values().next().value
+      report.kept.push(
+        ...pruned.kept.map((item) => ({
+          item: `branch ${item.branch}`,
+          reason: item.reason,
+          reasonKind: 'safety-hold' as const,
+          ...(item.reason === 'checked-out' && landingTreeRemedy
+            ? { remedy: landingTreeRemedy }
+            : {}),
+        })),
+      )
+      report.errors.push(
+        ...pruned.errors.map((detail) => ({
+          item: `branch ${branch}`,
+          detail,
+          retry: cleanupRetry(report.branch),
+        })),
+      )
+    } catch (cause) {
+      report.errors.push({
         item: `branch ${branch}`,
-        detail,
-        retry: cleanupRetry(branch),
-      })),
-    )
-  } catch (cause) {
-    report.errors.push({
-      item: `branch ${branch}`,
-      detail: cause instanceof Error ? cause.message : String(cause),
-      retry: cleanupRetry(branch),
-    })
+        detail: cause instanceof Error ? cause.message : String(cause),
+        retry: cleanupRetry(report.branch),
+      })
+    }
   }
 }
 
-export function shipCleanup(
-  branch: string,
-  options: {
-    cwd?: string
-    project?: string
-    confirmedLanded?: boolean
-    database?: Database
-    dependencies?: ShipCleanupDependencies
-  } = {},
-): ShipCleanupReport {
+function taskCleanupPlan(input: {
+  project: string
+  keyPrefixes: readonly string[]
+  branch: string
+  facts: readonly ShipCleanupRunFact[]
+  landingRecords: readonly BranchLandingRecord[]
+  adapter: ShipCleanupDependencies
+}) {
+  const taskKey =
+    taskKeyToken(input.branch, input.keyPrefixes) ??
+    input.facts.find((run) => run.branch === input.branch || run.mintedBranch === input.branch)
+      ?.launchKey ??
+    null
+  const candidateBranches = new Set(
+    input.facts.flatMap((run) =>
+      run.launchKey === taskKey && run.mintedBranch ? [run.mintedBranch] : [],
+    ),
+  )
+  const branches = taskKey
+    ? decideTaskBranchesToPrune(
+        taskKey,
+        input.facts,
+        new Map(
+          [...candidateBranches].map((branch) => {
+            const recorded = findRecordedBranchLanding(input.landingRecords, input.project, branch)
+            return [
+              branch,
+              recorded
+                ? {
+                    state: 'landed' as const,
+                    landedBy: { type: 'recorded' as const, ...recorded },
+                  }
+                : input.adapter.landingState(input.project, branch),
+            ] as const
+          }),
+        ),
+      )
+    : { prune: [], keep: [] }
+  return { taskKey, branches, landedBranches: new Set([input.branch, ...branches.prune]) }
+}
+
+type ShipCleanupOptions = {
+  cwd?: string
+  project?: string
+  confirmedLanded?: boolean
+  database?: Database
+  dependencies?: ShipCleanupDependencies
+}
+
+function runIdsByTree(decisions: readonly ShipCleanupRunDecision[]): Map<string, Set<string>> {
+  const result = new Map<string, Set<string>>()
+  for (const decision of decisions) {
+    if (!decision.worktree) continue
+    const ids = result.get(decision.worktree) ?? new Set<string>()
+    ids.add(decision.record_id)
+    result.set(decision.worktree, ids)
+  }
+  return result
+}
+
+export function shipCleanup(branch: string, options: ShipCleanupOptions = {}): ShipCleanupReport {
   const database = options.database ?? writableDb()
   const project = options.project
     ? projectByName(options.project, database)
@@ -455,11 +535,12 @@ export function shipCleanup(
     )
   }
   const adapter = options.dependencies ?? dependencies
-  const landingMergedAt = recordedLanding(project.name, branch, database)
+  const landingRecords = readBranchLandingRecords(database)
+  const landingMergedAt = recordedLanding(project.name, branch, landingRecords)
   if (
     !options.confirmedLanded &&
     !landingMergedAt &&
-    adapter.landingState(project.name, branch) !== 'landed'
+    adapter.landingState(project.name, branch).state !== 'landed'
   ) {
     throw new Error(
       `refusing ship cleanup: branch ${branch} has not been confirmed landed; cleared by: ${PLATFORM_SLUG} pr merge ${branch}`,
@@ -470,7 +551,20 @@ export function shipCleanup(
       `refusing ship cleanup: branch ${branch} has no recorded landing time; cleared by: ${PLATFORM_SLUG} tree branch landed ${branch} --pr <number>`,
     )
   }
-  const decisions = decideShipCleanup(branch, landingMergedAt, runFacts(project.recordId, database))
+  const facts = runFacts(project.recordId, database)
+  const {
+    taskKey,
+    branches: taskBranches,
+    landedBranches,
+  } = taskCleanupPlan({
+    project: project.name,
+    keyPrefixes: project.settings.keyPrefixes ?? [],
+    branch,
+    facts,
+    landingRecords,
+    adapter,
+  })
+  const decisions = decideShipCleanup(taskKey ?? '', landedBranches, landingMergedAt, facts)
   const report = emptyReport(project.name, branch)
   reportKeptRuns(decisions, report)
   const worktreePaths = [
@@ -481,11 +575,37 @@ export function shipCleanup(
     ),
   ]
   const beforeWorktrees = adapter.measure(worktreePaths)
-  const removedNow = new Set<string>()
-  const keptLandingTrees = closeBranchWorktrees(branch, decisions, report, adapter, removedNow)
-  reclaimRemovedTreeLeftovers(branch, [...removedNow], report, adapter)
+  const treeRunIds = runIdsByTree(decisions)
+  const removedNow = new Map<string, ReadonlySet<string>>()
+  const keptLandingTrees = closeBranchWorktrees(
+    branch,
+    decisions,
+    report,
+    adapter,
+    removedNow,
+    treeRunIds,
+  )
+  reclaimRemovedTreeLeftovers(
+    branch,
+    [...removedNow].map(([path, removedRunIds]) => ({ path, removedRunIds })),
+    report,
+    adapter,
+  )
   removeRunStorage(branch, decisions, beforeWorktrees, worktreePaths, report, adapter)
-  pruneMergedBranch(branch, report, adapter, keptLandingTrees)
+  report.kept.push(
+    ...taskBranches.keep.map((item) => ({
+      item: `branch ${item.branch}`,
+      reason: item.reason,
+      reasonKind: 'landing-not-proved' as const,
+    })),
+  )
+  pruneMergedBranches(
+    [...new Set([branch, ...taskBranches.prune])],
+    report,
+    adapter,
+    keptLandingTrees,
+  )
+  report.verdict = decideShipCleanupVerdict(report, true)
   return report
 }
 

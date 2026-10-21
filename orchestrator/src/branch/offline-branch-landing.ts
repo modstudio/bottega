@@ -6,6 +6,7 @@ import { db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { projects } from '../project/projects.ts'
+import { readBranchLandingRecords } from './branch-landing-records.ts'
 import {
   type BranchLandingRecord,
   decideBranchState,
@@ -59,12 +60,7 @@ function localBranches(project: Project): Map<string, string> {
 }
 
 function recordedLandings(database: Database): BranchLandingRecord[] {
-  return database
-    .query(
-      `SELECT project,branch,tip,pr_number number,merge_commit mergeCommit,merged_at mergedAt
-         FROM branch_landing_record`,
-    )
-    .all() as BranchLandingRecord[]
+  return readBranchLandingRecords(database)
 }
 
 function classifyExistingBranch(input: {

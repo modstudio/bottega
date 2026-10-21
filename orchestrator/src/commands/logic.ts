@@ -58,6 +58,7 @@ import { resolveQuestionIdentifier } from '../run/question-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { answerCommand, continueCommand, retryCommand } from '../run/run-message-commands.ts'
 import { formatShipCleanup, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
+import { SHIP_CLEANUP_RESIDUE_EXIT_CODE } from '../ship-cleanup/ship-cleanup-decision.ts'
 import { ORCH_DO_OPTIONS } from './do-options.ts'
 import { registerLensCommands } from './lens.ts'
 import { collect, log, productArgv, rawArgv, write, writeStdout } from './support.ts'
@@ -269,7 +270,11 @@ function registerTreeCommands(program: Command): void {
     .command('ship-cleanup <branch>')
     .description('remove ephemeral resources for a landed branch')
     .allowExcessArguments(false)
-    .action((branch) => log(formatShipCleanup(shipCleanup(branch))))
+    .action((branch) => {
+      const report = shipCleanup(branch)
+      log(formatShipCleanup(report))
+      if (!report.verdict.clean) process.exitCode = SHIP_CLEANUP_RESIDUE_EXIT_CODE
+    })
 }
 
 function registerAgentCommands(program: Command): void {
