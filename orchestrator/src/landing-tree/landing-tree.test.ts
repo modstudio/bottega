@@ -118,6 +118,29 @@ describe('landing-tree decisions', () => {
     })
   })
 
+  test.each([true, false])(
+    'keeps a present clean tree while landing is in flight (landed=%s)',
+    (landed) => {
+      expect(
+        landingTreeReleaseDecision(
+          {
+            job: LANDING_TREE_JOB,
+            sessionId: 'owner',
+            treeExists: true,
+            status: 'ok',
+            landingInFlight: true,
+            explicitTreeRemovalRequested: false,
+          },
+          true,
+          landed,
+        ),
+      ).toEqual({
+        action: 'keep',
+        reason: 'landing tree held by session owner: landing is in flight',
+      })
+    },
+  )
+
   test('explicit removal releases a present clean tree before its branch lands', () => {
     const facts = {
       job: LANDING_TREE_JOB,

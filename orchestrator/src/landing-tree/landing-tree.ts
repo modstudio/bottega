@@ -81,6 +81,9 @@ export function landingTreeReleaseDecision(
     }
     return { action: 'release' }
   }
+  if (row.landingInFlight) {
+    return { action: 'keep', reason: `landing tree held by ${owner}: landing is in flight` }
+  }
   if (!landed)
     return {
       action: 'keep',
