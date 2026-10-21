@@ -1,11 +1,5 @@
 import { expect, test } from 'bun:test'
-import { runTestWorkerCount, runTestWorkerEnvironment } from './run-test-workers.ts'
-
-test('repository test worker arithmetic floors at one', () => {
-  expect(runTestWorkerCount(16)).toBe(4)
-  expect(runTestWorkerCount(7)).toBe(1)
-  expect(runTestWorkerCount(1)).toBe(1)
-})
+import { runTestWorkerEnvironment } from './run-test-workers.ts'
 
 test('recipe test worker values take precedence over run defaults', () => {
   expect(runTestWorkerEnvironment({}, 16)).toEqual({

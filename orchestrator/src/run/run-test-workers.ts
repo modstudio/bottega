@@ -2,7 +2,7 @@ import { availableParallelism } from 'node:os'
 
 const RUN_TEST_WORKER_DIVISOR = 4
 
-export function runTestWorkerCount(parallelism: number): number {
+function runTestWorkerCount(parallelism: number): number {
   return Math.max(1, Math.floor(parallelism / RUN_TEST_WORKER_DIVISOR))
 }
 

@@ -32,7 +32,6 @@ describe('run host capacity', () => {
       await waitForRunHostCapacity({
         database: db(),
         runId,
-        skip: false,
         platform: 'linux',
         measure: loaded,
         sleep: async () => {
@@ -53,7 +52,6 @@ describe('run host capacity', () => {
       await waitForRunHostCapacity({
         database: db(),
         runId,
-        skip: false,
         platform: 'linux',
         measure: loaded,
       }),
@@ -73,7 +71,6 @@ describe('run host capacity', () => {
     const result = await waitForRunHostCapacity({
       database: db(),
       runId: younger,
-      skip: false,
       platform: 'linux',
       measure: loaded,
       now: () => now,
@@ -83,6 +80,101 @@ describe('run host capacity', () => {
       },
     })
     expect(result).toMatchObject({ outcome: 'admitted', heldOn: ['queue'] })
+  })
+
+  test('a long-running agent with a recent event is not a recent admission', async () => {
+    const now = Date.parse('2026-01-01T00:02:00.000Z')
+    const established = repositoryRun()
+    db()
+      .query('UPDATE run SET agent_start_time=?, last_event_at=? WHERE record_id=?')
+      .run(
+        new Date(now - 2 * 60_000).toUTCString(),
+        new Date(now - 1_000).toISOString(),
+        established,
+      )
+    const runId = repositoryRun()
+    let slept = false
+    expect(
+      await waitForRunHostCapacity({
+        database: db(),
+        runId,
+        platform: 'linux',
+        now: () => now,
+        measure: () => ({ ...loaded(), loadavg: 7 }),
+        sleep: async () => {
+          slept = true
+        },
+      }),
+    ).toBeNull()
+    expect(slept).toBe(false)
+  })
+
+  test('holding records host_wait_since before sleeping', async () => {
+    repositoryRun()
+    const runId = repositoryRun()
+    let recorded: string | null = null
+    const result = await waitForRunHostCapacity({
+      database: db(),
+      runId,
+      platform: 'linux',
+      measure: loaded,
+      sleep: async () => {
+        recorded = (
+          db().query('SELECT host_wait_since FROM run WHERE record_id=?').get(runId) as {
+            host_wait_since: string | null
+          }
+        ).host_wait_since
+        db().query("UPDATE run SET status='stopped' WHERE record_id=?").run(runId)
+      },
+    })
+    expect(recorded).not.toBeNull()
+    expect(result?.outcome).toBe('stopped')
+  })
+
+  test('an admitted wait does not spawn when the final running check fails', async () => {
+    let spawned = false
+    const result = await startRunAfterHostCapacity({
+      wait: async () => ({
+        outcome: 'admitted',
+        waitedMs: 1,
+        heldOn: ['load'],
+        boundReached: false,
+      }),
+      isRunning: () => false,
+      spawn: async () => {
+        spawned = true
+        return 'handle'
+      },
+      stop: async () => {},
+    })
+    expect(result.handle).toBeNull()
+    expect(spawned).toBe(false)
+  })
+
+  test('a stop while transport start resolves cancels the child before it is returned', async () => {
+    const runId = repositoryRun()
+    let cancelled = false
+    const fakeTransport = {
+      start: async () => {
+        db()
+          .query("UPDATE run SET status='stopped', host_wait_since=NULL WHERE record_id=?")
+          .run(runId)
+        return { pid: 123 }
+      },
+      cancel: async (_handle: { pid: number }) => {
+        cancelled = true
+      },
+    }
+    const result = await startRunAfterHostCapacity({
+      wait: async () => null,
+      isRunning: () =>
+        (db().query('SELECT status FROM run WHERE record_id=?').get(runId) as { status: string })
+          .status === 'running',
+      spawn: () => fakeTransport.start(),
+      stop: (handle) => fakeTransport.cancel(handle),
+    })
+    expect(result.handle).toBeNull()
+    expect(cancelled).toBe(true)
   })
 
   test('a stop during the wait prevents the spawn', async () => {
@@ -97,7 +189,6 @@ describe('run host capacity', () => {
         waitForRunHostCapacity({
           database: db(),
           runId,
-          skip: false,
           platform: 'linux',
           measure: loaded,
           sleep: async () => {
@@ -111,6 +202,7 @@ describe('run host capacity', () => {
         spawned = true
         return 'handle'
       },
+      stop: async () => {},
     })
     expect(result.handle).toBeNull()
     expect(result.wait?.outcome).toBe('stopped')
@@ -133,7 +225,6 @@ describe('run host capacity', () => {
         waitForRunHostCapacity({
           database: db(),
           runId,
-          skip: false,
           platform: 'linux',
           measure: loaded,
           now: () => now,
@@ -146,6 +237,7 @@ describe('run host capacity', () => {
         spawned = true
         return 'handle'
       },
+      stop: async () => {},
     })
     expect(result.wait).toMatchObject({ outcome: 'admitted', boundReached: true })
     expect(spawned).toBe(true)

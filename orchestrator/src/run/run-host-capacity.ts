@@ -36,10 +36,10 @@ function runningRepositoryFacts(
 ): RunningRepositoryFacts {
   const rows = database
     .query(
-      `SELECT last_event_at FROM run
+      `SELECT agent_start_time FROM run
         WHERE status='running' AND repo IS NOT NULL AND host_wait_since IS NULL AND record_id<>?`,
     )
-    .all(runId) as { last_event_at: string | null }[]
+    .all(runId) as { agent_start_time: string | null }[]
   const self = database.query('SELECT host_wait_since FROM run WHERE record_id=?').get(runId) as {
     host_wait_since: string | null
   } | null
@@ -57,7 +57,7 @@ function runningRepositoryFacts(
   return {
     running: rows.length,
     recentAdmissions: rows.filter((row) => {
-      const admittedAt = Date.parse(row.last_event_at ?? '')
+      const admittedAt = Date.parse(row.agent_start_time ?? '')
       return Number.isFinite(admittedAt) && now - admittedAt < HOST_LOAD_RESERVATION_MS
     }).length,
     hasOlderWaiter: older !== null,
@@ -115,7 +115,8 @@ function finishWait(input: {
   outcome: RunHostCapacityWait['outcome']
   boundReached?: boolean
 }): RunHostCapacityWait {
-  input.database.query('UPDATE run SET host_wait_since=NULL WHERE record_id=?').run(input.runId)
+  if (input.outcome === 'stopped')
+    input.database.query('UPDATE run SET host_wait_since=NULL WHERE record_id=?').run(input.runId)
   const result = {
     outcome: input.outcome,
     waitedMs: input.at - input.started,
@@ -215,14 +216,12 @@ async function runHostWaitLoop(input: RunHostWaitLoop): Promise<RunHostCapacityW
 export async function waitForRunHostCapacity(input: {
   database: Database
   runId: string
-  skip: boolean
   env?: NodeJS.ProcessEnv
   platform?: NodeJS.Platform
   now?: () => number
   sleep?: (ms: number) => Promise<void>
   measure?: typeof measureHostLoad
 }): Promise<RunHostCapacityWait | null> {
-  if (input.skip) return null
   const now = input.now ?? Date.now
   const sleep =
     input.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
@@ -244,8 +243,14 @@ export async function startRunAfterHostCapacity<T>(input: {
   wait: () => Promise<RunHostCapacityWait | null>
   isRunning: () => boolean
   spawn: () => Promise<T>
+  stop: (handle: T) => Promise<void>
 }): Promise<{ handle: T | null; wait: RunHostCapacityWait | null }> {
   const wait = await input.wait()
   if (wait?.outcome === 'stopped' || !input.isRunning()) return { handle: null, wait }
-  return { handle: await input.spawn(), wait }
+  const handle = await input.spawn()
+  if (!input.isRunning()) {
+    await input.stop(handle)
+    return { handle: null, wait }
+  }
+  return { handle, wait }
 }

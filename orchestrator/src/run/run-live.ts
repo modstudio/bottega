@@ -182,7 +182,7 @@ type LiveOptions = {
 async function startAfterHostCapacity(input: {
   repoJob: boolean
   claim: { id: string }
-  opts: Pick<LiveOptions, 'noWaitCapacity' | 'resume'>
+  opts: Pick<LiveOptions, 'resume'>
   transport: ReturnType<typeof transportFor>
   startOpts: TransportStartOpts
 }): Promise<TransportHandle> {
@@ -193,7 +193,6 @@ async function startAfterHostCapacity(input: {
         ? waitForRunHostCapacity({
             database: db(),
             runId,
-            skip: Boolean(input.opts.noWaitCapacity),
           })
         : Promise.resolve(null),
     isRunning: () =>
@@ -210,6 +209,7 @@ async function startAfterHostCapacity(input: {
             resume: true,
           })
         : input.transport.start(input.startOpts),
+    stop: (handle) => input.transport.cancel(handle),
   })
   const hostWait = result.wait
   if (hostWait?.boundReached) {
