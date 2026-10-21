@@ -5,6 +5,7 @@
  * contracts, transports, reviews, or worktree isolation.
  */
 import {
+  appendFileSync,
   copyFileSync,
   existsSync,
   lstatSync,
@@ -68,17 +69,60 @@ function artifactPathEvent(event: unknown): event is ArtifactPathEvent {
   )
 }
 
+function parseArtifactEvents(contents: string): {
+  events: ArtifactPathEvent[]
+  malformedLines: number
+} {
+  const events: unknown[] = []
+  let malformedLines = 0
+  for (const line of contents.split('\n')) {
+    if (!line.trim()) continue
+    try {
+      events.push(JSON.parse(line))
+    } catch {
+      malformedLines += 1
+    }
+  }
+  return { events: events.filter(artifactPathEvent), malformedLines }
+}
+
+function recordMalformedEventWarning(
+  id: string,
+  path: string,
+  contents: string,
+  malformedLines: number,
+): void {
+  if (!contents.endsWith('\n')) {
+    try {
+      appendFileSync(path, '\n')
+    } catch {
+      /* recordRunWarning below remains best-effort and terminalisation stays total */
+    }
+  }
+  const noun = malformedLines === 1 ? 'line was' : 'lines were'
+  const pronoun = malformedLines === 1 ? 'it' : 'them'
+  recordRunWarning(
+    id,
+    `${malformedLines} malformed event log ${noun} skipped; named artifact logs from ${pronoun} may not have been retained`,
+  )
+}
+
 function terminalArtifactEvents(id: string): ArtifactPathEvent[] {
+  const path = runEventsPath(id)
+  if (!existsSync(path)) return []
+
+  let contents: string
   try {
-    const events = readFileSync(runEventsPath(id), 'utf8')
-      .split('\n')
-      .filter((line) => line.trim())
-      .map((line): unknown => JSON.parse(line))
-    return events.filter(artifactPathEvent)
+    contents = readFileSync(path, 'utf8')
   } catch {
     recordRunWarning(id, 'named artifact logs may not have been retained: event log unavailable')
     return []
   }
+
+  const parsed = parseArtifactEvents(contents)
+  if (parsed.malformedLines > 0)
+    recordMalformedEventWarning(id, path, contents, parsed.malformedLines)
+  return parsed.events
 }
 
 /** Total terminal read of the structured event fields that name retained artifacts. */

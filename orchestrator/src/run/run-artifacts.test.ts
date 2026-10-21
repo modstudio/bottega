@@ -284,18 +284,31 @@ test('an unreadable terminal event log yields no named event paths and persisten
     append.mockRestore()
   }
 })
-test('an unparseable terminal event log records a warning and yields no named event paths', () => {
+test('an absent terminal event log yields no named event paths without a warning', () => {
   const id = addRun({ agent: 'codex', job: 'implement' })
-  mkdirSync(dirname(runEventsPath(id)), { recursive: true })
-  writeFileSync(runEventsPath(id), '{not json}\n')
+
+  expect(terminalRunArtifactPaths(id, null)).toEqual([])
+  expect(existsSync(runEventsPath(id))).toBe(false)
+})
+test('malformed terminal event lines are skipped without discarding valid artifact paths', () => {
+  const id = addRun({ agent: 'codex', job: 'implement' })
+  const gate = join(tmpdir(), 'gate-before-truncated-event.log')
+  appendRunEvent(id, {
+    ts: '2026-10-21T12:00:00.000Z',
+    type: 'gate_log',
+    logPath: gate,
+  })
+  fs.appendFileSync(runEventsPath(id), '{"ts":"truncated"')
 
   const named = terminalRunArtifactPaths(id, null)
 
-  expect(named).toEqual([])
+  expect(named).toEqual([{ path: gate, field: 'gate_log.logPath' }])
   expect(readEventLog(runEventsPath(id))).toContainEqual(
     expect.objectContaining({
       type: 'warning',
-      text: expect.stringContaining('named artifact logs may not have been retained'),
+      text: expect.stringContaining(
+        '1 malformed event log line was skipped; named artifact logs from it may not have been retained',
+      ),
     }),
   )
 })
