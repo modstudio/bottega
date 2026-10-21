@@ -76,6 +76,7 @@ describe('vendor event log', () => {
       timedOut: false,
       elapsedMs: 42,
       logName: 'focused-test-request.log',
+      logPath: '/runs/1/scratch/focused-test-request.log',
     })
     const peek = peekRun(id)
     expect(peek.events.at(-1)).toEqual({

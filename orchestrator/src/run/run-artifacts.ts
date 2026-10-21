@@ -33,6 +33,7 @@ import type { FilesystemIdentityPlan, FilesystemIdentityRun } from '../filesyste
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { KEEP_RUN_FILES_DAYS } from './run-artifact-limits.ts'
 import {
+  type ArtifactPathSource,
   decideRunArtifactRetention,
   namedRunArtifactPaths,
   type RunArtifactListingEntry,
@@ -402,7 +403,7 @@ type ArtifactCollectionInput = {
   id: string
   scratch: string
   artifacts: string
-  namedPaths: string[]
+  namedPaths: ArtifactPathSource[]
   worktreePath: string | null
   diff?: string
 }
@@ -422,24 +423,24 @@ function collectNamedCandidates(
 
 function collectNamedCandidate(
   input: ArtifactCollectionInput,
-  named: string,
+  named: ArtifactPathSource,
   listed: Map<string, ListedArtifact>,
   namedLogical: string[],
 ): string | null {
-  const artifact = namedArtifactPlan(input.id, RUNS_DIR, named, input.worktreePath)
+  const artifact = namedArtifactPlan(input.id, RUNS_DIR, named.path, input.worktreePath)
   const logical = relative(input.artifacts, artifact.destination) || '.'
   if (namedLogical.includes(logical)) return null
   namedLogical.push(logical)
   if (logical === '.') return null
   try {
-    const source = isPathAtOrBelow(named, input.scratch) ? named : artifact.source
+    const source = isPathAtOrBelow(named.path, input.scratch) ? named.path : artifact.source
     if (!existsSync(source)) throw new Error('source does not exist')
     if (!artifact.alreadyInPlace && !isPathAtOrBelow(source, input.scratch)) {
       listArtifacts(source, logical, listed)
     }
     return null
   } catch (error) {
-    return `could not copy named file ${artifact.source} to ${artifact.destination}: ${error instanceof Error ? error.message : String(error)}`
+    return `could not copy named file ${artifact.source} from ${named.field} to ${artifact.destination}: ${error instanceof Error ? error.message : String(error)}`
   }
 }
 
@@ -503,7 +504,7 @@ function publishRetainedArtifacts(input: {
 
 export function persistRunArtifacts(
   id: string,
-  namedPaths: string[] | null,
+  namedPaths: ArtifactPathSource[] | null,
   worktree: { path: string } | null,
   changes: { diff?: string } | null,
 ): void {

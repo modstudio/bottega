@@ -61,6 +61,7 @@ export type RunLogEvent =
       timedOut: boolean
       elapsedMs: number
       logName: string
+      logPath: string
     }
 
 type PeekEventSummary =

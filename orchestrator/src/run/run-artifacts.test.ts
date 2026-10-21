@@ -17,6 +17,7 @@ import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import {
   KEEP_RUN_FILES_DAYS,
+  namedRunArtifactPaths,
   persistRunArtifacts,
   persistTerminalSnapshot,
   pruneRuns,
@@ -57,6 +58,8 @@ const terminalSnapshot = () => ({
   deviations: 0,
   escalations: 0,
 })
+
+const artifactPaths = (...paths: string[]) => paths.map((path) => ({ path, field: 'test.path' }))
 
 test('terminal snapshot preserves every vendor usage field', () => {
   const id = addRun({ agent: 'codex', job: 'diagnose' })
@@ -175,7 +178,14 @@ test('artifacts are copied and listed', () => {
   writeFileSync(join(runScratchDir(id), 'timing-table.txt'), 'file,ms\na,1\n')
   writeFileSync(join(tree, 'named-evidence.txt'), 'failing test\n')
   try {
-    persistRunArtifacts(id, ['named-evidence.txt'], { path: tree }, { diff: 'fixture changed\n' })
+    persistRunArtifacts(
+      id,
+      artifactPaths('named-evidence.txt'),
+      { path: tree },
+      {
+        diff: 'fixture changed\n',
+      },
+    )
     expect(readFileSync(join(runArtifactsDir(id), 'timing-table.txt'), 'utf8')).toContain('a,1')
     expect(readFileSync(join(runArtifactsDir(id), 'named-evidence.txt'), 'utf8')).toContain(
       'failing test',
@@ -185,6 +195,53 @@ test('artifacts are copied and listed', () => {
     )
   } finally {
     rmSync(tree, { recursive: true, force: true })
+  }
+})
+test('inline deliverable content does not request a file copy or fail persistence', () => {
+  const id = addRun({ agent: 'codex', job: 'understand' })
+  const tree = mkdtempSync(join(tmpdir(), 'orch-inline-deliverable-tree-'))
+  writeFileSync(join(tree, 'inline-answer.md'), 'this is a worktree file\n')
+  try {
+    const named = namedRunArtifactPaths(
+      {
+        files_written: null,
+        deliverables: [{ name: 'answer.md', content: 'inline-answer.md' }],
+      },
+      [],
+    )
+    expect(() => persistRunArtifacts(id, named, { path: tree }, null)).not.toThrow()
+    expect(existsSync(join(runArtifactsDir(id), 'inline-answer.md'))).toBe(false)
+  } finally {
+    rmSync(tree, { recursive: true, force: true })
+  }
+})
+test('a focused-test event copies exactly its structured log path', () => {
+  const id = addRun({ agent: 'codex', job: 'implement' })
+  const source = mkdtempSync(join(tmpdir(), 'orch-focused-log-'))
+  const exact = join(source, 'focused-test-exact.log')
+  const summaryOnly = join(source, 'focused-test-summary.log')
+  writeFileSync(exact, 'exact log\n')
+  writeFileSync(summaryOnly, 'summary log\n')
+  try {
+    const named = namedRunArtifactPaths(
+      {
+        files_written: null,
+        deliverables: [
+          {
+            name: 'summary',
+            content: `${summaryOnly}\nOutput: should not be parsed`,
+          },
+        ],
+      },
+      [{ type: 'focused_test', logPath: exact }],
+    )
+    persistRunArtifacts(id, named, null, null)
+    expect(readFileSync(join(runArtifactsDir(id), 'focused-test-exact.log'), 'utf8')).toBe(
+      'exact log\n',
+    )
+    expect(existsSync(join(runArtifactsDir(id), 'focused-test-summary.log'))).toBe(false)
+  } finally {
+    rmSync(source, { recursive: true, force: true })
   }
 })
 test('artifacts written before scratch persistence survive the run 12430 files_written shape', () => {
@@ -201,7 +258,7 @@ test('artifacts written before scratch persistence survive the run 12430 files_w
     expect(() =>
       persistRunArtifacts(
         id,
-        ['full-measurements.json', join(evidence, 'report.md'), evidence],
+        artifactPaths('full-measurements.json', join(evidence, 'report.md'), evidence),
         { path: tree },
         null,
       ),
@@ -250,7 +307,7 @@ test('a listed directory is copied recursively without following its symlinks', 
   writeFileSync(join(evidence, 'target.txt'), 'target\n')
   symlinkSync('target.txt', join(evidence, 'link.txt'))
   try {
-    persistRunArtifacts(id, [evidence], null, null)
+    persistRunArtifacts(id, artifactPaths(evidence), null, null)
     const copied = join(runArtifactsDir(id), 'evidence')
     expect(readFileSync(join(copied, 'target.txt'), 'utf8')).toBe('target\n')
     expect(existsSync(join(copied, 'link.txt'))).toBe(false)
@@ -276,7 +333,7 @@ test('a listed symlink to a directory is recorded without following it', () => {
   writeFileSync(join(source, 'result.txt'), 'durable\n')
   symlinkSync(source, linked)
 
-  persistRunArtifacts(id, [linked], null, null)
+  persistRunArtifacts(id, artifactPaths(linked), null, null)
   rmSync(outside, { recursive: true, force: true })
 
   expect(existsSync(join(runArtifactsDir(id), 'linked-evidence'))).toBe(false)
@@ -310,7 +367,7 @@ test('all named artifacts are checked before copy failures are reported together
     expect(() =>
       persistRunArtifacts(
         id,
-        ['first-good.txt', 'first-missing.txt', 'second-missing.txt', 'last-good.txt'],
+        artifactPaths('first-good.txt', 'first-missing.txt', 'second-missing.txt', 'last-good.txt'),
         { path: tree },
         null,
       ),
@@ -327,7 +384,10 @@ test('a listed scratch or artifacts path that was never written is still a failu
   expect(() =>
     persistRunArtifacts(
       id,
-      [join(runScratchDir(id), 'never-written.json'), join(runArtifactsDir(id), 'absent.md')],
+      artifactPaths(
+        join(runScratchDir(id), 'never-written.json'),
+        join(runArtifactsDir(id), 'absent.md'),
+      ),
       null,
       null,
     ),
@@ -347,9 +407,9 @@ test('an artifact copy failure records a harness failure and preserves the tree'
   const id = addRun({ agent: 'codex', job: 'diagnose' })
   const tree = mkdtempSync(join(tmpdir(), 'orch-failed-artifact-tree-'))
   try {
-    expect(() => persistRunArtifacts(id, ['missing-evidence.txt'], { path: tree }, null)).toThrow(
-      `could not copy named file ${join(tree, 'missing-evidence.txt')}`,
-    )
+    expect(() =>
+      persistRunArtifacts(id, artifactPaths('missing-evidence.txt'), { path: tree }, null),
+    ).toThrow(`could not copy named file ${join(tree, 'missing-evidence.txt')} from test.path`)
     expect(existsSync(tree)).toBe(true)
     expect(existsSync(runArtifactsDir(id))).toBe(false)
   } finally {
@@ -360,7 +420,7 @@ test('an artifact persistence failure cannot overwrite a concurrent operator sto
   const id = addRun({ agent: 'codex', job: 'diagnose', status: 'stopped' })
   const tree = mkdtempSync(join(tmpdir(), 'orch-stopped-artifact-tree-'))
   try {
-    expect(() => persistRunArtifacts(id, ['missing'], { path: tree }, null)).toThrow()
+    expect(() => persistRunArtifacts(id, artifactPaths('missing'), { path: tree }, null)).toThrow()
     expect(db().query('SELECT status FROM run WHERE record_id=?').get(id)).toEqual({
       status: 'stopped',
     })
@@ -382,7 +442,7 @@ test('the adapter retains selected scratch files and records every dropped byte'
   const resultPath = join(dirname(scratch), 'result.json')
   writeFileSync(resultPath, '{}')
 
-  persistRunArtifacts(id, [join(scratch, 'nested', 'deep', 'named.txt')], null, {
+  persistRunArtifacts(id, artifactPaths(join(scratch, 'nested', 'deep', 'named.txt')), null, {
     diff: 'diff --git a/a b/a\n',
   })
 

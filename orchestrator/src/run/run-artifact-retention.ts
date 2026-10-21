@@ -23,6 +23,16 @@ export type ArtifactReaderReply = {
   deliverables: Array<{ name: string; content: string }>
 }
 
+export type ArtifactPathSource = {
+  path: string
+  field: string
+}
+
+type ArtifactPathEvent = {
+  type?: string
+  logPath?: string
+}
+
 type RunArtifactDropReason =
   | 'copy'
   | 'dependency'
@@ -51,33 +61,20 @@ const parts = (path: string) => path.split('/').filter(Boolean)
 const atOrBelow = (path: string, directory: string) =>
   directory === '.' || path === directory || path.startsWith(`${directory}/`)
 
-/** Ordered, deduplicated paths the parsed reply or its raw text names. */
+/** Ordered, deduplicated paths recorded in structured artifact-path fields. */
 export function namedRunArtifactPaths(
   reply: ArtifactReaderReply | null,
-  rawReply: string,
-  scratch: string,
-  artifacts: string,
-): string[] {
-  const paths = [
-    ...(reply?.files_written ?? []),
-    ...(reply?.deliverables.flatMap(({ name, content }) =>
-      [name, content].filter((value) => /(?:^|\/)\.?[^/]+\.[^/]+$/.test(value.trim())),
-    ) ?? []),
+  events: ArtifactPathEvent[],
+): ArtifactPathSource[] {
+  const paths: ArtifactPathSource[] = [
+    ...(reply?.files_written ?? []).map((path) => ({ path, field: 'reply.files_written' })),
+    ...events.flatMap((event) =>
+      event.type === 'focused_test' && event.logPath
+        ? [{ path: event.logPath, field: 'focused_test.logPath' }]
+        : [],
+    ),
   ]
-  const roots = [scratch, artifacts]
-  let cursor = 0
-  while (cursor < rawReply.length) {
-    const next = roots
-      .map((root) => ({ root, index: rawReply.indexOf(root, cursor) }))
-      .filter(({ index }) => index >= 0)
-      .sort((a, b) => a.index - b.index)[0]
-    if (!next) break
-    let end = next.index + next.root.length
-    while (end < rawReply.length && !/[\s"'`<>]/.test(rawReply[end]!)) end++
-    paths.push(rawReply.slice(next.index, end).replace(/[),.;:]+$/, ''))
-    cursor = end
-  }
-  return paths.filter((path, index) => paths.indexOf(path) === index)
+  return paths.filter(({ path }, index) => paths.findIndex((item) => item.path === path) === index)
 }
 
 function excludedDirectories(

@@ -47,7 +47,6 @@ import {
   persistRunArtifacts,
   persistTerminalSnapshot,
   runArtifactsDir,
-  runScratchDir,
   runTerminalReplyPath,
   type TerminalSnapshot,
 } from './run-artifacts.ts'
@@ -216,7 +215,7 @@ export type TerminalInput = {
   name: string
   artifactsPersisted: boolean
   mcpRuling: TerminalMcpRuling
-  workerEvents: Array<{ kind: string }>
+  workerEvents: Array<{ kind: string; type?: string; logPath?: string }>
 }
 
 export type TerminalResult = {
@@ -376,16 +375,11 @@ function clearRunTimers(
 function persistTerminalArtifacts(
   id: string,
   readerReply: ReaderReply | null,
-  output: string,
+  artifactPathEvents: Array<{ type?: string; logPath?: string }>,
   worktree: Worktree | null,
   changes: Changes | null,
 ): void {
-  persistRunArtifacts(
-    id,
-    namedRunArtifactPaths(readerReply, output, runScratchDir(id), runArtifactsDir(id)),
-    worktree,
-    changes,
-  )
+  persistRunArtifacts(id, namedRunArtifactPaths(readerReply, artifactPathEvents), worktree, changes)
 }
 
 function recordedReviewedHead(runId: string, required: boolean): string | null {
@@ -915,7 +909,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   }
 
   try {
-    persistTerminalArtifacts(claim.id, readerReply, output, worktree, changes)
+    persistTerminalArtifacts(claim.id, readerReply, workerEvents, worktree, changes)
   } catch (e) {
     artifactsPersisted = false
     const persistenceError = `artifact persistence failed for ${runArtifactsDir(claim.id)}: ${String((e as Error)?.message ?? e)}`

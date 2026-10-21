@@ -102,24 +102,46 @@ describe('finished run artifact retention', () => {
   })
 })
 
-test('named artifact paths put parsed reply files before raw citations and deduplicate', () => {
+test('named artifact paths use only structured path fields and deduplicate', () => {
   const scratch = '/runs/42/scratch'
-  const artifacts = '/runs/42/artifacts'
   expect(
     namedRunArtifactPaths(
       {
         files_written: ['report.md', `${scratch}/evidence.json`],
-        deliverables: [{ name: 'chart.png', content: `${artifacts}/table.csv` }],
+        deliverables: [
+          {
+            name: 'report.md',
+            content: `${scratch}/focused-test-request.log\nAfter the run closes: /runs/42/artifacts/focused-test-request.log`,
+          },
+        ],
       },
-      `See ${scratch}/evidence.json and ${artifacts}/notes.txt.`,
-      scratch,
-      artifacts,
+      [
+        {
+          type: 'focused_test',
+          logPath: `${scratch}/focused-test-request.log`,
+        },
+      ],
     ),
   ).toEqual([
-    'report.md',
-    `${scratch}/evidence.json`,
-    'chart.png',
-    `${artifacts}/table.csv`,
-    `${artifacts}/notes.txt`,
+    { path: 'report.md', field: 'reply.files_written' },
+    { path: `${scratch}/evidence.json`, field: 'reply.files_written' },
+    { path: `${scratch}/focused-test-request.log`, field: 'focused_test.logPath' },
   ])
+})
+
+test('inline deliverable content and summaries are not artifact path sources', () => {
+  expect(
+    namedRunArtifactPaths(
+      {
+        files_written: null,
+        deliverables: [
+          {
+            name: 'answer.md',
+            content: '/runs/42/scratch/not-a-file.md\nOutput: inline content',
+          },
+        ],
+      },
+      [],
+    ),
+  ).toEqual([])
 })
