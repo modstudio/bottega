@@ -222,7 +222,12 @@ M 100644 :5 notes.md
   if (result.exitCode !== 0) throw new Error(result.stderr.toString())
 }
 
-function postFixFixture(fixPath: string): { repo: string; branch: string; runId: string } {
+function postFixFixture(fixPath: string): {
+  repo: string
+  branch: string
+  runId: string
+  reviewed: string
+} {
   const repo = mkdtempSync(join(tmpdir(), 'orch-review-post-fix-'))
   git(repo, 'init', '-b', 'main')
   git(repo, 'config', 'user.email', 'fixture@example.com')
@@ -274,22 +279,23 @@ function postFixFixture(fixPath: string): { repo: string; branch: string; runId:
     .get(name, name, branch, base, reviewed, reviewed)!.id
   const reviewId = recordReview(runId, reviewReply(0), db())
   completeReview(reviewId, db())
-  git(repo, 'checkout', 'main')
-  writeFileSync(join(repo, 'trunk.txt'), 'disjoint trunk change\n')
-  git(repo, 'add', 'trunk.txt')
-  git(repo, 'commit', '-m', 'advance trunk')
-  git(repo, 'checkout', branch)
-  git(repo, 'rebase', 'main')
   const absoluteFix = join(repo, fixPath)
   mkdirSync(join(absoluteFix, '..'), { recursive: true })
   writeFileSync(absoluteFix, 'export const fix = true\n')
   git(repo, 'add', fixPath)
   git(repo, 'commit', '-m', 'apply review fix')
-  return { repo, branch, runId }
+  git(repo, 'checkout', 'main')
+  mkdirSync(join(repo, 'critical'), { recursive: true })
+  writeFileSync(join(repo, 'critical/trunk.ts'), 'export const trunk = true\n')
+  git(repo, 'add', 'critical/trunk.ts')
+  git(repo, 'commit', '-m', 'advance trunk')
+  git(repo, 'checkout', branch)
+  git(repo, 'merge', '--no-edit', 'main')
+  return { repo, branch, runId, reviewed }
 }
 
-test('review tier needs no round for a post-review fix touching only risk-two paths', async () => {
-  const { repo, branch } = postFixFixture('src/fix.ts')
+test('review tier needs no round when only trunk touched a tier-three path after review', async () => {
+  const { repo, branch, reviewed } = postFixFixture('src/fix.ts')
   try {
     const output: string[] = []
     await runReview(['review', 'tier', branch, '--cwd', repo], output)
@@ -297,13 +303,21 @@ test('review tier needs no round for a post-review fix touching only risk-two pa
     expect(output).toContain('no round needed: the architect reads the fix and lands it')
     expect(output.some((line) => line.startsWith('lens '))).toBeFalse()
     expect(output).not.toContain('current change would start a new round')
+
+    const json: string[] = []
+    await runReview(['review', 'tier', branch, '--cwd', repo, '--json'], json)
+    expect(JSON.parse(json[0]!).post_fix).toMatchObject({
+      kind: 'no-round-needed',
+      reviewedTip: reviewed,
+      tierThreePaths: [],
+    })
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }
 })
 
-test('review tier re-lenses only dimensions touched by a tier-three fix', async () => {
-  const { repo, branch } = postFixFixture('critical/fix.ts')
+test('review tier re-lenses only the tier-three path touched by the fix after a trunk merge', async () => {
+  const { repo, branch, reviewed } = postFixFixture('critical/fix.ts')
   try {
     const output: string[] = []
     await runReview(['review', 'tier', branch, '--cwd', repo], output)
@@ -313,6 +327,14 @@ test('review tier re-lenses only dimensions touched by a tier-three fix', async 
     expect(output.some((line) => line.startsWith('lens correctness'))).toBeTrue()
     expect(output.some((line) => line.startsWith('lens safety'))).toBeTrue()
     expect(output.some((line) => line.startsWith('lens craft'))).toBeFalse()
+
+    const json: string[] = []
+    await runReview(['review', 'tier', branch, '--cwd', repo, '--json'], json)
+    expect(JSON.parse(json[0]!).post_fix).toMatchObject({
+      kind: 're-lens',
+      reviewedTip: reviewed,
+      tierThreePaths: ['critical/fix.ts'],
+    })
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }

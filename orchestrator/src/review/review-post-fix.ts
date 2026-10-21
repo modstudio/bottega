@@ -90,8 +90,8 @@ function latestCompletedReview(
 
 function matchingReviewedTip(
   repo: string,
-  from: string,
   to: string,
+  trunkRef: string,
   branch: string,
   review: CompletedReview,
 ): string | null {
@@ -99,11 +99,13 @@ function matchingReviewedTip(
   if (!review.runIds.some((runId) => git(repo, ['rev-parse', '--verify', pinRef(runId)]).ok)) {
     return null
   }
-  const history = git(repo, ['rev-list', '--reverse', '--ancestry-path', `${from}..${to}`])
+  const history = git(repo, ['rev-list', '--reverse', to, '--not', trunkRef])
   if (!history.ok) return null
   let match: string | null = null
   for (const candidate of history.out.split('\n').filter(Boolean)) {
-    const identity = measureChangeIdentity(repo, from, candidate)
+    const mergeBase = git(repo, ['merge-base', trunkRef, candidate])
+    if (!mergeBase.ok) continue
+    const identity = measureChangeIdentity(repo, mergeBase.out, candidate)
     if (!identity) continue
     const candidateRound = reviewRoundIdentity({
       launch_key: null,
@@ -122,18 +124,30 @@ export function gatherPostFixReviewFacts(input: {
   repo: string
   from: string
   to: string
+  trunkRef: string
   project: string
   branch: string
 }): PostFixReviewFacts {
   const completed = latestCompletedReview(input.database, input.project, input.branch)
   if (!completed) return { completed: null }
-  const reviewedTip = matchingReviewedTip(input.repo, input.from, input.to, input.branch, completed)
+  const reviewedTip = matchingReviewedTip(
+    input.repo,
+    input.to,
+    input.trunkRef,
+    input.branch,
+    completed,
+  )
   if (!reviewedTip) return { completed, reviewedTip: null, fixFiles: null }
   try {
+    const currentPaths = new Set(
+      diffNumstat(input.repo, input.from, input.to).map(({ path }) => path),
+    )
     return {
       completed,
       reviewedTip,
-      fixFiles: diffNumstat(input.repo, reviewedTip, input.to),
+      fixFiles: diffNumstat(input.repo, reviewedTip, input.to).filter(({ path }) =>
+        currentPaths.has(path),
+      ),
     }
   } catch {
     return { completed, reviewedTip: null, fixFiles: null }

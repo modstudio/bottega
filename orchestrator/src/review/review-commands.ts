@@ -217,6 +217,15 @@ function resolveTierTarget(
 
 function reviewTierOutput(value: string, cwd: string) {
   const { repo, from, to, branch, project } = resolveTierTarget(value, cwd)
+  const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
+  if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
+  const remoteTrackingRefExists =
+    Bun.spawnSync(['git', 'show-ref', '--verify', '--quiet', `refs/remotes/origin/${trunk}`], {
+      cwd: repo,
+      env: targetGitEnvironment(repo),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    }).exitCode === 0
   const output = reviewTierForRange(repo, from, to, project.settings.review)
   const identity = measureChangeIdentity(repo, from, to)
   const currentRoundIdentity = identity
@@ -234,6 +243,7 @@ function reviewTierOutput(value: string, cwd: string) {
       repo,
       from,
       to,
+      trunkRef: reviewTrunkRef(remoteTrackingRefExists, trunk),
       project: project.name,
       branch,
     }),
