@@ -6,7 +6,9 @@ import { join } from 'node:path'
 import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
 import { registerEmbeddedAssets } from '../../shared/embedded-assets.ts'
 import {
+  assertHubStoreWritable,
   implicitHubDatabaseCreationRefusal,
+  linkedCheckoutWriteRefusal,
   missingHubDatabaseMessage,
   resolveHubRuntime,
   unauthorizedHubMigrationMessage,
@@ -38,6 +40,26 @@ test('implicit creation refuses explicit, linked, and unauthorized resolutions',
 test('implicit creation allows a linked checkout to initialize temporary state', () => {
   const path = join(tmpdir(), `hub-linked-scratch-${randomUUID()}`, 'hub.db')
   expect(implicitHubDatabaseCreationRefusal(false, false, true, path)).toBeNull()
+})
+
+test('a reader checkout can read the shared hub path but cannot write it', () => {
+  const runtime = resolveHubRuntime(
+    '/reader/clone',
+    { HOME: '/reader/home', HUB_DB: '/operator/state/hub.db' },
+    () => '/main/checkout',
+  )
+
+  expect(runtime.livePath).toBe('/operator/state/hub.db')
+  expect(() => assertHubStoreWritable(runtime.linkedCheckout, runtime.livePath, '/tmp')).toThrow(
+    'refusing to write hub rows to the shared main store from a linked worktree or borrowed clone\n' +
+      'invariant: A linked-worktree or borrowed-clone binary reads the main hub store and never writes it.\n' +
+      'cleared by: run the command from the main checkout, or set HUB_DB to a scratch copy',
+  )
+})
+
+test('a linked checkout may write an isolated temporary hub store', () => {
+  const path = join(tmpdir(), `hub-linked-write-${randomUUID()}`, 'hub.db')
+  expect(linkedCheckoutWriteRefusal(true, path)).toBeNull()
 })
 
 test('the migrate creation decision refuses an absent HUB_DB before touching its parent', () => {

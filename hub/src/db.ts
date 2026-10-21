@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
 import { embeddedDistributionManifest } from '../../shared/embedded-assets.ts'
 import { mainCheckoutOf } from '../../shared/git.ts'
@@ -59,6 +60,37 @@ const linkedCheckout = runtime.linkedCheckout
 const livePath = runtime.livePath
 const legacyPath = runtime.legacyPath
 export const DB_PATH = livePath
+
+const LINKED_CHECKOUT_WRITE_REFUSAL =
+  'refusing to write hub rows to the shared main store from a linked worktree or borrowed clone\n' +
+  'invariant: A linked-worktree or borrowed-clone binary reads the main hub store and never writes it.\n' +
+  'cleared by: run the command from the main checkout, or set HUB_DB to a scratch copy'
+
+/** A linked checkout may mutate only an explicitly isolated temporary store. */
+export function linkedCheckoutWriteRefusal(
+  linked: boolean,
+  path: string,
+  temporaryDirectory = tmpdir(),
+): string | null {
+  if (!linked) return null
+  const scratch = temporaryStateStoreMigrationAllowed(
+    realPathForPotentialPath(path),
+    realPathForPotentialPath(temporaryDirectory),
+  )
+  return scratch ? null : LINKED_CHECKOUT_WRITE_REFUSAL
+}
+
+/** Refuse the write handle before SQLite can mutate a shared store. */
+export function assertHubStoreWritable(
+  linked: boolean,
+  path: string,
+  temporaryDirectory = tmpdir(),
+): void {
+  const refusal = linkedCheckoutWriteRefusal(linked, path, temporaryDirectory)
+  if (refusal) throw new Error(refusal)
+}
+
+const linkedCheckoutReadOnly = linkedCheckoutWriteRefusal(linkedCheckout, DB_PATH) !== null
 
 function legacyDatabaseRefusal(): string | null {
   if (process.env.HUB_DB || !legacyPath) return null
@@ -182,28 +214,39 @@ export function db(): Database {
   // bun test sets NODE_ENV=test; an unset HUB_DB must not fall back to the live store.
   assertTestHubDatabasePath()
   requireDatabase()
-  const d = new Database(DB_PATH!, { readwrite: true, create: false })
+  const sidecarsExist = existsSync(`${DB_PATH}-wal`) || existsSync(`${DB_PATH}-shm`)
+  const readOnlyPath =
+    linkedCheckoutReadOnly && !sidecarsExist
+      ? `${pathToFileURL(DB_PATH).href}?immutable=1`
+      : DB_PATH
+  const d = linkedCheckoutReadOnly
+    ? new Database(readOnlyPath, { readonly: true })
+    : new Database(DB_PATH, { readwrite: true, create: false })
   d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
   const refused = migrationRefusal(d)
   if (refused) {
     d.close()
     throw new Error(refused)
   }
-  d.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA synchronous = NORMAL;
-    PRAGMA wal_autocheckpoint = 100;
-    PRAGMA journal_size_limit = 1048576;
-    PRAGMA query_only = ON;
-  `)
+  if (!linkedCheckoutReadOnly) {
+    d.exec(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA synchronous = NORMAL;
+      PRAGMA wal_autocheckpoint = 100;
+      PRAGMA journal_size_limit = 1048576;
+      PRAGMA query_only = ON;
+    `)
+  }
   handle = d
   openedUserVersion = readUserVersion(d)
   return d
 }
 
 /** Open the only sanctioned multi-statement write transaction. */
-export function writeTransaction<T>(fn: (conn: Database) => T, database: Database = db()): T {
-  const conn = refuseOrReloadStaleSchema(database, true)
+export function writeTransaction<T>(fn: (conn: Database) => T, database?: Database): T {
+  assertHubStoreWritable(linkedCheckout, DB_PATH)
+  const target = database ?? db()
+  const conn = refuseOrReloadStaleSchema(target, true)
   const depth = writeDepth.get(conn) ?? 0
   if (depth === 0) conn.exec('PRAGMA query_only = OFF')
   writeDepth.set(conn, depth + 1)

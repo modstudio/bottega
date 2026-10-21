@@ -20,6 +20,7 @@ import {
   prepareSandboxHome,
   type RunSandbox,
   removeNewSandboxHomeAfterFailure,
+  workerStateEnvironment,
 } from '../sandbox/sandbox.ts'
 import { prepareWorkerMcpConfig } from '../worktree/worktree-mcp.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
@@ -132,6 +133,9 @@ export async function prepareWorkerHomeLaunch(input: {
     input.runToken,
     {
       ...input.environment,
+      // Repository workers receive run-scoped homes. Resolve the operator's
+      // hub store before that HOME replaces the one that owns task state.
+      ...(input.includeStore ? workerStateEnvironment(process.env) : {}),
       ...home,
       ...input.grokEnvironment,
       ...grokReaderScope?.environment,
