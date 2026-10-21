@@ -4,6 +4,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { closeSync, mkdirSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
+import { scrubbedGitEnv } from '../../../shared/git.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { HOST_SLOT_HELD_ENV, HostSlotWaitAborted, withGateSlot } from '../gate-load.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
@@ -29,11 +30,23 @@ import { hostSlotWaitCallbacks } from './host-slot-wait.ts'
 
 /** A pending check is a plain read; only an actual claim takes the write lock. */
 const GATE_REQUEST_POLL_MS = 1000
+const GATE_BASE_REFRESH_TIMEOUT_MS = 30_000
 
 type PendingGate = { id: number; run_record_id: string; startedAt: string }
 type ActiveGate = { completion: Promise<void>; cancel(reason: string): Promise<void> }
 type HostSlotRunner = typeof withGateSlot
 export type GateExecutionMoment = { executionId: number; at: string }
+type GateBaseRefresh = (input: {
+  mainCheckout: string
+  landingBranch: string | null
+}) => GateBaseRefreshResult
+type GateBaseRefreshResult = { elapsedMs: number; message: string }
+type GitInvocationResult = {
+  status: number | null
+  stdout: Buffer
+  stderr: Buffer
+  error?: Error
+}
 type GateProcessState = {
   child: ReturnType<typeof spawn> | null
   termination: Promise<void> | null
@@ -106,6 +119,63 @@ function requiredMainCheckout(environment: Record<string, string>, runId: string
   const mainCheckout = environment.ORCH_MAIN_CHECKOUT
   if (!mainCheckout) throw new Error(`run ${runId} has no recorded main checkout`)
   return mainCheckout
+}
+
+function operatorGitEnvironment(): NodeJS.ProcessEnv {
+  const environment = scrubbedGitEnv(process.env)
+  delete environment.ORCH_RUN_ID
+  delete environment.ORCH_RUN_TOKEN
+  delete environment.ORCH_DEPTH
+  return environment
+}
+
+/** Refresh the registered landing ref without exposing the worker's ref guard or run identity. */
+export function refreshGateBase(
+  input: { mainCheckout: string; landingBranch: string | null },
+  invoke: (
+    args: string[],
+    options: { cwd: string; env: NodeJS.ProcessEnv; timeout: number },
+  ) => GitInvocationResult = (args, options) =>
+    spawnSync('git', args, { ...options, encoding: 'buffer' }),
+): GateBaseRefreshResult {
+  const started = Date.now()
+  if (!input.landingBranch) {
+    return {
+      elapsedMs: Date.now() - started,
+      message: 'gate base refresh skipped: no registered landing branch',
+    }
+  }
+  const options = {
+    cwd: input.mainCheckout,
+    env: operatorGitEnvironment(),
+    timeout: GATE_BASE_REFRESH_TIMEOUT_MS,
+  }
+  const configured = invoke(['config', '--get', `branch.${input.landingBranch}.remote`], options)
+  const remote = configured.status === 0 ? configured.stdout.toString().trim() : ''
+  if (!remote) {
+    const detail = configured.error
+      ? ` (${configured.error.message})`
+      : configured.status !== 1 && configured.stderr.length
+        ? ` (${configured.stderr.toString().trim()})`
+        : ''
+    return {
+      elapsedMs: Date.now() - started,
+      message: `gate base refresh skipped: no configured remote for ${input.landingBranch}${detail}`,
+    }
+  }
+  const fetched = invoke(['fetch', '--no-tags', '--', remote, input.landingBranch], options)
+  const elapsedMs = Date.now() - started
+  if (fetched.status === 0) {
+    return {
+      elapsedMs,
+      message: `gate base refresh passed: fetched ${remote}/${input.landingBranch}`,
+    }
+  }
+  const detail = fetched.error?.message ?? (fetched.stderr.toString().trim() || 'unknown failure')
+  return {
+    elapsedMs,
+    message: `gate base refresh failed for ${remote}/${input.landingBranch}: ${detail}`,
+  }
 }
 
 function gitPaths(worktree: string, args: string[]): string[] {
@@ -246,6 +316,7 @@ function prepareGateExecution(input: {
   request: PendingGate
   environment: Record<string, string>
   record: (chunk: Buffer | string) => void
+  refreshBase: GateBaseRefresh
 }) {
   const plan = gatePlan(input.request.run_record_id)
   const mainCheckout = requiredMainCheckout(input.environment, input.request.run_record_id)
@@ -262,6 +333,20 @@ function prepareGateExecution(input: {
     consumer: 'gate',
   })
   const command = resolveGateCommand(plan.command, plan.worktree)
+  const refreshStarted = Date.now()
+  let refresh: GateBaseRefreshResult
+  try {
+    refresh = input.refreshBase({ mainCheckout, landingBranch: plan.trunk })
+  } catch (error) {
+    refresh = {
+      elapsedMs: Date.now() - refreshStarted,
+      message: `gate base refresh failed: ${String(error)}`,
+    }
+  }
+  input.record(`${refresh.message} (${refresh.elapsedMs}ms)\n`)
+  db()
+    .query('UPDATE gate_execution SET base_refresh_elapsed_ms=?,base_refresh_result=? WHERE id=?')
+    .run(refresh.elapsedMs, refresh.message, input.request.id)
   const toolingPaths = changedGateTooling(plan, input.record)
   const headCommit = decideGateHeadCommit({
     headCommit:
@@ -286,6 +371,7 @@ function startGateExecution(
   registerActive: (terminate: () => Promise<void>) => () => void,
   onFinish: ((moment: GateExecutionMoment) => void) | undefined,
   hostSlot: HostSlotRunner,
+  refreshBase: GateBaseRefresh,
 ): ActiveGate {
   const state: GateProcessState = {
     child: null,
@@ -328,7 +414,7 @@ function startGateExecution(
     }
     try {
       fd = createGateLog(scratchPath)
-      const prepared = prepareGateExecution({ request, environment, record })
+      const prepared = prepareGateExecution({ request, environment, record, refreshBase })
       command = prepared.command
       await hostSlot(
         () =>
@@ -392,6 +478,7 @@ export function startGateBroker(input: {
   onExecutionStart?: (moment: GateExecutionMoment) => void
   onExecutionFinish?: (moment: GateExecutionMoment) => void
   withHostSlot?: HostSlotRunner
+  refreshBase?: GateBaseRefresh
 }): GateBroker {
   let closed = false
   let active: ActiveGate | null = null
@@ -408,6 +495,7 @@ export function startGateBroker(input: {
       registerActive,
       input.onExecutionFinish,
       input.withHostSlot ?? withGateSlot,
+      input.refreshBase ?? refreshGateBase,
     )
     active = execution
     void execution.completion.then(
