@@ -12,6 +12,7 @@ const facts = (overrides: Partial<SessionOwnershipFacts> = {}): SessionOwnership
   session: 'owner',
   runs: [],
   branches: [],
+  heldRunResources: [],
   claimIds: [],
   landingIds: [],
   reviewIds: [],
@@ -64,6 +65,17 @@ describe('session close-out decisions', () => {
         branches: [
           { project: 'p', branch: 'b', taskKey: 'DEV-1', state: 'empty' },
           { project: 'p', branch: 'b', taskKey: 'DEV-1', state: 'empty' },
+        ],
+        heldRunResources: [
+          {
+            rootRecordId: 'root',
+            worktree: false,
+            refGuard: false,
+            retainedRef: false,
+            claim: false,
+            owesRecordedTeardown: false,
+            unknown: false,
+          },
         ],
         claimIds: [4, 4],
         landingIds: ['l', 'l'],
@@ -140,6 +152,26 @@ describe('session close-out decisions', () => {
           { project: 'p', branch: 'landed', taskKey: 'DEV-1', state: 'landed' },
           { project: 'p', branch: 'unique', taskKey: 'DEV-1', state: 'unlanded' },
         ],
+        heldRunResources: [
+          {
+            rootRecordId: 'done',
+            worktree: true,
+            refGuard: false,
+            retainedRef: false,
+            claim: true,
+            owesRecordedTeardown: false,
+            unknown: false,
+          },
+          {
+            rootRecordId: 'tree',
+            worktree: true,
+            refGuard: false,
+            retainedRef: false,
+            claim: false,
+            owesRecordedTeardown: false,
+            unknown: false,
+          },
+        ],
         claimIds: [9],
         landingIds: ['landing'],
         reviewIds: ['review'],
@@ -178,12 +210,64 @@ describe('session close-out decisions', () => {
             dirty: true,
           },
         ],
+        heldRunResources: [
+          {
+            rootRecordId: 'dirty',
+            worktree: true,
+            refGuard: false,
+            retainedRef: false,
+            claim: false,
+            owesRecordedTeardown: false,
+            unknown: false,
+          },
+        ],
       }),
     )
     expect(result.mechanical).toEqual([])
     expect(result.process).toEqual([
       { kind: 'dirty-tree', runId: 'dirty', number: 9, path: '/dirty' },
     ])
+  })
+
+  test('terminal roots plan close-out only when they still hold a releasable resource', () => {
+    const run = {
+      recordId: 'done',
+      rootRecordId: 'done',
+      sessionId: 'owner',
+      number: 10,
+      status: 'ok',
+      architectTree: false,
+      worktree: '/tree',
+      project: 'p',
+      taskKey: 'DEV-10',
+      mintedBranch: null,
+      dirty: false,
+    }
+    const held = {
+      rootRecordId: 'done',
+      worktree: false,
+      refGuard: false,
+      retainedRef: false,
+      claim: false,
+      owesRecordedTeardown: false,
+      unknown: false,
+    }
+    expect(classifySessionCloseOut(facts({ runs: [run] })).mechanical).toEqual([])
+    for (const resource of [
+      'worktree',
+      'refGuard',
+      'retainedRef',
+      'claim',
+      'owesRecordedTeardown',
+      'unknown',
+    ] as const) {
+      expect(
+        classifySessionCloseOut({
+          ...facts({ runs: [run] }),
+          heldRunResources: [{ ...held, [resource]: true }],
+        }).mechanical,
+      ).toContainEqual({ kind: 'close-run', runId: 'done' })
+    }
   })
 
   test('verdict is clean only when no owned or failed item remains', () => {

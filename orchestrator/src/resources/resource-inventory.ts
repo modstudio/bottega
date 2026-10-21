@@ -109,7 +109,7 @@ export function sandboxDirectoryInventory(
   }
 }
 
-function parseRetainedRef(ref: string): string | null {
+export function parseRetainedRef(ref: string): string | null {
   const value = ref.match(/^refs\/orch\/retained\/([^/]+)$/)?.[1]
   return value && hasRecordIdShape(value) ? value.toLowerCase() : null
 }

@@ -11,15 +11,19 @@ import { reconcileAbsentClaims } from '../cleanup/claim-reconciliation.ts'
 import type { CleanupPresentation } from '../cleanup/cleanup.ts'
 import { closeOutRun } from '../close/close-out.ts'
 import { sessionId as callingSessionId, db, writableDb } from '../database/db.ts'
-import { targetGitEnvironment } from '../git/git-environment.ts'
+import { repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
 import { projectByName } from '../project/projects.ts'
 import { currentOrphanProcesses } from '../resources/process-inventory.ts'
+import { refGuardDirectory } from '../resources/ref-guard.ts'
+import { parseRetainedRef } from '../resources/resource-inventory.ts'
 import { isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { observeGrokTrustHeadings } from '../sandbox/grok-trust.ts'
 import { shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
+import { hasAbsentTreeTeardownPlan } from '../worktree/worktree-remove.ts'
 import {
   classifySessionCloseOut,
   plannedTreeOwnerMatches,
+  type SessionHeldRunResources,
   type SessionMechanicalAction,
   type SessionOwnedBranch,
   type SessionOwnedRun,
@@ -167,14 +171,8 @@ function incompleteReviews(database: Database, session: string): IncompleteRevie
 function observeOwnedBranch(
   item: { project: string; branch: string; taskKey: string | null },
   runs: readonly SessionOwnedRun[],
-  dryRun: boolean,
+  projectReport: ReturnType<typeof branchesReport>['projects'][number],
 ): { branch: SessionOwnedBranch; evidence: UnprovedBranchEvidence | null } | null {
-  const projectReport = branchesReport({
-    project: item.project,
-    branch: item.branch,
-    repairLandings: !dryRun,
-    dryRunLandingRepair: dryRun,
-  }).projects[0]!
   const row = projectReport.keys
     .flatMap((key) => key.branches)
     .find((branch) => branch.branch === item.branch)
@@ -225,13 +223,215 @@ function branchFacts(runs: readonly SessionOwnedRun[], dryRun: boolean) {
   }
   const branches: SessionOwnedBranch[] = []
   const evidence: UnprovedBranchEvidence[] = []
-  for (const item of wanted.values()) {
-    const observation = observeOwnedBranch(item, runs, dryRun)
-    if (!observation) continue
-    branches.push(observation.branch)
-    if (observation.evidence) evidence.push(observation.evidence)
+  const byProject = Map.groupBy(wanted.values(), (item) => item.project)
+  for (const [project, items] of byProject) {
+    const projectReport = branchesReport({
+      project,
+      repairLandings: !dryRun,
+      dryRunLandingRepair: dryRun,
+    }).projects[0]!
+    for (const item of items) {
+      const observation = observeOwnedBranch(item, runs, projectReport)
+      if (!observation) continue
+      branches.push(observation.branch)
+      if (observation.evidence) evidence.push(observation.evidence)
+    }
   }
   return { branches, evidence }
+}
+
+type ResourceObservationError = SessionCloseOutReport['errors'][number]
+type ProjectRootResources = {
+  rootRecordId: string
+  memberRecordIds: string[]
+  members: readonly SessionOwnedRun[]
+  project: string
+  repository: string
+}
+
+function resolveRootResources(
+  rootRecordId: string,
+  members: readonly SessionOwnedRun[],
+): { resources: ProjectRootResources | null; error?: ResourceObservationError } {
+  const project = members.find((member) => member.project)?.project
+  if (!project) return { resources: null }
+  const registered = projectByName(project)
+  if (!registered)
+    return {
+      resources: null,
+      error: {
+        item: `project ${project}`,
+        detail: 'run resource state could not be read: project is not registered',
+        retry: `${PLATFORM_SLUG} machine doctor`,
+      },
+    }
+  try {
+    const presentTree = members.find(
+      (member) => member.worktree && existsSync(member.worktree),
+    )?.worktree
+    return {
+      resources: {
+        rootRecordId,
+        memberRecordIds: members.map((member) => member.recordId),
+        members,
+        project,
+        repository: (presentTree ? repoRootOf(presentTree) : null) ?? registered.path,
+      },
+    }
+  } catch (cause) {
+    return {
+      resources: null,
+      error: {
+        item: `project ${project}`,
+        detail: `run resource state could not be read: ${cause instanceof Error ? cause.message : String(cause)}`,
+        retry: `${PLATFORM_SLUG} machine doctor`,
+      },
+    }
+  }
+}
+
+function observeRepositoryHeldResources(
+  repository: string,
+  projectRoots: readonly ProjectRootResources[],
+): { guardRoots: string[]; retainedRoots: string[]; teardownRoots: string[] } {
+  const guardDirectory = refGuardDirectory(repository)
+  if (!guardDirectory) throw new Error(`git common directory could not be read at ${repository}`)
+  const retained = Bun.spawnSync(
+    ['git', 'for-each-ref', '--format=%(refname)', 'refs/orch/retained'],
+    {
+      cwd: repository,
+      env: targetGitEnvironment(repository),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  )
+  if (retained.exitCode !== 0)
+    throw new Error(
+      `retained refs could not be read: ${retained.stderr.toString().trim() || `exit ${retained.exitCode}`}`,
+    )
+  const retainedIds = new Set(
+    retained.stdout
+      .toString()
+      .split('\n')
+      .flatMap((ref) => parseRetainedRef(ref) ?? []),
+  )
+  return {
+    guardRoots: projectRoots
+      .filter(({ memberRecordIds }) =>
+        memberRecordIds.some((recordId) => existsSync(`${guardDirectory}/${recordId}`)),
+      )
+      .map(({ rootRecordId }) => rootRecordId),
+    retainedRoots: projectRoots
+      .filter(({ memberRecordIds }) =>
+        memberRecordIds.some((recordId) => retainedIds.has(recordId.toLowerCase())),
+      )
+      .map(({ rootRecordId }) => rootRecordId),
+    teardownRoots: projectRoots
+      .filter(
+        ({ rootRecordId, members }) =>
+          !members.some((member) => Boolean(member.worktree && existsSync(member.worktree))) &&
+          hasAbsentTreeTeardownPlan(repository, rootRecordId),
+      )
+      .map(({ rootRecordId }) => rootRecordId),
+  }
+}
+
+function observeRepositoryGroup(
+  repository: string,
+  projectRoots: readonly ProjectRootResources[],
+): {
+  guardRoots: string[]
+  retainedRoots: string[]
+  teardownRoots: string[]
+  unknownRoots: string[]
+  errors: ResourceObservationError[]
+} {
+  try {
+    return {
+      ...observeRepositoryHeldResources(repository, projectRoots),
+      unknownRoots: [],
+      errors: [],
+    }
+  } catch (cause) {
+    const detail = `run resource state could not be read: ${cause instanceof Error ? cause.message : String(cause)}`
+    return {
+      guardRoots: [],
+      retainedRoots: [],
+      teardownRoots: [],
+      unknownRoots: projectRoots.map((item) => item.rootRecordId),
+      errors: [...new Set(projectRoots.map((item) => item.project))].map((project) => ({
+        item: `project ${project}`,
+        detail,
+        retry: `${PLATFORM_SLUG} machine doctor`,
+      })),
+    }
+  }
+}
+
+function heldGitRunResources(roots: ReadonlyMap<string, readonly SessionOwnedRun[]>): {
+  guardRoots: Set<string>
+  retainedRoots: Set<string>
+  teardownRoots: Set<string>
+  unknownRoots: Set<string>
+  errors: ResourceObservationError[]
+} {
+  const resolutions = [...roots].map(([rootRecordId, members]) => ({
+    rootRecordId,
+    ...resolveRootResources(rootRecordId, members),
+  }))
+  const resolvedRoots = resolutions.flatMap(({ resources }) => (resources ? [resources] : []))
+  const byRepository = Map.groupBy(resolvedRoots, (item) => item.repository)
+  const observations = [...byRepository].map(([repository, projectRoots]) =>
+    observeRepositoryGroup(repository, projectRoots),
+  )
+  const unresolved = resolutions.filter(({ resources }) => !resources)
+  return {
+    guardRoots: new Set(observations.flatMap(({ guardRoots }) => guardRoots)),
+    retainedRoots: new Set(observations.flatMap(({ retainedRoots }) => retainedRoots)),
+    teardownRoots: new Set(observations.flatMap(({ teardownRoots }) => teardownRoots)),
+    unknownRoots: new Set([
+      ...unresolved.map(({ rootRecordId }) => rootRecordId),
+      ...observations.flatMap(({ unknownRoots }) => unknownRoots),
+    ]),
+    errors: [
+      ...unresolved.flatMap(({ error }) => (error ? [error] : [])),
+      ...observations.flatMap(({ errors }) => errors),
+    ],
+  }
+}
+
+function heldRunResources(
+  database: Database,
+  runs: readonly SessionOwnedRun[],
+): { resources: SessionHeldRunResources[]; errors: ResourceObservationError[] } {
+  const roots = new Map<string, SessionOwnedRun[]>()
+  for (const run of runs) roots.set(run.rootRecordId, [...(roots.get(run.rootRecordId) ?? []), run])
+  if (!roots.size) return { resources: [], errors: [] }
+  const placeholders = [...roots].map(() => '?').join(',')
+  const claimedRoots = new Set(
+    (
+      database
+        .query(
+          `SELECT DISTINCT root_run_record_id FROM resource_claim
+            WHERE root_run_record_id IN (${placeholders}) AND state='claimed'`,
+        )
+        .all(...roots.keys()) as { root_run_record_id: string }[]
+    ).map((row) => row.root_run_record_id),
+  )
+  const { guardRoots, retainedRoots, teardownRoots, unknownRoots, errors } =
+    heldGitRunResources(roots)
+  return {
+    resources: [...roots].map(([rootRecordId, members]) => ({
+      rootRecordId,
+      worktree: members.some((member) => Boolean(member.worktree && existsSync(member.worktree))),
+      refGuard: guardRoots.has(rootRecordId),
+      retainedRef: retainedRoots.has(rootRecordId),
+      claim: claimedRoots.has(rootRecordId),
+      owesRecordedTeardown: teardownRoots.has(rootRecordId),
+      unknown: unknownRoots.has(rootRecordId),
+    })),
+    errors,
+  }
 }
 
 function gather(database: Database, session: string, dryRun: boolean) {
@@ -241,10 +441,12 @@ function gather(database: Database, session: string, dryRun: boolean) {
   const landings = activeLandings(database, session)
   const reviews = incompleteReviews(database, session)
   const branchInventory = branchFacts(runs, dryRun)
+  const held = heldRunResources(database, runs)
   const facts: SessionOwnershipFacts = {
     session,
     runs,
     branches: branchInventory.branches,
+    heldRunResources: held.resources,
     claimIds: claims.map((claim) => claim.id),
     landingIds: landings.map((landing) => landing.record_id),
     reviewIds: reviews.map((review) => review.record_id),
@@ -254,6 +456,7 @@ function gather(database: Database, session: string, dryRun: boolean) {
     claims,
     landings,
     reviews,
+    observationErrors: held.errors,
     ...branchInventory,
     classification: classifySessionCloseOut(facts),
   }
@@ -435,6 +638,7 @@ function appendArgumentProcesses(
     const project = projectByName(name)
     return project ? [project] : []
   })
+  if (!projectRows.length) return
   for (const process of currentOrphanProcesses(projectRows).orphans.filter(
     (row) => row.match === 'argument',
   ))
@@ -444,6 +648,20 @@ function appendArgumentProcesses(
       evidence: process.command,
       remedy: `${PLATFORM_SLUG} machine reclaim process ${process.pid}`,
     })
+}
+
+function appendObservationErrors(
+  report: SessionCloseOutReport,
+  errors: readonly ResourceObservationError[],
+): void {
+  for (const error of errors) {
+    if (
+      !report.errors.some(
+        (candidate) => candidate.item === error.item && candidate.detail === error.detail,
+      )
+    )
+      report.errors.push(error)
+  }
 }
 
 export function closeOutSession(
@@ -466,7 +684,7 @@ export function closeOutSession(
     },
     mechanical: [],
     process: [],
-    errors: [],
+    errors: [...initial.observationErrors],
     verdict: { clean: false, residue: 0 },
   }
   for (const action of initial.classification.mechanical) {
@@ -486,21 +704,43 @@ export function closeOutSession(
       })
     }
   }
-  const final = dryRun ? initial : gather(database, session, false)
+  const final =
+    dryRun || initial.classification.mechanical.length === 0
+      ? initial
+      : gather(database, session, false)
+  appendObservationErrors(report, final.observationErrors)
   appendClassifiedProcessItems(report, final)
   appendArgumentProcesses(report, final)
+  const plannedRunRoots = new Set(
+    dryRun
+      ? initial.classification.mechanical.flatMap((action) => {
+          if (action.kind === 'close-run') return [action.runId]
+          if (action.kind !== 'remove-tree') return []
+          const run = initial.runs.find((candidate) => candidate.recordId === action.runId)
+          return run ? [run.rootRecordId] : []
+        })
+      : [],
+  )
+  const plannedClaimIds = new Set(
+    dryRun
+      ? initial.classification.mechanical.flatMap((action) =>
+          action.kind === 'reconcile-claims' ? action.claimIds : [],
+        )
+      : [],
+  )
   report.verdict = sessionCloseOutVerdict({
     remainingRuns: final.runs.filter((run) => run.status === 'running' || run.status === 'asking')
       .length,
     remainingTrees: final.runs.filter(
       (run) =>
         run.worktree &&
+        !plannedRunRoots.has(run.rootRecordId) &&
         final.claims.some(
           (claim) => claim.kind === 'worktree' && claim.allocation_key === run.worktree,
         ),
     ).length,
     remainingBranches: final.evidence.length,
-    remainingClaims: final.claims.length,
+    remainingClaims: final.claims.filter((claim) => !plannedClaimIds.has(claim.id)).length,
     remainingLandings: final.landings.length,
     remainingReviews: final.reviews.length,
     processItems: report.process.length,
@@ -518,10 +758,18 @@ export function formatSessionCloseOut(report: SessionCloseOutReport): string {
     )
   for (const error of report.errors)
     lines.push(`error: ${error.item}: ${error.detail}; retry: ${error.retry}`)
-  lines.push(
-    report.verdict.clean
-      ? 'clean: session owns nothing'
-      : `not clean: ${report.verdict.residue} owned item(s) remain`,
-  )
+  if (report.dryRun && report.mechanical.length > 0) {
+    lines.push(
+      report.verdict.clean
+        ? `owned items would be released by the ${report.mechanical.length} planned action(s); session would then be clean`
+        : `owned items would be released by the ${report.mechanical.length} planned action(s); ${report.verdict.residue} owned item(s) would remain`,
+    )
+  } else {
+    lines.push(
+      report.verdict.clean
+        ? 'clean: session owns nothing'
+        : `not clean: ${report.verdict.residue} owned item(s) remain`,
+    )
+  }
   return lines.join('\n')
 }
