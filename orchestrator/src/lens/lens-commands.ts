@@ -2,7 +2,17 @@
 /** Owns lens registry command decisions. Must not know CLI grammar. */
 import { readFileSync } from 'node:fs'
 import { flagValue } from '../cli/args.ts'
-import { listLenses, listProfiles, setLens, setProfile, showLens, showProfile } from './lenses.ts'
+import { db } from '../database/db.ts'
+import { projectAt, projectByName } from '../project/projects.ts'
+import {
+  lensProfileSpace,
+  listLenses,
+  listProfiles,
+  setLens,
+  setProfile,
+  showLens,
+  showProfile,
+} from './lenses.ts'
 
 type LensPresentation = { log(value: string): void }
 type Emit = (value: unknown, line?: string) => void
@@ -80,9 +90,17 @@ export async function setLensCommand(argv: string[], emit: Emit): Promise<void> 
   )
 }
 
-export function listProfilesCommand(argv: string[], emit: Emit): void {
+const profileProject = (argv: string[], cwd: string): string | null => {
+  const named = flagValue(argv, 'project')
+  if (named && !projectByName(named)) throw new Error(`no project "${named}"`)
+  return named ?? projectAt(cwd)?.name ?? null
+}
+
+export function listProfilesCommand(argv: string[], emit: Emit, cwd: string = process.cwd()): void {
   const id = argv[3]
-  const rows = listProfiles(id)
+  const project = profileProject(argv, cwd)
+  const database = db()
+  const rows = listProfiles(id, database, lensProfileSpace(project, database))
   emit(
     rows,
     rows
@@ -100,7 +118,11 @@ export function showProfileCommand(argv: string[], emit: Emit): void {
   emit(row)
 }
 
-export async function setProfileCommand(argv: string[], emit: Emit): Promise<void> {
+export async function setProfileCommand(
+  argv: string[],
+  emit: Emit,
+  cwd: string = process.cwd(),
+): Promise<void> {
   const flag = (name: string) => flagValue(argv, name),
     id = argv[3],
     reason = flag('reason')
@@ -109,6 +131,7 @@ export async function setProfileCommand(argv: string[], emit: Emit): Promise<voi
   emit(
     await setProfile({
       lensId: id,
+      project: profileProject(argv, cwd) ?? undefined,
       axis: flag('axis')!,
       name: flag('name')!,
       body: source(argv, 'body', 'body-file'),

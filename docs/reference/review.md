@@ -217,12 +217,13 @@ inspect and change review lens profiles
 
 ## bottega review lens profile list
 
-**Synopsis:** `bottega review lens profile list [lens] [--json]`
+**Synopsis:** `bottega review lens profile list [lens] [--project <value>] [--json]`
 
 list review lens profiles
 
 ### Options
 
+- `--project <value>`: use the project space catalogue
 - `--json`: print JSON output
 
 ### Related
@@ -231,7 +232,7 @@ list review lens profiles
 
 ## bottega review lens profile set
 
-**Synopsis:** `bottega review lens profile set <lens> [--axis <value>] [--name <value>] [--body <value>] [--body-file <value>] [--enabled <value>] [--reason <value>] [--json]`
+**Synopsis:** `bottega review lens profile set <lens> [--axis <value>] [--name <value>] [--body <value>] [--body-file <value>] [--enabled <value>] [--project <value>] [--reason <value>] [--json]`
 
 create a review lens profile version
 
@@ -242,6 +243,7 @@ create a review lens profile version
 - `--body <value>`: supply the profile body inline
 - `--body-file <value>`: read the profile body from this file
 - `--enabled <value>`: enable or disable the profile
+- `--project <value>`: use the project space catalogue
 - `--reason <value>`: record why this change is being made
 - `--json`: print JSON output
 

@@ -8,6 +8,7 @@ import { upsertProject } from '../project/projects.ts'
 import { rememberActiveRecordSpace, rememberProjectSpace } from '../project-space.ts'
 import {
   chooseLensProfile,
+  lensProfileSpace,
   listLenses,
   listProfiles,
   resolveLens,
@@ -335,6 +336,53 @@ describe('lens catalogue', () => {
       )
     expect(resolveLens('correctness', 'hosted')!.question).toBe('Hosted question?')
     expect(resolveLens('correctness', null)!.question).not.toBe('Hosted question?')
+  })
+
+  test('a profile listed in a project space can be selected and dispatched there', async () => {
+    const projectRecordId = newRecordId()
+    const space = newRecordId()
+    upsertProject({
+      recordId: projectRecordId,
+      name: 'hosted-profile-project',
+      path: '/tmp/hosted-profile-project',
+      settings: {},
+    })
+    db()
+      .query(
+        `INSERT INTO lens (record_id,space_id,id,title,question,excludes,slots,version,enabled,requires_execution)
+         SELECT ?,?,id,title,question,excludes,slots,version,enabled,requires_execution
+         FROM lens WHERE id='correctness' AND space_id IS NULL`,
+      )
+      .run(newRecordId(), space)
+    rememberProjectSpace(db(), 'hosted-profile-project', space)
+    await setProfile({
+      project: 'hosted-profile-project',
+      lensId: 'correctness',
+      axis: 'framework',
+      name: 'hosted-profile-project',
+      body: '{"framework_guidance":"Hosted project profile.","commands":"bun test"}',
+      enabled: true,
+      reason: 'create hosted project profile',
+    })
+
+    const profileSpace = lensProfileSpace('hosted-profile-project')
+    expect(listProfiles('correctness', db(), profileSpace)).toEqual([
+      expect.objectContaining({ name: 'hosted-profile-project', enabled: true, space_id: space }),
+    ])
+    await selectProjectProfile({
+      project: 'hosted-profile-project',
+      axis: 'framework',
+      name: 'hosted-profile-project',
+      lensId: 'correctness',
+      version: 1,
+      reason: 'select listed hosted profile',
+    })
+    expect(resolveLens('correctness', 'hosted-profile-project')).toMatchObject({
+      profiles: [
+        { axis: 'framework', name: 'hosted-profile-project', version: 1, source: 'project' },
+      ],
+      body: expect.stringContaining('Hosted project profile.'),
+    })
   })
 
   test('unknown lenses remain free-form while disabled catalogue content refuses', async () => {
