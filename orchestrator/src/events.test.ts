@@ -72,6 +72,7 @@ describe('vendor event log', () => {
       ts: '2026-10-15T12:00:00.000Z',
       type: 'focused_test',
       paths: ['tests/one.test.ts'],
+      started: true,
       exitCode: 1,
       timedOut: false,
       elapsedMs: 42,
@@ -81,6 +82,7 @@ describe('vendor event log', () => {
     expect(peek.events.at(-1)).toEqual({
       type: 'focused_test',
       paths: ['tests/one.test.ts'],
+      started: true,
       exitCode: 1,
       timedOut: false,
       elapsedMs: 42,

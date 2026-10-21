@@ -7,6 +7,9 @@ floor:
 outcomes:
   - merged
   - merged-with-residue
+expectedExitCodes:
+  merged: 0
+  merged-with-residue: 20
 job: null
 autonomy: ask
 needs:

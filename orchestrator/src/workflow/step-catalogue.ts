@@ -21,7 +21,7 @@ import type {
 } from './step-catalogue-definition.ts'
 import { versionedLifecycle } from './versioned-lifecycle.ts'
 import type { WorkflowDefinition, WorkflowModeStep } from './workflow-definition.ts'
-import { floorKinds, isFloorKind } from './workflow-floor.ts'
+import { floorKinds, isFloorKind, mayCloseOnAgentSelfRuling } from './workflow-floor.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
 import {
   inspectWorkflowSteps,
@@ -273,6 +273,24 @@ function validateExpectedStatus(item: Record<string, unknown>, errors: string[])
     )
 }
 
+function validateExpectedExitCodes(item: Record<string, unknown>, errors: string[]): void {
+  if (item.expectedExitCodes === undefined) return
+  const slug = String(item.slug ?? '')
+  if (!object(item.expectedExitCodes) || Object.keys(item.expectedExitCodes).length === 0) {
+    errors.push(`step "${slug}" expectedExitCodes must be a non-empty object`)
+    return
+  }
+  if (!Array.isArray(item.floor) || !item.floor.includes('command-exit'))
+    errors.push(`step "${slug}" expectedExitCodes requires a command-exit floor`)
+  const outcomes = new Set(Array.isArray(item.outcomes) ? item.outcomes : [])
+  for (const [outcome, exitCode] of Object.entries(item.expectedExitCodes)) {
+    if (!outcomes.has(outcome))
+      errors.push(`step "${slug}" expectedExitCodes key "${outcome}" is not a step outcome`)
+    if (!Number.isInteger(exitCode) || (exitCode as number) < 0)
+      errors.push(`step "${slug}" expectedExitCodes.${outcome} must be a non-negative integer`)
+  }
+}
+
 function validateFloor(item: Record<string, unknown>, errors: string[]): void {
   const slug = String(item.slug ?? '')
   if (!Array.isArray(item.floor) || item.floor.length === 0) {
@@ -290,9 +308,31 @@ function validateFloor(item: Record<string, unknown>, errors: string[]): void {
     errors.push(`step "${slug}" requirePullRequest must be a boolean`)
   if (item.operatorRuling !== undefined && typeof item.operatorRuling !== 'boolean')
     errors.push(`step "${slug}" operatorRuling must be a boolean`)
-  if (item.operatorRuling === true && !floor.includes('ruling') && !floor.some(isFloorPlaceholder))
+  if (
+    item.operatorRuling === true &&
+    !floor.some(isFloorPlaceholder) &&
+    ![
+      mayCloseOnAgentSelfRuling({ floor, operatorRuling: false }, undefined),
+      ...(Array.isArray(item.rulingOutcomes)
+        ? item.rulingOutcomes.map((outcome) =>
+            mayCloseOnAgentSelfRuling(
+              {
+                floor,
+                rulingOutcomes: (item.rulingOutcomes as unknown[]).map(String),
+                operatorRuling: false,
+              },
+              String(outcome),
+            ),
+          )
+        : []),
+      object(item.reenter)
+        ? mayCloseOnAgentSelfRuling({ floor, operatorRuling: false }, undefined, true)
+        : false,
+    ].some(Boolean)
+  )
     errors.push(`step "${slug}" operatorRuling requires a ruling floor`)
   validateCommandEvidence(item, floor, errors)
+  validateExpectedExitCodes(item, errors)
   validateExpectedStatus(item, errors)
 }
 

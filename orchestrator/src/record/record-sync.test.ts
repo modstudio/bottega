@@ -125,6 +125,8 @@ function localScoreOutbox(): Database {
        VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','ok')`,
     )
     .run(RECORD_ID)
+  enqueueRunRecord(local, RECORD_ID, MACHINE_ID, STAMP)
+  local.query("UPDATE outbox SET synced_at=? WHERE kind='run'").run(STAMP)
   local
     .query(
       `INSERT INTO score
@@ -137,7 +139,18 @@ function localScoreOutbox(): Database {
 }
 
 test('sync upserts once and a second pass has no run mutation', async () => {
-  const local = localOutbox(1)
+  const local = localOutbox(1, PLATFORM_SLUG, {
+    vendorTokens: 101,
+    vendorCostUsd: 1.25,
+    vendorInputTokens: 102,
+    vendorOutputTokens: 103,
+    vendorEstimatedCostUsd: 1.5,
+    vendorCostSource: 'billed',
+    resourceCpuMs: 201,
+    resourcePeakRssBytes: 202,
+    resourceSamples: 203,
+    resourceSource: 'sampled',
+  })
   const remote = fakePostgres()
   expect(await syncRecord(options(local, remote))).toEqual({
     pushed: 1,
@@ -150,6 +163,39 @@ test('sync upserts once and a second pass has no run mutation', async () => {
   const firstRunWrites = remote.statements.filter((sql) =>
     sql.toLowerCase().includes('insert into "run"'),
   ).length
+  const runWrite = remote.statements.find((sql) => sql.toLowerCase().includes('insert into "run"'))!
+  const runColumns = runWrite
+    .slice(runWrite.indexOf('(') + 1, runWrite.indexOf(')'))
+    .split(',')
+    .map((column) => column.replaceAll('"', '').trim())
+  const runId = `${RECORD_ID.slice(0, -1)}1`
+  const runParameters = remote.parameters.find(
+    (parameters) => parameters.includes(runId) && parameters.includes(101n),
+  )!
+  const valueFor = (column: string) => runParameters[runColumns.indexOf(column)]
+  expect({
+    vendorTokens: valueFor('vendor_tokens'),
+    vendorCostUsd: valueFor('vendor_cost_usd'),
+    vendorInputTokens: valueFor('vendor_input_tokens'),
+    vendorOutputTokens: valueFor('vendor_output_tokens'),
+    vendorEstimatedCostUsd: valueFor('vendor_estimated_cost_usd'),
+    vendorCostSource: valueFor('vendor_cost_source'),
+    resourceCpuMs: valueFor('resource_cpu_ms'),
+    resourcePeakRssBytes: valueFor('resource_peak_rss_bytes'),
+    resourceSamples: valueFor('resource_samples'),
+    resourceSource: valueFor('resource_source'),
+  }).toEqual({
+    vendorTokens: 101n,
+    vendorCostUsd: 1.25,
+    vendorInputTokens: 102n,
+    vendorOutputTokens: 103n,
+    vendorEstimatedCostUsd: 1.5,
+    vendorCostSource: 'billed',
+    resourceCpuMs: 201n,
+    resourcePeakRssBytes: 202n,
+    resourceSamples: 203,
+    resourceSource: 'sampled',
+  })
   expect(await syncRecord(options(local, remote))).toEqual({
     pushed: 0,
     failed: 0,
@@ -161,6 +207,25 @@ test('sync upserts once and a second pass has no run mutation', async () => {
   expect(
     remote.statements.filter((sql) => sql.toLowerCase().includes('insert into "run"')),
   ).toHaveLength(firstRunWrites)
+  local.close()
+})
+
+test('run sync accepts a null resource source', async () => {
+  const local = localOutbox(1, PLATFORM_SLUG, { resourceSource: null })
+  const remote = fakePostgres()
+
+  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  local.close()
+})
+
+test('run sync rejects an unknown resource source', async () => {
+  const local = localOutbox(1, PLATFORM_SLUG, { resourceSource: 'estimated' })
+  const remote = fakePostgres()
+
+  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 0, failed: 1 })
+  expect(
+    local.query<{ last_error: string }, []>('SELECT last_error FROM outbox').get()!.last_error,
+  ).toBe('run.resourceSource must be sampled, none, unavailable, or null')
   local.close()
 })
 
@@ -314,10 +379,15 @@ test('a re-score while the old payload is in flight remains pending and is deliv
     blocked: [],
   })
   expect(
-    local.query<{ synced_at: string | null }, []>('SELECT synced_at FROM outbox').get()!.synced_at,
+    local
+      .query<{ synced_at: string | null }, []>("SELECT synced_at FROM outbox WHERE kind='score'")
+      .get()!.synced_at,
   ).toBeNull()
   expect(
-    JSON.parse(local.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!.payload),
+    JSON.parse(
+      local.query<{ payload: string }, []>("SELECT payload FROM outbox WHERE kind='score'").get()!
+        .payload,
+    ),
   ).toMatchObject({ note: 'new', scoredAt: newerStamp })
 
   expect(await syncRecord(options(local, remote))).toEqual({
@@ -364,10 +434,12 @@ test.each([
   },
 ])('score sync refuses $name', async ({ job, mutate, message }) => {
   const local = localScoreOutbox()
-  const row = local.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!
+  const row = local
+    .query<{ payload: string }, []>("SELECT payload FROM outbox WHERE kind='score'")
+    .get()!
   const payload = JSON.parse(row.payload) as Record<string, unknown>
   mutate(payload)
-  local.query('UPDATE outbox SET payload=?').run(JSON.stringify(payload))
+  local.query("UPDATE outbox SET payload=? WHERE kind='score'").run(JSON.stringify(payload))
   const remote = fakePostgres(false, RECORD_ACTOR_ROLE, job)
 
   expect(await syncRecord(options(local, remote))).toMatchObject({
@@ -377,7 +449,9 @@ test.each([
     configured: true,
   })
   expect(
-    local.query<{ last_error: string }, []>('SELECT last_error FROM outbox').get()!.last_error,
+    local
+      .query<{ last_error: string }, []>("SELECT last_error FROM outbox WHERE kind='score'")
+      .get()!.last_error,
   ).toContain(message)
   expect(
     remote.statements.some((sql) => sql.toLowerCase().includes('insert into "run_score"')),
@@ -387,14 +461,16 @@ test.each([
 
 test('an old-shape score payload without projectId or review grades syncs with nulls', async () => {
   const local = localScoreOutbox()
-  const row = local.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!
+  const row = local
+    .query<{ payload: string }, []>("SELECT payload FROM outbox WHERE kind='score'")
+    .get()!
   const payload = JSON.parse(row.payload) as Record<string, unknown>
   delete payload.reproduced
   delete payload.coverage
   delete payload.limits
   delete payload.overlap
   delete payload.projectId
-  local.query('UPDATE outbox SET payload=?').run(JSON.stringify(payload))
+  local.query("UPDATE outbox SET payload=? WHERE kind='score'").run(JSON.stringify(payload))
   const remote = fakePostgres()
 
   expect(await syncRecord(options(local, remote))).toMatchObject({

@@ -274,12 +274,25 @@ function addressFilters(filters: {
 
 export function getDocStore(
   scope: string,
-  subject: string | null,
+  subject: string | null | undefined,
   slug: string,
   owner: string | null = null,
   database: Database = db(),
 ): Doc | null {
   validScope(scope)
+  if (subject === undefined) {
+    const matches = database
+      .query<{ subject: string | null }, [string, string | null, string]>(
+        'SELECT subject FROM doc WHERE scope=? AND owner IS ? AND slug=? ORDER BY subject',
+      )
+      .all(scope, owner, slug)
+    if (matches.length > 1) {
+      const subjects = matches.map(({ subject: match }) => match ?? '(no subject)').join(', ')
+      throw new Error(`several ${scope} docs "${slug}" match subjects: ${subjects}; pass subject`)
+    }
+    if (matches.length === 0) return null
+    subject = matches[0]!.subject
+  }
   const tree = docTreeSelect(database)
   const row = database
     .query(
@@ -291,7 +304,7 @@ export function getDocStore(
 
 export function getDocForAudienceStore(
   scope: string,
-  subject: string | null,
+  subject: string | null | undefined,
   slug: string,
   audience: DocAudience,
   owner: string | null = null,

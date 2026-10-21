@@ -14,11 +14,14 @@ export type ProcessSample = {
   startTime?: string
 }
 
+export const RUN_RESOURCE_SOURCES = ['sampled', 'none', 'unavailable'] as const
+export type RunResourceSource = (typeof RUN_RESOURCE_SOURCES)[number]
+
 export type RunResourceUsage = {
   cpuMs: number | null
   peakRssBytes: number | null
   samples: number
-  source: 'sampled' | 'none' | 'unavailable'
+  source: RunResourceSource
 }
 
 export type RunResourceObserver = {

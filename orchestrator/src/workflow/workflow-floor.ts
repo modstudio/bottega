@@ -98,6 +98,7 @@ export type ValidatedEvidence = {
   probe?: { id: number; exitCode: number }
   exec?: {
     id: number
+    command: string
     exitCode: number
     sessionMatches: boolean
     sessionAdoptedCursor: boolean
@@ -206,22 +207,33 @@ export function catalogueFloors(
   })
 }
 
-function catalogueFloorsFor(step: {
-  floor: readonly string[]
-  deferrable?: readonly string[]
-  expectedStatus?: string | readonly string[]
-  requirePullRequest?: boolean
-  operatorRuling?: boolean
-  commandEvidence?: CommandEvidence
-}): Floor[] {
-  return catalogueFloors(
-    step.floor,
+function catalogueFloorsFor(
+  step: {
+    floor: readonly string[]
+    deferrable?: readonly string[]
+    expectedExitCodes?: Readonly<Record<string, number>>
+    expectedStatus?: string | readonly string[]
+    requirePullRequest?: boolean
+    operatorRuling?: boolean
+    commandEvidence?: CommandEvidence
+  },
+  outcome?: string,
+  kinds: readonly string[] = step.floor,
+): Floor[] {
+  const floors = catalogueFloors(
+    kinds,
     step.deferrable,
     step.expectedStatus,
     step.requirePullRequest,
     step.operatorRuling,
     step.commandEvidence,
   )
+  const expectedExitCode = outcome === undefined ? undefined : step.expectedExitCodes?.[outcome]
+  return expectedExitCode === undefined
+    ? floors
+    : floors.map((floor) =>
+        floor.kind === 'command-exit' ? { ...floor, expectedExitCode } : floor,
+      )
 }
 
 type CloseFloorStep = Parameters<typeof catalogueFloorsFor>[0] & {
@@ -235,15 +247,19 @@ export function decideCloseFloors(
   forceRuling = false,
 ): Floor[] {
   if (forceRuling || (outcome !== undefined && step.rulingOutcomes?.includes(outcome)))
-    return catalogueFloors(
-      ['ruling'],
-      step.deferrable,
-      step.expectedStatus,
-      step.requirePullRequest,
-      step.operatorRuling,
-      step.commandEvidence,
-    )
-  return catalogueFloorsFor(step)
+    return catalogueFloorsFor(step, outcome, ['ruling'])
+  return catalogueFloorsFor(step, outcome)
+}
+
+/** Whether the effective floor for this close accepts a ruling made by the agent. */
+export function mayCloseOnAgentSelfRuling(
+  step: CloseFloorStep,
+  outcome: string | undefined,
+  forceRuling = false,
+): boolean {
+  return decideCloseFloors(step, outcome, forceRuling).some(
+    (floor) => floor.kind === 'ruling' && !floor.operatorRuling,
+  )
 }
 
 export function reentryBoundRefusal(
@@ -417,6 +433,23 @@ function commandExitBindingRefusal(evidence: ValidatedEvidence): string | null {
   return null
 }
 
+function commandExitFailureRefusal(
+  floors: Floor[],
+  evidence: ValidatedEvidence,
+  met: Floor[],
+): string | null {
+  const exec = evidence.exec
+  if (!exec || evidence.artifact?.ref !== `exec:${exec.id}`) return null
+  if (!met.some((floor) => floor.kind === 'recorded-artifact')) return null
+  if (met.some((floor) => floor.kind === 'command-exit')) return null
+  const commandExit = floors.find((floor) => floor.kind === 'command-exit')
+  if (!commandExit || exec.exitCode === commandExit.expectedExitCode) return null
+  return (
+    `command-exit evidence exec:${exec.id} command \`${exec.command}\` exited ${exec.exitCode}; ` +
+    `rerun the command successfully with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass the new exec id`
+  )
+}
+
 function operatorRulingBindingRefusal(floors: Floor[], evidence: ValidatedEvidence): string | null {
   if (!evidence.ruling || !floors.some((floor) => floor.operatorRuling)) return null
   return evidence.ruling.answered &&
@@ -555,6 +588,8 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
   const met = input.floors.filter((floor) =>
     floorIsMet(floor, input.evidence, input.freshRulingAfter),
   )
+  const commandFailure = commandExitFailureRefusal(input.floors, input.evidence, met)
+  if (commandFailure) return { action: 'refuse', message: commandFailure }
   const bindingRefusal = commandExitBindingRefusal(input.evidence)
   if (
     met.length === 0 &&

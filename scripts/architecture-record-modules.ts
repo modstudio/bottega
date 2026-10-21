@@ -247,8 +247,16 @@ export const recordModules: RecordModule[] = [
     './record-sync-principal.ts',
     './record-sync-project-identity.ts',
     './record-run-usage.ts',
+    './record-value-conversions.ts',
     './score-sync.ts',
   ]),
+  module('orchestrator/src/record/record-run-usage.ts', [
+    '../process-resource-sampler.ts',
+    '../transport/vendor-usage.ts',
+    './outbox-failure.ts',
+    './record-value-conversions.ts',
+  ]),
+  module('orchestrator/src/record/record-value-conversions.ts', []),
   module('orchestrator/src/record/record-sync-evidence-lookup.ts', []),
   module('orchestrator/src/record/record-evidence-references.ts', ['./record-sync-contract.ts']),
   module('orchestrator/src/record/record-api-invitations.ts', [
