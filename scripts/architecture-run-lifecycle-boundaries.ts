@@ -185,6 +185,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       '../idle-kill.ts',
       '../process-resource-sampler.ts',
       './live-run-member.ts',
+      './run-host-capacity.ts',
       './run-identifier.ts',
       './question-open.ts',
       './synthetic-lifecycle-job.ts',

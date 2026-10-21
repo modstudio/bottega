@@ -10,6 +10,7 @@ const liveRunMemberSpec = {
     '../process-resource-sampler.ts',
     '../jobs/jobs.ts',
     '../stalled-run.ts',
+    './run-host-capacity.ts',
   ],
   typeOnlyAllowed: [],
   reason: 'Keep the canonical live member and its stall observation independent of adapters.',

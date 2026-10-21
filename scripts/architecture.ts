@@ -221,6 +221,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/cleanup/claim-reconciliation.ts', [
     'node:fs',
     '../../../shared/process-identity.ts',
+    '../branch/branch-ref-guard.ts',
     '../database/db.ts',
     '../git/git-environment.ts',
     '../project/project-lock.ts',
@@ -248,6 +249,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/branch/branches.ts', [
     '../../../shared/brand.ts',
     './branch-base-claim.ts',
+    './branch-ref-guard.ts',
     './branch-key-report.ts',
     './branch-landing-records.ts',
     './branch-landing-match.ts',
