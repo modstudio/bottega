@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { selectPromotionTask, validateHostedPromotionTaskKey } from './hosted-notes.ts'
 import type { HostedTask } from './hosted-tasks.ts'
 
@@ -16,6 +17,28 @@ describe('hosted note promotion task ownership', () => {
 
     expect(selected).toEqual({ key: 'ADN-42', task: null })
     expect(minted).toBeFalse()
+  })
+
+  test('requires an existing hub task when linking a hosted hub-owned note', async () => {
+    await expect(
+      selectPromotionTask(
+        'DEV-42',
+        async () => null,
+        async () => ({}) as HostedTask,
+        true,
+        'hub',
+      ),
+    ).rejects.toThrow(`${PLATFORM_SLUG} task list --project hub`)
+    const task = { id: 'task-id', key: 'DEV-42' } as HostedTask
+    await expect(
+      selectPromotionTask(
+        'DEV-42',
+        async () => task,
+        async () => ({}) as HostedTask,
+        true,
+        'hub',
+      ),
+    ).resolves.toEqual({ key: 'DEV-42', task })
   })
 
   test('validates supplied task keys against the hosted project', () => {
@@ -36,9 +59,9 @@ describe('hosted note promotion task ownership', () => {
         key_prefixes: ['DEV'],
         tracker: { protocol: 'hub' },
       }),
-    ).toThrow("project 'hub-owned' does not have a remote tracker")
+    ).not.toThrow()
     expect(() => validateHostedPromotionTaskKey('ADN-42', 'missing', undefined)).toThrow(
-      "project 'missing' does not have a remote tracker",
+      `${PLATFORM_SLUG} task list --project missing`,
     )
   })
 })

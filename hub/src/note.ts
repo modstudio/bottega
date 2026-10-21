@@ -39,7 +39,12 @@ import { queueHostedChange } from './outbox.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
 import { projects, type RegisteredProject } from './projects.ts'
 import { HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE, HOSTED_NOTE_TABLE } from './push-contract.ts'
-import { createLocalTaskInTransaction, duplicateCandidates, type TaskRow } from './task.ts'
+import {
+  attachLocalTaskEvidenceInTransaction,
+  createLocalTaskInTransaction,
+  duplicateCandidates,
+  type TaskRow,
+} from './task.ts'
 import { applyHostedTask } from './task-cache.ts'
 import { hostedTaskIdentity } from './task-client.ts'
 import { partitionProjectRows } from './task-project-space.ts'
@@ -639,8 +644,6 @@ export async function promoteNote(
     throw new Error(`note ${note.label} is already promoted to ${note.promoted_task}`)
   const project = projects().find((candidate) => candidate.name === note.project)!
   const destination = taskCreationDestination(project)
-  if (options.existingTaskKey && destination !== 'tracker')
-    throw new Error('--task is valid only for a project that owns its tracker')
   if (destination === 'tracker' && !options.existingTaskKey)
     throw new Error(`project ${note.project} owns task creation in its tracker`)
   if (options.existingTaskKey) {
@@ -663,6 +666,27 @@ export async function promoteNote(
             'UPDATE note SET promoted_task=?, promoted_task_record_id=NULL, last_seen_at=? WHERE record_id=?',
           )
           .run(options.existingTaskKey!, nowIso(), row.record_id)
+      })
+      return getNote(note.record_id)
+    }
+    if (options.existingTaskKey) {
+      writeTransaction((conn) => {
+        const row = decode(noteRow(conn, note.record_id))
+        if (row.promoted_task)
+          throw new Error(`note ${row.label} is already promoted to ${row.promoted_task}`)
+        const at = nowIso()
+        const task = attachLocalTaskEvidenceInTransaction(
+          conn,
+          options.existingTaskKey!,
+          row.project,
+          promotionTaskInput(row).body,
+          at,
+        )
+        conn
+          .query(
+            'UPDATE note SET promoted_task=?, promoted_task_record_id=?, last_seen_at=? WHERE record_id=?',
+          )
+          .run(task.task_key, task.task_record_id, at, row.record_id)
       })
       return getNote(note.record_id)
     }

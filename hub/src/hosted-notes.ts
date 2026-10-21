@@ -187,12 +187,18 @@ export async function promoteHostedNote(
       throw new Error(
         `note ${note.project}#${note.number} is already promoted to ${note.promoted_task}`,
       )
+    let promotionProject:
+      | { key_prefixes: string[]; tracker: { protocol?: string } | null }
+      | undefined
     if (input.task !== undefined) {
-      const project = rows<{ key_prefixes: string[]; tracker: { protocol?: string } | null }>(
+      promotionProject = rows<{
+        key_prefixes: string[]
+        tracker: { protocol?: string } | null
+      }>(
         await tx`SELECT key_prefixes,tracker FROM project
         WHERE space_id=${identity.spaceId}::uuid AND id=${noteProjectId}::uuid`,
       )[0]
-      validateHostedPromotionTaskKey(input.task, note.project, project)
+      validateHostedPromotionTaskKey(input.task, note.project, promotionProject)
     }
     const anchors = JSON.parse(note.anchors) as Array<Record<string, unknown>>
     const evidence = anchors
@@ -205,7 +211,8 @@ export async function promoteHostedNote(
       input.task,
       async (key) =>
         rows<HostedTask>(
-          await tx`SELECT * FROM hub_task WHERE space_id=${identity.spaceId}::uuid AND project_id=${noteProjectId}::uuid AND key=${key}`,
+          await tx`SELECT * FROM hub_task WHERE space_id=${identity.spaceId}::uuid AND project_id=${noteProjectId}::uuid
+          AND key=${key} AND deleted_at IS NULL`,
         )[0] ?? null,
       () =>
         createTask(tx, identity, {
@@ -214,8 +221,19 @@ export async function promoteHostedNote(
           title: note.text,
           body: `${note.text}\n\nSIGHTINGS (${note.sightings})\n${evidence}`,
         }),
+      input.task !== undefined && !projectHasRemoteTracker(promotionProject?.tracker),
+      note.project,
     )
     const { task } = selected
+    if (input.task !== undefined && task && !projectHasRemoteTracker(promotionProject?.tracker)) {
+      const body = `${note.text}\n\nSIGHTINGS (${note.sightings})\n${evidence}`
+      await tx`INSERT INTO hub_task_comment
+        (id,space_id,project_name,project_id,task_key,task_id,body,actor_user_id,created_at,updated_at)
+        VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${note.project},${noteProjectId}::uuid,
+        ${task.key},${task.id}::uuid,${body},${identity.userId}::uuid,now(),now())`
+      await tx`UPDATE hub_task SET updated_at=now(),last_seen=now()
+        WHERE space_id=${identity.spaceId}::uuid AND id=${task.id}::uuid`
+    }
     const promoted = rows<HostedNote>(
       await tx`UPDATE hub_note SET promoted_task=${selected.key},promoted_task_id=${task?.id ?? null}::uuid,last_seen_at=now(),updated_at=now()
       WHERE space_id=${identity.spaceId}::uuid AND id=${recordId}::uuid RETURNING *,number::int number`,
@@ -231,8 +249,10 @@ export function validateHostedPromotionTaskKey(
     | { key_prefixes: readonly string[]; tracker: { protocol?: string } | null | undefined }
     | undefined,
 ): void {
-  if (!project || !projectHasRemoteTracker(project.tracker))
-    throw new Error(`project '${projectName}' does not have a remote tracker`)
+  if (!project)
+    throw new Error(
+      `project '${projectName}' was not found; run \`${PLATFORM_SLUG} task list --project ${projectName}\``,
+    )
   const prefix = key.split('-', 1)[0]?.toUpperCase()
   const prefixes = project.key_prefixes.map((candidate) => candidate.toUpperCase())
   if (!prefix || !prefixes.includes(prefix))
@@ -245,8 +265,17 @@ export async function selectPromotionTask(
   existingKey: string | undefined,
   find: (key: string) => Promise<HostedTask | null>,
   mint: () => Promise<HostedTask>,
+  requireExisting = false,
+  project = '',
 ): Promise<{ key: string; task: HostedTask | null }> {
-  if (existingKey) return { key: existingKey, task: await find(existingKey) }
+  if (existingKey) {
+    const task = await find(existingKey)
+    if (requireExisting && !task)
+      throw new Error(
+        `no hub task ${existingKey.toUpperCase()} in project ${project}; run \`${PLATFORM_SLUG} task list --project ${project}\``,
+      )
+    return { key: existingKey.toUpperCase(), task }
+  }
   const task = await mint()
   return { key: task.key, task }
 }
