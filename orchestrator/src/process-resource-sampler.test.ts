@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   accumulateRunResourceUsage,
+  advanceRunResourceUsage,
   finalRunResourceUsage,
   parseProcessSnapshot,
   processTreePids,
@@ -53,6 +54,18 @@ describe('run process resource accumulation', () => {
       parseProcessSnapshot(`10 1 10 99.0 R 999999 10:00 Thu Oct 22 10:00:00 2026`),
     )
     expect(observed).toEqual(empty)
+  })
+
+  test('stops accumulating after the root disappears, including a recycled pid fixture', () => {
+    const gone = advanceRunResourceUsage({ usage: empty, active: true }, 10, birth, [])
+    const recycled = advanceRunResourceUsage(
+      gone,
+      10,
+      birth,
+      parseProcessSnapshot(`10 1 10 99.0 R 999999 10:00 Thu Oct 22 10:00:00 2026`),
+    )
+    expect(gone.active).toBe(false)
+    expect(recycled).toEqual(gone)
   })
 
   test('distinguishes an unobserved tree from an unavailable process table', () => {

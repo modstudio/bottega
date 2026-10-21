@@ -24,6 +24,8 @@ export type RunResourceObserver = {
   stop(): RunResourceUsage
 }
 
+export type RunResourceAccumulator = { usage: RunResourceUsage; active: boolean }
+
 type ProcessSnapshot = { rows: ProcessSample[]; available: boolean }
 
 function parseCpuTime(value: string): number | null {
@@ -121,6 +123,22 @@ export function accumulateRunResourceUsage(
   }
 }
 
+export function advanceRunResourceUsage(
+  previous: RunResourceAccumulator,
+  root: number,
+  rootStartTime: string,
+  snapshot: ProcessSample[],
+): RunResourceAccumulator {
+  if (!previous.active) return previous
+  const rootPresent = snapshot.some((row) => row.pid === root && row.startTime === rootStartTime)
+  return rootPresent
+    ? {
+        usage: accumulateRunResourceUsage(previous.usage, root, rootStartTime, snapshot),
+        active: true,
+      }
+    : { ...previous, active: false }
+}
+
 type Subscriber = {
   root: number
   rootStartTime: string | null
@@ -144,16 +162,17 @@ function observeSubscriber(
 ): void {
   if (snapshot.available) subscriber.availableAttempts++
   if (snapshot.available && subscriber.active) {
-    const root = snapshot.rows.find((row) => row.pid === subscriber.root)
-    if (!root || !subscriber.rootStartTime || root.startTime !== subscriber.rootStartTime) {
+    if (!subscriber.rootStartTime) {
       subscriber.active = false
     } else {
-      subscriber.usage = accumulateRunResourceUsage(
-        subscriber.usage,
+      const next = advanceRunResourceUsage(
+        { usage: subscriber.usage, active: subscriber.active },
         subscriber.root,
         subscriber.rootStartTime,
         snapshot.rows,
       )
+      subscriber.usage = next.usage
+      subscriber.active = next.active
     }
   }
   if (!notify || now < subscriber.nextObserveAt) return

@@ -106,6 +106,25 @@ function outputCeilingReached(
   )
 }
 
+function idleSnapshotObserver(
+  runId: string,
+  stopped: () => boolean,
+  check: (samples: ProcessSample[]) => Promise<void>,
+): (samples: ProcessSample[]) => void {
+  let inFlight = false
+  return (samples) => {
+    if (inFlight || stopped()) return
+    inFlight = true
+    void check(samples)
+      .catch((error) => {
+        console.error(`orch: run ${runId} idle check failed: ${error}`)
+      })
+      .finally(() => {
+        inFlight = false
+      })
+  }
+}
+
 function liveChildEnv(
   agent: Agent,
   runRecordId: string,
@@ -748,22 +767,11 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         })
       }
     }
-    let idleCheckInFlight = false
     resourceObserver = observeRunProcessTree(
       vendorPid,
       vendorStartTime,
       idlePollMs(jobIdleKillMs(opts.job, process.env, boundMs)),
-      (samples) => {
-        if (idleCheckInFlight || timedOut || idleKilled) return
-        idleCheckInFlight = true
-        void maybeIdleKill(samples)
-          .catch((error) => {
-            console.error(`orch: run ${claim.id} idle check failed: ${error}`)
-          })
-          .finally(() => {
-            idleCheckInFlight = false
-          })
-      },
+      idleSnapshotObserver(claim.id, () => timedOut || idleKilled, maybeIdleKill),
     )
     const teeing = teeTransportEvents(handle.events(), claim.id)
     await t.prompt(handle, prompt)
