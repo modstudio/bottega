@@ -128,7 +128,9 @@ export const modules: ArchitectureModule[] = [
     module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed]),
   ),
   ...coreModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
-  ...cleanupBoundarySpecs.map((spec) => module(spec.file, [...spec.allowed])),
+  ...cleanupBoundarySpecs.map((spec) =>
+    module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed]),
+  ),
   module('orchestrator/src/doc/doc-search.ts', [
     '../../../shared/self-spawn.ts',
     '../../../shared/orch-contract.ts',
@@ -219,6 +221,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/cleanup/claim-reconciliation.ts', [
     'node:fs',
     '../../../shared/process-identity.ts',
+    '../branch/branch-ref-guard.ts',
     '../database/db.ts',
     '../git/git-environment.ts',
     '../project/project-lock.ts',
@@ -246,7 +249,9 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/branch/branches.ts', [
     '../../../shared/brand.ts',
     './branch-base-claim.ts',
+    './branch-ref-guard.ts',
     './branch-key-report.ts',
+    './branch-landing-records.ts',
     './branch-landing-match.ts',
     './branch-landing-service.ts',
     './branch-state.ts',
@@ -339,6 +344,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/self-spawn.ts',
     '../database/db.ts',
+    '../cleanup/cleanup-sweep-docker.ts',
     '../events.ts',
     '../evidence/evidence-query.ts',
     '../git/git-environment.ts',
@@ -349,6 +355,7 @@ export const modules: ArchitectureModule[] = [
     './monitor-types.ts',
     '../../../shared/process-identity.ts',
     '../project/project-lock.ts',
+    '../reclaim/reclaim-kind.ts',
     '../project/projects.ts',
     '../resources/resource-claims.ts',
     '../resources/resource-inventory.ts',
@@ -758,7 +765,11 @@ export const exactArchitecturePath = (path: string) =>
 
 function architectureDependencyPath(target: string) {
   if (target.startsWith('node:')) return exactArchitecturePath(target.slice('node:'.length))
-  if (target === 'bun') return '(^|/)node_modules/\\.bun/[^/]+/node_modules/@types/bun/'
+  const installedPackageRoots = [
+    '(^|/)node_modules/\\.bun/[^/]+/node_modules/',
+    '(^|/)node_modules/',
+  ]
+  if (target === 'bun') return installedPackageRoots.map((root) => `${root}@types/bun/`).join('|')
   if (target.includes(':')) return exactArchitecturePath(target)
   if (CONCERNS.some((root) => target.startsWith(`${root}/`)) || target.startsWith('shared/')) {
     return exactArchitecturePath(target)
@@ -768,13 +779,12 @@ function architectureDependencyPath(target: string) {
   const packagePath = first?.startsWith('@') ? remainder : [second, ...remainder].filter(Boolean)
   const escapedPackage = packageName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const escapedPath = packagePath.map((part) => part!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-  const installed = `(^|/)node_modules/\\.bun/[^/]+/node_modules/${escapedPackage}/`
   const unresolved = exactArchitecturePath(target)
-  if (!escapedPath.length) return installed
+  const installed = installedPackageRoots.map((root) => `${root}${escapedPackage}/`)
+  if (!escapedPath.length) return installed.join('|')
   const packageSubpath = escapedPath.join('/')
-  const installedCandidates = Array.from(
-    { length: 5 },
-    (_, depth) => `${installed}${'[^/]+/'.repeat(depth)}${packageSubpath}`,
+  const installedCandidates = installed.flatMap((root) =>
+    Array.from({ length: 5 }, (_, depth) => `${root}${'[^/]+/'.repeat(depth)}${packageSubpath}`),
   )
   const installedResolutions = installedCandidates.flatMap((candidate) => [
     `${candidate}$`,

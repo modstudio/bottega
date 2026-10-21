@@ -147,6 +147,9 @@ export const hubModuleSpecs = [
       './note.ts',
       './note-promote-cli.ts',
       './note-push.ts',
+      './projects.ts',
+      './task.ts',
+      './tracker-new.ts',
     ],
   },
   {

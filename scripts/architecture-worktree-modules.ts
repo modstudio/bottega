@@ -57,6 +57,7 @@ export const worktreeModules: WorktreeModule[] = [
   module('orchestrator/src/worktree/worktree-provision.ts', [
     'node:fs',
     'node:path',
+    './clone-directory.ts',
     './provision-group-validation.ts',
   ]),
   module('orchestrator/src/worktree/provisioning-measurement.ts', [

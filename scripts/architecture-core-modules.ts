@@ -7,7 +7,10 @@ export const coreModuleSpecs = [
     allowed: ['../../shared/caller-classification.ts'],
   },
   { file: 'orchestrator/src/artifact-paths.ts', allowed: ['node:path'] },
-  { file: 'orchestrator/src/process-resource-sampler.ts', allowed: [] },
+  {
+    file: 'orchestrator/src/process-resource-sampler.ts',
+    allowed: ['../../shared/process-identity.ts'],
+  },
   { file: 'orchestrator/src/refusal-error.ts', allowed: [] },
   { file: 'orchestrator/src/worker-store-write.ts', allowed: [] },
 ] as const
