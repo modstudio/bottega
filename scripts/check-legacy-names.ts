@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 // hub.db is already named for its concern and is the target state-file name, so only orch.db is legacy.
+// env is report-only until the environment slice because new code must still read existing ORCH_*/HUB_* variables.
 import { existsSync, lstatSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -23,20 +24,26 @@ function commandPattern(name: string, verbs: readonly string[]): RegExp {
 const hubVerbs = PLATFORM_COMMAND_WORDS.map((spelling) => spelling.split(' ')[0])
 
 const LEGACY_NAME_REGISTRY = {
-  'orch-command': [/\borch\s+[a-z][a-z0-9-]*(?![\w-])/g],
-  'hub-command': [commandPattern('hub', hubVerbs)],
-  'legacy-binary': [/bin\/orch(?![\w-])/g, /bin\/hub(?![\w-])/g],
-  'mcp-name': [
-    /mcp__orch__/g,
-    /orch-ask/g,
-    /mcp_servers\.orch(?![\w-])/g,
-    /mcpServers\s*:\s*\{\s*(?:['"]orch['"]|orch)\s*:/g,
-    /new\s+McpServer\s*\(\s*\{\s*name\s*:\s*['"]orch['"]/g,
-    /\{[^{}]*\bname\s*:\s*['"]orch['"][^{}]*(?:command|target)\s*:/g,
-  ],
-  env: [/\b(?:ORCH|HUB)_[A-Z][A-Z0-9_]*\b/g],
-  'state-file': [/\borch\.db\b/g],
-} as const satisfies Record<string, readonly RegExp[]>
+  'orch-command': { blocking: true, detectors: [/\borch\s+[a-z][a-z0-9-]*(?![\w-])/g] },
+  'hub-command': { blocking: true, detectors: [commandPattern('hub', hubVerbs)] },
+  'legacy-binary': {
+    blocking: true,
+    detectors: [/bin\/orch(?![\w-])/g, /bin\/hub(?![\w-])/g],
+  },
+  'mcp-name': {
+    blocking: true,
+    detectors: [
+      /mcp__orch__/g,
+      /orch-ask/g,
+      /mcp_servers\.orch(?![\w-])/g,
+      /mcpServers\s*:\s*\{\s*(?:['"]orch['"]|orch)\s*:/g,
+      /new\s+McpServer\s*\(\s*\{\s*name\s*:\s*['"]orch['"]/g,
+      /\{[^{}]*\bname\s*:\s*['"]orch['"][^{}]*(?:command|target)\s*:/g,
+    ],
+  },
+  env: { blocking: false, detectors: [/\b(?:ORCH|HUB)_[A-Z][A-Z0-9_]*\b/g] },
+  'state-file': { blocking: true, detectors: [/\borch\.db\b/g] },
+} as const satisfies Record<string, { blocking: boolean; detectors: readonly RegExp[] }>
 
 export type LegacyNameClass = keyof typeof LEGACY_NAME_REGISTRY
 export type LegacyNameCounts = Record<
@@ -55,7 +62,10 @@ function occurrenceCount(text: string, patterns: readonly RegExp[]): number {
 /** Count legacy spellings in one file without knowing anything about its path. */
 export function countLegacyNames(text: string): Record<LegacyNameClass, number> {
   return Object.fromEntries(
-    LEGACY_NAME_CLASSES.map((name) => [name, occurrenceCount(text, LEGACY_NAME_REGISTRY[name])]),
+    LEGACY_NAME_CLASSES.map((name) => [
+      name,
+      occurrenceCount(text, LEGACY_NAME_REGISTRY[name].detectors),
+    ]),
   ) as Record<LegacyNameClass, number>
 }
 
@@ -85,6 +95,7 @@ export function legacyNameCounts(files: Readonly<Record<string, string>>): Legac
 export function legacyNameGrowth(current: LegacyNameCounts, baseline: LegacyNameCounts): string[] {
   const failures: string[] = []
   for (const name of LEGACY_NAME_CLASSES) {
+    if (!LEGACY_NAME_REGISTRY[name].blocking) continue
     const previous = baseline[name]
     const next = current[name]
     if (next.total > previous.total) {
@@ -200,8 +211,12 @@ function readBaseline(): LegacyNameCounts {
   return parseLegacyNameBaseline(readFileSync(BASELINE_PATH, 'utf8'))
 }
 
+export function legacyNameTotalLines(counts: LegacyNameCounts): string[] {
+  return LEGACY_NAME_CLASSES.map((name) => `legacy ${name} ${counts[name].total}`)
+}
+
 function printTotals(counts: LegacyNameCounts): void {
-  for (const name of LEGACY_NAME_CLASSES) console.log(`legacy ${name} ${counts[name].total}`)
+  for (const line of legacyNameTotalLines(counts)) console.log(line)
 }
 
 function run(): number {

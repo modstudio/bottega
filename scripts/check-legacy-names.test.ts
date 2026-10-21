@@ -4,6 +4,7 @@ import {
   countLegacyNames,
   legacyNameCounts,
   legacyNameGrowth,
+  legacyNameTotalLines,
   loweredLegacyNameBaseline,
   parseLegacyNameBaseline,
   validateLegacyNameBaseline,
@@ -38,11 +39,21 @@ test('does not count concern paths and limits only hub to known verbs', () => {
   expect(Object.values(counts).reduce((sum, count) => sum + count, 0)).toBe(1)
 })
 
-test('a per-file increase names its class, file, and new occurrences', () => {
+test('a report-only class can grow and is still printed', () => {
   const baseline = legacyNameCounts({ 'one.txt': 'ORCH_DB' })
   const current = legacyNameCounts({ 'one.txt': 'ORCH_DB ORCH_PORT' })
 
-  expect(legacyNameGrowth(current, baseline)).toContain('env one.txt: 1 -> 2 (1 new occurrences)')
+  expect(legacyNameGrowth(current, baseline)).toEqual([])
+  expect(legacyNameTotalLines(current)).toContain('legacy env 2')
+})
+
+test('a blocking per-file increase names its class, file, and new occurrences', () => {
+  const baseline = legacyNameCounts({ 'one.txt': 'orch run' })
+  const current = legacyNameCounts({ 'one.txt': 'orch run\norch task' })
+
+  expect(legacyNameGrowth(current, baseline)).toContain(
+    'orch-command one.txt: 1 -> 2 (1 new occurrences)',
+  )
 })
 
 test('a decrease passes and update lowers the baseline', () => {

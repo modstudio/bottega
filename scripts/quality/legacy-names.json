@@ -226,7 +226,7 @@
     }
   },
   "env": {
-    "total": 1603,
+    "total": 1609,
     "files": {
       ".agents/contexts/local-stack.md": 1,
       ".agents/contexts/orchestrator-record.md": 2,
@@ -243,8 +243,8 @@
       "hub/scripts/test-postgres-evidence.ts": 2,
       "hub/src/cli-program.test.ts": 3,
       "hub/src/collect-lease.test.ts": 8,
-      "hub/src/db.test.ts": 3,
-      "hub/src/db.ts": 6,
+      "hub/src/db.test.ts": 6,
+      "hub/src/db.ts": 7,
       "hub/src/doctor.test.ts": 4,
       "hub/src/hosted-changes.test.ts": 2,
       "hub/src/hosted-changes.ts": 2,
@@ -489,6 +489,7 @@
       "orchestrator/src/run/run-readonly-infrastructure.ts": 1,
       "orchestrator/src/run/run-test-workers.test.ts": 3,
       "orchestrator/src/run/run-test-workers.ts": 1,
+      "orchestrator/src/run/run-worker-home.test.ts": 1,
       "orchestrator/src/run/run-worker-home.ts": 1,
       "orchestrator/src/run/run.ts": 3,
       "orchestrator/src/sandbox/codex-mcp-scope.ts": 5,
@@ -496,7 +497,7 @@
       "orchestrator/src/sandbox/record-connection-env.test.ts": 18,
       "orchestrator/src/sandbox/record-connection-env.ts": 3,
       "orchestrator/src/sandbox/sandbox.test.ts": 2,
-      "orchestrator/src/sandbox/sandbox.ts": 6,
+      "orchestrator/src/sandbox/sandbox.ts": 7,
       "orchestrator/src/score/recalibration.ts": 1,
       "orchestrator/src/settings/settings-apply-commands.test.ts": 12,
       "orchestrator/src/settings/settings-commands.test.ts": 12,
