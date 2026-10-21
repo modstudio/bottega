@@ -249,6 +249,47 @@ type ProjectRootResources = {
   repository: string
 }
 
+function resolveRootResources(
+  rootRecordId: string,
+  members: readonly SessionOwnedRun[],
+): { resources: ProjectRootResources | null; error?: ResourceObservationError } {
+  const project = members.find((member) => member.project)?.project
+  if (!project) return { resources: null }
+  const registered = projectByName(project)
+  if (!registered)
+    return {
+      resources: null,
+      error: {
+        item: `project ${project}`,
+        detail: 'run resource state could not be read: project is not registered',
+        retry: `${PLATFORM_SLUG} machine doctor`,
+      },
+    }
+  try {
+    const presentTree = members.find(
+      (member) => member.worktree && existsSync(member.worktree),
+    )?.worktree
+    return {
+      resources: {
+        rootRecordId,
+        memberRecordIds: members.map((member) => member.recordId),
+        members,
+        project,
+        repository: (presentTree ? repoRootOf(presentTree) : null) ?? registered.path,
+      },
+    }
+  } catch (cause) {
+    return {
+      resources: null,
+      error: {
+        item: `project ${project}`,
+        detail: `run resource state could not be read: ${cause instanceof Error ? cause.message : String(cause)}`,
+        retry: `${PLATFORM_SLUG} machine doctor`,
+      },
+    }
+  }
+}
+
 function observeRepositoryHeldResources(
   repository: string,
   projectRoots: readonly ProjectRootResources[],
@@ -295,6 +336,38 @@ function observeRepositoryHeldResources(
   }
 }
 
+function observeRepositoryGroup(
+  repository: string,
+  projectRoots: readonly ProjectRootResources[],
+): {
+  guardRoots: string[]
+  retainedRoots: string[]
+  teardownRoots: string[]
+  unknownRoots: string[]
+  errors: ResourceObservationError[]
+} {
+  try {
+    return {
+      ...observeRepositoryHeldResources(repository, projectRoots),
+      unknownRoots: [],
+      errors: [],
+    }
+  } catch (cause) {
+    const detail = `run resource state could not be read: ${cause instanceof Error ? cause.message : String(cause)}`
+    return {
+      guardRoots: [],
+      retainedRoots: [],
+      teardownRoots: [],
+      unknownRoots: projectRoots.map((item) => item.rootRecordId),
+      errors: [...new Set(projectRoots.map((item) => item.project))].map((project) => ({
+        item: `project ${project}`,
+        detail,
+        retry: `${PLATFORM_SLUG} machine doctor`,
+      })),
+    }
+  }
+}
+
 function heldGitRunResources(roots: ReadonlyMap<string, readonly SessionOwnedRun[]>): {
   guardRoots: Set<string>
   retainedRoots: Set<string>
@@ -302,59 +375,29 @@ function heldGitRunResources(roots: ReadonlyMap<string, readonly SessionOwnedRun
   unknownRoots: Set<string>
   errors: ResourceObservationError[]
 } {
-  const guardRoots = new Set<string>()
-  const retainedRoots = new Set<string>()
-  const teardownRoots = new Set<string>()
-  const unknownRoots = new Set<string>()
-  const errors: ResourceObservationError[] = []
-  const resolvedRoots = [...roots].flatMap(([rootRecordId, members]) => {
-    const project = members.find((member) => member.project)?.project
-    if (!project) {
-      unknownRoots.add(rootRecordId)
-      return []
-    }
-    const registered = projectByName(project)
-    if (!registered) {
-      unknownRoots.add(rootRecordId)
-      errors.push({
-        item: `project ${project}`,
-        detail: 'run resource state could not be read: project is not registered',
-        retry: `${PLATFORM_SLUG} machine doctor`,
-      })
-      return []
-    }
-    const presentTree = members.find(
-      (member) => member.worktree && existsSync(member.worktree),
-    )?.worktree
-    const repository = (presentTree ? repoRootOf(presentTree) : null) ?? registered.path
-    return [
-      {
-        rootRecordId,
-        memberRecordIds: members.map((member) => member.recordId),
-        members,
-        project,
-        repository,
-      },
-    ]
-  })
+  const resolutions = [...roots].map(([rootRecordId, members]) => ({
+    rootRecordId,
+    ...resolveRootResources(rootRecordId, members),
+  }))
+  const resolvedRoots = resolutions.flatMap(({ resources }) => (resources ? [resources] : []))
   const byRepository = Map.groupBy(resolvedRoots, (item) => item.repository)
-  for (const [repository, projectRoots] of byRepository) {
-    try {
-      const observed = observeRepositoryHeldResources(repository, projectRoots)
-      for (const rootRecordId of observed.guardRoots) guardRoots.add(rootRecordId)
-      for (const rootRecordId of observed.retainedRoots) retainedRoots.add(rootRecordId)
-      for (const rootRecordId of observed.teardownRoots) teardownRoots.add(rootRecordId)
-    } catch (cause) {
-      for (const { rootRecordId } of projectRoots) unknownRoots.add(rootRecordId)
-      const projects = [...new Set(projectRoots.map((item) => item.project))].join(', ')
-      errors.push({
-        item: `project ${projects}`,
-        detail: `run resource state could not be read: ${cause instanceof Error ? cause.message : String(cause)}`,
-        retry: `${PLATFORM_SLUG} machine doctor`,
-      })
-    }
+  const observations = [...byRepository].map(([repository, projectRoots]) =>
+    observeRepositoryGroup(repository, projectRoots),
+  )
+  const unresolved = resolutions.filter(({ resources }) => !resources)
+  return {
+    guardRoots: new Set(observations.flatMap(({ guardRoots }) => guardRoots)),
+    retainedRoots: new Set(observations.flatMap(({ retainedRoots }) => retainedRoots)),
+    teardownRoots: new Set(observations.flatMap(({ teardownRoots }) => teardownRoots)),
+    unknownRoots: new Set([
+      ...unresolved.map(({ rootRecordId }) => rootRecordId),
+      ...observations.flatMap(({ unknownRoots }) => unknownRoots),
+    ]),
+    errors: [
+      ...unresolved.flatMap(({ error }) => (error ? [error] : [])),
+      ...observations.flatMap(({ errors }) => errors),
+    ],
   }
-  return { guardRoots, retainedRoots, teardownRoots, unknownRoots, errors }
 }
 
 function heldRunResources(
