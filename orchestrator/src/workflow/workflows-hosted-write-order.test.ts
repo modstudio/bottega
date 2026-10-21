@@ -7,7 +7,7 @@ import {
 import { db } from '../database/db.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
-import { productionWorkflows, promoteWorkflow, setWorkflow } from './workflows.ts'
+import { importWorkflow, productionWorkflows, promoteWorkflow, setWorkflow } from './workflows.ts'
 
 const SPACE = '01990000-0000-7000-8000-000000000222'
 const at = '2026-10-18T12:00:00.000Z'
@@ -46,6 +46,31 @@ function installHostedCatalogue(): void {
 afterEach(() => {
   delete process.env.ORCH_RECORD_API_URL
   installRecordApiClient(createMemoryRecordApiClient())
+})
+
+test('hosted import validates a workflow against a same-import catalogue', async () => {
+  installHostedCatalogue()
+  const local = db()
+  const productionCatalogue = productionStepCatalogue(local).definition
+  const sourceStep = productionCatalogue.steps[0]!
+  const knownCatalogue = {
+    ...productionCatalogue,
+    steps: [...productionCatalogue.steps, { ...sourceStep, slug: 'same-import-step' }],
+  }
+  const definition = structuredClone(productionWorkflows(local)[0]!.definition)
+  definition.modes[0]!.steps = ['same-import-step']
+  process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    whoami,
+    async draftWorkflow() {
+      throw new Error('reached hosted draft')
+    },
+  })
+
+  await expect(
+    importWorkflow('same-import-flow', definition, 'same import', 'test', local, knownCatalogue),
+  ).rejects.toThrow('reached hosted draft')
 })
 
 test('hosted set failure is inert and success adopts identity, version, and event ids', async () => {

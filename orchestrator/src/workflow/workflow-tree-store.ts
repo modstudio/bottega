@@ -71,9 +71,6 @@ function orderedSequences(
 }
 
 export type WorkflowTreeImportResult = {
-  steps: string[]
-  sequences: string[]
-  workflows: string[]
   catalogue: DraftOutcome
   workflowOutcomes: (DraftOutcome & { slug: string })[]
 }
@@ -168,8 +165,27 @@ function hostedWriteFailure(error: unknown, written: string[], pending: string[]
   )
 }
 
+class HostedCacheApplyFailure extends Error {}
+
+function hostedCacheApplyFailure(
+  error: unknown,
+  item: string,
+  written: string[],
+  pending: string[],
+) {
+  const reason = error instanceof Error ? error.message : String(error)
+  return new HostedCacheApplyFailure(
+    hostedWriteFailure(
+      new Error(
+        `${item} written to the hosted record; local cache not updated; run ${PLATFORM_SLUG} record sync to refresh: ${reason}`,
+      ),
+      written,
+      pending,
+    ).message,
+  )
+}
+
 type ImportPlan = {
-  base: Pick<WorkflowTreeImportResult, 'steps' | 'sequences' | 'workflows'>
   catalogue: { steps: CatalogueStep[]; sequences: CatalogueSequence[] }
   catalogueChanged: boolean
   workflowsToWrite: WorkflowTreeStore['workflows']
@@ -221,11 +237,6 @@ function planWorkflowTreeImport(
   )
   const toWrite = new Set(workflowsToWrite.map(({ slug }) => slug))
   return {
-    base: {
-      steps: changedSteps,
-      sequences: changedSequences,
-      workflows: changedWorkflows.map(({ slug }) => slug),
-    },
     catalogue,
     catalogueChanged:
       (changedSteps.length > 0 || changedSequences.length > 0) &&
@@ -253,12 +264,27 @@ async function writeHostedImport(
   const workflows = [...plan.noChangeWorkflows]
   try {
     if (plan.catalogueChanged) {
-      const row = await importStepCatalogue(plan.catalogue, reason, author, database, project)
+      let hostedN: number | undefined
+      const row = await importStepCatalogue(
+        plan.catalogue,
+        reason,
+        author,
+        database,
+        project,
+        (n) => {
+          hostedN = n
+          written.push(`catalogue draft ${n}`)
+          pending.shift()
+        },
+      ).catch((error) => {
+        if (hostedN !== undefined)
+          throw hostedCacheApplyFailure(error, `catalogue draft ${hostedN}`, written, pending)
+        throw error
+      })
       catalogue = { status: 'created', n: row.n }
-      written.push(`catalogue draft ${row.n}`)
-      pending.shift()
     }
     for (const { slug, definition } of plan.workflowsToWrite) {
+      let hostedN: number | undefined
       const row = await importWorkflow(
         slug,
         definition,
@@ -267,15 +293,28 @@ async function writeHostedImport(
         database,
         plan.catalogue,
         project,
-      )
+        (n) => {
+          hostedN = n
+          written.push(`workflow ${slug} draft ${n}`)
+          pending.shift()
+        },
+      ).catch((error) => {
+        if (hostedN !== undefined)
+          throw hostedCacheApplyFailure(
+            error,
+            `workflow ${slug} draft ${hostedN}`,
+            written,
+            pending,
+          )
+        throw error
+      })
       workflows.push({ slug, status: 'created', n: row.n })
-      written.push(`workflow ${slug} draft ${row.n}`)
-      pending.shift()
     }
   } catch (error) {
+    if (error instanceof HostedCacheApplyFailure) throw error
     throw hostedWriteFailure(error, written, pending)
   }
-  return { ...plan.base, catalogue, workflowOutcomes: workflows }
+  return { catalogue, workflowOutcomes: workflows }
 }
 
 function writeLocalImport(
@@ -299,7 +338,7 @@ function writeLocalImport(
         .n,
     })),
   ]
-  return { ...plan.base, catalogue, workflowOutcomes: workflows }
+  return { catalogue, workflowOutcomes: workflows }
 }
 
 export function importWorkflowTree(
@@ -317,7 +356,6 @@ export function importWorkflowTree(
     const plan = planWorkflowTreeImport(tree, production, newestDefinitions(database, spaceId))
     if (!plan.catalogueChanged && !plan.workflowsToWrite.length)
       return {
-        ...plan.base,
         catalogue: { status: 'no change' as const },
         workflowOutcomes: plan.noChangeWorkflows,
       }

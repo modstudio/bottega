@@ -43,6 +43,7 @@ import {
   productionFloorPorts,
   type WorkflowEvidenceInput,
 } from './workflow-floor-evidence.ts'
+import { workflowImportLines } from './workflow-import-output.ts'
 import {
   type ProbeRecord,
   type ProbeRunner,
@@ -58,11 +59,7 @@ import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { attachWorkflowText } from './workflow-text.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { applyWorkflowTreePlan, collectWorkflowTree } from './workflow-tree-files.ts'
-import {
-  importWorkflowTree,
-  productionWorkflowTree,
-  type WorkflowTreeImportResult,
-} from './workflow-tree-store.ts'
+import { importWorkflowTree, productionWorkflowTree } from './workflow-tree-store.ts'
 import {
   composeWorkflow,
   forkWorkflow,
@@ -727,21 +724,6 @@ export function hydrateCommand(
   }
   applyWorkflowTreePlan(root, plan)
   presentation.log(`hydrated ${count} paths`)
-}
-
-export function workflowImportLines(result: WorkflowTreeImportResult): string[] {
-  return [
-    result.catalogue.status === 'created'
-      ? `catalogue: created draft ${result.catalogue.n}`
-      : 'catalogue: no change',
-    ...result.workflowOutcomes
-      .sort((left, right) => left.slug.localeCompare(right.slug))
-      .map((outcome) =>
-        outcome.status === 'created'
-          ? `${outcome.slug}: created draft ${outcome.n}`
-          : `${outcome.slug}: no change`,
-      ),
-  ]
 }
 
 export async function importCommand(
