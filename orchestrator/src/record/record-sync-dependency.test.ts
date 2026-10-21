@@ -328,6 +328,46 @@ test('contention with no local run keeps its existing delivery behavior', async 
   expect(batches).toEqual([[1]])
 })
 
+test('contention stops waiting when its local run becomes terminal without an outbox row', async () => {
+  using local = migratedTestDatabase()
+  const runId = '01990000-0000-7000-8000-000000000012'
+  const contentionId = '01990000-0000-7000-8000-000000000013'
+  local
+    .query(
+      `INSERT INTO run
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       VALUES (1,?,'2026-10-13T03:00:00.000Z','codex','write','sha',4,'work','running')`,
+    )
+    .run(runId)
+  insertOutboxRow(local, 1, 'contention', contentionId, {
+    id: contentionId,
+    runId,
+  })
+  const liveBatches: number[][] = []
+
+  expect(
+    await syncRecord({
+      local,
+      now: () => STAMP,
+      identity: { id: machineId(), name: 'test-machine' },
+      client: dependencyClient(liveBatches, () => ({ status: 'synced' })),
+    }),
+  ).toMatchObject({ pushed: 0, failed: 0, pending: 1 })
+  expect(liveBatches).toEqual([[]])
+
+  local.query("UPDATE run SET status='ok' WHERE record_id=?").run(runId)
+  const terminalBatches: number[][] = []
+  expect(
+    await syncRecord({
+      local,
+      now: () => STAMP,
+      identity: { id: machineId(), name: 'test-machine' },
+      client: dependencyClient(terminalBatches, () => ({ status: 'synced' })),
+    }),
+  ).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
+  expect(terminalBatches).toEqual([[1]])
+})
+
 test('a synced copy satisfies a parent identity when a later copy is refused', async () => {
   using local = migratedTestDatabase()
   insertOutboxRow(local, 1, 'review', 'review-1', { id: 'review-1' })

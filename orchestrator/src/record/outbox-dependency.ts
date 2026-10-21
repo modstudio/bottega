@@ -12,10 +12,13 @@ type ParentState = {
   retired_at: string | null
 }
 
-function localRunExists(database: Database, recordId: string): boolean {
+function localRunIsLive(database: Database, recordId: string): boolean {
   return Boolean(
     database
-      .query<{ found: number }, [string]>('SELECT 1 AS found FROM run WHERE record_id=?')
+      .query<{ found: number }, [string]>(
+        `SELECT 1 AS found FROM run WHERE record_id=?
+         AND status NOT IN ('ok','failed','stale','stopped')`,
+      )
       .get(recordId),
   )
 }
@@ -147,7 +150,7 @@ function outboxDependencyState(
       .all(kind, parentRecordId)
     const latest = rows[0]
     if (!latest) {
-      if (kind === 'run' && localRunExists(database, parentRecordId)) deferred = true
+      if (kind === 'run' && localRunIsLive(database, parentRecordId)) deferred = true
       continue
     }
     if (rows.some((row) => row.synced_at !== null)) continue
