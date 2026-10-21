@@ -74,6 +74,7 @@ describe('live run member', () => {
       session_id: 'session-chain',
       agent_pid: 880,
       agent_start_time: 'recorded birth',
+      host_wait_since: null,
     })
   })
 })

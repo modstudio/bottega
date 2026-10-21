@@ -16,6 +16,7 @@ import {
   installAcpStreamTrace,
   traceAcpHandshake,
 } from './acp-trace.ts'
+import { lowerRunChildPriority } from './run-child-priority.ts'
 import {
   ACP_PILOT_TASK,
   type AgentTransport,
@@ -561,6 +562,10 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     env: acpEnvironment(opts),
     stdio: ['pipe', 'pipe', 'pipe'],
     detached: true,
+  })
+  lowerRunChildPriority(child.pid, (message) => {
+    console.error(`orch: ${message}`)
+    opts.onWarning?.(message)
   })
   const trace = createAcpTrace(
     opts.env.ORCH_ACP_TRACE,

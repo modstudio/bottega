@@ -58,6 +58,7 @@ import {
 } from './checkpoint.ts'
 import { questionOpenSql } from './question-open.ts'
 import { prepareLaterRunBoardPrompt } from './run-board-prompt.ts'
+import { waitForRunHostCapacity } from './run-host-capacity.ts'
 import { STALE_AFTER_MS } from './run-liveness.ts'
 import { childEnv, errorTail, live, liveCheckpoints } from './run-process.ts'
 import { decideReplySource, type ReplyContract } from './run-reply-source.ts'
@@ -169,6 +170,7 @@ type LiveOptions = {
   model?: string
   schemaPath?: string
   job: string
+  noWaitCapacity?: boolean
 }
 
 export type LiveInput = {
@@ -487,16 +489,36 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         repoJob,
         claim.number,
       ),
+      onWarning: (message) =>
+        appendRunEvent(claim.id, { ts: nowIso(), type: 'warning', text: message }),
     }
     recordRunAsk(claim.id, sandboxSelection.sandbox, t, startOpts)
-    const handle =
-      opts.resume?.session && opts.resume.kind === 'continue'
-        ? await t.resume({
-            ...startOpts,
-            session: opts.resume.session,
-            resume: true,
-          })
-        : await t.start(startOpts)
+    const hostWait = repoJob
+      ? await waitForRunHostCapacity({
+          database: db(),
+          runId: claim.id,
+          skip: Boolean(opts.noWaitCapacity),
+        })
+      : null
+    if (hostWait?.boundReached) {
+      const message = `host capacity wait bound reached after ${hostWait.waitedMs}ms; starting run`
+      console.error(`orch: ${message}`)
+      appendRunEvent(claim.id, { ts: nowIso(), type: 'warning', text: message })
+    }
+    let handle: Awaited<ReturnType<typeof t.start>>
+    try {
+      handle =
+        opts.resume?.session && opts.resume.kind === 'continue'
+          ? await t.resume({
+              ...startOpts,
+              session: opts.resume.session,
+              resume: true,
+            })
+          : await t.start(startOpts)
+    } catch (error) {
+      db().query('UPDATE run SET host_wait_since=NULL WHERE record_id=?').run(claim.id)
+      throw error
+    }
     proc = handle
     live.add(handle)
     effectiveModel = handle.effectiveModel ?? null
@@ -522,7 +544,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     const vendorStartTime = vendorPid && vendorPid > 1 ? processStartTime(vendorPid) : null
     db()
       .query(
-        `UPDATE run SET agent_pid=?, agent_pgid=?, agent_start_time=?,
+        `UPDATE run SET agent_pid=?, agent_pgid=?, agent_start_time=?, host_wait_since=NULL,
               last_event_at=COALESCE(last_event_at, ?) WHERE record_id=?`,
       )
       .run(vendorPid, vendorPgid, vendorStartTime, nowIso(), claim.id)

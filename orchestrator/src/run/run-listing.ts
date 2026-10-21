@@ -266,6 +266,7 @@ export async function runListingCommand(
             current_run.agent AS current_agent,
             current_run.job AS current_job, current_run.agent_pid AS current_agent_pid,
             current_run.agent_start_time AS current_agent_start_time,
+            current_run.host_wait_since,
             s.delivery, s.quality,
             COALESCE(r.label, r.prompt_head) AS prompt_head, r.route_reason, r.sandbox
             ${
@@ -443,6 +444,7 @@ export async function runListingCommand(
             session_id: (r.session_id as string | null) ?? null,
             agent_pid: (r.current_agent_pid as number | null) ?? null,
             agent_start_time: (r.current_agent_start_time as string | null) ?? null,
+            host_wait_since: (r.host_wait_since as string | null) ?? null,
           },
           processSamples,
           observedAt,
@@ -489,6 +491,8 @@ export async function runListingCommand(
     const outcome = outcomeOf(r as OutcomeRow)
     const stranded = r.stranded === true
     const status = stranded ? 'stranded' : outcome.line.split(' - ', 1)[0]!
+    const hostWaitSince = r.host_wait_since as string | null
+    const displayedStatus = hostWaitSince ? 'waiting' : status
     const identity =
       r.resolved_from === 'turn'
         ? `${r.number} (asked as turn ${r.requested_number})`
@@ -496,11 +500,12 @@ export async function runListingCommand(
     log(
       `${identity.padStart(4)}  ${String((r.failover_chain as string[]).join('→')).padEnd(6)} ${String(r.job).padEnd(14)}` +
         // 'running' is not a failure, and a null latency is not zero seconds.
-        ` ${String(r.status === 'failed' ? status.toUpperCase() : status).padEnd(10)}` +
+        ` ${String(r.status === 'failed' ? displayedStatus.toUpperCase() : displayedStatus).padEnd(10)}` +
         ` ${dur(r.latency_ms as number | null).padStart(8)}  ${String(r.prompt_head).slice(0, 60)}` +
         (r.idle ? `  ${r.idle}` : ''),
     )
     if (stranded) log(`      ${r.recovery_hint}`)
+    else if (hostWaitSince) log(`      waiting for host capacity since ${hostWaitSince}`)
     else if (r.status === 'asking') log(`      ${outcome.line.slice(status.length + 3)}`)
     if (r.failure_kind === 'contract' || r.failure_kind === 'unevidenced') {
       log(

@@ -5,6 +5,7 @@
  */
 
 import { createHash } from 'node:crypto'
+import { availableParallelism } from 'node:os'
 import {
   type PidRecordIdentity,
   pidAlive,
@@ -17,6 +18,12 @@ import { depth } from '../dispatch/dispatch-preflight.ts'
 import { DEFAULT_IDLE_GRACE_MS, isGroupKillablePgid, terminateProcessGroup } from '../idle-kill.ts'
 import { isForwardedChildEnvName } from '../sandbox/record-connection-env.ts'
 import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
+
+export const RUN_TEST_WORKER_DIVISOR = 4
+
+export function runTestWorkerCount(parallelism: number): number {
+  return Math.max(1, Math.floor(parallelism / RUN_TEST_WORKER_DIVISOR))
+}
 
 export function childEnv(
   a: (typeof AGENTS)[string],
@@ -32,6 +39,8 @@ export function childEnv(
     if (v === undefined || !isForwardedChildEnvName(k)) continue
     env[k] = v
   }
+  delete env.ORCH_TEST_WORKERS
+  delete env.VITEST_MAX_WORKERS
   env.ORCH_DEPTH = String(depth() + 1)
   /**
    * Which run is asking, for the ask-server the child may call back into.
@@ -64,9 +73,16 @@ export function childEnv(
    * register.
    */
   if (includeStore) env.ORCH_DB = DB_PATH
+  const testWorkers = String(runTestWorkerCount(availableParallelism()))
   const child = {
     ...env,
     ...(a.env?.() ?? {}),
+    ...(includeStore
+      ? {
+          ORCH_TEST_WORKERS: testWorkers,
+          VITEST_MAX_WORKERS: testWorkers,
+        }
+      : {}),
     ...extra,
     ...endpointEnvironment,
     ...workerLaunchEnv(workerHarnessName(a)),

@@ -2,7 +2,36 @@ import { expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
-import { childEnv, planRunProcessTermination, terminateRunProcesses } from './run-process.ts'
+import {
+  childEnv,
+  planRunProcessTermination,
+  runTestWorkerCount,
+  terminateRunProcesses,
+} from './run-process.ts'
+
+test('repository test worker arithmetic floors at one', () => {
+  expect(runTestWorkerCount(16)).toBe(4)
+  expect(runTestWorkerCount(7)).toBe(1)
+  expect(runTestWorkerCount(1)).toBe(1)
+})
+
+test('repository workers receive test caps and recipe values take precedence', () => {
+  const defaults = childEnv(AGENTS.codex!, undefined, undefined, {}, true)
+  expect(defaults.ORCH_TEST_WORKERS).toBeDefined()
+  expect(defaults.VITEST_MAX_WORKERS).toBe(defaults.ORCH_TEST_WORKERS)
+  expect(
+    childEnv(
+      AGENTS.codex!,
+      undefined,
+      undefined,
+      { ORCH_TEST_WORKERS: '9', VITEST_MAX_WORKERS: '7' },
+      true,
+    ),
+  ).toMatchObject({ ORCH_TEST_WORKERS: '9', VITEST_MAX_WORKERS: '7' })
+  expect(childEnv(AGENTS.codex!, undefined, undefined, {}, false)).not.toHaveProperty(
+    'ORCH_TEST_WORKERS',
+  )
+})
 
 test('worker context controls override inherited values only for grok', () => {
   const parentAgents = process.env.GROK_CLAUDE_AGENTS_ENABLED

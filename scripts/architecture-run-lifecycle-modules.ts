@@ -82,6 +82,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './question-close.ts',
     './branch-owner-guard.ts',
     './run-process.ts',
+    './run-host-capacity.ts',
     './resume-tree.ts',
     '../sandbox/sandbox.ts',
     '../branch/task-branch.ts',
@@ -202,6 +203,11 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../gate/gate-broker.ts',
     '../worktree/worktree-types.ts',
     './run-process.ts',
+  ]),
+  module('orchestrator/src/run/run-host-capacity.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    '../gate-load.ts',
   ]),
   module('orchestrator/src/run/run-reply-source.ts', [
     '../contract/contract.ts',

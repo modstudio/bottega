@@ -4,6 +4,7 @@ import { execa } from 'execa'
 import { eventsFromVendorLine } from '../events.ts'
 import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from '../idle-kill.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
+import { lowerRunChildPriority } from './run-child-priority.ts'
 import {
   type AgentTransport,
   type ArgvOpts,
@@ -99,6 +100,10 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
     extendEnv: false,
     forceKillAfterDelay: DEFAULT_IDLE_GRACE_MS,
     reject: false,
+  })
+  lowerRunChildPriority(p.pid, (message) => {
+    console.error(`orch: ${message}`)
+    opts.onWarning?.(message)
   })
 
   let cancelled = false

@@ -6,6 +6,7 @@ import { dir as suiteDir } from '../test/fixtures/store.ts'
 import { trackedTestResidue } from '../test/residue.ts'
 import type { HostLoad } from './gate-load.ts'
 import {
+  decideHostCapacityAdmission,
   decideHostSlotAdmission,
   HOST_SLOT_HELD_ENV,
   measureHostSlotLeases,
@@ -24,7 +25,12 @@ const stateEnvironment = (name: string) => {
   const state = trackResidue(join(suiteDir, name))
   return {
     state,
-    env: { ...process.env, CI: undefined, [STATE_HOME_ENV]: state },
+    env: {
+      ...process.env,
+      CI: undefined,
+      [HOST_SLOT_HELD_ENV]: undefined,
+      [STATE_HOME_ENV]: state,
+    },
     slots: join(state, 'orchestrator', 'host-slots'),
   }
 }
@@ -66,6 +72,32 @@ const decision = (load: HostLoad, platform: NodeJS.Platform = 'linux') =>
   })
 
 describe('gate load hold', () => {
+  test('shared capacity decision holds on load and memory, admits solo work, and releases at the bound', () => {
+    const base = {
+      heldWork: 1,
+      loadavg: 8,
+      ncpu: 8,
+      recentAdmissions: 0,
+      freeMem: 512 * 1024 * 1024,
+      pressure: 'unknown' as const,
+      limit: null,
+      platform: 'linux' as const,
+    }
+    expect(decideHostCapacityAdmission(base)).toEqual({
+      admit: false,
+      heldOn: ['load', 'memory'],
+      boundReached: false,
+    })
+    expect(decideHostCapacityAdmission({ ...base, heldWork: 0 })).toEqual({
+      admit: true,
+      heldOn: [],
+      boundReached: false,
+    })
+    expect(
+      decideHostCapacityAdmission({ ...base, waitedMs: 15 * 60_000, maxWaitMs: 15 * 60_000 }),
+    ).toEqual({ admit: true, heldOn: [], boundReached: true })
+  })
+
   test('CPU and memory floors hold even with one gate', () => {
     expect(decision(idle({ gates: 1, loadavg: 8, ncpu: 8 })).heldOn).toEqual(['load'])
     expect(decision(idle({ gates: 1, freeMem: 512 * 1024 * 1024 })).heldOn).toEqual(['memory'])
@@ -135,7 +167,7 @@ describe('gate load hold', () => {
     try {
       result = await withGateSlot(async () => 'ok', {
         platform: 'linux',
-        env: { ...process.env, CI: undefined },
+        env: { ...process.env, CI: undefined, [HOST_SLOT_HELD_ENV]: undefined },
         // The measure reports OTHER runners; withGateSlot adds this one.
         measure: () => {
           n++
@@ -161,7 +193,7 @@ describe('gate load hold', () => {
     const error = spyOn(console, 'error').mockImplementation((line) => lines.push(String(line)))
     try {
       await withGateSlot(async () => 'ok', {
-        env: { ...process.env, CI: undefined },
+        env: { ...process.env, CI: undefined, [HOST_SLOT_HELD_ENV]: undefined },
         measure: () => {
           if (clock === 0) return idle({ gates: 2 })
           if (clock === 25) return idle({ gates: 1, freeMem: 64 * 1024 * 1024 })
@@ -188,7 +220,7 @@ describe('gate load hold', () => {
     })
     try {
       const result = await withGateSlot(async () => 'ok', {
-        env: { ...process.env, CI: undefined },
+        env: { ...process.env, CI: undefined, [HOST_SLOT_HELD_ENV]: undefined },
         measure: () =>
           clock < 50 ? idle({ gates: 1, freeMem: 64 * 1024 * 1024 }) : idle({ gates: 1 }),
         sleep: async (ms) => {
