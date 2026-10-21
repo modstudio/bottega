@@ -218,9 +218,10 @@ function catalogueFloorsFor(
     commandEvidence?: CommandEvidence
   },
   outcome?: string,
+  kinds: readonly string[] = step.floor,
 ): Floor[] {
   const floors = catalogueFloors(
-    step.floor,
+    kinds,
     step.deferrable,
     step.expectedStatus,
     step.requirePullRequest,
@@ -246,14 +247,7 @@ export function decideCloseFloors(
   forceRuling = false,
 ): Floor[] {
   if (forceRuling || (outcome !== undefined && step.rulingOutcomes?.includes(outcome)))
-    return catalogueFloors(
-      ['ruling'],
-      step.deferrable,
-      step.expectedStatus,
-      step.requirePullRequest,
-      step.operatorRuling,
-      step.commandEvidence,
-    )
+    return catalogueFloorsFor(step, outcome, ['ruling'])
   return catalogueFloorsFor(step, outcome)
 }
 
