@@ -19,7 +19,11 @@ import {
   releaseRecipeAllocationClaims,
   settleClaims,
 } from '../resources/resource-claims.ts'
-import { appendProvisioningPhases } from '../worktree/provisioning-measurement.ts'
+import {
+  appendProvisioningPhases,
+  cloneProvisionRecorder,
+  measureProvisioningPhase,
+} from '../worktree/provisioning-measurement.ts'
 import { type ProvisionSkip, provisionWorktree } from '../worktree/worktree-provision.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { type ComposeSpawn, createCompose, downCompose } from './compose-provision.ts'
@@ -74,20 +78,6 @@ export type TrackedAllocator = {
 }
 type StepRunner = (step: Step, context: StepContext) => StepResult
 
-function measureProvisioningPhase<T>(
-  runId: string,
-  phase: string,
-  name: string,
-  operation: () => T,
-): T {
-  const started = performance.now()
-  try {
-    return operation()
-  } finally {
-    appendProvisioningPhases(runId, [{ phase, name, durationMs: performance.now() - started }])
-  }
-}
-
 function provisionTrackedDependencies(
   input: TrackedCreateInput,
   path: string,
@@ -99,6 +89,8 @@ function provisionTrackedDependencies(
       path,
       snapshot.recipe.provision ?? [],
       `tracked recipe "${snapshot.source.path}"`,
+      undefined,
+      cloneProvisionRecorder(input.runId),
     ),
   )
 }

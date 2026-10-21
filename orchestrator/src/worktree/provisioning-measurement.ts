@@ -5,7 +5,7 @@ import { dirname, join, relative } from 'node:path'
 import { db } from '../database/db.ts'
 import type { HostLoadSample } from '../host-load-sample.ts'
 import { STORAGE_WALK_ENTRY_LIMIT } from '../storage-walk.ts'
-import type { ProvisionEntry } from './worktree-provision.ts'
+import type { CloneProvisionMeasurement, ProvisionEntry } from './worktree-provision.ts'
 
 const PROVISIONING_ENTRY_LIMIT = STORAGE_WALK_ENTRY_LIMIT
 export type ProvisioningPhase = { phase: string; name: string; durationMs: number }
@@ -87,6 +87,33 @@ export function appendProvisioningPhases(
   db()
     .query('UPDATE run SET provisioning_phases=? WHERE record_id=?')
     .run(JSON.stringify([...prior, ...phases]), runId)
+}
+
+/** Record which copy-on-write mechanism handled each declared clone entry. */
+export function cloneProvisionRecorder(runId: string) {
+  return (measurement: CloneProvisionMeasurement): void =>
+    appendProvisioningPhases(runId, [
+      {
+        phase: 'dependency',
+        name: `${measurement.path} (${measurement.mechanism})`,
+        durationMs: measurement.durationMs,
+      },
+    ])
+}
+
+/** Measure and persist one named provisioning operation even when it fails. */
+export function measureProvisioningPhase<T>(
+  runId: string,
+  phase: string,
+  name: string,
+  operation: () => T,
+): T {
+  const started = performance.now()
+  try {
+    return operation()
+  } finally {
+    appendProvisioningPhases(runId, [{ phase, name, durationMs: performance.now() - started }])
+  }
 }
 
 export function finishProvisioningMeasurement(input: {
