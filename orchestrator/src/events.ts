@@ -4,7 +4,6 @@ import { dirname, join } from 'node:path'
 import { resolveRunsDirectory } from './database/database-location.ts'
 import { db, nowIso, writableDb } from './database/db.ts'
 import { targetGitEnvironment } from './git/git-environment.ts'
-import type { ArtifactPathEvent } from './run/run-artifact-retention.ts'
 
 /** The live-stream subset the JSONL log records. Wider transport events are ignored. */
 export type StreamEvent =
@@ -26,18 +25,24 @@ const DEFAULT_IDLE_WARN_MS = 5 * 60_000
 const DEFAULT_PEEK_EVENTS = 5
 const PEEK_TEXT_CHARS = 120
 
+type FocusedTestRunLogEvent = {
+  ts: string
+  type: 'focused_test'
+  paths: string[]
+  exitCode: number
+  timedOut: boolean
+  elapsedMs: number
+  logName: string
+  logPath: string
+}
+
+type GateLogRunLogEvent = { ts: string; type: 'gate_log'; logPath: string }
+
+/** Run events whose structured fields name files retained at terminalisation. */
+export type ArtifactPathEvent = FocusedTestRunLogEvent | GateLogRunLogEvent
+
 export type RunLogEvent =
-  | ({
-      ts: string
-      type: 'focused_test'
-      paths: string[]
-      exitCode: number
-      timedOut: boolean
-      elapsedMs: number
-      logName: string
-      logPath: string
-    } & ArtifactPathEvent)
-  | ({ ts: string; type: 'gate_log'; logPath: string } & ArtifactPathEvent)
+  | ArtifactPathEvent
   | { ts: string; type: 'text'; text: string }
   | { ts: string; type: 'warning'; text: string }
   | {

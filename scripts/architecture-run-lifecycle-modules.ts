@@ -52,7 +52,10 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-resume-kind.ts',
   ]),
   module('orchestrator/src/run/run-artifact-limits.ts', []),
-  module('orchestrator/src/run/run-artifact-retention.ts', ['./run-artifact-limits.ts']),
+  module('orchestrator/src/run/run-artifact-retention.ts', [
+    '../events.ts',
+    './run-artifact-limits.ts',
+  ]),
   module('orchestrator/src/run/run-chain.ts', ['bun:sqlite']),
   module('orchestrator/src/run/run-wall-deadline.ts', []),
   module('orchestrator/src/run/run-startup-failure.ts', [

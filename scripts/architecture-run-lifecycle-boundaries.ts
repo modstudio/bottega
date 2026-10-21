@@ -73,6 +73,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       '../database/database-location.ts',
       '../database/db.ts',
       '../database/migrations.ts',
+      '../events.ts',
       '../resources/resource-ownership.ts',
       './run-artifact-retention.ts',
       './run-artifact-limits.ts',

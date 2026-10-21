@@ -117,7 +117,13 @@ test('named artifact paths use only structured path fields and deduplicate', () 
       },
       [
         {
+          ts: '2026-10-21T12:00:00.000Z',
           type: 'focused_test',
+          paths: ['test.ts'],
+          exitCode: 0,
+          timedOut: false,
+          elapsedMs: 1,
+          logName: 'focused-test-request.log',
           logPath: `${scratch}/focused-test-request.log`,
         },
       ],
@@ -133,6 +139,7 @@ test('gate logs use only their structured event path', () => {
   expect(
     namedRunArtifactPaths(null, [
       {
+        ts: '2026-10-21T12:00:00.000Z',
         type: 'gate_log',
         logPath: '/runs/42/scratch/gate-7.log',
       },

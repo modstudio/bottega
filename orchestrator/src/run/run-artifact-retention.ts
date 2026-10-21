@@ -1,6 +1,7 @@
 // concern: run-artifact-retention
 /** Pure policy for selecting the bounded files a finished run retains. */
 
+import type { ArtifactPathEvent } from '../events.ts'
 import {
   OUTSIDE_DEPTH_AGGREGATE_FILE_LIMIT,
   RUN_ARTIFACT_BUILD_OUTPUT_DIRECTORIES,
@@ -26,12 +27,6 @@ export type ArtifactReaderReply = {
 export type ArtifactPathSource = {
   path: string
   field: string
-}
-
-/** The structured event fields that can name a retained run artifact. */
-export type ArtifactPathEvent = {
-  type: 'focused_test' | 'gate_log'
-  logPath: string
 }
 
 type RunArtifactDropReason =

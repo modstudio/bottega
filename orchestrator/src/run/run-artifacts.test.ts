@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { appendRunEvent, runEventsPath } from '../events.ts'
+import { appendRunEvent, readEventLog, runEventsPath } from '../events.ts'
 import {
   KEEP_RUN_FILES_DAYS,
   namedRunArtifactPaths,
@@ -274,6 +274,21 @@ test('an unreadable terminal event log yields no named event paths and persisten
   expect(named).toEqual([])
   expect(() => persistRunArtifacts(id, named, null, null)).not.toThrow()
 })
+test('an unparseable terminal event log records a warning and yields no named event paths', () => {
+  const id = addRun({ agent: 'codex', job: 'implement' })
+  mkdirSync(dirname(runEventsPath(id)), { recursive: true })
+  writeFileSync(runEventsPath(id), '{not json}\n')
+
+  const named = terminalRunArtifactPaths(id, null)
+
+  expect(named).toEqual([])
+  expect(readEventLog(runEventsPath(id))).toContainEqual(
+    expect.objectContaining({
+      type: 'warning',
+      text: expect.stringContaining('named artifact logs may not have been retained'),
+    }),
+  )
+})
 test('artifacts written before scratch persistence survive the run 12430 files_written shape', () => {
   const id = addRun({ agent: 'codex', job: 'understand' })
   const tree = mkdtempSync(join(tmpdir(), 'orch-artifact-evidence-tree-'))
@@ -439,7 +454,7 @@ test('an artifact copy failure records a harness failure and preserves the tree'
   try {
     expect(() =>
       persistRunArtifacts(id, artifactPaths('missing-evidence.txt'), { path: tree }, null),
-    ).toThrow(`could not copy named file ${join(tree, 'missing-evidence.txt')} from test.path`)
+    ).toThrow('could not copy named file missing-evidence.txt from test.path')
     expect(existsSync(tree)).toBe(true)
     expect(existsSync(runArtifactsDir(id))).toBe(false)
   } finally {

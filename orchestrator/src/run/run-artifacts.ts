@@ -29,11 +29,11 @@ import {
 import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { CONNECTION_SCHEMA_INVARIANT } from '../database/migrations.ts'
+import { type ArtifactPathEvent, recordRunWarning, runEventsPath } from '../events.ts'
 import type { FilesystemIdentityPlan, FilesystemIdentityRun } from '../filesystem-identity-plan.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { KEEP_RUN_FILES_DAYS } from './run-artifact-limits.ts'
 import {
-  type ArtifactPathEvent,
   type ArtifactPathSource,
   type ArtifactReaderReply,
   decideRunArtifactRetention,
@@ -70,19 +70,13 @@ function artifactPathEvent(event: unknown): event is ArtifactPathEvent {
 
 function terminalArtifactEvents(id: string): ArtifactPathEvent[] {
   try {
-    const path = join(resolveRunsDirectory(process.env), id, 'events.jsonl')
-    return readFileSync(path, 'utf8')
+    const events = readFileSync(runEventsPath(id), 'utf8')
       .split('\n')
-      .flatMap((line) => {
-        if (!line.trim()) return []
-        try {
-          const event: unknown = JSON.parse(line)
-          return artifactPathEvent(event) ? [event] : []
-        } catch {
-          return []
-        }
-      })
+      .filter((line) => line.trim())
+      .map((line): unknown => JSON.parse(line))
+    return events.filter(artifactPathEvent)
   } catch {
+    recordRunWarning(id, 'named artifact logs may not have been retained: event log unavailable')
     return []
   }
 }
@@ -479,7 +473,7 @@ function collectNamedCandidate(
     }
     return null
   } catch (error) {
-    return `could not copy named file ${artifact.source} from ${named.field} to ${artifact.destination}: ${error instanceof Error ? error.message : String(error)}`
+    return `could not copy named file ${named.path} from ${named.field} to ${artifact.destination}: ${error instanceof Error ? error.message : String(error)}`
   }
 }
 
