@@ -1,10 +1,13 @@
 export type ArchitectureViolationEdge = { rule: string; from: string; to: string }
+type ArchitectureViolationBaseline = ArchitectureViolationEdge & { reason: string }
 
-const architectureViolationBaseline: readonly ArchitectureViolationEdge[] = [
+const architectureViolationBaseline: readonly ArchitectureViolationBaseline[] = [
   {
     rule: 'no-new-orchestrator-cycles',
     from: 'orchestrator/src/transport/transport-acp-usage.ts',
     to: 'orchestrator/src/transport/transport-acp.ts',
+    reason:
+      'The ACP transport calls its usage accumulator, which imports the transport-owned usage types.',
   },
 ]
 

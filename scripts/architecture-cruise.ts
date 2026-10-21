@@ -32,17 +32,21 @@ export const ARCHITECTURE_CRUISE_ENTRIES = [
 
 export function architectureCruiseCoverageViolations({
   moduleSources,
-  manifestCount,
+  manifestSources,
   roots,
 }: {
   moduleSources: readonly string[]
-  manifestCount: number
+  manifestSources: readonly string[]
   roots: readonly string[]
 }): string[] {
   const violations: string[] = []
-  if (moduleSources.length < manifestCount) {
+  const cruised = new Set(moduleSources)
+  const missingManifestSources = manifestSources.filter((source) => !cruised.has(source))
+  if (missingManifestSources.length) {
+    const examples = missingManifestSources.slice(0, 5).join(', ')
+    const remainder = missingManifestSources.length > 5 ? ', ...' : ''
     violations.push(
-      `dependency-cruiser cruised ${moduleSources.length} modules, fewer than ${manifestCount} manifest modules`,
+      `dependency-cruiser missed ${missingManifestSources.length} manifest ${missingManifestSources.length === 1 ? 'module' : 'modules'}: ${examples}${remainder}`,
     )
   }
   for (const root of roots) {

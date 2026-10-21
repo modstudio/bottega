@@ -109,7 +109,7 @@ const cruise = await runArchitectureCruise({
 const result = architectureResult(cruise.stdout)
 const coverageViolations = architectureCruiseCoverageViolations({
   moduleSources: result.modules.map(({ source }) => source),
-  manifestCount: modules.length,
+  manifestSources: modules.map(({ file }) => file),
   roots: ARCHITECTURE_CRUISE_ROOTS,
 })
 if (coverageViolations.length) {
