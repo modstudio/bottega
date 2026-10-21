@@ -1,9 +1,10 @@
-// concern: hosted run usage validation
+// concern: record-run-usage
 /** Validates usage provenance before a run crosses into the hosted record. */
 
 import { RUN_RESOURCE_SOURCES, type RunResourceSource } from '../process-resource-sampler.ts'
 import { VENDOR_COST_SOURCES, type VendorCostSource } from '../transport/vendor-usage.ts'
 import { OutboxRowError } from './outbox-failure.ts'
+import { nullableBigint, nullableNumber } from './record-value-conversions.ts'
 
 const VENDOR_COST_SOURCE_SET = new Set<string>(VENDOR_COST_SOURCES)
 const RUN_RESOURCE_SOURCE_SET = new Set<string>(RUN_RESOURCE_SOURCES)
@@ -31,9 +32,6 @@ function nullableRunResourceSource(value: unknown): RunResourceSource | null {
   }
   return source as RunResourceSource
 }
-
-const nullableBigint = (value: unknown) => (value == null ? null : BigInt(String(value)))
-const nullableNumber = (value: unknown) => (value == null ? null : Number(value))
 
 function nullableInteger(value: unknown): number | null {
   if (value == null) return null

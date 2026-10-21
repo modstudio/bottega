@@ -53,6 +53,7 @@ import {
 import { ownedEvidenceLookup } from './record-sync-evidence-lookup.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
 import { type ProjectResolutionCache, projectRecordId } from './record-sync-project-identity.ts'
+import { nullableBigint, nullableNumber } from './record-value-conversions.ts'
 import { pushScore } from './score-sync.ts'
 
 function payload(source: string, kind: keyof typeof recordKinds): Payload {
@@ -75,8 +76,6 @@ function payload(source: string, kind: keyof typeof recordKinds): Payload {
 const date = (value: unknown) => new Date(String(value))
 const nullableDate = (value: unknown) => (value == null ? null : date(value))
 const bigint = (value: unknown) => BigInt(String(value))
-const nullableBigint = (value: unknown) => (value == null ? null : bigint(value))
-const nullableNumber = (value: unknown) => (value == null ? null : Number(value))
 const nullableString = (value: unknown) => (value == null ? null : String(value))
 const jsonString = (value: unknown) => (value == null ? null : JSON.stringify(value))
 function runValues(row: Payload, projectId: string | null) {
