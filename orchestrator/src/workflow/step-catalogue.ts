@@ -273,6 +273,24 @@ function validateExpectedStatus(item: Record<string, unknown>, errors: string[])
     )
 }
 
+function validateExpectedExitCodes(item: Record<string, unknown>, errors: string[]): void {
+  if (item.expectedExitCodes === undefined) return
+  const slug = String(item.slug ?? '')
+  if (!object(item.expectedExitCodes) || Object.keys(item.expectedExitCodes).length === 0) {
+    errors.push(`step "${slug}" expectedExitCodes must be a non-empty object`)
+    return
+  }
+  if (!Array.isArray(item.floor) || !item.floor.includes('command-exit'))
+    errors.push(`step "${slug}" expectedExitCodes requires a command-exit floor`)
+  const outcomes = new Set(Array.isArray(item.outcomes) ? item.outcomes : [])
+  for (const [outcome, exitCode] of Object.entries(item.expectedExitCodes)) {
+    if (!outcomes.has(outcome))
+      errors.push(`step "${slug}" expectedExitCodes key "${outcome}" is not a step outcome`)
+    if (!Number.isInteger(exitCode) || (exitCode as number) < 0)
+      errors.push(`step "${slug}" expectedExitCodes.${outcome} must be a non-negative integer`)
+  }
+}
+
 function validateFloor(item: Record<string, unknown>, errors: string[]): void {
   const slug = String(item.slug ?? '')
   if (!Array.isArray(item.floor) || item.floor.length === 0) {
@@ -314,6 +332,7 @@ function validateFloor(item: Record<string, unknown>, errors: string[]): void {
   )
     errors.push(`step "${slug}" operatorRuling requires a ruling floor`)
   validateCommandEvidence(item, floor, errors)
+  validateExpectedExitCodes(item, errors)
   validateExpectedStatus(item, errors)
 }
 

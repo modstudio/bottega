@@ -16,6 +16,7 @@ export type CatalogueStep = {
   rulingOutcomes?: string[]
   reenter?: { to: string; outcome: string }
   deferrable?: FloorKind[]
+  expectedExitCodes?: Record<string, number>
   expectedStatus?: string | string[]
   requirePullRequest?: boolean
   operatorRuling?: boolean

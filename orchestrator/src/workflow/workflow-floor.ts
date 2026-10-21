@@ -207,15 +207,19 @@ export function catalogueFloors(
   })
 }
 
-function catalogueFloorsFor(step: {
-  floor: readonly string[]
-  deferrable?: readonly string[]
-  expectedStatus?: string | readonly string[]
-  requirePullRequest?: boolean
-  operatorRuling?: boolean
-  commandEvidence?: CommandEvidence
-}): Floor[] {
-  return catalogueFloors(
+function catalogueFloorsFor(
+  step: {
+    floor: readonly string[]
+    deferrable?: readonly string[]
+    expectedExitCodes?: Readonly<Record<string, number>>
+    expectedStatus?: string | readonly string[]
+    requirePullRequest?: boolean
+    operatorRuling?: boolean
+    commandEvidence?: CommandEvidence
+  },
+  outcome?: string,
+): Floor[] {
+  const floors = catalogueFloors(
     step.floor,
     step.deferrable,
     step.expectedStatus,
@@ -223,6 +227,12 @@ function catalogueFloorsFor(step: {
     step.operatorRuling,
     step.commandEvidence,
   )
+  const expectedExitCode = outcome === undefined ? undefined : step.expectedExitCodes?.[outcome]
+  return expectedExitCode === undefined
+    ? floors
+    : floors.map((floor) =>
+        floor.kind === 'command-exit' ? { ...floor, expectedExitCode } : floor,
+      )
 }
 
 type CloseFloorStep = Parameters<typeof catalogueFloorsFor>[0] & {
@@ -244,7 +254,7 @@ export function decideCloseFloors(
       step.operatorRuling,
       step.commandEvidence,
     )
-  return catalogueFloorsFor(step)
+  return catalogueFloorsFor(step, outcome)
 }
 
 /** Whether the effective floor for this close accepts a ruling made by the agent. */
