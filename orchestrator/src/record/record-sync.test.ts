@@ -125,6 +125,8 @@ function localScoreOutbox(): Database {
        VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','ok')`,
     )
     .run(RECORD_ID)
+  enqueueRunRecord(local, RECORD_ID, MACHINE_ID, STAMP)
+  local.query("UPDATE outbox SET synced_at=? WHERE kind='run'").run(STAMP)
   local
     .query(
       `INSERT INTO score
@@ -377,10 +379,15 @@ test('a re-score while the old payload is in flight remains pending and is deliv
     blocked: [],
   })
   expect(
-    local.query<{ synced_at: string | null }, []>('SELECT synced_at FROM outbox').get()!.synced_at,
+    local
+      .query<{ synced_at: string | null }, []>("SELECT synced_at FROM outbox WHERE kind='score'")
+      .get()!.synced_at,
   ).toBeNull()
   expect(
-    JSON.parse(local.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!.payload),
+    JSON.parse(
+      local.query<{ payload: string }, []>("SELECT payload FROM outbox WHERE kind='score'").get()!
+        .payload,
+    ),
   ).toMatchObject({ note: 'new', scoredAt: newerStamp })
 
   expect(await syncRecord(options(local, remote))).toEqual({
@@ -427,10 +434,12 @@ test.each([
   },
 ])('score sync refuses $name', async ({ job, mutate, message }) => {
   const local = localScoreOutbox()
-  const row = local.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!
+  const row = local
+    .query<{ payload: string }, []>("SELECT payload FROM outbox WHERE kind='score'")
+    .get()!
   const payload = JSON.parse(row.payload) as Record<string, unknown>
   mutate(payload)
-  local.query('UPDATE outbox SET payload=?').run(JSON.stringify(payload))
+  local.query("UPDATE outbox SET payload=? WHERE kind='score'").run(JSON.stringify(payload))
   const remote = fakePostgres(false, RECORD_ACTOR_ROLE, job)
 
   expect(await syncRecord(options(local, remote))).toMatchObject({
@@ -440,7 +449,9 @@ test.each([
     configured: true,
   })
   expect(
-    local.query<{ last_error: string }, []>('SELECT last_error FROM outbox').get()!.last_error,
+    local
+      .query<{ last_error: string }, []>("SELECT last_error FROM outbox WHERE kind='score'")
+      .get()!.last_error,
   ).toContain(message)
   expect(
     remote.statements.some((sql) => sql.toLowerCase().includes('insert into "run_score"')),
@@ -450,14 +461,16 @@ test.each([
 
 test('an old-shape score payload without projectId or review grades syncs with nulls', async () => {
   const local = localScoreOutbox()
-  const row = local.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!
+  const row = local
+    .query<{ payload: string }, []>("SELECT payload FROM outbox WHERE kind='score'")
+    .get()!
   const payload = JSON.parse(row.payload) as Record<string, unknown>
   delete payload.reproduced
   delete payload.coverage
   delete payload.limits
   delete payload.overlap
   delete payload.projectId
-  local.query('UPDATE outbox SET payload=?').run(JSON.stringify(payload))
+  local.query("UPDATE outbox SET payload=? WHERE kind='score'").run(JSON.stringify(payload))
   const remote = fakePostgres()
 
   expect(await syncRecord(options(local, remote))).toMatchObject({
