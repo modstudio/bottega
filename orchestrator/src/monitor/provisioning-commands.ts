@@ -2,7 +2,8 @@
 
 import { parseBoardDuration } from '../../../shared/board-duration.ts'
 import { db } from '../database/db.ts'
-import { loadProvisioningReport, loadRunResourceReport } from './provisioning-report.ts'
+import { loadProvisioningReport } from './provisioning-report.ts'
+import { loadRunResourceReport } from './run-resource-report.ts'
 
 const mib = (bytes: number | null) => (bytes === null ? 'unknown' : (bytes / 1_048_576).toFixed(1))
 
@@ -29,6 +30,13 @@ export async function provisioningCommand(
       ? resources.byJob.map(
           (row) =>
             `${row.job}: ${row.runs} run(s), CPU seconds median/p90 ${row.cpuSeconds.median}/${row.cpuSeconds.p90}, peak RSS MiB median/p90 ${mib(row.peakRssBytes.median)}/${mib(row.peakRssBytes.p90)}`,
+        )
+      : ['no run resource samples']),
+    'run resources by agent:',
+    ...(resources.byAgent.length
+      ? resources.byAgent.map(
+          (row) =>
+            `${row.agent}: ${row.runs} run(s), CPU seconds median/p90 ${row.cpuSeconds.median}/${row.cpuSeconds.p90}, peak RSS MiB median/p90 ${mib(row.peakRssBytes.median)}/${mib(row.peakRssBytes.p90)}`,
         )
       : ['no run resource samples']),
     'run resources by project:',

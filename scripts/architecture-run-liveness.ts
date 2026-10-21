@@ -7,6 +7,7 @@ const liveRunMemberSpec = {
     '../database/db.ts',
     '../events.ts',
     '../idle-kill.ts',
+    '../process-resource-sampler.ts',
     '../jobs/jobs.ts',
     '../stalled-run.ts',
   ],

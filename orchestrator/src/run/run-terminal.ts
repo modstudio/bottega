@@ -27,7 +27,7 @@ import { isReaderJob, type Job } from '../jobs/jobs.ts'
 import type { McpConnection, McpMode } from '../mcp/mcp-preflight.ts'
 import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
 import { finalizeWorkerReply, type OutcomeStatus } from '../outcome.ts'
-import type { RunResourceUsage } from '../process-resource-sampler.ts'
+import type { RunResourceObserver, RunResourceUsage } from '../process-resource-sampler.ts'
 import { projectByName, projects } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
@@ -168,7 +168,7 @@ function reviewHidesGap(
 export type TerminalInput = {
   timer: ReturnType<typeof setTimeout> | null
   checkpointTimer: ReturnType<typeof setInterval> | null
-  resourceObserver: { usage(): RunResourceUsage; stop(): RunResourceUsage } | null
+  resourceObserver: RunResourceObserver | null
   proc: { pid?: number | null; kill(sig?: number | string): void } | null
   askLoopback: AskLoopback | null
   claim: { id: string; number: number }

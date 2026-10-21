@@ -1,9 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import {
-  type ProvisioningObservation,
-  provisioningReport,
-  runResourceReport,
-} from './provisioning-report.ts'
+import { type ProvisioningObservation, provisioningReport } from './provisioning-report.ts'
 
 const sample = (durationMs: number, entries = durationMs): ProvisioningObservation => ({
   project: 'app',
@@ -25,34 +21,6 @@ const sample = (durationMs: number, entries = durationMs): ProvisioningObservati
     oldestWaitMs: 0,
     liveRuns: 1,
   },
-})
-
-test('run resources report median and p90 by job and project', () => {
-  const report = runResourceReport([
-    { project: 'app', job: 'fix', cpuMs: 1_000, peakRssBytes: 100 },
-    { project: 'app', job: 'fix', cpuMs: 2_000, peakRssBytes: 200 },
-    { project: 'other', job: 'review', cpuMs: 3_000, peakRssBytes: 300 },
-  ])
-  expect(report.byJob).toEqual([
-    {
-      job: 'fix',
-      runs: 2,
-      cpuSeconds: { median: 1, p90: 2 },
-      peakRssBytes: { median: 100, p90: 200 },
-    },
-    {
-      job: 'review',
-      runs: 1,
-      cpuSeconds: { median: 3, p90: 3 },
-      peakRssBytes: { median: 300, p90: 300 },
-    },
-  ])
-  expect(report.byProject[0]).toEqual({
-    project: 'app',
-    runs: 2,
-    cpuSeconds: { median: 1, p90: 2 },
-    peakRssBytes: { median: 100, p90: 200 },
-  })
 })
 
 describe('provisioning report policy', () => {

@@ -11,8 +11,6 @@ import { pidAlive } from '../../shared/process-identity.ts'
 import { idleMsSince } from './events.ts'
 import { type ProcessSample, processTreePids, sampleProcesses } from './process-resource-sampler.ts'
 
-export { type ProcessSample, sampleProcesses } from './process-resource-sampler.ts'
-
 /**
  * Default 15 minutes. Measured 2026-09-08 against the live store's completed
  * runs that have event logs (90 runs, ids 2874–2997, 17_815 inter-event gaps):
@@ -44,6 +42,10 @@ export function idleKillMs(env: NodeJS.ProcessEnv = process.env): number {
   if (raw === undefined || raw === '') return DEFAULT_IDLE_KILL_MS
   const n = Number(raw)
   return Number.isFinite(n) && n >= 0 ? n : DEFAULT_IDLE_KILL_MS
+}
+
+export function idlePollMs(thresholdMs = idleKillMs()): number {
+  return Math.max(50, Math.min(1_000, Math.floor(thresholdMs / 5)))
 }
 
 /**
@@ -182,7 +184,7 @@ function pidsSharingPgid(pgid: number | null | undefined, samples: ProcessSample
 /**
  * Re-sample, do not trust the T0 census. A grandchild born after the first
  * sample, then reparented when the wrapper died, is invisible to
- * descendantPids(root) and to a tracked set frozen at T0. Union current
+ * processTreePids(root) and to a tracked set frozen at T0. Union current
  * descendants of every known pid with anyone still in the vendor pgid.
  */
 function rememberTree(
@@ -275,7 +277,7 @@ export async function terminateProcessGroup(
     return { exited: true, unkillable: false, reason: null, pgid, pids: [...tracked] }
   }
   // Re-sample before SIGKILL. The T0 census cannot see a grandchild born
-  // after the first sample, and descendantPids(root) cannot see one that
+  // after the first sample, and processTreePids(root) cannot see one that
   // reparented once the wrapper died.
   const beforeKill = deps.sample()
   rememberTree(pid, tracked, beforeKill, pgid)

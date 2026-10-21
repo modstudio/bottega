@@ -55,7 +55,7 @@ import {
   storedMcpProbe,
 } from '../mcp/mcp-probe.ts'
 import type { OutcomeStatus } from '../outcome.ts'
-import type { RunResourceUsage } from '../process-resource-sampler.ts'
+import type { RunResourceObserver } from '../process-resource-sampler.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
 import { startedByUserIdForRun } from '../record/record-attribution.ts'
 import { recordSandboxDirectoryClaim } from '../resources/resource-claims.ts'
@@ -912,7 +912,7 @@ export async function run(opts: {
   let proc: { pid?: number | null; kill(sig?: number | string): void } | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
   let checkpointTimer: ReturnType<typeof setInterval> | null = null
-  let resourceObserver: { usage(): RunResourceUsage; stop(): RunResourceUsage } | null = null
+  let resourceObserver: RunResourceObserver | null = null
   let idleUnkillable = false
   let idleTreePids: number[] = []
   let idleTreePgid: number | null = null

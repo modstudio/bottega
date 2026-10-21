@@ -9,16 +9,22 @@ export type ProcessSample = {
   state: string
   rssBytes?: number
   cpuMs?: number
+  startTime?: string
 }
 
 export type RunResourceUsage = {
-  cpuMs: number
-  peakRssBytes: number
+  cpuMs: number | null
+  peakRssBytes: number | null
   samples: number
-  source: 'sampled'
+  source: 'sampled' | 'none' | 'unavailable'
 }
 
-const RESOURCE_SAMPLE_INTERVAL_MS = 1_000
+export type RunResourceObserver = {
+  usage(): RunResourceUsage
+  stop(): RunResourceUsage
+}
+
+type ProcessSnapshot = { rows: ProcessSample[]; available: boolean }
 
 function parseCpuTime(value: string): number | null {
   const dayParts = value.split('-')
@@ -50,25 +56,32 @@ export function parseProcessSnapshot(text: string): ProcessSample[] {
     if (!Number.isInteger(ppid) || ppid < 0) continue
     if (!Number.isInteger(pgid) || pgid <= 0) continue
     if (!Number.isFinite(cpu) || !Number.isFinite(rssKb) || rssKb < 0 || cpuMs === null) continue
-    samples.push({ pid, ppid, pgid, cpu, state, rssBytes: rssKb * 1_024, cpuMs })
+    const startTime = parts.length > 7 ? parts.slice(7).join(' ') : undefined
+    samples.push({ pid, ppid, pgid, cpu, state, rssBytes: rssKb * 1_024, cpuMs, startTime })
   }
   return samples
 }
 
-export function sampleProcesses(): ProcessSample[] {
+function readProcessSnapshot(): ProcessSnapshot {
   try {
-    const p = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,pgid=,%cpu=,state=,rss=,time='], {
+    const p = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,pgid=,%cpu=,state=,rss=,time=,lstart='], {
+      env: { PATH: process.env.PATH ?? '', LC_ALL: 'C', LANG: 'C' },
       stdout: 'pipe',
       stderr: 'pipe',
     })
-    if (p.exitCode !== 0) return []
-    return parseProcessSnapshot(p.stdout.toString())
+    if (p.exitCode !== 0) return { rows: [], available: false }
+    return { rows: parseProcessSnapshot(p.stdout.toString()), available: true }
   } catch {
-    return []
+    return { rows: [], available: false }
   }
 }
 
+export function sampleProcesses(): ProcessSample[] {
+  return readProcessSnapshot().rows
+}
+
 export function processTreePids(root: number, samples: ProcessSample[]): number[] {
+  if (!samples.some((row) => row.pid === root)) return []
   const children = new Map<number, number[]>()
   for (const row of samples) {
     const list = children.get(row.ppid) ?? []
@@ -91,16 +104,18 @@ export function processTreePids(root: number, samples: ProcessSample[]): number[
 export function accumulateRunResourceUsage(
   previous: RunResourceUsage,
   root: number,
+  rootStartTime: string,
   snapshot: ProcessSample[],
 ): RunResourceUsage {
+  const rootRow = snapshot.find((row) => row.pid === root && row.startTime === rootStartTime)
+  if (!rootRow) return previous
   const pids = new Set(processTreePids(root, snapshot))
   const rows = snapshot.filter((row) => pids.has(row.pid))
-  if (!rows.length) return previous
   const rssBytes = rows.reduce((total, row) => total + (row.rssBytes ?? 0), 0)
   const cpuMs = rows.reduce((total, row) => total + (row.cpuMs ?? 0), 0)
   return {
-    cpuMs: Math.max(previous.cpuMs, cpuMs),
-    peakRssBytes: Math.max(previous.peakRssBytes, rssBytes),
+    cpuMs: Math.max(previous.cpuMs ?? 0, cpuMs),
+    peakRssBytes: Math.max(previous.peakRssBytes ?? 0, rssBytes),
     samples: previous.samples + 1,
     source: 'sampled',
   }
@@ -108,43 +123,105 @@ export function accumulateRunResourceUsage(
 
 type Subscriber = {
   root: number
+  rootStartTime: string | null
   usage: RunResourceUsage
+  availableAttempts: number
+  active: boolean
+  observeIntervalMs: number
+  nextObserveAt: number
   observe(snapshot: ProcessSample[]): void
 }
 
 const subscribers = new Set<Subscriber>()
 let samplerTimer: ReturnType<typeof setInterval> | null = null
+let samplerIntervalMs: number | null = null
 
-function sampleAll(): void {
-  const snapshot = sampleProcesses()
-  for (const subscriber of subscribers) {
-    subscriber.usage = accumulateRunResourceUsage(subscriber.usage, subscriber.root, snapshot)
-    subscriber.observe(snapshot)
+function observeSubscriber(
+  subscriber: Subscriber,
+  snapshot: ProcessSnapshot,
+  now: number,
+  notify: boolean,
+): void {
+  if (snapshot.available) subscriber.availableAttempts++
+  if (snapshot.available && subscriber.active) {
+    const root = snapshot.rows.find((row) => row.pid === subscriber.root)
+    if (!root || !subscriber.rootStartTime || root.startTime !== subscriber.rootStartTime) {
+      subscriber.active = false
+    } else {
+      subscriber.usage = accumulateRunResourceUsage(
+        subscriber.usage,
+        subscriber.root,
+        subscriber.rootStartTime,
+        snapshot.rows,
+      )
+    }
+  }
+  if (!notify || now < subscriber.nextObserveAt) return
+  subscriber.nextObserveAt = now + subscriber.observeIntervalMs
+  try {
+    subscriber.observe(snapshot.rows)
+  } catch (error) {
+    console.error(`orch: process resource subscriber failed: ${error}`)
+  }
+}
+
+function takeSample(subscriber?: Subscriber, notify = true): void {
+  const snapshot = readProcessSnapshot()
+  const now = Date.now()
+  const targets = subscriber ? [subscriber] : [...subscribers]
+  for (const target of targets) observeSubscriber(target, snapshot, now, notify)
+}
+
+function updateTimer(): void {
+  const interval = subscribers.size
+    ? Math.min(...[...subscribers].map((subscriber) => subscriber.observeIntervalMs))
+    : null
+  if (interval === samplerIntervalMs) return
+  if (samplerTimer !== null) clearInterval(samplerTimer)
+  samplerTimer = interval === null ? null : setInterval(takeSample, interval)
+  samplerIntervalMs = interval
+}
+
+export function finalRunResourceUsage(
+  usage: RunResourceUsage,
+  availableAttempts: number,
+): RunResourceUsage {
+  if (usage.samples > 0) return { ...usage }
+  return {
+    cpuMs: null,
+    peakRssBytes: null,
+    samples: 0,
+    source: availableAttempts > 0 ? 'none' : 'unavailable',
   }
 }
 
 export function observeRunProcessTree(
   root: number | null | undefined,
+  rootStartTime: string | null,
+  observeIntervalMs: number,
   observe: (snapshot: ProcessSample[]) => void,
-): { usage(): RunResourceUsage; stop(): RunResourceUsage } | null {
+): RunResourceObserver | null {
   if (root == null || root <= 1) return null
   const subscriber: Subscriber = {
     root,
-    usage: { cpuMs: 0, peakRssBytes: 0, samples: 0, source: 'sampled' },
+    rootStartTime,
+    usage: { cpuMs: null, peakRssBytes: null, samples: 0, source: 'none' },
+    availableAttempts: 0,
+    active: true,
+    observeIntervalMs,
+    nextObserveAt: 0,
     observe,
   }
   subscribers.add(subscriber)
-  if (samplerTimer === null) samplerTimer = setInterval(sampleAll, RESOURCE_SAMPLE_INTERVAL_MS)
-  const usage = () => ({ ...subscriber.usage })
+  takeSample(subscriber)
+  updateTimer()
   return {
-    usage,
+    usage: () => finalRunResourceUsage(subscriber.usage, subscriber.availableAttempts),
     stop() {
+      takeSample(subscriber, false)
       subscribers.delete(subscriber)
-      if (!subscribers.size && samplerTimer !== null) {
-        clearInterval(samplerTimer)
-        samplerTimer = null
-      }
-      return usage()
+      updateTimer()
+      return finalRunResourceUsage(subscriber.usage, subscriber.availableAttempts)
     },
   }
 }
