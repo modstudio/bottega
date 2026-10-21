@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
+import * as fs from 'node:fs'
 import {
   existsSync,
   mkdirSync,
@@ -268,11 +269,20 @@ test('terminal artifact loading names focused-test and gate logs from their stru
 test('an unreadable terminal event log yields no named event paths and persistence completes', () => {
   const id = addRun({ agent: 'codex', job: 'implement' })
   mkdirSync(runEventsPath(id), { recursive: true })
+  const append = spyOn(fs, 'appendFileSync')
 
-  const named = terminalRunArtifactPaths(id, null)
+  try {
+    const named = terminalRunArtifactPaths(id, null)
 
-  expect(named).toEqual([])
-  expect(() => persistRunArtifacts(id, named, null, null)).not.toThrow()
+    expect(named).toEqual([])
+    expect(() => persistRunArtifacts(id, named, null, null)).not.toThrow()
+    expect(append).toHaveBeenCalledWith(
+      runEventsPath(id),
+      expect.stringContaining('named artifact logs may not have been retained'),
+    )
+  } finally {
+    append.mockRestore()
+  }
 })
 test('an unparseable terminal event log records a warning and yields no named event paths', () => {
   const id = addRun({ agent: 'codex', job: 'implement' })
