@@ -30,6 +30,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-resume-kind.ts',
   ]),
   module('orchestrator/src/run/run-resume-claim.ts', [
+    '../branch/branch-ref-guard.ts',
     '../git/git-environment.ts',
     '../worktree/worktree-remove.ts',
     '../worktree/worktree-types.ts',

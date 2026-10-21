@@ -16,6 +16,7 @@ import {
   decideBranchDisposal,
   disposalTaskState,
 } from './branch-disposal-decision.ts'
+import { assertBranchRefMayBeCreated, assertBranchRefMayBeDeleted } from './branch-ref-guard.ts'
 import { settleDeletedBranch } from './branch-settlement.ts'
 import { branchesReport } from './branches.ts'
 import { observeTaskStatus } from './task-status-observation.ts'
@@ -274,6 +275,7 @@ export function disposeBranch(
       throw new Error(
         `branch ${plan.branch} moved while disposal was being ruled; inspect it and retry`,
       )
+    assertBranchRefMayBeDeleted(plan.project.path, plan.branch)
     git(
       plan.project.path,
       ['update-ref', '--stdin'],
@@ -290,6 +292,7 @@ export function disposeBranch(
       }, database)
     } catch (cause) {
       try {
+        assertBranchRefMayBeCreated(plan.project.path, plan.branch)
         git(
           plan.project.path,
           ['update-ref', '--stdin'],

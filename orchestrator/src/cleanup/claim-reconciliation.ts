@@ -4,12 +4,9 @@
 import type { Database } from 'bun:sqlite'
 import { lstatSync } from 'node:fs'
 import { pidAlive } from '../../../shared/process-identity.ts'
+import { restoreBranchWithCaseGuard as restoreProtectedBranch } from '../branch/branch-ref-guard.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
-import {
-  type GitRefObservation,
-  observeGitRef,
-  restoreBranch as restoreProtectedBranch,
-} from '../git/git-environment.ts'
+import { type GitRefObservation, observeGitRef } from '../git/git-environment.ts'
 import { withCleanupLock, withWorktreeLease } from '../project/project-lock.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import type { GrokTrustObservation } from '../sandbox/grok-trust.ts'

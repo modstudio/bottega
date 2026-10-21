@@ -3,6 +3,10 @@ import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import {
+  assertBranchRefMayBeDeleted,
+  branchRefMutationDecision,
+} from '../branch/branch-ref-guard.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import {
   borrowedCheckoutOf,
@@ -230,26 +234,21 @@ function removeWithTool(
 
   const vars: Record<string, string> = { name, path: w.path }
   if (w.branch) vars.branch = w.branch
+  const branchRefusal = toolBranchDeletionRefusal(w, keepBranch, branchBefore)
+  if (branchRefusal) return { removed: false, detail: branchRefusal }
   const r = runShellTool(tool.remove, vars, w.repoRoot)
   if (r.ok && !existsSync(w.path)) {
     markRecordedResourceTeardownDone(runId)
     const branchAfter = branchTip(w.repoRoot, w.branch)
-    if (
-      branchAfter !== null &&
-      branchAfter !== branchBefore &&
-      (uniqueBefore !== null || !keepBranch)
-    ) {
-      return {
-        removed: false,
-        detail:
-          branchBefore === null
-            ? `project remove tool created unprotected branch ${w.branch} at ${branchAfter}; it was left in place`
-            : uniqueBefore
-              ? `project remove tool moved unique branch ${w.branch} from ${branchBefore} to ${branchAfter}; it was left in place`
-              : `project remove tool moved unprotected branch ${w.branch} from ${branchBefore} to ${branchAfter}; it was left in place`,
-        ...(r.out ? { output: r.out } : {}),
-      }
-    }
+    const mutationFailure = projectToolBranchMutationFailure({
+      worktree: w,
+      keepBranch,
+      branchBefore,
+      branchAfter,
+      uniqueBefore,
+      output: r.out,
+    })
+    if (mutationFailure) return mutationFailure
     const reconciled = removeTree()
     return {
       ...reconciled,
@@ -297,6 +296,48 @@ function removeWithTool(
       `the protected work with the project's own tooling, then run ${PLATFORM_SLUG} run discard again. ` +
       `--force will not override a project tool's refusal unless the tree carries orch's ` +
       `${ORCH_RUN_MARKER} ownership marker.`,
+  }
+}
+
+function projectToolBranchMutationFailure(input: {
+  worktree: Worktree
+  keepBranch: boolean
+  branchBefore: string | null
+  branchAfter: string | null
+  uniqueBefore: UnmergedBranch | null
+  output: string
+}): WorktreeRemovalResult | null {
+  if (
+    input.branchAfter === null ||
+    input.branchAfter === input.branchBefore ||
+    (input.uniqueBefore === null && input.keepBranch)
+  ) {
+    return null
+  }
+  const detail =
+    input.branchBefore === null
+      ? `project remove tool created unprotected branch ${input.worktree.branch} at ${input.branchAfter}; it was left in place`
+      : input.uniqueBefore
+        ? `project remove tool moved unique branch ${input.worktree.branch} from ${input.branchBefore} to ${input.branchAfter}; it was left in place`
+        : `project remove tool moved unprotected branch ${input.worktree.branch} from ${input.branchBefore} to ${input.branchAfter}; it was left in place`
+  return {
+    removed: false,
+    detail,
+    ...(input.output ? { output: input.output } : {}),
+  }
+}
+
+function toolBranchDeletionRefusal(
+  worktree: Worktree,
+  keepBranch: boolean,
+  branchBefore: string | null,
+): string | null {
+  if (!worktree.branch || keepBranch || branchBefore === null) return null
+  try {
+    assertBranchRefMayBeDeleted(worktree.repoRoot, worktree.branch)
+    return null
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error)
   }
 }
 
@@ -617,14 +658,12 @@ export function removeWorktree(
   // pointer that ought to be clearable — refusing would strand it for ever.
   if (!existsSync(w.path)) {
     gitOk(['worktree', 'remove', '--force', w.path], w.repoRoot)
-    if (deleteBranch) gitOk(['branch', '-D', w.branch], w.repoRoot)
-    const branch = deleteBranch ? branchTip(w.repoRoot, w.branch) : null
-    return branch !== null
-      ? {
-          removed: false,
-          detail: `git could not remove branch ${w.branch}; it remains at ${branch}`,
-        }
-      : { removed: true, detail: `${w.path} was already gone` }
+    return (
+      removeOwnedWorktreeBranch(w, deleteBranch) ?? {
+        removed: true,
+        detail: `${w.path} was already gone`,
+      }
+    )
   }
   const cwdRefusal = removalWorkingDirectoryRefusal(w.path, w.repoRoot)
   if (cwdRefusal) return { removed: false, detail: cwdRefusal }
@@ -635,24 +674,40 @@ export function removeWorktree(
   // worktree produced exactly the orphan the comment warned about, announced
   // as a success.
   const gone = gitOk(['worktree', 'remove', '--force', w.path], w.repoRoot) !== null
-  if (deleteBranch) gitOk(['branch', '-D', w.branch], w.repoRoot)
-  const branch = deleteBranch ? branchTip(w.repoRoot, w.branch) : null
-  return (gone || !existsSync(w.path)) && (!deleteBranch || branch === null)
+  const branchFailure = removeOwnedWorktreeBranch(w, deleteBranch)
+  if (branchFailure) return branchFailure
+  return gone || !existsSync(w.path)
     ? { removed: true, detail: w.path }
-    : branch !== null
-      ? {
-          removed: false,
-          detail: `git could not remove branch ${w.branch}; it remains at ${branch}`,
-        }
-      : { removed: false, detail: `git could not remove ${w.path}; it is still on disk` }
+    : { removed: false, detail: `git could not remove ${w.path}; it is still on disk` }
+}
+
+function removeOwnedWorktreeBranch(
+  worktree: Worktree,
+  deleteBranch: boolean,
+): WorktreeRemovalResult | null {
+  if (!deleteBranch) return null
+  try {
+    removeBranch(worktree.repoRoot, worktree.branch)
+  } catch (error) {
+    return { removed: false, detail: error instanceof Error ? error.message : String(error) }
+  }
+  const branch = branchTip(worktree.repoRoot, worktree.branch)
+  return branch === null
+    ? null
+    : {
+        removed: false,
+        detail: `git could not remove branch ${worktree.branch}; it remains at ${branch}`,
+      }
 }
 
 /** Delete a local branch when it exists, reporting whether there was work to do. */
 export function removeBranch(repoRoot: string, branch: string): boolean {
-  if (gitOk(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], repoRoot) === null) {
-    return false
-  }
-  git(['branch', '-D', branch], repoRoot)
+  const decision = branchRefMutationDecision(repoRoot, 'delete', branch)
+  if (!decision.allowed && decision.reason === 'exact-missing') return false
+  assertBranchRefMayBeDeleted(repoRoot, branch)
+  const tip = branchTip(repoRoot, branch)
+  if (!tip) throw new Error(`refusing to delete branch ${branch}: its exact tip could not be read`)
+  git(['update-ref', '-d', `refs/heads/${branch}`, tip], repoRoot)
   return true
 }
 

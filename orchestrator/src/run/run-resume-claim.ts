@@ -1,6 +1,7 @@
 // concern: run-resume-claim
 /** Prepares and restores a retained conversation branch during tree creation. */
 
+import { assertBranchRefMayBeCreated } from '../branch/branch-ref-guard.ts'
 import { git, gitContext } from '../git/git-environment.ts'
 import { removeFor } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
@@ -22,7 +23,10 @@ export function prepareResumeBranchIfNeeded(
     '--verify',
     `refs/heads/${plan.branch}^{commit}`,
   )
-  if (!current) git(['update-ref', `refs/heads/${plan.branch}`, plan.tip], repoRoot)
+  if (!current) {
+    assertBranchRefMayBeCreated(repoRoot, plan.branch)
+    git(['update-ref', `refs/heads/${plan.branch}`, plan.tip], repoRoot)
+  }
 }
 
 export function restoreResumeIfNeeded(

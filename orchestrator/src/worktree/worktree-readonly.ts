@@ -1,6 +1,7 @@
 // concern: worktree-readonly
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { assertBranchRefMayBeCreated } from '../branch/branch-ref-guard.ts'
 import {
   borrowedCheckoutOf,
   git,
@@ -250,6 +251,7 @@ function restoreBranchToTip(
 ): { ok: true } | { ok: false; error: string } {
   const current = branchTip(repoRoot, branch)
   if (current === tip) return { ok: true }
+  if (current === null) assertBranchRefMayBeCreated(repoRoot, branch)
   const expected = current ?? '0000000000000000000000000000000000000000'
   const p = Bun.spawnSync(['git', 'update-ref', `refs/heads/${branch}`, tip, expected], {
     cwd: repoRoot,

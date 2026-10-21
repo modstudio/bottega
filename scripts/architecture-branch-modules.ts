@@ -1,6 +1,10 @@
 export const branchModuleSpecs = [
   { file: 'orchestrator/src/branch/branch-containment.ts', allowed: [] },
   {
+    file: 'orchestrator/src/branch/branch-ref-guard.ts',
+    allowed: ['../database/db.ts', '../git/git-environment.ts'],
+  },
+  {
     file: 'orchestrator/src/branch/branch-proof-observer.ts',
     allowed: [
       '../git/git-environment.ts',

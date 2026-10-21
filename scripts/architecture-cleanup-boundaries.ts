@@ -32,6 +32,7 @@ export const cleanupBoundarySpecs = [
       '../../../shared/brand.ts',
       '../../../shared/record/schema.ts',
       '../../../shared/record-id.ts',
+      './branch-ref-guard.ts',
       '../database/db.ts',
       '../git/git-environment.ts',
       '../project/project-lock.ts',

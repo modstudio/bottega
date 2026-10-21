@@ -147,6 +147,7 @@ const canonMirrorBoundarySpecs: ImportBoundary[] = [
       `${source}canon-lint.ts`,
       `${source}canon-stored-rows.ts`,
       'orchestrator/src/close/close-out.ts',
+      'orchestrator/src/branch/branch-ref-guard.ts',
       'orchestrator/src/database/db.ts',
       'orchestrator/src/git/git-environment.ts',
       'orchestrator/src/mcp/hub-notes.ts',
