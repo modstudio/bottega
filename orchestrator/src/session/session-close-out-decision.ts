@@ -26,10 +26,19 @@ export type SessionOwnedBranch = {
   state: BranchLanding['state']
 }
 
+export type SessionHeldRunResources = {
+  rootRecordId: string
+  worktree: boolean
+  refGuard: boolean
+  retainedRef: boolean
+  claim: boolean
+}
+
 export type SessionOwnershipFacts = {
   session: string
   runs: readonly SessionOwnedRun[]
   branches: readonly SessionOwnedBranch[]
+  heldRunResources: readonly SessionHeldRunResources[]
   claimIds: readonly number[]
   landingIds: readonly string[]
   reviewIds: readonly string[]
@@ -79,6 +88,7 @@ export function sessionOwnership(facts: SessionOwnershipFacts): SessionOwnership
     branches: [
       ...new Map(facts.branches.map((row) => [`${row.project}\0${row.branch}`, row])).values(),
     ],
+    heldRunResources: facts.heldRunResources.filter((held) => roots.has(held.rootRecordId)),
     claimIds: [...new Set(facts.claimIds)],
     landingIds: [...new Set(facts.landingIds)],
     reviewIds: [...new Set(facts.reviewIds)],
@@ -101,7 +111,7 @@ export function classifySessionCloseOut(facts: SessionOwnershipFacts): {
   const owned = sessionOwnership(facts)
   const mechanical: SessionMechanicalAction[] = []
   const process: SessionProcessItem[] = []
-  classifyRuns(owned.runs, mechanical, process)
+  classifyRuns(owned.runs, owned.heldRunResources, mechanical, process)
   classifyBranches(owned.branches, mechanical, process)
   if (owned.claimIds.length) mechanical.push({ kind: 'reconcile-claims', claimIds: owned.claimIds })
   process.push(...owned.landingIds.map((landingId) => ({ kind: 'landing' as const, landingId })))
@@ -111,6 +121,7 @@ export function classifySessionCloseOut(facts: SessionOwnershipFacts): {
 
 function classifyRuns(
   runs: readonly SessionOwnedRun[],
+  heldRunResources: readonly SessionHeldRunResources[],
   mechanical: SessionMechanicalAction[],
   process: SessionProcessItem[],
 ): void {
@@ -130,6 +141,8 @@ function classifyRuns(
       continue
     if (actedRoots.has(run.rootRecordId)) continue
     actedRoots.add(run.rootRecordId)
+    const held = heldRunResources.find((candidate) => candidate.rootRecordId === run.rootRecordId)
+    if (!holdsReleaseResource(held)) continue
     if (dirtyRoots.has(run.rootRecordId)) {
       const dirty = runs.find(
         (candidate) => candidate.rootRecordId === run.rootRecordId && candidate.dirty,
@@ -148,6 +161,10 @@ function classifyRuns(
       mechanical.push({ kind: 'close-run', runId: run.rootRecordId })
     }
   }
+}
+
+function holdsReleaseResource(held: SessionHeldRunResources | undefined): boolean {
+  return Boolean(held && (held.worktree || held.refGuard || held.retainedRef || held.claim))
 }
 
 function classifyBranches(
