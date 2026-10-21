@@ -1,7 +1,7 @@
 // concern: worktree-readonly
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { assertBranchRefMayBeCreated, exactBranchTip } from '../branch/branch-ref-guard.ts'
+import { assertBranchRefMayBeCreated, observeBranchRef } from '../branch/branch-ref-guard.ts'
 import {
   borrowedCheckoutOf,
   git,
@@ -250,7 +250,7 @@ function restoreBranchToTip(
   branch: string,
   tip: string,
 ): { ok: true } | { ok: false; error: string } {
-  const current = exactBranchTip(repoRoot, branch)
+  const current = observeBranchRef(repoRoot, branch).exactTip
   if (current === tip) return { ok: true }
   if (current === null) assertBranchRefMayBeCreated(repoRoot, branch)
   const expected = current ?? '0000000000000000000000000000000000000000'

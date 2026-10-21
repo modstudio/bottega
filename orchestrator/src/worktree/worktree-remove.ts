@@ -5,7 +5,7 @@ import { isAbsolute, join, relative } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   assertBranchRefDecisionMayBeDeleted,
-  exactBranchTip,
+  observeBranchRef,
   observeBranchRefMutation,
 } from '../branch/branch-ref-guard.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
@@ -698,6 +698,14 @@ export function removeWorktree(
   // worktree produced exactly the orphan the comment warned about, announced
   // as a success.
   const gone = gitOk(['worktree', 'remove', '--force', w.path], w.repoRoot) !== null
+  if (!gone) {
+    return {
+      removed: false,
+      detail: existsSync(w.path)
+        ? `git could not remove ${w.path}; it is still on disk`
+        : `git could not remove the registered worktree ${w.path}`,
+    }
+  }
   const branchFailure = removeOwnedWorktreeBranch(w, deleteBranch, classifiedTip)
   if (branchFailure) return branchFailure
   return gone || !existsSync(w.path)
@@ -742,15 +750,33 @@ export function removeBranch(
       `refusing to delete branch ${branch}: branch moved since it was classified (${classifiedTip} to ${tip})`,
     )
   }
+  const checkedOutAt = checkedOutBranchPath(
+    git(['worktree', 'list', '--porcelain'], repoRoot),
+    branch,
+  )
+  if (checkedOutAt) {
+    throw new Error(`refusing to delete branch ${branch}: branch is checked out in ${checkedOutAt}`)
+  }
   // branch-ref-guard: observeBranchRefMutation
   git(['update-ref', '-d', `refs/heads/${branch}`, tip], repoRoot)
   return true
 }
 
+/** Return the registered worktree path where an exact local branch is checked out. */
+export function checkedOutBranchPath(porcelain: string, branch: string): string | null {
+  let path: string | null = null
+  for (const line of porcelain.split('\n')) {
+    if (line.startsWith('worktree ')) path = line.slice('worktree '.length)
+    if (line === `branch refs/heads/${branch}`) return path
+    if (line === '') path = null
+  }
+  return null
+}
+
 /** Read a local branch tip so cleanup can restore a ref another run still records. */
 export function branchTip(repoRoot: string, branch: string): string | null {
   try {
-    return exactBranchTip(repoRoot, branch)
+    return observeBranchRef(repoRoot, branch).exactTip
   } catch {
     return null
   }

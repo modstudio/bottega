@@ -16,6 +16,7 @@ import { upsertProject } from '../project/projects.ts'
 import {
   branchTip,
   changesInIndex,
+  checkedOutBranchPath,
   readOnlyRemovalRefusal,
   removeBranch,
   removeFor,
@@ -121,6 +122,22 @@ test('observed changes without an explicit bound still use the trunk merge-base'
 })
 
 describe('worktree removal safety', () => {
+  test('finds an exact branch that remains checked out in a registered worktree', () => {
+    const porcelain = `worktree /projects/example
+HEAD aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+branch refs/heads/main
+
+worktree /projects/example/.claude/worktrees/dev-1470
+HEAD bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+branch refs/heads/DEV-1470-guard
+`
+
+    expect(checkedOutBranchPath(porcelain, 'DEV-1470-guard')).toBe(
+      '/projects/example/.claude/worktrees/dev-1470',
+    )
+    expect(checkedOutBranchPath(porcelain, 'dev-1470-guard')).toBeNull()
+  })
+
   test('a branch tip read tolerates a missing repository', () => {
     const missing = join(tmpdir(), `orch-missing-repository-${crypto.randomUUID()}`)
 

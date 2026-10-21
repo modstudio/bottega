@@ -43,14 +43,22 @@ function localBranchRefs(repoRoot: string): LocalBranchRef[] {
     })
 }
 
-export type BranchRefObservation = { decision: BranchRefDecision; exactTip: string | null }
+export type BranchRefObservation = { exactTip: string | null }
+
+/** Observe local heads once without classifying a mutation. */
+export function observeBranchRef(repoRoot: string, target: string): BranchRefObservation {
+  const refs = localBranchRefs(repoRoot)
+  return { exactTip: refs.find((ref) => ref.name === target)?.tip ?? null }
+}
+
+export type BranchRefMutationObservation = BranchRefObservation & { decision: BranchRefDecision }
 
 /** Observe all local heads once, preserving exact spelling and its classified tip. */
 export function observeBranchRefMutation(
   repoRoot: string,
   operation: 'create' | 'delete',
   target: string,
-): BranchRefObservation {
+): BranchRefMutationObservation {
   const refs = localBranchRefs(repoRoot)
   return {
     decision: decideBranchRefMutation({
@@ -118,11 +126,6 @@ export function assertBranchRefMayBeDeleted(repoRoot: string, branch: string): v
   assertBranchRefDecisionMayBeDeleted(branchRefMutationDecision(repoRoot, 'delete', branch), branch)
 }
 
-/** Read a local branch tip only when that exact spelling occurs in the heads listing. */
-export function exactBranchTip(repoRoot: string, branch: string): string | null {
-  return observeBranchRefMutation(repoRoot, 'delete', branch).exactTip
-}
-
 /** Restore one missing branch only after applying the creation guard. */
 export function restoreBranch(
   repoRoot: string,
@@ -130,12 +133,8 @@ export function restoreBranch(
   tip: string,
 ): { ok: true } | { ok: false; error: string } {
   try {
-    const observation = observeBranchRefMutation(repoRoot, 'create', branch)
-    if (!observation.decision.allowed && observation.decision.reason === 'case-collision') {
-      throw new Error(
-        `refusing to create branch ${branch}: existing local branch ${observation.decision.existing} differs only by case${recordedOwner(repoRoot, observation.decision.existing)}; use a different branch name`,
-      )
-    }
+    assertBranchRefMayBeCreated(repoRoot, branch)
+    const observation = observeBranchRef(repoRoot, branch)
     if (observation.exactTip === tip) return { ok: true }
     if (observation.exactTip !== null) {
       return { ok: false, error: `branch already exists at ${observation.exactTip}` }
@@ -145,7 +144,7 @@ export function restoreBranch(
   }
   const ref = `refs/heads/${branch}`
   const zero = '0000000000000000000000000000000000000000'
-  // branch-ref-guard: observeBranchRefMutation
+  // branch-ref-guard: assertBranchRefMayBeCreated
   const result = Bun.spawnSync(['git', 'update-ref', ref, tip, zero], {
     cwd: repoRoot,
     env: targetGitEnvironment(repoRoot),
