@@ -28,9 +28,8 @@ export const Variants: StoryObj<typeof meta> = {
   play: async ({ canvasElement }) => {
     const button = within(canvasElement).getByRole('button', { name: 'primary' })
     await userEvent.click(button)
-    await userEvent.unhover(button)
     const expected = document.createElement('span')
-    expected.style.backgroundColor = 'var(--color-accent-fill)'
+    expected.style.backgroundColor = 'var(--color-accent-fill-hover)'
     canvasElement.append(expected)
     await waitFor(() =>
       expect(colorToRgba(getComputedStyle(button).backgroundColor)).toEqual(
