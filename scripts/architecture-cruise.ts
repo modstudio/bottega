@@ -19,8 +19,9 @@ export const ARCHITECTURE_CRUISE_ROOTS = [
 ] as const
 
 export const ARCHITECTURE_CRUISE_ENTRIES = [
-  'orchestrator/{src,test,deploy}/**/*.{ts,tsx,js,jsx,mjs,cjs}',
-  'hub/{src,data/src,site/src,ui/src,util/src,views/src,web/src,deploy}/**/*.{ts,tsx,js,jsx,mjs,cjs}',
+  'orchestrator/{src,test,deploy,hooks,scripts}/**/*.{ts,tsx,js,jsx,mjs,cjs}',
+  'hub/{src,test,scripts,deploy,data/src,data/test,site/src,ui/src,ui/.storybook,util/src,views/src,views/.storybook,web/src,web/scripts}/**/*.{ts,tsx,js,jsx,mjs,cjs}',
+  'hub/{data,site,ui,util,views,web}/*.{ts,tsx,js,jsx,mjs,cjs}',
   'shared/**/*.{ts,tsx,js,jsx,mjs,cjs}',
   'ops/**/*.sh',
   'local-stack/**/*.sh',
@@ -81,7 +82,9 @@ export async function runArchitectureCruise(request: ArchitectureCruiseRequest) 
           ...process.env,
           ARCHITECTURE_CONFIG: generatedConfig,
           ARCHITECTURE_TYPESCRIPT: join(ROOT, 'node_modules/typescript/lib/typescript.js'),
-          NODE_PATH: [join(ROOT, 'node_modules'), process.env.NODE_PATH].filter(Boolean).join(delimiter),
+          NODE_PATH: [join(ROOT, 'node_modules'), process.env.NODE_PATH]
+            .filter(Boolean)
+            .join(delimiter),
           NODE_OPTIONS: [process.env.NODE_OPTIONS, `--import=${TYPESCRIPT_LOADER}`]
             .filter(Boolean)
             .join(' '),

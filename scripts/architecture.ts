@@ -763,8 +763,11 @@ export const exactArchitecturePath = (path: string) =>
 
 function architectureDependencyPath(target: string) {
   if (target.startsWith('node:')) return exactArchitecturePath(target.slice('node:'.length))
-  const installedPackageRoot = '(^|/)node_modules/(?:\\.bun/[^/]+/node_modules/)?'
-  if (target === 'bun') return `${installedPackageRoot}@types/bun/`
+  const installedPackageRoots = [
+    '(^|/)node_modules/\\.bun/[^/]+/node_modules/',
+    '(^|/)node_modules/',
+  ]
+  if (target === 'bun') return installedPackageRoots.map((root) => `${root}@types/bun/`).join('|')
   if (target.includes(':')) return exactArchitecturePath(target)
   if (CONCERNS.some((root) => target.startsWith(`${root}/`)) || target.startsWith('shared/')) {
     return exactArchitecturePath(target)
@@ -774,13 +777,12 @@ function architectureDependencyPath(target: string) {
   const packagePath = first?.startsWith('@') ? remainder : [second, ...remainder].filter(Boolean)
   const escapedPackage = packageName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const escapedPath = packagePath.map((part) => part!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-  const installed = `${installedPackageRoot}${escapedPackage}/`
   const unresolved = exactArchitecturePath(target)
-  if (!escapedPath.length) return installed
+  const installed = installedPackageRoots.map((root) => `${root}${escapedPackage}/`)
+  if (!escapedPath.length) return installed.join('|')
   const packageSubpath = escapedPath.join('/')
-  const installedCandidates = Array.from(
-    { length: 5 },
-    (_, depth) => `${installed}${'[^/]+/'.repeat(depth)}${packageSubpath}`,
+  const installedCandidates = installed.flatMap((root) =>
+    Array.from({ length: 5 }, (_, depth) => `${root}${'[^/]+/'.repeat(depth)}${packageSubpath}`),
   )
   const installedResolutions = installedCandidates.flatMap((candidate) => [
     `${candidate}$`,

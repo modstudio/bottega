@@ -1,6 +1,6 @@
 export type ArchitectureViolationEdge = { rule: string; from: string; to: string }
 
-export const architectureViolationBaseline: readonly ArchitectureViolationEdge[] = [
+const architectureViolationBaseline: readonly ArchitectureViolationEdge[] = [
   {
     rule: 'no-new-orchestrator-cycles',
     from: 'orchestrator/src/transport/transport-acp-usage.ts',

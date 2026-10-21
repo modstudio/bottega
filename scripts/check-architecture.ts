@@ -7,17 +7,17 @@ import type { ICruiseResult } from 'dependency-cruiser'
 import { CONCERNS } from '../shared/brand.ts'
 import { architectureRules, modules } from './architecture.ts'
 import {
-  architectureCruiseCoverageViolations,
   ARCHITECTURE_CRUISE_ENTRIES,
   ARCHITECTURE_CRUISE_ROOTS,
+  architectureCruiseCoverageViolations,
   runArchitectureCruise,
 } from './architecture-cruise.ts'
 import {
   hubViewsDocsModeLiteralLines,
   hubViewsDocsModeLiteralRuleName,
 } from './architecture-hub-data.ts'
-import { importSpecifiers } from './import-scanner.ts'
 import { architectureViolationRatchet } from './architecture-violation-baseline.ts'
+import { importSpecifiers } from './import-scanner.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const CONCERN = /^\/\/ concern: ([a-z0-9-]+)$/
