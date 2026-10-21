@@ -33,6 +33,7 @@ import { evidenceReferences, type MachineEvidenceTable } from './record-evidence
 import { pushReleaseRecord } from './record-release-sync.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues } from './record-review-values.ts'
+import { nullableVendorCostSource } from './record-run-usage.ts'
 import type {
   RecordPayload as Payload,
   RecordPrincipal,
@@ -79,7 +80,6 @@ const nullableBigint = (value: unknown) => (value == null ? null : bigint(value)
 const nullableNumber = (value: unknown) => (value == null ? null : Number(value))
 const nullableString = (value: unknown) => (value == null ? null : String(value))
 const jsonString = (value: unknown) => (value == null ? null : JSON.stringify(value))
-
 function runValues(row: Payload, projectId: string | null) {
   return {
     id: String(row.id),
@@ -103,6 +103,10 @@ function runValues(row: Payload, projectId: string | null) {
     outputBytes: nullableBigint(row.outputBytes),
     vendorTokens: nullableBigint(row.vendorTokens),
     vendorCostUsd: nullableNumber(row.vendorCostUsd),
+    vendorInputTokens: nullableBigint(row.vendorInputTokens),
+    vendorOutputTokens: nullableBigint(row.vendorOutputTokens),
+    vendorEstimatedCostUsd: nullableNumber(row.vendorEstimatedCostUsd),
+    vendorCostSource: nullableVendorCostSource(row.vendorCostSource),
     probe: Boolean(row.probe),
     failureKind: nullableString(row.failureKind),
     status: String(row.status),

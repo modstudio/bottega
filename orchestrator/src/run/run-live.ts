@@ -41,10 +41,12 @@ import { processStartTime } from '../project/project-lock.ts'
 import type { CodexMcpServer } from '../sandbox/codex-mcp-scope.ts'
 import type { SandboxSelection } from '../sandbox/sandbox.ts'
 import {
+  EMPTY_VENDOR_USAGE,
   type TransportName,
   type TransportResult,
   type TransportStartOpts,
   transportFor,
+  type VendorUsage,
   valueMatchesStrictSchema,
 } from '../transport/transport.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
@@ -81,6 +83,15 @@ function readReplyFile(path: string): string | null {
 function replyContract(schemaPath: string | undefined, textContract: boolean): ReplyContract {
   if (schemaPath) return 'custom'
   return textContract ? 'text' : 'none'
+}
+
+function outputCeilingReached(
+  reply: { text: string; stopReason?: string | null } | null,
+  ceilingReason: string | null,
+): boolean {
+  return Boolean(
+    reply && !reply.text.trim() && ceilingReason !== null && reply.stopReason === ceilingReason,
+  )
 }
 
 function liveChildEnv(
@@ -220,6 +231,7 @@ export type LiveResult = {
   output: string
   vendorTokens: number | null
   costUsd: number | null
+  vendorUsage: VendorUsage
   resolvedSession: string | null
   effectiveModel: string | null
   replyFileError: string | null
@@ -361,6 +373,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   let output = ''
   let vendorTokens: number | null = null
   let costUsd: number | null = null
+  let vendorUsage = EMPTY_VENDOR_USAGE
   let resolvedSession: string | null = vendorSession
   let effectiveModel: string | null = null
   let replyFileError: string | null = null
@@ -664,6 +677,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
           output: '',
           tokens: null,
           costUsd: null,
+          vendorUsage: EMPTY_VENDOR_USAGE,
           sessionId: null,
           stopReason: 'timeout',
           error: idleKillError,
@@ -717,13 +731,10 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     exitCode = collected.exitCode
     const reply = collected.parsed
     const replyError = reply?.error ?? collected.error
-    const outputCeilingReached =
-      !!reply &&
-      !reply.text.trim() &&
-      a.outputCeilingStopReason !== null &&
-      reply.stopReason === a.outputCeilingStopReason
+    const reachedOutputCeiling = outputCeilingReached(reply, a.outputCeilingStopReason)
     vendorTokens = collected.tokens
     costUsd = collected.costUsd
+    vendorUsage = collected.vendorUsage
     effectiveModel = collected.effectiveModel ?? effectiveModel
     resolvedSession = collected.sessionId ?? vendorSession
     output = collected.output
@@ -836,7 +847,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       acceptedQuestions: acceptedQuestions.length > 0,
       idleKilled,
       idleKillError,
-      outputCeilingReached,
+      outputCeilingReached: reachedOutputCeiling,
       outputCeilingStopReason: reply?.stopReason ?? null,
       timedOut,
       stderr,
@@ -866,7 +877,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       !replyFileError &&
       !collected.asking &&
       !acceptedQuestions.length &&
-      !outputCeilingReached
+      !reachedOutputCeiling
     ) {
       /**
        * IT FINISHED, AND THEN WE KILLED IT.
@@ -924,6 +935,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     output,
     vendorTokens,
     costUsd,
+    vendorUsage,
     resolvedSession,
     effectiveModel,
     replyFileError,

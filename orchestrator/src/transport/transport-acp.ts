@@ -33,6 +33,20 @@ import {
   type TransportStartOpts,
   withTransportDeadline,
 } from './transport.ts'
+import { acpRunUsage } from './transport-acp-usage.ts'
+
+type AcpMessageUsage = {
+  inputTokens?: number | null
+  outputTokens?: number | null
+  totalTokens?: number | null
+  cost?: number | null
+  costSource?: 'provider_reported' | 'estimated' | null
+}
+
+export type AcpMessageUsageUpdate = {
+  sessionUpdate: 'message_usage'
+  usage?: AcpMessageUsage
+}
 
 type AcpUpdate = {
   sessionUpdate: string
@@ -43,10 +57,21 @@ type AcpUpdate = {
   kind?: string
   used?: number
   cost?: { amount?: number; currency?: string } | null
+  accumulatedInputTokens?: number
+  accumulatedOutputTokens?: number
+  messageId?: string | null
+  usage?: AcpMessageUsage
   locations?: Array<{ path?: string }>
   rawInput?: unknown
   rawOutput?: unknown
 }
+export type AcpPromptUsage = {
+  inputTokens?: number
+  outputTokens?: number
+  totalTokens?: number
+  costUsd?: number
+} | null
+
 type AcpTurnInput = {
   sessionId?: string | null
   updates: unknown[]
@@ -55,12 +80,7 @@ type AcpTurnInput = {
   error?: string | null
   timedOut?: boolean
   permissionEvents?: Extract<NormalizedEvent, { kind: 'permission' }>[]
-  usage?: {
-    inputTokens?: number
-    outputTokens?: number
-    totalTokens?: number
-    costUsd?: number
-  } | null
+  usage?: AcpPromptUsage
 }
 
 async function resolveWorkerRunId(value: string | undefined): Promise<string | null> {
@@ -167,6 +187,10 @@ function asUpdate(value: unknown): AcpUpdate | null {
   return value as AcpUpdate
 }
 
+function isMessageUsageUpdate(update: AcpUpdate): update is AcpMessageUsageUpdate {
+  return update.sessionUpdate === 'message_usage'
+}
+
 function textOf(content: AcpUpdate['content']): string {
   if (
     content &&
@@ -225,17 +249,7 @@ function toolCallResult(update: AcpUpdate): string | undefined {
 export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
   const events: NormalizedEvent[] = []
   const chunks: string[] = []
-  const reportedInput = typeof input.usage?.inputTokens === 'number'
-  const reportedOutput = typeof input.usage?.outputTokens === 'number'
-  const reportedTotal = typeof input.usage?.totalTokens === 'number'
-  let tokens: number | null = null
-  if (reportedInput || reportedOutput) {
-    tokens = (input.usage!.inputTokens ?? 0) + (input.usage!.outputTokens ?? 0)
-  } else if (reportedTotal) {
-    tokens = input.usage!.totalTokens!
-  }
-  let costUsd: number | null = null
-  if (typeof input.usage?.costUsd === 'number') costUsd = input.usage.costUsd
+  const usageUpdates: AcpMessageUsageUpdate[] = []
   const sessionId = input.sessionId ?? null
   if (sessionId) events.push({ kind: 'session', sessionId })
   for (const event of input.permissionEvents ?? []) events.push(event)
@@ -251,6 +265,7 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
   for (const raw of input.updates) {
     const update = asUpdate(isRecord(raw) && 'update' in raw ? raw.update : raw)
     if (!update) continue
+    if (isMessageUsageUpdate(update)) usageUpdates.push(update)
     switch (update.sessionUpdate) {
       case 'agent_message_chunk': {
         const text = textOf(update.content)
@@ -300,17 +315,19 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
         break
       }
       case 'usage_update':
-        if (typeof update.used === 'number') {
-          tokens = update.used
-          const amount = update.cost?.amount
-          costUsd = update.cost?.currency === 'USD' && typeof amount === 'number' ? amount : null
-          events.push({ kind: 'usage', tokens, costUsd })
-        }
+        // ACP `used` is context-window occupancy. Goose's custom notification
+        // also carries session-cumulative counters, but per-message updates are
+        // the run-local source and avoid double-counting resumed sessions.
+        break
+      case 'message_usage':
         break
       default:
         break
     }
   }
+
+  const { tokens, costUsd, vendorUsage } = acpRunUsage(usageUpdates, input.usage ?? null)
+  if (tokens !== null) events.push({ kind: 'usage', tokens, costUsd })
 
   if (input.elicitation) {
     events.push({ kind: 'elicitation', message: input.elicitation.message })
@@ -352,6 +369,7 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
     parsed: { text: output, tokens, costUsd, stopReason, error: error ?? undefined },
     tokens,
     costUsd,
+    vendorUsage,
     sessionId,
     stopReason,
     error,
@@ -388,6 +406,14 @@ export function acpHarnessArgv(harness: string, leaderSocket?: string | null): s
   if (harness === 'grok') return ['agent', 'stdio', '--leader-socket', leaderSocket!]
   if (harness === 'opencode' || harness === 'goose') return ['acp']
   return []
+}
+
+export function acpClientCapabilities(harness: string): acp.ClientCapabilities {
+  return {
+    fs: { readTextFile: true, writeTextFile: true },
+    elicitation: { form: {} },
+    ...(harness === 'goose' ? { _meta: { goose: { customNotifications: true } } } : {}),
+  }
 }
 
 function readTextFile(path: string, line?: number | null, limit?: number | null): string {
@@ -501,6 +527,21 @@ function acpMcpServers(opts: TransportStartOpts): acp.McpServer[] {
   ]
 }
 
+function observeAcpUpdate(
+  params: unknown,
+  updates: unknown[],
+  outPath: string,
+  sessionId: string | null,
+  pushEvent: (event: NormalizedEvent) => void,
+): void {
+  updates.push(params)
+  persistAcpUpdates(outPath, sessionId, updates)
+  const folded = normalizeAcpTurn({ sessionId, updates: [params] })
+  for (const event of folded.events) {
+    if (event.kind !== 'session' && event.kind !== 'stop') pushEvent(event)
+  }
+}
+
 export function configuredAcpAsk(opts: TransportStartOpts): string[] | null {
   if (opts.agent.name === 'grok') return opts.agent.askServerCommand?.(opts.env) ?? null
   const server = acpMcpServers(opts).find((entry) => entry.name === 'orch-ask')
@@ -553,6 +594,8 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     const wait = eventWaiters.shift()
     if (wait) wait(event)
   }
+  const observeUpdate = (req: { params: unknown }) =>
+    observeAcpUpdate(req.params, updates, opts.outPath, sessionId, pushEvent)
 
   const app = acp
     .client({ name: 'orch' })
@@ -648,16 +691,8 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
       writeFileSync(confined, req.params.content)
       return {}
     })
-    .onNotification(acp.methods.client.session.update, (req) => {
-      // orch records the update as a run event; the store never holds ACP.
-      updates.push(req.params)
-      persistAcpUpdates(opts.outPath, sessionId, updates)
-      const folded = normalizeAcpTurn({ sessionId, updates: [req.params] })
-      for (const event of folded.events) {
-        if (event.kind === 'session' || event.kind === 'stop') continue
-        pushEvent(event)
-      }
-    })
+    .onNotification(acp.methods.client.session.update, observeUpdate)
+    .onNotification('_goose/unstable/session/update', (params) => params, observeUpdate)
 
   const stream = webStream(child, trace)
   connection = app.connect(stream)
@@ -680,10 +715,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
         // ACP has no result object, so the reply file is the one advertised write.
         // Gap: usage_update.used is session context, not CLI input+output.
         protocolVersion: acp.PROTOCOL_VERSION,
-        clientCapabilities: {
-          fs: { readTextFile: true, writeTextFile: true },
-          elicitation: { form: {} },
-        },
+        clientCapabilities: acpClientCapabilities(opts.agent.harness ?? opts.agent.name),
         clientInfo: { name: 'orch', version: '0.1.0' },
       }),
       'initialize',
@@ -775,6 +807,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
           /* schema is best-effort on the wire; run.ts validates */
         }
       }
+      updates.length = 0
       const promptWork = ctx.request(acp.methods.agent.session.prompt, {
         // orch sends the bound prompt as text blocks; schema is also inlined.
         sessionId,

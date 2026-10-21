@@ -7,12 +7,14 @@ import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import {
   type AgentTransport,
   type ArgvOpts,
+  EMPTY_VENDOR_USAGE,
   type NormalizedEvent,
   outcomeFromTransport,
   registerTransport,
   type TransportHandle,
   type TransportResult,
   type TransportStartOpts,
+  type VendorUsage,
 } from './transport.ts'
 import { cliResultEvents } from './transport-result-events.ts'
 
@@ -20,6 +22,14 @@ import { cliResultEvents } from './transport-result-events.ts'
 function parseVendorTokens(blob: string): number | null {
   const m = blob.match(/tokens used\s*\n?\s*([\d,]+)/i)
   return m ? Number(m[1]!.replace(/,/g, '')) : null
+}
+
+function cliUsage(estimatedCostUsd: number | null) {
+  const vendorUsage: VendorUsage =
+    estimatedCostUsd === null
+      ? EMPTY_VENDOR_USAGE
+      : { ...EMPTY_VENDOR_USAGE, estimatedCostUsd, costSource: 'estimated' }
+  return { costUsd: null, vendorUsage }
 }
 
 async function readStdoutLines(
@@ -124,7 +134,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
         const reply = opts.agent.parseReply?.(stdout)
         const replyError = reply?.error ?? null
         const tokens = reply?.tokens ?? parseVendorTokens(stderr) ?? parseVendorTokens(stdout)
-        const costUsd = reply?.costUsd ?? null
+        const usage = cliUsage(reply?.costUsd ?? null)
         const sessionId =
           opts.session ??
           opts.agent.readSession?.({
@@ -150,7 +160,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
         const terminalEvents: NormalizedEvent[] = []
         if (sessionId) terminalEvents.push({ kind: 'session', sessionId })
         if (output) terminalEvents.push({ kind: 'text', text: output })
-        if (tokens !== null) terminalEvents.push({ kind: 'usage', tokens, costUsd })
+        if (tokens !== null) terminalEvents.push({ kind: 'usage', tokens, costUsd: usage.costUsd })
         if (replyError) terminalEvents.push({ kind: 'error', error: replyError })
         if (stopReason) terminalEvents.push({ kind: 'stop', reason: stopReason })
         const events = cliResultEvents(liveEvents, terminalEvents)
@@ -169,7 +179,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
           raw: stdout,
           parsed: reply ?? null,
           tokens,
-          costUsd,
+          ...usage,
           sessionId,
           stopReason,
           error: replyError,

@@ -34,6 +34,10 @@ export type RecordRun = {
   failureKind: string | null
   vendorTokens: number | null
   vendorCostUsd: number | null
+  vendorInputTokens: number | null
+  vendorOutputTokens: number | null
+  vendorEstimatedCostUsd: number | null
+  vendorCostSource: string | null
   label: string | null
   lens: string | null
   parentRunId: string | null
@@ -99,6 +103,10 @@ function runRow(row: Record<string, unknown>): RecordRun {
     failureKind: row.failure_kind == null ? null : String(row.failure_kind),
     vendorTokens: numeric(row.vendor_tokens),
     vendorCostUsd: numeric(row.vendor_cost_usd),
+    vendorInputTokens: numeric(row.vendor_input_tokens),
+    vendorOutputTokens: numeric(row.vendor_output_tokens),
+    vendorEstimatedCostUsd: numeric(row.vendor_estimated_cost_usd),
+    vendorCostSource: row.vendor_cost_source == null ? null : String(row.vendor_cost_source),
     label: row.label == null ? null : String(row.label),
     lens: row.lens == null ? null : String(row.lens),
     parentRunId: row.parent_run_id == null ? null : String(row.parent_run_id),
@@ -135,7 +143,9 @@ export async function listRecordRuns(input: RunListInput): Promise<RecordRun[]> 
       SELECT r.id, r.space_id, sp.name AS space_name, p.name AS project_name,
         r.started_at, r.finished_at, r.agent, r.job,
         r.status, r.latency_ms, r.prompt_head, r.task_key, r.failure_kind, r.vendor_tokens,
-        r.vendor_cost_usd, r.label, r.lens, r.parent_run_id, r.turn, r.evidence_excluded,
+        r.vendor_cost_usd, r.vendor_input_tokens, r.vendor_output_tokens,
+        r.vendor_estimated_cost_usd, r.vendor_cost_source, r.label, r.lens,
+        r.parent_run_id, r.turn, r.evidence_excluded,
         r.probe, s.delivery, s.quality, s.fidelity, s.scored_at
       FROM run r JOIN space sp ON sp.id=r.space_id
       LEFT JOIN project p ON p.id=r.project_id LEFT JOIN run_score s ON s.run_id=r.id
@@ -246,6 +256,8 @@ export async function viewRecordRuns(input: RecordRunsWindowInput): Promise<Reco
       SELECT r.id, r.space_id, sp.name AS space_name, p.name AS project_name,
         r.started_at, r.finished_at, r.agent, r.job, r.status, r.latency_ms,
         r.prompt_head, r.task_key, r.failure_kind, r.vendor_tokens, r.vendor_cost_usd,
+        r.vendor_input_tokens, r.vendor_output_tokens, r.vendor_estimated_cost_usd,
+        r.vendor_cost_source,
         r.label, r.lens, r.parent_run_id, r.turn, r.evidence_excluded, r.probe,
         s.delivery, s.quality, s.fidelity, s.scored_at
       FROM run r JOIN space sp ON sp.id=r.space_id
