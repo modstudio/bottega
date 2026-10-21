@@ -314,6 +314,34 @@ describe('workflow rendering', () => {
     expect(rulingRendered).toContain('rule yourself')
   })
 
+  test('ask autonomy wins when the step has no ruling floor', () => {
+    const rendered = renderWorkflowStep({
+      slug: 'merge-pr',
+      title: 'Merge the pull request',
+      body: 'Merge the admitted pull request.',
+      floor: ['command-exit', 'recorded-artifact'],
+      expectedStatus: undefined,
+      commandEvidence: undefined,
+      job: null,
+      autonomy: 'auto',
+      needs: [],
+      resolvedAutonomy: { value: 'ask', scope: 'operator' },
+      workflow: 'ship-task',
+      version: 1,
+      catalogueVersion: 1,
+      project: 'fixture',
+      mode: 'full',
+      facts: {},
+      next: null,
+    })
+    expect(rendered).toContain(
+      `Autonomy: ask (operator) — stop and put the ruling to the operator; record the question with \`${PLATFORM_SLUG} workflow await\`.`,
+    )
+    expect(rendered).not.toContain('self_ruling')
+    expect(rendered).not.toContain('--self-ruling')
+    expect(rendered).not.toContain('rule yourself')
+  })
+
   test('an operator-only ruling floor does not tell the agent to rule itself or pass self-ruling', () => {
     const rendered = renderWorkflowStep({
       slug: 'acceptance',

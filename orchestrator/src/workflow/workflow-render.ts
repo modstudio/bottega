@@ -143,10 +143,10 @@ function autonomyInstruction(step: WorkflowStep): string {
   const resolved = step.resolvedAutonomy.value
   if (step.floor.includes('ruling') && step.operatorRuling)
     return operatorRulingAutonomy(step.floor.some((kind) => kind !== 'ruling'))
-  if (!step.floor.includes('ruling'))
-    return `meet this step's floor with ${step.floor.join(' or ')} evidence; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
   if (resolved === 'ask')
     return `stop and put the ruling to the operator; record the question with \`${PLATFORM_SLUG} workflow await\`.`
+  if (!step.floor.includes('ruling'))
+    return `meet this step's floor with ${step.floor.join(' or ')} evidence; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
   if (resolved === 'auto' && step.autonomy === 'ask')
     return `rule this step yourself and record it while closing with \`next_workflow_step\` inputs \`self_ruling\` and \`self_ruling_basis\` or \`${PLATFORM_SLUG} workflow next --self-ruling --basis\`; a decision that changes what the user sees, or product direction, still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
   if (resolved === 'review')
