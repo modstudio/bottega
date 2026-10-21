@@ -3,6 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { blockedByRetiredParentRows } from '../record/outbox-dependency.ts'
+import { heldOutboxKinds } from '../record/outbox-held.ts'
 import { quarantinedOutboxRows } from '../record/outbox-quarantine.ts'
 import type { AddressedMonitorCondition } from './monitor-types.ts'
 export function outboxQuarantineConditions(database: Database): AddressedMonitorCondition[] {
@@ -27,4 +28,30 @@ export function outboxRetiredParentConditions(database: Database): AddressedMoni
     action: `inspect the parent retirement, then run ${PLATFORM_SLUG} record outbox retire orch:${row.id} --reason <text> or replace the dependent row`,
     ownerSession: null,
   }))
+}
+
+export function outboxHeldForUpgradeConditions(
+  database: Database,
+  clock: number = Date.now(),
+): AddressedMonitorCondition[] {
+  return heldOutboxKinds(database).map((row) => {
+    const ageMs = Math.max(0, clock - new Date(row.oldestCreatedAt).getTime())
+    return {
+      kind: 'outbox-held-for-upgrade',
+      subject: `outbox-kind:${row.kind}`,
+      since: row.oldestCreatedAt,
+      ageMs,
+      detail: `${row.count} ${row.kind} outbox row(s) held; oldest age ${Math.round(ageMs / 60_000)}m; ${row.reason}`,
+      action: `run ${PLATFORM_SLUG} release run ${PLATFORM_SLUG} --rung hosted-api`,
+      ownerSession: null,
+    }
+  })
+}
+
+export function outboxConditions(database: Database, clock: number): AddressedMonitorCondition[] {
+  return [
+    ...outboxQuarantineConditions(database),
+    ...outboxHeldForUpgradeConditions(database, clock),
+    ...outboxRetiredParentConditions(database),
+  ]
 }

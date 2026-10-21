@@ -456,15 +456,54 @@ test('an old-shape landing override syncs with a null change group', async () =>
   local.close()
 })
 
+test('a held row stays pending while an independent row syncs and then delivers after upgrade', async () => {
+  const local = localOutbox(2)
+  const first = local.query<{ payload: string }, []>('SELECT payload FROM outbox WHERE id=1').get()!
+  local
+    .query('UPDATE outbox SET payload=? WHERE id=1')
+    .run(JSON.stringify({ ...JSON.parse(first.payload), futureColumn: null }))
+  const remote = fakePostgres()
+
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+    pending: 1,
+    held: [
+      {
+        kind: 'run',
+        rows: 1,
+        reason: expect.stringContaining('unknown columns: futureColumn'),
+      },
+    ],
+  })
+  expect(
+    local.query('SELECT attempts,synced_at,quarantined_at FROM outbox ORDER BY id').all(),
+  ).toEqual([
+    { attempts: 1, synced_at: null, quarantined_at: null },
+    { attempts: 0, synced_at: STAMP, quarantined_at: null },
+  ])
+
+  local.query('UPDATE outbox SET payload=? WHERE id=1').run(first.payload)
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+    pending: 0,
+  })
+  local.close()
+})
+
 test.each([
-  {
-    name: 'an unexpected extra column',
-    mutate: (payload: Record<string, unknown>) => Object.assign(payload, { unexpected: null }),
-  },
   {
     name: 'a missing required column',
     mutate: (payload: Record<string, unknown>) => {
       delete payload.branch
+    },
+  },
+  {
+    name: 'both an extra and a missing column',
+    mutate: (payload: Record<string, unknown>) => {
+      delete payload.branch
+      Object.assign(payload, { unexpected: null })
     },
   },
 ])('triage snapshot sync refuses $name', async ({ mutate }) => {

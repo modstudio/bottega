@@ -168,6 +168,7 @@ export const monitorModules: MonitorModule[] = [
     '../../../shared/brand.ts',
     'bun:sqlite',
     '../record/outbox-dependency.ts',
+    '../record/outbox-held.ts',
     '../record/outbox-quarantine.ts',
     './monitor-types.ts',
   ]),

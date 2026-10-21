@@ -14,6 +14,7 @@ export const MONITOR_NOTICE_DELIVERY_POLICY = {
   idle: 'revalidated',
   'observation-error': 'append-only',
   'outbox-quarantined': 'revalidated',
+  'outbox-held-for-upgrade': 'revalidated',
   'outbox-retired-parent': 'revalidated',
   'stale-run': 'append-only',
   'stalled-run': 'revalidated',

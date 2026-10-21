@@ -25,6 +25,12 @@ export function readOnlyDeferredLines(
   return rows.map((row) => `deferred ${row.rows}\tread-only space ${row.spaceId}`)
 }
 
+export function heldOutboxLines(
+  rows: NonNullable<Awaited<ReturnType<typeof syncRecord>>['held']>,
+): string[] {
+  return rows.map((row) => `held ${row.rows}\t${row.kind}\t${row.reason}`)
+}
+
 export async function syncCommand(
   options: { backfill: boolean },
   presentation: { log(value: string): void },
@@ -60,4 +66,5 @@ export async function syncCommand(
   for (const line of quarantinedOutboxLines(result.quarantined)) presentation.log(line)
   for (const line of blockedOutboxLines(result.blocked)) presentation.log(line)
   for (const line of readOnlyDeferredLines(result.readOnlyDeferred ?? [])) presentation.log(line)
+  for (const line of heldOutboxLines(result.held ?? [])) presentation.log(line)
 }

@@ -16,6 +16,7 @@ export type BlockedOutboxRow = {
   parentRecordId: string
   reason?: string
 }
+export type HeldRecordSyncRows = { kind: string; rows: number; reason: string }
 
 export type RecordSyncResult = {
   pushed: number
@@ -24,6 +25,7 @@ export type RecordSyncResult = {
   configured: boolean
   quarantined: QuarantinedOutboxRow[]
   blocked: BlockedOutboxRow[]
+  held?: HeldRecordSyncRows[]
   readOnlyDeferred?: { spaceId: string; rows: number }[]
   backfill?: RunRecordBackfillResult & {
     scores: number

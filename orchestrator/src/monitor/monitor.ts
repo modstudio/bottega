@@ -68,7 +68,7 @@ import {
 import { staleCustomerGuideCommandConditions } from './monitor-customer-guides.ts'
 import { workerGateToolingConditions } from './monitor-gate-tooling.ts'
 import { observeProjectHarnessLoad } from './monitor-harness-load.ts'
-import { outboxQuarantineConditions, outboxRetiredParentConditions } from './monitor-outbox.ts'
+import { outboxConditions } from './monitor-outbox.ts'
 import { observeRecordTunnel } from './monitor-record-tunnel.ts'
 import { observeRetrievalPins } from './monitor-retrieval-pins.ts'
 import { strayWorktreeConditions } from './monitor-stray-worktrees.ts'
@@ -639,8 +639,7 @@ export async function monitor(
       ownerSession: run.session_id,
     })
 
-  conditions.push(...outboxQuarantineConditions(database))
-  conditions.push(...outboxRetiredParentConditions(database))
+  conditions.push(...outboxConditions(database, clock))
   conditions.push(...boardEscalations(clock))
 
   conditions.push(...abandonedBootstrapConditions(clock))

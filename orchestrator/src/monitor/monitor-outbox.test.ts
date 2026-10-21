@@ -1,8 +1,13 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import { HostedApiUpgradeRequiredError } from '../record/outbox-held-contract.ts'
 import { quarantineOutboxRow } from '../record/outbox-quarantine.ts'
-import { outboxQuarantineConditions, outboxRetiredParentConditions } from './monitor-outbox.ts'
+import {
+  outboxHeldForUpgradeConditions,
+  outboxQuarantineConditions,
+  outboxRetiredParentConditions,
+} from './monitor-outbox.ts'
 
 test('a quarantined outbox row is a clearing monitor condition', () => {
   const database = migratedTestDatabase()
@@ -17,6 +22,40 @@ test('a quarantined outbox row is a clearing monitor condition', () => {
       kind: 'outbox-quarantined',
       subject: 'outbox:9',
       detail: expect.stringContaining('verdict refused'),
+    }),
+  ])
+  database.close()
+})
+
+test('held outbox rows produce one upgrade condition per kind', () => {
+  const database = migratedTestDatabase()
+  const runReason = new HostedApiUpgradeRequiredError('run', ['futureRun']).message
+  const scoreReason = new HostedApiUpgradeRequiredError('score', ['futureScore']).message
+  database
+    .query(
+      `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at,last_error) VALUES
+       (?,7,'run','run-7','{}','2026-10-21T00:00:00.000Z',?),
+       (?,8,'run','run-8','{}','2026-10-21T00:01:00.000Z',?),
+       (?,9,'score','score-9','{}','2026-10-21T00:02:00.000Z',?)`,
+    )
+    .run(newRecordId(), runReason, newRecordId(), runReason, newRecordId(), scoreReason)
+  const conditions = outboxHeldForUpgradeConditions(
+    database,
+    new Date('2026-10-21T00:10:00.000Z').getTime(),
+  )
+  expect(conditions).toHaveLength(2)
+  expect(conditions).toEqual([
+    expect.objectContaining({
+      kind: 'outbox-held-for-upgrade',
+      subject: 'outbox-kind:run',
+      ageMs: 600_000,
+      detail: expect.stringContaining('2 run outbox row(s) held; oldest age 10m;'),
+    }),
+    expect.objectContaining({
+      kind: 'outbox-held-for-upgrade',
+      subject: 'outbox-kind:score',
+      ageMs: 480_000,
+      detail: expect.stringContaining('futureScore'),
     }),
   ])
   database.close()
