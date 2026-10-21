@@ -19,8 +19,9 @@ import { enqueueReview, enqueueReviewFinding } from './review/review-outbox.ts'
 import {
   assertRunReviewFindingIntegrity,
   completeReview,
-  DISPOSITIONS,
   type Disposition,
+  FINDING_DETAIL_RULE,
+  FINDING_VALUE,
   gradeReviewLens,
   type ReviewGrades,
   triageFinding,
@@ -444,11 +445,7 @@ function missingReviewGradeFlag(name: keyof typeof REVIEW_GRADE_VALUES): string 
 }
 
 function missingReviewFindingFlag(ordinal: number): string {
-  return (
-    `--finding ${ordinal}=<${DISPOSITIONS.join('|')}>:<detail> ` +
-    `(accepted/modified/skipped: ${REVIEW_SEVERITY.join('|')}; ` +
-    'rejected: lowercase stable category ID of 1-64 characters)'
-  )
+  return `--finding ${ordinal}=${FINDING_VALUE} (${FINDING_DETAIL_RULE})`
 }
 
 function completeReviewWithoutFindings(reviewRecordId: string, scoredAt: string): void {

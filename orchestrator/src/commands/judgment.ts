@@ -11,13 +11,12 @@ import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { job } from '../jobs/jobs.ts'
 import { judgeRun, scoreRun } from '../judgment.ts'
 import { parseDuplicateFinding } from '../review/review-duplicate-link.ts'
-import { DISPOSITIONS } from '../review/review-triage.ts'
+import { FINDING_DETAIL_RULE, FINDING_VALUE } from '../review/review-triage.ts'
 import {
   REVIEW_COVERAGE,
   REVIEW_LIMITS,
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
-  REVIEW_SEVERITY,
 } from '../review/review-vocabulary.ts'
 import { authorizeRunMutation } from '../run/run-authority.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
@@ -108,7 +107,7 @@ const cleanupPresentation: CleanupPresentation = {
 function addJudgmentOptions(command: Command): Command {
   command.option(
     '--finding <value>',
-    `record N=<${DISPOSITIONS.join('|')}>:<detail>; accepted/modified/skipped detail is ${REVIEW_SEVERITY.join('|')}; rejected detail is a lowercase stable category ID of 1-64 characters`,
+    `record N=${FINDING_VALUE}; ${FINDING_DETAIL_RULE}`,
     collect,
     [],
   )
