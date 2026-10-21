@@ -731,12 +731,16 @@ export function hydrateCommand(
 
 export function workflowImportLines(result: WorkflowTreeImportResult): string[] {
   return [
-    ...result.steps.map((slug) => `drafted step ${slug}`),
-    ...result.sequences.map((slug) => `drafted sequence ${slug}`),
-    ...result.workflows.map((slug) => `drafted workflow ${slug}`),
-    ...(result.steps.length || result.sequences.length || result.workflows.length
-      ? []
-      : ['no changes']),
+    result.catalogue.status === 'created'
+      ? `catalogue: created draft ${result.catalogue.n}`
+      : 'catalogue: no change',
+    ...result.workflowOutcomes
+      .sort((left, right) => left.slug.localeCompare(right.slug))
+      .map((outcome) =>
+        outcome.status === 'created'
+          ? `${outcome.slug}: created draft ${outcome.n}`
+          : `${outcome.slug}: no change`,
+      ),
   ]
 }
 

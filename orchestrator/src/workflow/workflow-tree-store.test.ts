@@ -115,7 +115,12 @@ describe('importWorkflowTree', () => {
 
     const result = await importWorkflowTree(parseWorkflowTree(tree), 'add sequence', 'worker', d)
 
-    expect(result).toEqual({ steps: [], sequences: ['quality'], workflows: [] })
+    expect(result).toMatchObject({
+      steps: [],
+      sequences: ['quality'],
+      workflows: [],
+      catalogue: { status: 'created' },
+    })
     const draft = d
       .query("SELECT n FROM step_catalogue_version WHERE status='draft' ORDER BY n DESC LIMIT 1")
       .get() as { n: number }
@@ -306,7 +311,17 @@ describe('importWorkflowTree', () => {
 
     const result = await importWorkflowTree(parseWorkflowTree(tree), 'add tree flow', 'worker', d)
 
-    expect(result).toEqual({ steps: ['tree-step'], sequences: [], workflows: ['tree-flow'] })
+    expect(result).toMatchObject({
+      steps: ['tree-step'],
+      sequences: [],
+      workflows: ['tree-flow'],
+      catalogue: { status: 'created' },
+    })
+    expect(result.workflowOutcomes).toContainEqual({
+      slug: 'tree-flow',
+      status: 'created',
+      n: 1,
+    })
     const draft = d
       .query("SELECT n FROM step_catalogue_version WHERE status='draft' ORDER BY n DESC LIMIT 1")
       .get() as { n: number }
@@ -316,6 +331,9 @@ describe('importWorkflowTree', () => {
     expect(showWorkflow('tree-flow', undefined, d).status).toBe('draft')
     expect(productionStepCatalogue(d).n).toBe(productionCatalogue.n)
     expect(productionWorkflows(d)).toEqual(productionFlows)
+    expect(() =>
+      promoteWorkflowLocal('tree-flow', 1, 'must await catalogue promotion', 'test', d),
+    ).toThrow('references missing step "tree-step"')
   })
 
   test('a production flow missing from the tree refuses the import and writes nothing', () => {
@@ -338,6 +356,37 @@ describe('importWorkflowTree', () => {
       (d.query('SELECT COUNT(*) count FROM step_catalogue_version').get() as { count: number })
         .count,
     ).toBe(before.catalogues)
+    expect(
+      (d.query('SELECT COUNT(*) count FROM workflow_version').get() as { count: number }).count,
+    ).toBe(before.workflows)
+  })
+
+  test('an import equal to the newest drafts reports no change and writes nothing', async () => {
+    const d = database()
+    const tree = renderedTree(d)
+    const target = tree.find(({ path }) => path === '.agents/workflow-steps/blast-radius.md')!
+    target.body = target.body.replace(/\n---\n[\s\S]*\n$/, '\n---\nA stable draft body.\n')
+    const flow = tree.find(({ path }) => path === '.agents/workflows/fix-defect.md')!
+    flow.body = flow.body.replace(/\n---\n[\s\S]*\n$/, '\n---\nA stable workflow draft.\n')
+
+    const first = await importWorkflowTree(parseWorkflowTree(tree), 'first import', 'worker', d)
+    const before = {
+      catalogue: (
+        d.query('SELECT COUNT(*) count FROM step_catalogue_version').get() as { count: number }
+      ).count,
+      workflows: (d.query('SELECT COUNT(*) count FROM workflow_version').get() as { count: number })
+        .count,
+    }
+    const second = await importWorkflowTree(parseWorkflowTree(tree), 'retry import', 'worker', d)
+
+    expect(first.catalogue.status).toBe('created')
+    expect(first.workflowOutcomes).toContainEqual({ slug: 'fix-defect', status: 'created', n: 2 })
+    expect(second.catalogue).toEqual({ status: 'no change' })
+    expect(second.workflowOutcomes).toContainEqual({ slug: 'fix-defect', status: 'no change' })
+    expect(
+      (d.query('SELECT COUNT(*) count FROM step_catalogue_version').get() as { count: number })
+        .count,
+    ).toBe(before.catalogue)
     expect(
       (d.query('SELECT COUNT(*) count FROM workflow_version').get() as { count: number }).count,
     ).toBe(before.workflows)
