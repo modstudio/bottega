@@ -53,6 +53,7 @@ import { setupModuleSpecs } from './architecture-setup-modules.ts'
 import { subjectModules } from './architecture-subject-modules.ts'
 import { testSubstanceModules } from './architecture-test-substance-modules.ts'
 import { uiArchitectureRules, viewArchitectureRules } from './architecture-ui-layers.ts'
+import { workflowCommandModules } from './architecture-workflow-command-modules.ts'
 import { workflowFloorModules } from './architecture-workflow-floor-modules.ts'
 import { worktreeModules } from './architecture-worktree-modules.ts'
 
@@ -335,6 +336,7 @@ export const modules: ArchitectureModule[] = [
     './autonomy.ts',
     './step-catalogue.ts',
   ]),
+  ...workflowCommandModules,
   ...sessionContextModules,
   ...workflowFloorModules,
   ...monitorModules,

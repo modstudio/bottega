@@ -3,11 +3,11 @@ import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 import {
-  listWorkflows,
+  listResolvedWorkflows,
   resolvedWorkflowVersions,
   retireWorkflowLocal,
   setWorkflowLocal,
-  showWorkflow,
+  showResolvedWorkflow,
   type WorkflowDefinition,
 } from './workflows.ts'
 
@@ -57,7 +57,7 @@ describe('versioned lifecycle retirement', () => {
 
   test('retires a production version without clearing its promotion time', () => {
     const d = database()
-    const production = showWorkflow('flow', undefined, d)
+    const production = showResolvedWorkflow('flow', undefined, null, d)
 
     const retired = retireWorkflowLocal('flow', production.n, 'withdraw production', 'architect', d)
 
@@ -95,7 +95,9 @@ describe('versioned lifecycle retirement', () => {
     )
     retireWorkflowLocal('draft-listing', draft.n, 'withdraw', 'architect', d)
 
-    expect(listWorkflows(d).find(({ slug }) => slug === 'draft-listing')).toMatchObject({
+    expect(
+      listResolvedWorkflows(null, d).find(({ slug }) => slug === 'draft-listing'),
+    ).toMatchObject({
       production_n: null,
       draft_n: null,
     })

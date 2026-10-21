@@ -4,6 +4,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { removeProject, upsertProject } from '../project/projects.ts'
+import { rememberActiveRecordSpace, rememberProjectSpace } from '../project-space.ts'
 import {
   promoteWorkflowLocal,
   setWorkflowLocal,
@@ -11,6 +12,7 @@ import {
 } from '../workflow/workflows.ts'
 import { createDocsMcpServer } from './mcp.ts'
 import { bindWorkflowPromptArguments, workflowPromptDefinitions } from './mcp-prompts.ts'
+import { resolveMcpWorkflowSpace } from './mcp-workflow-space.ts'
 
 const workflow = (
   slug: string,
@@ -26,6 +28,38 @@ const workflow = (
       { slug: 'careful', title: 'Careful', steps: ['plan', 'implement'] },
     ],
   },
+})
+
+describe('MCP workflow space', () => {
+  test('a registered cwd project takes precedence over the remembered active space', () => {
+    const local = db()
+    const project = 'prompt-space-project'
+    const projectPath = process.cwd()
+    const projectSpace = newRecordId()
+    const activeSpace = newRecordId()
+    upsertProject({
+      recordId: newRecordId(),
+      name: project,
+      path: projectPath,
+      stack: 'bun',
+      settings: {},
+    })
+    rememberProjectSpace(local, project, projectSpace)
+    rememberActiveRecordSpace(local, activeSpace)
+
+    expect(resolveMcpWorkflowSpace(`${projectPath}/child`, local).spaceId).toBe(projectSpace)
+    removeProject(project)
+  })
+
+  test('an unregistered cwd uses the remembered active space', () => {
+    const local = db()
+    const activeSpace = newRecordId()
+    rememberActiveRecordSpace(local, activeSpace)
+
+    expect(resolveMcpWorkflowSpace('/fixture/outside-every-project', local).spaceId).toBe(
+      activeSpace,
+    )
+  })
 })
 
 describe('workflow prompt definitions', () => {

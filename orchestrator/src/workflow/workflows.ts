@@ -311,9 +311,9 @@ type VersionRow = {
 }
 function versionRow(
   slug: string,
-  n?: number,
-  d: Database = db(),
-  spaceId: string | null = null,
+  n: number | undefined,
+  d: Database,
+  spaceId: string | null,
 ): VersionRow {
   // Unqualified show prefers production, then the newest draft, then the
   // newest retired. A newer draft must not shadow live production.
@@ -337,11 +337,7 @@ const parseVersion = (row: VersionRow) => ({
   definition: JSON.parse(row.definition) as WorkflowDefinition,
 })
 
-function productionVersionRow(
-  slug: string,
-  d: Database = db(),
-  spaceId: string | null = null,
-): VersionRow {
+function productionVersionRow(slug: string, d: Database, spaceId: string | null): VersionRow {
   const row = d
     .query(`SELECT v.*, w.slug FROM workflow_version v
     JOIN workflow w ON w.id=v.workflow_id
@@ -354,11 +350,7 @@ function productionVersionRow(
   return row
 }
 
-export function listWorkflows(d: Database = db()) {
-  return listResolvedWorkflows(null, d)
-}
-
-function workflowSlugs(d: Database, spaceId: string | null = null): string[] {
+function workflowSlugs(d: Database, spaceId: string | null): string[] {
   return (
     d.query('SELECT slug FROM workflow WHERE space_id IS ? ORDER BY slug').all(spaceId) as {
       slug: string
@@ -366,8 +358,7 @@ function workflowSlugs(d: Database, spaceId: string | null = null): string[] {
   ).map(({ slug }) => slug)
 }
 
-export function listResolvedWorkflows(project: string | null, d: Database = db()) {
-  const spaceId = effectiveProjectSpace(d, project)
+export function listResolvedWorkflows(spaceId: string | null, d: Database = db()) {
   return workflowSlugs(d, spaceId).flatMap((slug) => {
     const row = d
       .query(`SELECT w.id,w.slug,
@@ -393,10 +384,7 @@ export function listResolvedWorkflows(project: string | null, d: Database = db()
   })
 }
 
-export function productionWorkflows(
-  d: Database = db(),
-  spaceId: string | null = null,
-): { slug: string; definition: WorkflowDefinition }[] {
+export function productionWorkflows(d: Database, spaceId: string | null) {
   return (
     d
       .query(
@@ -405,9 +393,6 @@ export function productionWorkflows(
       )
       .all(spaceId) as { slug: string; definition: string }[]
   ).map((row) => ({ slug: row.slug, definition: JSON.parse(row.definition) as WorkflowDefinition }))
-}
-export function showWorkflow(slug: string, n?: number, d: Database = db()) {
-  return parseVersion(versionRow(slug, n, d))
 }
 
 export function showResolvedWorkflow(
@@ -729,18 +714,15 @@ const selectedWorkflow = (
   slug: string,
   version: number | undefined,
   d: Database,
-  spaceId: string | null = null,
+  spaceId: string | null,
 ) =>
   parseVersion(
     version === undefined
       ? productionVersionRow(slug, d, spaceId)
       : versionRow(slug, version, d, spaceId),
   )
-const selectedCatalogue = (
-  version: number | undefined,
-  d: Database,
-  spaceId: string | null = null,
-) => selectedStepCatalogue(version, d, spaceId)
+const selectedCatalogue = (version: number | undefined, d: Database, spaceId: string | null) =>
+  selectedStepCatalogue(version, d, spaceId)
 
 export function resolveWorkflowMode(
   definition: WorkflowDefinition,

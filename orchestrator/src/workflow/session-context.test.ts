@@ -6,6 +6,8 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { dir } from '../../test/preload.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
+import { rememberProjectSpace } from '../project-space.ts'
+import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.ts'
 import { sessionContextCommand, staleSessionContext } from './session-context.ts'
 import type { CachedSessionContext } from './session-context-cache.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
@@ -309,6 +311,60 @@ test('a mixed stage lists each distinct value with its step count and scope', as
   expect(slice.text as string).toContain(
     `implement: ask (${remaining} ${remainingNoun}, project); auto (1 step, project)`,
   )
+})
+
+test('a registered project counts steps from its hosted catalogue', async () => {
+  const name = 'session-context-hosted-catalogue'
+  const path = repository(name)
+  const spaceId = newRecordId()
+  const catalogueId = newRecordId()
+  upsertProject({
+    recordId: newRecordId(),
+    name,
+    path,
+    stack: 'bun',
+    settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
+  })
+  rememberProjectSpace(db(), name, spaceId)
+  applyWorkflowCatalogueRow(db(), 'step_catalogue', {
+    id: catalogueId,
+    spaceId,
+    slug: 'shared',
+    generation: 1,
+    createdAt: '2026-10-21T12:00:00.000Z',
+  })
+  applyWorkflowCatalogueRow(db(), 'step_catalogue_version', {
+    id: newRecordId(),
+    spaceId,
+    ownerId: catalogueId,
+    n: 1,
+    status: 'production',
+    definition: JSON.stringify({
+      steps: [
+        {
+          slug: 'hosted-plan-only',
+          title: 'Hosted plan only',
+          body: 'Plan from the hosted catalogue.',
+          floor: [],
+          job: null,
+          stage: 'plan',
+          autonomy: 'auto',
+          needs: [],
+        },
+      ],
+    }),
+    author: 'test',
+    reason: 'hosted session context fixture',
+    createdAt: '2026-10-21T12:00:00.000Z',
+    promotedAt: '2026-10-21T12:00:00.000Z',
+    retiredAt: null,
+  })
+
+  const slice = await contextJson(path)
+  expect(
+    (slice.stages as { stage: string; steps: number }[]).find(({ stage }) => stage === 'plan')
+      ?.steps,
+  ).toBe(1)
 })
 
 test('a workflow catalogue with no canon steps still reports resolved canon autonomy', async () => {

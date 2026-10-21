@@ -5,7 +5,7 @@ import { db } from '../database/db.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { hasClosedStep } from './workflow-cursor-trail.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
-import { resolveWorkflowMode, showWorkflow } from './workflows.ts'
+import { resolveWorkflowMode, showResolvedWorkflow } from './workflows.ts'
 
 /** The persisted cursor columns a listed cursor carries; storage identity is not one of them. */
 export const LISTED_CURSOR_COLUMNS =
@@ -188,7 +188,7 @@ export function resolveWorkflowCursorMode(
       `${caller} cannot resolve a mode for workflow "${slug}"; active cursor modes: ` +
         `${rows.map(({ mode_slug }) => mode_slug).join(', ')}; ${remedy}`,
     )
-  const definition = showWorkflow(slug, undefined, d).definition
+  const definition = showResolvedWorkflow(slug, undefined, project, d).definition
   const mode = resolveWorkflowMode(definition)
   if (mode) return mode.slug
   throw new Error(

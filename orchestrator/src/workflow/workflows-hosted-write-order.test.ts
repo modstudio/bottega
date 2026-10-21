@@ -57,7 +57,7 @@ test('hosted import validates a workflow against a same-import catalogue', async
     ...productionCatalogue,
     steps: [...productionCatalogue.steps, { ...sourceStep, slug: 'same-import-step' }],
   }
-  const definition = structuredClone(productionWorkflows(local)[0]!.definition)
+  const definition = structuredClone(productionWorkflows(local, null)[0]!.definition)
   definition.modes[0]!.steps = ['same-import-step']
   process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
   installRecordApiClient({
@@ -75,7 +75,7 @@ test('hosted import validates a workflow against a same-import catalogue', async
 
 test('hosted set failure is inert and success adopts identity, version, and event ids', async () => {
   installHostedCatalogue()
-  const definition = { ...productionWorkflows(db())[0]!.definition, title: 'Hosted set' }
+  const definition = { ...productionWorkflows(db(), null)[0]!.definition, title: 'Hosted set' }
   process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
@@ -151,7 +151,7 @@ test('hosted set failure is inert and success adopts identity, version, and even
 test('hosted promote failure leaves draft state and success adopts promoted status and event id', async () => {
   installHostedCatalogue()
   const local = db(),
-    definition = productionWorkflows(local)[0]!.definition
+    definition = productionWorkflows(local, null)[0]!.definition
   const ownerId = newRecordId(),
     versionId = newRecordId(),
     setEventId = newRecordId()

@@ -175,7 +175,7 @@ test('an unresolved workflow parent preserves prior project routing', async () =
 test('the same workflow slug resolves through each project space without consuming local rows', () => {
   const local = db(),
     catalogueDefinition = productionStepCatalogue(local).definition
-  const localDefinition = productionWorkflows(local)[0]!.definition
+  const localDefinition = productionWorkflows(local, null)[0]!.definition
   const spaces = [newRecordId(), newRecordId()]
   for (const [index, space] of spaces.entries()) {
     const catalogue = identity(space!, 'shared')
@@ -198,7 +198,7 @@ test('the same workflow slug resolves through each project space without consumi
   }
   expect(productionWorkflowTree(local, 'space-1').workflows[0]!.definition.title).toBe('Space 1')
   expect(productionWorkflowTree(local, 'space-2').workflows[0]!.definition.title).toBe('Space 2')
-  expect(productionWorkflows(local)[0]!.definition.title).not.toMatch(/^Space /)
+  expect(productionWorkflows(local, null)[0]!.definition.title).not.toMatch(/^Space /)
 })
 
 const catalogueKinds = [

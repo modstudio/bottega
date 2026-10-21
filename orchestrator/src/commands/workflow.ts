@@ -5,6 +5,7 @@ import type { Command, OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
+import { forkCatalogueCommand } from '../workflow/workflow-catalogue-commands.ts'
 import {
   abandonCommand,
   attachCommand,
@@ -13,7 +14,6 @@ import {
   composeCommand,
   cursorsCommand,
   execCommand,
-  forkCatalogueCommand,
   forkWorkflowCommand,
   hydrateCommand,
   importCommand,
@@ -478,7 +478,11 @@ function registerWorkflowCatalogue({
   )
     .allowExcessArguments(false)
     .action((options) =>
-      forkCatalogueCommand(productArgv('catalogue', ['fork'], options), output(options)),
+      forkCatalogueCommand(
+        productArgv('catalogue', ['fork'], options),
+        output(options),
+        handlerOptions,
+      ),
     )
   jsonOption(catalogue.command('versions').description('list step catalogue versions'))
     .allowExcessArguments(false)

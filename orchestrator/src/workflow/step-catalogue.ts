@@ -369,8 +369,8 @@ export const productionStepCatalogue = (d: Database = db()) =>
   compatibleCatalogue(lifecycle.production(CATALOGUE, d))
 export function selectedStepCatalogue(
   n: number | undefined,
-  d: Database = db(),
-  spaceId: string | null = null,
+  d: Database,
+  spaceId: string | null,
 ): ReturnType<typeof showStepCatalogue> {
   const suffix = n === undefined ? "AND v.status='production'" : 'AND v.n=?'
   const row = d
@@ -451,18 +451,19 @@ function catalogueDraft(
 export const forkStepCatalogue = (
   from: number | undefined,
   reason: string | undefined,
+  project: string,
   author?: string,
   d: Database = writableDb(),
 ) => {
   assertCatalogueWriteAllowed('fork step catalogue')
   return applyRecordWriteAuthority({
     local: () => {
-      const source = from === undefined ? productionStepCatalogue(d) : showStepCatalogue(from, d)
+      const source = selectedStepCatalogue(from, d, effectiveProjectSpace(d, project))
       return lifecycle.write(CATALOGUE, source.definition, reason, author, 'fork', d)
     },
     hosted: async () => {
       if (!reason?.trim()) throw new Error('reason is required')
-      const spaceId = await activeSpace()
+      const spaceId = await activeSpace(d, project)
       const result = await recordApiClient().draftWorkflow!(
         {
           kind: 'step_catalogue',

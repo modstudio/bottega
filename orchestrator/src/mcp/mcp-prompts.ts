@@ -5,11 +5,8 @@ import { catalogueStepsForAutonomy, parseAutonomy } from '../workflow/autonomy.t
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { composeWorkflowWithCursor, mcpWorkflowCursorContext } from '../workflow/workflow-cursor.ts'
 import { renderWorkflowComposition } from '../workflow/workflow-render.ts'
-import {
-  composeWorkflow,
-  productionWorkflows,
-  type WorkflowDefinition,
-} from '../workflow/workflows.ts'
+import { composeWorkflow, type WorkflowDefinition } from '../workflow/workflows.ts'
+import { resolveMcpWorkflowSpace } from './mcp-workflow-space.ts'
 
 type ProductionWorkflow = { slug: string; definition: WorkflowDefinition }
 
@@ -185,7 +182,7 @@ const promptArgsSchema = (prompt: WorkflowPromptDefinition) =>
   )
 
 export function registerWorkflowPrompts(server: McpServer): void {
-  for (const workflow of productionWorkflows()) {
+  for (const workflow of resolveMcpWorkflowSpace(process.cwd()).workflows) {
     const prompt = workflowPromptDefinitions([workflow])[0]!
     server.registerPrompt(
       prompt.name,

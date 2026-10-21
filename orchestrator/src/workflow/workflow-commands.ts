@@ -9,12 +9,12 @@ import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import { type Project, projectAt, projects } from '../project/projects.ts'
+import { effectiveProjectSpace } from '../project-space.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from './autonomy.ts'
 import { resolveProjectAutonomy } from './autonomy-scopes.ts'
 import {
-  forkStepCatalogue,
   promoteStepCatalogue,
   resolvedStepCatalogueVersions,
   retireStepCatalogue,
@@ -112,7 +112,11 @@ export function listWorkflowCommand(
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
 ): void {
-  const rows = listResolvedWorkflows(inspectionProjectName(options))
+  const database = db()
+  const rows = listResolvedWorkflows(
+    effectiveProjectSpace(database, inspectionProjectName(options)),
+    database,
+  )
   print(
     rows,
     rows
@@ -644,16 +648,6 @@ export async function retireCatalogueCommand(argv: string[], print: WorkflowPrin
   print(
     await retireStepCatalogue(
       positive(argv[2], 'version')!,
-      flagValue(argv, 'reason'),
-      flagValue(argv, 'author'),
-    ),
-  )
-}
-
-export async function forkCatalogueCommand(argv: string[], print: WorkflowPrint): Promise<void> {
-  print(
-    await forkStepCatalogue(
-      positive(flagValue(argv, 'from'), '--from'),
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
     ),
