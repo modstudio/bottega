@@ -92,7 +92,8 @@ function registerProfileCommands(lens: Command, presentation: { log(value: strin
       .command('show <lens>')
       .description('show a review lens profile')
       .option('--axis <value>', 'select the profile axis')
-      .option('--name <value>', 'select the profile name'),
+      .option('--name <value>', 'select the profile name')
+      .option('--project <value>', 'use the project space catalogue'),
   )
     .allowExcessArguments(false)
     .action((id, options) => {

@@ -3,16 +3,8 @@
 import { readFileSync } from 'node:fs'
 import { flagValue } from '../cli/args.ts'
 import { db } from '../database/db.ts'
-import { projectAt, projectByName } from '../project/projects.ts'
-import {
-  lensProfileSpace,
-  listLenses,
-  listProfiles,
-  setLens,
-  setProfile,
-  showLens,
-  showProfile,
-} from './lenses.ts'
+import { type Project, projectAt, projectByName } from '../project/projects.ts'
+import { listLenses, listProfiles, setLens, setProfile, showLens, showProfile } from './lenses.ts'
 
 type LensPresentation = { log(value: string): void }
 type Emit = (value: unknown, line?: string) => void
@@ -90,17 +82,21 @@ export async function setLensCommand(argv: string[], emit: Emit): Promise<void> 
   )
 }
 
-const profileProject = (argv: string[], cwd: string): string | null => {
+const profileProject = (argv: string[], cwd: string): Project | null => {
   const named = flagValue(argv, 'project')
-  if (named && !projectByName(named)) throw new Error(`no project "${named}"`)
-  return named ?? projectAt(cwd)?.name ?? null
+  if (named) {
+    const project = projectByName(named)
+    if (!project) throw new Error(`no project "${named}"`)
+    return project
+  }
+  return projectAt(cwd)
 }
 
 export function listProfilesCommand(argv: string[], emit: Emit, cwd: string = process.cwd()): void {
   const id = argv[3]
   const project = profileProject(argv, cwd)
   const database = db()
-  const rows = listProfiles(id, database, lensProfileSpace(project, database))
+  const rows = listProfiles(id, database, project)
   emit(
     rows,
     rows
@@ -112,8 +108,14 @@ export function listProfilesCommand(argv: string[], emit: Emit, cwd: string = pr
   )
 }
 
-export function showProfileCommand(argv: string[], emit: Emit): void {
-  const row = showProfile(argv[3]!, flagValue(argv, 'axis')!, flagValue(argv, 'name')!)
+export function showProfileCommand(argv: string[], emit: Emit, cwd: string = process.cwd()): void {
+  const row = showProfile(
+    argv[3]!,
+    flagValue(argv, 'axis')!,
+    flagValue(argv, 'name')!,
+    db(),
+    profileProject(argv, cwd),
+  )
   if (!row) throw new Error('no such lens profile')
   emit(row)
 }

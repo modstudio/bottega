@@ -253,7 +253,7 @@ create a review lens profile version
 
 ## bottega review lens profile show
 
-**Synopsis:** `bottega review lens profile show <lens> [--axis <value>] [--name <value>] [--json]`
+**Synopsis:** `bottega review lens profile show <lens> [--axis <value>] [--name <value>] [--project <value>] [--json]`
 
 show a review lens profile
 
@@ -261,6 +261,7 @@ show a review lens profile
 
 - `--axis <value>`: select the profile axis
 - `--name <value>`: select the profile name
+- `--project <value>`: use the project space catalogue
 - `--json`: print JSON output
 
 ### Related

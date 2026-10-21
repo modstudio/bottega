@@ -6,6 +6,7 @@ import {
 } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
+import { rememberActiveRecordSpace } from '../project-space.ts'
 import { rememberHostedRecord } from '../record/install-binding.ts'
 import { BOUND_RECORD_WRITE_REFUSAL } from '../record/record-write-authority.ts'
 import { selectProjectProfile, setLens, setProfile, showLens, showProfile } from './lenses.ts'
@@ -25,6 +26,7 @@ function installHostedCorrectness(): void {
       FROM lens_profile p JOIN lens l ON l.record_id=p.lens_record_id
       WHERE l.id='correctness' AND p.axis='framework' AND p.name='default' AND p.space_id IS NULL`)
     .run(newRecordId(), HOSTED_SPACE, HOSTED_SPACE)
+  rememberActiveRecordSpace(local, HOSTED_SPACE)
 }
 
 test('a hosted lens failure leaves the local catalogue unchanged', async () => {
@@ -59,7 +61,7 @@ test('a hosted lens failure leaves the local catalogue unchanged', async () => {
 test('hosted profile failure is inert and success adopts hosted identities and versions', async () => {
   installHostedCorrectness()
   process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
-  const before = showProfile('correctness', 'framework', 'default', db(), HOSTED_SPACE)!
+  const before = showProfile('correctness', 'framework', 'default')!
   const beforeRevisions = db()
     .query<{ n: number }, []>(
       'SELECT COUNT(*) AS n FROM lens_profile_revision WHERE space_id IS NOT NULL',
@@ -81,7 +83,7 @@ test('hosted profile failure is inert and success adopts hosted identities and v
       reason: 'hosted profile ordering',
     }),
   ).rejects.toThrow('hosted profile write failed')
-  expect(showProfile('correctness', 'framework', 'default', db(), HOSTED_SPACE)).toEqual(before)
+  expect(showProfile('correctness', 'framework', 'default')).toEqual(before)
   expect(
     db()
       .query<{ n: number }, []>(

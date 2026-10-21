@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
-import { projectByName } from '../project/projects.ts'
+import { type Project, projectByName } from '../project/projects.ts'
 import { activeRecordSpace, effectiveProjectSpace, rememberProjectSpace } from '../project-space.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import type {
@@ -53,7 +53,7 @@ type SetLensInput = {
 }
 type SetProfileInput = {
   lensId: string
-  project?: string
+  project?: Project
   axis: string
   name: string
   body: string
@@ -338,8 +338,9 @@ export async function setLens(input: SetLensInput) {
 export function listProfiles(
   lensId?: string,
   database: Database = db(),
-  spaceId: string | null = activeRecordSpace(database),
+  project: Pick<Project, 'name'> | null = null,
 ) {
+  const spaceId = lensProfileSpace(project?.name ?? null, database)
   return profileRows(lensId, database, spaceId).map((row) => ({
     ...row,
     enabled: !!row.enabled,
@@ -361,10 +362,7 @@ function profileRows(
 }
 
 /** Resolve the catalogue space used by profile inspection, selection, and dispatch. */
-export function lensProfileSpace(
-  projectName: string | null,
-  database: Database = db(),
-): string | null {
+function lensProfileSpace(projectName: string | null, database: Database = db()): string | null {
   if (!projectName) return activeRecordSpace(database)
   return effectiveProjectSpace(database, projectName)
 }
@@ -373,7 +371,23 @@ export function showProfile(
   axis: string,
   name: string,
   database: Database = db(),
-  spaceId: string | null = activeRecordSpace(database),
+  project: Pick<Project, 'name'> | null = null,
+) {
+  return showProfileInSpace(
+    lensId,
+    axis,
+    name,
+    database,
+    lensProfileSpace(project?.name ?? null, database),
+  )
+}
+
+function showProfileInSpace(
+  lensId: string,
+  axis: string,
+  name: string,
+  database: Database,
+  spaceId: string | null,
 ) {
   const row = database
     .query(
@@ -386,8 +400,7 @@ export async function setProfile(input: SetProfileInput) {
   writableDb()
   const axis = validateProfileInput(input)
   const d = db()
-  const project = input.project ? projectByName(input.project, d) : null
-  if (input.project && !project) throw new Error(`no project "${input.project}"`)
+  const project = input.project ?? null
   const writeLocal = (spaceId: string | null, hosted?: RecordLensProfileWriteResponse) => {
     const core = d
       .query(`SELECT ${LENS_COLUMNS} FROM lens WHERE id=? AND space_id IS ?`)
@@ -433,10 +446,10 @@ export async function setProfile(input: SetProfileInput) {
         )
       }
     }, d)
-    return showProfile(input.lensId, axis, input.name, d, spaceId)!
+    return showProfileInSpace(input.lensId, axis, input.name, d, spaceId)!
   }
   return applyRecordWriteAuthority({
-    local: () => writeLocal(lensProfileSpace(project?.name ?? null, d)),
+    local: () => writeLocal(project ? lensProfileSpace(project.name, d) : null),
     hosted: async () => {
       const client = recordApiClient()
       const identity = await client.whoami()

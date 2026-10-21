@@ -4,11 +4,10 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db, sessionId } from '../database/db.ts'
 import { applyMigrations } from '../database/migrations.ts'
-import { upsertProject } from '../project/projects.ts'
+import { projectByName, upsertProject } from '../project/projects.ts'
 import { rememberActiveRecordSpace, rememberProjectSpace } from '../project-space.ts'
 import {
   chooseLensProfile,
-  lensProfileSpace,
   listLenses,
   listProfiles,
   resolveLens,
@@ -355,8 +354,9 @@ describe('lens catalogue', () => {
       )
       .run(newRecordId(), space)
     rememberProjectSpace(db(), 'hosted-profile-project', space)
+    const project = projectByName('hosted-profile-project')!
     await setProfile({
-      project: 'hosted-profile-project',
+      project,
       lensId: 'correctness',
       axis: 'framework',
       name: 'hosted-profile-project',
@@ -365,8 +365,7 @@ describe('lens catalogue', () => {
       reason: 'create hosted project profile',
     })
 
-    const profileSpace = lensProfileSpace('hosted-profile-project')
-    expect(listProfiles('correctness', db(), profileSpace)).toEqual([
+    expect(listProfiles('correctness', db(), project)).toEqual([
       expect.objectContaining({ name: 'hosted-profile-project', enabled: true, space_id: space }),
     ])
     await selectProjectProfile({
