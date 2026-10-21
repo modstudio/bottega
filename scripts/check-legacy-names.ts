@@ -1,35 +1,50 @@
 #!/usr/bin/env bun
+// hub.db is already named for its concern and is the target state-file name, so only orch.db is legacy.
 import { existsSync, lstatSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { Command } from 'commander'
-import { createHubProgram } from '../hub/src/cli-program.ts'
-import { program as orchProgram } from '../orchestrator/src/cli/program.ts'
-
-const LEGACY_NAME_CLASSES = [
-  'orch-command',
-  'hub-command',
-  'legacy-binary',
-  'mcp-name',
-  'env',
-  'state-file',
-] as const
-
-export type LegacyNameClass = (typeof LEGACY_NAME_CLASSES)[number]
-export type LegacyNameCounts = Record<
-  LegacyNameClass,
-  { total: number; files: Record<string, number> }
->
-export type LegacyCommandVerbs = Readonly<Record<'orch' | 'hub', readonly string[]>>
+import { PLATFORM_COMMAND_WORDS } from '../shared/command-spellings.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
-const BASELINE_PATH = join(ROOT, 'scripts/quality/legacy-names.json')
-const SELF = 'scripts/check-legacy-names.ts'
 const BASELINE = 'scripts/quality/legacy-names.json'
+const BASELINE_PATH = join(ROOT, BASELINE)
+const SELF = 'scripts/check-legacy-names.ts'
+const BESIDE_TEST = 'scripts/check-legacy-names.test.ts'
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
+
+function commandPattern(name: string, verbs: readonly string[]): RegExp {
+  const alternatives = [...new Set(verbs)].sort().map(escapeRegExp).join('|')
+  return new RegExp(`\\b${name}\\s+(?:${alternatives})(?![\\w-])`, 'g')
+}
+
+const hubVerbs = PLATFORM_COMMAND_WORDS.map((spelling) => spelling.split(' ')[0])
+
+const LEGACY_NAME_REGISTRY = {
+  'orch-command': [/\borch\s+[a-z][a-z0-9-]*(?![\w-])/g],
+  'hub-command': [commandPattern('hub', hubVerbs)],
+  'legacy-binary': [/bin\/orch(?![\w-])/g, /bin\/hub(?![\w-])/g],
+  'mcp-name': [
+    /mcp__orch__/g,
+    /orch-ask/g,
+    /mcp_servers\.orch(?![\w-])/g,
+    /mcpServers\s*:\s*\{\s*(?:['"]orch['"]|orch)\s*:/g,
+    /new\s+McpServer\s*\(\s*\{\s*name\s*:\s*['"]orch['"]/g,
+    /\{[^{}]*\bname\s*:\s*['"]orch['"][^{}]*(?:command|target)\s*:/g,
+  ],
+  env: [/\b(?:ORCH|HUB)_[A-Z][A-Z0-9_]*\b/g],
+  'state-file': [/\borch\.db\b/g],
+} as const satisfies Record<string, readonly RegExp[]>
+
+export type LegacyNameClass = keyof typeof LEGACY_NAME_REGISTRY
+export type LegacyNameCounts = Record<
+  LegacyNameClass,
+  { total: number; files: Record<string, number> }
+>
+
+const LEGACY_NAME_CLASSES = Object.keys(LEGACY_NAME_REGISTRY) as LegacyNameClass[]
 
 function occurrenceCount(text: string, patterns: readonly RegExp[]): number {
   let count = 0
@@ -37,36 +52,11 @@ function occurrenceCount(text: string, patterns: readonly RegExp[]): number {
   return count
 }
 
-function commandPattern(name: 'orch' | 'hub', verbs: readonly string[]): RegExp | null {
-  if (verbs.length === 0) return null
-  const alternatives = [...new Set(verbs)].sort().map(escapeRegExp).join('|')
-  return new RegExp(`\\b${name}\\s+(?:${alternatives})(?![\\w-])`, 'g')
-}
-
-function mcpRegistrationPatterns(): RegExp[] {
-  return [
-    /mcp_servers\.orch(?![\w-])/g,
-    /mcpServers\s*:\s*\{\s*(?:['"]orch['"]|orch)\s*:/g,
-    /new\s+McpServer\s*\(\s*\{\s*name\s*:\s*['"]orch['"]/g,
-    /\{[^{}]*\bname\s*:\s*['"]orch['"][^{}]*(?:command|target)\s*:/g,
-  ]
-}
-
 /** Count legacy spellings in one file without knowing anything about its path. */
-export function countLegacyNames(
-  text: string,
-  verbs: LegacyCommandVerbs,
-): Record<LegacyNameClass, number> {
-  const orchCommand = commandPattern('orch', verbs.orch)
-  const hubCommand = commandPattern('hub', verbs.hub)
-  return {
-    'orch-command': orchCommand ? occurrenceCount(text, [orchCommand]) : 0,
-    'hub-command': hubCommand ? occurrenceCount(text, [hubCommand]) : 0,
-    'legacy-binary': occurrenceCount(text, [/bin\/orch(?![\w-])/g, /bin\/hub(?![\w-])/g]),
-    'mcp-name': occurrenceCount(text, [/mcp__orch__/g, /orch-ask/g, ...mcpRegistrationPatterns()]),
-    env: occurrenceCount(text, [/\b(?:ORCH|HUB)_[A-Z][A-Z0-9_]*\b/g]),
-    'state-file': occurrenceCount(text, [/\borch\.db\b/g]),
-  }
+export function countLegacyNames(text: string): Record<LegacyNameClass, number> {
+  return Object.fromEntries(
+    LEGACY_NAME_CLASSES.map((name) => [name, occurrenceCount(text, LEGACY_NAME_REGISTRY[name])]),
+  ) as Record<LegacyNameClass, number>
 }
 
 function emptyLegacyNameCounts(): LegacyNameCounts {
@@ -77,13 +67,12 @@ function emptyLegacyNameCounts(): LegacyNameCounts {
 
 export function legacyNameCounts(
   files: Readonly<Record<string, string>>,
-  verbs: LegacyCommandVerbs,
 ): LegacyNameCounts {
   const counts = emptyLegacyNameCounts()
   for (const [file, text] of Object.entries(files).sort(([left], [right]) =>
     left.localeCompare(right),
   )) {
-    const fileCounts = countLegacyNames(text, verbs)
+    const fileCounts = countLegacyNames(text)
     for (const name of LEGACY_NAME_CLASSES) {
       const count = fileCounts[name]
       if (count === 0) continue
@@ -123,19 +112,6 @@ export function loweredLegacyNameBaseline(
   return current
 }
 
-function commandVerbs(program: Command): string[] {
-  return [
-    ...new Set(program.commands.flatMap((command) => [command.name(), ...command.aliases()])),
-  ].sort()
-}
-
-function registeredCommandVerbs(): LegacyCommandVerbs {
-  return {
-    orch: commandVerbs(orchProgram),
-    hub: commandVerbs(createHubProgram()),
-  }
-}
-
 function isLockfile(path: string): boolean {
   const name = path.split('/').at(-1) ?? path
   return (
@@ -152,6 +128,7 @@ function isLockfile(path: string): boolean {
 function isExempt(path: string): boolean {
   return (
     path === SELF ||
+    path === BESIDE_TEST ||
     path === BASELINE ||
     path.startsWith('orchestrator/migrations/') ||
     path.startsWith('shared/record/migrations/') ||
@@ -160,8 +137,8 @@ function isExempt(path: string): boolean {
   )
 }
 
-function trackedFiles(): string[] {
-  const result = Bun.spawnSync(['git', 'ls-files', '-z'], {
+function scannedFiles(): string[] {
+  const result = Bun.spawnSync(['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
     cwd: ROOT,
     stdout: 'pipe',
     stderr: 'pipe',
@@ -174,20 +151,48 @@ function trackedFiles(): string[] {
   return result.stdout.toString().split('\0').filter(Boolean)
 }
 
-function scanTrackedFiles(): LegacyNameCounts {
+function scanFiles(): LegacyNameCounts {
   const files: Record<string, string> = {}
-  for (const path of trackedFiles()) {
+  for (const path of scannedFiles()) {
     if (isExempt(path)) continue
     const absolute = join(ROOT, path)
     files[path] = lstatSync(absolute).isSymbolicLink()
       ? readlinkSync(absolute, 'utf8')
       : readFileSync(absolute, 'utf8')
   }
-  return legacyNameCounts(files, registeredCommandVerbs())
+  return legacyNameCounts(files)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+export function validateLegacyNameBaseline(value: unknown): LegacyNameCounts {
+  if (!isRecord(value)) throw new Error('expected a JSON object')
+  for (const name of LEGACY_NAME_CLASSES) {
+    const entry = value[name]
+    if (!isRecord(entry)) throw new Error(`missing or invalid class ${name}`)
+    if (typeof entry.total !== 'number' || !Number.isFinite(entry.total)) {
+      throw new Error(`class ${name} has a non-numeric total`)
+    }
+    if (!isRecord(entry.files)) throw new Error(`class ${name} has invalid files`)
+    for (const [file, count] of Object.entries(entry.files)) {
+      if (typeof count !== 'number' || !Number.isFinite(count)) {
+        throw new Error(`class ${name} file ${file} has a non-numeric count`)
+      }
+    }
+  }
+  return value as LegacyNameCounts
 }
 
 function readBaseline(): LegacyNameCounts {
-  return JSON.parse(readFileSync(BASELINE_PATH, 'utf8')) as LegacyNameCounts
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(readFileSync(BASELINE_PATH, 'utf8'))
+  } catch (error) {
+    throw new Error(`invalid JSON: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  return validateLegacyNameBaseline(parsed)
 }
 
 function printTotals(counts: LegacyNameCounts): void {
@@ -201,7 +206,7 @@ function run(): number {
     console.error(`unrecognized arguments: ${unexpected.join(' ')}`)
     return 1
   }
-  const current = scanTrackedFiles()
+  const current = scanFiles()
   printTotals(current)
   if (!existsSync(BASELINE_PATH)) {
     if (!update) {
@@ -213,7 +218,15 @@ function run(): number {
     writeFileSync(BASELINE_PATH, `${JSON.stringify(current, null, 2)}\n`)
     return 0
   }
-  const baseline = readBaseline()
+  let baseline: LegacyNameCounts
+  try {
+    baseline = readBaseline()
+  } catch (error) {
+    console.error(
+      `legacy-name baseline is invalid: ${error instanceof Error ? error.message : String(error)}\nRemedy: bun scripts/check-legacy-names.ts --update`,
+    )
+    return 1
+  }
   const growth = legacyNameGrowth(current, baseline)
   if (growth.length > 0) {
     console.error(

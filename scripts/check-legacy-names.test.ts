@@ -5,21 +5,20 @@ import {
   legacyNameCounts,
   legacyNameGrowth,
   loweredLegacyNameBaseline,
+  validateLegacyNameBaseline,
 } from './check-legacy-names.ts'
-
-const verbs = { orch: ['run', 'task'], hub: ['serve', 'task'] }
 
 test('counts each legacy-name class in fixture text', () => {
   const counts = countLegacyNames(
     [
       'orch run abc',
-      'hub serve',
-      'bin/orch bin/hub',
+      'hub task',
+      'bin/orch',
+      'bin/hub',
       `mcp__orch__get_doc orch-ask mcp_servers.orch={command="${PLATFORM_NAME}"}`,
       'ORCH_DB HUB_PORT',
       'orch.db',
     ].join('\n'),
-    verbs,
   )
 
   expect(counts).toEqual({
@@ -32,34 +31,48 @@ test('counts each legacy-name class in fixture text', () => {
   })
 })
 
-test('does not count concern paths or unregistered command words', () => {
-  const counts = countLegacyNames(
-    'hub/src/x.ts orchestrator/src/y.ts orch unknown hub unknown',
-    verbs,
-  )
-  expect(Object.values(counts).every((count) => count === 0)).toBe(true)
+test('does not count concern paths and limits only hub to known verbs', () => {
+  const counts = countLegacyNames('hub/src/x.ts orchestrator/src/y.ts orch unknown hub unknown')
+  expect(counts['orch-command']).toBe(1)
+  expect(counts['hub-command']).toBe(0)
+  expect(Object.values(counts).reduce((sum, count) => sum + count, 0)).toBe(1)
 })
 
 test('a per-file increase names its class, file, and new occurrences', () => {
-  const baseline = legacyNameCounts({ 'one.txt': 'ORCH_DB' }, verbs)
-  const current = legacyNameCounts({ 'one.txt': 'ORCH_DB ORCH_PORT' }, verbs)
+  const baseline = legacyNameCounts({ 'one.txt': 'ORCH_DB' })
+  const current = legacyNameCounts({ 'one.txt': 'ORCH_DB ORCH_PORT' })
 
   expect(legacyNameGrowth(current, baseline)).toContain('env one.txt: 1 -> 2 (1 new occurrences)')
 })
 
 test('a decrease passes and update lowers the baseline', () => {
-  const baseline = legacyNameCounts({ 'one.txt': 'ORCH_DB ORCH_PORT' }, verbs)
-  const current = legacyNameCounts({ 'one.txt': 'ORCH_DB' }, verbs)
+  const baseline = legacyNameCounts({ 'one.txt': 'ORCH_DB ORCH_PORT' })
+  const current = legacyNameCounts({ 'one.txt': 'ORCH_DB' })
 
   expect(legacyNameGrowth(current, baseline)).toEqual([])
   expect(loweredLegacyNameBaseline(current, baseline)).toEqual(current)
 })
 
 test('update refuses an increase', () => {
-  const baseline = legacyNameCounts({ 'one.txt': 'orch run' }, verbs)
-  const current = legacyNameCounts({ 'one.txt': 'orch run\norch task' }, verbs)
+  const baseline = legacyNameCounts({ 'one.txt': 'orch run' })
+  const current = legacyNameCounts({ 'one.txt': 'orch run\norch task' })
 
   expect(() => loweredLegacyNameBaseline(current, baseline)).toThrow(
     'orch-command one.txt: 1 -> 2 (1 new occurrences)',
   )
+})
+
+test('baseline validation requires every class with numeric totals and file counts', () => {
+  const baseline = legacyNameCounts({ 'one.txt': 'ORCH_DB' })
+  expect(validateLegacyNameBaseline(baseline)).toEqual(baseline)
+
+  expect(() => validateLegacyNameBaseline({ ...baseline, env: { files: {} } })).toThrow(
+    'class env has a non-numeric total',
+  )
+  expect(() =>
+    validateLegacyNameBaseline({
+      ...baseline,
+      env: { total: 0, files: { 'one.txt': 'invalid' } },
+    }),
+  ).toThrow('class env file one.txt has a non-numeric count')
 })
