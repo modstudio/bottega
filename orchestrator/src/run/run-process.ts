@@ -6,6 +6,7 @@
 
 import { createHash } from 'node:crypto'
 import {
+  observeBoundedSubprocess,
   type PidRecordIdentity,
   pidAlive,
   pidRecordIdentity,
@@ -97,6 +98,7 @@ export function registerLiveGate(terminate: () => Promise<void>): () => void {
 }
 
 type ProcessRow = { pid: number; ppid: number; pgid: number; command: string }
+const RUN_PROCESS_TABLE_PS_TIMEOUT_MS = 10_000
 export type ProcessInventory =
   | { ascertainable: true; rows: ProcessRow[] }
   | { ascertainable: false; reason: string }
@@ -132,55 +134,46 @@ export type RunProcessTerminationPlan =
   | VerifiedRunProcessTermination
 
 export function processTable(): ProcessInventory {
-  let p: ReturnType<typeof Bun.spawnSync>
   try {
-    p = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,pgid=,command='], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: 1_000,
-    })
+    const { process: p, error } = observeBoundedSubprocess(
+      'ps',
+      ['ps', '-axo', 'pid=,ppid=,pgid=,command='],
+      {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+      RUN_PROCESS_TABLE_PS_TIMEOUT_MS,
+    )
+    if (error) {
+      return {
+        ascertainable: false,
+        reason: `process inventory unavailable: ${error}`,
+      }
+    }
+    return {
+      ascertainable: true,
+      rows: p
+        .stdout!.toString()
+        .split('\n')
+        .flatMap((line): ProcessRow[] => {
+          const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/)
+          return match
+            ? [
+                {
+                  pid: Number(match[1]),
+                  ppid: Number(match[2]),
+                  pgid: Number(match[3]),
+                  command: match[4]!,
+                },
+              ]
+            : []
+        }),
+    }
   } catch (error) {
     return {
       ascertainable: false,
       reason: `process inventory unavailable: ${String((error as Error).message ?? error)}`,
     }
-  }
-  if (p.exitCode !== 0) {
-    const stderr = p.stderr!.length ? `: ${p.stderr!.toString().trim()}` : ''
-    if (p.exitCode === null && p.signalCode === 'SIGTERM') {
-      return {
-        ascertainable: false,
-        reason: `process inventory did not complete inside 1000ms${stderr}`,
-      }
-    } else if (p.exitCode !== null) {
-      return {
-        ascertainable: false,
-        reason: `process inventory failed with exit ${p.exitCode}${stderr}`,
-      }
-    }
-    return {
-      ascertainable: false,
-      reason: `process inventory ended on signal ${p.signalCode ?? 'unknown'}${stderr}`,
-    }
-  }
-  return {
-    ascertainable: true,
-    rows: p
-      .stdout!.toString()
-      .split('\n')
-      .flatMap((line): ProcessRow[] => {
-        const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/)
-        return match
-          ? [
-              {
-                pid: Number(match[1]),
-                ppid: Number(match[2]),
-                pgid: Number(match[3]),
-                command: match[4]!,
-              },
-            ]
-          : []
-      }),
   }
 }
 

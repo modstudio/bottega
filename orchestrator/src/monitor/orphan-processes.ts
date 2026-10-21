@@ -15,7 +15,7 @@ export function orphanProcessConditions(
       subject: `pid:${process.pid}`,
       since: new Date(clock - process.ageSeconds * 1000).toISOString(),
       ageMs: process.ageSeconds * 1000,
-      detail: `pid ${process.pid} ${process.command}; age ${process.ageSeconds}s; missing tree ${process.missingTree}; matched by ${process.match}${process.match === 'argument' ? '; argument-only matches require manual reclaim' : ''}`,
+      detail: `pid ${process.pid} ${process.command}; age ${process.ageSeconds}s; missing tree ${process.missingTree}; matched by ${process.match}${process.match === 'argument' ? '; argument-only matches require manual reclaim' : process.cwdVerified ? '' : '; cwd process birth is unverified'}`,
       action: `run ${PLATFORM_SLUG} machine reclaim orphan-process ${process.pid} --dry-run, then ${PLATFORM_SLUG} machine reclaim orphan-process ${process.pid}`,
       affectedProject: process.project,
     })),

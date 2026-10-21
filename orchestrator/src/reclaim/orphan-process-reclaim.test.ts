@@ -8,7 +8,14 @@ import {
   signalFreshOrphanPlan,
 } from './orphan-process-reclaim.ts'
 
-const identity = { pid: 42, startTime: 'start', command: 'vite', missingTree: '/trees/gone' }
+const identity = {
+  pid: 42,
+  startTime: 'start',
+  command: 'vite',
+  missingTree: '/trees/gone',
+  match: 'cwd' as const,
+  cwdVerified: true,
+}
 
 test('orphan process reclamation requires unchanged birth, command, and missing tree', () => {
   expect(orphanProcessReverification(identity, identity)).toEqual({ safe: true })
@@ -23,6 +30,10 @@ test('orphan process reclamation requires unchanged birth, command, and missing 
     orphanProcessReverification(identity, { ...identity, missingTree: '/trees/other' }).safe,
   ).toBe(false)
   expect(orphanProcessReverification(identity, null).safe).toBe(false)
+  expect(orphanProcessReverification(identity, { ...identity, cwdVerified: false })).toEqual({
+    safe: false,
+    reason: 'pid 42 cwd process birth could not be verified',
+  })
 })
 
 const orphan = (overrides: Partial<OrphanProcess> = {}): OrphanProcess => ({
@@ -33,6 +44,7 @@ const orphan = (overrides: Partial<OrphanProcess> = {}): OrphanProcess => ({
   ageSeconds: 120,
   startTime: 'start',
   cwd: '/trees/gone',
+  cwdVerified: true,
   missingTree: '/trees/gone',
   project: 'app',
   match: 'cwd',
@@ -53,6 +65,10 @@ test('automatic reclaim requires cwd evidence, age, non-platform command, and no
     reclaim: true,
   })
   expect(automaticOrphanReclaimDecision(orphan(), new Set(['/trees/gone'])).reclaim).toBe(false)
+  expect(automaticOrphanReclaimDecision(orphan({ cwdVerified: false }), new Set())).toEqual({
+    reclaim: false,
+    reason: 'cwd process birth could not be verified',
+  })
 })
 
 test('a signal plan contains only the root and descendants with their births', () => {
