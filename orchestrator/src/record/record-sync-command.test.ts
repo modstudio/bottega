@@ -1,7 +1,6 @@
 import { expect, test } from 'bun:test'
 import {
   blockedOutboxLines,
-  heldOutboxLines,
   quarantinedOutboxLines,
   readOnlyDeferredLines,
 } from './record-sync-command.ts'
@@ -33,11 +32,5 @@ test('sync presentation reports read-only deferred rows by space', () => {
   // Production break watched: omit read-only deferred rows from sync presentation.
   expect(readOnlyDeferredLines([{ spaceId: 'space-a', rows: 2 }])).toEqual([
     'deferred 2\tread-only space space-a',
-  ])
-})
-
-test('sync presentation reports held rows once per kind', () => {
-  expect(heldOutboxLines([{ kind: 'run', rows: 2, reason: 'unknown columns: future' }])).toEqual([
-    'held 2\trun\tunknown columns: future',
   ])
 })

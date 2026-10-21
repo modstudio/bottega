@@ -4,6 +4,10 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { blockedByRetiredParentRows } from '../record/outbox-dependency.ts'
 import { heldOutboxKinds } from '../record/outbox-held.ts'
+import {
+  HOSTED_API_RELEASE_COMMAND,
+  outboxHeldUnknownColumns,
+} from '../record/outbox-held-contract.ts'
 import { quarantinedOutboxRows } from '../record/outbox-quarantine.ts'
 import type { AddressedMonitorCondition } from './monitor-types.ts'
 export function outboxQuarantineConditions(database: Database): AddressedMonitorCondition[] {
@@ -30,7 +34,7 @@ export function outboxRetiredParentConditions(database: Database): AddressedMoni
   }))
 }
 
-export function outboxHeldForUpgradeConditions(
+function outboxHeldForUpgradeConditions(
   database: Database,
   clock: number = Date.now(),
 ): AddressedMonitorCondition[] {
@@ -41,8 +45,8 @@ export function outboxHeldForUpgradeConditions(
       subject: `outbox-kind:${row.kind}`,
       since: row.oldestCreatedAt,
       ageMs,
-      detail: `${row.count} ${row.kind} outbox row(s) held; oldest age ${Math.round(ageMs / 60_000)}m; ${row.reason}`,
-      action: `run ${PLATFORM_SLUG} release run ${PLATFORM_SLUG} --rung hosted-api`,
+      detail: `${row.count} ${row.kind} outbox row(s) held; oldest age ${Math.round(ageMs / 60_000)}m; unknown columns: ${outboxHeldUnknownColumns(row.reason)}`,
+      action: `run ${HOSTED_API_RELEASE_COMMAND}, or retire a row with ${PLATFORM_SLUG} record outbox retire orch:<row-id> --reason <text>`,
       ownerSession: null,
     }
   })

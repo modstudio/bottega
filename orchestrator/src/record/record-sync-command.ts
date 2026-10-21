@@ -25,7 +25,7 @@ export function readOnlyDeferredLines(
   return rows.map((row) => `deferred ${row.rows}\tread-only space ${row.spaceId}`)
 }
 
-export function heldOutboxLines(
+function heldOutboxLines(
   rows: NonNullable<Awaited<ReturnType<typeof syncRecord>>['held']>,
 ): string[] {
   return rows.map((row) => `held ${row.rows}\t${row.kind}\t${row.reason}`)

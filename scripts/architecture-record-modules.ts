@@ -184,6 +184,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-sync-results.ts', [
     'bun:sqlite',
     './outbox-dependency.ts',
+    './outbox-held-contract.ts',
     './outbox-quarantine.ts',
     './record-sync-contract.ts',
     './record-sync-result-decision.ts',
@@ -460,6 +461,7 @@ export const recordModules: RecordModule[] = [
     '../../../shared/record-id.ts',
     'bun:sqlite',
     '../database/db.ts',
+    './outbox-held-contract.ts',
   ]),
   module('orchestrator/src/record/outbox-payload-contracts.ts', ['../verdict/verdict-payload.ts']),
   module('orchestrator/src/record/record-session.ts', [

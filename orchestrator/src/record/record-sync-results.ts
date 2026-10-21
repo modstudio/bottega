@@ -2,8 +2,13 @@
 /** Validates and applies authoritative hosted-record row results to the local outbox. */
 import type { Database } from 'bun:sqlite'
 import { markOutboxRowSynced } from './outbox-dependency.ts'
+import { OUTBOX_HELD_FOR_UPGRADE_MARKER } from './outbox-held-contract.ts'
 import { quarantineOutboxRow } from './outbox-quarantine.ts'
-import type { RecordSyncRequestRow, RecordSyncResponse } from './record-sync-contract.ts'
+import type {
+  RecordSyncRequestRow,
+  RecordSyncResponse,
+  RecordSyncRowResult,
+} from './record-sync-contract.ts'
 import {
   type RecordSyncBatchDependency,
   recordSyncResultTreatments,
@@ -14,6 +19,18 @@ function countHeld(held: Map<string, HeldRecordSyncRows>, kind: string, reason: 
   const current = held.get(kind)
   if (current) current.rows++
   else held.set(kind, { kind, rows: 1, reason })
+}
+
+function validateResultReason(result: RecordSyncRowResult): void {
+  if (
+    (result.status === 'quarantined' || result.status === 'deferred' || result.status === 'held') &&
+    (typeof result.reason !== 'string' || !result.reason.trim())
+  ) {
+    throw new Error('record sync response contained an invalid row reason')
+  }
+  if (result.status === 'held' && !result.reason.startsWith(OUTBOX_HELD_FOR_UPGRADE_MARKER)) {
+    throw new Error('record sync response contained an invalid held row reason')
+  }
 }
 
 function validateBatchResults(batch: RecordSyncRequestRow[], response: RecordSyncResponse): void {
@@ -28,14 +45,7 @@ function validateBatchResults(batch: RecordSyncRequestRow[], response: RecordSyn
       throw new Error('record sync response order did not match the request')
     if (!['synced', 'quarantined', 'deferred', 'held'].includes(result.status))
       throw new Error('record sync response contained an invalid row status')
-    if (
-      (result.status === 'quarantined' ||
-        result.status === 'deferred' ||
-        result.status === 'held') &&
-      (typeof result.reason !== 'string' || !result.reason.trim())
-    ) {
-      throw new Error('record sync response contained an invalid row reason')
-    }
+    validateResultReason(result)
     if (
       result.status === 'deferred' &&
       (typeof result.spaceId !== 'string' || !result.spaceId.trim())

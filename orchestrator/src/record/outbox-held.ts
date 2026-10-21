@@ -1,7 +1,7 @@
 // concern: outbox-held
 /** Reads pending outbox rows held for a hosted API upgrade. */
 import type { Database } from 'bun:sqlite'
-import { OUTBOX_HELD_FOR_UPGRADE_MARKER } from './outbox-held-contract.ts'
+import { outboxHeldForUpgradeLikePattern } from './outbox-held-contract.ts'
 
 export type HeldOutboxKind = {
   kind: string
@@ -17,7 +17,7 @@ export function heldOutboxKinds(database: Database): HeldOutboxKind[] {
        WHERE synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL
          AND last_error LIKE ? ORDER BY kind,created_at,id`,
     )
-    .all(`${OUTBOX_HELD_FOR_UPGRADE_MARKER}%`)
+    .all(outboxHeldForUpgradeLikePattern())
   const held = new Map<string, HeldOutboxKind>()
   for (const row of rows) {
     const current = held.get(row.kind)

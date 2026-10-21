@@ -4,7 +4,7 @@ import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { HostedApiUpgradeRequiredError } from '../record/outbox-held-contract.ts'
 import { quarantineOutboxRow } from '../record/outbox-quarantine.ts'
 import {
-  outboxHeldForUpgradeConditions,
+  outboxConditions,
   outboxQuarantineConditions,
   outboxRetiredParentConditions,
 } from './monitor-outbox.ts'
@@ -39,10 +39,7 @@ test('held outbox rows produce one upgrade condition per kind', () => {
        (?,9,'score','score-9','{}','2026-10-21T00:02:00.000Z',?)`,
     )
     .run(newRecordId(), runReason, newRecordId(), runReason, newRecordId(), scoreReason)
-  const conditions = outboxHeldForUpgradeConditions(
-    database,
-    new Date('2026-10-21T00:10:00.000Z').getTime(),
-  )
+  const conditions = outboxConditions(database, new Date('2026-10-21T00:10:00.000Z').getTime())
   expect(conditions).toHaveLength(2)
   expect(conditions).toEqual([
     expect.objectContaining({
