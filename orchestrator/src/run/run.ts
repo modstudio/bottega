@@ -34,7 +34,7 @@ import {
   writeTransaction,
 } from '../database/db.ts'
 import { preflight } from '../dispatch/dispatch-preflight.ts'
-import { readEventLog, runEventsPath, type StreamEvent } from '../events.ts'
+import type { StreamEvent } from '../events.ts'
 import { type classify, notify } from '../failure/failure.ts'
 import { checkoutWatchSet } from '../git/checkout-identity.ts'
 import { gitContext } from '../git/git-environment.ts'
@@ -174,13 +174,6 @@ function workerMcpLaunchScope(input: {
     serverName: workerHome.projectMcpServerName(input.connection, project),
     allowlist: mcpConfigAllowlist(config),
   }
-}
-
-function terminalWorkerEvents(workerEvents: StreamEvent[], runId: string) {
-  const artifactEvents = readEventLog(runEventsPath(runId)).flatMap((event) =>
-    event.type === 'focused_test' ? [{ ...event, kind: 'artifact_path' }] : [],
-  )
-  return [...workerEvents, ...artifactEvents]
 }
 
 const CANON_SOURCE_PROMPT_RESERVE_BYTES =
@@ -1116,7 +1109,7 @@ export async function run(opts: {
         name,
         artifactsPersisted,
         mcpRuling,
-        workerEvents: terminalWorkerEvents(workerEvents, claim.id),
+        workerEvents,
       }))
     } finally {
       runLease?.release()

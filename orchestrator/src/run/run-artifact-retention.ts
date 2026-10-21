@@ -28,9 +28,10 @@ export type ArtifactPathSource = {
   field: string
 }
 
-type ArtifactPathEvent = {
-  type?: string
-  logPath?: string
+/** The structured event fields that can name a retained run artifact. */
+export type ArtifactPathEvent = {
+  type: 'focused_test' | 'gate_log'
+  logPath: string
 }
 
 type RunArtifactDropReason =
@@ -68,11 +69,10 @@ export function namedRunArtifactPaths(
 ): ArtifactPathSource[] {
   const paths: ArtifactPathSource[] = [
     ...(reply?.files_written ?? []).map((path) => ({ path, field: 'reply.files_written' })),
-    ...events.flatMap((event) =>
-      event.type === 'focused_test' && event.logPath
-        ? [{ path: event.logPath, field: 'focused_test.logPath' }]
-        : [],
-    ),
+    ...events.map((event) => ({
+      path: event.logPath,
+      field: `${event.type}.logPath`,
+    })),
   ]
   return paths.filter(({ path }, index) => paths.findIndex((item) => item.path === path) === index)
 }

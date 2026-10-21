@@ -33,7 +33,9 @@ import type { FilesystemIdentityPlan, FilesystemIdentityRun } from '../filesyste
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { KEEP_RUN_FILES_DAYS } from './run-artifact-limits.ts'
 import {
+  type ArtifactPathEvent,
   type ArtifactPathSource,
+  type ArtifactReaderReply,
   decideRunArtifactRetention,
   namedRunArtifactPaths,
   type RunArtifactListingEntry,
@@ -55,6 +57,43 @@ import { type RunUsageColumns, runUsageColumnValues } from './run-usage-columns.
  */
 export { KEEP_RUN_FILES_DAYS } from './run-artifact-limits.ts'
 export { namedRunArtifactPaths }
+
+function artifactPathEvent(event: unknown): event is ArtifactPathEvent {
+  if (!event || typeof event !== 'object') return false
+  const candidate = event as { type?: unknown; logPath?: unknown }
+  return (
+    (candidate.type === 'focused_test' || candidate.type === 'gate_log') &&
+    typeof candidate.logPath === 'string' &&
+    candidate.logPath.trim().length > 0
+  )
+}
+
+function terminalArtifactEvents(id: string): ArtifactPathEvent[] {
+  try {
+    const path = join(resolveRunsDirectory(process.env), id, 'events.jsonl')
+    return readFileSync(path, 'utf8')
+      .split('\n')
+      .flatMap((line) => {
+        if (!line.trim()) return []
+        try {
+          const event: unknown = JSON.parse(line)
+          return artifactPathEvent(event) ? [event] : []
+        } catch {
+          return []
+        }
+      })
+  } catch {
+    return []
+  }
+}
+
+/** Total terminal read of the structured event fields that name retained artifacts. */
+export function terminalRunArtifactPaths(
+  id: string,
+  reply: ArtifactReaderReply | null,
+): ArtifactPathSource[] {
+  return namedRunArtifactPaths(reply, terminalArtifactEvents(id))
+}
 
 /**
  * Where prompt and output files live. By default they sit beside the resolved

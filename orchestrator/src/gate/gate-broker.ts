@@ -25,7 +25,7 @@ import {
   GATE_COMMAND_TIMEOUT_MS,
   resolveGateCommand,
 } from './gate-decision.ts'
-import { hostSlotWaitCallbacks } from './host-slot-wait.ts'
+import { hostSlotWaitCallbacks, recordGateLogEvent } from './host-slot-wait.ts'
 
 /** A pending check is a plain read; only an actual claim takes the write lock. */
 const GATE_REQUEST_POLL_MS = 1000
@@ -375,6 +375,9 @@ function startGateExecution(
       cancelledReason: finalization.cancelledReason,
       command,
     })
+    if (finalization.artifactPath) {
+      recordGateLogEvent(request.run_record_id, finishedAt, scratchPath)
+    }
   })()
     .finally(() => onFinish?.({ executionId: request.id, at: finishedAt ?? nowIso() }))
     .finally(unregister)

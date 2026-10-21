@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { appendRunEvent, runEventsPath } from '../events.ts'
 import {
   KEEP_RUN_FILES_DAYS,
   namedRunArtifactPaths,
@@ -27,6 +28,7 @@ import {
   runArtifactsDir,
   runFilePaths,
   runScratchDir,
+  terminalRunArtifactPaths,
   writeDispatchState,
 } from './run-artifacts.ts'
 
@@ -215,34 +217,62 @@ test('inline deliverable content does not request a file copy or fail persistenc
     rmSync(tree, { recursive: true, force: true })
   }
 })
-test('a focused-test event copies exactly its structured log path', () => {
+test('terminal artifact loading names focused-test and gate logs from their structured fields', () => {
   const id = addRun({ agent: 'codex', job: 'implement' })
   const source = mkdtempSync(join(tmpdir(), 'orch-focused-log-'))
   const exact = join(source, 'focused-test-exact.log')
+  const gate = join(source, 'gate-exact.log')
   const summaryOnly = join(source, 'focused-test-summary.log')
   writeFileSync(exact, 'exact log\n')
+  writeFileSync(gate, 'gate log\n')
   writeFileSync(summaryOnly, 'summary log\n')
   try {
-    const named = namedRunArtifactPaths(
-      {
-        files_written: null,
-        deliverables: [
-          {
-            name: 'summary',
-            content: `${summaryOnly}\nOutput: should not be parsed`,
-          },
-        ],
-      },
-      [{ type: 'focused_test', logPath: exact }],
-    )
+    appendRunEvent(id, {
+      ts: '2026-10-21T12:00:00.000Z',
+      type: 'focused_test',
+      paths: ['test.ts'],
+      exitCode: 0,
+      timedOut: false,
+      elapsedMs: 1,
+      logName: 'focused-test-exact.log',
+      logPath: exact,
+    })
+    appendRunEvent(id, {
+      ts: '2026-10-21T12:00:01.000Z',
+      type: 'gate_log',
+      logPath: gate,
+    })
+    const named = terminalRunArtifactPaths(id, {
+      files_written: null,
+      deliverables: [
+        {
+          name: 'summary',
+          content: `${summaryOnly}\nOutput: should not be parsed`,
+        },
+      ],
+    })
+    expect(named).toEqual([
+      { path: exact, field: 'focused_test.logPath' },
+      { path: gate, field: 'gate_log.logPath' },
+    ])
     persistRunArtifacts(id, named, null, null)
     expect(readFileSync(join(runArtifactsDir(id), 'focused-test-exact.log'), 'utf8')).toBe(
       'exact log\n',
     )
+    expect(readFileSync(join(runArtifactsDir(id), 'gate-exact.log'), 'utf8')).toBe('gate log\n')
     expect(existsSync(join(runArtifactsDir(id), 'focused-test-summary.log'))).toBe(false)
   } finally {
     rmSync(source, { recursive: true, force: true })
   }
+})
+test('an unreadable terminal event log yields no named event paths and persistence completes', () => {
+  const id = addRun({ agent: 'codex', job: 'implement' })
+  mkdirSync(runEventsPath(id), { recursive: true })
+
+  const named = terminalRunArtifactPaths(id, null)
+
+  expect(named).toEqual([])
+  expect(() => persistRunArtifacts(id, named, null, null)).not.toThrow()
 })
 test('artifacts written before scratch persistence survive the run 12430 files_written shape', () => {
   const id = addRun({ agent: 'codex', job: 'understand' })

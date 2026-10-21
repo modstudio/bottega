@@ -129,6 +129,17 @@ test('named artifact paths use only structured path fields and deduplicate', () 
   ])
 })
 
+test('gate logs use only their structured event path', () => {
+  expect(
+    namedRunArtifactPaths(null, [
+      {
+        type: 'gate_log',
+        logPath: '/runs/42/scratch/gate-7.log',
+      },
+    ]),
+  ).toEqual([{ path: '/runs/42/scratch/gate-7.log', field: 'gate_log.logPath' }])
+})
+
 test('inline deliverable content and summaries are not artifact path sources', () => {
   expect(
     namedRunArtifactPaths(
