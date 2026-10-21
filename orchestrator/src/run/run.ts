@@ -85,7 +85,6 @@ import {
   selectReadonlySandbox,
 } from '../sandbox/sandbox.ts'
 import {
-  assertAcpAllowed,
   assertAcpReady,
   EMPTY_VENDOR_USAGE,
   selectAgentForTransport,
@@ -94,6 +93,7 @@ import {
 import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { resolveReadOnlyBase } from '../worktree/worktree-caller.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
+import { assertSelectedAcpAllowed } from './run-acp-policy.ts'
 import {
   pruneRuns,
   RUNS_DIR,
@@ -131,10 +131,11 @@ import { refuseUnstartedRun } from './run-prelaunch-refusal.ts'
 import { bindSignals, sha } from './run-process.ts'
 import { readOnlyBaseProjectPath, repoOf } from './run-project-context.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
-import { namedAgentTurn, resumeFacts } from './run-resume-kind.ts'
+import { resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
 import { rootRunRecordId } from './run-root-record.ts'
+import { failReservedRun } from './run-startup-failure.ts'
 import { finishRun, type TerminalInput } from './run-terminal.ts'
 import type { RunResult } from './run-types.ts'
 import * as workerHome from './run-worker-home.ts'
@@ -546,7 +547,7 @@ export async function run(opts: {
       timeoutMinutes,
     )
   } catch (e) {
-    if (opts.reserveId) db().query('DELETE FROM run WHERE record_id=?').run(opts.reserveId)
+    failReservedRun(opts.reserveId, e)
     throw e
   }
   if (resume.isFirstTurn) {
@@ -557,17 +558,17 @@ export async function run(opts: {
   }
   if (transportName === 'acp') {
     try {
-      assertAcpAllowed(opts.job, name, a, namedAgentTurn(opts.agentExplicit, resume.isFirstTurn))
+      assertSelectedAcpAllowed(opts.job, a, opts.agentExplicit, resume.isFirstTurn)
       assertAcpReady(name, a)
     } catch (e) {
-      if (opts.reserveId) db().query('DELETE FROM run WHERE record_id=?').run(opts.reserveId)
+      failReservedRun(opts.reserveId, e)
       throw e
     }
   }
   if (name === 'codex') {
     const versionRefusal = minimumCliVersionRefusal(a)
     if (versionRefusal) {
-      if (opts.reserveId) db().query('DELETE FROM run WHERE record_id=?').run(opts.reserveId)
+      failReservedRun(opts.reserveId, versionRefusal)
       throw new Error(versionRefusal)
     }
   }
@@ -597,8 +598,7 @@ export async function run(opts: {
     agentHasMcp: a.caps.mcp,
   })
   if (attachmentRuling.refusalReason) {
-    // A routing mismatch must not convert the reserved placeholder into a failed row.
-    if (opts.reserveId) db().query('DELETE FROM run WHERE record_id=?').run(opts.reserveId)
+    failReservedRun(opts.reserveId, attachmentRuling.refusalReason)
     throw new Error(attachmentRuling.refusalReason)
   }
   const mcpMode = attachmentRuling.mcpMode
