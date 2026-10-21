@@ -40,6 +40,8 @@ import {
 } from './monitor-store-write-lock.ts'
 import type { MonitorNotice } from './monitor-types.ts'
 
+const MONITOR_CAPABILITY_PS_TIMEOUT_MS = 10_000
+
 type Options = {
   ackNotices?: string
   notices: boolean
@@ -91,12 +93,20 @@ function deliveryAuthorized(): boolean {
       !pidAlive(capability.pid)
     )
       return false
-    const observed = Bun.spawnSync(['/bin/ps', '-p', String(capability.pid), '-o', 'command='], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
+    let observed: ReturnType<typeof Bun.spawnSync>
+    for (let attempt = 0; ; attempt += 1) {
+      observed = Bun.spawnSync(['/bin/ps', '-p', String(capability.pid), '-o', 'command='], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: MONITOR_CAPABILITY_PS_TIMEOUT_MS,
+      })
+      if (observed.exitedDueToTimeout !== true || attempt === 1) break
+    }
     if (observed.exitCode !== 0) return false
-    const words = new TextDecoder().decode(observed.stdout).trim().split(/\s+/)
+    const words = new TextDecoder()
+      .decode(observed.stdout ?? new Uint8Array())
+      .trim()
+      .split(/\s+/)
     let executable = words[0]
     if (/^(?:python(?:3(?:\.\d+)?)?|ba?sh|zsh|dash)$/i.test(executable ? basename(executable) : ''))
       executable = words[1]

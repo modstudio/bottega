@@ -15,6 +15,10 @@ import { workerHarnessName, workerLaunchEnv } from '../agent/worker-launch-env.t
 import { DB_PATH, db } from '../database/db.ts'
 import { depth } from '../dispatch/dispatch-preflight.ts'
 import { DEFAULT_IDLE_GRACE_MS, isGroupKillablePgid, terminateProcessGroup } from '../idle-kill.ts'
+import {
+  PROCESS_TABLE_PS_TIMEOUT_MS,
+  processInventorySubprocessError,
+} from '../resources/process-inventory.ts'
 import { isForwardedChildEnvName } from '../sandbox/record-connection-env.ts'
 import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
 import { runTestWorkerEnvironment } from './run-test-workers.ts'
@@ -134,33 +138,30 @@ export type RunProcessTerminationPlan =
 export function processTable(): ProcessInventory {
   let p: ReturnType<typeof Bun.spawnSync>
   try {
-    p = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,pgid=,command='], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: 1_000,
-    })
+    for (let attempt = 0; ; attempt += 1) {
+      p = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,pgid=,command='], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: PROCESS_TABLE_PS_TIMEOUT_MS,
+      })
+      if (p.exitedDueToTimeout !== true || attempt === 1) break
+    }
   } catch (error) {
     return {
       ascertainable: false,
       reason: `process inventory unavailable: ${String((error as Error).message ?? error)}`,
     }
   }
-  if (p.exitCode !== 0) {
-    const stderr = p.stderr!.length ? `: ${p.stderr!.toString().trim()}` : ''
-    if (p.exitCode === null && p.signalCode === 'SIGTERM') {
-      return {
-        ascertainable: false,
-        reason: `process inventory did not complete inside 1000ms${stderr}`,
-      }
-    } else if (p.exitCode !== null) {
-      return {
-        ascertainable: false,
-        reason: `process inventory failed with exit ${p.exitCode}${stderr}`,
-      }
-    }
+  const subprocessError = processInventorySubprocessError('ps', PROCESS_TABLE_PS_TIMEOUT_MS, {
+    exitCode: p.exitCode,
+    signalCode: p.signalCode,
+    exitedDueToTimeout: p.exitedDueToTimeout === true,
+    stderr: p.stderr?.toString() ?? '',
+  })
+  if (subprocessError) {
     return {
       ascertainable: false,
-      reason: `process inventory ended on signal ${p.signalCode ?? 'unknown'}${stderr}`,
+      reason: `process inventory unavailable: ${subprocessError}`,
     }
   }
   return {

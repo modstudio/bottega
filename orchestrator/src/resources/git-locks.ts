@@ -13,6 +13,8 @@ export type GitLock = {
   ownerPids: number[] | null
 }
 
+const GIT_LOCK_LSOF_TIMEOUT_MS = 10_000
+
 function git(cwd: string, args: string[]): string | null {
   const p = Bun.spawnSync(['git', ...args], {
     cwd,
@@ -40,7 +42,14 @@ function lockFiles(root: string): string[] {
 function owningPids(path: string): number[] | null {
   let p: ReturnType<typeof Bun.spawnSync>
   try {
-    p = Bun.spawnSync(['lsof', '-t', '--', path], { stdout: 'pipe', stderr: 'pipe' })
+    for (let attempt = 0; ; attempt += 1) {
+      p = Bun.spawnSync(['lsof', '-t', '--', path], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: GIT_LOCK_LSOF_TIMEOUT_MS,
+      })
+      if (p.exitedDueToTimeout !== true || attempt === 1) break
+    }
   } catch {
     return null
   }

@@ -183,19 +183,26 @@ export function freezeCheckouts(
   return { snapshots, failures }
 }
 
+const CONFINEMENT_LOCK_LSOF_TIMEOUT_MS = 10_000
+
 function lockHolderPids(checkout: string): ConfinementLockHolder[] {
   const gitDir = git(checkout, ['rev-parse', '--path-format=absolute', '--git-dir'])
   const lock = gitDir.ok ? join(gitDir.stdout.trim(), 'index.lock') : null
   if (!lock || !existsSync(lock)) return []
-  const owner = Bun.spawnSync(['lsof', '-nP', '-Fpc', '--', lock], {
-    stdout: 'pipe',
-    stderr: 'ignore',
-  })
+  let owner: ReturnType<typeof Bun.spawnSync>
+  for (let attempt = 0; ; attempt += 1) {
+    owner = Bun.spawnSync(['lsof', '-nP', '-Fpc', '--', lock], {
+      stdout: 'pipe',
+      stderr: 'ignore',
+      timeout: CONFINEMENT_LOCK_LSOF_TIMEOUT_MS,
+    })
+    if (owner.exitedDueToTimeout !== true || attempt === 1) break
+  }
   if (owner.exitCode !== 0) return []
   let pid: number | null = null
   let command: string | null = null
   const holders: ConfinementLockHolder[] = []
-  for (const line of owner.stdout.toString().split('\n')) {
+  for (const line of (owner.stdout?.toString() ?? '').split('\n')) {
     if (line.startsWith('p')) {
       if (pid !== null) holders.push({ pid, command, sessionId: null })
       pid = Number(line.slice(1))

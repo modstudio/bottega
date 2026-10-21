@@ -20,6 +20,7 @@ export type OrphanProcess = ProcessFact & {
 }
 
 const PROCESS_CWD_LSOF_TIMEOUT_MS = 10_000
+export const PROCESS_TABLE_PS_TIMEOUT_MS = 10_000
 
 type ProcessInventorySubprocessResult = {
   exitCode: number | null
@@ -37,9 +38,11 @@ export function processInventorySubprocessError(
   const detail = result.stderr.trim()
   const suffix = detail ? `: ${detail}` : ''
   if (result.exitedDueToTimeout) return `${command} timed out after ${timeoutMs} ms${suffix}`
-  if (result.signalCode) return `${command} ended on signal ${result.signalCode}${suffix}`
-  if (result.exitCode !== 0) return `${command} exited ${result.exitCode}${suffix}`
-  return null
+  if (result.signalCode !== null && result.signalCode !== undefined)
+    return `${command} ended on signal ${result.signalCode}${suffix}`
+  if (result.exitCode === 0) return null
+  if (result.exitCode !== null) return `${command} exited ${result.exitCode}${suffix}`
+  return `${command} ended on signal unknown${suffix}`
 }
 
 function elapsedSeconds(value: string): number | null {
@@ -113,16 +116,26 @@ function processCwds(): { values: Map<number, string>; error: string | null } {
 
 function observeProcesses(): { facts: ProcessFact[]; error: string | null } {
   try {
-    const ps = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,pgid=,etime=,command='], {
-      env: { PATH: process.env.PATH ?? '', LC_ALL: 'C', LANG: 'C' },
-      stdout: 'pipe',
-      stderr: 'pipe',
+    let ps: ReturnType<typeof Bun.spawnSync>
+    for (let attempt = 0; ; attempt += 1) {
+      ps = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,pgid=,etime=,command='], {
+        env: { PATH: process.env.PATH ?? '', LC_ALL: 'C', LANG: 'C' },
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: PROCESS_TABLE_PS_TIMEOUT_MS,
+      })
+      if (ps.exitedDueToTimeout !== true || attempt === 1) break
+    }
+    const subprocessError = processInventorySubprocessError('ps', PROCESS_TABLE_PS_TIMEOUT_MS, {
+      exitCode: ps.exitCode,
+      signalCode: ps.signalCode,
+      exitedDueToTimeout: ps.exitedDueToTimeout === true,
+      stderr: ps.stderr?.toString() ?? '',
     })
-    if (ps.exitCode !== 0)
-      return { facts: [], error: ps.stderr.toString().trim() || `ps exited ${ps.exitCode}` }
+    if (subprocessError) return { facts: [], error: subprocessError }
     const cwds = processCwds()
     return {
-      facts: parseProcessTable(ps.stdout.toString()).map((fact) => ({
+      facts: parseProcessTable(ps.stdout?.toString() ?? '').map((fact) => ({
         ...fact,
         cwd: cwds.values.get(fact.pid) ?? null,
       })),

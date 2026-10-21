@@ -3,6 +3,14 @@ import { parseProcessTable, processInventorySubprocessError } from './process-in
 
 test('classifies process inventory subprocess failures', () => {
   expect(
+    processInventorySubprocessError('ps', 10_000, {
+      exitCode: 0,
+      signalCode: null,
+      exitedDueToTimeout: false,
+      stderr: '',
+    }),
+  ).toBeNull()
+  expect(
     processInventorySubprocessError('lsof', 10_000, {
       exitCode: null,
       signalCode: 'SIGTERM',

@@ -35,6 +35,7 @@ export const DEFAULT_IDLE_GRACE_MS = 5_000
 const DEFAULT_IDLE_KILL_CONFIRM_MS = 5_000
 /** ps %cpu of a sleeping process is 0.0; a busy loop is ~100. 1% is scheduler noise, not work. */
 const CPU_IDLE_PERCENT = 1
+const IDLE_SAMPLE_PS_TIMEOUT_MS = 10_000
 
 export function idleKillMs(env: NodeJS.ProcessEnv = process.env): number {
   const raw = env.ORCH_IDLE_KILL_MS
@@ -78,12 +79,17 @@ function parsePsTable(text: string): ProcessSample[] {
 
 export function sampleProcesses(): ProcessSample[] {
   try {
-    const p = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,pgid=,%cpu=,state='], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
+    let p: ReturnType<typeof Bun.spawnSync>
+    for (let attempt = 0; ; attempt += 1) {
+      p = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,pgid=,%cpu=,state='], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: IDLE_SAMPLE_PS_TIMEOUT_MS,
+      })
+      if (p.exitedDueToTimeout !== true || attempt === 1) break
+    }
     if (p.exitCode !== 0) return []
-    return parsePsTable(p.stdout.toString())
+    return parsePsTable(p.stdout?.toString() ?? '')
   } catch {
     // Bun.spawnSync throws EPERM rather than returning non-zero. An
     // unobservable process table must read as not idle.

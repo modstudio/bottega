@@ -24,13 +24,20 @@ export type StoreWriteLockReport =
       sampleCount: number
     }
 
+const STORE_WRITE_LOCK_HOLDER_PS_TIMEOUT_MS = 10_000
+
 function holderCommand(pid: number): string | null {
-  const result = Bun.spawnSync(['/bin/ps', '-p', String(pid), '-o', 'command='], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  let result: ReturnType<typeof Bun.spawnSync>
+  for (let attempt = 0; ; attempt += 1) {
+    result = Bun.spawnSync(['/bin/ps', '-p', String(pid), '-o', 'command='], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: STORE_WRITE_LOCK_HOLDER_PS_TIMEOUT_MS,
+    })
+    if (result.exitedDueToTimeout !== true || attempt === 1) break
+  }
   if (result.exitCode !== 0) return null
-  return new TextDecoder().decode(result.stdout).trim() || null
+  return new TextDecoder().decode(result.stdout ?? new Uint8Array()).trim() || null
 }
 
 function supervisedRun(storePath: string, pid: number): string | null {

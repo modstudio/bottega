@@ -9,6 +9,8 @@ import {
 } from '../../shared/dashboard-capability.ts'
 import { pidAlive } from '../../shared/process-identity.ts'
 
+const DASHBOARD_CAPABILITY_PS_TIMEOUT_MS = 10_000
+
 export function dashboardServeCommand(command: string): boolean {
   const words = command.trim().split(/\s+/)
   const frontDoorSource = `cli/${PLATFORM_SLUG}.ts`
@@ -72,12 +74,17 @@ export function dashboardCapabilityAuthorized(): boolean {
       !pidAlive(capability.pid)
     )
       return false
-    const observed = Bun.spawnSync(['ps', '-p', String(capability.pid), '-o', 'command='], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
+    let observed: ReturnType<typeof Bun.spawnSync>
+    for (let attempt = 0; ; attempt += 1) {
+      observed = Bun.spawnSync(['ps', '-p', String(capability.pid), '-o', 'command='], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: DASHBOARD_CAPABILITY_PS_TIMEOUT_MS,
+      })
+      if (observed.exitedDueToTimeout !== true || attempt === 1) break
+    }
     if (observed.exitCode !== 0) return false
-    return dashboardServeCommand(new TextDecoder().decode(observed.stdout))
+    return dashboardServeCommand(new TextDecoder().decode(observed.stdout ?? new Uint8Array()))
   } catch {
     return false
   }
