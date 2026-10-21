@@ -430,17 +430,12 @@ export async function run(opts: {
     } catch (cause) {
       const message = (cause as Error).message
       let failedId = opts.reserveId
-      if (failedId)
-        db()
-          .query(
-            `UPDATE run SET status='failed', failure_kind='harness', error=? WHERE record_id=?`,
-          )
-          .run(message, failedId)
-      else
+      if (failedId) failReservedRun(failedId, cause)
+      else {
         failedId = (
           db()
             .query(
-              `INSERT INTO run (record_id,number,started_at,agent,job,repo,project_record_id,cwd,prompt_sha,spec_sha,prompt_bytes,prompt_head,status,session_id,failure_kind,error,docs_injected,mcp,started_by_user_id,agent_explicit) VALUES (?,?,?,'(pending)',?,?,?,?,?,?,?,?,'failed',?,'harness',?,0,?,?,?) RETURNING record_id`,
+              `INSERT INTO run (record_id,number,started_at,agent,job,repo,project_record_id,cwd,prompt_sha,spec_sha,prompt_bytes,prompt_head,status,session_id,docs_injected,mcp,started_by_user_id,agent_explicit) VALUES (?,?,?,'(pending)',?,?,?,?,?,?,?,?,'running',?,0,?,?,?) RETURNING record_id`,
             )
             .get(
               ...[newRecordId(), nextRunNumber(db()), nowIso()],
@@ -453,12 +448,13 @@ export async function run(opts: {
               Buffer.byteLength(originalPrompt),
               originalPrompt.slice(0, 200).replace(/\s+/g, ' '),
               opts.ownerSession ?? sessionId(),
-              message,
               storedMcpRequest(mcpRequest),
               startedByUserId,
               Number(Boolean(opts.agentExplicit)),
             ) as { record_id: string }
         ).record_id
+        failReservedRun(failedId, cause)
+      }
       throw Object.assign(new Error(`run ${failedId} could not start: ${message}`), {
         runId: failedId,
       })
@@ -771,11 +767,7 @@ export async function run(opts: {
   } catch (e) {
     removeNewSandboxHomeAfterFailure(sandboxRunDir, sandboxRunDirExisted)
     const why = String((e as Error)?.message ?? e)
-    db()
-      .query(
-        `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE record_id=?`,
-      )
-      .run(why, Date.now() - started, claim.id)
+    failReservedRun(claim.id, e)
     teardownTerminalRunResources(db(), claim.id)
     throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
   }
@@ -867,11 +859,7 @@ export async function run(opts: {
       } catch (error) {
         if ((error as { runId?: string }).runId === claim.id) throw error
         const why = String((error as Error)?.message ?? error)
-        db()
-          .query(
-            `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE record_id=?`,
-          )
-          .run(why, Date.now() - started, claim.id)
+        failReservedRun(claim.id, error)
         await resetSandbox()
         teardownTerminalRunResources(db(), claim.id)
         throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), {
@@ -888,11 +876,7 @@ export async function run(opts: {
           .run(mismatch.connection.error, storedMcpProbe(mismatch.recorded), claim.id)
         if (mismatch.refusalReason) {
           const why = mismatch.refusalReason
-          db()
-            .query(
-              `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE record_id=?`,
-            )
-            .run(why, Date.now() - started, claim.id)
+          failReservedRun(claim.id, why)
           teardownTerminalRunResources(db(), claim.id)
           throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), {
             runId: claim.id,

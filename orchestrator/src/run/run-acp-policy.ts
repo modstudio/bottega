@@ -4,8 +4,7 @@
  * validated immediately before launch.
  */
 import type { Agent } from '../agent/agents.ts'
-import { job } from '../jobs/jobs.ts'
-import { meteredRouteEligibility } from '../route/route.ts'
+import { agentMeteredRouteEligibility } from '../route/route.ts'
 import { assertAcpAllowed } from '../transport/transport.ts'
 import { namedAgentTurn } from './run-resume-kind.ts'
 
@@ -15,13 +14,11 @@ export function assertSelectedAcpAllowed(
   agentExplicit: boolean | undefined,
   firstTurn: boolean,
 ): void {
-  const automaticallyEligible = meteredRouteEligibility({
-    billing: agent.billing,
-    routeMetered: Boolean(agent.routeMetered),
-    writesRepo: Boolean(job(jobName).needs.writesRepo),
-    name: agent.name,
-    explicitlyNamedAgent: agentExplicit ? agent.name : undefined,
-  }).mayAutoRouteNamedJob
+  const automaticallyEligible = agentMeteredRouteEligibility(
+    jobName,
+    agent,
+    agentExplicit ? agent.name : undefined,
+  ).mayAutoRouteNamedJob
   assertAcpAllowed(
     jobName,
     agent.name,

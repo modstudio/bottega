@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { AGENTS } from '../agent/agent-registry.ts'
+import { assertDispatchAcpAllowed } from '../dispatch/dispatch-cli-service.ts'
 import { detachedRunOptions } from '../route/failover.ts'
 import { assertSelectedAcpAllowed } from './run-acp-policy.ts'
 
@@ -16,20 +17,19 @@ test('an automatically routed metered ACP review lens stays eligible at detached
     lens: 'correctness',
   })
 
-  expect(() =>
-    assertSelectedAcpAllowed(opts.job, meteredAcpAgent, opts.agentExplicit, true),
-  ).not.toThrow()
+  expect(() => {
+    assertDispatchAcpAllowed(opts.job, meteredAcpAgent.name, meteredAcpAgent, false)
+    assertSelectedAcpAllowed(opts.job, meteredAcpAgent, opts.agentExplicit, true)
+  }).not.toThrow()
 })
 
-test('porcelain presentation and distinct-model routing do not change detached ACP eligibility', () => {
-  // --porcelain is deliberately absent from DetachSpec: it controls caller output only.
+test('an ACP review lens without metered routing opt-in still requires a named agent', () => {
   const opts = detachedRunOptions('review-lens', 'review it', 'reserved-id', {
     lens: 'correctness',
-    distinctModels: ['excluded-model'],
   })
+  const unoptedAgent = { ...meteredAcpAgent, routeMetered: false }
 
-  expect(opts.distinctModels).toEqual(['excluded-model'])
-  expect(() =>
-    assertSelectedAcpAllowed(opts.job, meteredAcpAgent, opts.agentExplicit, true),
-  ).not.toThrow()
+  expect(() => assertSelectedAcpAllowed(opts.job, unoptedAgent, opts.agentExplicit, true)).toThrow(
+    'require an agent named with --agent',
+  )
 })

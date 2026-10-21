@@ -23,11 +23,10 @@
  * nothing statically and pulls the rest in dynamically, INSIDE a catch — so a
  * broken sibling becomes a recorded failure with a reason, instead of silence.
  *
- * It writes that failure through `bun:sqlite` directly rather than through
- * `db.ts`, because `db.ts` runs migrations on open and the whole point here is
- * to be the code that still works when the code is broken.
+ * It loads the shared terminal write only after a startup failure is caught, so
+ * a broken sibling still reaches this entry point while an intact database path
+ * gets the same guarded write and hosted-record outbox entry as every refusal.
  */
-import { Database } from 'bun:sqlite'
 import { RefusalError } from '../refusal-error.ts'
 
 export function startupFailureDiagnostic(error: unknown): string {
@@ -36,28 +35,11 @@ export function startupFailureDiagnostic(error: unknown): string {
 }
 
 /** Record why this run never started, using as little of the codebase as possible. */
-function recordStartupFailure(id: string, reason: string): void {
+async function recordStartupFailure(id: string, reason: string): Promise<void> {
   if (!id) return
   try {
-    // The dispatcher always exports the already-resolved store to detached
-    // workers. Do not independently derive either the current or legacy root.
-    const path = process.env.ORCH_DB
-    if (!path) return
-    // `readwrite` explicitly: Bun refuses `{ create: false }` on its own with
-    // "flags must include SQLITE_OPEN_READONLY or SQLITE_OPEN_READWRITE", and
-    // this function swallows its own errors by design — so the first version
-    // recorded nothing at all and looked exactly like the silence it exists to
-    // remove. `create` stays false because the database must already exist: the
-    // row this is about was inserted into it moments ago.
-    const d = new Database(path, { readwrite: true, create: false })
-    d.exec('PRAGMA busy_timeout = 15000')
-    // Only a row still claiming to run: never overwrite an outcome something
-    // else already recorded.
-    d.query(
-      `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=0
-        WHERE record_id=? AND status='running'`,
-    ).run(reason.slice(0, 2000), id)
-    d.close()
+    const { failReservedRun } = await import('./run-startup-failure.ts')
+    failReservedRun(id, reason.slice(0, 2000))
   } catch {
     // Out of places to put it. The stderr line below is the last word, and the
     // stale sweep remains the backstop it has always been.
@@ -90,7 +72,7 @@ export async function main(argv: string[]): Promise<number> {
      * this codebase already reserves for "orch was wrong", and like `unreachable`
      * and `interrupted` it is never counted as evidence about an agent.
      */
-    recordStartupFailure(id, message)
+    await recordStartupFailure(id, message)
     console.error(`orch: run ${id} could not start: ${diagnostic}`)
     return 1
   }

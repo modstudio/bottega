@@ -47,7 +47,6 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-alive.ts', []),
   module('orchestrator/src/run/run-acp-policy.ts', [
     '../agent/agents.ts',
-    '../jobs/jobs.ts',
     '../route/route.ts',
     '../transport/transport.ts',
     './run-resume-kind.ts',
@@ -59,6 +58,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-startup-failure.ts', [
     '../database/db.ts',
     '../record/machine-identity.ts',
+    './run-liveness.ts',
     './run-outbox.ts',
   ]),
   module('orchestrator/src/run/branch-conversation-owner.ts', []),

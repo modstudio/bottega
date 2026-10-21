@@ -20,3 +20,29 @@ test('a refusal after detach keeps the printed run queryable as failed', () => {
     kind: 'run',
   })
 })
+
+test('a failed reserved continuation rolls its outcome up to the chain root', () => {
+  const root = addRun({ agent: 'codex', job: 'review-lens', status: 'asking' })
+  const turn = addRun({
+    agent: '(pending)',
+    job: 'review-lens',
+    status: 'running',
+    parent: root,
+    turn: 2,
+  })
+
+  failReservedRun(turn, 'continuation setup failed')
+
+  expect(
+    db().query('SELECT status, failure_kind, error FROM run WHERE record_id=?').get(root),
+  ).toEqual({
+    status: 'failed',
+    failure_kind: 'harness',
+    error: 'continuation setup failed',
+  })
+  expect(
+    db()
+      .query("SELECT row_id FROM outbox WHERE row_id IN (?,?) AND kind='run' ORDER BY row_id")
+      .all(root, turn),
+  ).toEqual([{ row_id: root }, { row_id: turn }].sort((a, b) => a.row_id.localeCompare(b.row_id)))
+})
