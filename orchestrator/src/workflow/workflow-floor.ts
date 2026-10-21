@@ -429,10 +429,17 @@ function commandExitBindingRefusal(evidence: ValidatedEvidence): string | null {
   return null
 }
 
-function commandExitFailureRefusal(floors: Floor[], evidence: ValidatedEvidence): string | null {
+function commandExitFailureRefusal(
+  floors: Floor[],
+  evidence: ValidatedEvidence,
+  met: Floor[],
+): string | null {
   const exec = evidence.exec
-  if (!exec || !floors.some((floor) => floor.kind === 'command-exit')) return null
-  if (exec.exitCode === 0) return null
+  if (!exec || evidence.artifact?.ref !== `exec:${exec.id}`) return null
+  if (!met.some((floor) => floor.kind === 'recorded-artifact')) return null
+  if (met.some((floor) => floor.kind === 'command-exit')) return null
+  const commandExit = floors.find((floor) => floor.kind === 'command-exit')
+  if (!commandExit || exec.exitCode === commandExit.expectedExitCode) return null
   return (
     `command-exit evidence exec:${exec.id} command \`${exec.command}\` exited ${exec.exitCode}; ` +
     `rerun the command successfully with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass the new exec id`
@@ -574,11 +581,11 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
   if (rulingRefusal) return { action: 'refuse', message: rulingRefusal }
   const reviewRefusal = unfinishedReviewRefusal(input.floors, input.evidence)
   if (reviewRefusal) return { action: 'refuse', message: reviewRefusal }
-  const commandFailure = commandExitFailureRefusal(input.floors, input.evidence)
-  if (commandFailure) return { action: 'refuse', message: commandFailure }
   const met = input.floors.filter((floor) =>
     floorIsMet(floor, input.evidence, input.freshRulingAfter),
   )
+  const commandFailure = commandExitFailureRefusal(input.floors, input.evidence, met)
+  if (commandFailure) return { action: 'refuse', message: commandFailure }
   const bindingRefusal = commandExitBindingRefusal(input.evidence)
   if (
     met.length === 0 &&
