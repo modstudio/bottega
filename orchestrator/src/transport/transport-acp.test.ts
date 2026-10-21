@@ -33,6 +33,8 @@ import {
   ACP_FIXTURE_CANCELLED_TEXT,
   ACP_FIXTURE_EDIT_PERMISSION,
   ACP_FIXTURE_ELICITATION,
+  ACP_FIXTURE_GOOSE_ESTIMATED_USAGE,
+  ACP_FIXTURE_GOOSE_PROVIDER_USAGE,
   ACP_FIXTURE_GROK,
   ACP_FIXTURE_MALFORMED,
   ACP_FIXTURE_REFUSAL,
@@ -44,6 +46,7 @@ import {
   ACP_FIXTURE_TRUNCATED_TEXT,
 } from './transport-acp.fixtures.ts'
 import {
+  acpClientCapabilities,
   acpEnvironment,
   acpHarnessArgv,
   acpLeaderSocketPath,
@@ -169,6 +172,13 @@ describe('ACP startup and partial-output bounds', () => {
 })
 
 describe('ACP transport selection', () => {
+  test('goose advertises its custom notification capability', () => {
+    expect(acpClientCapabilities('goose')._meta).toEqual({
+      goose: { customNotifications: true },
+    })
+    expect(acpClientCapabilities('opencode')._meta).toBeUndefined()
+  })
+
   test('model-agnostic harnesses expose their ACP stdio command', () => {
     expect(acpHarnessArgv('opencode')).toEqual(['acp'])
     expect(acpHarnessArgv('goose')).toEqual(['acp'])
@@ -302,15 +312,15 @@ describe('ACP transport selection', () => {
 })
 
 describe('ACP event fixtures normalize to orch outcomes', () => {
-  test('a structured reply is ok with text and tokens', () => {
+  test('context occupancy never becomes vendor tokens', () => {
     const result = normalizeAcpTurn(ACP_FIXTURE_STRUCTURED_OK)
     expect(result.status).toBe('ok')
     expect(outcomeFromTransport(result)).toEqual({ status: 'ok', failureKind: null })
     expect(result.output).toBe('{"status":"ok"}')
-    expect(result.tokens).toBe(1200)
+    expect(result.tokens).toBeNull()
     expect(result.sessionId).toBe('sess_parity_ok')
     expect(result.events.some((event) => event.kind === 'text')).toBe(true)
-    expect(result.events.some((event) => event.kind === 'usage')).toBe(true)
+    expect(result.events.some((event) => event.kind === 'usage')).toBe(false)
     expect(
       result.events.some((event) => event.kind === 'stop' && event.reason === 'end_turn'),
     ).toBe(true)
@@ -335,7 +345,7 @@ describe('ACP event fixtures normalize to orch outcomes', () => {
     expect(result.events.some((event) => event.kind === 'usage')).toBe(false)
   })
 
-  test('PromptResponse.usage records vendor tokens and cost when emitted', () => {
+  test('PromptResponse.usage records vendor tokens but treats a source-less cost as estimated', () => {
     const result = normalizeAcpTurn({
       sessionId: 'sess_usage',
       updates: [
@@ -350,7 +360,84 @@ describe('ACP event fixtures normalize to orch outcomes', () => {
       usage: { inputTokens: 10, outputTokens: 5, costUsd: 0.002 },
     })
     expect(result.tokens).toBe(15)
-    expect(result.costUsd).toBe(0.002)
+    expect(result.vendorUsage?.inputTokens).toBe(10)
+    expect(result.vendorUsage?.outputTokens).toBe(5)
+    expect(result.costUsd).toBeNull()
+    expect(result.vendorUsage?.estimatedCostUsd).toBe(0.002)
+    expect(result.vendorUsage?.costSource).toBe('estimated')
+  })
+
+  test('provider-reported message costs sum without counting accumulated session cost', () => {
+    const result = normalizeAcpTurn(ACP_FIXTURE_GOOSE_PROVIDER_USAGE)
+    expect(result.tokens).toBe(1_200)
+    expect(result.vendorUsage?.inputTokens).toBe(1_000)
+    expect(result.vendorUsage?.outputTokens).toBe(200)
+    expect(result.costUsd).toBeCloseTo(0.03)
+    expect(result.vendorUsage?.estimatedCostUsd).toBeNull()
+    expect(result.vendorUsage?.costSource).toBe('billed')
+  })
+
+  test('an estimated message makes the run estimated rather than billed', () => {
+    const result = normalizeAcpTurn(ACP_FIXTURE_GOOSE_ESTIMATED_USAGE)
+    expect(result.tokens).toBe(440)
+    expect(result.costUsd).toBeNull()
+    expect(result.vendorUsage?.estimatedCostUsd).toBe(0.04)
+    expect(result.vendorUsage?.costSource).toBe('estimated')
+  })
+
+  test('message token components fall back independently to prompt totals', () => {
+    const result = normalizeAcpTurn({
+      sessionId: 'sess_partial_tokens',
+      updates: [
+        {
+          update: {
+            sessionUpdate: 'message_usage',
+            usage: { outputTokens: 5 },
+          },
+        },
+        {
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text: 'done' },
+          },
+        },
+      ],
+      stopReason: 'end_turn',
+      usage: { inputTokens: 100, outputTokens: 200 },
+    })
+    expect(result.vendorUsage.inputTokens).toBe(100)
+    expect(result.vendorUsage.outputTokens).toBe(5)
+    expect(result.tokens).toBe(105)
+  })
+
+  test('mixed provider and estimated message costs store only the whole-run estimate', () => {
+    const result = normalizeAcpTurn({
+      sessionId: 'sess_partial',
+      updates: [
+        {
+          update: {
+            sessionUpdate: 'message_usage',
+            usage: { cost: 0.02, costSource: 'provider_reported' },
+          },
+        },
+        {
+          update: {
+            sessionUpdate: 'message_usage',
+            usage: { cost: 0.03, costSource: 'estimated' },
+          },
+        },
+        {
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text: 'done' },
+          },
+        },
+      ],
+      stopReason: 'end_turn',
+    })
+    expect(result.costUsd).toBeNull()
+    expect(result.vendorUsage?.estimatedCostUsd).toBeCloseTo(0.05)
+    expect(result.vendorUsage?.costSource).toBe('partial')
   })
 
   test('a tool-using read records the tool and the answer', () => {

@@ -18,13 +18,84 @@ import { db } from '../database/db.ts'
 import {
   KEEP_RUN_FILES_DAYS,
   persistRunArtifacts,
+  persistTerminalSnapshot,
   pruneRuns,
+  RUNS_DIR,
   readDispatchState,
+  reconcileRun,
   runArtifactsDir,
   runFilePaths,
   runScratchDir,
   writeDispatchState,
 } from './run-artifacts.ts'
+
+const terminalSnapshot = () => ({
+  status: 'ok',
+  error: null,
+  failureKind: null,
+  output: 'complete',
+  outputPath: '/tmp/output',
+  promptPath: '/tmp/prompt',
+  exitCode: 0,
+  latencyMs: 123,
+  vendorTokens: 34,
+  vendorCostUsd: null,
+  vendorInputTokens: 12,
+  vendorOutputTokens: 22,
+  vendorEstimatedCostUsd: 0.45,
+  vendorCostSource: 'estimated',
+  model: 'fixture-model',
+  vendorSession: 'fixture-session',
+  preConfinement: null,
+  confinement: null,
+  filesChanged: 1,
+  changedPaths: '["file.ts"]',
+  linesAdded: 2,
+  linesRemoved: 1,
+  testsRan: 1,
+  testsPassed: 1,
+  deviations: 0,
+  escalations: 0,
+})
+
+test('terminal snapshot preserves every vendor usage field', () => {
+  const id = addRun({ agent: 'codex', job: 'diagnose' })
+  persistTerminalSnapshot(id, terminalSnapshot())
+
+  const stored = JSON.parse(readFileSync(join(RUNS_DIR, id, 'result.json'), 'utf8'))
+  expect(stored).toMatchObject({
+    vendorTokens: 34,
+    vendorCostUsd: null,
+    vendorInputTokens: 12,
+    vendorOutputTokens: 22,
+    vendorEstimatedCostUsd: 0.45,
+    vendorCostSource: 'estimated',
+  })
+})
+
+test('reconcile restores every vendor usage column from the terminal snapshot', () => {
+  const id = addRun({ agent: 'codex', job: 'diagnose' })
+  db().query('UPDATE run SET unreconciled=1 WHERE record_id=?').run(id)
+  persistTerminalSnapshot(id, terminalSnapshot())
+
+  expect(reconcileRun(id)).toBe(`reconciled run ${id} as ok`)
+  expect(
+    db()
+      .query(
+        `SELECT vendor_tokens, vendor_cost_usd, vendor_input_tokens, vendor_output_tokens,
+                vendor_estimated_cost_usd, vendor_cost_source
+           FROM run WHERE record_id=?`,
+      )
+      .get(id),
+  ).toEqual({
+    vendor_tokens: 34,
+    vendor_cost_usd: null,
+    vendor_input_tokens: 12,
+    vendor_output_tokens: 22,
+    vendor_estimated_cost_usd: 0.45,
+    vendor_cost_source: 'estimated',
+  })
+})
 
 describe('run files are named by their run, not by the clock', () => {
   /**

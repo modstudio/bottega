@@ -9,13 +9,17 @@ const contract = (
 ) => ({ columns: typeof names === 'string' ? columns(names) : names, laterAdded })
 
 const RUN_RECORD_PAYLOAD_COLUMNS = columns(
-  'id spaceId projectId projectName machineId localId startedByUserId startedAt finishedAt agent job promptSha specSha promptBytes promptHead taskKey label lens latencyMs exitCode outputBytes vendorTokens vendorCostUsd probe failureKind status error retryOf parentRunId turn filesChanged changedPaths linesAdded linesRemoved testsRan testsPassed deviations escalations stack model evidenceExcluded evidenceUnvoid inputTree headCommit reviewRef branch baseCommit mintedBranch docsInjected docRevisions canonSha transport sessionId routeReason noFailover automaticFailover outsideWorktreeWrites reviewProvenance provenanceStatus workPreserved closeOutOutcome closeOutDetail provisioningKind provisioningMs provisioningPhases provisioningEntries provisioningEntriesLimited provisioningHostLoad provisioningOutcome provisioningEntryRoots withheldFields createdAt updatedAt',
+  'id spaceId projectId projectName machineId localId startedByUserId startedAt finishedAt agent job promptSha specSha promptBytes promptHead taskKey label lens latencyMs exitCode outputBytes vendorTokens vendorCostUsd vendorInputTokens vendorOutputTokens vendorEstimatedCostUsd vendorCostSource probe failureKind status error retryOf parentRunId turn filesChanged changedPaths linesAdded linesRemoved testsRan testsPassed deviations escalations stack model evidenceExcluded evidenceUnvoid inputTree headCommit reviewRef branch baseCommit mintedBranch docsInjected docRevisions canonSha transport sessionId routeReason noFailover automaticFailover outsideWorktreeWrites reviewProvenance provenanceStatus workPreserved closeOutOutcome closeOutDetail provisioningKind provisioningMs provisioningPhases provisioningEntries provisioningEntriesLimited provisioningHostLoad provisioningOutcome provisioningEntryRoots withheldFields createdAt updatedAt',
 )
 const RUN_RECORD_PAYLOAD_CONTRACT = contract(RUN_RECORD_PAYLOAD_COLUMNS, {
   projectId: null,
   startedByUserId: null,
   taskKey: null,
   evidenceUnvoid: null,
+  vendorInputTokens: null,
+  vendorOutputTokens: null,
+  vendorEstimatedCostUsd: null,
+  vendorCostSource: null,
   provisioningKind: null,
   provisioningMs: null,
   provisioningPhases: null,

@@ -35,11 +35,10 @@ import {
 } from '../database/db.ts'
 import { preflight } from '../dispatch/dispatch-preflight.ts'
 import type { StreamEvent } from '../events.ts'
-import { assessEvidencePrompt } from '../evidence/evidence.ts'
 import { type classify, notify } from '../failure/failure.ts'
 import { checkoutWatchSet } from '../git/checkout-identity.ts'
 import { gitContext } from '../git/git-environment.ts'
-import { isReaderJob, job, jobBoundInstruction, resolveJobTimeoutMs } from '../jobs/jobs.ts'
+import { job, jobBoundInstruction, resolveJobTimeoutMs } from '../jobs/jobs.ts'
 import {
   canonSourceFor,
   canonSourceInstruction,
@@ -88,6 +87,7 @@ import {
 import {
   assertAcpAllowed,
   assertAcpReady,
+  EMPTY_VENDOR_USAGE,
   selectAgentForTransport,
   type TransportName,
 } from '../transport/transport.ts'
@@ -103,8 +103,10 @@ import {
 } from './run-artifacts.ts'
 import { resolveRunBase, shouldResolveRunBase } from './run-base-resolution.ts'
 import { prepareRunBoard as board, persistBoundPrompt } from './run-board-prompt.ts'
+import { callerWatch } from './run-caller-watch.ts'
 import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
+import { runEvidence } from './run-evidence-context.ts'
 import {
   assertWorkerGitGuardOutsideWritableRoots,
   provisionWriterSharedGitRoots,
@@ -132,6 +134,7 @@ import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
 import { namedAgentTurn, resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
+import { rootRunRecordId } from './run-root-record.ts'
 import { finishRun, type TerminalInput } from './run-terminal.ts'
 import type { RunResult } from './run-types.ts'
 import * as workerHome from './run-worker-home.ts'
@@ -181,21 +184,12 @@ const CANON_SOURCE_PROMPT_RESERVE_BYTES =
 
 const PROMPT_SIZE_RUN_RECORD_ID = '00000000-0000-7000-8000-000000000000'
 
-function runEvidence(jobName: string, findingsJob: boolean, declaredDeliverables: string[]) {
-  return assessEvidencePrompt({
-    findingsJob,
-    verifyClaimJob: jobName === 'verify-claim',
-    readerJob: isReaderJob(jobName),
-    declaredDeliverables,
-  })
-}
-
-function rootRunRecordId(runId: string): string {
-  return (
-    db()
-      .query('SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run WHERE record_id=?')
-      .get(runId) as { root_id: string }
-  ).root_id
+function confinementSkipLines(failures: FreezeFailure[]): string[] {
+  return failures.map(
+    (failure) =>
+      `confinement watch skipped ${failure.project} at ${failure.path}: ${failure.error}; ` +
+      `fix the register with ${PLATFORM_SLUG} project set`,
+  )
 }
 
 export async function run(opts: {
@@ -936,6 +930,7 @@ export async function run(opts: {
   let output = ''
   let vendorTokens: number | null = null
   let costUsd: number | null = null
+  let vendorUsage = EMPTY_VENDOR_USAGE
   let resolvedSession: string | null = vendorSession
   let effectiveModel: string | null = null
   let contract: WorkerReply | null = null
@@ -960,21 +955,17 @@ export async function run(opts: {
   const callerCheckout = callerProject
     ? (gitContext(callerCwd, 'rev-parse', '--show-toplevel') ?? callerCwd)
     : null
-  const callerWatch =
-    callerCheckout && callerCheckout !== isolatedCwd
-      ? [{ project: callerProject!.name, path: callerCheckout }]
-      : []
-  const candidates = checkoutWatchSet(callerWatch, worktree?.path, runProjectName)
+  const candidates = checkoutWatchSet(
+    callerWatch(callerCheckout, isolatedCwd, callerProject),
+    worktree?.path,
+    runProjectName,
+  )
   const beforeFreeze = freezeCheckouts(candidates.watched)
   const skipped = [...candidates.failures, ...beforeFreeze.failures]
   // A detached child's stderr reaches nobody, so the skip also rides the output
   // header that `bottega run result` prints (lens run 2290): the register is stale and
   // the project unwatched on every later run until somebody reads this.
-  const skipLines = skipped.map(
-    (failure) =>
-      `confinement watch skipped ${failure.project} at ${failure.path}: ${failure.error}; ` +
-      `fix the register with ${PLATFORM_SLUG} project set`,
-  )
+  const skipLines = confinementSkipLines(skipped)
   for (const line of skipLines) console.error(line)
   if (skipLines.length) {
     mcpSetupHeader = mcpSetupHeader
@@ -1005,6 +996,7 @@ export async function run(opts: {
       output,
       vendorTokens,
       costUsd,
+      vendorUsage,
       resolvedSession,
       effectiveModel,
       contract,
@@ -1121,6 +1113,7 @@ export async function run(opts: {
         exitCode,
         vendorTokens,
         costUsd,
+        vendorUsage,
         effectiveModel,
         resolvedSession,
         name,

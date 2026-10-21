@@ -37,6 +37,7 @@ import {
   namedRunArtifactPaths,
   type RunArtifactListingEntry,
 } from './run-artifact-retention.ts'
+import { type RunUsageColumns, runUsageColumnValues } from './run-usage-columns.ts'
 
 /**
  * How long a run's prompt and reply are kept on disk.
@@ -224,7 +225,7 @@ export function runTerminalReplyPath(id: string, runsDir = RUNS_DIR): string {
   return join(runsDir, id, 'reply.txt')
 }
 
-export type TerminalSnapshot = {
+export type TerminalSnapshot = RunUsageColumns & {
   status: string
   error: string | null
   failureKind: string | null
@@ -295,7 +296,8 @@ export function reconcileRun(id: string): string {
     db()
       .query(
         `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,
-                      vendor_tokens=?, vendor_cost_usd=?, model=COALESCE(?, model),
+                      vendor_tokens=?, vendor_cost_usd=?, vendor_input_tokens=?, vendor_output_tokens=?,
+                      vendor_estimated_cost_usd=?, vendor_cost_source=?, model=COALESCE(?, model),
                       status=?, error=?, failure_kind=?, vendor_session=COALESCE(?, vendor_session),
                       pre_confinement=?, confinement=?, unreconciled=0,
                       files_changed=?, changed_paths=?, lines_added=?, lines_removed=?,
@@ -310,6 +312,7 @@ export function reconcileRun(id: string): string {
         snapshot.promptPath,
         snapshot.vendorTokens,
         snapshot.vendorCostUsd,
+        ...runUsageColumnValues(snapshot),
         snapshot.model,
         snapshot.status,
         snapshot.error,

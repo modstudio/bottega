@@ -5,6 +5,13 @@ import type { FailureKind } from '../failure/failure.ts'
 import { job } from '../jobs/jobs.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import type { AjvValidator } from './ajv-validator.ts'
+import type { VendorUsage } from './vendor-usage.ts'
+
+export {
+  EMPTY_VENDOR_USAGE,
+  type VendorCostSource,
+  type VendorUsage,
+} from './vendor-usage.ts'
 
 /** Task that owns the ACP go/no-go. Named in every refusal. */
 export const ACP_PILOT_TASK = 'DEV-352'
@@ -166,6 +173,7 @@ export type TransportResult = {
   parsed: ParsedReply | null
   tokens: number | null
   costUsd: number | null
+  vendorUsage: VendorUsage
   sessionId: string | null
   stopReason: string | null
   error: string | null

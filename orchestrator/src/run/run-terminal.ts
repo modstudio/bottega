@@ -32,6 +32,7 @@ import { machineId } from '../record/machine-identity.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { cleanReviewEvidence } from '../review/review.ts'
 import { resetSandbox } from '../sandbox/sandbox.ts'
+import type { VendorUsage } from '../transport/transport.ts'
 import { type Changes, changesIn } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
@@ -53,6 +54,7 @@ import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
 import { checkpointRoot, claimIdentity } from './run-resume-kind.ts'
+import { runUsageColumns, runUsageColumnValues } from './run-usage-columns.ts'
 
 const TERMINAL_STATUS_SQL = 'SELECT status, failure_kind FROM run WHERE record_id=?'
 
@@ -148,6 +150,20 @@ export function recordArtifactPersistenceFailure(
   }, database)
 }
 
+function reviewHidesGap(
+  review: ReviewReply | null,
+  input: Pick<TerminalInput, 'mcpMode' | 'mcpRuling'>,
+  wrongProjectTool: string | null,
+): boolean {
+  return Boolean(
+    review &&
+      review.provenance.could_not_verify.length === 0 &&
+      (review.provenance.substitutes.length > 0 ||
+        (input.mcpMode !== null && input.mcpRuling?.connected !== 1) ||
+        wrongProjectTool),
+  )
+}
+
 export type TerminalInput = {
   timer: ReturnType<typeof setTimeout> | null
   checkpointTimer: ReturnType<typeof setInterval> | null
@@ -193,6 +209,7 @@ export type TerminalInput = {
   exitCode: number
   vendorTokens: number | null
   costUsd: number | null
+  vendorUsage: VendorUsage
   effectiveModel: string | null
   resolvedSession: string | null
   name: string
@@ -394,7 +411,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     parsedReply,
     runProjectName,
     mcpConnection,
-    mcpMode,
     declaredDeliverables,
     mcpSetupHeader,
     outPath,
@@ -404,6 +420,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     exitCode,
     vendorTokens,
     costUsd,
+    vendorUsage,
     effectiveModel,
     resolvedSession,
     name,
@@ -673,6 +690,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     latencyMs: Date.now() - started,
     vendorTokens,
     vendorCostUsd: costUsd,
+    ...runUsageColumns(vendorUsage),
     model: effectiveModel,
     vendorSession: resolvedSession,
     preConfinement,
@@ -694,12 +712,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   }
   persistTerminalSnapshot(claim.id, terminalSnapshot)
   const reviewProvenance = parsedReview ? JSON.stringify(parsedReview.provenance) : null
-  const provenanceSilent =
-    parsedReview &&
-    parsedReview.provenance.could_not_verify.length === 0 &&
-    (parsedReview.provenance.substitutes.length > 0 ||
-      (mcpMode !== null && mcpRuling?.connected !== 1) ||
-      Boolean(provenanceWrongProjectTool))
+  const provenanceSilent = reviewHidesGap(parsedReview, input, provenanceWrongProjectTool)
   const localMachineId = machineId()
   const writeTerminalRow = () =>
     writeTransaction(() => {
@@ -707,7 +720,8 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       db()
         .query(
           `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,
-                        vendor_tokens=?, vendor_cost_usd=?, model=COALESCE(?, model),
+                        vendor_tokens=?, vendor_cost_usd=?, vendor_input_tokens=?, vendor_output_tokens=?,
+                        vendor_estimated_cost_usd=?, vendor_cost_source=?, model=COALESCE(?, model),
                         status=CASE WHEN status='stopped' THEN status ELSE ? END,
                         error=CASE WHEN status='stopped' THEN error ELSE ? END,
                         failure_kind=CASE WHEN status='stopped' THEN failure_kind ELSE ? END,
@@ -723,6 +737,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           promptPath,
           vendorTokens,
           costUsd,
+          ...runUsageColumnValues(runUsageColumns(vendorUsage)),
           effectiveModel,
           status,
           error,

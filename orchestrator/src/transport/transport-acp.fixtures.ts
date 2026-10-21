@@ -25,6 +25,84 @@ export const ACP_FIXTURE_STRUCTURED_OK = {
   stopReason: 'end_turn' as const,
 }
 
+export const ACP_FIXTURE_GOOSE_PROVIDER_USAGE = {
+  sessionId: 'sess_goose_provider',
+  updates: [
+    {
+      sessionId: 'sess_goose_provider',
+      update: {
+        sessionUpdate: 'usage_update',
+        used: 90_000,
+        contextLimit: 200_000,
+        accumulatedInputTokens: 1_000,
+        accumulatedOutputTokens: 200,
+        accumulatedCost: 9.99,
+      },
+    },
+    {
+      sessionId: 'sess_goose_provider',
+      update: {
+        sessionUpdate: 'message_usage',
+        messageId: 'message-1',
+        usage: {
+          inputTokens: 700,
+          outputTokens: 100,
+          totalTokens: 800,
+          cost: 0.02,
+          costSource: 'provider_reported',
+        },
+      },
+    },
+    {
+      sessionId: 'sess_goose_provider',
+      update: {
+        sessionUpdate: 'message_usage',
+        messageId: 'message-2',
+        usage: {
+          inputTokens: 300,
+          outputTokens: 100,
+          totalTokens: 400,
+          cost: 0.01,
+          costSource: 'provider_reported',
+        },
+      },
+    },
+    {
+      sessionId: 'sess_goose_provider',
+      update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'done' },
+      },
+    },
+  ],
+  stopReason: 'end_turn' as const,
+}
+
+export const ACP_FIXTURE_GOOSE_ESTIMATED_USAGE = {
+  sessionId: 'sess_goose_estimated',
+  updates: [
+    {
+      update: {
+        sessionUpdate: 'message_usage',
+        messageId: 'message-1',
+        usage: {
+          inputTokens: 400,
+          outputTokens: 40,
+          cost: 0.04,
+          costSource: 'estimated',
+        },
+      },
+    },
+    {
+      update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'done' },
+      },
+    },
+  ],
+  stopReason: 'end_turn' as const,
+}
+
 export const ACP_FIXTURE_TOOL_READ = {
   sessionId: 'sess_parity_read',
   updates: [
