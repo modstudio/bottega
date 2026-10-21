@@ -125,7 +125,7 @@ describe('worker shared-text store writes', () => {
     applyMigrations(d)
     seedWorkflows(d)
     const catalogue = productionStepCatalogue(d)
-    const workflow = productionWorkflows(d)[0]!
+    const workflow = productionWorkflows(d, null)[0]!
     const architectCatalogue = setStepCatalogueLocal(
       catalogue.definition,
       'architect catalogue fixture',
@@ -161,7 +161,7 @@ describe('worker shared-text store writes', () => {
     const catalogueWrites = [
       () => setStepCatalogue(catalogue.definition, 'worker fixture', 'worker', d),
       () => importStepCatalogue(catalogue.definition, 'worker fixture', 'worker', d),
-      () => forkStepCatalogue(undefined, 'worker fixture', 'worker', d),
+      () => forkStepCatalogue(undefined, 'worker fixture', 'fixture', 'worker', d),
       () => promoteStepCatalogue(architectCatalogue.n, 'worker fixture', 'worker', d),
       () => retireStepCatalogue(catalogue.n, 'worker fixture', 'worker', d),
     ]

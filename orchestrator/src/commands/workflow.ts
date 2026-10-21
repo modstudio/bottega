@@ -478,7 +478,11 @@ function registerWorkflowCatalogue({
   )
     .allowExcessArguments(false)
     .action((options) =>
-      forkCatalogueCommand(productArgv('catalogue', ['fork'], options), output(options)),
+      forkCatalogueCommand(
+        productArgv('catalogue', ['fork'], options),
+        output(options),
+        handlerOptions,
+      ),
     )
   jsonOption(catalogue.command('versions').description('list step catalogue versions'))
     .allowExcessArguments(false)

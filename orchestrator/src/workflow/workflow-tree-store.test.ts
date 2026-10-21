@@ -294,7 +294,7 @@ describe('importWorkflowTree', () => {
   test('a new flow may reference a new step from the same tree import', async () => {
     const d = database()
     const productionCatalogue = productionStepCatalogue(d)
-    const productionFlows = productionWorkflows(d)
+    const productionFlows = productionWorkflows(d, null)
     const tree = renderedTree(d)
     tree.push({
       path: '.agents/workflow-steps/tree-step.md',
@@ -339,9 +339,9 @@ describe('importWorkflowTree', () => {
     expect(
       showStepCatalogue(draft.n, d).definition.steps.some(({ slug }) => slug === 'tree-step'),
     ).toBe(true)
-    expect(showWorkflow('tree-flow', undefined, d).status).toBe('draft')
+    expect(showWorkflow('tree-flow', undefined, d, null).status).toBe('draft')
     expect(productionStepCatalogue(d).n).toBe(productionCatalogue.n)
-    expect(productionWorkflows(d)).toEqual(productionFlows)
+    expect(productionWorkflows(d, null)).toEqual(productionFlows)
     expect(() =>
       promoteWorkflowLocal('tree-flow', 1, 'must await catalogue promotion', 'test', d),
     ).toThrow('references missing step "tree-step"')

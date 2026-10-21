@@ -6,7 +6,9 @@ import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ConfigClient } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import type { StateEnvironment } from '../../../shared/state-directory.ts'
+import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
+import { effectiveProjectSpace } from '../project-space.ts'
 import {
   type AutonomyStage,
   type AutonomyValue,
@@ -17,7 +19,7 @@ import {
 } from './autonomy.ts'
 import { HOSTED_AUTONOMY_SCOPE_NAMES, resolveProjectAutonomy } from './autonomy-scopes.ts'
 import { readSessionContextCache, writeSessionContextCache } from './session-context-cache.ts'
-import { productionStepCatalogue } from './step-catalogue.ts'
+import { selectedStepCatalogue } from './step-catalogue.ts'
 
 const AUTONOMY_SETTER = `${PLATFORM_SLUG} machine config set`
 
@@ -184,7 +186,11 @@ async function architectSessionContext(
 ): Promise<ArchitectSessionContext> {
   const project = projectAt(cwd, dependencies.database)
   if (!project) return { registered: false }
-  const steps = catalogueStepsForAutonomy(productionStepCatalogue().definition.steps)
+  const database = dependencies.database ?? db()
+  const steps = catalogueStepsForAutonomy(
+    selectedStepCatalogue(undefined, database, effectiveProjectSpace(database, project.name))
+      .definition.steps,
+  )
   const stateEnvironment = dependencies.stateEnvironment ?? process.env
   const cached = readSessionContextCache(project.name, stateEnvironment)
   const resolution = await resolveProjectAutonomy(

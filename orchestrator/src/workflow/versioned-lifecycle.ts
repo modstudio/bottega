@@ -60,7 +60,7 @@ function ownerId<T>(
   config: VersionedStoreConfig<T>,
   slug: string,
   d: Database,
-  spaceId: string | null = null,
+  spaceId: string | null,
 ): number {
   const row = (
     d.query(`SELECT id,space_id FROM ${config.identityTable} WHERE slug=?`).all(slug) as {
@@ -167,7 +167,7 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
     const why = required(reasonValue, 'reason'),
       by = author(authorValue),
       at = nowIso(),
-      id = ownerId(config, slug, d)
+      id = ownerId(config, slug, d, null)
     return writeTransaction(() => {
       const target = show(slug, n, d)
       if (target.status !== 'draft')
@@ -201,7 +201,7 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
     const why = required(reasonValue, 'reason'),
       by = author(authorValue),
       at = nowIso(),
-      id = ownerId(config, slug, d)
+      id = ownerId(config, slug, d, null)
     return writeTransaction(() => {
       const target = show(slug, n, d)
       if (target.status === 'retired')
@@ -213,7 +213,7 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
       return show(slug, n, d)
     }, d)
   }
-  const versions = (slug: string, d: Database, spaceId: string | null = null) => {
+  const versions = (slug: string, d: Database, spaceId: string | null) => {
     const id = ownerId(config, slug, d, spaceId)
     const rows = d
       .query(

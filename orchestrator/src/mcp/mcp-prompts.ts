@@ -1,6 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { projectAt, projectByName } from '../project/projects.ts'
+import { effectiveProjectSpace } from '../project-space.ts'
+import { db } from '../database/db.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from '../workflow/autonomy.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { composeWorkflowWithCursor, mcpWorkflowCursorContext } from '../workflow/workflow-cursor.ts'
@@ -185,7 +187,14 @@ const promptArgsSchema = (prompt: WorkflowPromptDefinition) =>
   )
 
 export function registerWorkflowPrompts(server: McpServer): void {
-  for (const workflow of productionWorkflows()) {
+  const project = projectAt(process.cwd())
+  if (!project)
+    throw new Error(
+      `cannot register workflow prompts: no registered project contains ${process.cwd()}`,
+    )
+  const database = db()
+  const spaceId = effectiveProjectSpace(database, project.name)
+  for (const workflow of productionWorkflows(database, spaceId)) {
     const prompt = workflowPromptDefinitions([workflow])[0]!
     server.registerPrompt(
       prompt.name,

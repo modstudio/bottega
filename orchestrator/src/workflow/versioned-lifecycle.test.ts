@@ -57,7 +57,7 @@ describe('versioned lifecycle retirement', () => {
 
   test('retires a production version without clearing its promotion time', () => {
     const d = database()
-    const production = showWorkflow('flow', undefined, d)
+    const production = showWorkflow('flow', undefined, d, null)
 
     const retired = retireWorkflowLocal('flow', production.n, 'withdraw production', 'architect', d)
 

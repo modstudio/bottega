@@ -113,7 +113,7 @@ describe('workflow projection and seeds', () => {
     }[]
   const makeLegacy = (d: Database, slug: string, n: number, author = 'seed') => {
     const id = workflowId(d, slug),
-      definition = JSON.stringify(showWorkflow(slug, 1, d).definition),
+      definition = JSON.stringify(showWorkflow(slug, 1, d, null).definition),
       at = '2026-01-01T00:00:00.000Z'
     d.query('DELETE FROM workflow_event WHERE workflow_id=?').run(id)
     d.query('DELETE FROM workflow_version WHERE workflow_id=?').run(id)
@@ -164,7 +164,7 @@ describe('workflow projection and seeds', () => {
       )
     }
     for (const [slug, revision] of [['fix-defect', 5]] as const) {
-      const version = showWorkflow(slug, 1, d)
+      const version = showWorkflow(slug, 1, d, null)
       expect(version.status).toBe('production')
       expect(version.author).toBe('seed')
       expect(version.reason).toBe(`seed r${revision}`)
@@ -305,10 +305,10 @@ describe('workflow projection and seeds', () => {
     const d = database()
     makeLegacy(d, 'fix-defect', 1)
     seedWorkflows(d)
-    expect(showWorkflow('fix-defect', 2, d).status).toBe('production')
+    expect(showWorkflow('fix-defect', 2, d, null).status).toBe('production')
     for (const [slug, prior, next, revision] of [['fix-defect', 1, 2, 5]] as const) {
-      expect(showWorkflow(slug, prior, d).status).toBe('retired')
-      expect(showWorkflow(slug, next, d).reason).toBe(`seed r${revision}`)
+      expect(showWorkflow(slug, prior, d, null).status).toBe('retired')
+      expect(showWorkflow(slug, next, d, null).reason).toBe(`seed r${revision}`)
       expect(
         events(d, slug)
           .slice(-3)
@@ -364,8 +364,8 @@ describe('workflow projection and seeds', () => {
     })
     expect(d.query("SELECT id FROM workflow WHERE slug='fix-defect'").get()).toEqual({ id })
     expect(resolvedWorkflowVersions('fix-defect', null, d).map(({ n }) => n)).toEqual([1, 2, 3])
-    expect(showWorkflow('fix-defect', 2, d).author).toBe('architect')
-    expect(showWorkflow('fix-defect', 3, d).reason).toBe('seed r5')
+    expect(showWorkflow('fix-defect', 2, d, null).author).toBe('architect')
+    expect(showWorkflow('fix-defect', 3, d, null).reason).toBe('seed r5')
     expect(
       listWorkflows(d).filter(({ slug }) => slug === 'fix-defect' || slug === 'filed-issue'),
     ).toHaveLength(1)
@@ -384,10 +384,10 @@ describe('workflow projection and seeds', () => {
     const d = database()
     makeLegacy(d, 'fix-defect', 2, 'architect')
     seedWorkflows(d)
-    expect(showWorkflow('fix-defect', 2, d).status).toBe('retired')
-    expect(showWorkflow('fix-defect', 2, d).author).toBe('architect')
-    expect(showWorkflow('fix-defect', 3, d).status).toBe('production')
-    expect(showWorkflow('fix-defect', 3, d).author).toBe('seed')
+    expect(showWorkflow('fix-defect', 2, d, null).status).toBe('retired')
+    expect(showWorkflow('fix-defect', 2, d, null).author).toBe('architect')
+    expect(showWorkflow('fix-defect', 3, d, null).status).toBe('production')
+    expect(showWorkflow('fix-defect', 3, d, null).author).toBe('seed')
   })
   test('a workflow with no production version upgrades without a retire event', () => {
     const d = database()
@@ -397,7 +397,7 @@ describe('workflow projection and seeds', () => {
     ).run(new Date().toISOString())
     const before = events(d, 'fix-defect').length
     seedWorkflows(d)
-    expect(showWorkflow('fix-defect', 2, d).status).toBe('production')
+    expect(showWorkflow('fix-defect', 2, d, null).status).toBe('production')
     expect(
       events(d, 'fix-defect')
         .slice(before)

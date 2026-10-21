@@ -650,11 +650,21 @@ export async function retireCatalogueCommand(argv: string[], print: WorkflowPrin
   )
 }
 
-export async function forkCatalogueCommand(argv: string[], print: WorkflowPrint): Promise<void> {
+export async function forkCatalogueCommand(
+  argv: string[],
+  print: WorkflowPrint,
+  options: WorkflowCommandOptions = {},
+): Promise<void> {
+  const project = inspectionProjectName(options)
+  if (!project)
+    throw new Error(
+      `cannot fork the workflow step catalogue: no registered project contains ${resolve(options.cwd ?? process.cwd())}`,
+    )
   print(
     await forkStepCatalogue(
       positive(flagValue(argv, 'from'), '--from'),
       flagValue(argv, 'reason'),
+      project,
       flagValue(argv, 'author'),
     ),
   )

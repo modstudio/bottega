@@ -521,7 +521,7 @@ describe('workflow versions and project composition', () => {
   })
   test('compose without a workflow version still uses production', () => {
     const d = database(),
-      production = showWorkflow('flow', undefined, d),
+      production = showWorkflow('flow', undefined, d, null),
       draft = setWorkflowLocal('flow', valid(), 'ignored draft fixture', 'test', d)
 
     const composed = composeWorkflow('flow', 'fixture', undefined, {}, d)
@@ -613,7 +613,7 @@ describe('workflow versions and project composition', () => {
     const second = setWorkflowLocal('test-flow', changed, 'second', 'author', d)
     promoteWorkflowLocal('test-flow', first.n, 'publish', 'architect', d)
     promoteWorkflowLocal('test-flow', second.n, 'replace', 'architect', d)
-    expect(showWorkflow('test-flow', first.n, d).status).toBe('retired')
+    expect(showWorkflow('test-flow', first.n, d, null).status).toBe('retired')
     expect(resolvedWorkflowVersions('test-flow', null, d)).toHaveLength(2)
   })
   test('renders the project trunk and refuses a missing trunk with its remedy', () => {

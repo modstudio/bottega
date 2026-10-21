@@ -862,7 +862,7 @@ describe('workflow cursor adapter', () => {
       d,
     )
     promoteStepCatalogueLocal(catalogueDraft.n, 'publish', 'test', d)
-    const current = showWorkflow('flow', undefined, d).definition
+    const current = showWorkflow('flow', undefined, d, null).definition
     const draft = setWorkflowLocal(
       'flow',
       {

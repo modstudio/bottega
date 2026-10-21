@@ -56,7 +56,15 @@ test('workflow inspection reads only the current project space and stays local o
     {
       title: 'Local inspection',
       description: 'Local catalogue definition.',
-      arguments: [],
+      arguments: [
+        { name: 'key', required: true, description: 'Task key.' },
+        {
+          name: 'branch',
+          required: false,
+          rebind: true,
+          description: 'Current branch.',
+        },
+      ],
       modes: [
         {
           slug: 'local',
@@ -157,7 +165,15 @@ test('workflow inspection reads only the current project space and stays local o
     definition: JSON.stringify({
       title: 'Hosted inspection',
       description: 'Hosted catalogue definition.',
-      arguments: [],
+      arguments: [
+        { name: 'key', required: true, description: 'Task key.' },
+        {
+          name: 'branch',
+          required: false,
+          rebind: true,
+          description: 'Current branch.',
+        },
+      ],
       modes: [
         {
           slug: 'default',
@@ -309,10 +325,41 @@ test('workflow inspection reads only the current project space and stays local o
 
   const stepLines: string[] = []
   await workflowCommand(
-    ['workflow', 'step', slug, '1', '--project', project],
+    ['workflow', 'step', slug, '1', '--project', project, '--arg', 'key=DEV-1499-default'],
     presentation(stepLines),
   )
   expect(stepLines.join('\n')).toContain('This step exists only in the hosted mode layout.')
+
+  const cursor = composeWorkflowWithCursor(
+    slug,
+    project,
+    'default',
+    { key: 'DEV-1499-rebind', branch: 'before' },
+    {},
+    local,
+  ).cursor!.id
+  await workflowCommand(
+    [
+      'workflow',
+      'step',
+      slug,
+      '1',
+      '--cursor',
+      String(cursor),
+      '--arg',
+      'key=DEV-1499-rebind',
+      '--arg',
+      'branch=after',
+    ],
+    presentation([]),
+  )
+  expect(
+    JSON.parse(
+      local
+        .query<{ args: string }, [number]>('SELECT args FROM workflow_cursor WHERE id=?')
+        .get(cursor)!.args,
+    ),
+  ).toEqual({ key: 'DEV-1499-rebind', branch: 'after' })
 
   const renderLines: string[] = []
   await workflowCommand(['workflow', 'render-check'], presentation(renderLines))
@@ -326,6 +373,52 @@ test('workflow inspection reads only the current project space and stays local o
   expect(renderLines).not.toContain(
     `${project}  ${secondWorkflow}  default  ${secondStep}  body  second.only`,
   )
+
+  const localProject = 'inspection-local-project'
+  registerFixtureProject(localProject)
+  await workflowCommand(
+    [
+      'workflow',
+      'step',
+      slug,
+      '1',
+      '--project',
+      localProject,
+      '--arg',
+      'key=DEV-1499-local-default',
+    ],
+    presentation([]),
+  )
+  const localCursor = composeWorkflowWithCursor(
+    slug,
+    localProject,
+    'local',
+    { key: 'DEV-1499-local-rebind', branch: 'before' },
+    {},
+    local,
+  ).cursor!.id
+  await workflowCommand(
+    [
+      'workflow',
+      'step',
+      slug,
+      '1',
+      '--cursor',
+      String(localCursor),
+      '--arg',
+      'key=DEV-1499-local-rebind',
+      '--arg',
+      'branch=after',
+    ],
+    presentation([]),
+  )
+  expect(
+    JSON.parse(
+      local
+        .query<{ args: string }, [number]>('SELECT args FROM workflow_cursor WHERE id=?')
+        .get(localCursor)!.args,
+    ),
+  ).toEqual({ key: 'DEV-1499-local-rebind', branch: 'after' })
 
   const outside: string[] = []
   await workflowCommand(['workflow', 'list', '--json'], presentation(outside), {
