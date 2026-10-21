@@ -176,7 +176,6 @@ type LiveOptions = {
   model?: string
   schemaPath?: string
   job: string
-  noWaitCapacity?: boolean
 }
 
 async function startAfterHostCapacity(input: {

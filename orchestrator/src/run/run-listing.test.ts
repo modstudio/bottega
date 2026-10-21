@@ -6,6 +6,7 @@ import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import type { ProcessSample } from '../idle-kill.ts'
 import { runDetail } from '../state/serve.ts'
+import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from './run-host-capacity.ts'
 import { runIdentityMap, runListingCommand } from './run-listing.ts'
 
 function command(
@@ -152,6 +153,34 @@ describe('run listing', () => {
     })
     expect(row.stall).toBeString()
     expect((row.stall as string).length).toBeGreaterThan(0)
+  })
+
+  test('runs JSON evaluates whether the host-capacity wait is fresh', async () => {
+    const observedAt = Date.parse('2026-10-21T12:00:00.000Z')
+    const fresh = insert('running')
+    const stale = insert('running')
+    db()
+      .query('UPDATE run SET host_wait_since=? WHERE record_id=?')
+      .run(new Date(observedAt - 1_000).toISOString(), fresh)
+    db()
+      .query('UPDATE run SET host_wait_since=? WHERE record_id=?')
+      .run(
+        new Date(observedAt - RUN_HOST_WAIT_MAX_MS - RUN_HOST_WAIT_POLL_MS - 1).toISOString(),
+        stale,
+      )
+
+    const rows = (
+      await command(
+        { json: true },
+        () => null,
+        { sampleProcesses: () => [], processStartTime: () => null },
+        () => observedAt,
+      )
+    )
+      .map(runJson)
+      .filter((row) => row.record_id === fresh || row.record_id === stale)
+    expect(rows.find((row) => row.record_id === fresh)?.waiting_for_host_capacity).toBe(true)
+    expect(rows.find((row) => row.record_id === stale)?.waiting_for_host_capacity).toBe(false)
   })
 
   test('runs --unscored applies its filter before --limit', async () => {

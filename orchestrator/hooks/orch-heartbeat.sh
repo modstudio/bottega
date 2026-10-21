@@ -293,6 +293,11 @@ for line in sys.stdin:
     host_wait_since = d.get("host_wait_since")
     if host_wait_since is not None and not isinstance(host_wait_since, str):
         raise SystemExit(2)
+    waiting_for_host_capacity = d.get("waiting_for_host_capacity")
+    if not isinstance(waiting_for_host_capacity, bool):
+        raise SystemExit(2)
+    if waiting_for_host_capacity and host_wait_since is None:
+        raise SystemExit(2)
     if status == "running" and stall_state not in ("healthy", "stalled", "unknown"):
         raise SystemExit(2)
     stall = d.get("stall")
@@ -305,7 +310,7 @@ for line in sys.stdin:
             raise SystemExit(2)
         stalled_subjects.append("run:" + str(member_id))
     ids.append(str(d.get("record_id")) + ("s" if stall_state == "stalled" else ("i" if idle_note else "")))
-    display = ("waiting for host capacity since " + host_wait_since) if host_wait_since else (str(d.get("status")) + " " + age + idle_note)
+    display = ("waiting for host capacity since " + host_wait_since) if waiting_for_host_capacity else (str(d.get("status")) + " " + age + idle_note)
     out.append("%s/%s %s %s" % (d.get("number"), d.get("job"), d.get("agent"), display))
 if not saw:
     raise SystemExit(2)

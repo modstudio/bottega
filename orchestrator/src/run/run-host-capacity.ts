@@ -37,7 +37,7 @@ function runningRepositoryFacts(
   const rows = database
     .query(
       `SELECT agent_start_time FROM run
-        WHERE status='running' AND repo IS NOT NULL AND host_wait_since IS NULL AND record_id<>?`,
+        WHERE status='running' AND worktree IS NOT NULL AND host_wait_since IS NULL AND record_id<>?`,
     )
     .all(runId) as { agent_start_time: string | null }[]
   const self = database.query('SELECT host_wait_since FROM run WHERE record_id=?').get(runId) as {
@@ -47,7 +47,7 @@ function runningRepositoryFacts(
     ? database
         .query(
           `SELECT record_id FROM run
-            WHERE status='running' AND repo IS NOT NULL AND host_wait_since IS NOT NULL
+            WHERE status='running' AND worktree IS NOT NULL AND host_wait_since IS NOT NULL
               AND record_id<>?
               AND (host_wait_since < ? OR (host_wait_since = ? AND record_id < ?))
             LIMIT 1`,

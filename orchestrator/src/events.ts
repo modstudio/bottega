@@ -162,7 +162,7 @@ export function appendRunEvent(runId: string, event: RunLogEvent, path?: string)
 
 /** Record a non-fatal run warning consistently across dispatch and live execution. */
 export function recordRunWarning(runId: string, warning: string): void {
-  appendRunEvent(runId, { ts: nowIso(), type: 'text', text: warning })
+  appendRunEvent(runId, { ts: nowIso(), type: 'warning', text: warning })
 }
 
 function isWorkerActivity(event: RunLogEvent): boolean {
@@ -634,7 +634,7 @@ function formatFocusedTestPeekEvent(event: Extract<PeekEventSummary, { type: 'fo
 }
 
 function formatPeekEvent(event: PeekEventSummary): string {
-  if (event.type === 'text') return `  text ${event.text}`
+  if ('text' in event) return `  ${event.type} ${event.text}`
   if (event.type === 'note') {
     return `  note ${event.noteLabel}${event.candidateLabels.length ? ` near ${event.candidateLabels.join(',')}` : ''}`
   }

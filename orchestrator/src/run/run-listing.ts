@@ -85,6 +85,10 @@ function processSamplesForRows(
   return rows.some((row) => row.status === 'running') ? sampleProcesses() : []
 }
 
+function freshListedRunHostWait(row: Record<string, unknown>, now: number): boolean {
+  return isFreshRunHostWait(String(row.status), (row.host_wait_since as string | null) ?? null, now)
+}
+
 function withRetryRecordId(row: Record<string, unknown>): Record<string, unknown> {
   row.retry_record_id = row.retry_of_record_id ?? null
   delete row.retry_of_record_id
@@ -440,8 +444,8 @@ export async function runListingCommand(
   rows = rows.map((r) => {
     const live = r.status === 'running'
     const lastEventAt = (r.last_event_at as string | null) ?? null
-    const startedAt = String(r.current_started_at ?? r.started_at)
-    const observedAt = clock()
+    const startedAt = String(r.current_started_at ?? r.started_at),
+      observedAt = clock()
     const idle = live
       ? idleLabel(lastEventAt, startedAt, observedAt)
       : r.failure_kind === 'idle'
@@ -481,6 +485,7 @@ export async function runListingCommand(
       ...rest,
       idle,
       idle_ms: since,
+      waiting_for_host_capacity: freshListedRunHostWait(r, observedAt),
       stall_state: stallObservation?.state ?? null,
       stall: stallObservation?.detail ?? null,
       reclaimed_ms: reclaimed,

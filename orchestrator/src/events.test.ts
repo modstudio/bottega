@@ -10,6 +10,7 @@ import {
   formatPeek,
   idleLabel,
   peekRun,
+  recordRunWarning,
   runEventsPath,
 } from './events.ts'
 import type { NormalizedEvent } from './transport/transport.ts'
@@ -94,6 +95,7 @@ describe('vendor event log', () => {
     const id = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     db().query('UPDATE run SET last_event_at=? WHERE record_id=?').run('worker-time', id)
     appendRunEvent(id, { ts: 'server-time', type: 'ask_initialized' }, runEventsPath(id))
+    recordRunWarning(id, 'capacity bound reached')
     expect(
       (
         db().query('SELECT last_event_at FROM run WHERE record_id=?').get(id) as {
@@ -101,6 +103,11 @@ describe('vendor event log', () => {
         }
       ).last_event_at,
     ).toBe('worker-time')
+    expect(peekRun(id).events.at(-1)).toEqual({
+      type: 'warning',
+      text: 'capacity bound reached',
+    })
+    expect(formatPeek(peekRun(id))).toContain('warning capacity bound reached')
     appendRunEvent(id, { ts: 'next-worker-time', type: 'text', text: 'worker output' })
     expect(
       (

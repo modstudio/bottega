@@ -21,8 +21,16 @@ const loaded = (): HostLoad => ({
   oldestWaitMs: 0,
 })
 
-const repositoryRun = () =>
-  addRun({ agent: 'codex', job: 'implement', status: 'running', repo: '/repo' })
+const repositoryRun = (repo: string | null = '/repo') => {
+  const runId = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'running',
+    repo: repo ?? undefined,
+  })
+  db().query('UPDATE run SET worktree=? WHERE record_id=?').run(`/worktrees/${runId}`, runId)
+  return runId
+}
 
 describe('run host capacity', () => {
   test('a run never counts itself as held work', async () => {
@@ -40,6 +48,23 @@ describe('run host capacity', () => {
       }),
     ).toBeNull()
     expect(slept).toBe(false)
+  })
+
+  test('an unregistered checkout is repository work for admission', async () => {
+    repositoryRun(null)
+    const runId = repositoryRun(null)
+    let now = 0
+    const result = await waitForRunHostCapacity({
+      database: db(),
+      runId,
+      platform: 'linux',
+      measure: loaded,
+      now: () => now,
+      sleep: async () => {
+        now = RUN_HOST_WAIT_MAX_MS
+      },
+    })
+    expect(result).toMatchObject({ outcome: 'admitted', heldOn: ['load'], boundReached: true })
   })
 
   test('a waiter is not held work and the oldest waiter gets solo admission', async () => {
