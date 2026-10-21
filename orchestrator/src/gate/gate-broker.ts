@@ -8,6 +8,7 @@ import {
   CHECK_EXECUTION_FILE_ENV,
   type CheckExecutionRecord,
 } from '../../../shared/check-execution.ts'
+import { scrubbedGitEnv } from '../../../shared/git.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { HOST_SLOT_HELD_ENV, HostSlotWaitAborted, withGateSlot } from '../gate-load.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
@@ -38,11 +39,26 @@ import { hostSlotWaitCallbacks } from './host-slot-wait.ts'
 
 /** A pending check is a plain read; only an actual claim takes the write lock. */
 const GATE_REQUEST_POLL_MS = 1000
+export const GATE_BASE_REFRESH_TIMEOUT_MS = 30_000
 
 type PendingGate = { id: number; run_record_id: string; startedAt: string }
-type ActiveGate = { completion: Promise<void>; cancel(reason: string): Promise<void> }
+type ActiveGate = {
+  completion: Promise<void>
+  cancel(reason: string): Promise<void>
+}
 type HostSlotRunner = typeof withGateSlot
 export type GateExecutionMoment = { executionId: number; at: string }
+type GateBaseRefresh = (input: {
+  mainCheckout: string
+  landingBranch: string | null
+}) => GateBaseRefreshResult
+type GateBaseRefreshResult = { elapsedMs: number; message: string }
+type GitInvocationResult = {
+  status: number | null
+  stdout: Buffer
+  stderr: Buffer
+  error?: Error
+}
 type GateProcessState = {
   child: ReturnType<typeof spawn> | null
   termination: Promise<void> | null
@@ -93,7 +109,10 @@ function gatePlan(runId: string): {
   const settings = JSON.parse(row.settings ?? '{}') as {
     gate?: unknown
     trunk?: unknown
-    mainStack?: { consumers?: MainStackConsumer[]; requiredServices?: string[] }
+    mainStack?: {
+      consumers?: MainStackConsumer[]
+      requiredServices?: string[]
+    }
   }
   if (typeof settings.gate !== 'string' || !settings.gate.trim()) {
     throw new Error(`run ${runId}'s project has no registered gate`)
@@ -117,6 +136,94 @@ function requiredMainCheckout(environment: Record<string, string>, runId: string
   return mainCheckout
 }
 
+function operatorGitEnvironment(): NodeJS.ProcessEnv {
+  const environment = scrubbedGitEnv(process.env)
+  delete environment.ORCH_RUN_ID
+  delete environment.ORCH_RUN_TOKEN
+  delete environment.ORCH_DEPTH
+  return environment
+}
+
+function failedGateBaseRefresh(detail: string): string {
+  return `gate base refresh failed: ${detail}`
+}
+
+function gitFailureDetail(result: GitInvocationResult, command: string): string {
+  const detail = result.error?.message ?? result.stderr.toString().trim()
+  return detail || `${command} exited with status ${String(result.status)}`
+}
+
+/** Refresh the registered landing ref without exposing the worker's ref guard or run identity. */
+export function refreshGateBase(
+  input: { mainCheckout: string; landingBranch: string | null },
+  invoke: (
+    args: string[],
+    options: { cwd: string; env: NodeJS.ProcessEnv; timeout: number },
+  ) => GitInvocationResult = (args, options) =>
+    spawnSync('git', args, { ...options, encoding: 'buffer' }),
+): GateBaseRefreshResult {
+  const started = Date.now()
+  if (!input.landingBranch) {
+    return {
+      elapsedMs: Date.now() - started,
+      message: 'gate base refresh skipped: no registered landing branch',
+    }
+  }
+  const options = {
+    cwd: input.mainCheckout,
+    env: operatorGitEnvironment(),
+    timeout: GATE_BASE_REFRESH_TIMEOUT_MS,
+  }
+  const configured = invoke(['config', '--get', `branch.${input.landingBranch}.remote`], options)
+  if (configured.status === 1) {
+    return {
+      elapsedMs: Date.now() - started,
+      message: `gate base refresh skipped: no configured remote for ${input.landingBranch}`,
+    }
+  }
+  const remote = configured.status === 0 ? configured.stdout.toString().trim() : ''
+  if (!remote) {
+    const detail = gitFailureDetail(configured, 'git config')
+    return {
+      elapsedMs: Date.now() - started,
+      message: `gate base refresh skipped: could not read branch.${input.landingBranch}.remote: ${detail}`,
+    }
+  }
+  const fetched = invoke(['fetch', '--no-tags', '--', remote, input.landingBranch], options)
+  const elapsedMs = Date.now() - started
+  if (fetched.status === 0) {
+    return {
+      elapsedMs,
+      message: `gate base refresh passed: fetched ${remote}/${input.landingBranch}`,
+    }
+  }
+  const detail = gitFailureDetail(fetched, 'git fetch')
+  return {
+    elapsedMs,
+    message: failedGateBaseRefresh(`${remote}/${input.landingBranch}: ${detail}`),
+  }
+}
+
+export async function runGateAfterBaseRefresh(input: {
+  refreshInput: Parameters<GateBaseRefresh>[0]
+  refreshBase: GateBaseRefresh
+  recordRefresh: (refresh: GateBaseRefreshResult) => void
+  runGate: () => Promise<void>
+}): Promise<void> {
+  const refreshStarted = Date.now()
+  let refresh: GateBaseRefreshResult
+  try {
+    refresh = input.refreshBase(input.refreshInput)
+  } catch (error) {
+    refresh = {
+      elapsedMs: Date.now() - refreshStarted,
+      message: failedGateBaseRefresh(String(error)),
+    }
+  }
+  input.recordRefresh(refresh)
+  await input.runGate()
+}
+
 function gitPaths(worktree: string, args: string[]): string[] {
   const result = spawnSync('git', args, { cwd: worktree, encoding: 'buffer' })
   if (result.status !== 0) {
@@ -138,7 +245,10 @@ function changedGateTooling(
     const reason = (error instanceof Error ? error.message : String(error)).replaceAll('\n', ' ')
     log(`gate tooling diff fell back to recorded base ${plan.baseCommit}: ${reason}\n`)
   }
-  const base = decideGateToolingDiffBase({ recordedBase: plan.baseCommit, mergeBase })
+  const base = decideGateToolingDiffBase({
+    recordedBase: plan.baseCommit,
+    mergeBase,
+  })
   return changedGateToolingPaths({
     diffPaths: gitPaths(plan.worktree, ['diff', '--name-only', '-z', base, '--']),
     untrackedPaths: gitPaths(plan.worktree, ['ls-files', '--others', '--exclude-standard', '-z']),
@@ -307,7 +417,43 @@ function prepareGateExecution(input: {
   db()
     .query('UPDATE gate_execution SET tooling_paths=?,resolved_command=?,head_commit=? WHERE id=?')
     .run(JSON.stringify(toolingPaths), command, headCommit, input.request.id)
-  return { command, worktree: plan.worktree }
+  return {
+    command,
+    worktree: plan.worktree,
+    refreshInput: { mainCheckout, landingBranch: plan.trunk },
+  }
+}
+
+async function runPreparedGate(input: {
+  requestId: number
+  prepared: ReturnType<typeof prepareGateExecution>
+  refreshBase: GateBaseRefresh
+  environment: Record<string, string>
+  state: GateProcessState
+  record: (chunk: Buffer | string) => void
+  stop: () => Promise<void>
+}): Promise<void> {
+  await runGateAfterBaseRefresh({
+    refreshInput: input.prepared.refreshInput,
+    refreshBase: input.refreshBase,
+    recordRefresh: (refresh) => {
+      input.record(`${refresh.message} (${refresh.elapsedMs}ms)\n`)
+      db()
+        .query(
+          'UPDATE gate_execution SET base_refresh_elapsed_ms=?,base_refresh_result=? WHERE id=?',
+        )
+        .run(refresh.elapsedMs, refresh.message, input.requestId)
+    },
+    runGate: () =>
+      runGateProcess({
+        command: input.prepared.command,
+        worktree: input.prepared.worktree,
+        environment: input.environment,
+        state: input.state,
+        record: input.record,
+        stop: input.stop,
+      }),
+  })
 }
 
 function startGateExecution(
@@ -317,6 +463,7 @@ function startGateExecution(
   registerActive: (terminate: () => Promise<void>) => () => void,
   onFinish: ((moment: GateExecutionMoment) => void) | undefined,
   hostSlot: HostSlotRunner,
+  refreshBase: GateBaseRefresh,
 ): ActiveGate {
   const state: GateProcessState = {
     child: null,
@@ -345,7 +492,6 @@ function startGateExecution(
   let finishedAt: string | null = null
   completion = (async () => {
     mkdirSync(scratchDir, { recursive: true })
-    const scratchPath = join(scratchDir, `gate-${request.id}.log`)
     const artifactPath = join(runArtifactsDir(request.run_record_id), `gate-${request.id}.log`)
     const started = Date.now()
     let fd: number | null = null
@@ -360,14 +506,15 @@ function startGateExecution(
       tail = boundedGateOutputTail(tail + bytes.toString())
     }
     try {
-      fd = createGateLog(scratchPath)
+      fd = createGateLog(join(scratchDir, `gate-${request.id}.log`))
       const prepared = prepareGateExecution({ request, environment, record })
       command = prepared.command
       await hostSlot(
         () =>
-          runGateProcess({
-            command: command!,
-            worktree: prepared.worktree,
+          runPreparedGate({
+            requestId: request.id,
+            prepared,
+            refreshBase,
             environment: gateExecutionEnvironment(environment, checkExecutionPath),
             state,
             record,
@@ -426,6 +573,7 @@ export function startGateBroker(input: {
   onExecutionStart?: (moment: GateExecutionMoment) => void
   onExecutionFinish?: (moment: GateExecutionMoment) => void
   withHostSlot?: HostSlotRunner
+  refreshBase?: GateBaseRefresh
 }): GateBroker {
   let closed = false
   let active: ActiveGate | null = null
@@ -434,7 +582,10 @@ export function startGateBroker(input: {
     if (closed || active) return
     const request = claimPendingGate(input.runId)
     if (!request) return
-    input.onExecutionStart?.({ executionId: request.id, at: request.startedAt })
+    input.onExecutionStart?.({
+      executionId: request.id,
+      at: request.startedAt,
+    })
     const execution = startGateExecution(
       request,
       input.scratchDir,
@@ -442,6 +593,7 @@ export function startGateBroker(input: {
       registerActive,
       input.onExecutionFinish,
       input.withHostSlot ?? withGateSlot,
+      input.refreshBase ?? refreshGateBase,
     )
     active = execution
     void execution.completion.then(
