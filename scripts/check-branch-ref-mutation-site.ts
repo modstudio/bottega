@@ -26,24 +26,82 @@ function collect(directory: string): void {
 collect(sourceRoot)
 
 const mutationPatterns = [
-  /['"]update-ref['"][\s\S]{0,500}refs\/heads\//g,
-  /['"]worktree['"][\s\S]{0,240}['"]add['"][\s\S]{0,240}['"]-(?:b|B)['"]/g,
-  /['"]checkout['"][\s\S]{0,160}['"]-B['"]/g,
-  /['"]branch['"][\s\S]{0,160}['"]-(?:d|D|m|M)['"]/g,
+  { command: 'update-ref', pattern: /['"]update-ref['"]/g },
+  { command: 'worktree', pattern: /['"]worktree['"]/g },
+  { command: 'checkout', pattern: /['"]checkout['"]/g },
+  { command: 'branch', pattern: /['"]branch['"]/g },
 ]
 const marker =
-  /branch-ref-guard: (?:assertBranchRefMayBeCreated|assertBranchRefMayBeDeleted|observeBranchRefMutation)/
+  /^\s*\/\/ branch-ref-guard: (?:assertBranchRefMayBeCreated|assertBranchRefMayBeDeleted|observeBranchRefMutation|non-local refs\/(?:orch|remotes)\/)\s*$/
 const violations: string[] = []
+
+function enclosingOpen(source: string, index: number, open: '(' | '[', close: ')' | ']'): number {
+  let depth = 0
+  for (let cursor = index - 1; cursor >= 0; cursor--) {
+    if (source[cursor] === close) depth++
+    else if (source[cursor] === open) {
+      if (depth === 0) return cursor
+      depth--
+    }
+  }
+  return -1
+}
+
+function enclosingArray(source: string, index: number): string | null {
+  const start = enclosingOpen(source, index, '[', ']')
+  if (start === -1) return null
+  let depth = 0
+  for (let cursor = start; cursor < source.length; cursor++) {
+    if (source[cursor] === '[') depth++
+    else if (source[cursor] === ']') {
+      depth--
+      if (depth === 0) return source.slice(start, cursor + 1)
+    }
+  }
+  return null
+}
+
+function isMutationCommand(source: string, index: number, command: string): boolean {
+  if (command === 'update-ref') return true
+  const argv = enclosingArray(source, index)
+  if (!argv) return false
+  if (command === 'worktree') return /['"]add['"]/.test(argv) && /['"]-(?:b|B)['"]/.test(argv)
+  if (command === 'checkout') return /['"]-B['"]/.test(argv)
+  return /['"]-(?:d|D|m|M)['"]/.test(argv)
+}
+
+function enclosingCallStart(source: string, index: number): number {
+  const enclosingCall = enclosingOpen(source, index, '(', ')')
+  const enclosingArray = enclosingOpen(source, index, '[', ']')
+  const callCrossesBlock = enclosingCall !== -1 && source.slice(enclosingCall, index).includes('{')
+  const start = enclosingCall !== -1 && !callCrossesBlock ? enclosingCall : enclosingArray
+  if (start !== -1) return source.lastIndexOf('\n', start - 1) + 1
+  return source.lastIndexOf('\n', index - 1) + 1
+}
+
+function precedingLine(source: string, index: number): string {
+  const before = source.slice(0, index)
+  const lines = before.split('\n')
+  return lines.at(-2) ?? ''
+}
+
+function isNonMutationUpdateRef(source: string, index: number): boolean {
+  const lineEnd = source.indexOf('\n', index)
+  const line = source.slice(index, lineEnd === -1 ? source.length : lineEnd)
+  return /update-ref exited|update-ref failed/.test(line)
+}
 
 for (const path of files) {
   if (path.endsWith(join('branch', 'branch-ref-guard.ts'))) continue
   const source = readFileSync(path, 'utf8')
-  for (const pattern of mutationPatterns) {
+  for (const { command, pattern } of mutationPatterns) {
     for (const match of source.matchAll(pattern)) {
       const index = match.index ?? 0
-      const nearby = source.slice(Math.max(0, index - 500), index + 500)
-      if (marker.test(nearby)) continue
-      const line = source.slice(0, index).split('\n').length
+      if (!isMutationCommand(source, index, command)) continue
+      if (command === 'update-ref' && isNonMutationUpdateRef(source, index)) continue
+      const callStart = enclosingCallStart(source, index)
+      if (marker.test(precedingLine(source, callStart))) continue
+      const line = source.slice(0, callStart).split('\n').length
       violations.push(`${relative(root, path)}:${line}`)
     }
   }
@@ -52,7 +110,7 @@ for (const path of files) {
 if (violations.length) {
   for (const violation of [...new Set(violations)]) {
     console.error(
-      `${violation}: local branch mutation needs a nearby branch-ref-guard marker naming its guard`,
+      `${violation}: ref mutation needs a branch-ref-guard marker directly above it naming its guard or non-local namespace`,
     )
   }
   process.exit(1)

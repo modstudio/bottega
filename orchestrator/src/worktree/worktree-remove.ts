@@ -749,7 +749,11 @@ export function removeBranch(
 
 /** Read a local branch tip so cleanup can restore a ref another run still records. */
 export function branchTip(repoRoot: string, branch: string): string | null {
-  return exactBranchTip(repoRoot, branch)
+  try {
+    return exactBranchTip(repoRoot, branch)
+  } catch {
+    return null
+  }
 }
 
 export type UnmergedBranch = { count: number; tip: string }

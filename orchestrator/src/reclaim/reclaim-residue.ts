@@ -103,6 +103,7 @@ function conversationRows(runId: string) {
 }
 
 function gitUpdateRef(projectPath: string, ref: string, tip: string): boolean {
+  // branch-ref-guard: non-local refs/orch/
   const result = Bun.spawnSync(['git', 'update-ref', '-d', ref, tip], {
     cwd: projectPath,
     env: targetGitEnvironment(projectPath),

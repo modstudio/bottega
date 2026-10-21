@@ -14,6 +14,7 @@ import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { upsertProject } from '../project/projects.ts'
 import {
+  branchTip,
   changesInIndex,
   readOnlyRemovalRefusal,
   removeBranch,
@@ -120,6 +121,12 @@ test('observed changes without an explicit bound still use the trunk merge-base'
 })
 
 describe('worktree removal safety', () => {
+  test('a branch tip read tolerates a missing repository', () => {
+    const missing = join(tmpdir(), `orch-missing-repository-${crypto.randomUUID()}`)
+
+    expect(branchTip(missing, 'DEV-1470-missing')).toBeNull()
+  })
+
   test('reader deletion accepts only this project clone or its partial reader directory', () => {
     const repoRoot = '/projects/alpha'
     expect(

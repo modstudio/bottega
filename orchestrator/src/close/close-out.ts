@@ -842,6 +842,7 @@ function attemptCloseOutRun(
               }
             }
             if (retainedRef) {
+              // branch-ref-guard: non-local refs/orch/
               const unpinned = Bun.spawnSync(
                 ['git', 'update-ref', '-d', retainedRef, branchSnapshot!],
                 {

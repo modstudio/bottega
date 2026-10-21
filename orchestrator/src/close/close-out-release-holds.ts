@@ -55,6 +55,7 @@ export function protectRetainedBranch(input: {
   treePath: string
 }): ReleaseHoldResult | null {
   if (!input.retainedRef || !input.branchSnapshot) return null
+  // branch-ref-guard: non-local refs/orch/
   const pinned = Bun.spawnSync(['git', 'update-ref', input.retainedRef, input.branchSnapshot], {
     cwd: input.repoRoot,
     env: targetGitEnvironment(input.repoRoot),

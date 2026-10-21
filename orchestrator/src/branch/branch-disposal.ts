@@ -64,7 +64,10 @@ function pruneExpiredArchive(
     const current = git(project.path, ['rev-parse', '--verify', row.archive_ref])
     if (current !== row.tip)
       throw new Error(`archive ref moved from recorded tip ${row.tip} to ${current}`)
-    if (!input.dryRun) git(project.path, ['update-ref', '-d', row.archive_ref, row.tip])
+    if (!input.dryRun) {
+      // branch-ref-guard: non-local refs/orch/
+      git(project.path, ['update-ref', '-d', row.archive_ref, row.tip])
+    }
     input.log(
       `${input.dryRun ? 'would expire' : 'expired'} branch disposal archive ${row.archive_ref} for ${row.project}:${row.branch}`,
     )

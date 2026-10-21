@@ -12,7 +12,7 @@ export type TrackedWorktreeAddInput = {
 
 /** Build the one git worktree-add shape used by every tracked creation form. */
 export function buildTrackedWorktreeAddArgv(input: TrackedWorktreeAddInput): string[] {
-  // branch-ref-guard: assertBranchRefMayBeCreated in createTrackedRecipe
+  // branch-ref-guard: assertBranchRefMayBeCreated
   return [
     'worktree',
     'add',

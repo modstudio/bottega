@@ -135,6 +135,7 @@ function snapshotRemoteTrackingRefs(repoRoot: string): RemoteTrackingRef[] {
 function restoreRemoteTrackingRefs(path: string, refs: RemoteTrackingRef[]): void {
   for (const ref of refs) {
     try {
+      // branch-ref-guard: non-local refs/remotes/
       gitInput(
         ['update-ref', '--stdin'],
         path,

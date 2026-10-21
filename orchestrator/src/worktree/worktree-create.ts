@@ -437,9 +437,13 @@ function checkoutCreatedBranch(
 ): void {
   assertBranchRefMayBeCreated(repoRoot, branch)
   const dirty = gitOk(['status', '--porcelain=v1', '--untracked-files=no'], path)
-  // branch-ref-guard: assertBranchRefMayBeCreated
-  if (baseRef && !dirty) git(['checkout', '-B', branch, base], path)
-  else gitOk(['checkout', '-B', branch], path)
+  if (baseRef && !dirty) {
+    // branch-ref-guard: assertBranchRefMayBeCreated
+    git(['checkout', '-B', branch, base], path)
+  } else {
+    // branch-ref-guard: assertBranchRefMayBeCreated
+    gitOk(['checkout', '-B', branch], path)
+  }
 }
 
 function runGuardedCreateTool(
