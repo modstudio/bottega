@@ -65,9 +65,7 @@ function emptyLegacyNameCounts(): LegacyNameCounts {
   ) as LegacyNameCounts
 }
 
-export function legacyNameCounts(
-  files: Readonly<Record<string, string>>,
-): LegacyNameCounts {
+export function legacyNameCounts(files: Readonly<Record<string, string>>): LegacyNameCounts {
   const counts = emptyLegacyNameCounts()
   for (const [file, text] of Object.entries(files).sort(([left], [right]) =>
     left.localeCompare(right),
@@ -138,11 +136,14 @@ function isExempt(path: string): boolean {
 }
 
 function scannedFiles(): string[] {
-  const result = Bun.spawnSync(['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
-    cwd: ROOT,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const result = Bun.spawnSync(
+    ['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+    {
+      cwd: ROOT,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  )
   if (result.exitCode !== 0) {
     throw new Error(
       `git ls-files failed with exit ${result.exitCode ?? 'unknown'}: ${result.stderr.toString().trim() || 'no error output'}`,
@@ -185,14 +186,18 @@ export function validateLegacyNameBaseline(value: unknown): LegacyNameCounts {
   return value as LegacyNameCounts
 }
 
-function readBaseline(): LegacyNameCounts {
+export function parseLegacyNameBaseline(text: string): LegacyNameCounts {
   let parsed: unknown
   try {
-    parsed = JSON.parse(readFileSync(BASELINE_PATH, 'utf8'))
+    parsed = JSON.parse(text)
   } catch (error) {
     throw new Error(`invalid JSON: ${error instanceof Error ? error.message : String(error)}`)
   }
   return validateLegacyNameBaseline(parsed)
+}
+
+function readBaseline(): LegacyNameCounts {
+  return parseLegacyNameBaseline(readFileSync(BASELINE_PATH, 'utf8'))
 }
 
 function printTotals(counts: LegacyNameCounts): void {

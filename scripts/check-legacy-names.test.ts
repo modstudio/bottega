@@ -5,6 +5,7 @@ import {
   legacyNameCounts,
   legacyNameGrowth,
   loweredLegacyNameBaseline,
+  parseLegacyNameBaseline,
   validateLegacyNameBaseline,
 } from './check-legacy-names.ts'
 
@@ -13,8 +14,7 @@ test('counts each legacy-name class in fixture text', () => {
     [
       'orch run abc',
       'hub task',
-      'bin/orch',
-      'bin/hub',
+      'bin/orch, bin/hub.',
       `mcp__orch__get_doc orch-ask mcp_servers.orch={command="${PLATFORM_NAME}"}`,
       'ORCH_DB HUB_PORT',
       'orch.db',
@@ -75,4 +75,5 @@ test('baseline validation requires every class with numeric totals and file coun
       env: { total: 0, files: { 'one.txt': 'invalid' } },
     }),
   ).toThrow('class env file one.txt has a non-numeric count')
+  expect(() => parseLegacyNameBaseline('{')).toThrow('invalid JSON')
 })
