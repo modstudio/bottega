@@ -16,30 +16,30 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "typescript": "^5"
+    "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@agentclientprotocol/codex-acp": "^2.1.1",
-    "@agentclientprotocol/sdk": "^1.6.0",
+    "@agentclientprotocol/codex-acp": "^2.2.2",
+    "@agentclientprotocol/sdk": "^1.9.0",
     "@anthropic-ai/sandbox-runtime": "^0.0.75",
     "@ast-grep/lang-bash": "0.0.8",
     "@ast-grep/lang-php": "0.0.7",
     "@ast-grep/lang-python": "0.0.6",
     "@ast-grep/napi": "0.45.3",
-    "@aws-sdk/client-sesv2": "^3.1135.0",
-    "@better-auth/drizzle-adapter": "1.7.5",
+    "@aws-sdk/client-sesv2": "^3.1154.0",
+    "@better-auth/drizzle-adapter": "1.7.12",
     "@clack/prompts": "1.8.1",
     "@modelcontextprotocol/client": "^2.3.1",
     "@modelcontextprotocol/server": "^2.3.1",
     "ajv": "^8.20.0",
-    "better-auth": "1.7.5",
+    "better-auth": "1.7.12",
     "commander": "15.0.0",
     "drizzle-orm": "1.0.0-rc.4",
-    "execa": "10.0.1",
+    "execa": "10.2.0",
     "github-slugger": "^2.0.0",
     "hono": "4.13.13",
     "hono-rate-limiter": "^0.5.4",
-    "package-manager-detector": "^1.8.0",
-    "zod": "^4"
+    "package-manager-detector": "^1.9.0",
+    "zod": "^4.6.7"
   }
 }
