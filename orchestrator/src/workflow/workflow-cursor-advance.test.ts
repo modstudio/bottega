@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {
@@ -348,6 +349,43 @@ function insertGradedReview(d: Database): string {
 }
 
 describe('ruling outcomes and bounded re-entry', () => {
+  test('a mixed command-exit step refuses a failed exec and closes on a successful exec', () => {
+    const d = database()
+    installFlowFixture(
+      d,
+      'command-close',
+      [flowStep('command', { floor: ['command-exit', 'recorded-artifact'] })],
+      ['command'],
+    )
+    open(d, 'command-close')
+    const recordExec = (exitCode: number) =>
+      d
+        .query<{ id: number }, (string | number)[]>(
+          `INSERT INTO probe
+            (record_id,command,cwd,head_commit,exit_code,output_tail,session_id,created_at,kind)
+           VALUES (?,?,'/tmp','abc',?,'','flow-session','9999-01-01','exec') RETURNING id`,
+        )
+        .get(newRecordId(), JSON.stringify([PLATFORM_SLUG, 'pr', 'create']), exitCode)!.id
+    const close = (id: number) =>
+      nextWorkflowStep(
+        'command-close',
+        'fixture',
+        'default',
+        args,
+        'opened pull request',
+        context,
+        d,
+        { artifact: `exec:${id}` },
+        testPorts,
+      )
+
+    const failed = recordExec(1)
+    expect(() => close(failed)).toThrow(
+      `command-exit evidence exec:${failed} command \`${PLATFORM_SLUG} pr create\` exited 1; rerun the command successfully with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass the new exec id`,
+    )
+    expect(close(recordExec(0))).toContain('is finished: 1 steps closed')
+  })
+
   test('a ruling outcome refuses without a ruling and closes with one', () => {
     const d = database()
     installFlowFixture(

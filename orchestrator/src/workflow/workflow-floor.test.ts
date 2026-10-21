@@ -52,6 +52,7 @@ const passingProbe: ValidatedEvidence = { probe: { id: 3, exitCode: 0 } }
 const passingExec: ValidatedEvidence = {
   exec: {
     id: 4,
+    command: `${PLATFORM_SLUG} pr create`,
     exitCode: 0,
     sessionMatches: true,
     sessionAdoptedCursor: false,
@@ -318,6 +319,29 @@ test('an exec with the expected exit satisfies command-exit', () => {
       evidence: {
         exec: {
           id: 4,
+          command: `${PLATFORM_SLUG} pr create`,
+          exitCode: 1,
+          sessionMatches: true,
+          sessionAdoptedCursor: false,
+          createdAfterStepActivation: true,
+        },
+      },
+    }),
+  ).toEqual({
+    action: 'refuse',
+    message: `command-exit evidence exec:4 command \`${PLATFORM_SLUG} pr create\` exited 1; rerun the command successfully with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass the new exec id`,
+  })
+})
+
+test('a failed exec cannot use the recorded-artifact alternative on a command-exit step', () => {
+  expect(
+    decide({
+      floors: [commandExit, artifact],
+      evidence: {
+        artifact: { ref: 'exec:4', exists: true },
+        exec: {
+          id: 4,
+          command: `${PLATFORM_SLUG} pr create`,
           exitCode: 1,
           sessionMatches: true,
           sessionAdoptedCursor: false,
@@ -328,12 +352,32 @@ test('an exec with the expected exit satisfies command-exit', () => {
   ).toBe('refuse')
 })
 
+test('a failed exec remains valid for a recorded-artifact-only step', () => {
+  expect(
+    decide({
+      floors: [artifact],
+      evidence: {
+        artifact: { ref: 'exec:4', exists: true },
+        exec: {
+          id: 4,
+          command: `${PLATFORM_SLUG} pr create`,
+          exitCode: 1,
+          sessionMatches: true,
+          sessionAdoptedCursor: false,
+          createdAfterStepActivation: true,
+        },
+      },
+    }).action,
+  ).toBe('allow')
+})
+
 test('an exec from another session is refused with the rerun remedy', () => {
   const decision = decide({
     floors: [commandExit],
     evidence: {
       exec: {
         id: 4,
+        command: 'true',
         exitCode: 0,
         sessionMatches: false,
         sessionAdoptedCursor: false,
@@ -354,6 +398,7 @@ test("an adopting session's exec satisfies command-exit", () => {
       evidence: {
         exec: {
           id: 4,
+          command: 'true',
           exitCode: 0,
           sessionMatches: false,
           sessionAdoptedCursor: true,
@@ -370,6 +415,7 @@ test('an exec older than the active step is refused with the rerun remedy', () =
     evidence: {
       exec: {
         id: 4,
+        command: 'true',
         exitCode: 0,
         sessionMatches: true,
         sessionAdoptedCursor: false,
