@@ -15,7 +15,11 @@ import { failureReason, outcomeOf } from '../outcome.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import type { ObservedDeadRun } from '../run/run-liveness.ts'
-import { TRUNCATED_TRANSCRIPT_BYTES, visibleTranscriptText } from './result-output.ts'
+import {
+  observedTestsLine,
+  TRUNCATED_TRANSCRIPT_BYTES,
+  visibleTranscriptText,
+} from './result-output.ts'
 export const COLLECTION_COMMANDS = new Set(['result', 'wait'])
 
 const THIN_OUTPUT_BYTES = 1024
@@ -92,12 +96,27 @@ type CollectedRunRow = {
   worktree: string | null
   branch: string | null
   minted_branch: string | null
+  tests_ran: number | null
+  tests_passed: number | null
+  tests_claim_disagrees: number | null
 }
 
 type AskingResolution =
   | { state: 'open'; rootId: string }
   | { state: 'running'; rootId: string; runningId: string }
   | { state: 'recoverable'; rootId: string }
+
+function presentObservedTests(
+  row: Pick<CollectedRunRow, 'tests_ran' | 'tests_passed' | 'tests_claim_disagrees'>,
+  presentation: CollectResultPresentation,
+): void {
+  const line = observedTestsLine({
+    ran: row.tests_ran,
+    passed: row.tests_passed,
+    claimDisagrees: row.tests_claim_disagrees,
+  })
+  if (line) presentation.error(line)
+}
 
 /** Resolve what an `asking` status means across the whole conversation. */
 function resolveAsking(database: Database, runId: string): AskingResolution {
@@ -570,7 +589,8 @@ export function collectResult(
       `SELECT record_id, number, agent, job, status, latency_ms, vendor_tokens, output_path, error,
             failure_kind, exit_code, parent_run_record_id, evidence_excluded, base_commit,
             cwd, mcp, mcp_server, mcp_connected, mcp_error, mcp_probe,
-            review_provenance, provenance_status, worktree, branch, minted_branch
+            review_provenance, provenance_status, worktree, branch, minted_branch,
+            tests_ran, tests_passed, tests_claim_disagrees
        FROM run WHERE record_id = ?`,
     )
     .get(chain.finalId) as CollectedRunRow | null
@@ -599,6 +619,7 @@ export function collectResult(
     }
   }
   presentCollectedOutput(row, output, outcome.ok, presentation)
+  presentObservedTests(row, presentation)
   const chainNote = failoverSummary(chain.attempts)
   if (chainNote) presentation.error(`\n— ${chainNote}`)
   if (asking) {

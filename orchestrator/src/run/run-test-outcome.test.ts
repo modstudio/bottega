@@ -1,0 +1,87 @@
+import { describe, expect, test } from 'bun:test'
+import { UNIT_TEST_CHECK_CATEGORY } from '../../../shared/check-execution.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
+import { addRun } from '../../test/fixtures/store.ts'
+import { db } from '../database/db.ts'
+import { appendRunEvent } from '../events.ts'
+import { deriveObservedTestOutcome, observedTestOutcome } from './run-test-outcome.ts'
+
+describe('deriveObservedTestOutcome', () => {
+  test('nothing-run focus and a passing gate that skipped unit tests do not support the claim', () => {
+    expect(
+      deriveObservedTestOutcome({
+        focused: [],
+        gate: [],
+        claim: { ran: true, passed: true },
+      }),
+    ).toEqual({ ran: false, passed: null, claimDisagrees: true })
+  })
+
+  test('an executed passing focused run establishes the claimed outcome', () => {
+    expect(
+      deriveObservedTestOutcome({
+        focused: [{ executed: true, passed: true }],
+        gate: [],
+        claim: { ran: true, passed: true },
+      }),
+    ).toEqual({ ran: true, passed: true, claimDisagrees: false })
+  })
+
+  test('no tool calls records that no tests ran', () => {
+    expect(deriveObservedTestOutcome({ focused: [], gate: [], claim: null })).toEqual({
+      ran: false,
+      passed: null,
+      claimDisagrees: false,
+    })
+  })
+
+  test('reads only started focused executions and unit-test checks from the run gate', () => {
+    const runId = addRun({ agent: 'codex', job: 'implement' })
+    appendRunEvent(runId, {
+      ts: '2026-10-21T00:00:00.000Z',
+      type: 'focused_test',
+      paths: ['passing.test.ts'],
+      started: true,
+      exitCode: 0,
+      timedOut: false,
+      elapsedMs: 10,
+      logName: 'started.log',
+    })
+    appendRunEvent(runId, {
+      ts: '2026-10-21T00:00:01.000Z',
+      type: 'focused_test',
+      paths: ['never-started.test.ts'],
+      started: false,
+      exitCode: -1,
+      timedOut: false,
+      elapsedMs: 1,
+      logName: 'launch-failure.log',
+    })
+    const gateId = db()
+      .query<{ id: number }, [string, string, string, string, string]>(
+        `INSERT INTO gate_execution
+            (record_id,run_record_id,requested_at,started_at,finished_at,exit_code)
+           VALUES (?,?,?,?,?,1) RETURNING id`,
+      )
+      .get(
+        newRecordId(),
+        runId,
+        '2026-10-21T00:00:02.000Z',
+        '2026-10-21T00:00:02.000Z',
+        '2026-10-21T00:00:03.000Z',
+      )!.id
+    db()
+      .query(
+        `INSERT INTO check_execution
+          (record_id,gate_execution_id,check_name,category,wall_ms,exit_code)
+         VALUES (?,?,?,?,?,?)`,
+      )
+      .run(newRecordId(), gateId, 'unit suite', UNIT_TEST_CHECK_CATEGORY, 100, 1)
+
+    expect(observedTestOutcome(db(), runId, { ran: true, passed: false })).toEqual({
+      ran: true,
+      passed: false,
+      claimDisagrees: false,
+    })
+  })
+})

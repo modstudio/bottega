@@ -113,6 +113,7 @@ function runValues(row: Payload, projectId: string | null) {
     linesRemoved: nullableNumber(row.linesRemoved),
     testsRan: nullableNumber(row.testsRan),
     testsPassed: nullableNumber(row.testsPassed),
+    testsClaimDisagrees: row.testsClaimDisagrees == null ? null : Boolean(row.testsClaimDisagrees),
     deviations: nullableNumber(row.deviations),
     escalations: nullableNumber(row.escalations),
     stack: nullableString(row.stack),

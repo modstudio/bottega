@@ -4,7 +4,7 @@ import {
   formatCursorResumed,
   workflowCursorReference,
 } from './workflow-cursor-format.ts'
-import { evidenceGuidance, type FloorKind } from './workflow-floor.ts'
+import { evidenceGuidance, type FloorKind, mayCloseOnAgentSelfRuling } from './workflow-floor.ts'
 import type { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
 type WorkflowComposition = ReturnType<typeof composeWorkflow> & {
@@ -139,24 +139,39 @@ function operatorRulingAutonomy(hasOtherFloor: boolean): string {
     : `stop and put the ruling to the operator; record the question with \`${PLATFORM_SLUG} workflow await\`.`
 }
 
+const stopAndAsk = `stop and put the ruling to the operator; record the question with \`${PLATFORM_SLUG} workflow await\`.`
+const selfRulingCloseProtocol = `record it while closing with \`next_workflow_step\` inputs \`self_ruling\` and \`self_ruling_basis\` or \`${PLATFORM_SLUG} workflow next --self-ruling --basis\``
+
+function selfRulingOpportunity(step: WorkflowStep): string | null {
+  if (mayCloseOnAgentSelfRuling(step, undefined))
+    return `rule yourself and ${selfRulingCloseProtocol}`
+  const outcomes = (step.rulingOutcomes ?? []).filter((outcome) =>
+    mayCloseOnAgentSelfRuling(step, outcome),
+  )
+  if (outcomes.length)
+    return `for outcome ${outcomes.join(' or ')}, you may rule this step yourself and ${selfRulingCloseProtocol}`
+  if (step.reenter && mayCloseOnAgentSelfRuling(step, undefined, true))
+    return `when the automatic re-entry bound is exhausted, you may rule this step yourself and ${selfRulingCloseProtocol}`
+  return null
+}
+
 function autonomyInstruction(step: WorkflowStep): string {
   const resolved = step.resolvedAutonomy.value
-  const maySelfRule = step.floor.includes('ruling') && !step.operatorRuling
-  if (step.floor.includes('ruling') && step.operatorRuling)
+  const opportunity = selfRulingOpportunity(step)
+  const effectiveRuling =
+    opportunity !== null ||
+    (step.operatorRuling && selfRulingOpportunity({ ...step, operatorRuling: false }) !== null)
+  if (effectiveRuling && step.operatorRuling)
     return operatorRulingAutonomy(step.floor.some((kind) => kind !== 'ruling'))
   if (resolved === 'ask')
-    return `stop and put the ruling to the operator; record the question with \`${PLATFORM_SLUG} workflow await\`.`
+    return `${stopAndAsk} The operator's answer authorizes the action; then close this step with ${step.floor.join(' or ')} evidence.`
+  if (!opportunity)
+    return `meet this step's floor with ${step.floor.join(' or ')} evidence; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
   if (resolved === 'auto' && step.autonomy === 'ask')
-    return maySelfRule
-      ? `rule this step yourself and record it while closing with \`next_workflow_step\` inputs \`self_ruling\` and \`self_ruling_basis\` or \`${PLATFORM_SLUG} workflow next --self-ruling --basis\`; a decision that changes what the user sees, or product direction, still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
-      : `rule this step yourself and record the ruling; a decision that changes what the user sees, or product direction, still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
+    return `${opportunity}; a decision that changes what the user sees, or product direction, still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
   if (resolved === 'review')
-    return maySelfRule
-      ? `rule yourself and record it while closing with \`next_workflow_step\` inputs \`self_ruling\` and \`self_ruling_basis\` or \`${PLATFORM_SLUG} workflow next --self-ruling --basis\`; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
-      : `rule yourself; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
-  return maySelfRule
-    ? `rule yourself and record it while closing with \`next_workflow_step\` inputs \`self_ruling\` and \`self_ruling_basis\` or \`${PLATFORM_SLUG} workflow next --self-ruling --basis\`; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
-    : `rule yourself; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
+    return `${opportunity}; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
+  return `${opportunity}; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
 }
 
 function closeContract(step: WorkflowStep): string {

@@ -64,6 +64,7 @@ export const run = pgTable.withRLS(
     linesRemoved: integer('lines_removed'),
     testsRan: integer('tests_ran'),
     testsPassed: integer('tests_passed'),
+    testsClaimDisagrees: boolean('tests_claim_disagrees'),
     deviations: integer(),
     escalations: integer(),
     stack: text(),

@@ -790,7 +790,7 @@ function gatherSatisfy(id: number, cursorId: number, d: Database): ValidatedEvid
 function gatheredCommandEvidence(
   kind: 'probe' | 'exec',
   id: number,
-  row: { exit_code: number; session_id: string | null; created_at: string },
+  row: { command: string; exit_code: number; session_id: string | null; created_at: string },
   identity: CursorIdentity,
   cursorId: number,
   d: Database,
@@ -800,12 +800,24 @@ function gatheredCommandEvidence(
   return {
     exec: {
       id,
+      command: recordedCommand(row.command),
       exitCode: row.exit_code,
       sessionMatches: session.sessionMatches,
       sessionAdoptedCursor: session.sessionAdoptedCursor,
       createdAfterStepActivation: row.created_at >= identity.stepActivatedAt,
     },
   }
+}
+
+function recordedCommand(value: string): string {
+  try {
+    const parsed = JSON.parse(value) as unknown
+    if (Array.isArray(parsed) && parsed.every((part) => typeof part === 'string'))
+      return parsed.join(' ')
+  } catch {
+    // Older and withheld records are already printable text.
+  }
+  return value
 }
 
 function offeredArtifactRunEvidence(
@@ -886,9 +898,10 @@ export function gatherValidatedEvidence(input: {
     Object.assign(gathered, offeredArtifactRunEvidence(parsed, d))
     if (parsed.kind === 'probe' || parsed.kind === 'exec') {
       const row = d
-        .query<{ exit_code: number; session_id: string | null; created_at: string }, [number]>(
-          'SELECT exit_code,session_id,created_at FROM probe WHERE id=?',
-        )
+        .query<
+          { command: string; exit_code: number; session_id: string | null; created_at: string },
+          [number]
+        >('SELECT command,exit_code,session_id,created_at FROM probe WHERE id=?')
         .get(parsed.id)!
       Object.assign(
         gathered,

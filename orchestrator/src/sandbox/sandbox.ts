@@ -28,6 +28,8 @@ import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import {
   ensureHubLoginTokenDirectory,
   hubLoginTokenDirectory,
+  resolveHubDatabase,
+  type StateEnvironment,
 } from '../../../shared/state-directory.ts'
 import { ROOT } from '../database/db.ts'
 import { disabledProjectMcpServers } from '../mcp/mcp-probe.ts'
@@ -52,6 +54,11 @@ export type SandboxRuntimeConfig = {
   }
   /** SRT option that lets macOS trustd verify public TLS certificates. Default off. */
   enableWeakerNetworkIsolation?: boolean
+}
+
+/** Pin operator state before a worker's isolated HOME changes implicit resolution. */
+export function workerStateEnvironment(environment: StateEnvironment): Record<string, string> {
+  return { HUB_DB: resolveHubDatabase(environment) }
 }
 
 export type RunSandbox = 'host' | 'srt'
