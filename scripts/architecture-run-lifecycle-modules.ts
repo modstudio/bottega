@@ -197,6 +197,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../mailbox/mailbox.ts',
     '../live-outcome.ts',
     '../outcome.ts',
+    '../process-resource-sampler.ts',
     '../project/project-lock.ts',
     './run-process.ts',
     './run-host-capacity.ts',

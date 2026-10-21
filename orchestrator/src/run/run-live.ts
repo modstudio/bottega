@@ -32,7 +32,6 @@ import { contentTree, gitContext, reviewChangedPaths } from '../git/git-environm
 import {
   formatIdleKillError,
   idleKillMayProceed,
-  idlePollMs,
   sampleProcesses,
   shouldIdleKill,
   terminateProcessGroup,
@@ -42,6 +41,11 @@ import { deriveLiveOutcome } from '../live-outcome.ts'
 import { receiptWorkerMessages, unreadWorkerMessages } from '../mailbox/mailbox.ts'
 import { deferredWorkerMessageNotice } from '../mailbox/mailbox-notice.ts'
 import { decideOutcome, type OutcomeStatus } from '../outcome.ts'
+import {
+  observeRunProcessTree,
+  type ProcessSample,
+  type RunResourceUsage,
+} from '../process-resource-sampler.ts'
 import { processStartTime } from '../project/project-lock.ts'
 import type { CodexMcpServer } from '../sandbox/codex-mcp-scope.ts'
 import type { SandboxSelection } from '../sandbox/sandbox.ts'
@@ -271,7 +275,7 @@ export type LiveResult = {
   proc: { pid?: number | null; kill(sig?: number | string): void } | null
   timer: ReturnType<typeof setTimeout> | null
   checkpointTimer: ReturnType<typeof setInterval> | null
-  idleTimer: ReturnType<typeof setInterval> | null
+  resourceObserver: { usage(): RunResourceUsage; stop(): RunResourceUsage } | null
   timedOut: boolean
   idleKilled: boolean
   idleKillError: string | null
@@ -413,7 +417,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   let proc: { pid?: number | null; kill(sig?: number | string): void } | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
   let checkpointTimer: ReturnType<typeof setInterval> | null = null
-  let idleTimer: ReturnType<typeof setInterval> | null = null
+  let resourceObserver: { usage(): RunResourceUsage; stop(): RunResourceUsage } | null = null
   let timedOut = false
   let idleKilled = false
   let idleKillError: string | null = null
@@ -650,7 +654,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     const forcedCollect = new Promise<TransportResult>((resolve) => {
       forceCollect = resolve
     })
-    const maybeIdleKill = async () => {
+    const maybeIdleKill = async (samples: ProcessSample[]) => {
       const row = idleRunRow(claim.id)
       if (!row) return
       const openQuestion = runHasOpenQuestion(claim.id)
@@ -664,6 +668,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         alreadyTimedOut: timedOut,
         alreadyIdleKilled: idleKilled,
         thresholdMs: idleThresholdMs,
+        samples,
       })
       if (!decision.kill) return
       idleKilled = true
@@ -743,20 +748,17 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       }
     }
     let idleCheckInFlight = false
-    idleTimer = setInterval(
-      () => {
-        if (idleCheckInFlight || timedOut || idleKilled) return
-        idleCheckInFlight = true
-        void maybeIdleKill()
-          .catch((error) => {
-            console.error(`orch: run ${claim.id} idle check failed: ${error}`)
-          })
-          .finally(() => {
-            idleCheckInFlight = false
-          })
-      },
-      idlePollMs(jobIdleKillMs(opts.job, process.env, boundMs)),
-    )
+    resourceObserver = observeRunProcessTree(vendorPid, (samples) => {
+      if (idleCheckInFlight || timedOut || idleKilled) return
+      idleCheckInFlight = true
+      void maybeIdleKill(samples)
+        .catch((error) => {
+          console.error(`orch: run ${claim.id} idle check failed: ${error}`)
+        })
+        .finally(() => {
+          idleCheckInFlight = false
+        })
+    })
     const teeing = teeTransportEvents(handle.events(), claim.id)
     await t.prompt(handle, prompt)
     receiptWorkerMessages(
@@ -975,7 +977,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     proc,
     timer,
     checkpointTimer,
-    idleTimer,
+    resourceObserver,
     timedOut,
     idleKilled,
     idleKillError,

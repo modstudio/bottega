@@ -9,6 +9,9 @@
 
 import { pidAlive } from '../../shared/process-identity.ts'
 import { idleMsSince } from './events.ts'
+import { type ProcessSample, processTreePids, sampleProcesses } from './process-resource-sampler.ts'
+
+export { type ProcessSample, sampleProcesses } from './process-resource-sampler.ts'
 
 /**
  * Default 15 minutes. Measured 2026-09-08 against the live store's completed
@@ -43,74 +46,6 @@ export function idleKillMs(env: NodeJS.ProcessEnv = process.env): number {
   return Number.isFinite(n) && n >= 0 ? n : DEFAULT_IDLE_KILL_MS
 }
 
-export function idlePollMs(thresholdMs = idleKillMs()): number {
-  return Math.max(50, Math.min(1_000, Math.floor(thresholdMs / 5)))
-}
-
-export type ProcessSample = {
-  pid: number
-  ppid: number
-  pgid: number
-  cpu: number
-  state: string
-}
-
-function parsePsTable(text: string): ProcessSample[] {
-  const samples: ProcessSample[] = []
-  for (const line of text.split('\n')) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-    const parts = trimmed.split(/\s+/)
-    if (parts.length < 5) continue
-    const pid = Number(parts[0])
-    const ppid = Number(parts[1])
-    const pgid = Number(parts[2])
-    const cpu = Number(parts[3])
-    const state = parts[4] ?? ''
-    if (!Number.isInteger(pid) || pid <= 0) continue
-    if (!Number.isInteger(ppid) || ppid < 0) continue
-    if (!Number.isInteger(pgid) || pgid <= 0) continue
-    if (!Number.isFinite(cpu)) continue
-    samples.push({ pid, ppid, pgid, cpu, state })
-  }
-  return samples
-}
-
-export function sampleProcesses(): ProcessSample[] {
-  try {
-    const p = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,pgid=,%cpu=,state='], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    if (p.exitCode !== 0) return []
-    return parsePsTable(p.stdout.toString())
-  } catch {
-    // Bun.spawnSync throws EPERM rather than returning non-zero. An
-    // unobservable process table must read as not idle.
-    return []
-  }
-}
-
-function descendantPids(root: number, samples: ProcessSample[]): number[] {
-  const children = new Map<number, number[]>()
-  for (const row of samples) {
-    const list = children.get(row.ppid) ?? []
-    list.push(row.pid)
-    children.set(row.ppid, list)
-  }
-  const out: number[] = []
-  const stack = [root]
-  const seen = new Set<number>()
-  while (stack.length) {
-    const pid = stack.pop()!
-    if (seen.has(pid)) continue
-    seen.add(pid)
-    out.push(pid)
-    for (const child of children.get(pid) ?? []) stack.push(child)
-  }
-  return out
-}
-
 /**
  * CPU sample coverage: the vendor pid and its descendants only. That is
  * work inside the vendor process tree, and nothing else. A worker blocked
@@ -122,7 +57,7 @@ function descendantPids(root: number, samples: ProcessSample[]): number[] {
  */
 function processGroupCpuPercent(pid: number, samples: ProcessSample[]): number | null {
   if (pid <= 0) return null
-  const pids = new Set(descendantPids(pid, samples))
+  const pids = new Set(processTreePids(pid, samples))
   if (!pids.size) return null
   let total = 0
   let seen = false
@@ -149,7 +84,7 @@ function isUninterruptible(state: string): boolean {
 }
 
 function groupHasUninterruptible(pid: number, samples: ProcessSample[]): boolean {
-  const pids = new Set(descendantPids(pid, samples))
+  const pids = new Set(processTreePids(pid, samples))
   return samples.some((row) => pids.has(row.pid) && isUninterruptible(row.state))
 }
 
@@ -218,7 +153,7 @@ function signalTree(
   // unproven assumption.
   if (isGroupKillablePgid(pgid, selfPgid) && pgid != null && signalGroup(pgid, signal, deps))
     return pgid
-  for (const child of descendantPids(pid, samples))
+  for (const child of processTreePids(pid, samples))
     if (!skipRoot || child !== pid) deps.kill(child, signal)
   return null
 }
@@ -258,7 +193,7 @@ function rememberTree(
 ): void {
   const seeds = new Set<number>([root, ...tracked, ...pidsSharingPgid(pgid, samples)])
   for (const seed of seeds) {
-    for (const pid of descendantPids(seed, samples)) tracked.add(pid)
+    for (const pid of processTreePids(seed, samples)) tracked.add(pid)
   }
   for (const pid of pidsSharingPgid(pgid, samples)) tracked.add(pid)
 }
@@ -422,7 +357,7 @@ export function runHasLiveDescendants(
   const ids = new Set<number>([...extra, ...pidsSharingPgid(pgid, samples)])
   for (const root of [...roots, ...extra]) {
     if (root && root > 1) {
-      for (const pid of descendantPids(root, samples)) ids.add(pid)
+      for (const pid of processTreePids(root, samples)) ids.add(pid)
     }
   }
   return [...ids].some((pid) => pid > 1 && resolved.alive(pid))
