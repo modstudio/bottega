@@ -10,7 +10,7 @@ import {
   targetGitEnvironment,
 } from '../git/git-environment.ts'
 import { projectAt, type WorktreeTool } from '../project/projects.ts'
-import { appendProvisioningPhases } from './provisioning-measurement.ts'
+import { appendProvisioningPhases, cloneProvisionRecorder } from './provisioning-measurement.ts'
 import {
   attributeWorktree,
   type RecordWorktree,
@@ -49,7 +49,14 @@ export function createReadOnlyWorktree(
     restoreRemoteTrackingRefs(path, remoteTrackingRefs)
     const dependencyStarted = performance.now()
     try {
-      provisionWorktree(repoRoot, path, provision, 'the project register row', provisionTimeoutMs)
+      provisionWorktree(
+        repoRoot,
+        path,
+        provision,
+        'the project register row',
+        provisionTimeoutMs,
+        cloneProvisionRecorder(runId),
+      )
     } finally {
       appendProvisioningPhases(runId, [
         {

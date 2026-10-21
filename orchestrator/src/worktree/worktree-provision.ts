@@ -10,6 +10,7 @@ import {
   symlinkSync,
 } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
+import { cloneDirectory } from './clone-directory.ts'
 import { validateProvisionGroups } from './provision-group-validation.ts'
 
 export type ProvisionEntry = {
@@ -29,6 +30,11 @@ export type ProvisionGroupDecision =
 export type ProvisionSkip = {
   path: string
   reason: 'missing source' | 'existing target'
+}
+export type CloneProvisionMeasurement = {
+  path: string
+  mechanism: 'clonefile' | 'cp'
+  durationMs: number
 }
 
 const INSTALL_ENVIRONMENT_PREFIXES = ['ORCH_', 'HUB_', 'SSH_'] as const
@@ -119,6 +125,7 @@ function placeProvision(
   provision: ProvisionEntry,
   declarationSource: string,
   skipped: ProvisionSkip[],
+  recordClone?: (measurement: CloneProvisionMeasurement) => void,
 ): void {
   const source = join(main, provision.path)
   const target = join(tree, provision.path)
@@ -149,6 +156,21 @@ function placeProvision(
   if (provision.method === 'install') {
     throw new Error(`install provision "${provision.path}" must be run as a command`)
   }
+  const started = performance.now()
+  const cloned = cloneDirectory(source, target)
+  if (cloned.status === 'cloned') {
+    recordClone?.({
+      path: provision.path,
+      mechanism: 'clonefile',
+      durationMs: performance.now() - started,
+    })
+    return
+  }
+  if (cloned.status === 'failed') {
+    throw new Error(
+      `could not clone provision "${provision.path}" with clonefile: ${cloned.errnoName} (errno ${cloned.errno}) cloning ${source} to ${target}`,
+    )
+  }
   const copy = Bun.spawnSync(['cp', '-c', '-R', source, target], {
     stdout: 'pipe',
     stderr: 'pipe',
@@ -157,6 +179,7 @@ function placeProvision(
     const detail = copy.stderr.toString().trim() || `cp exited ${copy.exitCode}`
     throw new Error(`could not clone provision "${provision.path}": ${detail}`)
   }
+  recordClone?.({ path: provision.path, mechanism: 'cp', durationMs: performance.now() - started })
 }
 
 function lockfileContent(root: string, lockfile: string): string | null {
@@ -252,11 +275,12 @@ function materializeInstallGroups(
   decisions: ReadonlyMap<string, ProvisionGroupDecision>,
   declarationSource: string,
   skipped: ProvisionSkip[],
+  recordClone?: (measurement: CloneProvisionMeasurement) => void,
 ): void {
   for (const decision of decisions.values()) {
     if (decision.action !== 'clone-and-install') continue
     for (const entry of decision.entries)
-      placeProvision(main, tree, entry, declarationSource, skipped)
+      placeProvision(main, tree, entry, declarationSource, skipped, recordClone)
   }
 }
 
@@ -284,11 +308,12 @@ function placeDeferredProvisions(
   decisions: ReadonlyMap<string, ProvisionGroupDecision>,
   declarationSource: string,
   skipped: ProvisionSkip[],
+  recordClone?: (measurement: CloneProvisionMeasurement) => void,
 ): void {
   const handledGroups = new Set<string>()
   for (const provision of provisions) {
     if (!provision.lockfile) {
-      placeProvision(main, tree, provision, declarationSource, skipped)
+      placeProvision(main, tree, provision, declarationSource, skipped, recordClone)
       continue
     }
     if (handledGroups.has(provision.lockfile)) continue
@@ -296,7 +321,7 @@ function placeDeferredProvisions(
     const decision = decisions.get(provision.lockfile)!
     if (decision.action === 'install') continue
     for (const entry of decision.entries) {
-      placeProvision(main, tree, entry, declarationSource, skipped)
+      placeProvision(main, tree, entry, declarationSource, skipped, recordClone)
     }
   }
 }
@@ -308,6 +333,7 @@ export function provisionWorktree(
   provisions: WorktreeProvision,
   declarationSource = 'the provision declaration',
   timeoutMs?: number,
+  recordClone?: (measurement: CloneProvisionMeasurement) => void,
 ): ProvisionSkip[] {
   const skipped: ProvisionSkip[] = []
   const grouped = new Map<string, ProvisionEntry[]>()
@@ -322,12 +348,20 @@ export function provisionWorktree(
   // Nothing may be linked into the tree while an installer can still run. Check every
   // install target first, then clone all install groups before starting any command.
   assertInstallGroupsSafe(tree, decisions)
-  materializeInstallGroups(main, tree, decisions, declarationSource, skipped)
+  materializeInstallGroups(main, tree, decisions, declarationSource, skipped, recordClone)
   runInstallGroups(tree, decisions, timeoutMs)
 
   // Once every install has finished, preserve declaration order for ordinary entries and
   // lockfile groups whose content matched the source checkout.
-  placeDeferredProvisions(main, tree, provisions, decisions, declarationSource, skipped)
+  placeDeferredProvisions(
+    main,
+    tree,
+    provisions,
+    decisions,
+    declarationSource,
+    skipped,
+    recordClone,
+  )
   return skipped
 }
 
