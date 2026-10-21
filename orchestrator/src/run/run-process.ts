@@ -6,6 +6,7 @@
 
 import { createHash } from 'node:crypto'
 import {
+  observeBoundedSubprocess,
   type PidRecordIdentity,
   pidAlive,
   pidRecordIdentity,
@@ -15,10 +16,7 @@ import { workerHarnessName, workerLaunchEnv } from '../agent/worker-launch-env.t
 import { DB_PATH, db } from '../database/db.ts'
 import { depth } from '../dispatch/dispatch-preflight.ts'
 import { DEFAULT_IDLE_GRACE_MS, isGroupKillablePgid, terminateProcessGroup } from '../idle-kill.ts'
-import {
-  PROCESS_TABLE_PS_TIMEOUT_MS,
-  processInventorySubprocessError,
-} from '../resources/process-inventory.ts'
+import { PROCESS_TABLE_PS_TIMEOUT_MS } from '../resources/process-inventory.ts'
 import { isForwardedChildEnvName } from '../sandbox/record-connection-env.ts'
 import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
 import { runTestWorkerEnvironment } from './run-test-workers.ts'
@@ -136,52 +134,47 @@ export type RunProcessTerminationPlan =
   | VerifiedRunProcessTermination
 
 export function processTable(): ProcessInventory {
-  let p: ReturnType<typeof Bun.spawnSync>
   try {
-    for (let attempt = 0; ; attempt += 1) {
-      p = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,pgid=,command='], {
+    const { process: p, error } = observeBoundedSubprocess(
+      'ps',
+      ['ps', '-axo', 'pid=,ppid=,pgid=,command='],
+      {
         stdout: 'pipe',
         stderr: 'pipe',
-        timeout: PROCESS_TABLE_PS_TIMEOUT_MS,
-      })
-      if (p.exitedDueToTimeout !== true || attempt === 1) break
+      },
+      PROCESS_TABLE_PS_TIMEOUT_MS,
+      1,
+    )
+    if (error) {
+      return {
+        ascertainable: false,
+        reason: `process inventory unavailable: ${error}`,
+      }
+    }
+    return {
+      ascertainable: true,
+      rows: p
+        .stdout!.toString()
+        .split('\n')
+        .flatMap((line): ProcessRow[] => {
+          const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/)
+          return match
+            ? [
+                {
+                  pid: Number(match[1]),
+                  ppid: Number(match[2]),
+                  pgid: Number(match[3]),
+                  command: match[4]!,
+                },
+              ]
+            : []
+        }),
     }
   } catch (error) {
     return {
       ascertainable: false,
       reason: `process inventory unavailable: ${String((error as Error).message ?? error)}`,
     }
-  }
-  const subprocessError = processInventorySubprocessError('ps', PROCESS_TABLE_PS_TIMEOUT_MS, {
-    exitCode: p.exitCode,
-    signalCode: p.signalCode,
-    exitedDueToTimeout: p.exitedDueToTimeout === true,
-    stderr: p.stderr?.toString() ?? '',
-  })
-  if (subprocessError) {
-    return {
-      ascertainable: false,
-      reason: `process inventory unavailable: ${subprocessError}`,
-    }
-  }
-  return {
-    ascertainable: true,
-    rows: p
-      .stdout!.toString()
-      .split('\n')
-      .flatMap((line): ProcessRow[] => {
-        const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/)
-        return match
-          ? [
-              {
-                pid: Number(match[1]),
-                ppid: Number(match[2]),
-                pgid: Number(match[3]),
-                command: match[4]!,
-              },
-            ]
-          : []
-      }),
   }
 }
 

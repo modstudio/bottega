@@ -160,6 +160,7 @@ export const monitorModules: MonitorModule[] = [
     './monitor-types.ts',
   ]),
   module('orchestrator/src/monitor/monitor-store-write-lock.ts', [
+    '../../../shared/process-identity.ts',
     '../database/db.ts',
     '../database/store-write-lock.ts',
   ]),

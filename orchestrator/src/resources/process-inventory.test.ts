@@ -1,9 +1,10 @@
 import { expect, test } from 'bun:test'
-import { parseProcessTable, processInventorySubprocessError } from './process-inventory.ts'
+import { processObservationError } from '../../../shared/process-identity.ts'
+import { cwdForMatchingProcessBirth, parseProcessTable } from './process-inventory.ts'
 
 test('classifies process inventory subprocess failures', () => {
   expect(
-    processInventorySubprocessError('ps', 10_000, {
+    processObservationError('ps', 10_000, {
       exitCode: 0,
       signalCode: null,
       exitedDueToTimeout: false,
@@ -11,7 +12,7 @@ test('classifies process inventory subprocess failures', () => {
     }),
   ).toBeNull()
   expect(
-    processInventorySubprocessError('lsof', 10_000, {
+    processObservationError('lsof', 10_000, {
       exitCode: null,
       signalCode: 'SIGTERM',
       exitedDueToTimeout: true,
@@ -19,7 +20,7 @@ test('classifies process inventory subprocess failures', () => {
     }),
   ).toBe('lsof timed out after 10000 ms')
   expect(
-    processInventorySubprocessError('lsof', 10_000, {
+    processObservationError('lsof', 10_000, {
       exitCode: null,
       signalCode: 'SIGKILL',
       exitedDueToTimeout: false,
@@ -27,7 +28,7 @@ test('classifies process inventory subprocess failures', () => {
     }),
   ).toBe('lsof ended on signal SIGKILL')
   expect(
-    processInventorySubprocessError('lsof', 10_000, {
+    processObservationError('lsof', 10_000, {
       exitCode: 7,
       signalCode: null,
       exitedDueToTimeout: false,
@@ -37,12 +38,17 @@ test('classifies process inventory subprocess failures', () => {
 })
 
 test('parses faithful macOS ps etime output', () => {
-  expect(parseProcessTable('  91     1    91  2-03:04:05 /usr/bin/node vite --host\n')).toEqual([
+  expect(
+    parseProcessTable(
+      '  91     1    91 Mon Oct 20 12:34:56 2026  2-03:04:05 /usr/bin/node vite --host\n',
+    ),
+  ).toEqual([
     {
       pid: 91,
       ppid: 1,
       pgid: 91,
       ageSeconds: 183_845,
+      startTime: 'Mon Oct 20 12:34:56 2026',
       command: '/usr/bin/node vite --host',
       cwd: null,
     },
@@ -51,15 +57,24 @@ test('parses faithful macOS ps etime output', () => {
 
 test('parses faithful Linux ps etime output and ignores malformed age', () => {
   expect(
-    parseProcessTable('  27  1  27  04:05:06 docker compose up\n  28  1  28 bad nope\n'),
+    parseProcessTable(
+      '  27  1  27 Tue Oct 21 01:02:03 2026  04:05:06 docker compose up\n  28  1  28 bad nope\n',
+    ),
   ).toEqual([
     {
       pid: 27,
       ppid: 1,
       pgid: 27,
       ageSeconds: 14_706,
+      startTime: 'Tue Oct 21 01:02:03 2026',
       command: 'docker compose up',
       cwd: null,
     },
   ])
+})
+
+test('keeps a cwd only when the process birth still matches the ps snapshot', () => {
+  expect(cwdForMatchingProcessBirth('/tmp/tree', 'birth-a', 'birth-a')).toBe('/tmp/tree')
+  expect(cwdForMatchingProcessBirth('/tmp/tree', 'birth-a', 'birth-b')).toBeNull()
+  expect(cwdForMatchingProcessBirth('/tmp/tree', 'birth-a', null)).toBeNull()
 })

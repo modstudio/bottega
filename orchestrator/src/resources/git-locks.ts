@@ -1,6 +1,6 @@
 import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
-import { pidAlive } from '../../../shared/process-identity.ts'
+import { observeBoundedSubprocess, pidAlive } from '../../../shared/process-identity.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 
 export type GitLock = {
@@ -42,14 +42,16 @@ function lockFiles(root: string): string[] {
 function owningPids(path: string): number[] | null {
   let p: ReturnType<typeof Bun.spawnSync>
   try {
-    for (let attempt = 0; ; attempt += 1) {
-      p = Bun.spawnSync(['lsof', '-t', '--', path], {
+    ;({ process: p } = observeBoundedSubprocess(
+      'lsof',
+      ['lsof', '-t', '--', path],
+      {
         stdout: 'pipe',
         stderr: 'pipe',
-        timeout: GIT_LOCK_LSOF_TIMEOUT_MS,
-      })
-      if (p.exitedDueToTimeout !== true || attempt === 1) break
-    }
+      },
+      GIT_LOCK_LSOF_TIMEOUT_MS,
+      1,
+    ))
   } catch {
     return null
   }

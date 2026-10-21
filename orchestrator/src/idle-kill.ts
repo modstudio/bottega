@@ -7,7 +7,7 @@
  * test (silence AND no CPU) and a failure kind that is not routing evidence.
  */
 
-import { pidAlive } from '../../shared/process-identity.ts'
+import { observeBoundedSubprocess, pidAlive } from '../../shared/process-identity.ts'
 import { idleMsSince } from './events.ts'
 
 /**
@@ -79,15 +79,16 @@ function parsePsTable(text: string): ProcessSample[] {
 
 export function sampleProcesses(): ProcessSample[] {
   try {
-    let p: ReturnType<typeof Bun.spawnSync>
-    for (let attempt = 0; ; attempt += 1) {
-      p = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,pgid=,%cpu=,state='], {
+    const { process: p } = observeBoundedSubprocess(
+      'ps',
+      ['ps', '-axo', 'pid=,ppid=,pgid=,%cpu=,state='],
+      {
         stdout: 'pipe',
         stderr: 'pipe',
-        timeout: IDLE_SAMPLE_PS_TIMEOUT_MS,
-      })
-      if (p.exitedDueToTimeout !== true || attempt === 1) break
-    }
+      },
+      IDLE_SAMPLE_PS_TIMEOUT_MS,
+      1,
+    )
     if (p.exitCode !== 0) return []
     return parsePsTable(p.stdout?.toString() ?? '')
   } catch {

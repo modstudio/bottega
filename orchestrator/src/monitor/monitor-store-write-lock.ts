@@ -1,6 +1,7 @@
 // concern: monitor
 /** Resolves a sampled database writer to process and run identity using read-only work. */
 
+import { observeBoundedSubprocess } from '../../../shared/process-identity.ts'
 import { DB_PATH, openReadOnlyDatabase } from '../database/db.ts'
 import { sampleWalWriteLock } from '../database/store-write-lock.ts'
 
@@ -27,15 +28,16 @@ export type StoreWriteLockReport =
 const STORE_WRITE_LOCK_HOLDER_PS_TIMEOUT_MS = 10_000
 
 function holderCommand(pid: number): string | null {
-  let result: ReturnType<typeof Bun.spawnSync>
-  for (let attempt = 0; ; attempt += 1) {
-    result = Bun.spawnSync(['/bin/ps', '-p', String(pid), '-o', 'command='], {
+  const { process: result } = observeBoundedSubprocess(
+    'ps',
+    ['/bin/ps', '-p', String(pid), '-o', 'command='],
+    {
       stdout: 'pipe',
       stderr: 'pipe',
-      timeout: STORE_WRITE_LOCK_HOLDER_PS_TIMEOUT_MS,
-    })
-    if (result.exitedDueToTimeout !== true || attempt === 1) break
-  }
+    },
+    STORE_WRITE_LOCK_HOLDER_PS_TIMEOUT_MS,
+    1,
+  )
   if (result.exitCode !== 0) return null
   return new TextDecoder().decode(result.stdout ?? new Uint8Array()).trim() || null
 }

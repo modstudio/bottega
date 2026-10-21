@@ -18,7 +18,7 @@ import {
   MONITOR_CAPABILITY_TOKEN_ENV,
   type MonitorCapability,
 } from '../../../shared/monitor-capability.ts'
-import { pidAlive } from '../../../shared/process-identity.ts'
+import { observeBoundedSubprocess, pidAlive } from '../../../shared/process-identity.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { failingCanonEvalSlugs } from '../canon/evals.ts'
 import { callerIdentity, sessionId } from '../database/db.ts'
@@ -93,15 +93,16 @@ function deliveryAuthorized(): boolean {
       !pidAlive(capability.pid)
     )
       return false
-    let observed: ReturnType<typeof Bun.spawnSync>
-    for (let attempt = 0; ; attempt += 1) {
-      observed = Bun.spawnSync(['/bin/ps', '-p', String(capability.pid), '-o', 'command='], {
+    const { process: observed } = observeBoundedSubprocess(
+      'ps',
+      ['/bin/ps', '-p', String(capability.pid), '-o', 'command='],
+      {
         stdout: 'pipe',
         stderr: 'pipe',
-        timeout: MONITOR_CAPABILITY_PS_TIMEOUT_MS,
-      })
-      if (observed.exitedDueToTimeout !== true || attempt === 1) break
-    }
+      },
+      MONITOR_CAPABILITY_PS_TIMEOUT_MS,
+      1,
+    )
     if (observed.exitCode !== 0) return false
     const words = new TextDecoder()
       .decode(observed.stdout ?? new Uint8Array())

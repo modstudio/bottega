@@ -2,7 +2,7 @@
 /** Gathers the process table and applies pure missing-worktree classification. */
 import { existsSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
-import { processStartTime } from '../../../shared/process-identity.ts'
+import { observeBoundedSubprocess, processStartTime } from '../../../shared/process-identity.ts'
 
 export type ProcessFact = {
   pid: number
@@ -10,10 +10,10 @@ export type ProcessFact = {
   pgid: number
   command: string
   ageSeconds: number
+  startTime: string
   cwd: string | null
 }
 export type OrphanProcess = ProcessFact & {
-  startTime: string | null
   missingTree: string
   project: string
   match: 'cwd' | 'argument'
@@ -21,29 +21,6 @@ export type OrphanProcess = ProcessFact & {
 
 const PROCESS_CWD_LSOF_TIMEOUT_MS = 10_000
 export const PROCESS_TABLE_PS_TIMEOUT_MS = 10_000
-
-type ProcessInventorySubprocessResult = {
-  exitCode: number | null
-  signalCode: string | number | null | undefined
-  exitedDueToTimeout: boolean
-  stderr: string
-}
-
-/** Classify a completed inventory subprocess without observing the process. */
-export function processInventorySubprocessError(
-  command: string,
-  timeoutMs: number,
-  result: ProcessInventorySubprocessResult,
-): string | null {
-  const detail = result.stderr.trim()
-  const suffix = detail ? `: ${detail}` : ''
-  if (result.exitedDueToTimeout) return `${command} timed out after ${timeoutMs} ms${suffix}`
-  if (result.signalCode !== null && result.signalCode !== undefined)
-    return `${command} ended on signal ${result.signalCode}${suffix}`
-  if (result.exitCode === 0) return null
-  if (result.exitCode !== null) return `${command} exited ${result.exitCode}${suffix}`
-  return `${command} ended on signal unknown${suffix}`
-}
 
 function elapsedSeconds(value: string): number | null {
   const match = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/.exec(value)
@@ -59,9 +36,12 @@ function elapsedSeconds(value: string): number | null {
 /** Parse the common macOS/Linux ps fields without relying on GNU-only etimes. */
 export function parseProcessTable(output: string): ProcessFact[] {
   return output.split('\n').flatMap((line): ProcessFact[] => {
-    const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+((?:\d+-)?(?:\d+:)?\d+:\d+)\s+(.+)$/.exec(line)
+    const match =
+      /^\s*(\d+)\s+(\d+)\s+(\d+)\s+((?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)\s+\S+\s+\d+\s+\d\d:\d\d:\d\d\s+\d{4})\s+((?:\d+-)?(?:\d+:)?\d+:\d+)\s+(.+)$/.exec(
+        line,
+      )
     if (!match) return []
-    const ageSeconds = elapsedSeconds(match[4]!)
+    const ageSeconds = elapsedSeconds(match[5]!)
     if (ageSeconds === null) return []
     return [
       {
@@ -69,7 +49,8 @@ export function parseProcessTable(output: string): ProcessFact[] {
         ppid: Number(match[2]),
         pgid: Number(match[3]),
         ageSeconds,
-        command: match[5]!,
+        startTime: match[4]!,
+        command: match[6]!,
         cwd: null,
       },
     ]
@@ -78,33 +59,22 @@ export function parseProcessTable(output: string): ProcessFact[] {
 
 function processCwds(): { values: Map<number, string>; error: string | null } {
   try {
-    let found: ProcessInventorySubprocessResult & { stdout: string }
-    for (let attempt = 0; ; attempt += 1) {
-      const child = Bun.spawnSync(['lsof', '-a', '-d', 'cwd', '-Fpn'], {
+    const { process: found, error } = observeBoundedSubprocess(
+      'lsof',
+      ['lsof', '-a', '-d', 'cwd', '-Fpn'],
+      {
         stdout: 'pipe',
         stderr: 'pipe',
-        timeout: PROCESS_CWD_LSOF_TIMEOUT_MS,
-      })
-      found = {
-        exitCode: child.exitCode,
-        signalCode: child.signalCode,
-        exitedDueToTimeout: child.exitedDueToTimeout === true,
-        stderr: child.stderr.toString(),
-        stdout: child.stdout.toString(),
-      }
-      if (found.exitedDueToTimeout !== true || attempt === 1) break
-    }
-    const subprocessError = processInventorySubprocessError(
-      'lsof',
+      },
       PROCESS_CWD_LSOF_TIMEOUT_MS,
-      found,
+      1,
     )
-    if (subprocessError) {
-      return { values: new Map(), error: subprocessError }
+    if (error) {
+      return { values: new Map(), error }
     }
     const values = new Map<number, string>()
     let pid: number | null = null
-    for (const line of found.stdout.split('\n')) {
+    for (const line of (found.stdout?.toString() ?? '').split('\n')) {
       if (line.startsWith('p')) pid = Number(line.slice(1))
       else if (pid && line.startsWith('n')) values.set(pid, line.slice(1))
     }
@@ -116,23 +86,18 @@ function processCwds(): { values: Map<number, string>; error: string | null } {
 
 function observeProcesses(): { facts: ProcessFact[]; error: string | null } {
   try {
-    let ps: ReturnType<typeof Bun.spawnSync>
-    for (let attempt = 0; ; attempt += 1) {
-      ps = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,pgid=,etime=,command='], {
+    const { process: ps, error } = observeBoundedSubprocess(
+      'ps',
+      ['ps', '-axo', 'pid=,ppid=,pgid=,lstart=,etime=,command='],
+      {
         env: { PATH: process.env.PATH ?? '', LC_ALL: 'C', LANG: 'C' },
         stdout: 'pipe',
         stderr: 'pipe',
-        timeout: PROCESS_TABLE_PS_TIMEOUT_MS,
-      })
-      if (ps.exitedDueToTimeout !== true || attempt === 1) break
-    }
-    const subprocessError = processInventorySubprocessError('ps', PROCESS_TABLE_PS_TIMEOUT_MS, {
-      exitCode: ps.exitCode,
-      signalCode: ps.signalCode,
-      exitedDueToTimeout: ps.exitedDueToTimeout === true,
-      stderr: ps.stderr?.toString() ?? '',
-    })
-    if (subprocessError) return { facts: [], error: subprocessError }
+      },
+      PROCESS_TABLE_PS_TIMEOUT_MS,
+      1,
+    )
+    if (error) return { facts: [], error }
     const cwds = processCwds()
     return {
       facts: parseProcessTable(ps.stdout?.toString() ?? '').map((fact) => ({
@@ -144,6 +109,15 @@ function observeProcesses(): { facts: ProcessFact[]; error: string | null } {
   } catch (error) {
     return { facts: [], error: String((error as Error).message ?? error) }
   }
+}
+
+/** A cwd observation is usable only while the pid still has the snapshotted birth. */
+export function cwdForMatchingProcessBirth(
+  cwd: string | null,
+  snapshottedStartTime: string,
+  observedStartTime: string | null,
+): string | null {
+  return observedStartTime === snapshottedStartTime ? cwd : null
 }
 
 const inside = (root: string, path: string) => {
@@ -166,8 +140,11 @@ export function orphanProcesses(
   birth: (pid: number) => string | null = processStartTime,
 ): OrphanProcess[] {
   return facts.flatMap((fact) => {
+    const cwd = fact.cwd
+      ? cwdForMatchingProcessBirth(fact.cwd, fact.startTime, birth(fact.pid))
+      : null
     const candidates = [
-      ...(fact.cwd ? [{ path: fact.cwd, match: 'cwd' as const }] : []),
+      ...(cwd ? [{ path: cwd, match: 'cwd' as const }] : []),
       ...absoluteArgumentPaths(fact.command).map((path) => ({ path, match: 'argument' as const })),
     ]
     for (const project of projects) {
@@ -181,7 +158,7 @@ export function orphanProcesses(
           return [
             {
               ...fact,
-              startTime: birth(fact.pid),
+              startTime: fact.startTime,
               missingTree: tree,
               project: project.name,
               match: candidate.match,

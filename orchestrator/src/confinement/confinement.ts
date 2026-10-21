@@ -9,6 +9,7 @@ import {
   ConfinementClassSchema,
   emptyAttribution,
 } from '../../../shared/orch-contract.ts'
+import { observeBoundedSubprocess } from '../../../shared/process-identity.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 
 const UNTRUSTED_INDEX_WINDOW_MS = 1000
@@ -189,15 +190,16 @@ function lockHolderPids(checkout: string): ConfinementLockHolder[] {
   const gitDir = git(checkout, ['rev-parse', '--path-format=absolute', '--git-dir'])
   const lock = gitDir.ok ? join(gitDir.stdout.trim(), 'index.lock') : null
   if (!lock || !existsSync(lock)) return []
-  let owner: ReturnType<typeof Bun.spawnSync>
-  for (let attempt = 0; ; attempt += 1) {
-    owner = Bun.spawnSync(['lsof', '-nP', '-Fpc', '--', lock], {
+  const { process: owner } = observeBoundedSubprocess(
+    'lsof',
+    ['lsof', '-nP', '-Fpc', '--', lock],
+    {
       stdout: 'pipe',
       stderr: 'ignore',
-      timeout: CONFINEMENT_LOCK_LSOF_TIMEOUT_MS,
-    })
-    if (owner.exitedDueToTimeout !== true || attempt === 1) break
-  }
+    },
+    CONFINEMENT_LOCK_LSOF_TIMEOUT_MS,
+    1,
+  )
   if (owner.exitCode !== 0) return []
   let pid: number | null = null
   let command: string | null = null

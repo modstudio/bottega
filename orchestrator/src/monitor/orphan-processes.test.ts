@@ -11,6 +11,7 @@ describe('orphan worktree process policy', () => {
         pgid: 10,
         command: 'vite',
         ageSeconds: 5,
+        startTime: 'birth',
         cwd: '/code/app/.claude/worktrees/gone/web',
       },
       {
@@ -19,6 +20,7 @@ describe('orphan worktree process policy', () => {
         pgid: 11,
         command: 'tool --root=/code/app/.claude/worktrees/also-gone/file',
         ageSeconds: 6,
+        startTime: 'birth',
         cwd: '/tmp',
       },
     ]
@@ -39,9 +41,17 @@ describe('orphan worktree process policy', () => {
         pgid: 10,
         command: 'vite /tmp/file',
         ageSeconds: 5,
+        startTime: 'birth',
         cwd: '/code/app/.claude/worktrees/live',
       },
     ]
-    expect(orphanProcesses(facts, [project], (path) => path.endsWith('/live'))).toEqual([])
+    expect(
+      orphanProcesses(
+        facts,
+        [project],
+        (path) => path.endsWith('/live'),
+        () => 'birth',
+      ),
+    ).toEqual([])
   })
 })
