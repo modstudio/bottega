@@ -1,5 +1,5 @@
 // concern: run-startup-failure
-/** Keep a reserved run queryable when coordinator setup refuses before claim. */
+/** Records and publishes startup failures before or after a run is claimed. */
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { rollUpRootAndEnqueue } from './run-liveness.ts'
@@ -31,7 +31,7 @@ export function publishFailedReservedRun(reserveId: string): void {
   })
 }
 
-export function failReservedRun(
+export function recordRunStartupFailure(
   reserveId: string | undefined,
   error: unknown,
   started?: number,

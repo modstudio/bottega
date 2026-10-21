@@ -64,7 +64,6 @@ type Presentation = {
   cwd(): string
 }
 
-export const assertDispatchAcpAllowed = assertAcpPolicyAllowed
 const namedDispatchTurn = (agentName: string | undefined) =>
   namedAgentTurn(Boolean(agentName), true)
 
@@ -366,7 +365,7 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       transport =
         !explicit && selected ? selected.defaultTransport : resolveTransportName(transportFlag)
     if (transport === 'acp') {
-      assertDispatchAcpAllowed(jobName, flag('agent'), selected, namedDispatchTurn(flag('agent')))
+      assertAcpPolicyAllowed(jobName, flag('agent'), selected, namedDispatchTurn(flag('agent')))
       assertAcpReady(flag('agent') ?? 'codex', selected)
     }
     return {
@@ -462,7 +461,7 @@ export async function pickPreviewCommand(
     warnCallerDrift(presentation.cwd(), undefined, presentation.error)
   const transport = resolveTransportName(flag('transport'))
   if (transport === 'acp')
-    assertDispatchAcpAllowed(
+    assertAcpPolicyAllowed(
       jobName,
       flag('agent'),
       flag('agent') ? AGENTS[flag('agent')!] : undefined,

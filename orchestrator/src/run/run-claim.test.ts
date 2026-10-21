@@ -119,6 +119,46 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
     expect(
       db().query('SELECT status, agent FROM run WHERE record_id=?').get(failedReservation),
     ).toEqual({ status: 'failed', agent: '(pending)' })
+
+    const setupFailureRoot = addRun({ agent: 'codex', job: 'review-lens', status: 'asking' })
+    const setupFailureTurn = addRun({
+      agent: '(pending)',
+      job: 'review-lens',
+      status: 'running',
+      parent: setupFailureRoot,
+      turn: 2,
+    })
+    await expect(
+      claimRun({
+        ...claimInput,
+        opts: {
+          job: 'review-lens',
+          reserveId: setupFailureTurn,
+          resume: {
+            kind: 'continue',
+            parent: setupFailureRoot,
+            agent: 'codex',
+            turn: 2,
+            sessionId: null,
+            worktree: null,
+          },
+        },
+        stamp: 'post-claim-setup-failure',
+        carriedQuestionIds: [],
+        deferredCwdMcpPlan: ['ensure-main-stack'],
+      }),
+    ).rejects.toThrow('deferred MCP main-stack step ran before project preflight')
+    expect(
+      db().query('SELECT status, failure_kind FROM run WHERE record_id=?').get(setupFailureTurn),
+    ).toEqual({ status: 'failed', failure_kind: 'harness' })
+    expect(
+      db().query('SELECT status, failure_kind FROM run WHERE record_id=?').get(setupFailureRoot),
+    ).toEqual({ status: 'failed', failure_kind: 'harness' })
+    expect(
+      db()
+        .query("SELECT count(*) AS count FROM outbox WHERE kind='run' AND row_id=?")
+        .get(setupFailureTurn),
+    ).toEqual({ count: 1 })
   } finally {
     rmSync(runsDir, { recursive: true, force: true })
   }

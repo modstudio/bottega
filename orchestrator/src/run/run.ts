@@ -135,7 +135,7 @@ import { resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
 import { rootRunRecordId } from './run-root-record.ts'
-import { failReservedRun } from './run-startup-failure.ts'
+import { recordRunStartupFailure } from './run-startup-failure.ts'
 import { finishRun, type TerminalInput } from './run-terminal.ts'
 import type { RunResult } from './run-types.ts'
 import * as workerHome from './run-worker-home.ts'
@@ -430,7 +430,7 @@ export async function run(opts: {
     } catch (cause) {
       const message = (cause as Error).message
       let failedId = opts.reserveId
-      if (failedId) failReservedRun(failedId, cause)
+      if (failedId) recordRunStartupFailure(failedId, cause)
       else {
         failedId = (
           db()
@@ -453,7 +453,7 @@ export async function run(opts: {
               Number(Boolean(opts.agentExplicit)),
             ) as { record_id: string }
         ).record_id
-        failReservedRun(failedId, cause)
+        recordRunStartupFailure(failedId, cause)
       }
       throw Object.assign(new Error(`run ${failedId} could not start: ${message}`), {
         runId: failedId,
@@ -543,7 +543,7 @@ export async function run(opts: {
       timeoutMinutes,
     )
   } catch (e) {
-    failReservedRun(opts.reserveId, e)
+    recordRunStartupFailure(opts.reserveId, e)
     throw e
   }
   if (resume.isFirstTurn) {
@@ -557,14 +557,14 @@ export async function run(opts: {
       assertSelectedAcpAllowed(opts.job, a, opts.agentExplicit, resume.isFirstTurn)
       assertAcpReady(name, a)
     } catch (e) {
-      failReservedRun(opts.reserveId, e)
+      recordRunStartupFailure(opts.reserveId, e)
       throw e
     }
   }
   if (name === 'codex') {
     const versionRefusal = minimumCliVersionRefusal(a)
     if (versionRefusal) {
-      failReservedRun(opts.reserveId, versionRefusal)
+      recordRunStartupFailure(opts.reserveId, versionRefusal)
       throw new Error(versionRefusal)
     }
   }
@@ -594,7 +594,7 @@ export async function run(opts: {
     agentHasMcp: a.caps.mcp,
   })
   if (attachmentRuling.refusalReason) {
-    failReservedRun(opts.reserveId, attachmentRuling.refusalReason)
+    recordRunStartupFailure(opts.reserveId, attachmentRuling.refusalReason)
     throw new Error(attachmentRuling.refusalReason)
   }
   const mcpMode = attachmentRuling.mcpMode
@@ -768,7 +768,7 @@ export async function run(opts: {
     removeNewSandboxHomeAfterFailure(sandboxRunDir, sandboxRunDirExisted)
     const why = String((e as Error)?.message ?? e)
     try {
-      failReservedRun(claim.id, e, started)
+      recordRunStartupFailure(claim.id, e, started)
     } finally {
       teardownTerminalRunResources(db(), claim.id)
     }
@@ -863,7 +863,7 @@ export async function run(opts: {
         if ((error as { runId?: string }).runId === claim.id) throw error
         const why = String((error as Error)?.message ?? error)
         try {
-          failReservedRun(claim.id, error, started)
+          recordRunStartupFailure(claim.id, error, started)
         } finally {
           try {
             await resetSandbox()
@@ -886,7 +886,7 @@ export async function run(opts: {
         if (mismatch.refusalReason) {
           const why = mismatch.refusalReason
           try {
-            failReservedRun(claim.id, why, started)
+            recordRunStartupFailure(claim.id, why, started)
           } finally {
             teardownTerminalRunResources(db(), claim.id)
           }

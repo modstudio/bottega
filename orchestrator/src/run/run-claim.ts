@@ -82,6 +82,7 @@ import { prepareResumeBranchIfNeeded, restoreResumeIfNeeded } from './run-resume
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 import { assertRetryRootWorkspace } from './run-retry-claim.ts'
+import { recordRunStartupFailure } from './run-startup-failure.ts'
 import { taskBranchResolution } from './run-task-branch-resolution.ts'
 import { resolveRunTaskRecordId } from './run-task-reference.ts'
 
@@ -939,18 +940,13 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   } catch (e) {
     removeIsolatedCwd?.()
     const why = errorTail(String((e as Error)?.message ?? e))
-    db()
-      .query(
-        // 'harness': setting a worktree up is orch's job, and failing at it says
-        // nothing whatever about the agent that was about to be given it.
-        `UPDATE run SET
-           status=CASE WHEN status='stopped' THEN status ELSE 'failed' END,
-           error=CASE WHEN status='stopped' THEN error ELSE ? END,
-           failure_kind=CASE WHEN status='stopped' THEN failure_kind ELSE 'harness' END,
-           latency_ms=? WHERE record_id=?`,
-      )
-      .run(why, Date.now() - started, claim.id)
-    teardownTerminalRunResources(db(), claim.id)
+    try {
+      // Setting a worktree up is orch's job, so this shared harness failure
+      // must publish the child and roll its outcome up to a continuation root.
+      recordRunStartupFailure(claim.id, why, started)
+    } finally {
+      teardownTerminalRunResources(db(), claim.id)
+    }
     throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
   }
   return {

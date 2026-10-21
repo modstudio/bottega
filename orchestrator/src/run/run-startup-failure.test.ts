@@ -1,12 +1,12 @@
 import { expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { failReservedRun } from './run-startup-failure.ts'
+import { recordRunStartupFailure } from './run-startup-failure.ts'
 
 test('a refusal after detach keeps the printed run queryable as failed', () => {
   const id = addRun({ agent: '(pending)', job: 'review-lens', status: 'running' })
 
-  failReservedRun(id, new Error('selected transport refused the launch'))
+  recordRunStartupFailure(id, new Error('selected transport refused the launch'))
 
   expect(
     db().query('SELECT status, failure_kind, error, latency_ms FROM run WHERE record_id=?').get(id),
@@ -31,7 +31,7 @@ test('a failed reserved continuation rolls its outcome up to the chain root', ()
     turn: 2,
   })
 
-  failReservedRun(turn, 'continuation setup failed')
+  recordRunStartupFailure(turn, 'continuation setup failed')
 
   expect(
     db().query('SELECT status, failure_kind, error FROM run WHERE record_id=?').get(root),
@@ -50,7 +50,7 @@ test('a failed reserved continuation rolls its outcome up to the chain root', ()
 test('a post-claim startup failure records elapsed latency', () => {
   const id = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
 
-  failReservedRun(id, 'worker-home setup failed', Date.now() - 25)
+  recordRunStartupFailure(id, 'worker-home setup failed', Date.now() - 25)
 
   const row = db().query('SELECT status, latency_ms FROM run WHERE record_id=?').get(id) as {
     status: string

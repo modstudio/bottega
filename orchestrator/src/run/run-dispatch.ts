@@ -40,7 +40,7 @@ import { ensureDispatchMcpMainStack } from './run-mcp-main-stack.ts'
 import { nextRunNumber } from './run-number.ts'
 import { repoOf } from './run-project-context.ts'
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
-import { failReservedRun } from './run-startup-failure.ts'
+import { recordRunStartupFailure } from './run-startup-failure.ts'
 
 function writeDetachedPrompt(runsDir: string, recordId: string, prompt: string): string {
   const runDirectory = join(runsDir, recordId)
@@ -354,7 +354,7 @@ export async function detach(
     return recordId
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    failReservedRun(recordId, `detach handoff failed during ${handoffStep}: ${message}`)
+    recordRunStartupFailure(recordId, `detach handoff failed during ${handoffStep}: ${message}`)
     throw error
   } finally {
     if (coordinatorLogFd !== null) closeSync(coordinatorLogFd)

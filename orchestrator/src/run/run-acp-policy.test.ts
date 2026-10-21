@@ -1,8 +1,7 @@
 import { expect, test } from 'bun:test'
 import { AGENTS } from '../agent/agent-registry.ts'
-import { assertDispatchAcpAllowed } from '../dispatch/dispatch-cli-service.ts'
 import { detachedRunOptions } from '../route/failover.ts'
-import { assertSelectedAcpAllowed } from './run-acp-policy.ts'
+import { assertAcpPolicyAllowed, assertSelectedAcpAllowed } from './run-acp-policy.ts'
 
 const meteredAcpAgent = {
   ...AGENTS.codex!,
@@ -18,7 +17,7 @@ test('an automatically routed metered ACP review lens stays eligible at detached
   })
 
   expect(() => {
-    assertDispatchAcpAllowed(opts.job, meteredAcpAgent.name, meteredAcpAgent, false)
+    assertAcpPolicyAllowed(opts.job, meteredAcpAgent.name, meteredAcpAgent, false)
     assertSelectedAcpAllowed(opts.job, meteredAcpAgent, opts.agentExplicit, true)
   }).not.toThrow()
 })
