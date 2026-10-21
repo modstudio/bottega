@@ -353,8 +353,8 @@ export function selectAgentForTransport(
  * Refuse an ACP opt-in that the pilot does not cover.
  *
  * Writing jobs name the pilot task explicitly. Other jobs outside the one
- * complete rule in acpJobAllowed are refused too.
- * This assertion is the sole job-eligibility decision for ACP launches.
+ * complete rule in acpJobAllowed are refused too. Automatic metered-route
+ * eligibility is decided by route.ts and supplied here as an input.
  */
 export function assertAcpAllowed(
   jobName: string,

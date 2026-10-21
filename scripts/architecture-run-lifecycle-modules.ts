@@ -45,10 +45,22 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-retry.ts',
   ]),
   module('orchestrator/src/run/run-alive.ts', []),
+  module('orchestrator/src/run/run-acp-policy.ts', [
+    '../agent/agents.ts',
+    '../route/route.ts',
+    '../transport/transport.ts',
+    './run-resume-kind.ts',
+  ]),
   module('orchestrator/src/run/run-artifact-limits.ts', []),
   module('orchestrator/src/run/run-artifact-retention.ts', ['./run-artifact-limits.ts']),
   module('orchestrator/src/run/run-chain.ts', ['bun:sqlite']),
   module('orchestrator/src/run/run-wall-deadline.ts', []),
+  module('orchestrator/src/run/run-startup-failure.ts', [
+    '../database/db.ts',
+    '../record/machine-identity.ts',
+    './run-liveness.ts',
+    './run-outbox.ts',
+  ]),
   module('orchestrator/src/run/branch-conversation-owner.ts', []),
   module('orchestrator/src/run/branch-owner-guard.ts', [
     '../database/db.ts',

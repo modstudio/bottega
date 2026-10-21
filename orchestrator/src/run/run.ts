@@ -85,7 +85,6 @@ import {
   selectReadonlySandbox,
 } from '../sandbox/sandbox.ts'
 import {
-  assertAcpAllowed,
   assertAcpReady,
   EMPTY_VENDOR_USAGE,
   selectAgentForTransport,
@@ -94,6 +93,7 @@ import {
 import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { resolveReadOnlyBase } from '../worktree/worktree-caller.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
+import { assertAcpPolicyAllowed } from './run-acp-policy.ts'
 import {
   pruneRuns,
   RUNS_DIR,
@@ -120,7 +120,6 @@ import { finalWorkerMcpRuling } from './run-mcp-attachment-record.ts'
 import { enforceRunMcpGrammar } from './run-mcp-grammar.ts'
 import { prepareRunMcpPreflight } from './run-mcp-main-stack.ts'
 import { codexMcpMode } from './run-mcp-mode.ts'
-import { nextRunNumber } from './run-number.ts'
 import {
   bindReviewInstructions,
   checksReviewedCommit,
@@ -131,10 +130,11 @@ import { refuseUnstartedRun } from './run-prelaunch-refusal.ts'
 import { bindSignals, sha } from './run-process.ts'
 import { readOnlyBaseProjectPath, repoOf } from './run-project-context.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
-import { namedAgentTurn, resumeFacts } from './run-resume-kind.ts'
+import { resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
 import { rootRunRecordId } from './run-root-record.ts'
+import { recordNeverStartedRunFailure, recordRunStartupFailure } from './run-startup-failure.ts'
 import { finishRun, type TerminalInput } from './run-terminal.ts'
 import type { RunResult } from './run-types.ts'
 import * as workerHome from './run-worker-home.ts'
@@ -429,35 +429,25 @@ export async function run(opts: {
     } catch (cause) {
       const message = (cause as Error).message
       let failedId = opts.reserveId
-      if (failedId)
-        db()
-          .query(
-            `UPDATE run SET status='failed', failure_kind='harness', error=? WHERE record_id=?`,
-          )
-          .run(message, failedId)
-      else
-        failedId = (
-          db()
-            .query(
-              `INSERT INTO run (record_id,number,started_at,agent,job,repo,project_record_id,cwd,prompt_sha,spec_sha,prompt_bytes,prompt_head,status,session_id,failure_kind,error,docs_injected,mcp,started_by_user_id,agent_explicit) VALUES (?,?,?,'(pending)',?,?,?,?,?,?,?,?,'failed',?,'harness',?,0,?,?,?) RETURNING record_id`,
-            )
-            .get(
-              ...[newRecordId(), nextRunNumber(db()), nowIso()],
-              opts.job,
-              runProjectName,
-              runProjectId,
-              callerCwd,
-              sha(originalPrompt),
-              sha(originalPrompt),
-              Buffer.byteLength(originalPrompt),
-              originalPrompt.slice(0, 200).replace(/\s+/g, ' '),
-              opts.ownerSession ?? sessionId(),
-              message,
-              storedMcpRequest(mcpRequest),
-              startedByUserId,
-              Number(Boolean(opts.agentExplicit)),
-            ) as { record_id: string }
-        ).record_id
+      if (failedId) recordRunStartupFailure(failedId, cause)
+      else {
+        failedId = recordNeverStartedRunFailure({
+          recordId: newRecordId(),
+          error: cause,
+          job: opts.job,
+          repo: runProjectName,
+          projectRecordId: runProjectId,
+          cwd: callerCwd,
+          promptSha: sha(originalPrompt),
+          specSha: sha(originalPrompt),
+          promptBytes: Buffer.byteLength(originalPrompt),
+          promptHead: originalPrompt.slice(0, 200).replace(/\s+/g, ' '),
+          sessionId: opts.ownerSession ?? sessionId(),
+          mcp: storedMcpRequest(mcpRequest),
+          startedByUserId,
+          agentExplicit: Number(Boolean(opts.agentExplicit)),
+        })
+      }
       throw Object.assign(new Error(`run ${failedId} could not start: ${message}`), {
         runId: failedId,
       })
@@ -546,7 +536,7 @@ export async function run(opts: {
       timeoutMinutes,
     )
   } catch (e) {
-    if (opts.reserveId) db().query('DELETE FROM run WHERE record_id=?').run(opts.reserveId)
+    recordRunStartupFailure(opts.reserveId, e)
     throw e
   }
   if (resume.isFirstTurn) {
@@ -557,17 +547,17 @@ export async function run(opts: {
   }
   if (transportName === 'acp') {
     try {
-      assertAcpAllowed(opts.job, name, a, namedAgentTurn(opts.agentExplicit, resume.isFirstTurn))
+      assertAcpPolicyAllowed(opts.job, a.name, a, opts.agentExplicit, resume.isFirstTurn)
       assertAcpReady(name, a)
     } catch (e) {
-      if (opts.reserveId) db().query('DELETE FROM run WHERE record_id=?').run(opts.reserveId)
+      recordRunStartupFailure(opts.reserveId, e)
       throw e
     }
   }
   if (name === 'codex') {
     const versionRefusal = minimumCliVersionRefusal(a)
     if (versionRefusal) {
-      if (opts.reserveId) db().query('DELETE FROM run WHERE record_id=?').run(opts.reserveId)
+      recordRunStartupFailure(opts.reserveId, versionRefusal)
       throw new Error(versionRefusal)
     }
   }
@@ -597,8 +587,7 @@ export async function run(opts: {
     agentHasMcp: a.caps.mcp,
   })
   if (attachmentRuling.refusalReason) {
-    // A routing mismatch must not convert the reserved placeholder into a failed row.
-    if (opts.reserveId) db().query('DELETE FROM run WHERE record_id=?').run(opts.reserveId)
+    recordRunStartupFailure(opts.reserveId, attachmentRuling.refusalReason)
     throw new Error(attachmentRuling.refusalReason)
   }
   const mcpMode = attachmentRuling.mcpMode
@@ -771,12 +760,11 @@ export async function run(opts: {
   } catch (e) {
     removeNewSandboxHomeAfterFailure(sandboxRunDir, sandboxRunDirExisted)
     const why = String((e as Error)?.message ?? e)
-    db()
-      .query(
-        `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE record_id=?`,
-      )
-      .run(why, Date.now() - started, claim.id)
-    teardownTerminalRunResources(db(), claim.id)
+    try {
+      recordRunStartupFailure(claim.id, e, started)
+    } finally {
+      teardownTerminalRunResources(db(), claim.id)
+    }
     throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
   }
   mcpSetupHeader = codexMcpSetupHeader(mcpSetupHeader, codexMcpScope, codexMcpCatalogues)
@@ -867,13 +855,15 @@ export async function run(opts: {
       } catch (error) {
         if ((error as { runId?: string }).runId === claim.id) throw error
         const why = String((error as Error)?.message ?? error)
-        db()
-          .query(
-            `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE record_id=?`,
-          )
-          .run(why, Date.now() - started, claim.id)
-        await resetSandbox()
-        teardownTerminalRunResources(db(), claim.id)
+        try {
+          recordRunStartupFailure(claim.id, error, started)
+        } finally {
+          try {
+            await resetSandbox()
+          } finally {
+            teardownTerminalRunResources(db(), claim.id)
+          }
+        }
         throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), {
           runId: claim.id,
         })
@@ -888,12 +878,11 @@ export async function run(opts: {
           .run(mismatch.connection.error, storedMcpProbe(mismatch.recorded), claim.id)
         if (mismatch.refusalReason) {
           const why = mismatch.refusalReason
-          db()
-            .query(
-              `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE record_id=?`,
-            )
-            .run(why, Date.now() - started, claim.id)
-          teardownTerminalRunResources(db(), claim.id)
+          try {
+            recordRunStartupFailure(claim.id, why, started)
+          } finally {
+            teardownTerminalRunResources(db(), claim.id)
+          }
           throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), {
             runId: claim.id,
           })

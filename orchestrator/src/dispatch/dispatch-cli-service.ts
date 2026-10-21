@@ -35,12 +35,12 @@ import {
 import type { DetachSpec } from '../route/failover.ts'
 import { pick } from '../route/route.ts'
 import { pickCommand } from '../route/routing-commands.ts'
+import { assertAcpPolicyAllowed } from '../run/run-acp-policy.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { follow as followRun } from '../run/run-control.ts'
 import { detach as dispatchDetached } from '../run/run-dispatch.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import {
-  assertAcpAllowed,
   assertAcpReady,
   resolveTransportName,
   selectAgentForTransport,
@@ -361,7 +361,7 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       transport =
         !explicit && selected ? selected.defaultTransport : resolveTransportName(transportFlag)
     if (transport === 'acp') {
-      assertAcpAllowed(jobName, flag('agent'), selected, Boolean(flag('agent')))
+      assertAcpPolicyAllowed(jobName, flag('agent'), selected, Boolean(flag('agent')), true)
       assertAcpReady(flag('agent') ?? 'codex', selected)
     }
     return {
@@ -457,11 +457,12 @@ export async function pickPreviewCommand(
     warnCallerDrift(presentation.cwd(), undefined, presentation.error)
   const transport = resolveTransportName(flag('transport'))
   if (transport === 'acp')
-    assertAcpAllowed(
+    assertAcpPolicyAllowed(
       jobName,
       flag('agent'),
       flag('agent') ? AGENTS[flag('agent')!] : undefined,
       Boolean(flag('agent')),
+      true,
     )
   pickCommand(
     {

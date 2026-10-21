@@ -1,5 +1,6 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
+import type { Agent } from '../agent/agents.ts'
 import {
   fileContractProbeReason,
   predatesFileContract,
@@ -605,7 +606,7 @@ export function candidates(
     const evidence = scored + failures
     const score = evidence > 0 ? (recent.pts + weigh('none', null) * failures) / evidence : null
     const mcpWhy = mcpCandidateIneligibility(a.mcpToolNamePattern, requiredMcp)
-    const policy = routePolicyEligibility(jobName, a, j, explicitlyNamedAgent)
+    const policy = routePolicyEligibility(jobName, a, explicitlyNamedAgent)
     let eligible = true,
       why = policy.why
     const unavailable = unavailableReason(name)
@@ -1170,19 +1171,26 @@ export function meteredRouteEligibility(input: {
   return { eligible: true, why: '', mayAutoRouteNamedJob: true }
 }
 
-function routePolicyEligibility(
+export function agentMeteredRouteEligibility(
   jobName: string,
-  agent: { billing: string; routeMetered?: boolean; name: string; defaultTransport: 'cli' | 'acp' },
-  routedJob: { needs: { writesRepo?: boolean } },
-  explicitlyNamedAgent: string | undefined,
-) {
-  const metered = meteredRouteEligibility({
+  agent: Pick<Agent, 'billing' | 'routeMetered' | 'name'>,
+  explicitlyNamedAgent?: string,
+): ReturnType<typeof meteredRouteEligibility> {
+  return meteredRouteEligibility({
     billing: agent.billing,
     routeMetered: Boolean(agent.routeMetered),
-    writesRepo: Boolean(routedJob.needs.writesRepo),
+    writesRepo: Boolean(job(jobName).needs.writesRepo),
     name: agent.name,
     explicitlyNamedAgent,
   })
+}
+
+function routePolicyEligibility(
+  jobName: string,
+  agent: Pick<Agent, 'billing' | 'routeMetered' | 'name' | 'defaultTransport'>,
+  explicitlyNamedAgent: string | undefined,
+) {
+  const metered = agentMeteredRouteEligibility(jobName, agent, explicitlyNamedAgent)
   if (!metered.eligible) return metered
   const transportWhy =
     agent.defaultTransport === 'acp'
@@ -1200,12 +1208,7 @@ function routePolicyEligibility(
 export function agentsIneligibleForTransport(jobName: string, transport: 'cli' | 'acp'): string[] {
   return Object.values(AGENTS)
     .filter((agent) => {
-      const policy = meteredRouteEligibility({
-        billing: agent.billing,
-        routeMetered: Boolean(agent.routeMetered),
-        writesRepo: Boolean(job(jobName).needs.writesRepo),
-        name: agent.name,
-      })
+      const policy = agentMeteredRouteEligibility(jobName, agent)
       return (
         transportPinIneligibility(
           jobName,

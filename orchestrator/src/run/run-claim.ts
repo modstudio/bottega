@@ -82,6 +82,7 @@ import { prepareResumeBranchIfNeeded, restoreResumeIfNeeded } from './run-resume
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 import { assertRetryRootWorkspace } from './run-retry-claim.ts'
+import { recordRunStartupFailure } from './run-startup-failure.ts'
 import { taskBranchResolution } from './run-task-branch-resolution.ts'
 import { resolveRunTaskRecordId } from './run-task-reference.ts'
 
@@ -174,6 +175,16 @@ function claimRecordId(reserveId: string | undefined): string {
   return reserveId
 }
 
+function claimableRow<T>(
+  reserveId: string | undefined,
+  updateReserved: () => T | null,
+  insertFresh: () => T,
+): T {
+  const row = reserveId ? updateReserved() : insertFresh()
+  if (!row) throw new Error(`reserved run ${reserveId} is no longer claimable`)
+  return row
+}
+
 export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   let {
     opts,
@@ -237,9 +248,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
    */
   const originalSchemaPath = writeGeneratedSchema(runsDir, stamp, generatedSchema, opts.schemaPath)
   const textReplyContract = !opts.schemaPath && generatedSchema === TEXT_REPLY_SCHEMA
-  // Codex's --output-schema is OpenAI strict structured output. Its copy is
-  // normalized beside the prompt; the caller's file remains byte-for-byte
-  // untouched for Grok, whose --json-schema accepts ordinary JSON Schema.
+  // Normalize Codex's strict schema beside the prompt; leave the caller's file untouched for Grok.
   const schemaPath =
     name === 'codex' && originalSchemaPath
       ? (() => {
@@ -327,7 +336,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
                         route_reason=?, branch=?, parent_run_record_id=?, turn=?, vendor_session=?, docs_injected=?, doc_revisions=?, canon_sha=?,
                         launch_cwd=?, launch_seed=?, launch_key=?, task_record_id=?, launch_base=?, no_failover=?,
                         automatic_failover=?, agent_explicit=?, transport_explicit=?, review_ref=?, pid=?, mcp=?, transport=?
-          WHERE record_id=? RETURNING record_id, number`,
+          WHERE record_id=? AND status='running' AND agent='(pending)' RETURNING record_id, number`,
       )
       .get(
         recordId,
@@ -415,7 +424,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         startedByUserId,
       ) as { record_id: string; number: number }
   const claim = writeTransaction(() => {
-    const claimedRow = opts.reserveId ? updateReservedRun() : insertClaimedRun()
+    const claimedRow = claimableRow(opts.reserveId, updateReservedRun, insertClaimedRun)
     const claimed = { id: claimedRow.record_id, number: claimedRow.number }
     /**
      * A child that asked has finished that turn once its successor exists.
@@ -931,21 +940,15 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   } catch (e) {
     removeIsolatedCwd?.()
     const why = errorTail(String((e as Error)?.message ?? e))
-    db()
-      .query(
-        // 'harness': setting a worktree up is orch's job, and failing at it says
-        // nothing whatever about the agent that was about to be given it.
-        `UPDATE run SET
-           status=CASE WHEN status='stopped' THEN status ELSE 'failed' END,
-           error=CASE WHEN status='stopped' THEN error ELSE ? END,
-           failure_kind=CASE WHEN status='stopped' THEN failure_kind ELSE 'harness' END,
-           latency_ms=? WHERE record_id=?`,
-      )
-      .run(why, Date.now() - started, claim.id)
-    teardownTerminalRunResources(db(), claim.id)
+    try {
+      // Setting a worktree up is orch's job, so this shared harness failure
+      // must publish the child and roll its outcome up to a continuation root.
+      recordRunStartupFailure(claim.id, why, started)
+    } finally {
+      teardownTerminalRunResources(db(), claim.id)
+    }
     throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
   }
-
   return {
     promptPath,
     outputPath,
