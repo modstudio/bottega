@@ -11,7 +11,7 @@ import { dbNameFor, type Recipe, type RecipeDatabaseProvider, runRecipe } from '
 import { createTrackedRecipe } from '../recipe/tracked-recipe.ts'
 import { ORCH_RUN_MARKER } from './worktree-attribution.ts'
 import { resolveBase } from './worktree-caller.ts'
-import { removeFor, removeWorktree } from './worktree-remove.ts'
+import { branchTip, removeFor, removeWorktree } from './worktree-remove.ts'
 import { projectSeedPreflight } from './worktree-seed.ts'
 import { createArgv, fillArg, fillTool, type WorktreeCreate } from './worktree-template.ts'
 import type { Worktree } from './worktree-types.ts'
@@ -86,7 +86,7 @@ function runRecordedRecipe(
   } catch (error) {
     const cleanup = recipeStarted
       ? removeFor(worktree, worktree.repoRoot, false, false, runId)
-      : removeWorktree(worktree)
+      : removeWorktree(worktree, false, branchTip(worktree.repoRoot, worktree.branch))
     settleCreateTimeBranchCleanup(worktree, runId)
     throw new Error(
       `${String((error as Error)?.message ?? error)}\n` +
@@ -474,17 +474,6 @@ function createWithoutCommand(
   requestedBranch?: string,
 ): Worktree {
   if (tool.recipePath) {
-    if (shouldCheckoutCreatedBranch(detached, existingBranch)) {
-      const { branch } = recipeWorktreeIdentity(
-        tool,
-        repoRoot,
-        runId,
-        key,
-        existingBranch,
-        requestedBranch,
-      )
-      assertBranchRefMayBeCreated(repoRoot, branch)
-    }
     return createTrackedRecipe({
       tool,
       repoRoot,
@@ -497,7 +486,12 @@ function createWithoutCommand(
       ...recipeWorktreeIdentity(tool, repoRoot, runId, key, existingBranch, requestedBranch),
       attribute: (worktree) => attributeWorktree(worktree, runId, record),
       verify: verifyFreshWorktree,
-      remove: (worktree) => removeWorktree(worktree, detached || Boolean(existingBranch)),
+      remove: (worktree) =>
+        removeWorktree(
+          worktree,
+          detached || Boolean(existingBranch),
+          branchTip(worktree.repoRoot, worktree.branch),
+        ),
       removeProvisioned: (worktree) => removeFor(worktree, repoRoot, false, false, runId),
     })
   }

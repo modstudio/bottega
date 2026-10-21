@@ -4,6 +4,7 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { assertBranchRefMayBeCreated } from '../branch/branch-ref-guard.ts'
 import { settleCreateTimeBranchCleanup } from '../branch/create-time-settlement.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { git } from '../git/git-environment.ts'
@@ -62,6 +63,10 @@ import type {
   RecipeAllocations,
   RecipeSnapshot,
 } from './tracked-recipe-types.ts'
+import {
+  buildTrackedWorktreeAddArgv,
+  type TrackedWorktreeAddInput,
+} from './tracked-worktree-add.ts'
 
 export type {
   AllocationAttempt,
@@ -686,24 +691,16 @@ function createTrackedCompose(input: {
   return prepared.context
 }
 
+function prepareTrackedWorktreeAdd(input: TrackedCreateInput, branch: string, path: string): void {
+  mkdirSync(dirname(path), { recursive: true })
+  if (!input.detached && !input.existingBranch) {
+    assertBranchRefMayBeCreated(input.repoRoot, branch)
+  }
+}
+
 /** Build the one git worktree-add shape used by every tracked creation form. */
-export function trackedWorktreeAddArgv(input: {
-  branch: string
-  path: string
-  base: string
-  detached: boolean
-  existingBranch: boolean
-  relativePaths?: boolean
-}): string[] {
-  // branch-ref-guard: assertBranchRefMayBeCreated in createWithoutCommand
-  return [
-    'worktree',
-    'add',
-    ...(input.relativePaths ? ['--relative-paths'] : []),
-    ...(input.detached ? ['--detach'] : input.existingBranch ? [] : ['-b', input.branch]),
-    input.path,
-    input.existingBranch && !input.detached ? input.branch : input.base,
-  ]
+export function trackedWorktreeAddArgv(input: TrackedWorktreeAddInput): string[] {
+  return buildTrackedWorktreeAddArgv(input)
 }
 
 /**
@@ -729,8 +726,7 @@ export function createTrackedRecipe(
   const { base, snapshot, vars } = prepared
 
   try {
-    mkdirSync(dirname(path), { recursive: true })
-    // branch-ref-guard: assertBranchRefMayBeCreated in createWithoutCommand
+    prepareTrackedWorktreeAdd(input, branch, path) // branch-ref-guard: assertBranchRefMayBeCreated
     git(
       trackedWorktreeAddArgv({
         branch,

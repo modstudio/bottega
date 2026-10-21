@@ -5,7 +5,6 @@ import { isAbsolute, join, relative } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   assertBranchRefDecisionMayBeDeleted,
-  assertBranchRefMayBeDeleted,
   exactBranchTip,
   observeBranchRefMutation,
 } from '../branch/branch-ref-guard.ts'
@@ -220,10 +219,12 @@ function removeWithTool(
   forceOrchTree = false,
   keepBranch = false,
   runId?: string,
-  removeTree: () => { removed: boolean; detail: string } = () => removeWorktree(w, keepBranch),
+  classifiedTip: string | null = branchTip(w.repoRoot, w.branch),
+  removeTree: () => { removed: boolean; detail: string } = () =>
+    removeWorktree(w, keepBranch, classifiedTip),
 ): WorktreeRemovalResult {
   const name = w.path.split('/').pop() ?? w.path
-  const branchBefore = branchTip(w.repoRoot, w.branch)
+  const branchBefore = classifiedTip
   const uniqueBefore = unmergedBranch(w.repoRoot, w.branch, null)
 
   // A recipe-built tree is torn down the same way it was made: bottega
@@ -231,12 +232,12 @@ function removeWithTool(
   // goes, because a compose file that lives in the worktree cannot bring
   // anything down once the worktree has been deleted.
   if (!tool.remove) {
-    return removeWithoutCommand(tool, w, keepBranch, runId)
+    return removeWithoutCommand(tool, w, keepBranch, classifiedTip, runId)
   }
 
   const vars: Record<string, string> = { name, path: w.path }
   if (w.branch) vars.branch = w.branch
-  const branchRefusal = toolBranchDeletionRefusal(w, keepBranch, branchBefore)
+  const branchRefusal = toolBranchDeletionRefusal(w, keepBranch, classifiedTip)
   if (branchRefusal) return { removed: false, detail: branchRefusal }
   const r = runShellTool(tool.remove, vars, w.repoRoot)
   if (r.ok && !existsSync(w.path)) {
@@ -265,7 +266,7 @@ function removeWithTool(
   // templates also recognize old trees for sweep, but are deliberately not
   // strong enough evidence for destructive fallback here.
   if (forceOrchTree && existsSync(join(w.path, ORCH_RUN_MARKER))) {
-    return removeWorktree(w, keepBranch)
+    return removeWorktree(w, keepBranch, classifiedTip)
   }
 
   /**
@@ -332,11 +333,19 @@ function projectToolBranchMutationFailure(input: {
 function toolBranchDeletionRefusal(
   worktree: Worktree,
   keepBranch: boolean,
-  branchBefore: string | null,
+  classifiedTip: string | null,
 ): string | null {
-  if (!worktree.branch || keepBranch || branchBefore === null) return null
+  if (!worktree.branch || keepBranch) return null
   try {
-    assertBranchRefMayBeDeleted(worktree.repoRoot, worktree.branch)
+    const observation = observeBranchRefMutation(worktree.repoRoot, 'delete', worktree.branch)
+    if (!observation.decision.allowed && observation.decision.reason === 'case-collision') {
+      assertBranchRefDecisionMayBeDeleted(observation.decision, worktree.branch)
+    }
+    if (observation.exactTip !== classifiedTip) {
+      throw new Error(
+        `refusing to delete branch ${worktree.branch}: branch moved since it was classified (${classifiedTip ?? 'absent'} to ${observation.exactTip ?? 'absent'})`,
+      )
+    }
     return null
   } catch (error) {
     return error instanceof Error ? error.message : String(error)
@@ -347,6 +356,7 @@ function removeWithoutCommand(
   tool: WorktreeTool,
   w: Worktree,
   keepBranch: boolean,
+  classifiedTip: string | null,
   runId?: string,
 ): WorktreeRemovalResult {
   const snapshotRefusal = snapshotlessTrackedRecipeRefusal({
@@ -363,17 +373,17 @@ function removeWithoutCommand(
       worktree: w,
       remove: () => {
         teardownCompleted = true
-        return removeWorktree(w, keepBranch)
+        return removeWorktree(w, keepBranch, classifiedTip)
       },
     })
     return teardownCompleted
       ? { ...removed, resourceTeardownCompleted: true }
       : { ...removed, resourceTeardownFailed: true }
   }
-  if (!tool.recipe || runId === undefined) return removeWorktree(w, keepBranch)
+  if (!tool.recipe || runId === undefined) return removeWorktree(w, keepBranch, classifiedTip)
   const teardown = teardownBuiltInRecipe(tool.recipe, w, runId)
   return teardown.ok
-    ? { ...removeWorktree(w, keepBranch), resourceTeardownCompleted: true }
+    ? { ...removeWorktree(w, keepBranch, classifiedTip), resourceTeardownCompleted: true }
     : {
         removed: false,
         detail: `recipe teardown failed at "${teardown.step}": ${teardown.detail.slice(-200)}`,
@@ -563,6 +573,7 @@ function removeByLifecycle(input: {
   projectName: string | null
   forceOrchTree: boolean
   retainBranch: boolean
+  classifiedTip: string | null
   runId?: string
   removeTree(): { removed: boolean; detail: string }
 }): WorktreeRemovalResult {
@@ -584,8 +595,16 @@ function removeByLifecycle(input: {
     worktree.source === 'recipe' || (worktree.source === undefined && Boolean(tool))
   const removed: WorktreeRemovalResult =
     tool && projectOwned
-      ? removeWithTool(tool, worktree, input.forceOrchTree, input.retainBranch, runId, removeTree)
-      : removeWorktree(worktree, input.retainBranch)
+      ? removeWithTool(
+          tool,
+          worktree,
+          input.forceOrchTree,
+          input.retainBranch,
+          runId,
+          input.classifiedTip,
+          removeTree,
+        )
+      : removeWorktree(worktree, input.retainBranch, input.classifiedTip)
   return removed.output && input.projectName
     ? { ...removed, output: `${input.projectName} remove:\n${removed.output}` }
     : removed
@@ -624,13 +643,14 @@ export function removeFor(
   const removeTree = () =>
     skipGitRemoval
       ? { removed: true, detail: `${w.path} was already gone` }
-      : removeWorktree(owned, retainBranch, classification?.tip)
+      : removeWorktree(owned, retainBranch, classification?.tip ?? null)
   const result = removeByLifecycle({
     worktree: owned,
     tool,
     projectName: project?.name ?? null,
     forceOrchTree,
     retainBranch,
+    classifiedTip: classification?.tip ?? null,
     runId,
     removeTree,
   })
@@ -653,7 +673,7 @@ export function sweepWithTool(
 export function removeWorktree(
   w: Worktree,
   keepBranch = false,
-  classifiedTip?: string,
+  classifiedTip: string | null,
 ): { removed: boolean; detail: string } {
   const deleteBranch = Boolean(w.branch) && !keepBranch
   // Never prune the repository; remove only this worktree's own record.
@@ -688,7 +708,7 @@ export function removeWorktree(
 function removeOwnedWorktreeBranch(
   worktree: Worktree,
   deleteBranch: boolean,
-  classifiedTip?: string,
+  classifiedTip: string | null,
 ): WorktreeRemovalResult | null {
   if (!deleteBranch) return null
   try {
@@ -706,14 +726,18 @@ function removeOwnedWorktreeBranch(
 }
 
 /** Delete a local branch when it exists, reporting whether there was work to do. */
-export function removeBranch(repoRoot: string, branch: string, classifiedTip?: string): boolean {
+export function removeBranch(
+  repoRoot: string,
+  branch: string,
+  classifiedTip: string | null,
+): boolean {
   const observation = observeBranchRefMutation(repoRoot, 'delete', branch)
   const { decision } = observation
   if (!decision.allowed && decision.reason === 'exact-missing') return false
   assertBranchRefDecisionMayBeDeleted(decision, branch)
   const tip = observation.exactTip
   if (!tip) throw new Error(`refusing to delete branch ${branch}: its exact tip could not be read`)
-  if (classifiedTip !== undefined && tip !== classifiedTip) {
+  if (tip !== classifiedTip) {
     throw new Error(
       `refusing to delete branch ${branch}: branch moved since it was classified (${classifiedTip} to ${tip})`,
     )

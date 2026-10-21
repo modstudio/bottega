@@ -733,7 +733,8 @@ export async function discardRun(id: string, options: CleanupOptions): Promise<v
       }
       authority = adoptRunMutation(authority, 'discard')
       const snapshot = branchTip(repoRoot, row.branch_kept!)
-      const removed = removeBranch(repoRoot, row.branch_kept!)
+      // The snapshot is the tip cleanup classified when it decided to delete.
+      const removed = removeBranch(repoRoot, row.branch_kept!, snapshot)
       const ownersAfter = evidenceOwningBranchOwners(ownerRow, repoRoot, snapshot)
       const outcome = verifyBranchOwnershipAfterCleanup(
         row.record_id,
