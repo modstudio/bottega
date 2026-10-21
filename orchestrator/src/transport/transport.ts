@@ -223,6 +223,8 @@ export type TransportStartOpts = {
   bin?: string
   /** First turn vs resumeArgv. Session may exist on a first grok turn too. */
   resume?: boolean
+  /** Best-effort run warning recorder owned by the lifecycle adapter. */
+  onWarning?: (message: string) => void
 }
 
 export type TransportHandle = {

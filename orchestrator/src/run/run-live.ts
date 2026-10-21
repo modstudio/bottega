@@ -21,7 +21,12 @@ import {
   type WorkerReply,
 } from '../contract/contract.ts'
 import { db, nowIso } from '../database/db.ts'
-import { appendRunEvent, type StreamEvent, teeTransportEvents } from '../events.ts'
+import {
+  appendRunEvent,
+  recordRunWarning,
+  type StreamEvent,
+  teeTransportEvents,
+} from '../events.ts'
 import { type classify, hasVendorTerminationMarker } from '../failure/failure.ts'
 import { contentTree, gitContext, reviewChangedPaths } from '../git/git-environment.ts'
 import {
@@ -42,6 +47,7 @@ import type { CodexMcpServer } from '../sandbox/codex-mcp-scope.ts'
 import type { SandboxSelection } from '../sandbox/sandbox.ts'
 import {
   EMPTY_VENDOR_USAGE,
+  type TransportHandle,
   type TransportName,
   type TransportResult,
   type TransportStartOpts,
@@ -58,6 +64,7 @@ import {
 } from './checkpoint.ts'
 import { questionOpenSql } from './question-open.ts'
 import { prepareLaterRunBoardPrompt } from './run-board-prompt.ts'
+import { startRunAfterHostCapacity, waitForRunHostCapacity } from './run-host-capacity.ts'
 import { STALE_AFTER_MS } from './run-liveness.ts'
 import { childEnv, errorTail, live, liveCheckpoints } from './run-process.ts'
 import { decideReplySource, type ReplyContract } from './run-reply-source.ts'
@@ -170,6 +177,50 @@ type LiveOptions = {
   schemaPath?: string
   job: string
 }
+
+async function startAfterHostCapacity(input: {
+  repoJob: boolean
+  claim: { id: string }
+  opts: Pick<LiveOptions, 'resume'>
+  transport: ReturnType<typeof transportFor>
+  startOpts: TransportStartOpts
+}): Promise<TransportHandle> {
+  const runId = input.claim.id
+  const result = await startRunAfterHostCapacity({
+    wait: () =>
+      input.repoJob
+        ? waitForRunHostCapacity({
+            database: db(),
+            runId,
+          })
+        : Promise.resolve(null),
+    isRunning: () =>
+      (
+        db().query('SELECT status FROM run WHERE record_id=?').get(runId) as {
+          status: string
+        } | null
+      )?.status === 'running',
+    spawn: () =>
+      input.opts.resume?.session && input.opts.resume.kind === 'continue'
+        ? input.transport.resume({
+            ...input.startOpts,
+            session: input.opts.resume.session,
+            resume: true,
+          })
+        : input.transport.start(input.startOpts),
+    stop: (handle) => input.transport.cancel(handle),
+  })
+  const hostWait = result.wait
+  if (hostWait?.boundReached) {
+    const message = `host capacity wait bound reached after ${hostWait.waitedMs}ms; starting run`
+    console.error(`orch: ${message}`)
+    recordRunWarning(runId, message)
+  }
+  if (!result.handle) throw new Error('run stopped while waiting for host capacity')
+  return result.handle
+}
+
+const warnForRun = (runId: string) => (message: string) => recordRunWarning(runId, message)
 
 export type LiveInput = {
   repoJob: boolean
@@ -487,16 +538,16 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         repoJob,
         claim.number,
       ),
+      onWarning: warnForRun(claim.id),
     }
     recordRunAsk(claim.id, sandboxSelection.sandbox, t, startOpts)
-    const handle =
-      opts.resume?.session && opts.resume.kind === 'continue'
-        ? await t.resume({
-            ...startOpts,
-            session: opts.resume.session,
-            resume: true,
-          })
-        : await t.start(startOpts)
+    const handle = await startAfterHostCapacity({
+      repoJob,
+      claim,
+      opts,
+      transport: t,
+      startOpts,
+    })
     proc = handle
     live.add(handle)
     effectiveModel = handle.effectiveModel ?? null
@@ -522,7 +573,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     const vendorStartTime = vendorPid && vendorPid > 1 ? processStartTime(vendorPid) : null
     db()
       .query(
-        `UPDATE run SET agent_pid=?, agent_pgid=?, agent_start_time=?,
+        `UPDATE run SET agent_pid=?, agent_pgid=?, agent_start_time=?, host_wait_since=NULL,
               last_event_at=COALESCE(last_event_at, ?) WHERE record_id=?`,
       )
       .run(vendorPid, vendorPgid, vendorStartTime, nowIso(), claim.id)

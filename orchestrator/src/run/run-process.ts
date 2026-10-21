@@ -17,6 +17,7 @@ import { depth } from '../dispatch/dispatch-preflight.ts'
 import { DEFAULT_IDLE_GRACE_MS, isGroupKillablePgid, terminateProcessGroup } from '../idle-kill.ts'
 import { isForwardedChildEnvName } from '../sandbox/record-connection-env.ts'
 import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
+import { runTestWorkerEnvironment } from './run-test-workers.ts'
 
 export function childEnv(
   a: (typeof AGENTS)[string],
@@ -32,6 +33,8 @@ export function childEnv(
     if (v === undefined || !isForwardedChildEnvName(k)) continue
     env[k] = v
   }
+  delete env.ORCH_TEST_WORKERS
+  delete env.VITEST_MAX_WORKERS
   env.ORCH_DEPTH = String(depth() + 1)
   /**
    * Which run is asking, for the ask-server the child may call back into.
@@ -64,10 +67,10 @@ export function childEnv(
    * register.
    */
   if (includeStore) env.ORCH_DB = DB_PATH
-  const child = {
+  const child: Record<string, string> = {
     ...env,
     ...(a.env?.() ?? {}),
-    ...extra,
+    ...(includeStore ? runTestWorkerEnvironment(extra) : extra),
     ...endpointEnvironment,
     ...workerLaunchEnv(workerHarnessName(a)),
   }

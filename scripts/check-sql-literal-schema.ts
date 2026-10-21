@@ -185,8 +185,8 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
   ),
   ...exempt(
     'orchestrator/src/run/live-run-member.ts',
-    ['\u0062a75daa7e0655021'],
-    'live-member query composes the shared run-voiding expression',
+    ['f7d638579a50675d'],
+    'live-member query composes the canonical current-member join',
   ),
   ...exempt(
     'orchestrator/src/reclaim/reclaim.ts',

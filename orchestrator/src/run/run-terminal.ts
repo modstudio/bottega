@@ -725,6 +725,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
                         status=CASE WHEN status='stopped' THEN status ELSE ? END,
                         error=CASE WHEN status='stopped' THEN error ELSE ? END,
                         failure_kind=CASE WHEN status='stopped' THEN failure_kind ELSE ? END,
+                        host_wait_since=NULL,
                         vendor_session=COALESCE(?, vendor_session), pre_confinement=?, confinement=?,
                         review_provenance=?, provenance_status=?,
                         unreconciled=0 WHERE record_id=?`,

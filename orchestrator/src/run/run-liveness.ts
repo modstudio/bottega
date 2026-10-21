@@ -318,7 +318,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
   const finishedAt = new Date(now).toISOString()
   if (abandonedBootstraps.length) {
     const update = d.query(
-      `UPDATE run SET status='failed', failure_kind='harness',
+      `UPDATE run SET status='failed', failure_kind='harness', host_wait_since=NULL,
               error=? WHERE record_id=? AND status='running'`,
     )
     for (const id of abandonedBootstraps) {
@@ -334,7 +334,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
   }
   if (setupDeaths.length) {
     const update = d.query(
-      `UPDATE run SET status='failed', failure_kind='harness', error=?
+      `UPDATE run SET status='failed', failure_kind='harness', error=?, host_wait_since=NULL
         WHERE record_id=? AND status='running'`,
     )
     for (const id of setupDeaths) {
@@ -360,7 +360,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
     // by the calling harness's command timeout and landed here - a fact about the
     // caller, charged until now to qwen36-goose.
     const update = d.query(
-      `UPDATE run SET status='stale', failure_kind='interrupted', error=?
+      `UPDATE run SET status='stale', failure_kind='interrupted', error=?, host_wait_since=NULL
         WHERE record_id=? AND status='running'`,
     )
     for (const id of dead) {

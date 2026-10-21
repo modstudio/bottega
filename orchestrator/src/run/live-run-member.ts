@@ -11,6 +11,7 @@ import { idleMsSince } from '../events.ts'
 import { type ProcessSample, processTreeCpuMoving } from '../idle-kill.ts'
 import { jobIdleKillMs } from '../jobs/jobs.ts'
 import { idleStallMs, stalledRunDetail, stalledRunState } from '../stalled-run.ts'
+import { isFreshRunHostWait } from './run-host-capacity.ts'
 
 export type LiveRunMember = {
   record_id: string
@@ -22,6 +23,8 @@ export type LiveRunMember = {
   session_id: string | null
   agent_pid: number | null
   agent_start_time: string | null
+  host_wait_since?: string | null
+  status?: string
 }
 
 /** One definition of the member whose status and process represent a conversation now. */
@@ -40,7 +43,7 @@ export function liveRunMembers(database: Database = db()): LiveRunMember[] {
     .query(
       `SELECT current_run.record_id, current_run.number, current_run.started_at, current_run.last_event_at,
               current_run.agent, current_run.job, root.session_id,
-              current_run.agent_pid, current_run.agent_start_time
+              current_run.agent_pid, current_run.agent_start_time, current_run.host_wait_since
          FROM run root
          ${currentRunMemberJoin('root')}
         WHERE root.parent_run_record_id IS NULL AND current_run.status='running'`,
@@ -63,6 +66,9 @@ export function liveMemberStall(
   thresholdMs = idleStallMs(),
   observedStartTime: (pid: number) => string | null = processStartTime,
 ): LiveMemberStall {
+  if (isFreshRunHostWait(member.status ?? 'running', member.host_wait_since, clock)) {
+    return { state: 'healthy', detail: null, idleMs: null, idleBoundMs: jobIdleKillMs(member.job) }
+  }
   const idleMs = idleMsSince(member.last_event_at, member.started_at, clock)
   const idleBoundMs = jobIdleKillMs(member.job)
   const identity = pidRecordIdentity(member.agent_pid, member.agent_start_time, observedStartTime)

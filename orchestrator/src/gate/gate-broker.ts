@@ -13,6 +13,7 @@ import type { MainStackConsumer } from '../project/project-settings.ts'
 import { ensureMainStackStarted } from '../resources/main-stack.ts'
 import { resolveReviewMergeBase } from '../review/review-target.ts'
 import { runArtifactsDir } from '../run/run-artifacts.ts'
+import { lowerRunChildPriority } from '../run/run-child-priority.ts'
 import {
   boundedGateOutputTail,
   brokerGateEnvironment,
@@ -184,6 +185,30 @@ function recordFinishedGate(input: {
     )
 }
 
+function spawnGateChild(input: {
+  command: string
+  worktree: string
+  environment: Record<string, string>
+  record: (chunk: Buffer | string) => void
+}) {
+  return lowerRunChildPriority(
+    spawn('sh', ['-c', input.command], {
+      cwd: input.worktree,
+      env: {
+        ...brokerGateEnvironment(
+          workerGateEnvironment(process.env),
+          process.env,
+          input.environment,
+        ),
+        [HOST_SLOT_HELD_ENV]: '1',
+      },
+      detached: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }),
+    (message) => input.record(`warning: ${message}\n`),
+  )
+}
+
 async function runGateProcess(input: {
   command: string
   worktree: string
@@ -193,15 +218,7 @@ async function runGateProcess(input: {
   stop: () => Promise<void>
 }): Promise<void> {
   const { state } = input
-  state.child = spawn('sh', ['-c', input.command], {
-    cwd: input.worktree,
-    env: {
-      ...brokerGateEnvironment(workerGateEnvironment(process.env), process.env, input.environment),
-      [HOST_SLOT_HELD_ENV]: '1',
-    },
-    detached: true,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
+  state.child = spawnGateChild(input)
   state.child.stdout?.on('data', input.record)
   state.child.stderr?.on('data', input.record)
   state.child.once('error', (error) => input.record(`gate could not start: ${String(error)}\n`))

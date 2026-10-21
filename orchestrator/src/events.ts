@@ -27,6 +27,7 @@ const PEEK_TEXT_CHARS = 120
 
 export type RunLogEvent =
   | { ts: string; type: 'text'; text: string }
+  | { ts: string; type: 'warning'; text: string }
   | {
       ts: string
       type: 'note'
@@ -64,6 +65,7 @@ export type RunLogEvent =
 
 type PeekEventSummary =
   | { type: 'text'; text: string }
+  | { type: 'warning'; text: string }
   | { type: 'note'; noteLabel: string; candidateLabels: string[] }
   | { type: 'tool_call'; title: string; target?: string }
   | { type: 'tool_result'; status?: string; bytes?: number }
@@ -158,8 +160,15 @@ export function appendRunEvent(runId: string, event: RunLogEvent, path?: string)
   if (isWorkerActivity(event)) touchLastEventAt(runId, event.ts)
 }
 
+/** Record a non-fatal run warning consistently across dispatch and live execution. */
+export function recordRunWarning(runId: string, warning: string): void {
+  appendRunEvent(runId, { ts: nowIso(), type: 'warning', text: warning })
+}
+
 function isWorkerActivity(event: RunLogEvent): boolean {
-  return !['ask_expected', 'ask_started', 'ask_initialized', 'ask_listed'].includes(event.type)
+  return !['warning', 'ask_expected', 'ask_started', 'ask_initialized', 'ask_listed'].includes(
+    event.type,
+  )
 }
 
 const RESULT_STATUSES = new Set(['completed', 'failed', 'ok', 'error', 'cancelled'])
@@ -500,6 +509,8 @@ export function readEventLog(path: string): RunLogEvent[] {
 
 function summarizeEvent(event: RunLogEvent): PeekEventSummary {
   if (event.type === 'text') return { type: 'text', text: event.text.slice(0, PEEK_TEXT_CHARS) }
+  if (event.type === 'warning')
+    return { type: 'warning', text: event.text.slice(0, PEEK_TEXT_CHARS) }
   if (event.type === 'note') {
     return {
       type: 'note',
@@ -623,7 +634,7 @@ function formatFocusedTestPeekEvent(event: Extract<PeekEventSummary, { type: 'fo
 }
 
 function formatPeekEvent(event: PeekEventSummary): string {
-  if (event.type === 'text') return `  text ${event.text}`
+  if ('text' in event) return `  ${event.type} ${event.text}`
   if (event.type === 'note') {
     return `  note ${event.noteLabel}${event.candidateLabels.length ? ` near ${event.candidateLabels.join(',')}` : ''}`
   }

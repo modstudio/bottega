@@ -8,6 +8,7 @@ import {
 import { type GateBroker, startGateBroker } from '../gate/gate-broker.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { registerLiveGate } from './run-process.ts'
+import { runTestWorkerEnvironment } from './run-test-workers.ts'
 
 export type WorkerExecutionBrokers = { gate: GateBroker; focusedTests: FocusedTestBroker | null }
 
@@ -22,11 +23,12 @@ export function startWorkerExecutionBrokers(input: {
   onGateFinish: (at: string) => void
 }): WorkerExecutionBrokers | null {
   if (!input.repoJob || !input.worktree) return null
+  const environment = runTestWorkerEnvironment(input.environment)
   return {
     gate: startGateBroker({
       runId: input.runId,
       scratchDir: input.scratchDir,
-      environment: input.environment,
+      environment,
       registerActive: registerLiveGate,
       onExecutionStart: ({ at }) => input.onGateStart(at),
       onExecutionFinish: ({ at }) => input.onGateFinish(at),
@@ -35,7 +37,7 @@ export function startWorkerExecutionBrokers(input: {
       ? startFocusedTestBroker({
           runId: input.runId,
           scratchDir: input.scratchDir,
-          environment: input.environment,
+          environment,
           registerActive: registerLiveGate,
         })
       : null,

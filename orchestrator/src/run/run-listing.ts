@@ -17,6 +17,7 @@ import type {
   QuestionDeliveryMode,
   QuestionDeliveryOutcome,
 } from './question-vocabulary.ts'
+import { isFreshRunHostWait } from './run-host-capacity.ts'
 import { classifyRunIdentifier, resolveRunIdentifierOrNull } from './run-identifier.ts'
 import { agentWorkValue } from './synthetic-lifecycle-job.ts'
 
@@ -84,6 +85,10 @@ function processSamplesForRows(
   return rows.some((row) => row.status === 'running') ? sampleProcesses() : []
 }
 
+function freshListedRunHostWait(row: Record<string, unknown>, now: number): boolean {
+  return isFreshRunHostWait(String(row.status), (row.host_wait_since as string | null) ?? null, now)
+}
+
 function withRetryRecordId(row: Record<string, unknown>): Record<string, unknown> {
   row.retry_record_id = row.retry_of_record_id ?? null
   delete row.retry_of_record_id
@@ -100,6 +105,21 @@ function runListingWarningRow(row: Record<string, unknown>): RunListingWarningRo
     writesRepo: false,
     branch: row.branch as string | null,
     minted_branch: row.minted_branch as string | null,
+  }
+}
+
+function lifecyclePresentation(
+  row: Record<string, unknown>,
+  outcome: ReturnType<typeof outcomeOf>,
+): { status: string; detail: string | null } {
+  if (row.stranded === true) return { status: 'stranded', detail: String(row.recovery_hint) }
+  const status = outcome.line.split(' - ', 1)[0]!
+  const hostWaitSince = row.host_wait_since as string | null
+  if (isFreshRunHostWait(String(row.status), hostWaitSince))
+    return { status: 'waiting', detail: `waiting for host capacity since ${hostWaitSince}` }
+  return {
+    status,
+    detail: row.status === 'asking' ? outcome.line.slice(status.length + 3) : null,
   }
 }
 
@@ -266,6 +286,7 @@ export async function runListingCommand(
             current_run.agent AS current_agent,
             current_run.job AS current_job, current_run.agent_pid AS current_agent_pid,
             current_run.agent_start_time AS current_agent_start_time,
+            current_run.host_wait_since,
             s.delivery, s.quality,
             COALESCE(r.label, r.prompt_head) AS prompt_head, r.route_reason, r.sandbox
             ${
@@ -423,8 +444,8 @@ export async function runListingCommand(
   rows = rows.map((r) => {
     const live = r.status === 'running'
     const lastEventAt = (r.last_event_at as string | null) ?? null
-    const startedAt = String(r.current_started_at ?? r.started_at)
-    const observedAt = clock()
+    const startedAt = String(r.current_started_at ?? r.started_at),
+      observedAt = clock()
     const idle = live
       ? idleLabel(lastEventAt, startedAt, observedAt)
       : r.failure_kind === 'idle'
@@ -443,6 +464,7 @@ export async function runListingCommand(
             session_id: (r.session_id as string | null) ?? null,
             agent_pid: (r.current_agent_pid as number | null) ?? null,
             agent_start_time: (r.current_agent_start_time as string | null) ?? null,
+            host_wait_since: (r.host_wait_since as string | null) ?? null,
           },
           processSamples,
           observedAt,
@@ -463,6 +485,7 @@ export async function runListingCommand(
       ...rest,
       idle,
       idle_ms: since,
+      waiting_for_host_capacity: freshListedRunHostWait(r, observedAt),
       stall_state: stallObservation?.state ?? null,
       stall: stallObservation?.detail ?? null,
       reclaimed_ms: reclaimed,
@@ -487,8 +510,7 @@ export async function runListingCommand(
   }
   for (const r of rows) {
     const outcome = outcomeOf(r as OutcomeRow)
-    const stranded = r.stranded === true
-    const status = stranded ? 'stranded' : outcome.line.split(' - ', 1)[0]!
+    const lifecycle = lifecyclePresentation(r, outcome)
     const identity =
       r.resolved_from === 'turn'
         ? `${r.number} (asked as turn ${r.requested_number})`
@@ -496,12 +518,11 @@ export async function runListingCommand(
     log(
       `${identity.padStart(4)}  ${String((r.failover_chain as string[]).join('→')).padEnd(6)} ${String(r.job).padEnd(14)}` +
         // 'running' is not a failure, and a null latency is not zero seconds.
-        ` ${String(r.status === 'failed' ? status.toUpperCase() : status).padEnd(10)}` +
+        ` ${String(r.status === 'failed' ? lifecycle.status.toUpperCase() : lifecycle.status).padEnd(10)}` +
         ` ${dur(r.latency_ms as number | null).padStart(8)}  ${String(r.prompt_head).slice(0, 60)}` +
         (r.idle ? `  ${r.idle}` : ''),
     )
-    if (stranded) log(`      ${r.recovery_hint}`)
-    else if (r.status === 'asking') log(`      ${outcome.line.slice(status.length + 3)}`)
+    if (lifecycle.detail) log(`      ${lifecycle.detail}`)
     if (r.failure_kind === 'contract' || r.failure_kind === 'unevidenced') {
       log(
         `      ${failureReason(

@@ -29,24 +29,25 @@ export type HostLoad = {
   oldestWaitMs: number
 }
 export type MemoryPressure = 'normal' | 'warning' | 'critical' | 'unknown'
-type GateHoldCondition = 'gates' | 'load' | 'memory'
+export type HostHoldCondition = 'gates' | 'load' | 'memory' | 'queue'
 export type GateWaitState = {
   delayedMs: number
   load: HostLoad
-  heldOn: GateHoldCondition[]
+  heldOn: HostHoldCondition[]
 }
-export type HostSlotDecision = { admit: boolean; heldOn: GateHoldCondition[] }
+export type HostSlotDecision = { admit: boolean; heldOn: HostHoldCondition[] }
+export type HostCapacityDecision = HostSlotDecision & { boundReached: boolean }
 
 /** Two concurrent gates is the measured safe operating point. */
 const GATE_CONCURRENCY_LIMIT = 2
 /** Reservations cover the one-minute interval before admitted work appears in load average. */
-const HOST_LOAD_RESERVATION_MS = 60_000
+export const HOST_LOAD_RESERVATION_MS = 60_000
 export const HOST_SLOT_HELD_ENV = 'ORCH_HOST_SLOT_HELD'
 const FREE_MEM_FLOOR_BYTES = 1024 * 1024 * 1024
 const GATE_HOLD_POLL_MS = 250
 const MEMORY_PRESSURE_READ_TIMEOUT_MS = 100
 const MEBIBYTE_BYTES = 1024 * 1024
-const GATE_HOLD_CONDITION_ORDER: GateHoldCondition[] = ['gates', 'load', 'memory']
+const GATE_HOLD_CONDITION_ORDER: HostHoldCondition[] = ['gates', 'load', 'memory', 'queue']
 
 function gatePidDir(env: NodeJS.ProcessEnv = process.env): string {
   return join(resolveStatePaths(env).orchestratorDirectory, 'host-slots')
@@ -286,6 +287,36 @@ export function measureHostSlotLeases(
 }
 
 /** Decide admission from measured facts; the adapter owns measurement and process control. */
+export function decideHostCapacityAdmission(input: {
+  heldWork: number
+  loadavg: number
+  ncpu: number
+  recentAdmissions: number
+  freeMem: number
+  pressure: MemoryPressure
+  limit: number | null
+  platform: NodeJS.Platform
+  waitedMs?: number
+  maxWaitMs?: number
+  hasOlderWaiter?: boolean
+}): HostCapacityDecision {
+  const boundReached = input.maxWaitMs !== undefined && (input.waitedMs ?? 0) >= input.maxWaitMs
+  if (boundReached) return { admit: true, heldOn: [], boundReached: true }
+  if (input.hasOlderWaiter) return { admit: false, heldOn: ['queue'], boundReached: false }
+  // Machine-wide load must never prevent all bottega work from making progress.
+  if (input.heldWork === 0) return { admit: true, heldOn: [], boundReached: false }
+  const conditions: HostHoldCondition[] = []
+  if (input.limit !== null && input.heldWork >= input.limit) conditions.push('gates')
+  if (input.loadavg + input.recentAdmissions >= input.ncpu) conditions.push('load')
+  const memoryHeld =
+    input.platform === 'darwin'
+      ? input.pressure === 'warning' || input.pressure === 'critical'
+      : input.freeMem < FREE_MEM_FLOOR_BYTES
+  if (memoryHeld) conditions.push('memory')
+  return { admit: conditions.length === 0, heldOn: conditions, boundReached: false }
+}
+
+/** Preserve the gate-specific surface while sharing load and memory policy with runs. */
 export function decideHostSlotAdmission(input: {
   heldSlots: number
   loadavg: number
@@ -296,17 +327,12 @@ export function decideHostSlotAdmission(input: {
   limit?: number
   platform: NodeJS.Platform
 }): HostSlotDecision {
-  // Machine-wide load must never prevent all bottega work from making progress.
-  if (input.heldSlots === 0) return { admit: true, heldOn: [] }
-  const conditions: GateHoldCondition[] = []
-  if (input.heldSlots >= (input.limit ?? GATE_CONCURRENCY_LIMIT)) conditions.push('gates')
-  if (input.loadavg + input.recentAdmissions >= input.ncpu) conditions.push('load')
-  const memoryHeld =
-    input.platform === 'darwin'
-      ? input.pressure === 'warning' || input.pressure === 'critical'
-      : input.freeMem < FREE_MEM_FLOOR_BYTES
-  if (memoryHeld) conditions.push('memory')
-  return { admit: conditions.length === 0, heldOn: conditions }
+  const decision = decideHostCapacityAdmission({
+    ...input,
+    heldWork: input.heldSlots,
+    limit: input.limit ?? GATE_CONCURRENCY_LIMIT,
+  })
+  return { admit: decision.admit, heldOn: decision.heldOn }
 }
 
 type GateHoldOpts = {
@@ -391,7 +417,7 @@ function tryReserveHostSlot(input: {
   limit?: number
 }):
   | { unregisterLease: () => void; load: null; conditions: [] }
-  | { unregisterLease: null; load: HostLoad; conditions: GateHoldCondition[] }
+  | { unregisterLease: null; load: HostLoad; conditions: HostHoldCondition[] }
   | null {
   const unlock = tryAcquireLock(input.dir)
   if (!unlock) return null
@@ -445,7 +471,7 @@ async function acquireHostSlot(
   const dir = gatePidDir(env)
   let unregisterWait: (() => void) | null = null
   const started = now()
-  const seen = new Set<GateHoldCondition>()
+  const seen = new Set<HostHoldCondition>()
   let finalWait: GateWaitState | null = null
   try {
     if (env.CI) return { unregisterLease: registerLease(dir, null, now()), wait: null }

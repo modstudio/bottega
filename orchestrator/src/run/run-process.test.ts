@@ -4,6 +4,15 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { childEnv, planRunProcessTermination, terminateRunProcesses } from './run-process.ts'
 
+test('repository workers receive test caps while inline workers do not', () => {
+  const defaults = childEnv(AGENTS.codex!, undefined, undefined, {}, true)
+  expect(defaults.ORCH_TEST_WORKERS).toBeDefined()
+  expect(defaults.VITEST_MAX_WORKERS).toBe(defaults.ORCH_TEST_WORKERS)
+  expect(childEnv(AGENTS.codex!, undefined, undefined, {}, false)).not.toHaveProperty(
+    'ORCH_TEST_WORKERS',
+  )
+})
+
 test('worker context controls override inherited values only for grok', () => {
   const parentAgents = process.env.GROK_CLAUDE_AGENTS_ENABLED
   const parentHooks = process.env.GROK_CLAUDE_HOOKS_ENABLED
