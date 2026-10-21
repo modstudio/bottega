@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { Button, IconButton, TextButton } from './button'
 
 function colorToRgba(color: string) {
@@ -28,11 +28,14 @@ export const Variants: StoryObj<typeof meta> = {
   play: async ({ canvasElement }) => {
     const button = within(canvasElement).getByRole('button', { name: 'primary' })
     await userEvent.click(button)
+    await userEvent.unhover(button)
     const expected = document.createElement('span')
     expected.style.backgroundColor = 'var(--color-accent-fill)'
     canvasElement.append(expected)
-    await expect(colorToRgba(getComputedStyle(button).backgroundColor)).toEqual(
-      colorToRgba(getComputedStyle(expected).backgroundColor),
+    await waitFor(() =>
+      expect(colorToRgba(getComputedStyle(button).backgroundColor)).toEqual(
+        colorToRgba(getComputedStyle(expected).backgroundColor),
+      ),
     )
     expected.remove()
   },
