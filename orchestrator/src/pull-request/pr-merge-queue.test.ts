@@ -95,7 +95,7 @@ test('a declared merge queue enqueues after proof and returns the eventual merge
         wait: () => calls.push('wait'),
       }),
     ),
-  ).toBe('queued-merge-oid')
+  ).toEqual({ output: 'queued-merge-oid', exitCode: 0 })
   expect(calls).toEqual(['enqueue', 'wait', 'wait'])
   expect(enqueueArguments).toEqual([[cwd, 42, 'head-commit']])
 })
@@ -117,7 +117,7 @@ test('an already-queued pull request is only waited for', () => {
         },
       }),
     ),
-  ).toBe('queued-merge-oid')
+  ).toEqual({ output: 'queued-merge-oid', exitCode: 0 })
   expect(enqueued).toBe(false)
 })
 
@@ -159,7 +159,7 @@ test('a pull request merged during the vanished-entry transition completes', () 
         ],
       }),
     ),
-  ).toBe('queued-merge-oid')
+  ).toEqual({ output: 'queued-merge-oid', exitCode: 0 })
 })
 
 test('a closed pull request refuses immediately after an established queue', () => {
@@ -243,6 +243,6 @@ test('a declared merge queue exempts a local-gate proof from moved landing state
         },
       }),
     ),
-  ).toBe('queued-merge-oid')
+  ).toEqual({ output: 'queued-merge-oid', exitCode: 0 })
   expect(readLandingState).toBe(false)
 })

@@ -11,7 +11,12 @@ import { writableDb } from '../database/db.ts'
 import { passingGateForCommit } from '../gate/gate-passed.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt } from '../project/projects.ts'
-import { formatShipCleanup, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
+import {
+  formatShipCleanup,
+  type ShipCleanupReport,
+  shipCleanup,
+} from '../ship-cleanup/ship-cleanup.ts'
+import { SHIP_CLEANUP_RESIDUE_EXIT_CODE } from '../ship-cleanup/ship-cleanup-decision.ts'
 import type { AdmissionDecision } from './admission-decision.ts'
 import {
   decideMergeAdmission,
@@ -85,7 +90,18 @@ export type PullRequestMergeAdapter = {
   enqueue(cwd: string, number: number, headCommit: string): void
   now(): number
   wait(milliseconds: number): void
-  shipCleanup?(project: string, branch: string, prNumber: number, database: Database): string
+  shipCleanup?(
+    project: string,
+    branch: string,
+    prNumber: number,
+    database: Database,
+  ): ShipCleanupReport
+}
+
+export const MERGED_WITH_RESIDUE_EXIT_CODE = SHIP_CLEANUP_RESIDUE_EXIT_CODE
+export type PullRequestMergeOutcome = {
+  output: string
+  exitCode: 0 | typeof MERGED_WITH_RESIDUE_EXIT_CODE
 }
 
 type ProcessResult = { exitCode: number; stdout: string; stderr: string }
@@ -274,7 +290,7 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
     Bun.sleepSync(milliseconds)
   },
   shipCleanup(project, branch, _prNumber, database) {
-    return formatShipCleanup(shipCleanup(branch, { project, confirmedLanded: true, database }))
+    return shipCleanup(branch, { project, confirmedLanded: true, database })
   },
 }
 
@@ -425,19 +441,33 @@ function mergedPullRequestOutput(input: {
   prNumber: number
   mergeCommit: string
   landingRecordingError?: string
-}): string {
+}): PullRequestMergeOutcome {
   if (input.landingRecordingError) {
-    return `${input.mergeCommit}\nlanding recording failed for ${input.branch}: ${input.landingRecordingError}; cleanup was not run`
+    return {
+      output: `${input.mergeCommit}\nlanding recording failed for ${input.branch}: ${input.landingRecordingError}; cleanup was not run`,
+      exitCode: MERGED_WITH_RESIDUE_EXIT_CODE,
+    }
   }
-  if (!input.adapter.shipCleanup) return input.mergeCommit
+  if (!input.adapter.shipCleanup) return { output: input.mergeCommit, exitCode: 0 }
   try {
-    return `${input.mergeCommit}\n${input.adapter.shipCleanup(input.project, input.branch, input.prNumber, input.database)}`
+    const report = input.adapter.shipCleanup(
+      input.project,
+      input.branch,
+      input.prNumber,
+      input.database,
+    )
+    return {
+      output: `${input.mergeCommit}\n${formatShipCleanup(report)}`,
+      exitCode: report.verdict.clean ? 0 : MERGED_WITH_RESIDUE_EXIT_CODE,
+    }
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : String(cause)
-    return (
-      `${input.mergeCommit}\nship cleanup failed for ${input.branch}: ${detail}; ` +
-      `retry: ${PLATFORM_SLUG} tree ship-cleanup ${input.branch}`
-    )
+    return {
+      output:
+        `${input.mergeCommit}\nship cleanup failed for ${input.branch}: ${detail}; ` +
+        `retry: ${PLATFORM_SLUG} tree ship-cleanup ${input.branch}`,
+      exitCode: MERGED_WITH_RESIDUE_EXIT_CODE,
+    }
   }
 }
 
@@ -446,7 +476,7 @@ export function mergePullRequest(
   cwd = process.cwd(),
   adapter: PullRequestMergeAdapter = cliPullRequestMergeAdapter,
   database: Database = writableDb(),
-): string {
+): PullRequestMergeOutcome {
   const project = projectAt(cwd, database)
   if (!project) {
     throw new Error(

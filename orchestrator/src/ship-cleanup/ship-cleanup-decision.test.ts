@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { decideShipCleanup, type ShipCleanupRunFact } from './ship-cleanup-decision.ts'
+import {
+  decideShipCleanup,
+  decideShipCleanupVerdict,
+  decideTaskBranchesToPrune,
+  type ShipCleanupRunFact,
+} from './ship-cleanup-decision.ts'
 
 const run = (overrides: Partial<ShipCleanupRunFact> = {}): ShipCleanupRunFact => ({
   record_id: '1',
@@ -9,6 +14,7 @@ const run = (overrides: Partial<ShipCleanupRunFact> = {}): ShipCleanupRunFact =>
   job: 'implement',
   status: 'ok',
   branch: 'DEV-1392-c3',
+  mintedBranch: 'DEV-1392-c3',
   launchKey: 'DEV-1392',
   judged: true,
   worktree: '/trees/1',
@@ -16,8 +22,10 @@ const run = (overrides: Partial<ShipCleanupRunFact> = {}): ShipCleanupRunFact =>
 })
 
 describe('ship cleanup decision', () => {
-  const decide = (runs: ShipCleanupRunFact[]) =>
-    decideShipCleanup('DEV-1392-c3', '2026-10-18T01:00:00Z', runs)
+  const decide = (
+    runs: ShipCleanupRunFact[],
+    landedBranches: ReadonlySet<string> = new Set(['DEV-1392-c3']),
+  ) => decideShipCleanup('DEV-1392', landedBranches, '2026-10-18T01:00:00Z', runs)
 
   test('leaves a sibling branch on the same key alone', () => {
     expect(decide([run({ branch: 'DEV-1392-c2' })])[0]).toMatchObject({
@@ -28,15 +36,18 @@ describe('ship cleanup decision', () => {
   })
 
   test('covers the root and turns of the chain that reached the merged branch', () => {
-    const decisions = decide([
-      run({ record_id: '1', root_record_id: '1', branch: 'DEV-1392-c2' }),
-      run({ record_id: '2', root_record_id: '1', branch: 'DEV-1392-c3' }),
-      run({ record_id: '3', root_record_id: '3', branch: 'DEV-1392-c2' }),
-    ])
+    const decisions = decide(
+      [
+        run({ record_id: '1', root_record_id: '1', branch: 'DEV-1392-c2' }),
+        run({ record_id: '2', root_record_id: '1', branch: 'DEV-1392-c3' }),
+        run({ record_id: '3', root_record_id: '3', branch: 'DEV-1392-c2' }),
+      ],
+      new Set(['DEV-1392-c2', 'DEV-1392-c3']),
+    )
     expect(decisions.map(({ record_id, scope }) => ({ record_id, scope }))).toEqual([
       { record_id: '1', scope: 'chain' },
       { record_id: '2', scope: 'chain' },
-      { record_id: '3', scope: 'outside' },
+      { record_id: '3', scope: 'chain' },
     ])
   })
 
@@ -85,5 +96,70 @@ describe('ship cleanup decision', () => {
       worktreeAction: 'ignore',
       reason: 'run started after branch landed at 2026-10-18T01:00:00Z',
     })
+  })
+})
+
+test('cleanup verdict permits only the command tree during merge cleanup', () => {
+  expect(decideShipCleanupVerdict({ kept: [], errors: [] }, false)).toEqual({ clean: true })
+  const selfHold = {
+    item: 'run 7 worktree',
+    reason: 'copy can change without policy coupling',
+    reasonKind: 'command-tree' as const,
+  }
+  expect(decideShipCleanupVerdict({ kept: [selfHold], errors: [] }, true)).toEqual({ clean: true })
+  expect(decideShipCleanupVerdict({ kept: [selfHold], errors: [] }, false)).toEqual({
+    clean: false,
+    reason: 'unexpected-kept-item',
+  })
+  expect(decideShipCleanupVerdict({ kept: [], errors: [{}] }, true)).toEqual({
+    clean: false,
+    reason: 'errors',
+  })
+})
+
+test('task branch pruning accepts squash, recorded PR head, and containment proof but keeps unique work', () => {
+  const runs = [
+    run({ launchKey: 'DEV-1392', mintedBranch: 'DEV-1392-a' }),
+    run({ launchKey: 'DEV-1392', mintedBranch: 'DEV-1392-b' }),
+    run({ launchKey: 'DEV-1392', mintedBranch: 'DEV-1392-a' }),
+    run({ launchKey: 'DEV-2', mintedBranch: 'DEV-2-a' }),
+  ]
+  const evidence = new Map([
+    ['DEV-1392-a', { state: 'landed', landedBy: { type: 'patch-equivalent', form: 'squash' } }],
+    [
+      'DEV-1392-b',
+      {
+        state: 'landed',
+        landedBy: {
+          type: 'recorded',
+          number: 42,
+          mergeCommit: 'merged',
+          mergedAt: '2026-10-18T01:00:00Z',
+        },
+      },
+    ],
+  ] as const)
+  expect(decideTaskBranchesToPrune('DEV-1392', runs, evidence)).toEqual({
+    prune: ['DEV-1392-a', 'DEV-1392-b'],
+    keep: [],
+  })
+  expect(decideTaskBranchesToPrune('DEV-1392', runs, new Map())).toEqual({
+    prune: [],
+    keep: [
+      { branch: 'DEV-1392-a', reason: 'landing not proved' },
+      { branch: 'DEV-1392-b', reason: 'landing not proved' },
+    ],
+  })
+  expect(
+    decideTaskBranchesToPrune(
+      'DEV-1392',
+      runs,
+      new Map([
+        ['DEV-1392-a', { state: 'landed', landedBy: { type: 'contained', branch: 'DEV-1392-b' } }],
+      ]),
+    ),
+  ).toEqual({
+    prune: ['DEV-1392-a'],
+    keep: [{ branch: 'DEV-1392-b', reason: 'landing not proved' }],
   })
 })

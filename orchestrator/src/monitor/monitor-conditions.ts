@@ -10,6 +10,7 @@ import {
   processStartTime,
 } from '../../../shared/process-identity.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
+import { recordedRunClaimsWorktree } from '../cleanup/cleanup-sweep-docker.ts'
 import { db, liveRuns } from '../database/db.ts'
 import { idleLabel, idleMsSince, idleWarnMs } from '../events.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
@@ -26,6 +27,7 @@ import {
 
 export { sandboxDirectoryInventory } from '../resources/resource-inventory.ts'
 
+import type { ReclaimKind } from '../reclaim/reclaim-kind.ts'
 import { liveMemberStall, liveRunMembers } from '../run/live-run-member.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { runAlive } from '../run/run-alive.ts'
@@ -42,6 +44,8 @@ import type {
   RecipeDatabaseClaim,
   RecipeDatabaseNamespace,
 } from './monitor-types.ts'
+
+const ORPHAN_DOCKER_VOLUME_KIND = 'orphan-docker-volume' satisfies ReclaimKind
 
 const ASKING_RUN_WHERE = `parent_run_record_id IS NULL
    AND (
@@ -735,18 +739,19 @@ export function dockerConditions(clock: number): {
       !workingDir ||
       !ownedRoots.some((root) => workingDir.startsWith(root)) ||
       existsSync(workingDir) ||
-      liveTrees.has(workingDir)
+      liveTrees.has(workingDir) ||
+      recordedRunClaimsWorktree(workingDir)
     )
       return []
     const since = row.CreatedAt ? new Date(row.CreatedAt).toISOString() : null
     return [
       {
-        kind: 'orphan-docker-volume',
+        kind: ORPHAN_DOCKER_VOLUME_KIND,
         subject: row.Name,
         since,
         ageMs: age(since, clock),
         detail: `compose worktree is gone: ${workingDir}`,
-        action: 'reported; no established removal verb',
+        action: `${PLATFORM_SLUG} machine reclaim orphan-docker-volume ${row.Name}`,
       },
     ]
   })

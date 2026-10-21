@@ -8,6 +8,7 @@ import { db } from '../database/db.ts'
 import { projectByName, upsertProject } from '../project/projects.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import {
+  decideOrphanDockerVolumeRemoval,
   reclaimRemovedTreeDockerResources,
   reclaimSweptDockerResources,
 } from './cleanup-sweep-docker.ts'
@@ -331,7 +332,9 @@ test('ship cleanup removes only the attributable Compose stack for its just-remo
     return result('')
   }) as typeof Bun.spawnSync)
   try {
-    const cleanup = reclaimRemovedTreeDockerResources([shipped])
+    const cleanup = reclaimRemovedTreeDockerResources([
+      { path: shipped, removedRunIds: new Set([landing]) },
+    ])
 
     expect(cleanup).toEqual({ removed: ['shipped-db'], kept: [], errors: [] })
     expect(commands).toContain('docker rm -f shipped-db')
@@ -339,6 +342,92 @@ test('ship cleanup removes only the attributable Compose stack for its just-remo
   } finally {
     rmSync(projectPath, { recursive: true, force: true })
   }
+})
+
+test('ship cleanup removes a Compose volume after its run tree and containers are gone', () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'orch-docker-shipped-volume-'))
+  const shipped = join(projectPath, '.claude/worktrees/DEV-1462-shipped')
+  upsertProject({
+    recordId: newRecordId(),
+    name: `docker-shipped-volume-${Date.now()}`,
+    path: projectPath,
+    settings: {},
+  })
+  const commands: string[] = []
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    const command = args.join(' ')
+    commands.push(command)
+    if (command.startsWith('docker ps -a --format')) return result('')
+    if (command.startsWith('docker volume ls --format'))
+      return result(`shipped_data\t\tshipped-stack\t${shipped}`)
+    if (command === 'docker network ls --format {{.Name}}') return result('')
+    return result('')
+  }) as typeof Bun.spawnSync)
+  try {
+    const cleanup = reclaimRemovedTreeDockerResources([{ path: shipped, removedRunIds: new Set() }])
+
+    expect(cleanup).toEqual({ removed: ['shipped_data'], kept: [], errors: [] })
+    expect(commands).toContain('docker volume rm shipped_data')
+  } finally {
+    rmSync(projectPath, { recursive: true, force: true })
+  }
+})
+
+test('removed run identity is permitted but a replacement run at the same path blocks teardown', () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'orch-docker-replacement-'))
+  const shipped = join(projectPath, '.claude/worktrees/DEV-1462-shipped')
+  upsertProject({
+    recordId: newRecordId(),
+    name: `docker-replacement-${Date.now()}`,
+    path: projectPath,
+    settings: {},
+  })
+  const removed = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const replacement = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+  db()
+    .query('UPDATE run SET worktree=? WHERE record_id IN (?,?)')
+    .run(shipped, removed, replacement)
+  const commands: string[] = []
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    const command = args.join(' ')
+    commands.push(command)
+    if (command.startsWith('docker ps -a --format'))
+      return result(`replacement-db\t\treplacement-stack\t${shipped}`)
+    return result('')
+  }) as typeof Bun.spawnSync)
+  try {
+    const cleanup = reclaimRemovedTreeDockerResources([
+      { path: shipped, removedRunIds: new Set([removed]) },
+    ])
+    expect(cleanup.removed).toEqual([])
+    expect(commands).not.toContain('docker rm -f replacement-db')
+  } finally {
+    rmSync(projectPath, { recursive: true, force: true })
+  }
+})
+
+test('orphan volume decision covers ownership guards and dry-run output without Docker', () => {
+  expect(
+    decideOrphanDockerVolumeRemoval({
+      name: 'data',
+      attributable: true,
+      orphanWorktree: true,
+      recordedRunClaim: false,
+      dryRun: true,
+    }),
+  ).toEqual({ allowed: true, text: 'would remove orphan Docker volume data' })
+  expect(
+    decideOrphanDockerVolumeRemoval({
+      name: 'data',
+      attributable: true,
+      orphanWorktree: true,
+      recordedRunClaim: true,
+      dryRun: false,
+    }),
+  ).toEqual({
+    allowed: false,
+    reason: 'volume data is still claimed by a worktree or recorded run',
+  })
 })
 
 test('a recorded run worktree pointer keeps an otherwise orphan Compose project', () => {

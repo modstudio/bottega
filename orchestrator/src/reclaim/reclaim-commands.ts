@@ -3,20 +3,13 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
+import { reclaimOrphanDockerVolume } from '../cleanup/cleanup-sweep-docker.ts'
 import { db } from '../database/db.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { reclaimOrphanProcess } from './orphan-process-reclaim.ts'
 import { reclaimBranch, reclaimWorktree } from './reclaim.ts'
+import { RECLAIM_KIND_SET, RECLAIM_KINDS } from './reclaim-kind.ts'
 import { type ResidueKind, reclaimResidue } from './reclaim-residue.ts'
-
-const RESIDUE_KINDS = new Set<ResidueKind>([
-  'ref-guard',
-  'sandbox',
-  'retained-ref',
-  'trust',
-  'process',
-  'stale-run',
-])
 
 function reclaimFixtureQuestionsCommand(
   subject: string | undefined,
@@ -74,10 +67,12 @@ export async function reclaimCommand(
     presentation.log(result.action)
     return
   }
-  if (kind !== 'worktree' && kind !== 'branch' && !RESIDUE_KINDS.has(kind as ResidueKind)) {
-    throw new Error(
-      `unknown reclaim kind ${JSON.stringify(kind)}: use worktree, branch, orphan-process, ref-guard, sandbox, retained-ref, trust, process, stale-run, or fixture-questions`,
-    )
+  if (kind === 'orphan-docker-volume') {
+    presentation.log(reclaimOrphanDockerVolume(subject, dryRun))
+    return
+  }
+  if (!RECLAIM_KIND_SET.has(kind)) {
+    throw new Error(`unknown reclaim kind ${JSON.stringify(kind)}: use ${RECLAIM_KINDS.join(', ')}`)
   }
   const result = reclaimNamed(kind, subject, dryRun)
   if (!result.ok) throw new Error(result.action)
