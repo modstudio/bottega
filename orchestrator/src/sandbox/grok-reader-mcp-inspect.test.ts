@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { MCP_SERVER_NAME, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { grokReaderMcpInspectionError } from './grok-reader-mcp-inspect.ts'
 
 const proxy = { project: { command: '/bin/orch', args: ['mcp-reader-proxy'] } }
@@ -95,7 +95,10 @@ test('Grok reader inspection rejects a same-command server from the working tree
 test('Grok reader inspection rejects missing proxies and platform servers', () => {
   expect(
     grokReaderMcpInspectionError(
-      { configSources, mcpServers: [{ name: WORKER_MCP_SERVER_NAME, target: '/bin/orch', source }] },
+      {
+        configSources,
+        mcpServers: [{ name: WORKER_MCP_SERVER_NAME, target: '/bin/orch', source }],
+      },
       proxy,
       runConfig,
       [WORKER_MCP_SERVER_NAME],
@@ -105,7 +108,7 @@ test('Grok reader inspection rejects missing proxies and platform servers', () =
     grokReaderMcpInspectionError({ configSources, mcpServers: [] }, proxy, runConfig, [
       WORKER_MCP_SERVER_NAME,
     ]),
-  ).toBe("Grok reader MCP inspection did not find expected server WORKER_MCP_SERVER_NAME")
+  ).toBe(`Grok reader MCP inspection did not find expected server '${WORKER_MCP_SERVER_NAME}'`)
 })
 
 test('Grok reader inspection does not require orch when the run home omits it', () => {

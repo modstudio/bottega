@@ -34,11 +34,8 @@ import {
   type TransportStartOpts,
   withTransportDeadline,
 } from './transport.ts'
+import type { AcpMessageUsageUpdate, AcpPromptUsage } from './transport-acp-types.ts'
 import { acpRunUsage } from './transport-acp-usage.ts'
-import type {
-  AcpMessageUsageUpdate,
-  AcpPromptUsage,
-} from './transport-acp-types.ts'
 
 type AcpUpdate = {
   sessionUpdate: string

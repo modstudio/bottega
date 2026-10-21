@@ -6,10 +6,7 @@ import { GENERIC_QUESTION_TOKENS } from '../outcome.ts'
 import { REVIEW_SEVERITY } from '../review/review-vocabulary.ts'
 import { progressFileInstruction } from '../run/checkpoint.ts'
 
-export {
-  hasRealQuestions,
-  realQuestions,
-} from '../outcome.ts'
+export { hasRealQuestions, realQuestions } from '../outcome.ts'
 
 /**
  * What an implementation worker is told, and what it must hand back.

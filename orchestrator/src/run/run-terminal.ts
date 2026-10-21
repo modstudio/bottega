@@ -232,6 +232,10 @@ export type TerminalResult = {
   artifactsPersisted: boolean
 }
 
+function isNonPlatformMcpServer(server: string, ownMcpServer: string | null | undefined): boolean {
+  return server !== ownMcpServer && server !== MCP_SERVER_NAME && server !== WORKER_MCP_SERVER_NAME
+}
+
 /** Which accepted questions have not already been recorded, preserving reply order. */
 export function questionsToInsert(
   existingQuestionTexts: string[],
@@ -590,12 +594,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   const otherProjectMcpServers = new Set(
     projects()
       .map((project) => project.settings.mcpServer ?? project.name)
-      .filter(
-        (server) =>
-          server !== ownMcpServer &&
-          server !== MCP_SERVER_NAME &&
-          server !== WORKER_MCP_SERVER_NAME,
-      ),
+      .filter((server) => isNonPlatformMcpServer(server, ownMcpServer)),
   )
   const cleanReview =
     parsedReview && status === 'ok' && confinementEvent?.classification !== 'overlapping'

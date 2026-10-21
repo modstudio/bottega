@@ -1,12 +1,9 @@
 import { expect, test } from 'bun:test'
-import {
-  MCP_SERVER_NAME,
-  PLATFORM_SLUG,
-  WORKER_MCP_SERVER_NAME,
-} from '../../../shared/brand.ts'
+import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import {
   captureHarnessMcpFacts,
   classifyMcpRegistration,
+  type McpServer,
   mcpAddArgv,
   mcpRemoveArgv,
   readMcpRegistration,
@@ -119,7 +116,7 @@ test('rules out timeout and spawn errors before missing-server diagnostics', () 
 test('captures Grok list rows and marks unsupported harnesses manual', () => {
   const runner = () =>
     result(JSON.stringify([{ name: MCP_SERVER_NAME, command: '/bin/orch', args: ['mcp'] }]))
-  const server = { name: MCP_SERVER_NAME, command: '/bin/orch', args: ['mcp'] }
+  const server: McpServer = { name: MCP_SERVER_NAME, command: '/bin/orch', args: ['mcp'] }
   expect(
     captureHarnessMcpFacts(
       'grok',
@@ -148,7 +145,7 @@ test('captures Grok list rows and marks unsupported harnesses manual', () => {
 })
 
 test('classifies missing, different, and matching registrations', () => {
-  const server = {
+  const server: McpServer = {
     name: MCP_SERVER_NAME,
     command: `/bin/${PLATFORM_SLUG}`,
     args: ['mcp', 'serve'],
@@ -224,7 +221,7 @@ test('stable persisted registrations share the platform entry', () => {
 })
 
 test('uses each harness exact user-scope add form', () => {
-  const server = { name: MCP_SERVER_NAME, command: '/bin/orch', args: ['mcp'] }
+  const server: McpServer = { name: MCP_SERVER_NAME, command: '/bin/orch', args: ['mcp'] }
   expect(mcpAddArgv('claude', '/bin/claude', server)).toEqual([
     '/bin/claude',
     'mcp',

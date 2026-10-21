@@ -10,6 +10,7 @@ import {
   type SetupNotice,
 } from './setup-engine.ts'
 import type { SetupFacts } from './setup-facts.ts'
+import type { McpServer } from './setup-mcp.ts'
 import { planSetupActions, recommendedAnswers, validateSetupAnswers } from './setup-planner.ts'
 import { INFERRED_RECIPE_PATH, inferredRecipeContent } from './setup-toolchain.ts'
 
@@ -67,7 +68,7 @@ test('mentions record use when no hosted record address is configured', () => {
   })
 })
 
-const orchServer = {
+const orchServer: McpServer = {
   name: MCP_SERVER_NAME,
   command: '/bin/orch',
   args: ['mcp'],

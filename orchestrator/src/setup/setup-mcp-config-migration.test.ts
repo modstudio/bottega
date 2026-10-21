@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { MCP_SERVER_NAME, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { migrateMcpConfigText } from './setup-mcp-config-migration.ts'
 
 test('migrates server and tool permission names once without leaving aliases', () => {
@@ -16,9 +17,9 @@ test('migrates server and tool permission names once without leaving aliases', (
     },
   })
   const migrated = migrateMcpConfigText(original)
-  expect(migrated).toContain('"bottega"')
-  expect(migrated).toContain('"bottega-ask"')
-  expect(migrated).toContain('mcp__bottega__get_doc')
+  expect(migrated).toContain(`"${MCP_SERVER_NAME}"`)
+  expect(migrated).toContain(`"${WORKER_MCP_SERVER_NAME}"`)
+  expect(migrated).toContain(`mcp__${MCP_SERVER_NAME}__get_doc`)
   expect(migrated).not.toContain('"orch":')
   expect(migrated).not.toContain('"orch-ask":')
   expect(migrateMcpConfigText(migrated)).toBe(migrated)

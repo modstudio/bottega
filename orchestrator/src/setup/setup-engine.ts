@@ -86,6 +86,22 @@ function registrationState(current: McpReadback): SetupRegistrationProposal['sta
   return 'unreadable'
 }
 
+function registrationToMigrate(
+  facts: NonNullable<HarnessFacts['mcp']>,
+  server: McpServer,
+): { current: McpReadback; legacyName: import('./setup-mcp.ts').LegacyMcpServerName | null } {
+  const legacyName = legacyMcpServerName(server.name)
+  const legacy = facts.legacyRegistrations?.[legacyName]
+  if (legacy && legacy.status !== 'absent') return { current: legacy, legacyName }
+  return {
+    current: facts.registrations[server.name] ?? {
+      status: 'unreadable',
+      detail: 'registration was not captured',
+    },
+    legacyName: null,
+  }
+}
+
 function proposeHarnessRegistrations(
   harness: keyof SetupFacts['harnesses'],
   facts: HarnessFacts,
@@ -131,17 +147,8 @@ function proposeHarnessRegistrations(
     })
   }
   return desired.map((server) => {
-    const legacyName = legacyMcpServerName(server.name)
-    const legacy = facts.mcp!.legacyRegistrations?.[legacyName]
-    const desiredCurrent = facts.mcp!.registrations[server.name]
-    const current =
-      legacy && legacy.status !== 'absent'
-        ? legacy
-        : (desiredCurrent ?? {
-            status: 'unreadable' as const,
-            detail: 'registration was not captured',
-          })
-    const migrating = Boolean(legacy && legacy.status !== 'absent')
+    const { current, legacyName } = registrationToMigrate(facts.mcp!, server)
+    const migrating = legacyName !== null
     if (!migrating && sameMcpRegistration(current, server)) {
       return { harness, bin: facts.path!, server, current, questionId: null, state: 'same' }
     }

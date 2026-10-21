@@ -1,6 +1,6 @@
 {
   "orch-command": {
-    "total": 347,
+    "total": 346,
     "files": {
       ".agents/contexts/orchestrator-docs.md": 1,
       ".agents/contexts/orchestrator-review.md": 2,
@@ -104,7 +104,6 @@
       "orchestrator/src/run/run-answer.test.ts": 1,
       "orchestrator/src/run/run-dispatch.ts": 1,
       "orchestrator/src/run/run-process.ts": 1,
-      "orchestrator/src/sandbox/codex-mcp-scope.test.ts": 1,
       "orchestrator/src/sandbox/codex-mcp-scope.ts": 1,
       "orchestrator/src/sandbox/confinement-report.test.ts": 9,
       "orchestrator/src/sandbox/confinement-report.ts": 2,

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { JOBS, jobBoundInstructionForContract } from '../jobs/jobs.ts'
 import {
   COULD_NOT_VERIFY_INSTRUCTION,
@@ -114,7 +115,7 @@ describe('job contracts are visible before submission', () => {
     expect(READONLY_PREAMBLE).not.toContain('run_gate')
     expect(READONLY_PREAMBLE).not.toContain('run_tests')
     expect(READONLY_PREAMBLE).toContain(
-      'Call the `gate_result` tool on the `bottega-ask` MCP server',
+      `Call the \`gate_result\` tool on the \`${WORKER_MCP_SERVER_NAME}\` MCP server`,
     )
     expect(READONLY_PREAMBLE).toContain('Never\nrun Docker or `scripts/gate` yourself')
     expect(READONLY_PREAMBLE).toContain('`could_not_verify`')

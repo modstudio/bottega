@@ -284,7 +284,7 @@ test('replaces a Claude MCP registration by removing, adding, then reading back'
         bin: '/bin/claude',
         server: {
           name: MCP_SERVER_NAME,
-          command: `/usr/local/${MCP_SERVER_NAME}`,
+          command: '/bin/orch',
           args: ['mcp'],
         },
         replace: true,
@@ -318,7 +318,11 @@ test('migrates a legacy Codex registration by removing the alias before adding t
         kind: 'register-mcp',
         harness: 'codex',
         bin: '/bin/codex',
-        server: { name: MCP_SERVER_NAME, command: '/bin/orch', args: ['mcp'] },
+        server: {
+          name: MCP_SERVER_NAME,
+          command: `/usr/local/${MCP_SERVER_NAME}`,
+          args: ['mcp'],
+        },
         replace: true,
         legacyName: 'orch',
       },

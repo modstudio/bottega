@@ -95,5 +95,5 @@ test('setup-ask replaces a registration whose command is missing', async () => {
   )
   expect(code).toBe(0)
   expect(calls.filter((argv) => argv.includes('add'))).toHaveLength(2)
-  expect(output.join('\n')).toContain('bottega-ask registered and verified')
+  expect(output.join(`\n`)).toContain(`${WORKER_MCP_SERVER_NAME} registered and verified`)
 })

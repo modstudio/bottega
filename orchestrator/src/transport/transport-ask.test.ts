@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { BUILTIN_AGENTS } from '../agent/agents.ts'
 import type { TransportStartOpts } from './transport.ts'
@@ -19,7 +20,7 @@ function opts(agent: TransportStartOpts['agent'], env: Record<string, string>): 
   }
 }
 
-describe('configured bottega-ask transport evidence', () => {
+describe(`configured ${WORKER_MCP_SERVER_NAME} transport evidence`, () => {
   test('CLI reports Codex from its scope definition and none for an unregistered agent', () => {
     const codex = BUILTIN_AGENTS.codex!
     expect(configuredCliAsk(opts(codex, {}))).toEqual(bottegaEntryArgv('ask-server'))
@@ -34,7 +35,7 @@ describe('configured bottega-ask transport evidence', () => {
       mkdirSync(root, { recursive: true })
       writeFileSync(
         join(root, 'config.toml'),
-        '[mcp_servers.bottega-ask]\ncommand = "/stale/bun"\nargs = ["/stale/orch", "ask-server"]\n',
+        `[mcp_servers.${WORKER_MCP_SERVER_NAME}]\ncommand = "/stale/bun"\nargs = ["/stale/orch", "ask-server"]\n`,
       )
       expect(configuredCliAsk(opts(BUILTIN_AGENTS.grok!, { GROK_HOME: root }))).toEqual([
         '/stale/bun',
@@ -46,7 +47,7 @@ describe('configured bottega-ask transport evidence', () => {
     }
   })
 
-  test('ACP reports exactly the bottega-ask session server it would register', () => {
+  test(`ACP reports exactly the ${WORKER_MCP_SERVER_NAME} session server it would register`, () => {
     const command = configuredAcpAsk(
       opts(BUILTIN_AGENTS.codex!, { ORCH_RUN_ID: '42', ORCH_RUN_TOKEN: 'token' }),
     )
@@ -59,7 +60,7 @@ describe('configured bottega-ask transport evidence', () => {
     try {
       writeFileSync(
         join(root, 'config.toml'),
-        '[mcp_servers.bottega-ask]\ncommand = "/old/bun"\nargs = ["/old/orch", "ask-server"]\n',
+        `[mcp_servers.${WORKER_MCP_SERVER_NAME}]\ncommand = "/old/bun"\nargs = ["/old/orch", "ask-server"]\n`,
       )
       expect(
         configuredAcpAsk(

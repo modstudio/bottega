@@ -6,7 +6,7 @@ import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 export const SETUP_COMMAND_TIMEOUT_MS = 5_000
 const MCP_SERVER_NAMES = [MCP_SERVER_NAME, WORKER_MCP_SERVER_NAME] as const
-export const LEGACY_MCP_SERVER_NAMES = ['orch', 'orch-ask'] as const
+const LEGACY_MCP_SERVER_NAMES = ['orch', 'orch-ask'] as const
 export type LegacyMcpServerName = (typeof LEGACY_MCP_SERVER_NAMES)[number]
 export function legacyMcpServerName(name: McpServerName): LegacyMcpServerName {
   return name === MCP_SERVER_NAME ? LEGACY_MCP_SERVER_NAMES[0] : LEGACY_MCP_SERVER_NAMES[1]

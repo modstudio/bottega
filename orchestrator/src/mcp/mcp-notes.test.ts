@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { createDocsMcpServer } from './mcp.ts'
 
 describe('scoped operator docs', () => {
   test.each(['ORCH_RUN_ID', 'ORCH_DEPTH'])(
-    'orch MCP note gives workers the fixed bottega-ask remedy for %s',
+    `orch MCP note gives workers the fixed ${WORKER_MCP_SERVER_NAME} remedy for %s`,
     async (marker) => {
       const prior = process.env.ORCH_RUN_ID
       const priorDepth = process.env.ORCH_DEPTH
@@ -19,7 +19,7 @@ describe('scoped operator docs', () => {
         const filed = await client.callTool({ name: 'note', arguments: { text: 'outside defect' } })
         expect(filed.isError).toBe(true)
         expect((filed.content as { text: string }[])[0]!.text).toContain(
-          'only through the bottega-ask note tool; do not retry',
+          `only through the ${WORKER_MCP_SERVER_NAME} note tool; do not retry`,
         )
       } finally {
         if (prior === undefined) delete process.env.ORCH_RUN_ID

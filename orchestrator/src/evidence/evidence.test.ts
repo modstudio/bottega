@@ -86,7 +86,11 @@ describe('terminal evidence assessment', () => {
           ownMcpServer: 'fixture-project',
         },
       )
-    for (const tool of ['get_doc', 'mcp__fixture-project__get_doc', 'bottega-ask.get_doc']) {
+    for (const tool of [
+      `get_doc`,
+      `mcp__fixture-project__get_doc`,
+      `${WORKER_MCP_SERVER_NAME}.get_doc`,
+    ]) {
       expect(assess([tool]).status).toBe('ok')
     }
     expect(assess(['other-server.get_doc'])).toMatchObject({
