@@ -784,8 +784,12 @@ describe('judge ruling', () => {
       new RegExp(
         `${PLATFORM_SLUG} score ${id} is missing:[\\s\\S]*` +
           `<none\\|partial\\|full>[\\s\\S]*<wrong\\|mixed\\|right>[\\s\\S]*` +
-          `--reproduced[\\s\\S]*--coverage[\\s\\S]*--limits[\\s\\S]*--overlap[\\s\\S]*` +
-          '--finding 1=',
+          `--reproduced none \\| some \\| all[\\s\\S]*` +
+          `--coverage empty \\| partial \\| adequate[\\s\\S]*` +
+          `--limits named \\| absent[\\s\\S]*` +
+          `--overlap unique \\| shared \\| none \\| alone[\\s\\S]*` +
+          '--finding 1=<accepted\\|modified\\|rejected\\|skipped>:<detail>[\\s\\S]*' +
+          'critical\\|high\\|medium\\|low[\\s\\S]*lowercase stable category ID of 1-64 characters',
       ),
     )
     expect(db().query('SELECT id FROM score WHERE run_record_id=?').get(id)).toBeNull()
