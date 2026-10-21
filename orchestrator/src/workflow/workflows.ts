@@ -1,10 +1,11 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, sessionId, writableDb } from '../database/db.ts'
-import { projects } from '../project/projects.ts'
-import { effectiveProjectSpace } from '../project-space.ts'
+import { projectAt, projects } from '../project/projects.ts'
+import { activeRecordSpace, effectiveProjectSpace } from '../project-space.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { applyWorkflowWriteResponse } from '../record/record-cache-workflow.ts'
+import { storedRecordToken } from '../record/record-session.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { workerStoreWriteRefusal } from '../worker-store-write.ts'
 import {
@@ -389,10 +390,7 @@ export function listResolvedWorkflows(project: string | null, d: Database = db()
   })
 }
 
-export function productionWorkflows(
-  d: Database,
-  spaceId: string | null,
-): { slug: string; definition: WorkflowDefinition }[] {
+export function productionWorkflows(d: Database, spaceId: string | null) {
   return (
     d
       .query(
@@ -402,15 +400,18 @@ export function productionWorkflows(
       .all(spaceId) as { slug: string; definition: string }[]
   ).map((row) => ({ slug: row.slug, definition: JSON.parse(row.definition) as WorkflowDefinition }))
 }
-export function showWorkflow(
-  slug: string,
-  n: number | undefined,
-  d: Database,
-  spaceId: string | null,
-) {
-  return parseVersion(versionRow(slug, n, d, spaceId))
-}
 
+export function resolveMcpWorkflowSpace(
+  cwd: string,
+  d: Database = db(),
+  signedIn = Boolean(storedRecordToken(d)),
+) {
+  const project = projectAt(cwd, d)
+  let spaceId: string | null = null
+  if (project) spaceId = effectiveProjectSpace(d, project.name)
+  else if (signedIn) spaceId = activeRecordSpace(d)
+  return { spaceId, workflows: productionWorkflows(d, spaceId) }
+}
 export function showResolvedWorkflow(
   slug: string,
   n: number | undefined,

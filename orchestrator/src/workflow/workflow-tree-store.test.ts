@@ -23,7 +23,7 @@ import {
   getWorkflowStep,
   productionWorkflows,
   promoteWorkflowLocal,
-  showWorkflow,
+  showResolvedWorkflow,
 } from './workflows.ts'
 
 const database = testDatabaseFixture((d) => {
@@ -339,7 +339,7 @@ describe('importWorkflowTree', () => {
     expect(
       showStepCatalogue(draft.n, d).definition.steps.some(({ slug }) => slug === 'tree-step'),
     ).toBe(true)
-    expect(showWorkflow('tree-flow', undefined, d, null).status).toBe('draft')
+    expect(showResolvedWorkflow('tree-flow', undefined, null, d).status).toBe('draft')
     expect(productionStepCatalogue(d).n).toBe(productionCatalogue.n)
     expect(productionWorkflows(d, null)).toEqual(productionFlows)
     expect(() =>

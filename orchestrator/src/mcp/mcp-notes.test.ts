@@ -1,7 +1,15 @@
-import { describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import {
+  installRecordSessionRunner,
+  memoryRecordSession,
+} from '../../test/fixtures/record-session.ts'
 import { createDocsMcpServer } from './mcp.ts'
+
+const recordSession = memoryRecordSession()
+beforeAll(() => installRecordSessionRunner(recordSession.runner))
+afterAll(() => installRecordSessionRunner(null))
 
 describe('scoped operator docs', () => {
   test.each(['ORCH_RUN_ID', 'ORCH_DEPTH'])(

@@ -7,7 +7,7 @@ import {
   resolvedWorkflowVersions,
   retireWorkflowLocal,
   setWorkflowLocal,
-  showWorkflow,
+  showResolvedWorkflow,
   type WorkflowDefinition,
 } from './workflows.ts'
 
@@ -57,7 +57,7 @@ describe('versioned lifecycle retirement', () => {
 
   test('retires a production version without clearing its promotion time', () => {
     const d = database()
-    const production = showWorkflow('flow', undefined, d, null)
+    const production = showResolvedWorkflow('flow', undefined, null, d)
 
     const retired = retireWorkflowLocal('flow', production.n, 'withdraw production', 'architect', d)
 

@@ -22,7 +22,7 @@ import type { WorkflowEvidenceInput } from './workflow-floor-evidence.ts'
 import { renderWorkflowComposition } from './workflow-render.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
-import { promoteWorkflowLocal, setWorkflowLocal, showWorkflow } from './workflows.ts'
+import { promoteWorkflowLocal, setWorkflowLocal, showResolvedWorkflow } from './workflows.ts'
 
 const database = testDatabaseFixture((d) => {
   seedWorkflows(d)
@@ -862,7 +862,7 @@ describe('workflow cursor adapter', () => {
       d,
     )
     promoteStepCatalogueLocal(catalogueDraft.n, 'publish', 'test', d)
-    const current = showWorkflow('flow', undefined, d, null).definition
+    const current = showResolvedWorkflow('flow', undefined, null, d).definition
     const draft = setWorkflowLocal(
       'flow',
       {

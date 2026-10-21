@@ -3,10 +3,9 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { nowIso } from '../database/db.ts'
-import { effectiveProjectSpace } from '../project-space.ts'
 import { workflowCursorReference } from './workflow-cursor-format.ts'
 import type { ArgumentReboundEvent, CursorTrailEntry } from './workflow-cursor-trail.ts'
-import { productionWorkflows, showWorkflow } from './workflows.ts'
+import { resolvedProductionWorkflows, showResolvedWorkflow } from './workflows.ts'
 
 type ArgumentCursor = {
   id: number
@@ -57,10 +56,11 @@ export function decideCursorArguments(
 }
 
 function rebindableArguments(row: ArgumentCursor, d: Database): Set<string> {
-  const spaceId = effectiveProjectSpace(d, row.project)
-  const current = productionWorkflows(d, spaceId).find(({ slug }) => slug === row.workflow_slug)
+  const current = resolvedProductionWorkflows(row.project, d).find(
+    ({ slug }) => slug === row.workflow_slug,
+  )
   const definitions = [
-    showWorkflow(row.workflow_slug, row.workflow_version, d, spaceId).definition,
+    showResolvedWorkflow(row.workflow_slug, row.workflow_version, row.project, d).definition,
     ...(current ? [current.definition] : []),
   ]
   return new Set(

@@ -1,16 +1,26 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test'
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import {
+  installRecordSessionRunner,
+  memoryRecordSession,
+} from '../../test/fixtures/record-session.ts'
 import { db } from '../database/db.ts'
 import { removeProject, upsertProject } from '../project/projects.ts'
+import { rememberActiveRecordSpace, rememberProjectSpace } from '../project-space.ts'
 import {
   promoteWorkflowLocal,
+  resolveMcpWorkflowSpace,
   setWorkflowLocal,
   type WorkflowDefinition,
 } from '../workflow/workflows.ts'
 import { createDocsMcpServer } from './mcp.ts'
 import { bindWorkflowPromptArguments, workflowPromptDefinitions } from './mcp-prompts.ts'
+
+const recordSession = memoryRecordSession()
+beforeAll(() => installRecordSessionRunner(recordSession.runner))
+afterAll(() => installRecordSessionRunner(null))
 
 const workflow = (
   slug: string,
@@ -26,6 +36,41 @@ const workflow = (
       { slug: 'careful', title: 'Careful', steps: ['plan', 'implement'] },
     ],
   },
+})
+
+describe('MCP workflow space', () => {
+  test('a registered cwd project takes precedence over the signed-in active space', () => {
+    const local = db()
+    const project = 'prompt-space-project'
+    const projectPath = process.cwd()
+    const projectSpace = newRecordId()
+    const activeSpace = newRecordId()
+    upsertProject({
+      recordId: newRecordId(),
+      name: project,
+      path: projectPath,
+      stack: 'bun',
+      settings: {},
+    })
+    rememberProjectSpace(local, project, projectSpace)
+    rememberActiveRecordSpace(local, activeSpace)
+
+    expect(resolveMcpWorkflowSpace(`${projectPath}/child`, local, true).spaceId).toBe(projectSpace)
+    removeProject(project)
+  })
+
+  test('an unregistered cwd uses the signed-in active space', () => {
+    const local = db()
+    const activeSpace = newRecordId()
+    rememberActiveRecordSpace(local, activeSpace)
+
+    expect(resolveMcpWorkflowSpace('/fixture/outside-every-project', local, true).spaceId).toBe(
+      activeSpace,
+    )
+    expect(
+      resolveMcpWorkflowSpace('/fixture/outside-every-project', local, false).spaceId,
+    ).toBeNull()
+  })
 })
 
 describe('workflow prompt definitions', () => {

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import {
   Client,
   InMemoryTransport,
@@ -19,6 +19,10 @@ import { type Project, removeProject, upsertProject } from '../project/projects.
 import { productionStepCatalogue } from '../workflow/step-catalogue.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from '../workflow/workflows.ts'
 import { createDocsMcpServer, fileIssueTaskKey } from './mcp.ts'
+
+const defaultRecordSession = memoryRecordSession()
+beforeAll(() => installRecordSessionRunner(defaultRecordSession.runner))
+afterAll(() => installRecordSessionRunner(null))
 
 describe('orch MCP', () => {
   test('workflow ruling tools return the durable question id', async () => {
