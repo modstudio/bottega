@@ -246,6 +246,17 @@ export function decideCloseFloors(
   return catalogueFloorsFor(step)
 }
 
+/** Whether the effective floor for this close accepts a ruling made by the agent. */
+export function mayCloseOnAgentSelfRuling(
+  step: CloseFloorStep,
+  outcome: string | undefined,
+  forceRuling = false,
+): boolean {
+  return decideCloseFloors(step, outcome, forceRuling).some(
+    (floor) => floor.kind === 'ruling' && !floor.operatorRuling,
+  )
+}
+
 export function reentryBoundRefusal(
   reenterOutcome: string,
   outcomes: readonly string[] | undefined,

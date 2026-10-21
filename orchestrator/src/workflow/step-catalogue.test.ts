@@ -160,6 +160,34 @@ test('operatorRuling requires a ruling floor', () => {
         {
           ...step,
           stage: 'ship',
+          floor: ['recorded-artifact'],
+          outcomes: ['needed', 'clear'],
+          rulingOutcomes: ['needed'],
+          operatorRuling: true,
+        },
+      ],
+    }),
+  ).toEqual([])
+  expect(
+    validateStepCatalogue({
+      steps: [
+        {
+          ...step,
+          stage: 'ship',
+          floor: ['recorded-artifact'],
+          outcomes: ['changed', 'clean'],
+          reenter: { to: 'design', outcome: 'changed' },
+          operatorRuling: true,
+        },
+      ],
+    }),
+  ).toEqual([])
+  expect(
+    validateStepCatalogue({
+      steps: [
+        {
+          ...step,
+          stage: 'ship',
           floor: ['{{shipTo.closeFloor}}'],
           operatorRuling: true,
         },

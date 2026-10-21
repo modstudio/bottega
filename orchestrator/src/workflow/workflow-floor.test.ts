@@ -6,6 +6,7 @@ import {
   decideFloorSatisfaction,
   type Floor,
   type FloorSatisfactionInput,
+  mayCloseOnAgentSelfRuling,
   type OpenObligation,
   parseArtifactRef,
   reentryBoundRefusal,
@@ -86,6 +87,10 @@ test('a ruling outcome replaces ordinary floors with a ruling floor', () => {
   expect(decideCloseFloors(step, 'fix').map((floor) => floor.kind)).toEqual(['ruling'])
   expect(decideCloseFloors(step, 'clear').map((floor) => floor.kind)).toEqual(['recorded-artifact'])
   expect(decideCloseFloors(step, 'clear', true).map((floor) => floor.kind)).toEqual(['ruling'])
+  expect(mayCloseOnAgentSelfRuling(step, 'fix')).toBe(true)
+  expect(mayCloseOnAgentSelfRuling(step, 'clear')).toBe(false)
+  expect(mayCloseOnAgentSelfRuling(step, 'clear', true)).toBe(true)
+  expect(mayCloseOnAgentSelfRuling({ ...step, operatorRuling: true }, 'fix')).toBe(false)
 })
 
 test('the re-entry bound refusal names await and a non-re-entering outcome', () => {

@@ -308,10 +308,29 @@ describe('workflow rendering', () => {
     expect(evidenceRendered).not.toContain('--self-ruling')
     expect(evidenceRendered).not.toContain('rule yourself')
 
+    const reviewEvidenceRendered = renderWorkflowStep({
+      ...step,
+      resolvedAutonomy: { value: 'review' as const, scope: 'project' },
+    })
+    expect(reviewEvidenceRendered).toContain(
+      `Autonomy: review (project) — meet this step's floor with command-exit or recorded-artifact evidence; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`,
+    )
+    expect(reviewEvidenceRendered).not.toContain('self_ruling')
+    expect(reviewEvidenceRendered).not.toContain('--self-ruling')
+    expect(reviewEvidenceRendered).not.toContain('rule yourself')
+
     const rulingRendered = renderWorkflowStep({ ...step, floor: ['ruling'] })
     expect(rulingRendered).toContain('self_ruling')
     expect(rulingRendered).toContain('--self-ruling')
     expect(rulingRendered).toContain('rule yourself')
+
+    const rulingOutcomeRendered = renderWorkflowStep({
+      ...step,
+      outcomes: ['needed', 'clear'],
+      rulingOutcomes: ['needed'],
+    })
+    expect(rulingOutcomeRendered).toContain('for outcome needed, you may rule this step yourself')
+    expect(rulingOutcomeRendered).toContain('--self-ruling')
   })
 
   test('ask autonomy wins when the step has no ruling floor', () => {
@@ -335,7 +354,7 @@ describe('workflow rendering', () => {
       next: null,
     })
     expect(rendered).toContain(
-      `Autonomy: ask (operator) — stop and put the ruling to the operator; record the question with \`${PLATFORM_SLUG} workflow await\`.`,
+      `Autonomy: ask (operator) — stop and put the ruling to the operator; record the question with \`${PLATFORM_SLUG} workflow await\`. The operator's answer authorizes the action; then close this step with command-exit or recorded-artifact evidence.`,
     )
     expect(rendered).not.toContain('self_ruling')
     expect(rendered).not.toContain('--self-ruling')

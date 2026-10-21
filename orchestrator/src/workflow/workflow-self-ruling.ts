@@ -3,7 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { AutonomyValue } from './autonomy.ts'
-import { type Floor, flagForFloor } from './workflow-floor.ts'
+import { type Floor, flagForFloor, mayCloseOnAgentSelfRuling } from './workflow-floor.ts'
 
 const remedy = `use \`${PLATFORM_SLUG} workflow await\` and \`${PLATFORM_SLUG} workflow rule\` instead, with \`--from-operator\` where the operator rules`
 
@@ -20,7 +20,16 @@ export function selfRulingRefusal(
   floors: Pick<Floor, 'kind' | 'operatorRuling'>[],
   basis: string,
 ): string | null {
-  if (!floors.some((floor) => floor.kind === 'ruling'))
+  if (
+    !mayCloseOnAgentSelfRuling(
+      {
+        floor: floors.map((floor) => floor.kind),
+        operatorRuling: floors.some((floor) => floor.kind === 'ruling' && floor.operatorRuling),
+      },
+      undefined,
+    ) &&
+    !floors.some((floor) => floor.kind === 'ruling' && floor.operatorRuling)
+  )
     return 'self-ruling is refused because this step has no ruling floor; this step is closed with the evidence its floor names'
   if (resolvedAutonomy !== 'auto' && resolvedAutonomy !== 'review')
     return `self-ruling is refused because resolved autonomy is ${resolvedAutonomy}; ${remedy}`
