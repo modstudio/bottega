@@ -39,6 +39,11 @@ type ReclaimWorktreeOptions = {
   allowDirty?: boolean
   beforeLockedProof?: () => void
 }
+
+function prepareExactBranchDeletion(repoRoot: string, branch: string): void {
+  writableDb()
+  assertBranchRefMayBeDeleted(repoRoot, branch)
+}
 const CLEAR_RETAINED_BRANCH_SQL =
   'UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE record_id=?'
 
@@ -458,8 +463,7 @@ export function reclaimBranch(
           const lockedProof = prove()
           if (!lockedProof.result.ok) return lockedProof.result
           const tip = lockedProof.tip!
-          writableDb()
-          assertBranchRefMayBeDeleted(project.path, branch)
+          prepareExactBranchDeletion(project.path, branch)
           const deleted = git(project.path, ['update-ref', '-d', `refs/heads/${branch}`, tip])
           if (!deleted.ok || branchTip(project.path, branch) !== null) {
             return refuse(
