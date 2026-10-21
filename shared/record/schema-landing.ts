@@ -151,3 +151,26 @@ export const testFlake = pgTable.withRLS(
   },
   (table) => [...tenantPolicies('test_flake', table.spaceId)],
 )
+
+export const branchDisposal = pgTable.withRLS(
+  'branch_disposal',
+  {
+    id: recordIdentity(),
+    spaceId: spaceIdentity(),
+    projectId: uuid('project_id').references(() => project.id),
+    machineId: machineIdentity(),
+    branch: text().notNull(),
+    tip: text().notNull(),
+    taskKey: text('task_key'),
+    reason: text().notNull(),
+    note: text().notNull(),
+    archiveRef: text('archive_ref').notNull(),
+    archiveExpiresAt: recordedAt('archive_expires_at'),
+    actorSession: text('actor_session').notNull(),
+    disposedAt: recordedAt('disposed_at'),
+    withheldFields: jsonb('withheld_fields'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [...tenantPolicies('branch_disposal', table.spaceId)],
+)

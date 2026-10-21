@@ -6,6 +6,7 @@ worktrees and branches
 
 - [bottega tree](#bottega-tree)
 - [bottega tree branch](#bottega-tree-branch)
+- [bottega tree branch dispose](#bottega-tree-branch-dispose)
 - [bottega tree branch landed](#bottega-tree-branch-landed)
 - [bottega tree branch prune](#bottega-tree-branch-prune)
 - [bottega tree create](#bottega-tree-create)
@@ -49,8 +50,26 @@ report run-minted branches and their landing state
 ### Related
 
 - [bottega tree](./tree.md#bottega-tree)
+- [bottega tree branch dispose](./tree.md#bottega-tree-branch-dispose)
 - [bottega tree branch landed](./tree.md#bottega-tree-branch-landed)
 - [bottega tree branch prune](./tree.md#bottega-tree-branch-prune)
+
+## bottega tree branch dispose
+
+**Synopsis:** `bottega tree branch dispose <project-branch> [--reason <reason>] [--note <why>] [--operator] [--json]`
+
+archive and dispose a run-minted branch after a recorded ruling
+
+### Options
+
+- `--reason <reason>`: abandoned, superseded, or throwaway
+- `--note <why>`: explain the disposal ruling
+- `--operator`: authorize disposal of unique work for an open task
+- `--json`: write the disposal record as JSON
+
+### Related
+
+- [bottega tree branch](./tree.md#bottega-tree-branch)
 
 ## bottega tree branch landed
 

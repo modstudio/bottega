@@ -15,6 +15,7 @@ export type MachineEvidenceTable =
   | 'landing_triage_snapshot'
   | 'contention'
   | 'test_flake'
+  | 'branch_disposal'
 
 export type EvidenceReference = {
   table: MachineEvidenceTable

@@ -6,6 +6,7 @@ import { pidAlive } from '../../../shared/process-identity.ts'
 import { stampEndedClaims } from '../board/board-claim-service.ts'
 import { reapBoardReach } from '../board/board-reach.ts'
 import { reapBoardMessages } from '../board/board-service.ts'
+import { pruneExpiredBranchDisposalArchives } from '../branch/branch-disposal.ts'
 import { closeOutRun } from '../close/close-out.ts'
 import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { expireUnjudgedRun, unjudgedRuns } from '../evidence/unjudged-expiry.ts'
@@ -642,6 +643,20 @@ function sweepRecordedRow(
   applyRecordedPostInventory(r, closeRuling.closeOutcome, inventory, state, presentation)
 }
 
+function pruneArchives(options: SweepOptions): { failed: boolean } {
+  const reader = pruneReaderCloneArchives({
+    dryRun: options.dryRun,
+    presentation: options.presentation,
+  })
+  const branch = pruneExpiredBranchDisposalArchives({
+    dryRun: options.dryRun,
+    project: options.project,
+    log: options.presentation.log,
+    error: options.presentation.error,
+  })
+  return { failed: reader.failed > 0 || branch.failed }
+}
+
 /**
  * Reclaim worktrees, and the infrastructure behind them, without being asked.
  *
@@ -666,10 +681,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   )
   if (!dry) writableDb()
   reapExpiredBoardMessages(dry)
-  const archiveRetention = pruneReaderCloneArchives({
-    dryRun: dry,
-    presentation: options.presentation,
-  })
+  const archiveRetention = pruneArchives(options)
   const trustObservation = helpers.observeGrokTrustHeadings()
   reconcileAbsentClaims({
     dryRun: dry,
@@ -711,7 +723,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     absent: 0,
     forgotten: 0,
   }
-  let cleanupFailed = archiveRetention.failed > 0 || runLeftovers.failed
+  let cleanupFailed = archiveRetention.failed || runLeftovers.failed
   cleanupFailed ||= sweepIdleMainStacks({
     database: db(),
     projects: sweepProjects,

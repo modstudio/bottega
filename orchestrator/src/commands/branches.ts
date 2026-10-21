@@ -3,6 +3,7 @@
 
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { disposeBranch } from '../branch/branch-disposal.ts'
 import { recordBranchLanding } from '../branch/branch-landing-service.ts'
 import {
   branchesReport,
@@ -32,6 +33,28 @@ export function register(program: Command): void {
       })
       log(options.json ? JSON.stringify(report) : renderBranchesReport(report))
       if (report.projects.some((project) => project.error)) process.exitCode = 1
+    })
+
+  branches
+    .command('dispose <project-branch>')
+    .description('archive and dispose a run-minted branch after a recorded ruling')
+    .requiredOption('--reason <reason>', 'abandoned, superseded, or throwaway')
+    .requiredOption('--note <why>', 'explain the disposal ruling')
+    .option('--operator', 'authorize disposal of unique work for an open task')
+    .option('--json', 'write the disposal record as JSON')
+    .allowExcessArguments(false)
+    .action((target, options) => {
+      const result = disposeBranch({
+        target,
+        reason: options.reason,
+        note: options.note,
+        operator: options.operator,
+      })
+      log(
+        options.json
+          ? JSON.stringify(result)
+          : `${result.project}:${result.branch}: archived at ${result.archiveRef} until ${result.archiveExpiresAt} and disposed`,
+      )
     })
 
   branches

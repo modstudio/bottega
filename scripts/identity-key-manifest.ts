@@ -368,6 +368,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'branch_landing_record.recording_session',
     'calibration.session_id',
     'contention.session_id',
+    'branch_disposal.actor_session',
     'doc_revision.session_id',
     'duel.session_id',
     'gate_execution.session_id',
@@ -405,6 +406,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
   ...manifest('orchestrator', 'filesystem path or ref issued by the filesystem or Git', [
     'resource_claim.allocation_key',
   ]),
+  ...manifest('orchestrator', 'archive ref issued by Git', ['branch_disposal.archive_ref']),
   ...manifest('orchestrator', 'review ref issued by Git', ['run.review_ref']),
   ...manifest('orchestrator', "identifier issued by Git's patch-id system", [
     'landing_override.patch_id',
@@ -436,6 +438,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'board_claim.holder_session',
     'board_message.author_session',
     'contention.session_id',
+    'branch_disposal.actor_session',
     'doc_revision.session_id',
     'hub_interval.session_id',
     'hub_note_acknowledgement.session_id',
@@ -465,13 +468,20 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'review_read.patch_id',
   ]),
   ...manifest('hosted', 'review ref issued by Git', ['run.review_ref']),
+  ...manifest('hosted', 'archive ref issued by Git', ['branch_disposal.archive_ref']),
   ...manifest('hosted', 'identifier issued by the authentication provider', [
     'account.account_id',
     'account.provider_id',
     'hub_task_comment.actor_user_id',
     'hub_task_status_event.actor_user_id',
   ]),
-  ...manifest('hosted', 'identifier issued by the project task tracker', ['port_ref.task_key']),
+  ...manifest('orchestrator', 'identifier issued by the project task tracker', [
+    'branch_disposal.task_key',
+  ]),
+  ...manifest('hosted', 'identifier issued by the project task tracker', [
+    'branch_disposal.task_key',
+    'port_ref.task_key',
+  ]),
 ]
 
 const UUID_COLUMNS: readonly ManifestColumn[] = [
@@ -502,6 +512,8 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'board_receipt.message_record_id',
     'branch_landing_record.record_id',
     'branch_landing_record.project_record_id',
+    'branch_disposal.record_id',
+    'branch_disposal.project_record_id',
     'calibration.record_id',
     'calibration.run_record_id',
     'canon_eval.record_id',

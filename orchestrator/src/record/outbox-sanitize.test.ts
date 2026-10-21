@@ -122,6 +122,14 @@ const kinds: KindCase[] = [
       payload.signal = SECRET
     },
   },
+  {
+    kind: 'branch_disposal',
+    payload: { note: SAFE, reason: 'abandoned' },
+    path: 'note',
+    plant: (payload) => {
+      payload.note = SECRET
+    },
+  },
 ]
 
 test.each(kinds)(

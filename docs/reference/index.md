@@ -5,6 +5,7 @@
 Every command accepts `--help`.
 
 - [run](./run.md) — dispatch and inspect runs
+- [session](./session.md) — architect session lifecycle
 - [question](./question.md) — open worker questions and rulings
 - [score](./score.md) — verdicts on runs
 - [review](./review.md) — review runs, lenses, tiers, and confinement

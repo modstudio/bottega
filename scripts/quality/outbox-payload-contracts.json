@@ -310,6 +310,23 @@
     "createdAt",
     "updatedAt"
   ],
+  "branch_disposal": [
+    "id",
+    "spaceId",
+    "projectName",
+    "machineId",
+    "localId",
+    "branch",
+    "tip",
+    "reason",
+    "note",
+    "archiveRef",
+    "archiveExpiresAt",
+    "actorSession",
+    "disposedAt",
+    "createdAt",
+    "updatedAt"
+  ],
   "test_flake": [
     "id",
     "spaceId",

@@ -34,6 +34,7 @@ import { pushReleaseRecord } from './record-release-sync.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues } from './record-review-values.ts'
 import { nullableVendorCostSource } from './record-run-usage.ts'
+import { pushBranchDisposal } from './record-sync-branch-disposal.ts'
 import type {
   RecordPayload as Payload,
   RecordPrincipal,
@@ -917,6 +918,11 @@ const recordKinds = {
           .returning({ id: testFlakeRecord.id })
         requireOwnedUpsert(written, 'test_flake', values.id)
       }),
+  },
+  branch_disposal: {
+    ...OUTBOX_PAYLOAD_CONTRACTS.branch_disposal,
+    push: (postgres, row, principal, projectIds) =>
+      pushBranchDisposal(postgres, row, principal, projectIds, existingEvidenceOwned),
   },
 } as const satisfies Record<
   keyof typeof OUTBOX_PAYLOAD_CONTRACTS,

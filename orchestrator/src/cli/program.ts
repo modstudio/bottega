@@ -22,6 +22,7 @@ import { register as registerReview } from '../commands/review.ts'
 import { register as registerRouting } from '../commands/routing.ts'
 import { register as registerRulings } from '../commands/rulings.ts'
 import { register as registerRunListing } from '../commands/run-listing.ts'
+import { register as registerSession } from '../commands/session.ts'
 import { register as registerSettings } from '../commands/settings.ts'
 import { register as registerSetup } from '../commands/setup.ts'
 import { register as registerSubjects } from '../commands/subjects.ts'
@@ -66,6 +67,7 @@ registerRouting(program)
 registerRulings(program)
 registerLogic(program)
 registerSettings(program)
+registerSession(program)
 registerSetup(program)
 registerSync(program)
 registerTestSubstance(program)
