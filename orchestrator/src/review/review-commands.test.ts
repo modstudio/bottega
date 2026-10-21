@@ -12,7 +12,7 @@ import { db } from '../database/db.ts'
 import { setProfile } from '../lens/lenses.ts'
 import { upsertProject } from '../project/projects.ts'
 import { serializePathSet } from './review-group.ts'
-import { measureChangeIdentity, pinRef } from './review-pins.ts'
+import { pinRef } from './review-pins.ts'
 import { completeReview, recordReview, triageFinding } from './review-triage.ts'
 
 // Deterministic identities produced by importRebasedHistory.
@@ -238,7 +238,6 @@ function postFixFixture(fixPath: string): { repo: string; branch: string; runId:
   git(repo, 'add', 'src/large.ts')
   git(repo, 'commit', '-m', 'reviewed change')
   const reviewed = git(repo, 'rev-parse', 'HEAD')
-  const identity = measureChangeIdentity(repo, base, reviewed)!
   const name = `post-fix-${crypto.randomUUID()}`
   upsertProject({
     recordId: newRecordId(),
@@ -265,29 +264,16 @@ function postFixFixture(fixPath: string): { repo: string; branch: string; runId:
   const runId = db()
     .query<{ id: string }, [string, string, string, string, string, string]>(
       `INSERT INTO run
-         (record_id,number,started_at,agent,job,repo,project_record_id,branch,base_commit,input_tree,head_commit,
+         (record_id,number,started_at,agent,model,lens,job,repo,project_record_id,branch,base_commit,input_tree,head_commit,
           prompt_sha,prompt_bytes,prompt_head,status)
-       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-10-20','codex','review-lens',?,
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-10-20','codex','fixture-model','correctness','review-lens',?,
                (SELECT record_id FROM project WHERE name=?),?,?,?,?,
                'sha',1,'head','ok')
        RETURNING record_id AS id`,
     )
     .get(name, name, branch, base, reviewed, reviewed)!.id
-  const reviewId = db()
-    .query<{ id: string }, [string, string]>(
-      `INSERT INTO review (record_id,number,recorded_at,completed_at,tier,patch_id,path_set)
-       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM review),'2026-10-20','2026-10-20',3,?,?)
-       RETURNING record_id AS id`,
-    )
-    .get(identity.patchId, serializePathSet(identity.paths))!.id
-  db()
-    .query(
-      `INSERT INTO review_lens
-       (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
-       VALUES ('${newRecordId()}',?,?,'correctness','codex','[]','[]','[]','[]')`,
-    )
-    .run(reviewId, runId)
-  git(repo, 'update-ref', pinRef(runId), reviewed)
+  const reviewId = recordReview(runId, reviewReply(0), db())
+  completeReview(reviewId, db())
   git(repo, 'checkout', 'main')
   writeFileSync(join(repo, 'trunk.txt'), 'disjoint trunk change\n')
   git(repo, 'add', 'trunk.txt')

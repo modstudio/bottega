@@ -178,9 +178,11 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     file: 'orchestrator/src/review/review-post-fix.ts',
     allowed: [
       './review-applicability.ts',
+      './review-evidence-sql.ts',
       './review-group.ts',
       './review-pins.ts',
       './review-tier.ts',
+      './review-yield.ts',
     ],
     typeOnlyAllowed: ['bun:sqlite', '../project/project-injection.ts'],
     reason:

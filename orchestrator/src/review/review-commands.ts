@@ -12,7 +12,6 @@ import { formatLensProfileSource, resolveLens } from '../lens/lenses.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import { getReview, listReviews, parseReviewOutput, recordReviews } from './review.ts'
-import type { ApplicableReview } from './review-applicability.ts'
 import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
 import { resolveReviewCommandCwd } from './review-command-cwd.ts'
 import { coverageAudit } from './review-coverage.ts'
@@ -20,7 +19,7 @@ import { REVIEW_WINDOW } from './review-evidence-sql.ts'
 import { serializePathSet } from './review-group.ts'
 import { resolveReviewIdentifier } from './review-identifier.ts'
 import { measureChangeIdentity, reviewPins } from './review-pins.ts'
-import { postFixReviewDecision } from './review-post-fix.ts'
+import { gatherPostFixReviewFacts, postFixReviewDecision } from './review-post-fix.ts'
 import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round-budget.ts'
 import { resolveReviewMergeBase, reviewTrunkRef } from './review-target.ts'
 import { parseTierRange, resolveTierRange, type TierRangeEndpoint } from './review-tier.ts'
@@ -229,30 +228,27 @@ function reviewTierOutput(value: string, cwd: string) {
       }).identity
     : null
   const branchBudget = reviewBudgetForBranch(db(), project.name, branch, currentRoundIdentity)
-  const reviewBudget = reviewRoundBudgetDecision({
-    tier: output.tier,
-    ...branchBudget,
-  })
   const postFix = postFixReviewDecision({
-    database: db(),
-    repo,
-    from,
-    to,
-    project: project.name,
-    branch,
+    facts: gatherPostFixReviewFacts({
+      database: db(),
+      repo,
+      from,
+      to,
+      project: project.name,
+      branch,
+    }),
     tier: output.tier,
     review: project.settings.review,
   })
-  const selected: ApplicableReview =
-    postFix.kind === 'no-round-needed'
-      ? { lenses: [] as string[] }
-      : postFix.kind === 're-lens'
-        ? postFix.applicability
-        : output
-  const effectiveReviewBudget =
-    postFix.kind === 'no-round-needed'
-      ? { ...reviewBudget, startsNewRound: false, wouldExceedCeiling: false }
-      : reviewBudget
+  const reviewBudget = reviewRoundBudgetDecision({
+    tier: output.tier,
+    ...branchBudget,
+    roundNeeded: postFix.kind !== 'no-round-needed',
+  })
+  const selected =
+    postFix.kind === 'no-round-needed' || postFix.kind === 're-lens'
+      ? postFix.applicability
+      : output
   return {
     ...output,
     ...selected,
@@ -261,7 +257,7 @@ function reviewTierOutput(value: string, cwd: string) {
     secondOpinionBasis: selected.secondOpinionBasis,
     post_fix: postFix,
     review_budget: {
-      ...effectiveReviewBudget,
+      ...reviewBudget,
       eligibleReviewCount: branchBudget.eligibleReviewCount,
       unclassifiableReviewCount: branchBudget.unclassifiableReviewCount,
     },

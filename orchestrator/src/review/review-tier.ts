@@ -121,14 +121,19 @@ function fileRisk(
   return { tier, reason: `unlisted product path ${path} (${applied})`, basis: null }
 }
 
+const compileRiskPaths = (
+  riskMap: ReviewRiskMap | undefined,
+): CompiledReviewRiskPath[] | undefined =>
+  riskMap?.paths.map((entry) => ({
+    ...entry,
+    pattern: new RegExp(entry.pattern),
+  }))
+
 function classifyRisk(
   files: readonly ReviewTierFile[],
   riskMap: ReviewRiskMap | undefined,
 ): { risk: 0 | 1 | 2 | 3; reason: string; basis: string | null } {
-  const riskPaths = riskMap?.paths.map((entry) => ({
-    ...entry,
-    pattern: new RegExp(entry.pattern),
-  }))
+  const riskPaths = compileRiskPaths(riskMap)
   let risk: 0 | 1 | 2 | 3 = 0
   let reason =
     files.length === 0
@@ -176,10 +181,7 @@ export function tierThreeRiskPaths(
   files: readonly ReviewTierFile[],
   riskMap: ReviewRiskMap | undefined,
 ): string[] {
-  const riskPaths = riskMap?.paths.map((entry) => ({
-    ...entry,
-    pattern: new RegExp(entry.pattern),
-  }))
+  const riskPaths = compileRiskPaths(riskMap)
   return files
     .filter((file) => fileRisk(file.path, riskPaths, riskMap?.unlisted)?.tier === 3)
     .map(({ path }) => path)

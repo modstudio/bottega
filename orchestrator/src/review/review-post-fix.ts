@@ -3,17 +3,37 @@
 
 import type { Database } from 'bun:sqlite'
 import type { ReviewSettings } from '../project/project-injection.ts'
-import { type ApplicableReview, applicableReview } from './review-applicability.ts'
+import {
+  type ApplicableReview,
+  applicablePostFixReview,
+  applicableReview,
+} from './review-applicability.ts'
+import { completedReviewEvidenceSql } from './review-evidence-sql.ts'
 import { serializePathSet } from './review-group.ts'
 import { git, measureChangeIdentity, pinRef } from './review-pins.ts'
-import { tierThreeRiskPaths } from './review-tier.ts'
+import {
+  diffNumstat,
+  type ReviewTier,
+  type ReviewTierFile,
+  tierThreeRiskPaths,
+} from './review-tier.ts'
+import { type ReviewRoundEvidenceRow, reviewRoundIdentity } from './review-yield.ts'
+
+const POST_FIX_RELENS_TIER: ReviewTier['tier'] = 3
 
 type CompletedReview = {
   number: number
-  patchId: string | null
-  pathSet: string | null
+  identity: string | null
   runIds: string[]
 }
+
+export type PostFixReviewFacts =
+  | { completed: null }
+  | {
+      completed: CompletedReview
+      reviewedTip: string | null
+      fixFiles: ReviewTierFile[] | null
+    }
 
 export type PostFixReviewDecision =
   | { kind: 'no-completed-round' }
@@ -23,6 +43,7 @@ export type PostFixReviewDecision =
       reviewNumber: number
       reviewedTip: string
       tierThreePaths: []
+      applicability: ApplicableReview
     }
   | {
       kind: 're-lens'
@@ -32,40 +53,38 @@ export type PostFixReviewDecision =
       applicability: ApplicableReview
     }
 
+type CompletedReviewEvidenceRow = Pick<
+  ReviewRoundEvidenceRow,
+  'review_record_id' | 'run_id' | 'launch_key' | 'branch' | 'patch_id' | 'path_set'
+> & { review_number: number }
+
 function latestCompletedReview(
   database: Database,
   project: string,
   branch: string,
 ): CompletedReview | null {
   const rows = database
-    .query<
-      {
-        number: number
-        patch_id: string | null
-        path_set: string | null
-        run_record_id: string
-      },
-      [string, string]
-    >(
-      `SELECT r.number,r.patch_id,r.path_set,rl.run_record_id
+    .query<CompletedReviewEvidenceRow, [string, string]>(
+      `SELECT r.record_id AS review_record_id,r.number AS review_number,
+              run.record_id AS run_id,run.launch_key,run.branch,r.patch_id,r.path_set
          FROM review r
          JOIN review_lens rl ON rl.review_record_id=r.record_id
          JOIN run ON run.record_id=rl.run_record_id
-        WHERE r.completed_at IS NOT NULL
-          AND run.project_record_id=(SELECT record_id FROM project WHERE name=?)
+        WHERE run.project_record_id=(SELECT record_id FROM project WHERE name=?)
           AND run.branch=?
+          AND ${completedReviewEvidenceSql('r', 'run', 'rl')}
         ORDER BY r.number DESC,rl.record_id`,
     )
     .all(project, branch)
   const first = rows[0]
   if (!first) return null
+  const roundRows = rows.filter(
+    ({ review_record_id }) => review_record_id === first.review_record_id,
+  )
   return {
-    number: first.number,
-    patchId: first.patch_id,
-    pathSet: first.path_set,
-    runIds: rows
-      .filter(({ number }) => number === first.number)
-      .map(({ run_record_id }) => run_record_id),
+    number: first.review_number,
+    identity: reviewRoundIdentity(first).identity,
+    runIds: roundRows.map(({ run_id }) => run_id),
   }
 }
 
@@ -73,9 +92,10 @@ function matchingReviewedTip(
   repo: string,
   from: string,
   to: string,
+  branch: string,
   review: CompletedReview,
 ): string | null {
-  if (!review.patchId || !review.pathSet) return null
+  if (!review.identity) return null
   if (!review.runIds.some((runId) => git(repo, ['rev-parse', '--verify', pinRef(runId)]).ok)) {
     return null
   }
@@ -84,50 +104,61 @@ function matchingReviewedTip(
   let match: string | null = null
   for (const candidate of history.out.split('\n').filter(Boolean)) {
     const identity = measureChangeIdentity(repo, from, candidate)
-    if (
-      identity?.patchId === review.patchId &&
-      serializePathSet(identity.paths) === review.pathSet
-    ) {
-      match = candidate
-    }
+    if (!identity) continue
+    const candidateRound = reviewRoundIdentity({
+      launch_key: null,
+      branch,
+      patch_id: identity.patchId,
+      path_set: serializePathSet(identity.paths),
+    }).identity
+    if (candidateRound === review.identity) match = candidate
   }
   return match
 }
 
-function pathsTouchedByCommits(repo: string, from: string, to: string): string[] | null {
-  const result = git(repo, ['log', '--format=', '--name-only', `${from}..${to}`])
-  if (!result.ok) return null
-  return [...new Set(result.out.split('\n').filter(Boolean))].sort()
-}
-
-export function postFixReviewDecision(input: {
+/** Gather repository and review-store evidence without making the review-policy decision. */
+export function gatherPostFixReviewFacts(input: {
   database: Database
   repo: string
   from: string
   to: string
   project: string
   branch: string
-  tier: 0 | 1 | 2 | 3
+}): PostFixReviewFacts {
+  const completed = latestCompletedReview(input.database, input.project, input.branch)
+  if (!completed) return { completed: null }
+  const reviewedTip = matchingReviewedTip(input.repo, input.from, input.to, input.branch, completed)
+  if (!reviewedTip) return { completed, reviewedTip: null, fixFiles: null }
+  try {
+    return {
+      completed,
+      reviewedTip,
+      fixFiles: diffNumstat(input.repo, reviewedTip, input.to),
+    }
+  } catch {
+    return { completed, reviewedTip: null, fixFiles: null }
+  }
+}
+
+/** Decide post-fix review applicability from already-gathered facts. */
+export function postFixReviewDecision(input: {
+  facts: PostFixReviewFacts
+  tier: ReviewTier['tier']
   review: ReviewSettings | undefined
 }): PostFixReviewDecision {
-  const completed = latestCompletedReview(input.database, input.project, input.branch)
-  if (!completed) return { kind: 'no-completed-round' }
-  const reviewedTip = matchingReviewedTip(input.repo, input.from, input.to, completed)
-  if (!reviewedTip) {
+  if (!input.facts.completed) return { kind: 'no-completed-round' }
+  const { completed, reviewedTip, fixFiles } = input.facts
+  if (!reviewedTip || !fixFiles) {
     return { kind: 'reviewed-tip-unidentified', reviewNumber: completed.number }
   }
-  const fixPaths = pathsTouchedByCommits(input.repo, reviewedTip, input.to)
-  if (!fixPaths) {
-    return { kind: 'reviewed-tip-unidentified', reviewNumber: completed.number }
-  }
-  const fixFiles = fixPaths.map((path) => ({ path, insertions: 0, deletions: 0 }))
   const tierThreePaths = tierThreeRiskPaths(fixFiles, input.review?.risk)
-  if (input.tier !== 3 || tierThreePaths.length === 0) {
+  if (input.tier !== POST_FIX_RELENS_TIER || tierThreePaths.length === 0) {
     return {
       kind: 'no-round-needed',
       reviewNumber: completed.number,
       reviewedTip,
       tierThreePaths: [],
+      applicability: applicableReview(0, [], input.review),
     }
   }
   return {
@@ -135,6 +166,10 @@ export function postFixReviewDecision(input: {
     reviewNumber: completed.number,
     reviewedTip,
     tierThreePaths,
-    applicability: applicableReview(3, fixPaths, input.review),
+    applicability: applicablePostFixReview(
+      POST_FIX_RELENS_TIER,
+      fixFiles.map(({ path }) => path),
+      input.review,
+    ),
   }
 }
