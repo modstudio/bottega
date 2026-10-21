@@ -14,7 +14,7 @@ import {
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../shared/brand.ts'
 import { newRecordId } from '../shared/record-id.ts'
 import { BOTTEGA_ENTRY_PROTOCOL } from '../shared/self-spawn.ts'
 import { buildHostBinary } from './build-binary.ts'
@@ -261,8 +261,12 @@ try {
   if (!addInvocations.some((line) => line.startsWith('codex\t') && line.includes('\torch\t'))) {
     throw new Error(`${PLATFORM_SLUG} machine setup apply did not register orch with Codex`)
   }
-  if (!addInvocations.some((line) => line.startsWith('codex\t') && line.includes('\torch-ask\t'))) {
-    throw new Error(`${PLATFORM_SLUG} machine setup apply did not register orch-ask with Codex`)
+  if (
+    !addInvocations.some((line) => line.startsWith('codex\t') && line.includes('\tbottega-ask\t'))
+  ) {
+    throw new Error(
+      `${PLATFORM_SLUG} machine setup apply did not register ${WORKER_MCP_SERVER_NAME} with Codex`,
+    )
   }
   if (!addInvocations.every((line) => line.includes(`\t${realpathSync(binary)}\t`))) {
     throw new Error(

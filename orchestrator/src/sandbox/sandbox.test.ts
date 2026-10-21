@@ -85,9 +85,9 @@ test('prepares one persistent Grok MCP home and refuses a source clamp', () => {
     mkdirSync(source)
     writeFileSync(
       join(source, 'config.toml'),
-      'model = "grok"\n[mcp_servers.orch]\ncommand = "orch"\n' +
-        '[mcp_servers.orch-ask]\ncommand = "/old/bun"\nargs = ["/main/orchestrator/src/cli.ts", "ask-server"]\n' +
-        '[mcp_servers.orch-ask.env]\nSTALE = "1"\n',
+      'model = "grok"\n[mcp_servers.bottega]\ncommand = "orch"\n' +
+        '[mcp_servers.bottega-ask]\ncommand = "/old/bun"\nargs = ["/main/orchestrator/src/cli.ts", "ask-server"]\n' +
+        '[mcp_servers.bottega-ask.env]\nSTALE = "1"\n',
     )
     expect(prepareGrokMcpHome(runDir, ['stopal', 'alephbeis'], source, 'host')).toEqual({
       GROK_HOME: runDir,
@@ -95,7 +95,7 @@ test('prepares one persistent Grok MCP home and refuses a source clamp', () => {
     })
     const written = readFileSync(join(runDir, 'config.toml'), 'utf8')
     expect(written.startsWith('disabled_mcp_servers = ["stopal","alephbeis"]\n\n')).toBe(true)
-    expect(written).toContain('model = "grok"\n[mcp_servers.orch]')
+    expect(written).toContain('model = "grok"\n[mcp_servers.bottega]')
     expect(written).not.toContain('/main/orchestrator/src/cli.ts')
     expect(written).not.toContain('STALE')
     expect(written).toContain(`command = ${JSON.stringify(join(ROOT, '..', 'bin', PLATFORM_SLUG))}`)
@@ -115,7 +115,7 @@ test('prepares one persistent Grok MCP home and refuses a source clamp', () => {
     mkdirSync(conflict)
     writeFileSync(
       join(conflict, 'config.toml'),
-      'disabled_mcp_servers = ["x"]\n[mcp_servers.orch]\n',
+      'disabled_mcp_servers = ["x"]\n[mcp_servers.bottega]\n',
     )
     expect(() => prepareGrokMcpHome(join(fixture, 'conflict-run'), [], conflict, 'host')).toThrow(
       `disabled_mcp_servers is already declared in ${join(conflict, 'config.toml')}`,
@@ -168,27 +168,27 @@ test('prepares one persistent Codex home per chain without operator canon or ses
   }
 })
 
-test('removes registered orch-ask tables from Codex config and keeps neighboring tables', () => {
+test('removes registered bottega-ask tables from Codex config and keeps neighboring tables', () => {
   const config =
-    'model = "codex"\n[mcp_servers.orch]\ncommand = "orch"\n' +
-    '[mcp_servers.orch-ask]\ncommand = "/old/bun"\n' +
-    '[mcp_servers.orch-ask.env]\nSTALE = "1"\n' +
+    'model = "codex"\n[mcp_servers.bottega]\ncommand = "orch"\n' +
+    '[mcp_servers.bottega-ask]\ncommand = "/old/bun"\n' +
+    '[mcp_servers.bottega-ask.env]\nSTALE = "1"\n' +
     '[[marketplace.sources]]\nurl = "kept"\n[ui]\nnotifications = true\n'
   expect(withoutRegisteredOrchAskServer(config)).toBe(
-    'model = "codex"\n[mcp_servers.orch]\ncommand = "orch"\n' +
+    'model = "codex"\n[mcp_servers.bottega]\ncommand = "orch"\n' +
       '[[marketplace.sources]]\nurl = "kept"\n[ui]\nnotifications = true\n',
   )
 })
 
-test('leaves Codex config without a registered orch-ask table unchanged', () => {
-  const config = 'model = "codex"\r\n[mcp_servers.orch]\r\ncommand = "orch"\r\n'
+test('leaves Codex config without a registered bottega-ask table unchanged', () => {
+  const config = 'model = "codex"\r\n[mcp_servers.bottega]\r\ncommand = "orch"\r\n'
   expect(withoutRegisteredOrchAskServer(config)).toBe(config)
 })
 
 test('reads the configured Grok ask command from the table its writer owns', () => {
   expect(
     grokAskCommandFromConfig(
-      'model = "grok"\n[mcp_servers.orch-ask]\ncommand = "/stale/bun"\n' +
+      'model = "grok"\n[mcp_servers.bottega-ask]\ncommand = "/stale/bun"\n' +
         'args = ["/stale/orch.ts", "ask-server"]\n[ui]\ncommand = "ignored"\n',
     ),
   ).toEqual(['/stale/bun', '/stale/orch.ts', 'ask-server'])
@@ -237,7 +237,7 @@ test('prepares and updates a Grok home for the launch sandbox only', () => {
   }
 })
 
-test('prepares Codex home without a user-registered orch-ask server', () => {
+test('prepares Codex home without a user-registered bottega-ask server', () => {
   const fixture = mkdtempSync(join(tmpdir(), 'orch-codex-ask-config-'))
   try {
     const source = join(fixture, 'operator-codex')
@@ -246,7 +246,7 @@ test('prepares Codex home without a user-registered orch-ask server', () => {
     writeFileSync(join(source, 'auth.json'), '{}')
     writeFileSync(
       join(source, 'config.toml'),
-      '[mcp_servers.orch-ask]\ncommand = "/old/bun"\n[mcp_servers.orch-ask.env]\nSTALE = "1"\n[ui]\nnotifications = true\n',
+      '[mcp_servers.bottega-ask]\ncommand = "/old/bun"\n[mcp_servers.bottega-ask.env]\nSTALE = "1"\n[ui]\nnotifications = true\n',
     )
 
     const prepared = prepareCodexHome(runDir, { CODEX_HOME: source })
@@ -546,19 +546,19 @@ describe('readonly-lens sandbox profile', () => {
       rmSync(directory, { recursive: true, force: true })
     }
   })
-  test('replaces a stale registered Grok orch-ask entry with this checkout proxy', () => {
+  test('replaces a stale registered Grok bottega-ask entry with this checkout proxy', () => {
     const config =
-      '[mcp_servers.orch-ask]\ncommand = "bun"\nargs = ["/main/orchestrator/src/cli.ts", "ask-server"]\n'
+      '[mcp_servers.bottega-ask]\ncommand = "bun"\nargs = ["/main/orchestrator/src/cli.ts", "ask-server"]\n'
     const rewritten = grokSandboxConfig(config, 'srt')
     expect(rewritten).toContain(`command = ${JSON.stringify(Bun.which('bun') ?? process.execPath)}`)
     expect(rewritten).toContain('"ask-server"')
     expect(rewritten).not.toContain('/main/orchestrator/src/cli.ts')
     expect(rewritten).toContain('/orchestrator/src/ask/ask-proxy.ts')
   })
-  test('keeps every other table, array tables included, around the replaced orch-ask', () => {
+  test('keeps every other table, array tables included, around the replaced bottega-ask', () => {
     const config =
       '[cli]\na = 1\n[marketplace]\nb = 2\n[[marketplace.sources]]\nurl = "before"\n' +
-      '[mcp_servers.orch-ask]\ncommand = "x"\n[mcp_servers.orch-ask.env]\nK = "v"\n' +
+      '[mcp_servers.bottega-ask]\ncommand = "x"\n[mcp_servers.bottega-ask.env]\nK = "v"\n' +
       '[[marketplace.sources]]\nurl = "after"\n[ui]\nc = 3\n'
     const rewritten = grokSandboxConfig(config, 'srt')
     for (const kept of ['[cli]', '[marketplace]', 'url = "before"', 'url = "after"', '[ui]']) {
@@ -568,10 +568,10 @@ describe('readonly-lens sandbox profile', () => {
     expect(rewritten).not.toContain('command = "x"')
     expect(rewritten).not.toContain('K = "v"')
   })
-  test('adds a live orch-ask table when the user config has none', () => {
+  test('adds a live bottega-ask table when the user config has none', () => {
     const rewritten = grokSandboxConfig('model = "grok"\n', 'srt')
     expect(rewritten).toContain('model = "grok"')
-    expect(rewritten).toContain('[mcp_servers.orch-ask]')
+    expect(rewritten).toContain('[mcp_servers.bottega-ask]')
     expect(rewritten).toContain('/orchestrator/src/ask/ask-proxy.ts')
   })
   test('builds allow and deny lists from the register fixture', () => {

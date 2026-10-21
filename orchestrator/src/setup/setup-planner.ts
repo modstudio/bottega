@@ -2,7 +2,7 @@
 /** Resolves setup answers into ordered project-register actions. Pure: it never applies them. */
 import type { ProjectSettings } from '../project/projects.ts'
 import type { SetupPlan, SetupProposal, SetupQuestion } from './setup-engine.ts'
-import type { HarnessName, McpServer } from './setup-mcp.ts'
+import type { HarnessName, LegacyMcpServerName, McpServer } from './setup-mcp.ts'
 import { INFERRED_RECIPE_PATH } from './setup-toolchain.ts'
 
 export type SetupAnswers = Record<string, string>
@@ -34,6 +34,7 @@ export type SetupAction =
       bin: string
       server: McpServer
       replace: boolean
+      legacyName?: LegacyMcpServerName
     }
   | {
       kind: 'mcp-unchanged' | 'mcp-skipped'
@@ -41,12 +42,14 @@ export type SetupAction =
       bin: string
       server: McpServer
     }
+  | { kind: 'migrate-mcp-config'; path: string; before: string; after: string }
 
 export function setupActionChangesMachine(action: SetupAction): boolean {
   switch (action.kind) {
     case 'add':
     case 'set':
     case 'register-mcp':
+    case 'migrate-mcp-config':
       return true
     case 'unchanged':
     case 'mcp-unchanged':
@@ -59,6 +62,8 @@ export function setupActionLine(action: SetupAction): string {
   switch (action.kind) {
     case 'register-mcp':
       return `${action.replace ? 'Replace' : 'Register'} ${action.server.name} in ${action.harness}`
+    case 'migrate-mcp-config':
+      return `Migrate MCP names in ${action.path}`
     case 'add':
       return `Add project ${action.name} (${action.path})`
     case 'set':
@@ -195,7 +200,11 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
       settingsDiff,
     }
   })
-  return [...registrations, ...projects]
+  const migrations: SetupAction[] = (plan.mcpConfigMigrations ?? []).map((migration) => ({
+    kind: 'migrate-mcp-config',
+    ...migration,
+  }))
+  return [...registrations, ...migrations, ...projects]
 }
 
 export function recommendedAnswers(plan: SetupPlan): SetupAnswers {

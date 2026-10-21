@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { stableMcpServers } from '../setup/setup-mcp.ts'
 import { setupAskCommand } from './ask-commands.ts'
 
@@ -32,7 +32,7 @@ test('setup-ask refuses a present differing registration without adding it', asy
   const output: string[] = []
   const calls: string[][] = []
   const replaced = new Set<string>()
-  const desired = stableMcpServers().find((server) => server.name === 'orch-ask')!
+  const desired = stableMcpServers().find((server) => server.name === WORKER_MCP_SERVER_NAME)!
   const code = await setupAskCommand(
     { log: (line) => output.push(line) },
     {
@@ -47,7 +47,7 @@ test('setup-ask refuses a present differing registration without adding it', asy
           : { command: '/somewhere/else', args: [] }
         const stdout = argv.includes('get')
           ? JSON.stringify({ transport: { type: 'stdio', ...entry } })
-          : JSON.stringify([{ name: 'orch-ask', ...entry }])
+          : JSON.stringify([{ name: WORKER_MCP_SERVER_NAME, ...entry }])
         return {
           exitCode: 0,
           stdout,
@@ -67,7 +67,7 @@ test('setup-ask replaces a registration whose command is missing', async () => {
   const output: string[] = []
   const calls: string[][] = []
   const replaced = new Set<string>()
-  const desired = stableMcpServers().find((server) => server.name === 'orch-ask')!
+  const desired = stableMcpServers().find((server) => server.name === WORKER_MCP_SERVER_NAME)!
   const code = await setupAskCommand(
     { log: (line) => output.push(line) },
     {
@@ -82,7 +82,7 @@ test('setup-ask replaces a registration whose command is missing', async () => {
           : { command: `/missing/${PLATFORM_SLUG}`, args: ['mcp', 'ask-server'] }
         const stdout = argv.includes('get')
           ? JSON.stringify({ transport: { type: 'stdio', ...entry } })
-          : JSON.stringify([{ name: 'orch-ask', ...entry }])
+          : JSON.stringify([{ name: WORKER_MCP_SERVER_NAME, ...entry }])
         return {
           exitCode: 0,
           stdout,
@@ -95,5 +95,5 @@ test('setup-ask replaces a registration whose command is missing', async () => {
   )
   expect(code).toBe(0)
   expect(calls.filter((argv) => argv.includes('add'))).toHaveLength(2)
-  expect(output.join('\n')).toContain('orch-ask registered and verified')
+  expect(output.join('\n')).toContain('bottega-ask registered and verified')
 })

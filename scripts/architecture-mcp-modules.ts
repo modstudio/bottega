@@ -85,10 +85,12 @@ export const mcpModules: McpModule[] = [
   ]),
   module('orchestrator/src/mcp/mcp-reader-policy.ts', []),
   module('orchestrator/src/sandbox/mcp-reader-scope.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/self-spawn.ts',
     '../mcp/mcp-probe.ts',
   ]),
   module('orchestrator/src/sandbox/grok-reader-mcp-home.ts', [
+    '../../../shared/brand.ts',
     'node:fs',
     'node:path',
     '@decimalturn/toml-patch',

@@ -1,7 +1,11 @@
 // Tests codex-mcp-scope.ts: explicit Codex CLI configuration and MCP grants.
 import { expect, test } from 'bun:test'
 import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import {
+  MCP_SERVER_NAME,
+  PLATFORM_SLUG,
+  WORKER_MCP_SERVER_NAME,
+} from '../../../shared/brand.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { ROOT } from '../database/database-location.ts'
 import {
@@ -51,7 +55,7 @@ function serverEntries(argv: string[]): string[] {
   return argv.filter((arg) => arg.startsWith('mcp_servers.'))
 }
 
-test('MCP Codex receives only orch-ask, orch, and its required project server', () => {
+test('MCP Codex receives only bottega-ask, orch, and its required project server', () => {
   const home = '/operator'
   const argv = codexScopeArgs({ mcp: true, mcpServer: 'starship', home })
   expect(argv).toContain('--ignore-user-config')
@@ -59,7 +63,7 @@ test('MCP Codex receives only orch-ask, orch, and its required project server', 
   expect(argv).toContain('features.plugins=false')
   expect(argv).toContain(`model_reasoning_effort=${JSON.stringify(CODEX_REASONING_EFFORT)}`)
   expect(serverEntries(argv).map((entry) => entry.match(/^mcp_servers\.([^=]+)/)![1])).toEqual([
-    'orch-ask',
+    WORKER_MCP_SERVER_NAME,
     'orch',
     'starship',
   ])
@@ -142,8 +146,10 @@ test('reading-job project overlays all use the credential-free reader proxy', ()
     expect(entry).not.toContain('literal-secret')
     expect(entry).not.toContain('.claude/mcp/mcp-run')
   }
-  expect(entries.find((entry) => entry.startsWith('mcp_servers.orch-ask='))).toContain('ask-server')
-  expect(entries.find((entry) => entry.startsWith('mcp_servers.orch='))).toContain(
+  expect(entries.find((entry) => entry.startsWith('mcp_servers.bottega-ask='))).toContain(
+    'ask-server',
+  )
+  expect(entries.find((entry) => entry.startsWith('mcp_servers.bottega='))).toContain(
     'args=["mcp","serve"]',
   )
 })
@@ -160,7 +166,7 @@ test('reading job without a registered project receives no project servers', () 
   expect(scope).toEqual({ servers: {}, withheld: [] })
   const entries = serverEntries(codexScopeArgs({ mcp: true, projectServers: scope.servers }))
   expect(entries.map((entry) => entry.match(/^mcp_servers\.([^=]+)/)![1])).toEqual([
-    'orch-ask',
+    WORKER_MCP_SERVER_NAME,
     'orch',
   ])
 })
@@ -168,32 +174,32 @@ test('reading job without a registered project receives no project servers', () 
 test('platform-shaped MCP scope emits orch exactly once', () => {
   const entries = serverEntries(codexScopeArgs({ mcp: true, mcpServer: 'orch', home: '/operator' }))
   expect(entries.map((entry) => entry.match(/^mcp_servers\.([^=]+)/)![1])).toEqual([
-    'orch-ask',
+    WORKER_MCP_SERVER_NAME,
     'orch',
   ])
-  expect(entries.filter((entry) => entry.startsWith('mcp_servers.orch='))).toHaveLength(1)
+  expect(entries.filter((entry) => entry.startsWith('mcp_servers.bottega='))).toHaveLength(1)
 })
 
-test('non-MCP Codex receives only orch-ask', () => {
+test('non-MCP Codex receives only bottega-ask', () => {
   const argv = codexScopeArgs({ mcp: false, mcpServer: 'starship', home: '/operator' })
   expect(argv).toContain('--ignore-user-config')
   expect(argv).toContain('features.apps=false')
   expect(argv).toContain('features.plugins=false')
   expect(serverEntries(argv).map((entry) => entry.match(/^mcp_servers\.([^=]+)/)![1])).toEqual([
-    'orch-ask',
+    WORKER_MCP_SERVER_NAME,
   ])
   expect(serverEntries(argv)[0]).toContain(`env_vars=${JSON.stringify(CODEX_ASK_ENV_VARS)}`)
 })
 
-test('orch-ask CLI definition matches the ACP command and args', () => {
+test('bottega-ask CLI definition matches the ACP command and args', () => {
   const entry = serverEntries(codexScopeArgs({ mcp: true, mcpServer: 'orch' })).find((arg) =>
-    arg.startsWith('mcp_servers.orch-ask='),
+    arg.startsWith('mcp_servers.bottega-ask='),
   )!
   expect(entry).toContain(`command=${JSON.stringify(join(ROOT, '..', 'bin', PLATFORM_SLUG))}`)
   expect(entry).toContain(`args=${JSON.stringify(['mcp', 'ask-server'])}`)
   expect(entry).toContain(`env_vars=${JSON.stringify(CODEX_ASK_ENV_VARS)}`)
   expect(serverEntries(codexScopeArgs({ mcp: true, mcpServer: 'orch' }))).toContain(
-    `mcp_servers.orch={command=${JSON.stringify(join(ROOT, '..', 'bin', PLATFORM_SLUG))},args=["mcp","serve"],env_vars=${JSON.stringify(CODEX_ORCH_ENV_VARS)}}`,
+    `mcp_servers.bottega={command=${JSON.stringify(join(ROOT, '..', 'bin', PLATFORM_SLUG))},args=["mcp","serve"],env_vars=${JSON.stringify(CODEX_ORCH_ENV_VARS)}}`,
   )
 })
 

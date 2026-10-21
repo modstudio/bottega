@@ -3,6 +3,7 @@
 
 import { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { DB_PATH } from '../database/db.ts'
 import { addProject, fillAbsentProjectSettings } from '../project/project-commands.ts'
 import { projectByName, projects } from '../project/projects.ts'
@@ -17,6 +18,7 @@ import {
 import { proposeSetup, type SetupAgent, type SetupPlan } from './setup-engine.ts'
 import { gatherSetupFacts } from './setup-facts.ts'
 import { stableMcpServers } from './setup-mcp.ts'
+import { captureMcpConfigMigrations } from './setup-mcp-config-migration.ts'
 import {
   planSetupActions,
   recommendedAnswers,
@@ -51,7 +53,7 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
     Promise.resolve(readSetupState()),
   ])
   const repositories = await gatherRepositoryFactsReport(folders)
-  return proposeSetup(
+  const plan = proposeSetup(
     resolveWorktreeLifecycle,
     machine,
     repositories.repositories,
@@ -60,6 +62,11 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
     repositories.notices,
     stableMcpServers(),
   )
+  plan.mcpConfigMigrations = captureMcpConfigMigrations(
+    homedir(),
+    state.projects.map((project) => project.path),
+  )
+  return plan
 }
 
 function readSetupState(): {

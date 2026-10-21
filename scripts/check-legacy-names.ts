@@ -139,6 +139,8 @@ function isExempt(path: string): boolean {
     path === SELF ||
     path === BESIDE_TEST ||
     path === BASELINE ||
+    path === 'orchestrator/src/setup/setup-mcp-config-migration.ts' ||
+    path === 'orchestrator/src/setup/setup-mcp-config-migration.test.ts' ||
     path.startsWith('orchestrator/migrations/') ||
     path.startsWith('shared/record/migrations/') ||
     path.startsWith('hub/migrations/') ||

@@ -16,8 +16,8 @@ test('Grok reader home replaces project routes with credential-free proxies', ()
       'disabled_mcp_servers = ["stale"]\n' +
         '[mcp_servers.project]\ncommand = "direct"\nargs = ["credential"]\n' +
         '[mcp_servers.alias]\ncommand = "same-project-under-another-name"\n' +
-        '[mcp_servers.orch]\ncommand = "orch"\n' +
-        '[mcp_servers.orch-ask]\ncommand = "stale-ask"\n',
+        '[mcp_servers.bottega]\ncommand = "orch"\n' +
+        '[mcp_servers.bottega-ask]\ncommand = "stale-ask"\n',
     )
     const proxies = {
       project: {

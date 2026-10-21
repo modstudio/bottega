@@ -30,9 +30,6 @@
  * - **`ORCH_*` environment variables**, read from a developer's own shell and
  *   from launchd plists that this repo does not own.
  * - **`orch.db` and `hub.db`**, which are files on disk with history in them.
- * - **The MCP server name `orch-ask`**, registered inside codex's and grok's
- *   own configuration; renaming it there is a migration, not a substitution.
- *
  * Renaming one of those is a migration with a rollout, not a find-and-replace,
  * which is exactly why they are listed rather than left to judgment.
  */
@@ -42,6 +39,11 @@ export const PLATFORM_NAME = 'Bottega'
 
 /** Machine form: the directory, the package name, anything a path needs. */
 export const PLATFORM_SLUG = 'bottega'
+
+/** Stable MCP identities derived from the platform name. */
+export const MCP_SERVER_NAME = PLATFORM_SLUG
+export const WORKER_MCP_SERVER_NAME = `${PLATFORM_SLUG}-ask`
+export const MCP_TOOL_PREFIX = `mcp__${PLATFORM_SLUG}__`
 
 /** On-disk state names are protocol: changing one requires an operator migration. */
 export const FROZEN_STATE_NAMES = {

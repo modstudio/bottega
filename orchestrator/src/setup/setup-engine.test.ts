@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { MCP_SERVER_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Project, ProjectSettings } from '../project/projects.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
 import type { RepositoryFacts } from './repository-facts.ts'
@@ -68,7 +68,7 @@ test('mentions record use when no hosted record address is configured', () => {
 })
 
 const orchServer = {
-  name: 'orch' as const,
+  name: MCP_SERVER_NAME,
   command: '/bin/orch',
   args: ['mcp'],
 }
@@ -463,7 +463,7 @@ test('plans absent, same, and different MCP registration read-backs', () => {
   const absent = proposeSetup(
     machineWithMcp('codex', {
       support: 'automatic',
-      registrations: { orch: { status: 'absent' } },
+      registrations: { [MCP_SERVER_NAME]: { status: 'absent' } },
     }),
     [],
     [],
@@ -481,7 +481,7 @@ test('plans absent, same, and different MCP registration read-backs', () => {
     machineWithMcp('codex', {
       support: 'automatic',
       registrations: {
-        orch: { status: 'registered', command: '/bin/orch', args: ['mcp'] },
+        [MCP_SERVER_NAME]: { status: 'registered', command: '/bin/orch', args: ['mcp'] },
       },
     }),
     [],
@@ -497,7 +497,7 @@ test('plans absent, same, and different MCP registration read-backs', () => {
     machineWithMcp('codex', {
       support: 'automatic',
       registrations: {
-        orch: {
+        [MCP_SERVER_NAME]: {
           status: 'different',
           command: '/old/orch',
           args: ['mcp'],
@@ -522,7 +522,7 @@ test('recommends skipping an absent registration when the harness is signed out'
   const plan = proposeSetup(
     machineWithMcp(
       'codex',
-      { support: 'automatic', registrations: { orch: { status: 'absent' } } },
+      { support: 'automatic', registrations: { [MCP_SERVER_NAME]: { status: 'absent' } } },
       'signed-out',
     ),
     [],

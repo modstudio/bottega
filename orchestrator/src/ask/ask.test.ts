@@ -24,7 +24,7 @@ async function askClient(
   dependencies?: Parameters<typeof createAskMcpServer>[3],
 ) {
   const server = createAskMcpServer(runId, token, timeoutMs, dependencies)
-  const client = new Client({ name: 'orch-ask-test', version: '1.0.0' })
+  const client = new Client({ name: 'bottega-ask-test', version: '1.0.0' })
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
   await server.connect(serverTransport)
   await client.connect(clientTransport)
@@ -69,7 +69,7 @@ describe('the live ask channel always answers', () => {
           initialized: () => {},
         },
       })
-      const client = new Client({ name: 'orch-ask-tools-test', version: '1.0.0' })
+      const client = new Client({ name: 'bottega-ask-tools-test', version: '1.0.0' })
       const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
       await server.connect(serverTransport)
       await client.connect(clientTransport)
@@ -117,7 +117,7 @@ describe('the live ask channel always answers', () => {
   test('observes the names returned by tools/list at the transport boundary', async () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const server = createAskMcpServer(run, '')
-    const client = new Client({ name: 'orch-ask-list-test', version: '1.0.0' })
+    const client = new Client({ name: 'bottega-ask-list-test', version: '1.0.0' })
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     await server.connect(observeAskTransport(serverTransport, run))
     await client.connect(clientTransport)

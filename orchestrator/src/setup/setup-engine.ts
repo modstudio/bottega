@@ -7,6 +7,7 @@ import type { RepositoryFacts } from './repository-facts.ts'
 import type { SetupFacts } from './setup-facts.ts'
 import {
   harnessMcpServers,
+  legacyMcpServerName,
   type McpReadback,
   type McpServer,
   manualMcpInstructions,
@@ -62,6 +63,7 @@ type SetupRegistrationProposal = {
   current: McpReadback
   questionId: string | null
   state: 'absent' | 'same' | 'stale' | 'different' | 'unreadable'
+  legacyName?: import('./setup-mcp.ts').LegacyMcpServerName
 }
 export type SetupPlan = {
   facts: { machine: SetupFacts; repositories: RepositoryFacts[] }
@@ -69,6 +71,7 @@ export type SetupPlan = {
   registrations: SetupRegistrationProposal[]
   questions: SetupQuestion[]
   notices: SetupNotice[]
+  mcpConfigMigrations?: { path: string; before: string; after: string }[]
 }
 
 const questionId = (path: string, field: string) => `project:${encodeURIComponent(path)}:${field}`
@@ -128,11 +131,18 @@ function proposeHarnessRegistrations(
     })
   }
   return desired.map((server) => {
-    const current = facts.mcp!.registrations[server.name] ?? {
-      status: 'unreadable' as const,
-      detail: 'registration was not captured',
-    }
-    if (sameMcpRegistration(current, server)) {
+    const legacyName = legacyMcpServerName(server.name)
+    const legacy = facts.mcp!.legacyRegistrations?.[legacyName]
+    const desiredCurrent = facts.mcp!.registrations[server.name]
+    const current =
+      legacy && legacy.status !== 'absent'
+        ? legacy
+        : (desiredCurrent ?? {
+            status: 'unreadable' as const,
+            detail: 'registration was not captured',
+          })
+    const migrating = Boolean(legacy && legacy.status !== 'absent')
+    if (!migrating && sameMcpRegistration(current, server)) {
       return { harness, bin: facts.path!, server, current, questionId: null, state: 'same' }
     }
     if (current.status === 'absent') {
@@ -181,6 +191,7 @@ function proposeHarnessRegistrations(
       current,
       questionId: replaceQuestionId,
       state: registrationState(current),
+      ...(migrating ? { legacyName } : {}),
     }
   })
 }

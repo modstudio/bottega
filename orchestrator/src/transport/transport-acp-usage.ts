@@ -1,7 +1,7 @@
 // concern: ACP metered usage
 /** Folds run-local goose message usage without knowing transport lifecycle or persistence. */
 import type { VendorCostSource, VendorUsage } from './transport.ts'
-import type { AcpMessageUsageUpdate, AcpPromptUsage } from './transport-acp.ts'
+import type { AcpMessageUsageUpdate, AcpPromptUsage } from './transport-acp-types.ts'
 
 type MessageTotals = {
   inputTokens: number

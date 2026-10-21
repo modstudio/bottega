@@ -1,11 +1,16 @@
 // concern: setup-mcp
 /** Knows harness MCP CLI grammar and bounded execution. Must not know setup questions or projects. */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 export const SETUP_COMMAND_TIMEOUT_MS = 5_000
-const MCP_SERVER_NAMES = ['orch', 'orch-ask'] as const
+const MCP_SERVER_NAMES = [MCP_SERVER_NAME, WORKER_MCP_SERVER_NAME] as const
+export const LEGACY_MCP_SERVER_NAMES = ['orch', 'orch-ask'] as const
+export type LegacyMcpServerName = (typeof LEGACY_MCP_SERVER_NAMES)[number]
+export function legacyMcpServerName(name: McpServerName): LegacyMcpServerName {
+  return name === MCP_SERVER_NAME ? LEGACY_MCP_SERVER_NAMES[0] : LEGACY_MCP_SERVER_NAMES[1]
+}
 export type McpServerName = (typeof MCP_SERVER_NAMES)[number]
 type HarnessMcpDescriptor = {
   support: 'automatic' | 'manual'
@@ -15,27 +20,27 @@ type HarnessMcpDescriptor = {
 export const HARNESS_MCP_CATALOGUE = {
   codex: {
     support: 'automatic',
-    servers: ['orch', 'orch-ask'],
+    servers: MCP_SERVER_NAMES,
     manualDocumentation: null,
   },
   grok: {
     support: 'automatic',
-    servers: ['orch', 'orch-ask'],
+    servers: MCP_SERVER_NAMES,
     manualDocumentation: null,
   },
   claude: {
     support: 'automatic',
-    servers: ['orch'],
+    servers: [MCP_SERVER_NAME],
     manualDocumentation: null,
   },
   opencode: {
     support: 'manual',
-    servers: ['orch'],
+    servers: [MCP_SERVER_NAME],
     manualDocumentation: 'https://opencode.ai/v2/docs/mcp-servers',
   },
   goose: {
     support: 'manual',
-    servers: ['orch'],
+    servers: [MCP_SERVER_NAME],
     manualDocumentation: 'https://block.github.io/goose/',
   },
 } as const satisfies Record<string, HarnessMcpDescriptor>
@@ -66,15 +71,16 @@ export type McpReadback =
 export type HarnessMcpFacts = {
   support: 'automatic' | 'manual'
   registrations: Partial<Record<McpServerName, McpReadback>>
+  legacyRegistrations?: Partial<Record<LegacyMcpServerName, McpReadback>>
 }
 
 /** The stable entries persisted in harness configuration. */
 export function stableMcpServers(): McpServer[] {
   const [command, ...prefix] = bottegaEntryArgv(PLATFORM_SLUG)
   return [
-    { name: 'orch', command: command!, args: [...prefix, 'mcp', 'serve'] },
+    { name: MCP_SERVER_NAME, command: command!, args: [...prefix, 'mcp', 'serve'] },
     {
-      name: 'orch-ask',
+      name: WORKER_MCP_SERVER_NAME,
       command: command!,
       args: [...prefix, 'mcp', 'ask-server'],
     },
@@ -118,7 +124,11 @@ export function manualMcpInstructions(harness: HarnessName): string {
   return `run ${PLATFORM_SLUG} mcp serve --config and follow ${HARNESS_MCP_CATALOGUE[harness].manualDocumentation ?? 'the harness MCP documentation'}`
 }
 
-function mcpReadArgv(harness: HarnessName, bin: string, name: McpServerName): string[] {
+function mcpReadArgv(
+  harness: HarnessName,
+  bin: string,
+  name: McpServerName | LegacyMcpServerName,
+): string[] {
   if (harness === 'claude') return [bin, 'mcp', 'get', name]
   if (harness === 'codex') return [bin, 'mcp', 'get', name, '--json']
   if (harness === 'grok') return [bin, 'mcp', 'list', '--json']
@@ -135,9 +145,15 @@ export function mcpAddArgv(harness: HarnessName, bin: string, server: McpServer)
   throw new Error(`${harness} has no automatic MCP registration support`)
 }
 
-export function mcpRemoveArgv(harness: HarnessName, bin: string, name: McpServerName): string[] {
+export function mcpRemoveArgv(
+  harness: HarnessName,
+  bin: string,
+  name: McpServerName | LegacyMcpServerName,
+): string[] {
   if (harness === 'claude') return [bin, 'mcp', 'remove', '--scope', 'user', name]
-  throw new Error(`${harness} does not require removing an MCP registration before replacement`)
+  if (harness === 'codex') return [bin, 'mcp', 'remove', name]
+  if (harness === 'grok') return [bin, 'mcp', 'remove', '--scope', 'user', name]
+  throw new Error(`${harness} has no automatic MCP registration support`)
 }
 
 function parseJson(text: string): unknown {
@@ -166,7 +182,7 @@ function output(result: SetupCommandResult): string {
   return `${result.stdout}\n${result.stderr}`.trim()
 }
 
-function parseCodex(result: SetupCommandResult, name: McpServerName): McpReadback {
+function parseCodex(result: SetupCommandResult, name: string): McpReadback {
   if (result.timedOut || result.error) return unreadable(result)
   if (result.exitCode !== 0) {
     if (output(result) === `Error: No MCP server named '${name}' found.`)
@@ -193,7 +209,7 @@ function parseCodex(result: SetupCommandResult, name: McpServerName): McpReadbac
   }
 }
 
-function parseGrok(result: SetupCommandResult, name: McpServerName): McpReadback {
+function parseGrok(result: SetupCommandResult, name: string): McpReadback {
   if (result.timedOut || result.error) return unreadable(result)
   if (result.exitCode !== 0) return unreadable(result)
   try {
@@ -214,7 +230,7 @@ function parseGrok(result: SetupCommandResult, name: McpServerName): McpReadback
   }
 }
 
-function parseClaude(result: SetupCommandResult, name: McpServerName): McpReadback {
+function parseClaude(result: SetupCommandResult, name: string): McpReadback {
   if (result.timedOut || result.error) return unreadable(result)
   if (result.exitCode !== 0) {
     const firstLine = output(result).split(/\r?\n/, 1)[0]
@@ -252,7 +268,7 @@ function unreadable(result: SetupCommandResult): McpReadback {
 export function readMcpRegistration(
   harness: HarnessName,
   bin: string,
-  name: McpServerName,
+  name: McpServerName | LegacyMcpServerName,
   runner: SetupCommandRunner = runSetupCommand,
 ): McpReadback {
   const result = runner(mcpReadArgv(harness, bin, name), SETUP_COMMAND_TIMEOUT_MS)
@@ -270,7 +286,7 @@ export function captureHarnessMcpFacts(
   findCommand: (name: string) => string | null,
 ): HarnessMcpFacts {
   if (HARNESS_MCP_CATALOGUE[harness].support === 'manual')
-    return { support: 'manual', registrations: {} }
+    return { support: 'manual', registrations: {}, legacyRegistrations: {} }
   return {
     support: 'automatic',
     registrations: Object.fromEntries(
@@ -286,6 +302,12 @@ export function captureHarnessMcpFacts(
           ),
         ]
       }),
+    ),
+    legacyRegistrations: Object.fromEntries(
+      LEGACY_MCP_SERVER_NAMES.map((name) => [
+        name,
+        readMcpRegistration(harness, bin, name, runner),
+      ]),
     ),
   }
 }

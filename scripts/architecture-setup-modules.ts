@@ -13,6 +13,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     allowed: [
       'bun:sqlite',
       'node:fs',
+      'node:os',
       '../../../shared/brand.ts',
       '../../../shared/self-spawn.ts',
       '../database/db.ts',
@@ -25,6 +26,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       './setup-engine.ts',
       './setup-facts.ts',
       './setup-mcp.ts',
+      './setup-mcp-config-migration.ts',
       './setup-planner.ts',
       './setup-registration-write.ts',
     ],
@@ -105,6 +107,14 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     allowed: ['../../../shared/brand.ts', '../recipe/recipe-schema.ts'],
     typeOnlyAllowed: [],
     reason: 'Keep gate and recipe proposals pure and independent of adapters and persistence.',
+  },
+  {
+    name: 'setup-mcp-config-migration-boundary',
+    file: 'orchestrator/src/setup/setup-mcp-config-migration.ts',
+    allowed: ['node:fs', 'node:path', '../../../shared/brand.ts'],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep setup-owned JSON name migration independent of stores, setup policy, and harness CLI execution.',
   },
   {
     name: 'setup-mcp-boundary',

@@ -10,6 +10,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { applySetupActions } from './setup-apply.ts'
 import type { SetupAction } from './setup-planner.ts'
 import { INFERRED_RECIPE_PATH } from './setup-toolchain.ts'
@@ -193,6 +194,19 @@ test('stops at the first refusal and marks remaining actions not attempted', asy
   expect(results[1]?.message).toBe('service refused two')
 })
 
+test('applies an MCP configuration migration once and then reports unchanged', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'setup-mcp-config-'))
+  const path = join(root, 'settings.json')
+  const before = '{"permissions":{"allow":["mcp__orch__get_doc"]}}\n'
+  const after = '{"permissions":{"allow":["mcp__bottega__get_doc"]}}\n'
+  writeFileSync(path, before)
+  const migration: SetupAction = { kind: 'migrate-mcp-config', path, before, after }
+  const service = { add: async () => {}, fillAbsent: async () => {} }
+  expect((await applySetupActions([migration], service))[0]?.status).toBe('applied')
+  expect(readFileSync(path, 'utf8')).toBe(after)
+  expect((await applySetupActions([migration], service))[0]?.status).toBe('unchanged')
+})
+
 test('adds an MCP registration and verifies the read-back', async () => {
   const calls: string[][] = []
   let reads = 0
@@ -200,7 +214,7 @@ test('adds an MCP registration and verifies the read-back', async () => {
     kind: 'register-mcp',
     harness: 'codex',
     bin: '/bin/codex',
-    server: { name: 'orch', command: '/bin/orch', args: ['mcp'] },
+    server: { name: MCP_SERVER_NAME, command: '/bin/orch', args: ['mcp'] },
     replace: false,
   }
   const results = await applySetupActions(
@@ -217,7 +231,9 @@ test('adds an MCP registration and verifies the read-back', async () => {
               })
           : 'added',
         stderr:
-          argv.includes('get') && reads === 1 ? "Error: No MCP server named 'orch' found." : '',
+          argv.includes('get') && reads === 1
+            ? `Error: No MCP server named '${MCP_SERVER_NAME}' found.`
+            : '',
         exitCode: argv.includes('get') && reads === 1 ? 1 : 0,
         timedOut: false,
         error: null,
@@ -237,7 +253,7 @@ test('refuses a registration that became different before add and does not add',
     kind: 'register-mcp',
     harness: 'codex',
     bin: '/bin/codex',
-    server: { name: 'orch', command: '/bin/orch', args: ['mcp'] },
+    server: { name: MCP_SERVER_NAME, command: '/bin/orch', args: ['mcp'] },
     replace: false,
   }
   const results = await applySetupActions(
@@ -266,7 +282,11 @@ test('replaces a Claude MCP registration by removing, adding, then reading back'
         kind: 'register-mcp',
         harness: 'claude',
         bin: '/bin/claude',
-        server: { name: 'orch', command: '/bin/orch', args: ['mcp'] },
+        server: {
+          name: MCP_SERVER_NAME,
+          command: `/usr/local/${MCP_SERVER_NAME}`,
+          args: ['mcp'],
+        },
         replace: true,
       },
     ],
@@ -290,6 +310,45 @@ test('replaces a Claude MCP registration by removing, adding, then reading back'
   expect(results[0]?.status).toBe('applied')
 })
 
+test('migrates a legacy Codex registration by removing the alias before adding the new name', async () => {
+  const calls: string[][] = []
+  const results = await applySetupActions(
+    [
+      {
+        kind: 'register-mcp',
+        harness: 'codex',
+        bin: '/bin/codex',
+        server: { name: MCP_SERVER_NAME, command: '/bin/orch', args: ['mcp'] },
+        replace: true,
+        legacyName: 'orch',
+      },
+    ],
+    { add: async () => {}, fillAbsent: async () => {} },
+    (argv) => {
+      calls.push(argv)
+      return {
+        exitCode: 0,
+        stdout: argv.includes('get')
+          ? JSON.stringify({
+              transport: { command: `/usr/local/${MCP_SERVER_NAME}`, args: ['mcp'] },
+            })
+          : 'ok',
+        stderr: '',
+        timedOut: false,
+        error: null,
+      }
+    },
+  )
+  expect(calls.map((argv) => argv.slice(1, 3))).toEqual([
+    ['mcp', 'remove'],
+    ['mcp', 'add'],
+    ['mcp', 'get'],
+  ])
+  expect(calls[0]).toContain('orch')
+  expect(calls[1]).toContain(MCP_SERVER_NAME)
+  expect(results[0]?.status).toBe('applied')
+})
+
 test('refuses a Claude replacement after a failed remove without attempting add', async () => {
   const calls: string[][] = []
   const results = await applySetupActions(
@@ -298,7 +357,7 @@ test('refuses a Claude replacement after a failed remove without attempting add'
         kind: 'register-mcp',
         harness: 'claude',
         bin: '/bin/claude',
-        server: { name: 'orch', command: '/bin/orch', args: ['mcp'] },
+        server: { name: MCP_SERVER_NAME, command: '/bin/orch', args: ['mcp'] },
         replace: true,
       },
     ],
@@ -330,7 +389,7 @@ test.each(['codex', 'grok'] as const)(
           kind: 'register-mcp',
           harness,
           bin: `/bin/${harness}`,
-          server: { name: 'orch', command: '/bin/orch', args: ['mcp'] },
+          server: { name: MCP_SERVER_NAME, command: '/bin/orch', args: ['mcp'] },
           replace: true,
         },
       ],
@@ -340,7 +399,7 @@ test.each(['codex', 'grok'] as const)(
         const stdout = argv.includes('get')
           ? JSON.stringify({ transport: { type: 'stdio', command: '/bin/orch', args: ['mcp'] } })
           : argv.includes('list')
-            ? JSON.stringify([{ name: 'orch', command: '/bin/orch', args: ['mcp'] }])
+            ? JSON.stringify([{ name: MCP_SERVER_NAME, command: '/bin/orch', args: ['mcp'] }])
             : 'ok'
         return { exitCode: 0, stdout, stderr: '', timedOut: false, error: null }
       },
@@ -359,7 +418,7 @@ test('reports unchanged when a registration appears with the desired value befor
         kind: 'register-mcp',
         harness: 'codex',
         bin: '/bin/codex',
-        server: { name: 'orch', command: '/bin/orch', args: ['mcp'] },
+        server: { name: MCP_SERVER_NAME, command: '/bin/orch', args: ['mcp'] },
         replace: false,
       },
     ],
@@ -391,7 +450,7 @@ test('screens secret-shaped read-back and command output from refusal and apply 
         kind: 'register-mcp',
         harness: 'codex',
         bin: '/bin/codex',
-        server: { name: 'orch', command: '/bin/orch', args: ['mcp'] },
+        server: { name: MCP_SERVER_NAME, command: '/bin/orch', args: ['mcp'] },
         replace: false,
       },
     ],
@@ -410,7 +469,9 @@ test('screens secret-shaped read-back and command output from refusal and apply 
               ? ''
               : `added ${secret}`,
         stderr:
-          isRead && reads === 1 ? "Error: No MCP server named 'orch' found." : `also raw ${secret}`,
+          isRead && reads === 1
+            ? `Error: No MCP server named '${MCP_SERVER_NAME}' found.`
+            : `also raw ${secret}`,
         timedOut: false,
         error: null,
       }

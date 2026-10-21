@@ -1,5 +1,6 @@
 // concern: contract
 
+import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { isReaderJob, type Job, job } from '../jobs/jobs.ts'
 import { GENERIC_QUESTION_TOKENS } from '../outcome.ts'
 import { REVIEW_SEVERITY } from '../review/review-vocabulary.ts'
@@ -1192,7 +1193,7 @@ Edit and test freely when that helps you verify a finding. Your findings are the
 deliverable, not your diff: every change you make here is scratch work and must
 never be treated as a proposed change to land. Do not commit, push, or merge.
 
-Call the \`gate_result\` tool on the \`orch-ask\` MCP server to read the recorded gate result for this exact commit. Never
+Call the \`gate_result\` tool on the \`${WORKER_MCP_SERVER_NAME}\` MCP server to read the recorded gate result for this exact commit. Never
 run Docker or \`scripts/gate\` yourself. Record an unrun gate in
 \`could_not_verify\`.
 
