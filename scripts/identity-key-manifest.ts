@@ -62,6 +62,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'run.work_preserved',
     'run.provisioning_entries_limited',
     'run.gate_requests_closed',
+    'run.tests_claim_disagrees',
     'run_checkpoint.final',
     'workflow_obligation.require_pull_request',
     'workflow_obligation.floor_deferrable',

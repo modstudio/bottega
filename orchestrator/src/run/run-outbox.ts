@@ -97,6 +97,8 @@ export function buildRunRecordPayload(
     linesRemoved: row.lines_removed,
     testsRan: row.tests_ran,
     testsPassed: row.tests_passed,
+    testsClaimDisagrees:
+      row.tests_claim_disagrees == null ? null : Boolean(row.tests_claim_disagrees),
     deviations: row.deviations,
     escalations: row.escalations,
     stack: row.stack,

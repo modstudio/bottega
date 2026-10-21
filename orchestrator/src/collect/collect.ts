@@ -15,7 +15,11 @@ import { failureReason, outcomeOf } from '../outcome.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import type { ObservedDeadRun } from '../run/run-liveness.ts'
-import { TRUNCATED_TRANSCRIPT_BYTES, visibleTranscriptText } from './result-output.ts'
+import {
+  TRUNCATED_TRANSCRIPT_BYTES,
+  visibleTranscriptText,
+  withTestClaimDisagreement,
+} from './result-output.ts'
 export const COLLECTION_COMMANDS = new Set(['result', 'wait'])
 
 const THIN_OUTPUT_BYTES = 1024
@@ -92,6 +96,7 @@ type CollectedRunRow = {
   worktree: string | null
   branch: string | null
   minted_branch: string | null
+  tests_claim_disagrees: number | null
 }
 
 type AskingResolution =
@@ -570,7 +575,8 @@ export function collectResult(
       `SELECT record_id, number, agent, job, status, latency_ms, vendor_tokens, output_path, error,
             failure_kind, exit_code, parent_run_record_id, evidence_excluded, base_commit,
             cwd, mcp, mcp_server, mcp_connected, mcp_error, mcp_probe,
-            review_provenance, provenance_status, worktree, branch, minted_branch
+            review_provenance, provenance_status, worktree, branch, minted_branch,
+            tests_claim_disagrees
        FROM run WHERE record_id = ?`,
     )
     .get(chain.finalId) as CollectedRunRow | null
@@ -598,7 +604,8 @@ export function collectResult(
       /* a legacy malformed value remains visible in the raw output */
     }
   }
-  presentCollectedOutput(row, output, outcome.ok, presentation)
+  const observedOutput = withTestClaimDisagreement(output, row.tests_claim_disagrees)
+  presentCollectedOutput(row, observedOutput, outcome.ok, presentation)
   const chainNote = failoverSummary(chain.attempts)
   if (chainNote) presentation.error(`\n— ${chainNote}`)
   if (asking) {
