@@ -33,7 +33,6 @@ import {
   formatIdleKillError,
   idleKillMayProceed,
   idlePollMs,
-  sampleProcesses,
   shouldIdleKill,
   terminateProcessGroup,
 } from '../idle-kill.ts'
@@ -42,6 +41,12 @@ import { deriveLiveOutcome } from '../live-outcome.ts'
 import { receiptWorkerMessages, unreadWorkerMessages } from '../mailbox/mailbox.ts'
 import { deferredWorkerMessageNotice } from '../mailbox/mailbox-notice.ts'
 import { decideOutcome, type OutcomeStatus } from '../outcome.ts'
+import {
+  observeRunProcessTree,
+  type ProcessSample,
+  type RunResourceObserver,
+  sampleProcesses,
+} from '../process-resource-sampler.ts'
 import { processStartTime } from '../project/project-lock.ts'
 import type { CodexMcpServer } from '../sandbox/codex-mcp-scope.ts'
 import type { SandboxSelection } from '../sandbox/sandbox.ts'
@@ -99,6 +104,25 @@ function outputCeilingReached(
   return Boolean(
     reply && !reply.text.trim() && ceilingReason !== null && reply.stopReason === ceilingReason,
   )
+}
+
+function idleSnapshotObserver(
+  runId: string,
+  stopped: () => boolean,
+  check: (samples: ProcessSample[]) => Promise<void>,
+): (samples: ProcessSample[]) => void {
+  let inFlight = false
+  return (samples) => {
+    if (inFlight || stopped()) return
+    inFlight = true
+    void check(samples)
+      .catch((error) => {
+        console.error(`orch: run ${runId} idle check failed: ${error}`)
+      })
+      .finally(() => {
+        inFlight = false
+      })
+  }
 }
 
 function liveChildEnv(
@@ -271,7 +295,7 @@ export type LiveResult = {
   proc: { pid?: number | null; kill(sig?: number | string): void } | null
   timer: ReturnType<typeof setTimeout> | null
   checkpointTimer: ReturnType<typeof setInterval> | null
-  idleTimer: ReturnType<typeof setInterval> | null
+  resourceObserver: RunResourceObserver | null
   timedOut: boolean
   idleKilled: boolean
   idleKillError: string | null
@@ -413,7 +437,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   let proc: { pid?: number | null; kill(sig?: number | string): void } | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
   let checkpointTimer: ReturnType<typeof setInterval> | null = null
-  let idleTimer: ReturnType<typeof setInterval> | null = null
+  let resourceObserver: RunResourceObserver | null = null
   let timedOut = false
   let idleKilled = false
   let idleKillError: string | null = null
@@ -650,7 +674,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     const forcedCollect = new Promise<TransportResult>((resolve) => {
       forceCollect = resolve
     })
-    const maybeIdleKill = async () => {
+    const maybeIdleKill = async (samples: ProcessSample[]) => {
       const row = idleRunRow(claim.id)
       if (!row) return
       const openQuestion = runHasOpenQuestion(claim.id)
@@ -664,6 +688,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         alreadyTimedOut: timedOut,
         alreadyIdleKilled: idleKilled,
         thresholdMs: idleThresholdMs,
+        samples,
       })
       if (!decision.kill) return
       idleKilled = true
@@ -742,20 +767,11 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         })
       }
     }
-    let idleCheckInFlight = false
-    idleTimer = setInterval(
-      () => {
-        if (idleCheckInFlight || timedOut || idleKilled) return
-        idleCheckInFlight = true
-        void maybeIdleKill()
-          .catch((error) => {
-            console.error(`orch: run ${claim.id} idle check failed: ${error}`)
-          })
-          .finally(() => {
-            idleCheckInFlight = false
-          })
-      },
+    resourceObserver = observeRunProcessTree(
+      vendorPid,
+      vendorStartTime,
       idlePollMs(jobIdleKillMs(opts.job, process.env, boundMs)),
+      idleSnapshotObserver(claim.id, () => timedOut || idleKilled, maybeIdleKill),
     )
     const teeing = teeTransportEvents(handle.events(), claim.id)
     await t.prompt(handle, prompt)
@@ -881,7 +897,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     }
     const questionsControlStatus = isAsking(contract) || contract?.status === 'done'
     acceptedQuestions = questionsControlStatus ? realQuestions(contract) : transportQuestions
-
     const derived = deriveLiveOutcome({
       writesJob,
       contractStatus: contract?.status ?? null,
@@ -914,7 +929,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       timedOut,
       excludedGateMsAtTimeout,
     )
-
     if (idleKilled && derived.inputs.completedReply) {
       console.error(
         `orch: run ${claim.id} had already returned a complete reply when idle-killed. ` +
@@ -956,7 +970,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
           gateExclusionNoteSuffix(excludedGateMsAtTimeout),
       )
     }
-
     ;({ status, failureKind } = decideOutcome(derived.inputs))
   } catch (e) {
     // Spawn refused, a pipe broke, the output file could not be written. The row
@@ -975,7 +988,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     proc,
     timer,
     checkpointTimer,
-    idleTimer,
+    resourceObserver,
     timedOut,
     idleKilled,
     idleKillError,

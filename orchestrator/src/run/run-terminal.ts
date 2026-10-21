@@ -27,6 +27,7 @@ import { isReaderJob, type Job } from '../jobs/jobs.ts'
 import type { McpConnection, McpMode } from '../mcp/mcp-preflight.ts'
 import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
 import { finalizeWorkerReply, type OutcomeStatus } from '../outcome.ts'
+import type { RunResourceObserver, RunResourceUsage } from '../process-resource-sampler.ts'
 import { projectByName, projects } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
@@ -167,7 +168,7 @@ function reviewHidesGap(
 export type TerminalInput = {
   timer: ReturnType<typeof setTimeout> | null
   checkpointTimer: ReturnType<typeof setInterval> | null
-  idleTimer: ReturnType<typeof setInterval> | null
+  resourceObserver: RunResourceObserver | null
   proc: { pid?: number | null; kill(sig?: number | string): void } | null
   askLoopback: AskLoopback | null
   claim: { id: string; number: number }
@@ -341,6 +342,37 @@ function recordTerminalMcpEvidence(
     .run(ruling.connected, ruling.error, runId)
 }
 
+function runResourceColumnValues(usage: RunResourceUsage | null) {
+  return [
+    usage?.cpuMs ?? null,
+    usage?.peakRssBytes ?? null,
+    usage?.samples ?? null,
+    usage?.source ?? null,
+  ]
+}
+
+/** The terminal resource write shared by finalization and its schema contract test. */
+export function writeTerminalRunResourceUsage(
+  database: Database,
+  runId: string,
+  usage: RunResourceUsage | null,
+): void {
+  database
+    .query(
+      `UPDATE run SET resource_cpu_ms=?, resource_peak_rss_bytes=?, resource_samples=?, resource_source=?
+        WHERE record_id=?`,
+    )
+    .run(...runResourceColumnValues(usage), runId)
+}
+
+function clearRunTimers(
+  timer: ReturnType<typeof setTimeout> | null,
+  checkpointTimer: ReturnType<typeof setInterval> | null,
+): void {
+  if (timer) clearTimeout(timer)
+  if (checkpointTimer) clearInterval(checkpointTimer)
+}
+
 function persistTerminalArtifacts(
   id: string,
   readerReply: ReaderReply | null,
@@ -379,7 +411,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   let {
     timer,
     checkpointTimer,
-    idleTimer,
+    resourceObserver,
     proc,
     askLoopback,
     claim,
@@ -428,9 +460,8 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     mcpRuling,
     workerEvents,
   } = input
-  if (timer) clearTimeout(timer)
-  if (checkpointTimer) clearInterval(checkpointTimer)
-  if (idleTimer) clearInterval(idleTimer)
+  clearRunTimers(timer, checkpointTimer)
+  const resourceUsage = resourceObserver?.stop() ?? null
   if (proc) {
     live.delete(proc)
     liveCheckpoints.delete(proc)
@@ -750,6 +781,8 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           provenanceSilent ? 'silent' : null,
           claim.id,
         )
+
+      writeTerminalRunResourceUsage(db(), claim.id, resourceUsage)
 
       recordTerminalMcpEvidence(db(), claim.id, mcpRuling)
 

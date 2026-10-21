@@ -5,8 +5,8 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { processStartTime } from '../../../shared/process-identity.ts'
 import { thinOutputWarning } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
-import { sampleProcesses } from '../idle-kill.ts'
 import { resolveRecordedRunJob } from '../jobs/jobs.ts'
+import { sampleProcesses } from '../process-resource-sampler.ts'
 import {
   classifyRunIdentifier,
   resolveRunIdentifier,

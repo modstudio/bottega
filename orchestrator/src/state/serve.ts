@@ -128,6 +128,7 @@ export function runDetail(id: string, receipt = false) {
             r.provisioning_kind, r.provisioning_ms, r.provisioning_phases,
             r.provisioning_entries, r.provisioning_entries_limited, r.provisioning_host_load,
             r.provisioning_outcome, r.provisioning_entry_roots,
+            r.resource_cpu_ms, r.resource_peak_rss_bytes, r.resource_samples, r.resource_source,
             s.delivery, s.quality, s.fidelity, s.note, s.scored_at
        FROM run r
        LEFT JOIN score s ON s.run_record_id = r.record_id WHERE r.record_id = ?`,

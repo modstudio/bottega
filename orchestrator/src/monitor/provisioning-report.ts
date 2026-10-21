@@ -2,6 +2,7 @@
 /** Provisioning history query and pure aggregation. */
 import type { Database } from 'bun:sqlite'
 import type { MonitorHostLoad } from './monitor-types.ts'
+import { type ReportFilterOptions, reportFilter } from './report-filter.ts'
 
 export type ProvisioningObservation = {
   project: string
@@ -76,14 +77,8 @@ export function provisioningReport(rows: readonly ProvisioningObservation[]) {
     .sort((a, b) => a.project.localeCompare(b.project) || a.kind.localeCompare(b.kind))
 }
 
-export function loadProvisioningReport(
-  database: Database,
-  options: { project?: string; sinceMs: number | null; now?: number },
-) {
-  const cutoff =
-    options.sinceMs === null
-      ? null
-      : new Date((options.now ?? Date.now()) - options.sinceMs).toISOString()
+export function loadProvisioningReport(database: Database, options: ReportFilterOptions) {
+  const filter = reportFilter(options)
   const rows = database
     .query(
       `SELECT project.name project,r.provisioning_kind kind,r.provisioning_outcome outcome,
@@ -93,7 +88,7 @@ export function loadProvisioningReport(
       WHERE r.provisioning_ms IS NOT NULL AND (? IS NULL OR project.name=?)
       AND (? IS NULL OR r.started_at>=?)`,
     )
-    .all(options.project ?? null, options.project ?? null, cutoff, cutoff) as {
+    .all(...filter.parameters) as {
     project: string
     kind: 'writer' | 'read-only'
     outcome: 'ok' | 'failed'

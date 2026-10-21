@@ -6,8 +6,8 @@ import type { RunIdentity } from '../../../shared/orch-contract.ts'
 import { resolveFailover } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
-import type { ProcessSample } from '../idle-kill.ts'
 import { failureReason, type OutcomeRow, outcomeOf } from '../outcome.ts'
+import type { ProcessSample } from '../process-resource-sampler.ts'
 import { currentRunMemberJoin, liveMemberStall } from './live-run-member.ts'
 import { questionOpenSql } from './question-open.ts'
 import type {
@@ -292,7 +292,7 @@ export async function runListingCommand(
             ${
               json
                 ? ', r.cwd, r.session_id, r.started_by_user_id, r.vendor_cost_usd, r.probe, r.exit_code, r.input_tree, r.head_commit, r.review_ref,' +
-                  ' r.prompt_path, r.branch, r.branch_kept, r.branch_kept_tip, r.retry_of_record_id, r.launch_key, r.evidence_excluded'
+                  ' r.prompt_path, r.branch, r.branch_kept, r.branch_kept_tip, r.retry_of_record_id, r.launch_key, r.evidence_excluded, r.resource_cpu_ms, r.resource_peak_rss_bytes, r.resource_samples, r.resource_source'
                 : ''
             }
        FROM run r
@@ -326,7 +326,7 @@ export async function runListingCommand(
     const turns = json
       ? db()
           .query(
-            `SELECT record_id, number, started_at, latency_ms, vendor_tokens, vendor_cost_usd, status, turn, input_tree, sandbox
+            `SELECT record_id, number, started_at, latency_ms, vendor_tokens, vendor_cost_usd, status, turn, input_tree, sandbox, resource_cpu_ms, resource_peak_rss_bytes, resource_samples, resource_source
          FROM run WHERE record_id = ? OR parent_run_record_id = ?
         ORDER BY turn, number`,
           )

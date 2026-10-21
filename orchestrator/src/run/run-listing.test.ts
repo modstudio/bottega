@@ -4,7 +4,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { runJson } from '../../test/fixtures/replies.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import type { ProcessSample } from '../idle-kill.ts'
+import type { ProcessSample } from '../process-resource-sampler.ts'
 import { runDetail } from '../state/serve.ts'
 import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from './run-host-capacity.ts'
 import { runIdentityMap, runListingCommand } from './run-listing.ts'
@@ -155,6 +155,25 @@ describe('run listing', () => {
     expect((row.stall as string).length).toBeGreaterThan(0)
   })
 
+  test('runs JSON and run detail publish all run resource fields', async () => {
+    const id = insert('ok')
+    db()
+      .query(
+        `UPDATE run SET resource_cpu_ms=?,resource_peak_rss_bytes=?,resource_samples=?,resource_source=?
+          WHERE record_id=?`,
+      )
+      .run(12_345, 67_890, 4, 'sampled', id)
+    const expected = {
+      resource_cpu_ms: 12_345,
+      resource_peak_rss_bytes: 67_890,
+      resource_samples: 4,
+      resource_source: 'sampled',
+    }
+
+    expect(runJson((await command({ json: true, id: [String(id)] }))[0]!)).toMatchObject(expected)
+    expect(runDetail(id)).toMatchObject(expected)
+  })
+
   test('runs JSON evaluates whether the host-capacity wait is fresh', async () => {
     const observedAt = Date.parse('2026-10-21T12:00:00.000Z')
     const fresh = insert('running')
@@ -205,7 +224,10 @@ describe('run listing', () => {
     const secondNumber = runNumber(second)
     const unknown = secondNumber + 1000
     const rows = (
-      await command({ id: [String(first), String(second), String(unknown)], json: true })
+      await command({
+        id: [String(first), String(second), String(unknown)],
+        json: true,
+      })
     ).map(runJson)
     expect(rows.slice(0, 2).map((row) => row.record_id)).toEqual([second, first])
     expect(rows.at(-1) as unknown).toEqual({
@@ -266,7 +288,11 @@ describe('run listing', () => {
   test('runs --id refuses a time window', async () => {
     const id = insert('ok')
     await expect(
-      command({ id: [String(id)], since: ['2026-09-01T00:00:00Z'], json: true }),
+      command({
+        id: [String(id)],
+        since: ['2026-09-01T00:00:00Z'],
+        json: true,
+      }),
     ).rejects.toThrow(`${PLATFORM_SLUG} run list --id and --since cannot be combined`)
   })
 
@@ -279,7 +305,11 @@ describe('run listing', () => {
       '2026-09-01T13:40:00.000Z',
     ]
     const tokens = [260552, 62612, 1904392, 261452, 9309615]
-    const root = addRun({ agent: 'codex', job: 'implement', startedAt: starts[0] })
+    const root = addRun({
+      agent: 'codex',
+      job: 'implement',
+      startedAt: starts[0],
+    })
     const ids = [root]
     for (let turn = 2; turn <= 5; turn++) {
       const startedAt = starts[turn - 1]
@@ -442,7 +472,12 @@ describe('run listing', () => {
   })
 
   test('runs, runs --json, and --follow report the same failover chain', async () => {
-    const root = addRun({ agent: 'codex', job: 'understand', status: 'failed', kind: 'quota' })
+    const root = addRun({
+      agent: 'codex',
+      job: 'understand',
+      status: 'failed',
+      kind: 'quota',
+    })
     const successor = addRun({ agent: 'grok', job: 'understand' })
     db()
       .query(
@@ -559,7 +594,12 @@ describe('run listing', () => {
   })
 
   test('a deliberate retry remains separate from an automatic failover chain', async () => {
-    const first = addRun({ agent: 'codex', job: 'understand', status: 'failed', kind: 'quota' })
+    const first = addRun({
+      agent: 'codex',
+      job: 'understand',
+      status: 'failed',
+      kind: 'quota',
+    })
     const retry = addRun({ agent: 'grok', job: 'understand' })
     db().query('UPDATE run SET retry_of_record_id=? WHERE record_id=?').run(first, retry)
     const human = (await command()).join('\n')
@@ -569,7 +609,11 @@ describe('run listing', () => {
   })
 
   test('a resumed turn can also fail over forward without confusing the two axes', async () => {
-    const root = addRun({ agent: 'codex', job: 'understand', status: 'failed' })
+    const root = addRun({
+      agent: 'codex',
+      job: 'understand',
+      status: 'failed',
+    })
     const turn = addRun({
       agent: 'codex',
       job: 'understand',
