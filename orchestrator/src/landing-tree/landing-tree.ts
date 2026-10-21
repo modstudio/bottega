@@ -88,6 +88,9 @@ export function landingTreeReleaseDecision(
         `landing tree held by ${owner}: branch has not landed; ` +
         `${owner} releases it with ${PLATFORM_SLUG} tree remove <path>`,
     }
+  if (row.landingInFlight) {
+    return { action: 'keep', reason: `landing tree held by ${owner}: landing is in flight` }
+  }
   return { action: 'release' }
 }
 

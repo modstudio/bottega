@@ -405,13 +405,13 @@ const PATCH_EQUIVALENCE_GIT_IDENTITY = {
   GIT_COMMITTER_EMAIL: 'patch-equivalence@orchestrator.invalid',
 } as const
 
-function taskBranchGitWithEnvironment(
+function taskBranchGit(
   cwd: string,
-  environment: NodeJS.ProcessEnv,
-  ...args: string[]
+  args: string[],
+  env: NodeJS.ProcessEnv = targetGitEnvironment(cwd),
 ): string {
   const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
-    env: { ...targetGitEnvironment(cwd), ...environment },
+    env,
     stdout: 'pipe',
     stderr: 'pipe',
   })
@@ -422,10 +422,6 @@ function taskBranchGitWithEnvironment(
     )
   }
   return p.stdout.toString().trim()
-}
-
-function taskBranchGit(cwd: string, ...args: string[]): string {
-  return taskBranchGitWithEnvironment(cwd, {}, ...args)
 }
 
 /** Exit zero is true, exit one is false; any other exit throws naming the command. */
@@ -510,20 +506,15 @@ export function taskBranchPatchEquivalent(input: {
   mergeBase: string
   commitMessage: string
 }): PatchEquivalentForm | null {
-  const individual = taskBranchGit(input.cwd, 'cherry', input.trunkTip, input.branchTip)
+  const individual = taskBranchGit(input.cwd, ['cherry', input.trunkTip, input.branchTip])
   if (!individual.split('\n').some((line) => line.startsWith('+ '))) return 'commits'
-  const tree = taskBranchGit(input.cwd, 'rev-parse', '--verify', `${input.branchTip}^{tree}`)
-  const squash = taskBranchGitWithEnvironment(
+  const tree = taskBranchGit(input.cwd, ['rev-parse', '--verify', `${input.branchTip}^{tree}`])
+  const squash = taskBranchGit(
     input.cwd,
-    PATCH_EQUIVALENCE_GIT_IDENTITY,
-    'commit-tree',
-    tree,
-    '-p',
-    input.mergeBase,
-    '-m',
-    input.commitMessage,
+    ['commit-tree', tree, '-p', input.mergeBase, '-m', input.commitMessage],
+    { ...targetGitEnvironment(input.cwd), ...PATCH_EQUIVALENCE_GIT_IDENTITY },
   )
-  const cherry = taskBranchGit(input.cwd, 'cherry', input.trunkTip, squash)
+  const cherry = taskBranchGit(input.cwd, ['cherry', input.trunkTip, squash])
   return cherry.split('\n').some((line) => line.startsWith('+ ')) ? null : 'squash'
 }
 
@@ -563,31 +554,29 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
 
   const byBranch = new Map<string, typeof rows>()
   for (const row of rows) byBranch.set(row.branch, [...(byBranch.get(row.branch) ?? []), row])
-  const trunkTip = taskBranchGit(
-    repoRoot,
+  const trunkTip = taskBranchGit(repoRoot, [
     'rev-parse',
     '--verify',
     '--end-of-options',
     `${trunk}^{commit}`,
-  )
+  ])
   const candidates: TaskBranchCandidate[] = []
   const liveBranches = [...byBranch].filter(([branch]) => !isTaskBranchSuperseded(branch, rows))
   for (const [branch, branchRows] of liveBranches) {
     let tip: string
     try {
-      tip = taskBranchGit(
-        repoRoot,
+      tip = taskBranchGit(repoRoot, [
         'rev-parse',
         '--verify',
         '--end-of-options',
         `refs/heads/${branch}^{commit}`,
-      )
+      ])
     } catch {
       continue
     }
-    const mergeBase = taskBranchGit(repoRoot, 'merge-base', trunkTip, tip)
+    const mergeBase = taskBranchGit(repoRoot, ['merge-base', trunkTip, tip])
     const commitCount = Number(
-      taskBranchGit(repoRoot, 'rev-list', '--count', `${mergeBase}..${tip}`),
+      taskBranchGit(repoRoot, ['rev-list', '--count', `${mergeBase}..${tip}`]),
     )
     if (!Number.isSafeInteger(commitCount) || commitCount < 1) continue
 
