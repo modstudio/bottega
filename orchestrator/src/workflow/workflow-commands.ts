@@ -15,7 +15,6 @@ import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from './autonomy.ts'
 import { resolveProjectAutonomy } from './autonomy-scopes.ts'
 import {
-  forkStepCatalogue,
   promoteStepCatalogue,
   resolvedStepCatalogueVersions,
   retireStepCatalogue,
@@ -650,27 +649,6 @@ export async function retireCatalogueCommand(argv: string[], print: WorkflowPrin
     await retireStepCatalogue(
       positive(argv[2], 'version')!,
       flagValue(argv, 'reason'),
-      flagValue(argv, 'author'),
-    ),
-  )
-}
-
-export async function forkCatalogueCommand(
-  argv: string[],
-  print: WorkflowPrint,
-  options: WorkflowCommandOptions = {},
-): Promise<void> {
-  const project = inspectionProjectName(options)
-  if (!project)
-    throw new Error(
-      `cannot fork the workflow step catalogue: no registered project contains ${resolve(options.cwd ?? process.cwd())}\n` +
-        "cleared by: run from a registered project's worktree, or pass --cwd for one",
-    )
-  print(
-    await forkStepCatalogue(
-      positive(flagValue(argv, 'from'), '--from'),
-      flagValue(argv, 'reason'),
-      project,
       flagValue(argv, 'author'),
     ),
   )
