@@ -25,6 +25,7 @@ import {
   staleNotes,
 } from './note.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
+import { createLocalTaskInTransaction, showTask } from './task.ts'
 
 const scratch = mkdtempSync(join(tmpdir(), 'hub-note-'))
 beforeAll(resetFixtureStore)
@@ -389,7 +390,7 @@ describe('suggestion notes', () => {
       expect(promoted.promoted_task).toMatch(/^LOC-\d+$/)
     })
 
-    test('a hub-protocol note promotion mints through hub and refuses --task', async () => {
+    test('a hub-protocol note promotion mints or links an existing hub task with evidence', async () => {
       const created = (
         await createNote({
           text: `Hub-owned promotion ${crypto.randomUUID()}`,
@@ -402,14 +403,43 @@ describe('suggestion notes', () => {
 
       const another = (
         await createNote({
-          text: `Hub-owned task refusal ${crypto.randomUUID()}`,
+          text: `Hub-owned existing task ${crypto.randomUUID()}`,
           cwd: '/fixtures/repos/workshop',
           forceNew: true,
         })
       ).note
-      await expect(promoteNote(another.record_id, { existingTaskKey: 'LOC-999' })).rejects.toThrow(
-        '--task is valid only for a project that owns its tracker',
+      const existing = writeTransaction((conn) =>
+        createLocalTaskInTransaction(conn, {
+          project: 'workshop',
+          title: 'Existing task',
+          status: 'done',
+        }),
       )
+      const linked = await promoteNote(another.record_id, { existingTaskKey: existing.key })
+      expect(linked.promoted_task).toBe(existing.key)
+      const detail = showTask(existing.key, { project: 'workshop' })
+      expect(detail.task.status_category).toBe('done')
+      expect(detail.comments).toHaveLength(1)
+      expect(detail.comments[0]?.body).toContain(another.text)
+      expect(detail.comments[0]?.body).toContain('SIGHTINGS (1)')
+      expect(
+        db()
+          .query<{ promoted_task_record_id: string }, [string]>(
+            'SELECT promoted_task_record_id FROM note WHERE record_id=?',
+          )
+          .get(another.record_id),
+      ).toEqual({ promoted_task_record_id: existing.record_id })
+
+      const unknown = (
+        await createNote({
+          text: `Hub-owned unknown task ${crypto.randomUUID()}`,
+          cwd: '/fixtures/repos/workshop',
+          forceNew: true,
+        })
+      ).note
+      await expect(
+        promoteNote(unknown.record_id, { existingTaskKey: 'LOC-999999' }),
+      ).rejects.toThrow(`${PLATFORM_SLUG} task list --project workshop`)
     })
 
     test('drop merge and reap write locally and keep hosted invariants', async () => {

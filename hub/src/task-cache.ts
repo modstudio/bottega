@@ -118,7 +118,7 @@ export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][numb
     )
 }
 
-function applyComment(conn: Database, row: HostedChanges['comments'][number]) {
+export function applyHostedTaskComment(conn: Database, row: HostedChanges['comments'][number]) {
   const taskRecordId = requireChildTaskRecordId(conn, 'comment', row)
   const updated = conn
     .query(
@@ -321,7 +321,7 @@ export function applyHostedTaskRows(conn: Database, changes: HostedChanges) {
   })
   reconcileParentRecordIds(conn)
   changes.comments.forEach((row) => {
-    applySnapshotRow(conn, 'hub_task_comment', row.id, row, applyComment)
+    applySnapshotRow(conn, 'hub_task_comment', row.id, row, applyHostedTaskComment)
   })
   changes.documents.forEach((row) => {
     applySnapshotRow(conn, 'hub_task_document', row.id, row, applyDocument)
@@ -352,7 +352,7 @@ const hostedTaskChangeTables = {
   hub_task: { machine: HOSTED_MACHINE_TABLES.hub_task, apply: applyHostedTask },
   hub_task_comment: {
     machine: HOSTED_MACHINE_TABLES.hub_task_comment,
-    apply: applyComment,
+    apply: applyHostedTaskComment,
   },
   hub_task_document: {
     machine: HOSTED_MACHINE_TABLES.hub_task_document,

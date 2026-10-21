@@ -19,6 +19,9 @@ import {
 } from './note.ts'
 import { promoteNoteCommand } from './note-promote-cli.ts'
 import { pushNotes } from './note-push.ts'
+import { projects } from './projects.ts'
+import { showTask } from './task.ts'
+import { taskCreationDestination } from './tracker-new.ts'
 
 type NoteOptions = {
   actionable?: boolean
@@ -191,7 +194,13 @@ function registerNoteReferenceCommands(note: Command): void {
         options.task,
         options.task !== undefined,
       )
-      console.log(`${row.promoted_task}`)
+      const project = projects().find((candidate) => candidate.name === row.project)
+      const linkedDone =
+        options.task !== undefined &&
+        project !== undefined &&
+        taskCreationDestination(project) !== 'tracker' &&
+        showTask(row.promoted_task!, { project: row.project }).task.status_category === 'done'
+      console.log(linkedDone ? `${row.promoted_task} (done)` : `${row.promoted_task}`)
     })
   note
     .command('drop <reference>')

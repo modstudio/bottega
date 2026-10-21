@@ -414,6 +414,26 @@ function writeLocalComment(
   }
 }
 
+export function attachLocalTaskEvidenceInTransaction(
+  conn: Database,
+  key: string,
+  project: string,
+  body: string,
+  at: string,
+): TaskComment {
+  const upper = key.toUpperCase()
+  const task = conn
+    .query<TaskRow, [string, string]>(
+      `SELECT * FROM task WHERE project = ? AND key = ? COLLATE NOCASE`,
+    )
+    .get(project, upper)
+  if (task?.source !== 'local')
+    throw new Error(
+      `no hub task ${upper} in project ${project}; run \`${PLATFORM_SLUG} task list --project ${project}\``,
+    )
+  return writeLocalComment(conn, task, body, at, false, UNATTRIBUTED)
+}
+
 export async function createTask(
   input: {
     project: string
