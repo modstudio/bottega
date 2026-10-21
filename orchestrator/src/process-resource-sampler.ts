@@ -141,6 +141,24 @@ export function liveProcessTreePids(root: number, samples: ProcessSample[]): num
   return processTreePids(root, samples, true)
 }
 
+function canonicalProcessStartTime(value: string): string {
+  return value.trim().replace(/\s+/g, ' ')
+}
+
+export function observedProcessRoot(
+  root: number,
+  rootStartTime: string,
+  samples: ProcessSample[],
+): boolean {
+  const recordedStartTime = canonicalProcessStartTime(rootStartTime)
+  return samples.some(
+    (row) =>
+      row.pid === root &&
+      row.startTime !== undefined &&
+      canonicalProcessStartTime(row.startTime) === recordedStartTime,
+  )
+}
+
 export function accumulateRunResourceUsage(
   previous: RunResourceUsage,
   root: number,
@@ -201,8 +219,10 @@ function observeSubscriber(
     if (!subscriber.rootStartTime) {
       subscriber.active = false
     } else {
-      const rootPresent = snapshot.rows.some(
-        (row) => row.pid === subscriber.root && row.startTime === subscriber.rootStartTime,
+      const rootPresent = observedProcessRoot(
+        subscriber.root,
+        subscriber.rootStartTime,
+        snapshot.rows,
       )
       const next = advanceRunResourceUsage(
         { usage: subscriber.usage, active: subscriber.active },

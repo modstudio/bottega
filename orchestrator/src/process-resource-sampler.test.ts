@@ -4,6 +4,7 @@ import {
   advanceRunResourceUsage,
   finalRunResourceUsage,
   liveProcessTreePids,
+  observedProcessRoot,
   observedProcessTreePids,
   PROCESS_SNAPSHOT_FIELDS,
   parseProcessSnapshot,
@@ -56,6 +57,13 @@ describe('run process resource accumulation', () => {
   test('liveness keeps a recorded root when the process snapshot is empty', () => {
     expect(observedProcessTreePids(10, [])).toEqual([])
     expect(liveProcessTreePids(10, [])).toEqual([10])
+  })
+
+  test('finds a root when ps space-pads the recorded day of month', () => {
+    const recordedBirth = 'Thu Oct  2 09:15:00 2026'
+    const rows = parseProcessSnapshot(`10 1 10 1.0 S 100 00:01 ${recordedBirth}`)
+
+    expect(observedProcessRoot(10, recordedBirth, rows)).toBe(true)
   })
 
   test('keeps peak summed RSS and maximum observed summed CPU across samples', () => {
