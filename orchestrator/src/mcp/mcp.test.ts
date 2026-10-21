@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 import {
   Client,
   InMemoryTransport,
@@ -16,15 +16,70 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { missingIssueReportFields } from '../issue/issue-report-fields.ts'
 import { type Project, removeProject, upsertProject } from '../project/projects.ts'
+import { rememberProjectSpace } from '../project-space.ts'
+import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.ts'
 import { productionStepCatalogue } from '../workflow/step-catalogue.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from '../workflow/workflows.ts'
 import { createDocsMcpServer, fileIssueTaskKey } from './mcp.ts'
 
-const defaultRecordSession = memoryRecordSession()
-beforeAll(() => installRecordSessionRunner(defaultRecordSession.runner))
-afterAll(() => installRecordSessionRunner(null))
-
 describe('orch MCP', () => {
+  test('list_workflows lists workflows from the server project hosted space', async () => {
+    const project = 'mcp-hosted-workflow-list'
+    const spaceId = newRecordId()
+    const workflowId = newRecordId()
+    upsertProject({
+      recordId: newRecordId(),
+      name: project,
+      path: process.cwd(),
+      settings: {},
+    })
+    rememberProjectSpace(db(), project, spaceId)
+    applyWorkflowCatalogueRow(db(), 'workflow', {
+      id: workflowId,
+      spaceId,
+      slug: 'hosted-list-only',
+      generation: 1,
+      createdAt: '2026-10-21T12:00:00.000Z',
+    })
+    applyWorkflowCatalogueRow(db(), 'workflow_version', {
+      id: newRecordId(),
+      spaceId,
+      ownerId: workflowId,
+      n: 1,
+      status: 'production',
+      definition: JSON.stringify({
+        title: 'Hosted list only',
+        description: 'Exists only in the project hosted space.',
+        arguments: [],
+        modes: [],
+      }),
+      author: 'test',
+      reason: 'hosted list fixture',
+      createdAt: '2026-10-21T12:00:00.000Z',
+      promotedAt: '2026-10-21T12:00:00.000Z',
+      retiredAt: null,
+    })
+
+    const server = createDocsMcpServer()
+    const client = new Client({ name: 'orch-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(serverTransport)
+    await client.connect(clientTransport)
+    try {
+      const result = await client.callTool({ name: 'list_workflows', arguments: {} })
+      expect(JSON.parse((result.content as { text: string }[])[0]!.text)).toContainEqual({
+        slug: 'hosted-list-only',
+        title: 'Hosted list only',
+        production_n: 1,
+        draft_n: null,
+      })
+    } finally {
+      await client.close()
+      await server.close()
+      removeProject(project)
+    }
+  })
+
   test('workflow ruling tools return the durable question id', async () => {
     upsertProject({ recordId: newRecordId(), name: 'fixture', path: '/fixture', settings: {} })
     db()

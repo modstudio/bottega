@@ -57,7 +57,7 @@ import {
 import {
   composeWorkflow,
   getWorkflowStep,
-  listWorkflows,
+  listResolvedWorkflows,
   workflowModeStepLists,
 } from '../workflow/workflows.ts'
 import { fileNote, hubOutput } from './hub-notes.ts'
@@ -69,6 +69,7 @@ import { registerSearchTools } from './mcp-search-tools.ts'
 import { registerSetupTools } from './mcp-setup-tools.ts'
 import { registerSubjectTools } from './mcp-subject-tools.ts'
 import { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
+import { resolveMcpWorkflowSpace } from './mcp-workflow-space.ts'
 
 const text = (value: unknown, isError = false) => ({
   content: [
@@ -473,7 +474,7 @@ export function createDocsMcpServer(): McpServer {
     {
       description: 'List workflow identities and their production and draft versions.',
     },
-    async () => text(listWorkflows()),
+    async () => text(listResolvedWorkflows(resolveMcpWorkflowSpace(process.cwd()).spaceId)),
   )
 
   server.registerTool(

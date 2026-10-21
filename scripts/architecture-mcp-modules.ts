@@ -137,5 +137,12 @@ export const mcpModules: McpModule[] = [
     '../workflow/workflow-cursor.ts',
     '../workflow/workflow-cursor-selection.ts',
     '../workflow/workflows.ts',
+    './mcp-workflow-space.ts',
+  ]),
+  module('orchestrator/src/mcp/mcp-workflow-space.ts', [
+    '../database/db.ts',
+    '../project/projects.ts',
+    '../project-space.ts',
+    '../workflow/workflows.ts',
   ]),
 ]

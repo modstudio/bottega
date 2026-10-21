@@ -1,11 +1,7 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import {
-  installRecordSessionRunner,
-  memoryRecordSession,
-} from '../../test/fixtures/record-session.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { createDocsMcpServer } from './mcp.ts'
@@ -13,10 +9,6 @@ import { createDocsMcpServer } from './mcp.ts'
 const SESSION = 'mcp-operator-tools-test'
 let priorSession: string | undefined
 let priorRunId: string | undefined
-const recordSession = memoryRecordSession()
-
-beforeAll(() => installRecordSessionRunner(recordSession.runner))
-afterAll(() => installRecordSessionRunner(null))
 
 beforeEach(() => {
   priorSession = process.env.CLAUDE_CODE_SESSION_ID

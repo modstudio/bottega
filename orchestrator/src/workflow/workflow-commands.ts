@@ -9,6 +9,7 @@ import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import { type Project, projectAt, projects } from '../project/projects.ts'
+import { effectiveProjectSpace } from '../project-space.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from './autonomy.ts'
@@ -112,7 +113,11 @@ export function listWorkflowCommand(
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
 ): void {
-  const rows = listResolvedWorkflows(inspectionProjectName(options))
+  const database = db()
+  const rows = listResolvedWorkflows(
+    effectiveProjectSpace(database, inspectionProjectName(options)),
+    database,
+  )
   print(
     rows,
     rows
@@ -658,7 +663,8 @@ export async function forkCatalogueCommand(
   const project = inspectionProjectName(options)
   if (!project)
     throw new Error(
-      `cannot fork the workflow step catalogue: no registered project contains ${resolve(options.cwd ?? process.cwd())}`,
+      `cannot fork the workflow step catalogue: no registered project contains ${resolve(options.cwd ?? process.cwd())}\n` +
+        "cleared by: run from a registered project's worktree, or pass --cwd for one",
     )
   print(
     await forkStepCatalogue(

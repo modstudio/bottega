@@ -14,7 +14,7 @@ import {
 import { mergeSeededSteps, seedMayPromote } from './workflow-built-ins.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import {
-  listWorkflows,
+  listResolvedWorkflows,
   resolvedWorkflowVersions,
   showResolvedWorkflow,
   validateWorkflowDefinition,
@@ -153,7 +153,7 @@ describe('workflow projection and seeds', () => {
       'fix-defect-triage',
       'ship',
     ])
-    expect(listWorkflows(d).map(({ slug }) => slug)).toEqual(['fix-defect'])
+    expect(listResolvedWorkflows(null, d).map(({ slug }) => slug)).toEqual(['fix-defect'])
     for (const row of d
       .query<{ record_id: string }, []>(
         'SELECT record_id FROM workflow UNION ALL SELECT record_id FROM step_catalogue',
@@ -367,7 +367,9 @@ describe('workflow projection and seeds', () => {
     expect(showResolvedWorkflow('fix-defect', 2, null, d).author).toBe('architect')
     expect(showResolvedWorkflow('fix-defect', 3, null, d).reason).toBe('seed r5')
     expect(
-      listWorkflows(d).filter(({ slug }) => slug === 'fix-defect' || slug === 'filed-issue'),
+      listResolvedWorkflows(null, d).filter(
+        ({ slug }) => slug === 'fix-defect' || slug === 'filed-issue',
+      ),
     ).toHaveLength(1)
   })
   test('revision seeding is idempotent', () => {

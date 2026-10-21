@@ -1,13 +1,9 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { consumeDoc, removeDoc, setDoc } from '../../test/fixtures/docs.ts'
-import {
-  installRecordSessionRunner,
-  memoryRecordSession,
-} from '../../test/fixtures/record-session.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { register as registerReviewCommand } from '../commands/review.ts'
@@ -41,10 +37,6 @@ import {
   restoreDoc,
   setDoc as writeDoc,
 } from './docs.ts'
-
-const recordSession = memoryRecordSession()
-beforeAll(() => installRecordSessionRunner(recordSession.runner))
-afterAll(() => installRecordSessionRunner(null))
 
 const listPairs = () =>
   db()

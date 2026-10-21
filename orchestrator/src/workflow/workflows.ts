@@ -1,11 +1,10 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, sessionId, writableDb } from '../database/db.ts'
-import { projectAt, projects } from '../project/projects.ts'
-import { activeRecordSpace, effectiveProjectSpace } from '../project-space.ts'
+import { projects } from '../project/projects.ts'
+import { effectiveProjectSpace } from '../project-space.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { applyWorkflowWriteResponse } from '../record/record-cache-workflow.ts'
-import { storedRecordToken } from '../record/record-session.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { workerStoreWriteRefusal } from '../worker-store-write.ts'
 import {
@@ -351,10 +350,6 @@ function productionVersionRow(slug: string, d: Database, spaceId: string | null)
   return row
 }
 
-export function listWorkflows(d: Database = db()) {
-  return listResolvedWorkflows(null, d)
-}
-
 function workflowSlugs(d: Database, spaceId: string | null): string[] {
   return (
     d.query('SELECT slug FROM workflow WHERE space_id IS ? ORDER BY slug').all(spaceId) as {
@@ -363,8 +358,7 @@ function workflowSlugs(d: Database, spaceId: string | null): string[] {
   ).map(({ slug }) => slug)
 }
 
-export function listResolvedWorkflows(project: string | null, d: Database = db()) {
-  const spaceId = effectiveProjectSpace(d, project)
+export function listResolvedWorkflows(spaceId: string | null, d: Database = db()) {
   return workflowSlugs(d, spaceId).flatMap((slug) => {
     const row = d
       .query(`SELECT w.id,w.slug,
@@ -401,17 +395,6 @@ export function productionWorkflows(d: Database, spaceId: string | null) {
   ).map((row) => ({ slug: row.slug, definition: JSON.parse(row.definition) as WorkflowDefinition }))
 }
 
-export function resolveMcpWorkflowSpace(
-  cwd: string,
-  d: Database = db(),
-  signedIn = Boolean(storedRecordToken(d)),
-) {
-  const project = projectAt(cwd, d)
-  let spaceId: string | null = null
-  if (project) spaceId = effectiveProjectSpace(d, project.name)
-  else if (signedIn) spaceId = activeRecordSpace(d)
-  return { spaceId, workflows: productionWorkflows(d, spaceId) }
-}
 export function showResolvedWorkflow(
   slug: string,
   n: number | undefined,
