@@ -541,7 +541,7 @@ function terminaliseJudgedProbe(runId: string): void {
     .run(answeredAt, ANSWERER_KIND_EVAL, ANSWER_CHANNEL_CLI, runId)
   const terminalised = db()
     .query(
-      `UPDATE run SET status='ok', error=NULL, failure_kind=NULL
+      `UPDATE run SET status='ok', error=NULL, failure_kind=NULL, host_wait_since=NULL
       WHERE record_id=? AND status='asking' AND probe=1`,
     )
     .run(runId)

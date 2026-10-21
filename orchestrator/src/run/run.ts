@@ -432,7 +432,7 @@ export async function run(opts: {
       if (failedId)
         db()
           .query(
-            `UPDATE run SET status='failed', failure_kind='harness', error=? WHERE record_id=?`,
+            `UPDATE run SET status='failed', failure_kind='harness', error=?, host_wait_since=NULL WHERE record_id=?`,
           )
           .run(message, failedId)
       else
@@ -773,7 +773,7 @@ export async function run(opts: {
     const why = String((e as Error)?.message ?? e)
     db()
       .query(
-        `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE record_id=?`,
+        `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=?, host_wait_since=NULL WHERE record_id=?`,
       )
       .run(why, Date.now() - started, claim.id)
     teardownTerminalRunResources(db(), claim.id)
@@ -869,7 +869,7 @@ export async function run(opts: {
         const why = String((error as Error)?.message ?? error)
         db()
           .query(
-            `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE record_id=?`,
+            `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=?, host_wait_since=NULL WHERE record_id=?`,
           )
           .run(why, Date.now() - started, claim.id)
         await resetSandbox()
@@ -890,7 +890,7 @@ export async function run(opts: {
           const why = mismatch.refusalReason
           db()
             .query(
-              `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE record_id=?`,
+              `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=?, host_wait_since=NULL WHERE record_id=?`,
             )
             .run(why, Date.now() - started, claim.id)
           teardownTerminalRunResources(db(), claim.id)

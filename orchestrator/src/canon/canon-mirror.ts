@@ -334,7 +334,9 @@ export function revisionRows(
 function setRunTerminal(runId: string, started: number, error?: string): void {
   const safe = error ? screenCanonMirrorError(error) : null
   db()
-    .query(`UPDATE run SET status=?,latency_ms=?,exit_code=?,error=?,pid=NULL WHERE record_id=?`)
+    .query(
+      `UPDATE run SET status=?,latency_ms=?,exit_code=?,error=?,pid=NULL,host_wait_since=NULL WHERE record_id=?`,
+    )
     .run(safe ? 'failed' : 'ok', Date.now() - started, safe ? 1 : 0, safe, runId)
 }
 function releaseLifecycle(port: CanonMirrorPort, runId: string): string | null {

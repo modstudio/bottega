@@ -18,8 +18,8 @@ import { flagValue, flagValues, readMessageText } from '../cli/args.ts'
 import { doPositionals } from '../commands/do-options.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { contractConflicts } from '../contract/contract.ts'
-import { db, nowIso, sessionId } from '../database/db.ts'
-import { appendRunEvent } from '../events.ts'
+import { db, sessionId } from '../database/db.ts'
+import { recordRunWarning } from '../events.ts'
 import { branchOf } from '../git/git-environment.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
 import { effectiveMcpRequest, parseRequestedMcp, requiredMcpServer } from '../mcp/mcp-preflight.ts'
@@ -73,10 +73,6 @@ function earlierReviewRejections(
     branch: reviewMemoryBranch(branchOf(cwd), explicitBranch),
     rows: reviewFindingMemoryRows(project),
   }
-}
-
-function recordRunWarning(runId: string, warning: string): void {
-  appendRunEvent(runId, { ts: nowIso(), type: 'text', text: warning })
 }
 
 async function lookupTaskKey(project: string, key: string) {

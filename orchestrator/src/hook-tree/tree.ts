@@ -66,7 +66,9 @@ export function hookTreeSeedRequest(input: {
 
 function recordHookTreeFailure(recordId: string, startedAt: string, detail: string): void {
   db()
-    .query(`UPDATE run SET status='failed',latency_ms=?,exit_code=1,error=? WHERE record_id=?`)
+    .query(
+      `UPDATE run SET status='failed',latency_ms=?,exit_code=1,error=?,host_wait_since=NULL WHERE record_id=?`,
+    )
     .run(Math.max(0, Date.now() - Date.parse(startedAt)), detail, recordId)
 }
 
@@ -194,7 +196,9 @@ export function createHookTree(input: {
       hookBranch,
     )
     db()
-      .query(`UPDATE run SET status='ok',latency_ms=?,exit_code=0 WHERE record_id=?`)
+      .query(
+        `UPDATE run SET status='ok',latency_ms=?,exit_code=0,host_wait_since=NULL WHERE record_id=?`,
+      )
       .run(Math.max(0, Date.now() - Date.parse(startedAt)), inserted.record_id)
     return created.path
   } catch (error) {

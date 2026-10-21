@@ -3,6 +3,7 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import type { ProcessSample } from '../idle-kill.ts'
 import { type LiveRunMember, liveMemberStall, liveRunMembers } from './live-run-member.ts'
+import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from './run-host-capacity.ts'
 
 describe('live run member', () => {
   const clock = Date.parse('2026-09-22T12:30:00.000Z')
@@ -44,6 +45,40 @@ describe('live run member', () => {
       detail:
         'run 88 codex/review-lens has been silent for 30m and has used no CPU in that time; stop it and re-dispatch, or wait for the 29m idle bound',
     })
+  })
+
+  test('a fresh host waiter is exempt from stall detection', () => {
+    expect(
+      liveMemberStall(
+        { ...member, host_wait_since: new Date(clock - 1_000).toISOString() },
+        idle,
+        clock,
+        25 * 60_000,
+        () => member.agent_start_time,
+      ),
+    ).toMatchObject({ state: 'healthy', idleMs: null })
+  })
+
+  test('an expired or terminal host wait marker does not exempt a stall', () => {
+    const expired = new Date(clock - RUN_HOST_WAIT_MAX_MS - RUN_HOST_WAIT_POLL_MS - 1).toISOString()
+    expect(
+      liveMemberStall(
+        { ...member, host_wait_since: expired },
+        idle,
+        clock,
+        25 * 60_000,
+        () => member.agent_start_time,
+      ).state,
+    ).toBe('stalled')
+    expect(
+      liveMemberStall(
+        { ...member, status: 'stopped', host_wait_since: new Date(clock - 1_000).toISOString() },
+        idle,
+        clock,
+        25 * 60_000,
+        () => member.agent_start_time,
+      ).state,
+    ).toBe('stalled')
   })
 
   test('publishes the running turn, not its asking root, as the live member', () => {

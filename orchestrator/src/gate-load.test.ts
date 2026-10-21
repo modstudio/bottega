@@ -98,6 +98,25 @@ describe('gate load hold', () => {
     ).toEqual({ admit: true, heldOn: [], boundReached: true })
   })
 
+  test('shared capacity decision preserves waiter arrival order', () => {
+    const input = {
+      heldWork: 0,
+      loadavg: 16,
+      ncpu: 8,
+      recentAdmissions: 0,
+      freeMem: 8 * 1024 * 1024 * 1024,
+      pressure: 'unknown' as const,
+      limit: null,
+      platform: 'linux' as const,
+    }
+    expect(decideHostCapacityAdmission({ ...input, hasOlderWaiter: true })).toEqual({
+      admit: false,
+      heldOn: ['queue'],
+      boundReached: false,
+    })
+    expect(decideHostCapacityAdmission({ ...input, hasOlderWaiter: false }).admit).toBe(true)
+  })
+
   test('CPU and memory floors hold even with one gate', () => {
     expect(decision(idle({ gates: 1, loadavg: 8, ncpu: 8 })).heldOn).toEqual(['load'])
     expect(decision(idle({ gates: 1, freeMem: 512 * 1024 * 1024 })).heldOn).toEqual(['memory'])

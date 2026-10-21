@@ -11,6 +11,7 @@ import { idleMsSince } from '../events.ts'
 import { type ProcessSample, processTreeCpuMoving } from '../idle-kill.ts'
 import { jobIdleKillMs } from '../jobs/jobs.ts'
 import { idleStallMs, stalledRunDetail, stalledRunState } from '../stalled-run.ts'
+import { isFreshRunHostWait } from './run-host-capacity.ts'
 
 export type LiveRunMember = {
   record_id: string
@@ -23,6 +24,7 @@ export type LiveRunMember = {
   agent_pid: number | null
   agent_start_time: string | null
   host_wait_since?: string | null
+  status?: string
 }
 
 /** One definition of the member whose status and process represent a conversation now. */
@@ -64,7 +66,7 @@ export function liveMemberStall(
   thresholdMs = idleStallMs(),
   observedStartTime: (pid: number) => string | null = processStartTime,
 ): LiveMemberStall {
-  if (member.host_wait_since) {
+  if (isFreshRunHostWait(member.status ?? 'running', member.host_wait_since, clock)) {
     return { state: 'healthy', detail: null, idleMs: null, idleBoundMs: jobIdleKillMs(member.job) }
   }
   const idleMs = idleMsSince(member.last_event_at, member.started_at, clock)

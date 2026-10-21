@@ -99,7 +99,9 @@ export function releaseFailedLandingTree(runId: string): void {
 
 function recordLandingTreeFailure(recordId: string, startedAt: string, error: unknown): void {
   db()
-    .query("UPDATE run SET status='failed',latency_ms=?,exit_code=1,error=? WHERE record_id=?")
+    .query(
+      "UPDATE run SET status='failed',latency_ms=?,exit_code=1,error=?,host_wait_since=NULL WHERE record_id=?",
+    )
     .run(
       Math.max(0, Date.now() - Date.parse(startedAt)),
       String((error as Error)?.message ?? error),
@@ -320,7 +322,9 @@ export function openLandingTree(runId: string, seed?: string): OpenedLandingTree
       )
     }
     db()
-      .query("UPDATE run SET status='ok',latency_ms=?,exit_code=0 WHERE record_id=?")
+      .query(
+        "UPDATE run SET status='ok',latency_ms=?,exit_code=0,host_wait_since=NULL WHERE record_id=?",
+      )
       .run(Math.max(0, Date.now() - Date.parse(startedAt)), inserted.record_id)
     return { path: created.path, branch, tip: plan.tip }
   } catch (error) {

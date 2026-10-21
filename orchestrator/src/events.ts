@@ -160,6 +160,11 @@ export function appendRunEvent(runId: string, event: RunLogEvent, path?: string)
   if (isWorkerActivity(event)) touchLastEventAt(runId, event.ts)
 }
 
+/** Record a non-fatal run warning consistently across dispatch and live execution. */
+export function recordRunWarning(runId: string, warning: string): void {
+  appendRunEvent(runId, { ts: nowIso(), type: 'text', text: warning })
+}
+
 function isWorkerActivity(event: RunLogEvent): boolean {
   return !['warning', 'ask_expected', 'ask_started', 'ask_initialized', 'ask_listed'].includes(
     event.type,

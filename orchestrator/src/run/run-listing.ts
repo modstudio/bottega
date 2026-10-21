@@ -17,6 +17,7 @@ import type {
   QuestionDeliveryMode,
   QuestionDeliveryOutcome,
 } from './question-vocabulary.ts'
+import { isFreshRunHostWait } from './run-host-capacity.ts'
 import { classifyRunIdentifier, resolveRunIdentifierOrNull } from './run-identifier.ts'
 import { agentWorkValue } from './synthetic-lifecycle-job.ts'
 
@@ -110,7 +111,7 @@ function lifecyclePresentation(
   if (row.stranded === true) return { status: 'stranded', detail: String(row.recovery_hint) }
   const status = outcome.line.split(' - ', 1)[0]!
   const hostWaitSince = row.host_wait_since as string | null
-  if (hostWaitSince)
+  if (isFreshRunHostWait(String(row.status), hostWaitSince))
     return { status: 'waiting', detail: `waiting for host capacity since ${hostWaitSince}` }
   return {
     status,

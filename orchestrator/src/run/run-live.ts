@@ -21,7 +21,12 @@ import {
   type WorkerReply,
 } from '../contract/contract.ts'
 import { db, nowIso } from '../database/db.ts'
-import { appendRunEvent, type StreamEvent, teeTransportEvents } from '../events.ts'
+import {
+  appendRunEvent,
+  recordRunWarning,
+  type StreamEvent,
+  teeTransportEvents,
+} from '../events.ts'
 import { type classify, hasVendorTerminationMarker } from '../failure/failure.ts'
 import { contentTree, gitContext, reviewChangedPaths } from '../git/git-environment.ts'
 import {
@@ -59,7 +64,7 @@ import {
 } from './checkpoint.ts'
 import { questionOpenSql } from './question-open.ts'
 import { prepareLaterRunBoardPrompt } from './run-board-prompt.ts'
-import { waitForRunHostCapacity } from './run-host-capacity.ts'
+import { startRunAfterHostCapacity, waitForRunHostCapacity } from './run-host-capacity.ts'
 import { STALE_AFTER_MS } from './run-liveness.ts'
 import { childEnv, errorTail, live, liveCheckpoints } from './run-process.ts'
 import { decideReplySource, type ReplyContract } from './run-reply-source.ts'
@@ -182,34 +187,41 @@ async function startAfterHostCapacity(input: {
   startOpts: TransportStartOpts
 }): Promise<TransportHandle> {
   const runId = input.claim.id
-  const hostWait = input.repoJob
-    ? await waitForRunHostCapacity({
-        database: db(),
-        runId,
-        skip: Boolean(input.opts.noWaitCapacity),
-      })
-    : null
+  const result = await startRunAfterHostCapacity({
+    wait: () =>
+      input.repoJob
+        ? waitForRunHostCapacity({
+            database: db(),
+            runId,
+            skip: Boolean(input.opts.noWaitCapacity),
+          })
+        : Promise.resolve(null),
+    isRunning: () =>
+      (
+        db().query('SELECT status FROM run WHERE record_id=?').get(runId) as {
+          status: string
+        } | null
+      )?.status === 'running',
+    spawn: () =>
+      input.opts.resume?.session && input.opts.resume.kind === 'continue'
+        ? input.transport.resume({
+            ...input.startOpts,
+            session: input.opts.resume.session,
+            resume: true,
+          })
+        : input.transport.start(input.startOpts),
+  })
+  const hostWait = result.wait
   if (hostWait?.boundReached) {
     const message = `host capacity wait bound reached after ${hostWait.waitedMs}ms; starting run`
     console.error(`orch: ${message}`)
-    appendRunEvent(runId, { ts: nowIso(), type: 'warning', text: message })
+    recordRunWarning(runId, message)
   }
-  try {
-    return input.opts.resume?.session && input.opts.resume.kind === 'continue'
-      ? await input.transport.resume({
-          ...input.startOpts,
-          session: input.opts.resume.session,
-          resume: true,
-        })
-      : await input.transport.start(input.startOpts)
-  } catch (error) {
-    db().query('UPDATE run SET host_wait_since=NULL WHERE record_id=?').run(runId)
-    throw error
-  }
+  if (!result.handle) throw new Error('run stopped while waiting for host capacity')
+  return result.handle
 }
 
-const recordRunWarning = (runId: string) => (message: string) =>
-  appendRunEvent(runId, { ts: nowIso(), type: 'warning', text: message })
+const warnForRun = (runId: string) => (message: string) => recordRunWarning(runId, message)
 
 export type LiveInput = {
   repoJob: boolean
@@ -527,7 +539,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         repoJob,
         claim.number,
       ),
-      onWarning: recordRunWarning(claim.id),
+      onWarning: warnForRun(claim.id),
     }
     recordRunAsk(claim.id, sandboxSelection.sandbox, t, startOpts)
     const handle = await startAfterHostCapacity({

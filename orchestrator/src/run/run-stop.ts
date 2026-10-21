@@ -212,7 +212,7 @@ function commitStoppedRun(
   const next = adoptRunMutation(reauthorizeRunMutation(authority, 'stop'), 'stop')
   const changed = db()
     .query(
-      "UPDATE run SET status='stopped', error='stopped by architect', failure_kind='stopped' WHERE record_id=? AND status='running'",
+      "UPDATE run SET status='stopped', error='stopped by architect', failure_kind='stopped', host_wait_since=NULL WHERE record_id=? AND status='running'",
     )
     .run(row.record_id)
   if (changed.changes !== 1) {
@@ -225,7 +225,7 @@ function commitStoppedRun(
   if (row.record_id !== next.rootId) {
     db()
       .query(
-        "UPDATE run SET status='stopped', error='stopped by architect', failure_kind='stopped' WHERE record_id=?",
+        "UPDATE run SET status='stopped', error='stopped by architect', failure_kind='stopped', host_wait_since=NULL WHERE record_id=?",
       )
       .run(next.rootId)
   }
@@ -336,7 +336,7 @@ export async function abandonRun(
       .all(authority.rootId, authority.rootId)
     const changed = db()
       .query(
-        "UPDATE run SET status='stale', error=?, failure_kind='abandoned' WHERE record_id=? AND status='asking'",
+        "UPDATE run SET status='stale', error=?, failure_kind='abandoned', host_wait_since=NULL WHERE record_id=? AND status='asking'",
       )
       .run(error, row.record_id)
     if (changed.changes !== 1) {

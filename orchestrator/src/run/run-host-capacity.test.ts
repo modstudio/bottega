@@ -1,0 +1,160 @@
+import { describe, expect, test } from 'bun:test'
+import { addRun } from '../../test/fixtures/store.ts'
+import { db } from '../database/db.ts'
+import type { HostLoad } from '../gate-load.ts'
+import {
+  RUN_HOST_WAIT_MAX_MS,
+  startRunAfterHostCapacity,
+  waitForRunHostCapacity,
+} from './run-host-capacity.ts'
+
+const loaded = (): HostLoad => ({
+  gates: 0,
+  loadavg: 16,
+  ncpu: 8,
+  freeMem: 8 * 1024 * 1024 * 1024,
+  pressure: 'unknown',
+  swapUsed: 0,
+  swapTotal: 0,
+  recentAdmissions: 0,
+  waitingRequests: 0,
+  oldestWaitMs: 0,
+})
+
+const repositoryRun = () =>
+  addRun({ agent: 'codex', job: 'implement', status: 'running', repo: '/repo' })
+
+describe('run host capacity', () => {
+  test('a run never counts itself as held work', async () => {
+    const runId = repositoryRun()
+    let slept = false
+    expect(
+      await waitForRunHostCapacity({
+        database: db(),
+        runId,
+        skip: false,
+        platform: 'linux',
+        measure: loaded,
+        sleep: async () => {
+          slept = true
+        },
+      }),
+    ).toBeNull()
+    expect(slept).toBe(false)
+  })
+
+  test('a waiter is not held work and the oldest waiter gets solo admission', async () => {
+    const runId = repositoryRun()
+    const waiter = repositoryRun()
+    db()
+      .query('UPDATE run SET host_wait_since=? WHERE record_id=?')
+      .run('2026-01-01T00:00:01.000Z', waiter)
+    expect(
+      await waitForRunHostCapacity({
+        database: db(),
+        runId,
+        skip: false,
+        platform: 'linux',
+        measure: loaded,
+      }),
+    ).toBeNull()
+  })
+
+  test('waiters are admitted in arrival order', async () => {
+    const older = repositoryRun()
+    const younger = repositoryRun()
+    db()
+      .query('UPDATE run SET host_wait_since=? WHERE record_id=?')
+      .run('2026-01-01T00:00:00.000Z', older)
+    db()
+      .query('UPDATE run SET host_wait_since=? WHERE record_id=?')
+      .run('2026-01-01T00:00:01.000Z', younger)
+    let now = Date.parse('2026-01-01T00:00:01.000Z')
+    const result = await waitForRunHostCapacity({
+      database: db(),
+      runId: younger,
+      skip: false,
+      platform: 'linux',
+      measure: loaded,
+      now: () => now,
+      sleep: async (ms) => {
+        now += ms
+        db().query("UPDATE run SET status='ok', host_wait_since=NULL WHERE record_id=?").run(older)
+      },
+    })
+    expect(result).toMatchObject({ outcome: 'admitted', heldOn: ['queue'] })
+  })
+
+  test('a stop during the wait prevents the spawn', async () => {
+    const blocker = repositoryRun()
+    db()
+      .query('UPDATE run SET last_event_at=? WHERE record_id=?')
+      .run(new Date().toISOString(), blocker)
+    const runId = repositoryRun()
+    let spawned = false
+    const result = await startRunAfterHostCapacity({
+      wait: () =>
+        waitForRunHostCapacity({
+          database: db(),
+          runId,
+          skip: false,
+          platform: 'linux',
+          measure: loaded,
+          sleep: async () => {
+            db().query("UPDATE run SET status='stopped' WHERE record_id=?").run(runId)
+          },
+        }),
+      isRunning: () =>
+        (db().query('SELECT status FROM run WHERE record_id=?').get(runId) as { status: string })
+          .status === 'running',
+      spawn: async () => {
+        spawned = true
+        return 'handle'
+      },
+    })
+    expect(result.handle).toBeNull()
+    expect(result.wait?.outcome).toBe('stopped')
+    expect(spawned).toBe(false)
+    expect(db().query('SELECT host_wait_since FROM run WHERE record_id=?').get(runId)).toEqual({
+      host_wait_since: null,
+    })
+  })
+
+  test('the wait bound starts the run and records contention', async () => {
+    const blocker = repositoryRun()
+    db()
+      .query('UPDATE run SET last_event_at=? WHERE record_id=?')
+      .run(new Date().toISOString(), blocker)
+    const runId = repositoryRun()
+    let now = 0
+    let spawned = false
+    const result = await startRunAfterHostCapacity({
+      wait: () =>
+        waitForRunHostCapacity({
+          database: db(),
+          runId,
+          skip: false,
+          platform: 'linux',
+          measure: loaded,
+          now: () => now,
+          sleep: async () => {
+            now = RUN_HOST_WAIT_MAX_MS
+          },
+        }),
+      isRunning: () => true,
+      spawn: async () => {
+        spawned = true
+        return 'handle'
+      },
+    })
+    expect(result.wait).toMatchObject({ outcome: 'admitted', boundReached: true })
+    expect(spawned).toBe(true)
+    expect(
+      db()
+        .query(
+          "SELECT cause FROM contention WHERE run_record_id=? AND resource_key='host-capacity'",
+        )
+        .get(runId),
+    ).toEqual({ cause: 'load:bound-reached' })
+  })
+})

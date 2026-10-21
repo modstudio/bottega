@@ -29,7 +29,7 @@ export type HostLoad = {
   oldestWaitMs: number
 }
 export type MemoryPressure = 'normal' | 'warning' | 'critical' | 'unknown'
-export type HostHoldCondition = 'gates' | 'load' | 'memory'
+export type HostHoldCondition = 'gates' | 'load' | 'memory' | 'queue'
 export type GateWaitState = {
   delayedMs: number
   load: HostLoad
@@ -47,7 +47,7 @@ const FREE_MEM_FLOOR_BYTES = 1024 * 1024 * 1024
 const GATE_HOLD_POLL_MS = 250
 const MEMORY_PRESSURE_READ_TIMEOUT_MS = 100
 const MEBIBYTE_BYTES = 1024 * 1024
-const GATE_HOLD_CONDITION_ORDER: HostHoldCondition[] = ['gates', 'load', 'memory']
+const GATE_HOLD_CONDITION_ORDER: HostHoldCondition[] = ['gates', 'load', 'memory', 'queue']
 
 function gatePidDir(env: NodeJS.ProcessEnv = process.env): string {
   return join(resolveStatePaths(env).orchestratorDirectory, 'host-slots')
@@ -298,9 +298,11 @@ export function decideHostCapacityAdmission(input: {
   platform: NodeJS.Platform
   waitedMs?: number
   maxWaitMs?: number
+  hasOlderWaiter?: boolean
 }): HostCapacityDecision {
   const boundReached = input.maxWaitMs !== undefined && (input.waitedMs ?? 0) >= input.maxWaitMs
   if (boundReached) return { admit: true, heldOn: [], boundReached: true }
+  if (input.hasOlderWaiter) return { admit: false, heldOn: ['queue'], boundReached: false }
   // Machine-wide load must never prevent all bottega work from making progress.
   if (input.heldWork === 0) return { admit: true, heldOn: [], boundReached: false }
   const conditions: HostHoldCondition[] = []

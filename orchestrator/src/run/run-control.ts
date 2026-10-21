@@ -693,7 +693,11 @@ export async function continueRun(
     authority = reauthorizeRunMutation(authority, 'continue')
     const adopted = adoptRunMutation(authority, 'continue')
     // Stop preserves the artifact specifically so this transition can reopen it.
-    db().query("UPDATE run SET status='failed' WHERE record_id=? AND status='stopped'").run(id)
+    db()
+      .query(
+        "UPDATE run SET status='failed',host_wait_since=NULL WHERE record_id=? AND status='stopped'",
+      )
+      .run(id)
     return adopted
   })
   const childId = await detach(row.job, prompt, {
