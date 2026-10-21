@@ -21,6 +21,7 @@ export type CommandRoute = {
 
 export const GROUPS = [
   ['run', 'dispatch and inspect runs'],
+  ['session', 'architect session lifecycle'],
   ['question', 'open worker questions and rulings'],
   ['score', 'verdicts on runs'],
   ['review', 'review runs, lenses, tiers, and confinement'],
@@ -117,6 +118,7 @@ export const ROUTES = (
     ),
     route('doc', 'orch', 'doc'),
     route('project', 'orch', 'project'),
+    route('session', 'orch', 'session'),
     route('tree branch', 'orch', 'branches'),
     route('tree', 'orch', 'tree'),
     route('pr', 'orch', 'pr'),

@@ -384,6 +384,7 @@ export const CLI_COMMANDS = new Set([
   'ruling',
   'runs',
   'score',
+  'session',
   'search',
   'subject',
   'settings',

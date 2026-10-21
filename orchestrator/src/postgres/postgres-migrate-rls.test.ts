@@ -29,6 +29,7 @@ import {
 import { registerBoardApiProofs, registerBoardRlsProofs } from '../../test/postgres-board-proof.ts'
 import { registerHostedConfigProofs } from '../../test/postgres-config-proof.ts'
 import { registerCustomerAuthProof } from '../../test/postgres-customer-auth-proof.ts'
+import { registerLandingEvidenceRlsProof } from '../../test/postgres-landing-evidence-proof.ts'
 import { registerProjectSpaceProofs } from '../../test/postgres-project-space-proof.ts'
 import { registerPublicDocProofs } from '../../test/postgres-public-doc-proof.ts'
 import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-proof.ts'
@@ -173,6 +174,12 @@ realPostgres('RLS proof against real Postgres', () => {
       VALUES
         ('01990000-0000-7000-8000-00000000011a', '${ids.SPACE_A}', '${ids.PROJECT_A}', '${ids.MACHINE_A}', 'a', 'a.ts', '{}', now(), now(), now()),
         ('01990000-0000-7000-8000-00000000011b', '${ids.SPACE_B}', '${ids.PROJECT_B}', '${ids.MACHINE_A}', 'b', 'b.ts', '{}', now(), now(), now());
+      INSERT INTO branch_disposal
+        (id,space_id,project_id,machine_id,branch,tip,reason,note,archive_ref,
+         archive_expires_at,actor_session,disposed_at,created_at,updated_at)
+      VALUES
+        ('01990000-0000-7000-8000-00000000012a', '${ids.SPACE_A}', '${ids.PROJECT_A}', '${ids.MACHINE_A}', 'a', 'tip-a', 'throwaway', 'proof', 'refs/orch/archive/a', now() + interval '30 days', 'session-a', now(), now(), now()),
+        ('01990000-0000-7000-8000-00000000012b', '${ids.SPACE_B}', '${ids.PROJECT_B}', '${ids.MACHINE_A}', 'b', 'tip-b', 'throwaway', 'proof', 'refs/orch/archive/b', now() + interval '30 days', 'session-b', now(), now(), now());
     `,
     )
 
@@ -1015,24 +1022,7 @@ realPostgres('RLS proof against real Postgres', () => {
     }
   })
 
-  test('cross-space landing evidence reads return nothing', () => {
-    for (const [table, id] of [
-      ['landing', '01990000-0000-7000-8000-00000000007b'],
-      ['landing_override', '01990000-0000-7000-8000-00000000008b'],
-      ['landing_review_carry', '01990000-0000-7000-8000-00000000009b'],
-      ['contention', '01990000-0000-7000-8000-00000000010b'],
-      ['test_flake', '01990000-0000-7000-8000-00000000011b'],
-    ]) {
-      const result = asSpace(
-        RECORD_ACTOR_ROLE,
-        'actor-password',
-        ids.SPACE_A,
-        `SELECT id FROM ${table} WHERE id = '${id}';`,
-      )
-      expect(result.code, result.stderr).toBe(0)
-      expect(result.stdout).toBe('')
-    }
-  })
+  registerLandingEvidenceRlsProof()
 
   registerScoreRecordSyncProof(() => ({
     actorUrl: actorUrl!,

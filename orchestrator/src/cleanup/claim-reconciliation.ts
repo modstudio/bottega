@@ -80,8 +80,12 @@ const defaultObservers = (trust: GrokTrustObservation): ClaimReconciliationObser
   pidAlive,
 })
 
-function claimedRows(database: Database, projectName: string | undefined): ClaimedRow[] {
-  return database
+function claimedRows(
+  database: Database,
+  projectName: string | undefined,
+  claimIds?: ReadonlySet<number>,
+): ClaimedRow[] {
+  const rows = database
     .query(
       `SELECT claim.id,claim.root_run_record_id,claim.run_record_id,claim.project_record_id,claim.kind,claim.allocation_key,
               project.name project_name,project.path project_path,root.repo run_repo,
@@ -100,6 +104,7 @@ function claimedRows(database: Database, projectName: string | undefined): Claim
        ORDER BY claim.id`,
     )
     .all(projectName ?? null, projectName ?? null) as ClaimedRow[]
+  return claimIds ? rows.filter((row) => claimIds.has(row.id)) : rows
 }
 
 function unregisteredRepositoryPath(row: ClaimedRow): string | null {
@@ -364,6 +369,7 @@ function completedLine(result: ReconciliationResult, label: string, branch: stri
 export function reconcileAbsentClaims(input: {
   dryRun: boolean
   project?: string
+  claimIds?: readonly number[]
   presentation: CleanupPresentation
   trust: GrokTrustObservation
   database?: Database
@@ -376,7 +382,8 @@ export function reconcileAbsentClaims(input: {
     ...input.observers,
   }
   const synchronize = input.synchronize ?? synchronizeClaim
-  for (const row of claimedRows(database, input.project)) {
+  const claimIds = input.claimIds ? new Set(input.claimIds) : undefined
+  for (const row of claimedRows(database, input.project, claimIds)) {
     const initial = rulingFor(database, row, observers)
     const { ruling } = initial
     const label = `claim ${row.id} ${row.kind} ${row.allocation_key}`

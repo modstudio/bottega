@@ -56,13 +56,18 @@ const HOSTED_SQL_EXEMPTIONS: readonly HostedSqlExemption[] = [
   },
   {
     file: 'orchestrator/src/postgres/postgres-migrate-rls.test.ts',
-    fingerprint: '72ddb5876469b406',
+    fingerprint: '4a018147fe1ed109',
     reason: 'RLS seed composes the reviewed Better Auth invitation fixture statements',
   },
   {
     file: 'orchestrator/src/postgres/postgres-migrate-rls.test.ts',
     fingerprint: 'f491f4da8f4b51e9',
     reason: 'RLS catalogue proof selects from each table discovered from the hosted schema',
+  },
+  {
+    file: 'orchestrator/test/postgres-landing-evidence-proof.ts',
+    fingerprint: 'f491f4da8f4b51e9',
+    reason: 'RLS landing-evidence proof selects from its closed hosted evidence table catalogue',
   },
   {
     file: 'orchestrator/src/postgres/postgres-migrate-recipients.test.ts',

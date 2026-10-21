@@ -116,6 +116,10 @@ const TEST_FLAKE_RECORD_PAYLOAD_COLUMNS = columns(
 const TEST_FLAKE_RECORD_PAYLOAD_CONTRACT = contract(TEST_FLAKE_RECORD_PAYLOAD_COLUMNS, {
   withheldFields: null,
 })
+const BRANCH_DISPOSAL_RECORD_PAYLOAD_CONTRACT = contract(
+  'id spaceId projectId projectName machineId localId branch tip taskKey reason note archiveRef archiveExpiresAt actorSession disposedAt withheldFields createdAt updatedAt',
+  { projectId: null, taskKey: null, withheldFields: null },
+)
 
 export const OUTBOX_PAYLOAD_CONTRACTS = {
   run: RUN_RECORD_PAYLOAD_CONTRACT,
@@ -132,4 +136,5 @@ export const OUTBOX_PAYLOAD_CONTRACTS = {
   landing_triage_snapshot: LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_CONTRACT,
   contention: CONTENTION_RECORD_PAYLOAD_CONTRACT,
   test_flake: TEST_FLAKE_RECORD_PAYLOAD_CONTRACT,
+  branch_disposal: BRANCH_DISPOSAL_RECORD_PAYLOAD_CONTRACT,
 } as const
