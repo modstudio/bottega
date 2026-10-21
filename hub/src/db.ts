@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
+import { classifyCaller } from '../../shared/caller-classification.ts'
 import { embeddedDistributionManifest } from '../../shared/embedded-assets.ts'
 import { mainCheckoutOf } from '../../shared/git.ts'
 import { installRoot, isAuthorizedPlatformInstallation } from '../../shared/install-root.ts'
@@ -16,6 +17,7 @@ import {
   type StateEnvironment,
   temporaryStateStoreMigrationAllowed,
 } from '../../shared/state-directory.ts'
+import { decideStoreAccess, type StoreAccessDecision } from '../../shared/store-access.ts'
 import { assertTestHubDatabasePath } from '../../shared/test-hub-database.ts'
 import {
   applyMigrations,
@@ -61,36 +63,34 @@ const livePath = runtime.livePath
 const legacyPath = runtime.legacyPath
 export const DB_PATH = livePath
 
-const LINKED_CHECKOUT_WRITE_REFUSAL =
-  'refusing to write hub rows to the shared main store from a linked worktree or borrowed clone\n' +
-  'invariant: A linked-worktree or borrowed-clone binary reads the main hub store and never writes it.\n' +
-  'cleared by: run the command from the main checkout, or set HUB_DB to a scratch copy'
+const RESTRICTED_ACTOR_WRITE_REFUSAL =
+  'refusing to write hub rows to the shared store from a worker, linked worktree, or borrowed clone\n' +
+  'invariant: A restricted process reads the shared hub store and never writes or migrates it.\n' +
+  'cleared by: run the command as an operator from the main checkout, or set HUB_DB to a temporary scratch copy'
 
-/** A linked checkout may mutate only an explicitly isolated temporary store. */
-export function linkedCheckoutWriteRefusal(
-  linked: boolean,
+/** Gather hub-specific path and caller facts for the shared store-access decision. */
+export function hubStoreAccess(
+  restrictedActor: boolean,
   path: string,
   temporaryDirectory = tmpdir(),
-): string | null {
-  if (!linked) return null
-  const scratch = temporaryStateStoreMigrationAllowed(
-    realPathForPotentialPath(path),
-    realPathForPotentialPath(temporaryDirectory),
-  )
-  return scratch ? null : LINKED_CHECKOUT_WRITE_REFUSAL
+  walOrShmSidecarPresent = existsSync(`${path}-wal`) || existsSync(`${path}-shm`),
+): StoreAccessDecision {
+  return decideStoreAccess({
+    restrictedActor,
+    storePathUnderTemporaryRoot: temporaryStateStoreMigrationAllowed(
+      realPathForPotentialPath(path),
+      realPathForPotentialPath(temporaryDirectory),
+    ),
+    walOrShmSidecarPresent,
+  })
 }
 
-/** Refuse the write handle before SQLite can mutate a shared store. */
-export function assertHubStoreWritable(
-  linked: boolean,
-  path: string,
-  temporaryDirectory = tmpdir(),
-): void {
-  const refusal = linkedCheckoutWriteRefusal(linked, path, temporaryDirectory)
-  if (refusal) throw new Error(refusal)
-}
+const restrictedActor = linkedCheckout || classifyCaller(process.env).kind === 'worker'
 
-const linkedCheckoutReadOnly = linkedCheckoutWriteRefusal(linkedCheckout, DB_PATH) !== null
+function assertHubStoreWritable(): void {
+  if (hubStoreAccess(restrictedActor, DB_PATH).writesRefused)
+    throw new Error(RESTRICTED_ACTOR_WRITE_REFUSAL)
+}
 
 function legacyDatabaseRefusal(): string | null {
   if (process.env.HUB_DB || !legacyPath) return null
@@ -214,21 +214,22 @@ export function db(): Database {
   // bun test sets NODE_ENV=test; an unset HUB_DB must not fall back to the live store.
   assertTestHubDatabasePath()
   requireDatabase()
-  const sidecarsExist = existsSync(`${DB_PATH}-wal`) || existsSync(`${DB_PATH}-shm`)
-  const readOnlyPath =
-    linkedCheckoutReadOnly && !sidecarsExist
+  const access = hubStoreAccess(restrictedActor, DB_PATH)
+  const databasePath =
+    access.openMode === 'read-only-immutable'
       ? `${pathToFileURL(DB_PATH).href}?immutable=1`
       : DB_PATH
-  const d = linkedCheckoutReadOnly
-    ? new Database(readOnlyPath, { readonly: true })
-    : new Database(DB_PATH, { readwrite: true, create: false })
+  const d =
+    access.openMode === 'read-write'
+      ? new Database(databasePath, { readwrite: true, create: false })
+      : new Database(databasePath, { readonly: true })
   d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
   const refused = migrationRefusal(d)
   if (refused) {
     d.close()
     throw new Error(refused)
   }
-  if (!linkedCheckoutReadOnly) {
+  if (access.openMode === 'read-write') {
     d.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA synchronous = NORMAL;
@@ -244,7 +245,7 @@ export function db(): Database {
 
 /** Open the only sanctioned multi-statement write transaction. */
 export function writeTransaction<T>(fn: (conn: Database) => T, database?: Database): T {
-  assertHubStoreWritable(linkedCheckout, DB_PATH)
+  assertHubStoreWritable()
   const target = database ?? db()
   const conn = refuseOrReloadStaleSchema(target, true)
   const depth = writeDepth.get(conn) ?? 0
@@ -301,6 +302,8 @@ export async function questionIdentitiesForMigrations(
 }
 
 function openMigrationDatabase(): { database: Database; create: boolean } {
+  if (hubStoreAccess(restrictedActor, DB_PATH).migrationsRefused)
+    throw new Error(RESTRICTED_ACTOR_WRITE_REFUSAL)
   const refusal = legacyDatabaseRefusal()
   if (refusal) throw new Error(refusal)
   const create = !existsSync(DB_PATH)

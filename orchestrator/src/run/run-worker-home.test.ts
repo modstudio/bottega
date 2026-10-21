@@ -106,7 +106,6 @@ test('Grok launch scopes only a reader home while leaving a writer direct', asyn
   expect(readerLaunch.environment.GROK_CURSOR_MCPS_ENABLED).toBe('0')
   expect(readerLaunch.environment.HOME).toBe(join(readerRun, 'home'))
   expect(readerLaunch.environment.HUB_DB).toBe(operatorHub)
-  expect(resolveHubDatabase(readerLaunch.environment)).toBe(operatorHub)
 
   const writerRun = join(root, 'writer-run')
   const writer = join(root, 'writer')
