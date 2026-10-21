@@ -58,6 +58,7 @@ function renderedFiles(store: WorkflowTreeStore): WorkflowTreeFile[] {
         ...(step.rulingOutcomes?.length ? { rulingOutcomes: step.rulingOutcomes } : {}),
         ...(step.reenter ? { reenter: step.reenter } : {}),
         ...(step.deferrable?.length ? { deferrable: step.deferrable } : {}),
+        ...(step.expectedExitCodes ? { expectedExitCodes: step.expectedExitCodes } : {}),
         ...(step.expectedStatus ? { expectedStatus: step.expectedStatus } : {}),
         ...(step.requirePullRequest ? { requirePullRequest: true } : {}),
         ...(step.operatorRuling ? { operatorRuling: true } : {}),
@@ -134,6 +135,13 @@ const expectedStatusFrom = (frontMatter: Record<string, unknown>) =>
     ? {}
     : { expectedStatus: frontMatter.expectedStatus as CatalogueStep['expectedStatus'] }
 
+const expectedExitCodesFrom = (frontMatter: Record<string, unknown>) =>
+  frontMatter.expectedExitCodes === undefined
+    ? {}
+    : {
+        expectedExitCodes: frontMatter.expectedExitCodes as CatalogueStep['expectedExitCodes'],
+      }
+
 const outcomesFrom = (frontMatter: Record<string, unknown>) =>
   frontMatter.outcomes === undefined
     ? {}
@@ -190,6 +198,7 @@ export function parseWorkflowTree(tree: WorkflowTreeFile[]): WorkflowTreeStore {
         ...(frontMatter.deferrable === undefined
           ? {}
           : { deferrable: frontMatter.deferrable as CatalogueStep['deferrable'] }),
+        ...expectedExitCodesFrom(frontMatter),
         ...expectedStatusFrom(frontMatter),
         ...stepBooleanOptionsFrom(frontMatter),
         ...commandEvidenceFrom(frontMatter),
