@@ -3,7 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { existsSync, realpathSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { branchesReport, pruneBranch } from '../branch/branches.ts'
 import { observeTaskStatus } from '../branch/task-status-observation.ts'
@@ -12,9 +12,10 @@ import type { CleanupPresentation } from '../cleanup/cleanup.ts'
 import { closeOutRun } from '../close/close-out.ts'
 import { sessionId as callingSessionId, db, writableDb } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
-import { projectGitCommonDir } from '../project/project-lock.ts'
 import { projectByName } from '../project/projects.ts'
 import { currentOrphanProcesses } from '../resources/process-inventory.ts'
+import { refGuardDirectory } from '../resources/ref-guard.ts'
+import { parseRetainedRef } from '../resources/resource-inventory.ts'
 import { isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { observeGrokTrustHeadings } from '../sandbox/grok-trust.ts'
 import { shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
@@ -238,59 +239,96 @@ function branchFacts(runs: readonly SessionOwnedRun[], dryRun: boolean) {
   return { branches, evidence }
 }
 
+type ResourceObservationError = SessionCloseOutReport['errors'][number]
+type ProjectRootResources = {
+  rootRecordId: string
+  memberRecordIds: string[]
+}
+
+function observeProjectHeldResources(
+  name: string,
+  projectRoots: readonly ProjectRootResources[],
+): { guardRoots: string[]; retainedRoots: string[] } {
+  const project = projectByName(name)
+  if (!project) throw new Error('project is not registered')
+  const guardDirectory = refGuardDirectory(project.path)
+  if (!guardDirectory) throw new Error(`git common directory could not be read at ${project.path}`)
+  const retained = Bun.spawnSync(
+    ['git', 'for-each-ref', '--format=%(refname)', 'refs/orch/retained'],
+    {
+      cwd: project.path,
+      env: targetGitEnvironment(project.path),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  )
+  if (retained.exitCode !== 0)
+    throw new Error(
+      `retained refs could not be read: ${retained.stderr.toString().trim() || `exit ${retained.exitCode}`}`,
+    )
+  const retainedIds = new Set(
+    retained.stdout
+      .toString()
+      .split('\n')
+      .flatMap((ref) => parseRetainedRef(ref) ?? []),
+  )
+  return {
+    guardRoots: projectRoots
+      .filter(({ memberRecordIds }) =>
+        memberRecordIds.some((recordId) => existsSync(`${guardDirectory}/${recordId}`)),
+      )
+      .map(({ rootRecordId }) => rootRecordId),
+    retainedRoots: projectRoots
+      .filter(({ memberRecordIds }) =>
+        memberRecordIds.some((recordId) => retainedIds.has(recordId.toLowerCase())),
+      )
+      .map(({ rootRecordId }) => rootRecordId),
+  }
+}
+
 function heldGitRunResources(roots: ReadonlyMap<string, readonly SessionOwnedRun[]>): {
   guardRoots: Set<string>
   retainedRoots: Set<string>
+  unknownRoots: Set<string>
+  errors: ResourceObservationError[]
 } {
   const guardRoots = new Set<string>()
   const retainedRoots = new Set<string>()
+  const unknownRoots = new Set<string>()
+  const errors: ResourceObservationError[] = []
   const byProject = Map.groupBy(
     [...roots].flatMap(([rootRecordId, members]) => {
       const name = members.find((member) => member.project)?.project
-      return name ? [{ rootRecordId, name }] : []
+      return name
+        ? [{ rootRecordId, memberRecordIds: members.map((member) => member.recordId), name }]
+        : []
     }),
     (item) => item.name,
   )
   for (const [name, projectRoots] of byProject) {
-    const project = projectByName(name)
-    if (!project) continue
-    const common = projectGitCommonDir(project.path)
-    for (const { rootRecordId } of projectRoots) {
-      if (existsSync(join(common, 'orch-guards', rootRecordId))) guardRoots.add(rootRecordId)
-    }
-    const retained = Bun.spawnSync(
-      ['git', 'for-each-ref', '--format=%(refname)', 'refs/orch/retained'],
-      {
-        cwd: project.path,
-        env: targetGitEnvironment(project.path),
-        stdout: 'pipe',
-        stderr: 'pipe',
-      },
-    )
-    if (retained.exitCode !== 0)
-      throw new Error(
-        `${name}: retained refs could not be read: ${retained.stderr.toString().trim() || `exit ${retained.exitCode}`}`,
-      )
-    const retainedIds = new Set(
-      retained.stdout
-        .toString()
-        .split('\n')
-        .flatMap((ref) => ref.match(/^refs\/orch\/retained\/([^/]+)$/)?.[1] ?? []),
-    )
-    for (const { rootRecordId } of projectRoots) {
-      if (retainedIds.has(rootRecordId)) retainedRoots.add(rootRecordId)
+    try {
+      const observed = observeProjectHeldResources(name, projectRoots)
+      for (const rootRecordId of observed.guardRoots) guardRoots.add(rootRecordId)
+      for (const rootRecordId of observed.retainedRoots) retainedRoots.add(rootRecordId)
+    } catch (cause) {
+      for (const { rootRecordId } of projectRoots) unknownRoots.add(rootRecordId)
+      errors.push({
+        item: `project ${name}`,
+        detail: `run resource state could not be read: ${cause instanceof Error ? cause.message : String(cause)}`,
+        retry: `${PLATFORM_SLUG} machine doctor`,
+      })
     }
   }
-  return { guardRoots, retainedRoots }
+  return { guardRoots, retainedRoots, unknownRoots, errors }
 }
 
 function heldRunResources(
   database: Database,
   runs: readonly SessionOwnedRun[],
-): SessionHeldRunResources[] {
+): { resources: SessionHeldRunResources[]; errors: ResourceObservationError[] } {
   const roots = new Map<string, SessionOwnedRun[]>()
   for (const run of runs) roots.set(run.rootRecordId, [...(roots.get(run.rootRecordId) ?? []), run])
-  if (!roots.size) return []
+  if (!roots.size) return { resources: [], errors: [] }
   const placeholders = [...roots].map(() => '?').join(',')
   const claimedRoots = new Set(
     (
@@ -302,14 +340,18 @@ function heldRunResources(
         .all(...roots.keys()) as { root_run_record_id: string }[]
     ).map((row) => row.root_run_record_id),
   )
-  const { guardRoots, retainedRoots } = heldGitRunResources(roots)
-  return [...roots].map(([rootRecordId, members]) => ({
-    rootRecordId,
-    worktree: members.some((member) => Boolean(member.worktree && existsSync(member.worktree))),
-    refGuard: guardRoots.has(rootRecordId),
-    retainedRef: retainedRoots.has(rootRecordId),
-    claim: claimedRoots.has(rootRecordId),
-  }))
+  const { guardRoots, retainedRoots, unknownRoots, errors } = heldGitRunResources(roots)
+  return {
+    resources: [...roots].map(([rootRecordId, members]) => ({
+      rootRecordId,
+      worktree: members.some((member) => Boolean(member.worktree && existsSync(member.worktree))),
+      refGuard: guardRoots.has(rootRecordId),
+      retainedRef: retainedRoots.has(rootRecordId),
+      claim: claimedRoots.has(rootRecordId),
+      unknown: unknownRoots.has(rootRecordId),
+    })),
+    errors,
+  }
 }
 
 function gather(database: Database, session: string, dryRun: boolean) {
@@ -319,11 +361,12 @@ function gather(database: Database, session: string, dryRun: boolean) {
   const landings = activeLandings(database, session)
   const reviews = incompleteReviews(database, session)
   const branchInventory = branchFacts(runs, dryRun)
+  const held = heldRunResources(database, runs)
   const facts: SessionOwnershipFacts = {
     session,
     runs,
     branches: branchInventory.branches,
-    heldRunResources: heldRunResources(database, runs),
+    heldRunResources: held.resources,
     claimIds: claims.map((claim) => claim.id),
     landingIds: landings.map((landing) => landing.record_id),
     reviewIds: reviews.map((review) => review.record_id),
@@ -333,6 +376,7 @@ function gather(database: Database, session: string, dryRun: boolean) {
     claims,
     landings,
     reviews,
+    observationErrors: held.errors,
     ...branchInventory,
     classification: classifySessionCloseOut(facts),
   }
@@ -526,6 +570,20 @@ function appendArgumentProcesses(
     })
 }
 
+function appendObservationErrors(
+  report: SessionCloseOutReport,
+  errors: readonly ResourceObservationError[],
+): void {
+  for (const error of errors) {
+    if (
+      !report.errors.some(
+        (candidate) => candidate.item === error.item && candidate.detail === error.detail,
+      )
+    )
+      report.errors.push(error)
+  }
+}
+
 export function closeOutSession(
   options: { session?: string; dryRun?: boolean } = {},
 ): SessionCloseOutReport {
@@ -546,7 +604,7 @@ export function closeOutSession(
     },
     mechanical: [],
     process: [],
-    errors: [],
+    errors: [...initial.observationErrors],
     verdict: { clean: false, residue: 0 },
   }
   for (const action of initial.classification.mechanical) {
@@ -570,20 +628,39 @@ export function closeOutSession(
     dryRun || initial.classification.mechanical.length === 0
       ? initial
       : gather(database, session, false)
+  appendObservationErrors(report, final.observationErrors)
   appendClassifiedProcessItems(report, final)
   appendArgumentProcesses(report, final)
+  const plannedRunRoots = new Set(
+    dryRun
+      ? initial.classification.mechanical.flatMap((action) => {
+          if (action.kind === 'close-run') return [action.runId]
+          if (action.kind !== 'remove-tree') return []
+          const run = initial.runs.find((candidate) => candidate.recordId === action.runId)
+          return run ? [run.rootRecordId] : []
+        })
+      : [],
+  )
+  const plannedClaimIds = new Set(
+    dryRun
+      ? initial.classification.mechanical.flatMap((action) =>
+          action.kind === 'reconcile-claims' ? action.claimIds : [],
+        )
+      : [],
+  )
   report.verdict = sessionCloseOutVerdict({
     remainingRuns: final.runs.filter((run) => run.status === 'running' || run.status === 'asking')
       .length,
     remainingTrees: final.runs.filter(
       (run) =>
         run.worktree &&
+        !plannedRunRoots.has(run.rootRecordId) &&
         final.claims.some(
           (claim) => claim.kind === 'worktree' && claim.allocation_key === run.worktree,
         ),
     ).length,
     remainingBranches: final.evidence.length,
-    remainingClaims: final.claims.length,
+    remainingClaims: final.claims.filter((claim) => !plannedClaimIds.has(claim.id)).length,
     remainingLandings: final.landings.length,
     remainingReviews: final.reviews.length,
     processItems: report.process.length,
@@ -601,11 +678,11 @@ export function formatSessionCloseOut(report: SessionCloseOutReport): string {
     )
   for (const error of report.errors)
     lines.push(`error: ${error.item}: ${error.detail}; retry: ${error.retry}`)
-  if (report.dryRun) {
+  if (report.dryRun && report.mechanical.length > 0) {
     lines.push(
       report.verdict.clean
-        ? `would be clean after ${report.mechanical.length} planned action(s)`
-        : `would not be clean after ${report.mechanical.length} planned action(s): ${report.verdict.residue} owned item(s) would remain`,
+        ? `owned items would be released by the ${report.mechanical.length} planned action(s); session would then be clean`
+        : `owned items would be released by the ${report.mechanical.length} planned action(s); ${report.verdict.residue} owned item(s) would remain`,
     )
   } else {
     lines.push(

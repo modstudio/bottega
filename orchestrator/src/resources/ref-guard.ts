@@ -161,10 +161,15 @@ function refGuardMigrationDirectory(project: FilesystemIdentityProject): string 
       `${project.name}: repository metadata could not be read: ${(error as Error).message}`,
     )
   }
-  const common = commonGitDir(project.path)
-  if (!common) throw new Error(`${project.name}: git common directory could not be read`)
-  const directory = join(common, 'orch-guards')
+  const directory = refGuardDirectory(project.path)
+  if (!directory) throw new Error(`${project.name}: git common directory could not be read`)
   return existsSync(directory) ? directory : null
+}
+
+/** The directory containing one repository's per-run shared-ref guards. */
+export function refGuardDirectory(cwd: string): string | null {
+  const common = commonGitDir(cwd)
+  return common ? join(common, 'orch-guards') : null
 }
 
 function refGuardMigrationNames(project: FilesystemIdentityProject, directory: string): string[] {
@@ -450,13 +455,13 @@ export function prepareSharedRefGuard(
 
 /** Remove the guard owned by one run. A missing repository or directory is already clean. */
 export function removeSharedRefGuard(cwd: string, runId: string): void {
-  const commonDir = commonGitDir(cwd)
-  if (!commonDir) return
+  const directory = refGuardDirectory(cwd)
+  if (!directory) return
   const owner = db()
     .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
     .get(runId)
   if (!owner) return
-  rmSync(join(commonDir, 'orch-guards', owner.record_id), {
+  rmSync(join(directory, owner.record_id), {
     recursive: true,
     force: true,
   })

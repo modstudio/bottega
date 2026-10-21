@@ -32,6 +32,7 @@ export type SessionHeldRunResources = {
   refGuard: boolean
   retainedRef: boolean
   claim: boolean
+  unknown: boolean
 }
 
 export type SessionOwnershipFacts = {
@@ -164,7 +165,9 @@ function classifyRuns(
 }
 
 function holdsReleaseResource(held: SessionHeldRunResources | undefined): boolean {
-  return Boolean(held && (held.worktree || held.refGuard || held.retainedRef || held.claim))
+  return Boolean(
+    held && (held.worktree || held.refGuard || held.retainedRef || held.claim || held.unknown),
+  )
 }
 
 function classifyBranches(
