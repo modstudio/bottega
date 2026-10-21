@@ -174,6 +174,16 @@ function claimRecordId(reserveId: string | undefined): string {
   return reserveId
 }
 
+function claimableRow<T>(
+  reserveId: string | undefined,
+  updateReserved: () => T | null,
+  insertFresh: () => T,
+): T {
+  const row = reserveId ? updateReserved() : insertFresh()
+  if (!row) throw new Error(`reserved run ${reserveId} is no longer claimable`)
+  return row
+}
+
 export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   let {
     opts,
@@ -237,9 +247,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
    */
   const originalSchemaPath = writeGeneratedSchema(runsDir, stamp, generatedSchema, opts.schemaPath)
   const textReplyContract = !opts.schemaPath && generatedSchema === TEXT_REPLY_SCHEMA
-  // Codex's --output-schema is OpenAI strict structured output. Its copy is
-  // normalized beside the prompt; the caller's file remains byte-for-byte
-  // untouched for Grok, whose --json-schema accepts ordinary JSON Schema.
+  // Normalize Codex's strict schema beside the prompt; leave the caller's file untouched for Grok.
   const schemaPath =
     name === 'codex' && originalSchemaPath
       ? (() => {
@@ -415,8 +423,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         startedByUserId,
       ) as { record_id: string; number: number }
   const claim = writeTransaction(() => {
-    const claimedRow = opts.reserveId ? updateReservedRun() : insertClaimedRun()
-    if (!claimedRow) throw new Error(`reserved run ${opts.reserveId} is no longer claimable`)
+    const claimedRow = claimableRow(opts.reserveId, updateReservedRun, insertClaimedRun)
     const claimed = { id: claimedRow.record_id, number: claimedRow.number }
     /**
      * A child that asked has finished that turn once its successor exists.
