@@ -402,6 +402,9 @@ example. In an epic, schedule that surface first. A proposed fix cites the
 measurement command's current output, and a landed fix reports what the same
 surface shows afterwards.
 
+A worker has no network; repeat its timings that cross one from the main
+checkout.
+
 A fix without class-level measurement is instance patching. The monitor ranks
 above a patch because it reveals prevalence, cost and unseen paths.
 
