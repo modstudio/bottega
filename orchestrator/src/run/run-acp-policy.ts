@@ -12,20 +12,13 @@ export function assertAcpPolicyAllowed(
   jobName: string,
   agentName: string | undefined,
   agent: Agent | undefined,
-  namedTurn: boolean,
+  agentExplicit: boolean | undefined,
+  firstTurn: boolean,
 ): void {
+  const namedTurn = namedAgentTurn(agentExplicit, firstTurn)
   const automaticallyEligible = agent
     ? agentMeteredRouteEligibility(jobName, agent, namedTurn ? agent.name : undefined)
         .mayAutoRouteNamedJob
     : false
   assertAcpAllowed(jobName, agentName, agent, namedTurn, automaticallyEligible)
-}
-
-export function assertSelectedAcpAllowed(
-  jobName: string,
-  agent: Agent,
-  agentExplicit: boolean | undefined,
-  firstTurn: boolean,
-): void {
-  assertAcpPolicyAllowed(jobName, agent.name, agent, namedAgentTurn(agentExplicit, firstTurn))
 }

@@ -93,7 +93,7 @@ import {
 import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { resolveReadOnlyBase } from '../worktree/worktree-caller.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
-import { assertSelectedAcpAllowed } from './run-acp-policy.ts'
+import { assertAcpPolicyAllowed } from './run-acp-policy.ts'
 import {
   pruneRuns,
   RUNS_DIR,
@@ -120,7 +120,6 @@ import { finalWorkerMcpRuling } from './run-mcp-attachment-record.ts'
 import { enforceRunMcpGrammar } from './run-mcp-grammar.ts'
 import { prepareRunMcpPreflight } from './run-mcp-main-stack.ts'
 import { codexMcpMode } from './run-mcp-mode.ts'
-import { nextRunNumber } from './run-number.ts'
 import {
   bindReviewInstructions,
   checksReviewedCommit,
@@ -135,7 +134,7 @@ import { resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
 import { rootRunRecordId } from './run-root-record.ts'
-import { recordRunStartupFailure } from './run-startup-failure.ts'
+import { recordNeverStartedRunFailure, recordRunStartupFailure } from './run-startup-failure.ts'
 import { finishRun, type TerminalInput } from './run-terminal.ts'
 import type { RunResult } from './run-types.ts'
 import * as workerHome from './run-worker-home.ts'
@@ -432,28 +431,22 @@ export async function run(opts: {
       let failedId = opts.reserveId
       if (failedId) recordRunStartupFailure(failedId, cause)
       else {
-        failedId = (
-          db()
-            .query(
-              `INSERT INTO run (record_id,number,started_at,agent,job,repo,project_record_id,cwd,prompt_sha,spec_sha,prompt_bytes,prompt_head,status,session_id,docs_injected,mcp,started_by_user_id,agent_explicit) VALUES (?,?,?,'(pending)',?,?,?,?,?,?,?,?,'running',?,0,?,?,?) RETURNING record_id`,
-            )
-            .get(
-              ...[newRecordId(), nextRunNumber(db()), nowIso()],
-              opts.job,
-              runProjectName,
-              runProjectId,
-              callerCwd,
-              sha(originalPrompt),
-              sha(originalPrompt),
-              Buffer.byteLength(originalPrompt),
-              originalPrompt.slice(0, 200).replace(/\s+/g, ' '),
-              opts.ownerSession ?? sessionId(),
-              storedMcpRequest(mcpRequest),
-              startedByUserId,
-              Number(Boolean(opts.agentExplicit)),
-            ) as { record_id: string }
-        ).record_id
-        recordRunStartupFailure(failedId, cause)
+        failedId = recordNeverStartedRunFailure({
+          recordId: newRecordId(),
+          error: cause,
+          job: opts.job,
+          repo: runProjectName,
+          projectRecordId: runProjectId,
+          cwd: callerCwd,
+          promptSha: sha(originalPrompt),
+          specSha: sha(originalPrompt),
+          promptBytes: Buffer.byteLength(originalPrompt),
+          promptHead: originalPrompt.slice(0, 200).replace(/\s+/g, ' '),
+          sessionId: opts.ownerSession ?? sessionId(),
+          mcp: storedMcpRequest(mcpRequest),
+          startedByUserId,
+          agentExplicit: Number(Boolean(opts.agentExplicit)),
+        })
       }
       throw Object.assign(new Error(`run ${failedId} could not start: ${message}`), {
         runId: failedId,
@@ -554,7 +547,7 @@ export async function run(opts: {
   }
   if (transportName === 'acp') {
     try {
-      assertSelectedAcpAllowed(opts.job, a, opts.agentExplicit, resume.isFirstTurn)
+      assertAcpPolicyAllowed(opts.job, a.name, a, opts.agentExplicit, resume.isFirstTurn)
       assertAcpReady(name, a)
     } catch (e) {
       recordRunStartupFailure(opts.reserveId, e)

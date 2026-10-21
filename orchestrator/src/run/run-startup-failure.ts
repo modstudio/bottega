@@ -3,6 +3,7 @@
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { rollUpRootAndEnqueue } from './run-liveness.ts'
+import { nextRunNumber } from './run-number.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 
 function enqueueFailedReservedRun(
@@ -35,6 +36,7 @@ export function recordRunStartupFailure(
   reserveId: string | undefined,
   error: unknown,
   started?: number,
+  options?: { failureKind?: string; mcpError?: string },
 ): void {
   if (!reserveId) return
   const message = error instanceof Error ? error.message : String(error)
@@ -44,11 +46,71 @@ export function recordRunStartupFailure(
     const database = db()
     const changed = database
       .query(
-        `UPDATE run SET status='failed', failure_kind='harness', error=?, latency_ms=?
+        `UPDATE run SET status='failed', failure_kind=?, error=?,
+         mcp_error=COALESCE(?,mcp_error), latency_ms=?
          WHERE record_id=? AND status='running'`,
       )
-      .run(message, started === undefined ? 0 : Date.now() - started, reserveId).changes
+      // Keep this status predicate paired with exec.ts's self-contained fallback.
+      .run(
+        options?.failureKind ?? 'harness',
+        message,
+        options?.mcpError ?? null,
+        started === undefined ? 0 : Date.now() - started,
+        reserveId,
+      ).changes
     if (changed !== 1) return
     enqueueFailedReservedRun(reserveId, database, localMachineId, finishedAt)
+  })
+}
+
+export function recordNeverStartedRunFailure(input: {
+  recordId: string
+  error: unknown
+  job: string
+  repo: string | null
+  projectRecordId: string | null
+  cwd: string
+  promptSha: string
+  specSha: string
+  promptBytes: number
+  promptHead: string
+  sessionId: string | null
+  mcp: number
+  startedByUserId: string | null
+  agentExplicit: number
+}): string {
+  const message = input.error instanceof Error ? input.error.message : String(input.error)
+  const finishedAt = nowIso()
+  const localMachineId = machineId()
+  return writeTransaction(() => {
+    const database = db()
+    database
+      .query(
+        `INSERT INTO run
+         (record_id,number,started_at,agent,job,repo,project_record_id,cwd,prompt_sha,spec_sha,
+          prompt_bytes,prompt_head,status,failure_kind,error,latency_ms,session_id,docs_injected,mcp,
+          started_by_user_id,agent_explicit)
+         VALUES (?,?,?,'(pending)',?,?,?,?,?,?,?,?,'failed','harness',?,0,?,0,?,?,?)`,
+      )
+      .run(
+        input.recordId,
+        nextRunNumber(database),
+        finishedAt,
+        input.job,
+        input.repo,
+        input.projectRecordId,
+        input.cwd,
+        input.promptSha,
+        input.specSha,
+        input.promptBytes,
+        input.promptHead,
+        message,
+        input.sessionId,
+        input.mcp,
+        input.startedByUserId,
+        input.agentExplicit,
+      )
+    enqueueFailedReservedRun(input.recordId, database, localMachineId, finishedAt)
+    return input.recordId
   })
 }

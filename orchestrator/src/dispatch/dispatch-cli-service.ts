@@ -40,7 +40,6 @@ import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { follow as followRun } from '../run/run-control.ts'
 import { detach as dispatchDetached } from '../run/run-dispatch.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
-import { namedAgentTurn } from '../run/run-resume-kind.ts'
 import {
   assertAcpReady,
   resolveTransportName,
@@ -63,9 +62,6 @@ type Presentation = {
   printRunId(id: number): void
   cwd(): string
 }
-
-const namedDispatchTurn = (agentName: string | undefined) =>
-  namedAgentTurn(Boolean(agentName), true)
 
 function earlierReviewRejections(
   project: string,
@@ -365,7 +361,7 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       transport =
         !explicit && selected ? selected.defaultTransport : resolveTransportName(transportFlag)
     if (transport === 'acp') {
-      assertAcpPolicyAllowed(jobName, flag('agent'), selected, namedDispatchTurn(flag('agent')))
+      assertAcpPolicyAllowed(jobName, flag('agent'), selected, Boolean(flag('agent')), true)
       assertAcpReady(flag('agent') ?? 'codex', selected)
     }
     return {
@@ -465,7 +461,8 @@ export async function pickPreviewCommand(
       jobName,
       flag('agent'),
       flag('agent') ? AGENTS[flag('agent')!] : undefined,
-      namedDispatchTurn(flag('agent')),
+      Boolean(flag('agent')),
+      true,
     )
   pickCommand(
     {

@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { detachedRunOptions } from '../route/failover.ts'
-import { assertAcpPolicyAllowed, assertSelectedAcpAllowed } from './run-acp-policy.ts'
+import { assertAcpPolicyAllowed } from './run-acp-policy.ts'
 
 const meteredAcpAgent = {
   ...AGENTS.codex!,
@@ -17,8 +17,7 @@ test('an automatically routed metered ACP review lens stays eligible at detached
   })
 
   expect(() => {
-    assertAcpPolicyAllowed(opts.job, meteredAcpAgent.name, meteredAcpAgent, false)
-    assertSelectedAcpAllowed(opts.job, meteredAcpAgent, opts.agentExplicit, true)
+    assertAcpPolicyAllowed(opts.job, meteredAcpAgent.name, meteredAcpAgent, false, true)
   }).not.toThrow()
 })
 
@@ -28,7 +27,7 @@ test('an ACP review lens without metered routing opt-in still requires a named a
   })
   const unoptedAgent = { ...meteredAcpAgent, routeMetered: false }
 
-  expect(() => assertSelectedAcpAllowed(opts.job, unoptedAgent, opts.agentExplicit, true)).toThrow(
-    'require an agent named with --agent',
-  )
+  expect(() =>
+    assertAcpPolicyAllowed(opts.job, unoptedAgent.name, unoptedAgent, opts.agentExplicit, true),
+  ).toThrow('require an agent named with --agent')
 })

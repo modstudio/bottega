@@ -47,8 +47,9 @@ async function recordStartupFailure(id: string, reason: string): Promise<void> {
     changed = database
       .query(
         `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=0
-         WHERE record_id=? AND status IN ('running')`,
+         WHERE record_id=? AND status = 'running'`,
       )
+      // Keep this status predicate paired with run-startup-failure.ts's shared writer.
       .run(reason.slice(0, 2000), id).changes
     database.close()
   } catch (error) {
