@@ -181,6 +181,15 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-sync-batch.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/record/record-sync-contract.ts', []),
   module('orchestrator/src/record/record-sync-result-decision.ts', ['./record-sync-contract.ts']),
+  module('orchestrator/src/record/record-sync-results.ts', [
+    'bun:sqlite',
+    './outbox-dependency.ts',
+    './outbox-held-contract.ts',
+    './outbox-quarantine.ts',
+    './record-sync-contract.ts',
+    './record-sync-result-decision.ts',
+    './record-sync-types.ts',
+  ]),
   module('orchestrator/src/record/record-project-identity.ts', [
     'bun',
     '../../../shared/record-project-identity.ts',
@@ -223,7 +232,9 @@ export const recordModules: RecordModule[] = [
     '../../../shared/record/schema-run.ts',
     '../verdict/verdict-rules.ts',
     './outbox-failure.ts',
+    './outbox-held-contract.ts',
     './outbox-payload-contracts.ts',
+    './record-payload-columns.ts',
     './record-auth.ts',
     './record-evidence-references.ts',
     './record-release-sync.ts',
@@ -421,6 +432,12 @@ export const recordModules: RecordModule[] = [
     './record-session.ts',
   ]),
   module('orchestrator/src/record/outbox-failure.ts', ['./record-verdicts.ts']),
+  module('orchestrator/src/record/outbox-held-contract.ts', ['../../../shared/brand.ts']),
+  module('orchestrator/src/record/outbox-held.ts', ['bun:sqlite', './outbox-held-contract.ts']),
+  module('orchestrator/src/record/record-payload-columns.ts', [
+    './outbox-failure.ts',
+    './outbox-held-contract.ts',
+  ]),
   module('orchestrator/src/record/record-release-sync.ts', [
     'bun',
     'drizzle-orm/bun-sql',
@@ -444,6 +461,7 @@ export const recordModules: RecordModule[] = [
     '../../../shared/record-id.ts',
     'bun:sqlite',
     '../database/db.ts',
+    './outbox-held-contract.ts',
   ]),
   module('orchestrator/src/record/outbox-payload-contracts.ts', ['../verdict/verdict-payload.ts']),
   module('orchestrator/src/record/record-session.ts', [

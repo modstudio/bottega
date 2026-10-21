@@ -27,9 +27,11 @@ import { run as runRecord } from '../../../shared/record/schema-run.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { refuseHostedUnvoid, VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { OutboxRowError, outboxErrorDetail, outboxFailureDisposition } from './outbox-failure.ts'
+import { HostedApiUpgradeRequiredError } from './outbox-held-contract.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { evidenceReferences, type MachineEvidenceTable } from './record-evidence-references.ts'
+import { assertRecordPayloadColumns } from './record-payload-columns.ts'
 import { pushReleaseRecord } from './record-release-sync.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues } from './record-review-values.ts'
@@ -66,11 +68,7 @@ function payload(source: string, kind: keyof typeof recordKinds): Payload {
   for (const [column, fill] of Object.entries(recordKinds[kind].laterAdded)) {
     if (!Object.hasOwn(parsed, column)) Object.assign(parsed, { [column]: fill })
   }
-  const keys = Object.keys(parsed).sort()
-  const expected = [...recordKinds[kind].columns].sort()
-  if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) {
-    throw new OutboxRowError(`${kind} outbox payload has an unexpected column set`, 'payload')
-  }
+  assertRecordPayloadColumns(kind, parsed as Payload, recordKinds[kind].columns)
   return parsed as Payload
 }
 
@@ -985,6 +983,9 @@ async function pushHostedRow(input: {
     await recordKinds[kind].push(postgres, record, rowPrincipal, input.projectIds)
     return { id: row.id, status: 'synced' }
   } catch (error) {
+    if (error instanceof HostedApiUpgradeRequiredError) {
+      return { id: row.id, status: 'held', reason: error.message }
+    }
     const detail = outboxErrorDetail(error)
     if (outboxFailureDisposition(error) === 'row-fatal') {
       return { id: row.id, status: 'quarantined', reason: detail }

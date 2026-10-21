@@ -4,6 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
+import { OUTBOX_HELD_FOR_UPGRADE_MARKER } from './outbox-held-contract.ts'
 export type QuarantinedOutboxRow = {
   id: number
   kind: string
@@ -18,6 +19,7 @@ type OutboxIdentity = {
   kind: string
   row_id: string
   attempts: number
+  last_error: string | null
   quarantine_reason: string | null
   quarantined_at: string | null
   retired_at: string | null
@@ -26,7 +28,7 @@ type OutboxIdentity = {
 function outboxRow(database: Database, rowId: number): OutboxIdentity {
   const row = database
     .query<OutboxIdentity, [number]>(
-      `SELECT id,kind,row_id,attempts,quarantine_reason,quarantined_at,retired_at
+      `SELECT id,kind,row_id,attempts,last_error,quarantine_reason,quarantined_at,retired_at
          FROM outbox WHERE id=?`,
     )
     .get(rowId)
@@ -147,14 +149,24 @@ export function retireOutboxRow(
         `outbox row ${rowId} is retired and permanently not deliverable; inspect its outbox quarantine audit instead`,
       )
     }
-    const blocked = candidate.quarantined_at ? false : additionalEligibility?.(database, rowId)
-    if (!candidate.quarantined_at && !blocked) {
+    const held = candidate.last_error?.startsWith(OUTBOX_HELD_FOR_UPGRADE_MARKER) ?? false
+    const blocked =
+      candidate.quarantined_at || held ? false : additionalEligibility?.(database, rowId)
+    if (!candidate.quarantined_at && !held && !blocked) {
       throw new Error(
-        `outbox row ${rowId} is not quarantined or blocked by a retired parent; run \`${PLATFORM_SLUG} record sync\` and retire only a reported row`,
+        `outbox row ${rowId} is not quarantined, held for upgrade, or blocked by a retired parent; run \`${PLATFORM_SLUG} record sync\` and retire only a reported row`,
       )
     }
     const row = candidate
-    audit(database, row, 'retire', row.quarantine_reason, trimmed, actorSession, at)
+    audit(
+      database,
+      row,
+      'retire',
+      row.quarantine_reason ?? row.last_error,
+      trimmed,
+      actorSession,
+      at,
+    )
     database
       .query('UPDATE outbox SET retired_at=?,retirement_reason=? WHERE id=?')
       .run(at, trimmed, rowId)
