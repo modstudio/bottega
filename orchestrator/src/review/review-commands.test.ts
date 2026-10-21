@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { Command } from 'commander'
@@ -12,6 +12,7 @@ import { db } from '../database/db.ts'
 import { setProfile } from '../lens/lenses.ts'
 import { upsertProject } from '../project/projects.ts'
 import { serializePathSet } from './review-group.ts'
+import { measureChangeIdentity, pinRef } from './review-pins.ts'
 import { completeReview, recordReview, triageFinding } from './review-triage.ts'
 
 // Deterministic identities produced by importRebasedHistory.
@@ -220,6 +221,132 @@ M 100644 :5 notes.md
   })
   if (result.exitCode !== 0) throw new Error(result.stderr.toString())
 }
+
+function postFixFixture(fixPath: string): { repo: string; branch: string; runId: string } {
+  const repo = mkdtempSync(join(tmpdir(), 'orch-review-post-fix-'))
+  git(repo, 'init', '-b', 'main')
+  git(repo, 'config', 'user.email', 'fixture@example.com')
+  git(repo, 'config', 'user.name', 'Fixture')
+  writeFileSync(join(repo, 'base.txt'), 'base\n')
+  git(repo, 'add', 'base.txt')
+  git(repo, 'commit', '-m', 'base')
+  const base = git(repo, 'rev-parse', 'HEAD')
+  const branch = `DEV-1510-${crypto.randomUUID()}`
+  git(repo, 'checkout', '-b', branch)
+  mkdirSync(join(repo, 'src'), { recursive: true })
+  writeFileSync(join(repo, 'src/large.ts'), 'export const line = 1\n'.repeat(401))
+  git(repo, 'add', 'src/large.ts')
+  git(repo, 'commit', '-m', 'reviewed change')
+  const reviewed = git(repo, 'rev-parse', 'HEAD')
+  const identity = measureChangeIdentity(repo, base, reviewed)!
+  const name = `post-fix-${crypto.randomUUID()}`
+  upsertProject({
+    recordId: newRecordId(),
+    name,
+    path: repo,
+    settings: {
+      trunk: 'main',
+      review: {
+        lenses: [
+          { lens: 'correctness' },
+          { lens: 'safety', paths: ['critical/**'] },
+          { lens: 'craft', paths: ['src/**'] },
+        ],
+        risk: {
+          paths: [
+            { pattern: '^critical/', tier: 3, reason: 'critical boundary' },
+            { pattern: '^src/', tier: 2, reason: 'product source' },
+          ],
+          unlisted: 2,
+        },
+      },
+    },
+  })
+  const runId = db()
+    .query<{ id: string }, [string, string, string, string, string, string]>(
+      `INSERT INTO run
+         (record_id,number,started_at,agent,job,repo,project_record_id,branch,base_commit,input_tree,head_commit,
+          prompt_sha,prompt_bytes,prompt_head,status)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-10-20','codex','review-lens',?,
+               (SELECT record_id FROM project WHERE name=?),?,?,?,?,
+               'sha',1,'head','ok')
+       RETURNING record_id AS id`,
+    )
+    .get(name, name, branch, base, reviewed, reviewed)!.id
+  const reviewId = db()
+    .query<{ id: string }, [string, string]>(
+      `INSERT INTO review (record_id,number,recorded_at,completed_at,tier,patch_id,path_set)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM review),'2026-10-20','2026-10-20',3,?,?)
+       RETURNING record_id AS id`,
+    )
+    .get(identity.patchId, serializePathSet(identity.paths))!.id
+  db()
+    .query(
+      `INSERT INTO review_lens
+       (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+       VALUES ('${newRecordId()}',?,?,'correctness','codex','[]','[]','[]','[]')`,
+    )
+    .run(reviewId, runId)
+  git(repo, 'update-ref', pinRef(runId), reviewed)
+  git(repo, 'checkout', 'main')
+  writeFileSync(join(repo, 'trunk.txt'), 'disjoint trunk change\n')
+  git(repo, 'add', 'trunk.txt')
+  git(repo, 'commit', '-m', 'advance trunk')
+  git(repo, 'checkout', branch)
+  git(repo, 'rebase', 'main')
+  const absoluteFix = join(repo, fixPath)
+  mkdirSync(join(absoluteFix, '..'), { recursive: true })
+  writeFileSync(absoluteFix, 'export const fix = true\n')
+  git(repo, 'add', fixPath)
+  git(repo, 'commit', '-m', 'apply review fix')
+  return { repo, branch, runId }
+}
+
+test('review tier needs no round for a post-review fix touching only risk-two paths', async () => {
+  const { repo, branch } = postFixFixture('src/fix.ts')
+  try {
+    const output: string[] = []
+    await runReview(['review', 'tier', branch, '--cwd', repo], output)
+
+    expect(output).toContain('no round needed: the architect reads the fix and lands it')
+    expect(output.some((line) => line.startsWith('lens '))).toBeFalse()
+    expect(output).not.toContain('current change would start a new round')
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
+
+test('review tier re-lenses only dimensions touched by a tier-three fix', async () => {
+  const { repo, branch } = postFixFixture('critical/fix.ts')
+  try {
+    const output: string[] = []
+    await runReview(['review', 'tier', branch, '--cwd', repo], output)
+
+    expect(output.some((line) => line.includes('tier-3 paths touched since review'))).toBeTrue()
+    expect(output.some((line) => line.includes('critical/fix.ts'))).toBeTrue()
+    expect(output.some((line) => line.startsWith('lens correctness'))).toBeTrue()
+    expect(output.some((line) => line.startsWith('lens safety'))).toBeTrue()
+    expect(output.some((line) => line.startsWith('lens craft'))).toBeFalse()
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
+
+test('review tier reports an unidentified reviewed tip and falls back to full output', async () => {
+  const { repo, branch, runId } = postFixFixture('src/fix.ts')
+  try {
+    git(repo, 'update-ref', '-d', pinRef(runId))
+    const output: string[] = []
+    await runReview(['review', 'tier', branch, '--cwd', repo], output)
+
+    expect(output.some((line) => line.includes('tip could not be identified'))).toBeTrue()
+    expect(output.some((line) => line.includes('falling back'))).toBeTrue()
+    expect(output.some((line) => line.startsWith('lens correctness'))).toBeTrue()
+    expect(output.some((line) => line.startsWith('lens craft'))).toBeTrue()
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
 
 test('a rebased writer run tier excludes files changed only on trunk', async () => {
   const repo = mkdtempSync(join(tmpdir(), 'orch-review-tier-'))

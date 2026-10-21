@@ -171,6 +171,20 @@ export function classifyReviewTier(input: {
   return { tier: Math.max(risk, size) as 0 | 1 | 2 | 3, risk, size, reasons, riskBasis }
 }
 
+/** Paths whose declared surface risk independently requires tier-three review. */
+export function tierThreeRiskPaths(
+  files: readonly ReviewTierFile[],
+  riskMap: ReviewRiskMap | undefined,
+): string[] {
+  const riskPaths = riskMap?.paths.map((entry) => ({
+    ...entry,
+    pattern: new RegExp(entry.pattern),
+  }))
+  return files
+    .filter((file) => fileRisk(file.path, riskPaths, riskMap?.unlisted)?.tier === 3)
+    .map(({ path }) => path)
+}
+
 export function diffNumstat(repo: string, from: string, to: string): ReviewTierFile[] {
   const result = Bun.spawnSync(['git', 'diff', '--no-renames', '--numstat', `${from}..${to}`], {
     cwd: repo,
