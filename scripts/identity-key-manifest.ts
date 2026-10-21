@@ -85,6 +85,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'doc_revision.position',
     'gate_execution.exit_code',
     'gate_execution.elapsed_ms',
+    'gate_execution.base_refresh_elapsed_ms',
     'landing.claim_pid',
     'landing_triage_snapshot.pr_number',
     'landing_triage_snapshot.tier',

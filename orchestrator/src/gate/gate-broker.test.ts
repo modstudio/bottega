@@ -13,7 +13,12 @@ import { CHECK_EXECUTION_FILE_ENV } from '../../../shared/check-execution.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { startGateBroker } from './gate-broker.ts'
+import {
+  GATE_BASE_REFRESH_TIMEOUT_MS,
+  refreshGateBase,
+  runGateAfterBaseRefresh,
+  startGateBroker,
+} from './gate-broker.ts'
 
 async function waitForFinishedGate(id: number): Promise<void> {
   for (let attempt = 0; attempt < 200; attempt += 1) {
@@ -108,6 +113,162 @@ test('records machine-readable checks emitted by a worker gate against its execu
   }
 })
 
+test('base refresh resolves the branch remote and fetches without worker identity', () => {
+  const calls: Array<{
+    args: string[]
+    options: { cwd: string; env: NodeJS.ProcessEnv; timeout: number }
+  }> = []
+  const result = refreshGateBase(
+    { mainCheckout: '/registered/main', landingBranch: 'develop' },
+    (args, options) => {
+      calls.push({ args, options })
+      return {
+        status: 0,
+        stdout: Buffer.from(calls.length === 1 ? 'upstream\n' : ''),
+        stderr: Buffer.from(''),
+      }
+    },
+  )
+
+  expect(calls.map((call) => call.args)).toEqual([
+    ['config', '--get', 'branch.develop.remote'],
+    ['fetch', '--no-tags', '--', 'upstream', 'develop'],
+  ])
+  expect(calls.every((call) => call.options.cwd === '/registered/main')).toBe(true)
+  expect(calls.every((call) => call.options.timeout === GATE_BASE_REFRESH_TIMEOUT_MS)).toBe(true)
+  expect(calls[1]!.options.env.ORCH_RUN_ID).toBeUndefined()
+  expect(calls[1]!.options.env.ORCH_RUN_TOKEN).toBeUndefined()
+  expect(result.message).toBe('gate base refresh passed: fetched upstream/develop')
+})
+
+test('base refresh does not guess a remote when the landing branch has none configured', () => {
+  const calls: string[][] = []
+  const result = refreshGateBase(
+    { mainCheckout: '/registered/main', landingBranch: 'develop' },
+    (args) => {
+      calls.push(args)
+      return { status: 1, stdout: Buffer.from(''), stderr: Buffer.from('') }
+    },
+  )
+
+  expect(calls).toEqual([['config', '--get', 'branch.develop.remote']])
+  expect(result.message).toBe('gate base refresh skipped: no configured remote for develop')
+})
+
+test('base refresh reports a git config read failure separately from an absent remote', () => {
+  const spawnFailure = refreshGateBase(
+    { mainCheckout: '/registered/main', landingBranch: 'develop' },
+    () => ({
+      status: null,
+      stdout: Buffer.from(''),
+      stderr: Buffer.from(''),
+      error: new Error('spawn git ENOENT'),
+    }),
+  )
+  const statusFailure = refreshGateBase(
+    { mainCheckout: '/registered/main', landingBranch: 'develop' },
+    () => ({
+      status: 2,
+      stdout: Buffer.from(''),
+      stderr: Buffer.from('bad config'),
+    }),
+  )
+
+  expect(spawnFailure.message).toBe(
+    'gate base refresh skipped: could not read branch.develop.remote: spawn git ENOENT',
+  )
+  expect(statusFailure.message).toBe(
+    'gate base refresh skipped: could not read branch.develop.remote: bad config',
+  )
+})
+
+test('base refresh failure uses the shared failure message template', () => {
+  let invocation = 0
+  const result = refreshGateBase(
+    { mainCheckout: '/registered/main', landingBranch: 'develop' },
+    () => {
+      invocation += 1
+      return invocation === 1
+        ? {
+            status: 0,
+            stdout: Buffer.from('upstream\n'),
+            stderr: Buffer.from(''),
+          }
+        : {
+            status: 128,
+            stdout: Buffer.from(''),
+            stderr: Buffer.from('network unavailable'),
+          }
+    },
+  )
+
+  expect(result.message).toBe('gate base refresh failed: upstream/develop: network unavailable')
+})
+
+test('base refresh runs after slot acquisition immediately before the gate', async () => {
+  const events: string[] = []
+  const recorded: Array<{ elapsedMs: number; message: string }> = []
+  const withHostSlot = async (run: () => Promise<void>) => {
+    events.push('slot acquired')
+    await run()
+  }
+
+  await withHostSlot(() =>
+    runGateAfterBaseRefresh({
+      refreshInput: {
+        mainCheckout: '/registered/main',
+        landingBranch: 'develop',
+      },
+      refreshBase: () => {
+        events.push('base refreshed')
+        return {
+          elapsedMs: 17,
+          message: 'gate base refresh passed: fetched upstream/develop',
+        }
+      },
+      recordRefresh: (refresh) => {
+        events.push('refresh recorded')
+        recorded.push(refresh)
+      },
+      runGate: async () => {
+        events.push('gate ran')
+      },
+    }),
+  )
+
+  expect(events).toEqual(['slot acquired', 'base refreshed', 'refresh recorded', 'gate ran'])
+  expect(recorded).toEqual([
+    {
+      elapsedMs: 17,
+      message: 'gate base refresh passed: fetched upstream/develop',
+    },
+  ])
+})
+
+test('a thrown base refresh is recorded and the gate still runs', async () => {
+  const events: string[] = []
+  const recorded: Array<{ elapsedMs: number; message: string }> = []
+
+  await runGateAfterBaseRefresh({
+    refreshInput: {
+      mainCheckout: '/registered/main',
+      landingBranch: 'develop',
+    },
+    refreshBase: () => {
+      throw new Error('network unavailable')
+    },
+    recordRefresh: (refresh) => recorded.push(refresh),
+    runGate: async () => {
+      events.push('gate ran')
+    },
+  })
+
+  expect(events).toEqual(['gate ran'])
+  expect(recorded).toHaveLength(1)
+  expect(recorded[0]!.elapsedMs).toBeGreaterThanOrEqual(0)
+  expect(recorded[0]!.message).toBe('gate base refresh failed: Error: network unavailable')
+})
+
 test('an occupied gate log path fails the execution without following the path', async () => {
   const root = mkdtempSync(join(dir, 'gate-broker-occupied-log-'))
   const scratch = join(root, 'scratch')
@@ -166,7 +327,11 @@ test('an occupied gate log path fails the execution without following the path',
     await waitForFinishedGate(gateId)
     const execution = db()
       .query('SELECT exit_code,output_tail,output_artifact FROM gate_execution WHERE id=?')
-      .get(gateId) as { exit_code: number; output_tail: string; output_artifact: string | null }
+      .get(gateId) as {
+      exit_code: number
+      output_tail: string
+      output_artifact: string | null
+    }
 
     expect(execution.exit_code).toBe(-1)
     expect(execution.output_artifact).toBeNull()
