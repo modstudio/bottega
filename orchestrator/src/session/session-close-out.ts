@@ -11,7 +11,7 @@ import { reconcileAbsentClaims } from '../cleanup/claim-reconciliation.ts'
 import type { CleanupPresentation } from '../cleanup/cleanup.ts'
 import { closeOutRun } from '../close/close-out.ts'
 import { sessionId as callingSessionId, db, writableDb } from '../database/db.ts'
-import { targetGitEnvironment } from '../git/git-environment.ts'
+import { repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
 import { projectByName } from '../project/projects.ts'
 import { currentOrphanProcesses } from '../resources/process-inventory.ts'
 import { refGuardDirectory } from '../resources/ref-guard.ts'
@@ -19,6 +19,7 @@ import { parseRetainedRef } from '../resources/resource-inventory.ts'
 import { isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { observeGrokTrustHeadings } from '../sandbox/grok-trust.ts'
 import { shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
+import { hasAbsentTreeTeardownPlan } from '../worktree/worktree-remove.ts'
 import {
   classifySessionCloseOut,
   plannedTreeOwnerMatches,
@@ -243,21 +244,22 @@ type ResourceObservationError = SessionCloseOutReport['errors'][number]
 type ProjectRootResources = {
   rootRecordId: string
   memberRecordIds: string[]
+  members: readonly SessionOwnedRun[]
+  project: string
+  repository: string
 }
 
-function observeProjectHeldResources(
-  name: string,
+function observeRepositoryHeldResources(
+  repository: string,
   projectRoots: readonly ProjectRootResources[],
-): { guardRoots: string[]; retainedRoots: string[] } {
-  const project = projectByName(name)
-  if (!project) throw new Error('project is not registered')
-  const guardDirectory = refGuardDirectory(project.path)
-  if (!guardDirectory) throw new Error(`git common directory could not be read at ${project.path}`)
+): { guardRoots: string[]; retainedRoots: string[]; teardownRoots: string[] } {
+  const guardDirectory = refGuardDirectory(repository)
+  if (!guardDirectory) throw new Error(`git common directory could not be read at ${repository}`)
   const retained = Bun.spawnSync(
     ['git', 'for-each-ref', '--format=%(refname)', 'refs/orch/retained'],
     {
-      cwd: project.path,
-      env: targetGitEnvironment(project.path),
+      cwd: repository,
+      env: targetGitEnvironment(repository),
       stdout: 'pipe',
       stderr: 'pipe',
     },
@@ -283,43 +285,76 @@ function observeProjectHeldResources(
         memberRecordIds.some((recordId) => retainedIds.has(recordId.toLowerCase())),
       )
       .map(({ rootRecordId }) => rootRecordId),
+    teardownRoots: projectRoots
+      .filter(
+        ({ rootRecordId, members }) =>
+          !members.some((member) => Boolean(member.worktree && existsSync(member.worktree))) &&
+          hasAbsentTreeTeardownPlan(repository, rootRecordId),
+      )
+      .map(({ rootRecordId }) => rootRecordId),
   }
 }
 
 function heldGitRunResources(roots: ReadonlyMap<string, readonly SessionOwnedRun[]>): {
   guardRoots: Set<string>
   retainedRoots: Set<string>
+  teardownRoots: Set<string>
   unknownRoots: Set<string>
   errors: ResourceObservationError[]
 } {
   const guardRoots = new Set<string>()
   const retainedRoots = new Set<string>()
+  const teardownRoots = new Set<string>()
   const unknownRoots = new Set<string>()
   const errors: ResourceObservationError[] = []
-  const byProject = Map.groupBy(
-    [...roots].flatMap(([rootRecordId, members]) => {
-      const name = members.find((member) => member.project)?.project
-      return name
-        ? [{ rootRecordId, memberRecordIds: members.map((member) => member.recordId), name }]
-        : []
-    }),
-    (item) => item.name,
-  )
-  for (const [name, projectRoots] of byProject) {
+  const resolvedRoots = [...roots].flatMap(([rootRecordId, members]) => {
+    const project = members.find((member) => member.project)?.project
+    if (!project) {
+      unknownRoots.add(rootRecordId)
+      return []
+    }
+    const registered = projectByName(project)
+    if (!registered) {
+      unknownRoots.add(rootRecordId)
+      errors.push({
+        item: `project ${project}`,
+        detail: 'run resource state could not be read: project is not registered',
+        retry: `${PLATFORM_SLUG} machine doctor`,
+      })
+      return []
+    }
+    const presentTree = members.find(
+      (member) => member.worktree && existsSync(member.worktree),
+    )?.worktree
+    const repository = (presentTree ? repoRootOf(presentTree) : null) ?? registered.path
+    return [
+      {
+        rootRecordId,
+        memberRecordIds: members.map((member) => member.recordId),
+        members,
+        project,
+        repository,
+      },
+    ]
+  })
+  const byRepository = Map.groupBy(resolvedRoots, (item) => item.repository)
+  for (const [repository, projectRoots] of byRepository) {
     try {
-      const observed = observeProjectHeldResources(name, projectRoots)
+      const observed = observeRepositoryHeldResources(repository, projectRoots)
       for (const rootRecordId of observed.guardRoots) guardRoots.add(rootRecordId)
       for (const rootRecordId of observed.retainedRoots) retainedRoots.add(rootRecordId)
+      for (const rootRecordId of observed.teardownRoots) teardownRoots.add(rootRecordId)
     } catch (cause) {
       for (const { rootRecordId } of projectRoots) unknownRoots.add(rootRecordId)
+      const projects = [...new Set(projectRoots.map((item) => item.project))].join(', ')
       errors.push({
-        item: `project ${name}`,
+        item: `project ${projects}`,
         detail: `run resource state could not be read: ${cause instanceof Error ? cause.message : String(cause)}`,
         retry: `${PLATFORM_SLUG} machine doctor`,
       })
     }
   }
-  return { guardRoots, retainedRoots, unknownRoots, errors }
+  return { guardRoots, retainedRoots, teardownRoots, unknownRoots, errors }
 }
 
 function heldRunResources(
@@ -340,7 +375,8 @@ function heldRunResources(
         .all(...roots.keys()) as { root_run_record_id: string }[]
     ).map((row) => row.root_run_record_id),
   )
-  const { guardRoots, retainedRoots, unknownRoots, errors } = heldGitRunResources(roots)
+  const { guardRoots, retainedRoots, teardownRoots, unknownRoots, errors } =
+    heldGitRunResources(roots)
   return {
     resources: [...roots].map(([rootRecordId, members]) => ({
       rootRecordId,
@@ -348,6 +384,7 @@ function heldRunResources(
       refGuard: guardRoots.has(rootRecordId),
       retainedRef: retainedRoots.has(rootRecordId),
       claim: claimedRoots.has(rootRecordId),
+      owesRecordedTeardown: teardownRoots.has(rootRecordId),
       unknown: unknownRoots.has(rootRecordId),
     })),
     errors,

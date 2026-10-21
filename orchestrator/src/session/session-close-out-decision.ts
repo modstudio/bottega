@@ -32,6 +32,7 @@ export type SessionHeldRunResources = {
   refGuard: boolean
   retainedRef: boolean
   claim: boolean
+  owesRecordedTeardown: boolean
   unknown: boolean
 }
 
@@ -166,7 +167,13 @@ function classifyRuns(
 
 function holdsReleaseResource(held: SessionHeldRunResources | undefined): boolean {
   return Boolean(
-    held && (held.worktree || held.refGuard || held.retainedRef || held.claim || held.unknown),
+    held &&
+      (held.worktree ||
+        held.refGuard ||
+        held.retainedRef ||
+        held.claim ||
+        held.owesRecordedTeardown ||
+        held.unknown),
   )
 }
 

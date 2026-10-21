@@ -73,6 +73,7 @@ describe('session close-out decisions', () => {
             refGuard: false,
             retainedRef: false,
             claim: false,
+            owesRecordedTeardown: false,
             unknown: false,
           },
         ],
@@ -158,6 +159,7 @@ describe('session close-out decisions', () => {
             refGuard: false,
             retainedRef: false,
             claim: true,
+            owesRecordedTeardown: false,
             unknown: false,
           },
           {
@@ -166,6 +168,7 @@ describe('session close-out decisions', () => {
             refGuard: false,
             retainedRef: false,
             claim: false,
+            owesRecordedTeardown: false,
             unknown: false,
           },
         ],
@@ -214,6 +217,7 @@ describe('session close-out decisions', () => {
             refGuard: false,
             retainedRef: false,
             claim: false,
+            owesRecordedTeardown: false,
             unknown: false,
           },
         ],
@@ -245,10 +249,18 @@ describe('session close-out decisions', () => {
       refGuard: false,
       retainedRef: false,
       claim: false,
+      owesRecordedTeardown: false,
       unknown: false,
     }
     expect(classifySessionCloseOut(facts({ runs: [run] })).mechanical).toEqual([])
-    for (const resource of ['worktree', 'refGuard', 'retainedRef', 'claim', 'unknown'] as const) {
+    for (const resource of [
+      'worktree',
+      'refGuard',
+      'retainedRef',
+      'claim',
+      'owesRecordedTeardown',
+      'unknown',
+    ] as const) {
       expect(
         classifySessionCloseOut({
           ...facts({ runs: [run] }),

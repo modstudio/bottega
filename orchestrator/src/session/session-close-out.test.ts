@@ -120,3 +120,39 @@ test('an unreadable project reports an error and conservatively plans its root',
   ])
   expect(report.verdict.clean).toBe(false)
 })
+
+test('an absent tree that owes recorded teardown makes its terminal root planned', () => {
+  const project = `session-close-out-teardown-${newRecordId()}`
+  const repo = join(dir, project)
+  cleanupPaths.push(repo)
+  mkdirSync(join(repo, '.git'), { recursive: true })
+  const projectId = registerProject(project, repo)
+  const root = addRun({ agent: 'codex', job: 'implement', status: 'ok', session: 'owner' })
+  attachRunToProject(root, projectId, project)
+  db()
+    .query(
+      `UPDATE run
+          SET worktree=?,worktree_source='recipe',recipe_snapshot='{}',resource_teardown='pending'
+        WHERE record_id=?`,
+    )
+    .run(join(repo, 'missing-tree'), root)
+  spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
+    if (command.includes('--git-common-dir')) return spawnResult('.git\n')
+    if (command[0] === 'ps' || command[0] === 'lsof') return spawnResult()
+    return spawnResult()
+  }) as typeof Bun.spawnSync)
+
+  const report = closeOutSession({ session: 'owner', dryRun: true })
+
+  expect(report.mechanical).toEqual([`would close run ${root}`])
+  expect(report.errors).toEqual([])
+})
+
+test('a terminal root without a project is planned because its held state is unknown', () => {
+  const root = addRun({ agent: 'codex', job: 'implement', status: 'ok', session: 'owner' })
+
+  const report = closeOutSession({ session: 'owner', dryRun: true })
+
+  expect(report.mechanical).toEqual([`would close run ${root}`])
+  expect(report.errors).toEqual([])
+})
