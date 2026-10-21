@@ -1,13 +1,8 @@
 import { expect, test } from 'bun:test'
-import { withTestClaimDisagreement } from './result-output.ts'
+import { observedTestsLine } from './result-output.ts'
 
-test('shows the observed disagreement beside the unchanged tests claim', () => {
-  const shown = JSON.parse(
-    withTestClaimDisagreement('{"status":"done","tests":{"ran":true,"passed":true}}', 1)!,
+test('shows observed tests and their disagreement independently of a reply', () => {
+  expect(observedTestsLine({ ran: 0, passed: null, claimDisagrees: 1 })).toBe(
+    'tests observed: {"ran":false,"passed":null}; tests_claim_disagrees: true',
   )
-  expect(shown).toEqual({
-    status: 'done',
-    tests: { ran: true, passed: true },
-    tests_claim_disagrees: true,
-  })
 })

@@ -134,6 +134,27 @@ describe('thin output warning', () => {
 })
 
 describe('collection records', () => {
+  test('result leaves an unparseable reply untouched and shows the observed disagreement', () => {
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    const output = join(dir, `unparseable-test-claim-${id}.txt`)
+    const reply = '{"status":"done","tests":{"ran":true'
+    try {
+      writeFileSync(output, reply)
+      db()
+        .query(
+          'UPDATE run SET output_path=?,tests_ran=0,tests_passed=NULL,tests_claim_disagrees=1 WHERE record_id=?',
+        )
+        .run(output, id)
+      const shown = recordedResult(id)
+      expect(shown.logs).toContain(reply)
+      expect(shown.errors).toContain(
+        'tests observed: {"ran":false,"passed":null}; tests_claim_disagrees: true',
+      )
+    } finally {
+      rmSync(output, { force: true })
+    }
+  })
+
   test('result returns a stored writer reply from before change guides', () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
     const output = join(dir, `old-writer-reply-${id}.txt`)

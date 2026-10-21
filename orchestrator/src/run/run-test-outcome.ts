@@ -41,11 +41,13 @@ function focusedTestObservations(runId: string): TestExecutionObservation[] {
       try {
         const event = JSON.parse(line) as {
           type?: unknown
+          started?: unknown
           exitCode?: unknown
           timedOut?: unknown
         }
         if (
           event.type !== 'focused_test' ||
+          event.started !== true ||
           typeof event.exitCode !== 'number' ||
           typeof event.timedOut !== 'boolean'
         )
