@@ -137,7 +137,18 @@ function localScoreOutbox(): Database {
 }
 
 test('sync upserts once and a second pass has no run mutation', async () => {
-  const local = localOutbox(1)
+  const local = localOutbox(1, PLATFORM_SLUG, {
+    vendorTokens: 101,
+    vendorCostUsd: 1.25,
+    vendorInputTokens: 102,
+    vendorOutputTokens: 103,
+    vendorEstimatedCostUsd: 1.5,
+    vendorCostSource: 'billed',
+    resourceCpuMs: 201,
+    resourcePeakRssBytes: 202,
+    resourceSamples: 203,
+    resourceSource: 'sampled',
+  })
   const remote = fakePostgres()
   expect(await syncRecord(options(local, remote))).toEqual({
     pushed: 1,
@@ -150,6 +161,39 @@ test('sync upserts once and a second pass has no run mutation', async () => {
   const firstRunWrites = remote.statements.filter((sql) =>
     sql.toLowerCase().includes('insert into "run"'),
   ).length
+  const runWrite = remote.statements.find((sql) => sql.toLowerCase().includes('insert into "run"'))!
+  const runColumns = runWrite
+    .slice(runWrite.indexOf('(') + 1, runWrite.indexOf(')'))
+    .split(',')
+    .map((column) => column.replaceAll('"', '').trim())
+  const runId = `${RECORD_ID.slice(0, -1)}1`
+  const runParameters = remote.parameters.find(
+    (parameters) => parameters.includes(runId) && parameters.includes(101n),
+  )!
+  const valueFor = (column: string) => runParameters[runColumns.indexOf(column)]
+  expect({
+    vendorTokens: valueFor('vendor_tokens'),
+    vendorCostUsd: valueFor('vendor_cost_usd'),
+    vendorInputTokens: valueFor('vendor_input_tokens'),
+    vendorOutputTokens: valueFor('vendor_output_tokens'),
+    vendorEstimatedCostUsd: valueFor('vendor_estimated_cost_usd'),
+    vendorCostSource: valueFor('vendor_cost_source'),
+    resourceCpuMs: valueFor('resource_cpu_ms'),
+    resourcePeakRssBytes: valueFor('resource_peak_rss_bytes'),
+    resourceSamples: valueFor('resource_samples'),
+    resourceSource: valueFor('resource_source'),
+  }).toEqual({
+    vendorTokens: 101n,
+    vendorCostUsd: 1.25,
+    vendorInputTokens: 102n,
+    vendorOutputTokens: 103n,
+    vendorEstimatedCostUsd: 1.5,
+    vendorCostSource: 'billed',
+    resourceCpuMs: 201n,
+    resourcePeakRssBytes: 202n,
+    resourceSamples: 203,
+    resourceSource: 'sampled',
+  })
   expect(await syncRecord(options(local, remote))).toEqual({
     pushed: 0,
     failed: 0,
@@ -161,6 +205,25 @@ test('sync upserts once and a second pass has no run mutation', async () => {
   expect(
     remote.statements.filter((sql) => sql.toLowerCase().includes('insert into "run"')),
   ).toHaveLength(firstRunWrites)
+  local.close()
+})
+
+test('run sync accepts a null resource source', async () => {
+  const local = localOutbox(1, PLATFORM_SLUG, { resourceSource: null })
+  const remote = fakePostgres()
+
+  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  local.close()
+})
+
+test('run sync rejects an unknown resource source', async () => {
+  const local = localOutbox(1, PLATFORM_SLUG, { resourceSource: 'estimated' })
+  const remote = fakePostgres()
+
+  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 0, failed: 1 })
+  expect(
+    local.query<{ last_error: string }, []>('SELECT last_error FROM outbox').get()!.last_error,
+  ).toBe('run.resourceSource must be sampled, none, unavailable, or null')
   local.close()
 })
 

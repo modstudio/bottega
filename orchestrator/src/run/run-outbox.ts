@@ -39,6 +39,15 @@ function docRevisions(value: unknown): string[] | null {
   return parsed
 }
 
+function resourceValues(row: LocalRun) {
+  return {
+    resourceCpuMs: row.resource_cpu_ms,
+    resourcePeakRssBytes: row.resource_peak_rss_bytes,
+    resourceSamples: row.resource_samples,
+    resourceSource: row.resource_source,
+  }
+}
+
 /** Terminal payloads use last_event_at as finished_at when present, otherwise started_at. */
 export function buildRunRecordPayload(
   row: LocalRun,
@@ -74,6 +83,7 @@ export function buildRunRecordPayload(
     vendorOutputTokens: row.vendor_output_tokens,
     vendorEstimatedCostUsd: row.vendor_estimated_cost_usd,
     vendorCostSource: row.vendor_cost_source,
+    ...resourceValues(row),
     probe: Boolean(row.probe),
     failureKind: row.failure_kind,
     status: row.status,
