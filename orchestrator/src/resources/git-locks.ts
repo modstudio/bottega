@@ -50,7 +50,6 @@ function owningPids(path: string): number[] | null {
         stderr: 'pipe',
       },
       GIT_LOCK_LSOF_TIMEOUT_MS,
-      1,
     ))
   } catch {
     return null

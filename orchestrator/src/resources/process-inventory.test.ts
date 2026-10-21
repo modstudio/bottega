@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { processObservationError } from '../../../shared/process-identity.ts'
-import { cwdForMatchingProcessBirth, parseProcessTable } from './process-inventory.ts'
+import { joinProcessCwd, parseProcessTable } from './process-inventory.ts'
 
 test('classifies process inventory subprocess failures', () => {
   expect(
@@ -51,6 +51,7 @@ test('parses faithful macOS ps etime output', () => {
       startTime: 'Mon Oct 20 12:34:56 2026',
       command: '/usr/bin/node vite --host',
       cwd: null,
+      cwdVerified: false,
     },
   ])
 })
@@ -69,12 +70,22 @@ test('parses faithful Linux ps etime output and ignores malformed age', () => {
       startTime: 'Tue Oct 21 01:02:03 2026',
       command: 'docker compose up',
       cwd: null,
+      cwdVerified: false,
     },
   ])
 })
 
-test('keeps a cwd only when the process birth still matches the ps snapshot', () => {
-  expect(cwdForMatchingProcessBirth('/tmp/tree', 'birth-a', 'birth-a')).toBe('/tmp/tree')
-  expect(cwdForMatchingProcessBirth('/tmp/tree', 'birth-a', 'birth-b')).toBeNull()
-  expect(cwdForMatchingProcessBirth('/tmp/tree', 'birth-a', null)).toBeNull()
+test('marks a cwd verified only when the process birth still matches the ps snapshot', () => {
+  expect(joinProcessCwd('/tmp/tree', 'birth-a', 'birth-a')).toEqual({
+    cwd: '/tmp/tree',
+    cwdVerified: true,
+  })
+  expect(joinProcessCwd('/tmp/tree', 'birth-a', 'birth-b')).toEqual({
+    cwd: '/tmp/tree',
+    cwdVerified: false,
+  })
+  expect(joinProcessCwd('/tmp/tree', 'birth-a', null)).toEqual({
+    cwd: '/tmp/tree',
+    cwdVerified: false,
+  })
 })

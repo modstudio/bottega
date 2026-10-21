@@ -2,7 +2,7 @@
 /** Gathers the process table and applies pure missing-worktree classification. */
 import { existsSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
-import { observeBoundedSubprocess, processStartTime } from '../../../shared/process-identity.ts'
+import { observeBoundedSubprocess } from '../../../shared/process-identity.ts'
 
 export type ProcessFact = {
   pid: number
@@ -12,6 +12,7 @@ export type ProcessFact = {
   ageSeconds: number
   startTime: string
   cwd: string | null
+  cwdVerified: boolean
 }
 export type OrphanProcess = ProcessFact & {
   missingTree: string
@@ -20,7 +21,7 @@ export type OrphanProcess = ProcessFact & {
 }
 
 const PROCESS_CWD_LSOF_TIMEOUT_MS = 10_000
-export const PROCESS_TABLE_PS_TIMEOUT_MS = 10_000
+const PROCESS_TABLE_PS_TIMEOUT_MS = 10_000
 
 function elapsedSeconds(value: string): number | null {
   const match = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/.exec(value)
@@ -52,6 +53,7 @@ export function parseProcessTable(output: string): ProcessFact[] {
         startTime: match[4]!,
         command: match[6]!,
         cwd: null,
+        cwdVerified: false,
       },
     ]
   })
@@ -67,7 +69,6 @@ function processCwds(): { values: Map<number, string>; error: string | null } {
         stderr: 'pipe',
       },
       PROCESS_CWD_LSOF_TIMEOUT_MS,
-      1,
     )
     if (error) {
       return { values: new Map(), error }
@@ -84,7 +85,7 @@ function processCwds(): { values: Map<number, string>; error: string | null } {
   }
 }
 
-function observeProcesses(): { facts: ProcessFact[]; error: string | null } {
+function processTableSnapshot(): { facts: ProcessFact[]; error: string | null } {
   try {
     const { process: ps, error } = observeBoundedSubprocess(
       'ps',
@@ -95,29 +96,44 @@ function observeProcesses(): { facts: ProcessFact[]; error: string | null } {
         stderr: 'pipe',
       },
       PROCESS_TABLE_PS_TIMEOUT_MS,
-      1,
     )
     if (error) return { facts: [], error }
-    const cwds = processCwds()
     return {
-      facts: parseProcessTable(ps.stdout?.toString() ?? '').map((fact) => ({
-        ...fact,
-        cwd: cwds.values.get(fact.pid) ?? null,
-      })),
-      error: cwds.error,
+      facts: parseProcessTable(ps.stdout?.toString() ?? ''),
+      error: null,
     }
   } catch (error) {
     return { facts: [], error: String((error as Error).message ?? error) }
   }
 }
 
-/** A cwd observation is usable only while the pid still has the snapshotted birth. */
-export function cwdForMatchingProcessBirth(
+/** Preserve cwd evidence, but mark it safe to act on only when both snapshots agree on birth. */
+export function joinProcessCwd(
   cwd: string | null,
   snapshottedStartTime: string,
   observedStartTime: string | null,
-): string | null {
-  return observedStartTime === snapshottedStartTime ? cwd : null
+): Pick<ProcessFact, 'cwd' | 'cwdVerified'> {
+  return { cwd, cwdVerified: cwd !== null && observedStartTime === snapshottedStartTime }
+}
+
+function observeProcesses(): { facts: ProcessFact[]; error: string | null } {
+  const before = processTableSnapshot()
+  if (before.error) return before
+  const cwds = processCwds()
+  if (cwds.error) return { facts: before.facts, error: cwds.error }
+  const after = processTableSnapshot()
+  const births = new Map(after.facts.map((fact) => [fact.pid, fact.startTime]))
+  return {
+    facts: before.facts.map((fact) => ({
+      ...fact,
+      ...joinProcessCwd(
+        cwds.values.get(fact.pid) ?? null,
+        fact.startTime,
+        births.get(fact.pid) ?? null,
+      ),
+    })),
+    error: after.error,
+  }
 }
 
 const inside = (root: string, path: string) => {
@@ -137,14 +153,10 @@ export function orphanProcesses(
   facts: readonly ProcessFact[],
   projects: readonly { name: string; path: string }[],
   pathExists: (path: string) => boolean,
-  birth: (pid: number) => string | null = processStartTime,
 ): OrphanProcess[] {
   return facts.flatMap((fact) => {
-    const cwd = fact.cwd
-      ? cwdForMatchingProcessBirth(fact.cwd, fact.startTime, birth(fact.pid))
-      : null
     const candidates = [
-      ...(cwd ? [{ path: cwd, match: 'cwd' as const }] : []),
+      ...(fact.cwd ? [{ path: fact.cwd, match: 'cwd' as const }] : []),
       ...absoluteArgumentPaths(fact.command).map((path) => ({ path, match: 'argument' as const })),
     ]
     for (const project of projects) {

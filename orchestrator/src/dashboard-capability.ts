@@ -82,7 +82,6 @@ export function dashboardCapabilityAuthorized(): boolean {
         stderr: 'pipe',
       },
       DASHBOARD_CAPABILITY_PS_TIMEOUT_MS,
-      1,
     )
     if (observed.exitCode !== 0) return false
     return dashboardServeCommand(new TextDecoder().decode(observed.stdout ?? new Uint8Array()))

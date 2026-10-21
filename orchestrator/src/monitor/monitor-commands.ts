@@ -101,7 +101,6 @@ function deliveryAuthorized(): boolean {
         stderr: 'pipe',
       },
       MONITOR_CAPABILITY_PS_TIMEOUT_MS,
-      1,
     )
     if (observed.exitCode !== 0) return false
     const words = new TextDecoder()

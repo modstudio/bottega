@@ -87,7 +87,6 @@ export function sampleProcesses(): ProcessSample[] {
         stderr: 'pipe',
       },
       IDLE_SAMPLE_PS_TIMEOUT_MS,
-      1,
     )
     if (p.exitCode !== 0) return []
     return parsePsTable(p.stdout?.toString() ?? '')

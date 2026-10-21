@@ -36,7 +36,6 @@ function holderCommand(pid: number): string | null {
       stderr: 'pipe',
     },
     STORE_WRITE_LOCK_HOLDER_PS_TIMEOUT_MS,
-    1,
   )
   if (result.exitCode !== 0) return null
   return new TextDecoder().decode(result.stdout ?? new Uint8Array()).trim() || null

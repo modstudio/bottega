@@ -16,7 +16,6 @@ import { workerHarnessName, workerLaunchEnv } from '../agent/worker-launch-env.t
 import { DB_PATH, db } from '../database/db.ts'
 import { depth } from '../dispatch/dispatch-preflight.ts'
 import { DEFAULT_IDLE_GRACE_MS, isGroupKillablePgid, terminateProcessGroup } from '../idle-kill.ts'
-import { PROCESS_TABLE_PS_TIMEOUT_MS } from '../resources/process-inventory.ts'
 import { isForwardedChildEnvName } from '../sandbox/record-connection-env.ts'
 import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
 import { runTestWorkerEnvironment } from './run-test-workers.ts'
@@ -99,6 +98,7 @@ export function registerLiveGate(terminate: () => Promise<void>): () => void {
 }
 
 type ProcessRow = { pid: number; ppid: number; pgid: number; command: string }
+const RUN_PROCESS_TABLE_PS_TIMEOUT_MS = 10_000
 export type ProcessInventory =
   | { ascertainable: true; rows: ProcessRow[] }
   | { ascertainable: false; reason: string }
@@ -142,8 +142,7 @@ export function processTable(): ProcessInventory {
         stdout: 'pipe',
         stderr: 'pipe',
       },
-      PROCESS_TABLE_PS_TIMEOUT_MS,
-      1,
+      RUN_PROCESS_TABLE_PS_TIMEOUT_MS,
     )
     if (error) {
       return {

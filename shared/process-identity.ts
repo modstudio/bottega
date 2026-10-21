@@ -8,6 +8,7 @@ import { platform } from 'node:os'
 const PROCESS_START_TIME =
   /^(Sun|Mon|Tue|Wed|Thu|Fri|Sat) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ 0-3]\d [0-2]\d:[0-5]\d:[0-5]\d \d{4}$/
 const PROCESS_START_TIME_PS_TIMEOUT_MS = 10_000
+const DEFAULT_PROCESS_OBSERVATION_RETRY_COUNT = 1
 
 type ProcessObservationResult = {
   exitCode: number | null
@@ -38,7 +39,7 @@ export function observeBoundedSubprocess(
   argv: string[],
   options: NonNullable<Parameters<typeof Bun.spawnSync>[1]>,
   timeoutMs: number,
-  retryCount: number,
+  retryCount = DEFAULT_PROCESS_OBSERVATION_RETRY_COUNT,
 ): { process: ReturnType<typeof Bun.spawnSync>; error: string | null } {
   let observed: ReturnType<typeof Bun.spawnSync>
   for (let attempt = 0; ; attempt += 1) {
@@ -81,7 +82,6 @@ export function processStartTime(pid: number): string | null {
         stderr: 'ignore',
       },
       PROCESS_START_TIME_PS_TIMEOUT_MS,
-      1,
     )
     if (inspected.exitCode !== 0) return null
     const value = inspected.stdout?.toString().trim() ?? ''

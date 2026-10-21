@@ -13,7 +13,10 @@ import {
 
 const ORPHAN_PROCESS_AUTO_RECLAIM_MIN_AGE_MS = 60_000
 const RECLAIM_GRACE_MS = 5_000
-type Identity = Pick<OrphanProcess, 'pid' | 'startTime' | 'command' | 'missingTree'>
+type Identity = Pick<
+  OrphanProcess,
+  'pid' | 'startTime' | 'command' | 'missingTree' | 'match' | 'cwdVerified'
+>
 
 export function orphanProcessReverification(
   first: Identity,
@@ -25,6 +28,8 @@ export function orphanProcessReverification(
       safe: false,
       reason: `pid ${first.pid} is no longer attached to the same missing tree`,
     }
+  if (first.match === 'cwd' && (!first.cwdVerified || !verified.cwdVerified))
+    return { safe: false, reason: `pid ${first.pid} cwd process birth could not be verified` }
   if (!verified.startTime)
     return { safe: false, reason: `pid ${first.pid} start time became unknown` }
   if (verified.startTime !== first.startTime)
@@ -59,6 +64,8 @@ export function automaticOrphanReclaimDecision(
 ): { reclaim: true } | { reclaim: false; reason: string } {
   if (orphan.match !== 'cwd')
     return { reclaim: false, reason: 'argument-only match requires manual reclaim' }
+  if (!orphan.cwdVerified)
+    return { reclaim: false, reason: 'cwd process birth could not be verified' }
   if (platformProcess(orphan.command))
     return { reclaim: false, reason: `${PLATFORM_SLUG}/orch lifecycle process` }
   if (liveWorktrees.has(orphan.missingTree))
@@ -160,6 +167,11 @@ export function reclaimOrphanProcess(
   if (inventory.error)
     return { ok: false, action: `refused; process inventory unavailable: ${inventory.error}` }
   const first = inventory.orphans.find((item) => item.pid === pid)
+  if (first?.match === 'cwd' && !first.cwdVerified)
+    return {
+      ok: false,
+      action: `refused; pid ${pid} cwd process birth could not be verified`,
+    }
   if (!first?.startTime || pidRecordIdentity(pid, first.startTime) !== 'live')
     return {
       ok: false,
