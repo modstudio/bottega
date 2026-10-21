@@ -16,6 +16,7 @@ export const databaseBoundarySpecs: ImportBoundary[] = [
       'shared/embedded-assets.ts',
       'shared/machine-config.ts',
       'shared/record-id.ts',
+      'shared/store-access.ts',
       'orchestrator/src/caller-classification.ts',
       `${source}contention.ts`,
       `${source}database-location.ts`,

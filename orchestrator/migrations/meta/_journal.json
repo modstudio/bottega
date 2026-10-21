@@ -988,13 +988,6 @@
       "when": 1793577600003,
       "tag": "0140_run_resources",
       "breakpoints": true
-    },
-    {
-      "idx": 141,
-      "version": "6",
-      "when": 1793577600004,
-      "tag": "0141_gate_base_refresh",
-      "breakpoints": true
     }
   ]
 }
