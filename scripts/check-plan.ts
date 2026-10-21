@@ -4,7 +4,7 @@ export const CHECK_LEGS = [
     directory: 'orchestrator',
     ciJob: 'orchestrator',
     typecheck: ['bun', 'run', 'typecheck'],
-    suite: [['bun', 'run', 'test:gate']],
+    suite: [{ argv: ['bun', 'run', 'test:gate'], unitTests: true }],
   },
   {
     name: 'hub',
@@ -12,10 +12,10 @@ export const CHECK_LEGS = [
     ciJob: 'hub',
     typecheck: ['bun', 'run', 'typecheck'],
     suite: [
-      ['bun', 'run', 'test'],
-      ['bun', 'run', '--cwd', 'data', 'test'],
-      ['bun', 'run', '--cwd', 'site', 'test'],
-      ['bun', 'run', '--cwd', 'util', 'test'],
+      { argv: ['bun', 'run', 'test'], unitTests: true },
+      { argv: ['bun', 'run', '--cwd', 'data', 'test'], unitTests: true },
+      { argv: ['bun', 'run', '--cwd', 'site', 'test'], unitTests: true },
+      { argv: ['bun', 'run', '--cwd', 'util', 'test'], unitTests: true },
     ],
   },
   {
@@ -24,8 +24,8 @@ export const CHECK_LEGS = [
     ciJob: 'hub-web',
     typecheck: ['bun', 'run', 'typecheck'],
     suite: [
-      ['bun', 'run', 'test'],
-      ['bun', 'run', 'build'],
+      { argv: ['bun', 'run', 'test'], unitTests: true },
+      { argv: ['bun', 'run', 'build'], unitTests: false },
     ],
   },
   {
@@ -33,14 +33,14 @@ export const CHECK_LEGS = [
     directory: 'hub/deploy/site',
     ciJob: 'hub-deploy-site',
     typecheck: ['bun', 'run', 'typecheck'],
-    suite: [['bun', 'run', 'test']],
+    suite: [{ argv: ['bun', 'run', 'test'], unitTests: true }],
   },
   {
     name: 'retrieval',
     directory: 'retrieval',
     ciJob: 'retrieval',
     typecheck: ['bun', 'run', 'typecheck'],
-    suite: [['bun', 'run', 'test']],
+    suite: [{ argv: ['bun', 'run', 'test'], unitTests: true }],
   },
 ] as const
 

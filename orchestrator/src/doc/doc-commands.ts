@@ -308,7 +308,7 @@ function listedDocs(
 }
 
 function readDoc(
-  address: { scope: string; subject: string | null; owner: string | null },
+  address: { scope: string; subject: string | null | undefined; owner: string | null },
   slug: string,
   audience: DocAudience | undefined,
 ) {
@@ -330,6 +330,14 @@ function readDocFilters(
     kind: flags.flag('kind'),
     articleSubject: flags.flag('article-subject'),
   }
+}
+
+function readDocSubject(
+  flags: DocFlags,
+  address: { subject: string | null },
+): string | null | undefined {
+  if (!flags.has('subject') && !flags.has('user')) return undefined
+  return address.subject
 }
 
 function handledReadDocCommand(
@@ -369,7 +377,11 @@ function handledReadDocCommand(
   if (!slug || !address.scope)
     throw new Error(`${PLATFORM_SLUG} doc ${sub} <slug> --scope S [--subject X]`)
   const doc = readDoc(
-    { scope: address.scope, subject: address.subject, owner: address.owner },
+    {
+      scope: address.scope,
+      subject: readDocSubject(flags, address),
+      owner: address.owner,
+    },
     slug,
     docReadAudience(flags.flag('audience')),
   )

@@ -29,6 +29,7 @@ type FocusedTestRunLogEvent = {
   ts: string
   type: 'focused_test'
   paths: string[]
+  started: boolean
   exitCode: number
   timedOut: boolean
   elapsedMs: number
@@ -85,6 +86,7 @@ type PeekEventSummary =
   | {
       type: 'focused_test'
       paths: string[]
+      started: boolean
       exitCode: number
       timedOut: boolean
       elapsedMs: number
@@ -546,6 +548,7 @@ function summarizeEvent(event: RunLogEvent): PeekEventSummary {
     return {
       type: 'focused_test',
       paths: event.paths,
+      started: event.started,
       exitCode: event.exitCode,
       timedOut: event.timedOut,
       elapsedMs: event.elapsedMs,

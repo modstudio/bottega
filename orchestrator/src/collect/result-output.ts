@@ -20,3 +20,17 @@ export function visibleTranscriptText(agent: string, transcript: string): string
   }
   return parts.join('\n\n')
 }
+
+/** Present Bottega's observation independently, leaving the stored worker reply untouched. */
+export function observedTestsLine(input: {
+  ran: number | null
+  passed: number | null
+  claimDisagrees: number | null
+}): string | null {
+  if (input.claimDisagrees === null) return null
+  return (
+    `tests observed: {"ran":${Boolean(input.ran)},"passed":` +
+    `${input.passed === null ? 'null' : Boolean(input.passed)}}; ` +
+    `tests_claim_disagrees: ${Boolean(input.claimDisagrees)}`
+  )
+}

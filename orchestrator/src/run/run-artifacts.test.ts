@@ -58,6 +58,7 @@ const terminalSnapshot = () => ({
   linesRemoved: 1,
   testsRan: 1,
   testsPassed: 1,
+  testsClaimDisagrees: 0,
   deviations: 0,
   escalations: 0,
 })

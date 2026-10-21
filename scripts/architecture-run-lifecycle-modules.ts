@@ -302,6 +302,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-terminal-change.ts',
     './run-terminal-premature.ts',
     './run-terminal-precedence.ts',
+    './run-test-outcome.ts',
     './run-usage-columns.ts',
     '../sandbox/sandbox.ts',
     '../transport/transport.ts',
@@ -316,6 +317,12 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-terminal-precedence.ts', [
     '../failure/failure.ts',
     '../outcome.ts',
+  ]),
+  module('orchestrator/src/run/run-test-outcome.ts', [
+    '../../../shared/check-execution.ts',
+    'bun:sqlite',
+    'node:fs',
+    '../events.ts',
   ]),
   module('orchestrator/src/run/run-types.ts', [
     '../contract/contract.ts',

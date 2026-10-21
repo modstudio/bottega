@@ -123,6 +123,24 @@ function resolveRootFromLastTurnPreserving(
            WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
            ORDER BY last.turn DESC, last.number DESC
            LIMIT 1
+        ),
+            tests_ran = (
+          SELECT last.tests_ran FROM run last
+           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
+           ORDER BY last.turn DESC, last.number DESC
+           LIMIT 1
+        ),
+            tests_passed = (
+          SELECT last.tests_passed FROM run last
+           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
+           ORDER BY last.turn DESC, last.number DESC
+           LIMIT 1
+        ),
+            tests_claim_disagrees = (
+          SELECT last.tests_claim_disagrees FROM run last
+           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
+           ORDER BY last.turn DESC, last.number DESC
+           LIMIT 1
         )
       WHERE root.record_id = ?
         AND root.parent_run_record_id IS NULL

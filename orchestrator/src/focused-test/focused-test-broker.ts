@@ -48,6 +48,7 @@ export type FocusedTestBroker = { close(): Promise<void> }
 type FocusedTestProcessState = {
   child: ReturnType<typeof spawn> | null
   termination: Promise<void> | null
+  started: boolean
   cancelled: boolean
   timedOut: boolean
   exitCode: number
@@ -166,6 +167,9 @@ async function runFocusedTestProcess(input: {
   state.child = spawnFocusedTestChild(input)
   state.child.stdout?.on('data', input.record)
   state.child.stderr?.on('data', input.record)
+  state.child.once('spawn', () => {
+    state.started = true
+  })
   state.child.once('error', (error) =>
     input.record(`focused test runner could not start: ${String(error)}\n`),
   )
@@ -198,6 +202,7 @@ function startFocusedTest(input: {
   const state: FocusedTestProcessState = {
     child: null,
     termination: null,
+    started: false,
     cancelled: false,
     timedOut: false,
     exitCode: -1,
@@ -274,6 +279,7 @@ function startFocusedTest(input: {
       ts: nowIso(),
       type: 'focused_test',
       paths: input.request.paths,
+      started: state.started,
       exitCode: state.exitCode,
       timedOut: state.timedOut,
       elapsedMs,

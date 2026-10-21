@@ -324,6 +324,7 @@ export type TerminalSnapshot = RunUsageColumns & {
   linesRemoved: number | null
   testsRan: number | null
   testsPassed: number | null
+  testsClaimDisagrees: number | null
   deviations: number | null
   escalations: number | null
 }
@@ -379,7 +380,7 @@ export function reconcileRun(id: string): string {
                       status=?, error=?, failure_kind=?, vendor_session=COALESCE(?, vendor_session),
                       pre_confinement=?, confinement=?, unreconciled=0,
                       files_changed=?, changed_paths=?, lines_added=?, lines_removed=?,
-                      tests_ran=?, tests_passed=?, deviations=?, escalations=?
+                      tests_ran=?, tests_passed=?, tests_claim_disagrees=?, deviations=?, escalations=?
         WHERE record_id=?`,
       )
       .run(
@@ -404,6 +405,7 @@ export function reconcileRun(id: string): string {
         snapshot.linesRemoved,
         snapshot.testsRan,
         snapshot.testsPassed,
+        snapshot.testsClaimDisagrees,
         snapshot.deviations,
         snapshot.escalations,
         id,
