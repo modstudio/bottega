@@ -2,7 +2,7 @@
 /** Gathers the process table and applies pure missing-worktree classification. */
 import { existsSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
-import { processStartTime } from '../../../shared/process-identity.ts'
+import { observeBoundedSubprocess } from '../../../shared/process-identity.ts'
 
 export type ProcessFact = {
   pid: number
@@ -10,14 +10,18 @@ export type ProcessFact = {
   pgid: number
   command: string
   ageSeconds: number
+  startTime: string
   cwd: string | null
+  cwdVerified: boolean
 }
 export type OrphanProcess = ProcessFact & {
-  startTime: string | null
   missingTree: string
   project: string
   match: 'cwd' | 'argument'
 }
+
+const PROCESS_CWD_LSOF_TIMEOUT_MS = 10_000
+const PROCESS_TABLE_PS_TIMEOUT_MS = 10_000
 
 function elapsedSeconds(value: string): number | null {
   const match = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/.exec(value)
@@ -33,9 +37,12 @@ function elapsedSeconds(value: string): number | null {
 /** Parse the common macOS/Linux ps fields without relying on GNU-only etimes. */
 export function parseProcessTable(output: string): ProcessFact[] {
   return output.split('\n').flatMap((line): ProcessFact[] => {
-    const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+((?:\d+-)?(?:\d+:)?\d+:\d+)\s+(.+)$/.exec(line)
+    const match =
+      /^\s*(\d+)\s+(\d+)\s+(\d+)\s+((?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)\s+\S+\s+\d+\s+\d\d:\d\d:\d\d\s+\d{4})\s+((?:\d+-)?(?:\d+:)?\d+:\d+)\s+(.+)$/.exec(
+        line,
+      )
     if (!match) return []
-    const ageSeconds = elapsedSeconds(match[4]!)
+    const ageSeconds = elapsedSeconds(match[5]!)
     if (ageSeconds === null) return []
     return [
       {
@@ -43,8 +50,10 @@ export function parseProcessTable(output: string): ProcessFact[] {
         ppid: Number(match[2]),
         pgid: Number(match[3]),
         ageSeconds,
-        command: match[5]!,
+        startTime: match[4]!,
+        command: match[6]!,
         cwd: null,
+        cwdVerified: false,
       },
     ]
   })
@@ -52,20 +61,21 @@ export function parseProcessTable(output: string): ProcessFact[] {
 
 function processCwds(): { values: Map<number, string>; error: string | null } {
   try {
-    const found = Bun.spawnSync(['lsof', '-a', '-d', 'cwd', '-Fpn'], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: 1_000,
-    })
-    if (found.exitCode !== 0) {
-      return {
-        values: new Map(),
-        error: found.stderr.toString().trim() || `lsof exited ${found.exitCode}`,
-      }
+    const { process: found, error } = observeBoundedSubprocess(
+      'lsof',
+      ['lsof', '-a', '-d', 'cwd', '-Fpn'],
+      {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+      PROCESS_CWD_LSOF_TIMEOUT_MS,
+    )
+    if (error) {
+      return { values: new Map(), error }
     }
     const values = new Map<number, string>()
     let pid: number | null = null
-    for (const line of found.stdout.toString().split('\n')) {
+    for (const line of (found.stdout?.toString() ?? '').split('\n')) {
       if (line.startsWith('p')) pid = Number(line.slice(1))
       else if (pid && line.startsWith('n')) values.set(pid, line.slice(1))
     }
@@ -75,25 +85,54 @@ function processCwds(): { values: Map<number, string>; error: string | null } {
   }
 }
 
-function observeProcesses(): { facts: ProcessFact[]; error: string | null } {
+function processTableSnapshot(): { facts: ProcessFact[]; error: string | null } {
   try {
-    const ps = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,pgid=,etime=,command='], {
-      env: { PATH: process.env.PATH ?? '', LC_ALL: 'C', LANG: 'C' },
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    if (ps.exitCode !== 0)
-      return { facts: [], error: ps.stderr.toString().trim() || `ps exited ${ps.exitCode}` }
-    const cwds = processCwds()
+    const { process: ps, error } = observeBoundedSubprocess(
+      'ps',
+      ['ps', '-axo', 'pid=,ppid=,pgid=,lstart=,etime=,command='],
+      {
+        env: { PATH: process.env.PATH ?? '', LC_ALL: 'C', LANG: 'C' },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+      PROCESS_TABLE_PS_TIMEOUT_MS,
+    )
+    if (error) return { facts: [], error }
     return {
-      facts: parseProcessTable(ps.stdout.toString()).map((fact) => ({
-        ...fact,
-        cwd: cwds.values.get(fact.pid) ?? null,
-      })),
-      error: cwds.error,
+      facts: parseProcessTable(ps.stdout?.toString() ?? ''),
+      error: null,
     }
   } catch (error) {
     return { facts: [], error: String((error as Error).message ?? error) }
+  }
+}
+
+/** Preserve cwd evidence, but mark it safe to act on only when both snapshots agree on birth. */
+export function joinProcessCwd(
+  cwd: string | null,
+  snapshottedStartTime: string,
+  observedStartTime: string | null,
+): Pick<ProcessFact, 'cwd' | 'cwdVerified'> {
+  return { cwd, cwdVerified: cwd !== null && observedStartTime === snapshottedStartTime }
+}
+
+function observeProcesses(): { facts: ProcessFact[]; error: string | null } {
+  const before = processTableSnapshot()
+  if (before.error) return before
+  const cwds = processCwds()
+  if (cwds.error) return { facts: before.facts, error: cwds.error }
+  const after = processTableSnapshot()
+  const births = new Map(after.facts.map((fact) => [fact.pid, fact.startTime]))
+  return {
+    facts: before.facts.map((fact) => ({
+      ...fact,
+      ...joinProcessCwd(
+        cwds.values.get(fact.pid) ?? null,
+        fact.startTime,
+        births.get(fact.pid) ?? null,
+      ),
+    })),
+    error: after.error,
   }
 }
 
@@ -114,7 +153,6 @@ export function orphanProcesses(
   facts: readonly ProcessFact[],
   projects: readonly { name: string; path: string }[],
   pathExists: (path: string) => boolean,
-  birth: (pid: number) => string | null = processStartTime,
 ): OrphanProcess[] {
   return facts.flatMap((fact) => {
     const candidates = [
@@ -132,7 +170,7 @@ export function orphanProcesses(
           return [
             {
               ...fact,
-              startTime: birth(fact.pid),
+              startTime: fact.startTime,
               missingTree: tree,
               project: project.name,
               match: candidate.match,

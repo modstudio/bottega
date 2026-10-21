@@ -18,7 +18,7 @@ import {
   MONITOR_CAPABILITY_TOKEN_ENV,
   type MonitorCapability,
 } from '../../../shared/monitor-capability.ts'
-import { pidAlive } from '../../../shared/process-identity.ts'
+import { observeBoundedSubprocess, pidAlive } from '../../../shared/process-identity.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { failingCanonEvalSlugs } from '../canon/evals.ts'
 import { callerIdentity, sessionId } from '../database/db.ts'
@@ -39,6 +39,8 @@ import {
   storeWriteLockReport,
 } from './monitor-store-write-lock.ts'
 import type { MonitorNotice } from './monitor-types.ts'
+
+const MONITOR_CAPABILITY_PS_TIMEOUT_MS = 10_000
 
 type Options = {
   ackNotices?: string
@@ -91,12 +93,20 @@ function deliveryAuthorized(): boolean {
       !pidAlive(capability.pid)
     )
       return false
-    const observed = Bun.spawnSync(['/bin/ps', '-p', String(capability.pid), '-o', 'command='], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
+    const { process: observed } = observeBoundedSubprocess(
+      'ps',
+      ['/bin/ps', '-p', String(capability.pid), '-o', 'command='],
+      {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+      MONITOR_CAPABILITY_PS_TIMEOUT_MS,
+    )
     if (observed.exitCode !== 0) return false
-    const words = new TextDecoder().decode(observed.stdout).trim().split(/\s+/)
+    const words = new TextDecoder()
+      .decode(observed.stdout ?? new Uint8Array())
+      .trim()
+      .split(/\s+/)
     let executable = words[0]
     if (/^(?:python(?:3(?:\.\d+)?)?|ba?sh|zsh|dash)$/i.test(executable ? basename(executable) : ''))
       executable = words[1]

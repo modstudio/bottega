@@ -14,6 +14,7 @@ import shlex
 import subprocess
 import sys
 
+PROCESS_LIST_PS_TIMEOUT_SECONDS = 2
 
 DETACHED_DISPATCHES = {
     ("bottega", "run", "start"): ("run start", 3),
@@ -33,7 +34,7 @@ def heartbeat_armed(session_id: str) -> bool | None:
                 ["ps", "-axo", "pid=,args="],
                 capture_output=True,
                 text=True,
-                timeout=2,
+                timeout=PROCESS_LIST_PS_TIMEOUT_SECONDS,
                 check=True,
             )
             process_list = observed.stdout

@@ -21,6 +21,7 @@ import uuid
 
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+PROCESS_LIST_PS_TIMEOUT_SECONDS = 2
 DB = os.environ.get("ORCH_DB") or subprocess.check_output(
     ["bun", "--no-env-file", os.path.join(ROOT, "shared", "state-directory.ts"), "orchestrator", "database"],
     text=True,
@@ -52,7 +53,7 @@ def heartbeat_armed(session_id: str) -> bool | None:
                 ["ps", "-axo", "pid=,args="],
                 capture_output=True,
                 text=True,
-                timeout=2,
+                timeout=PROCESS_LIST_PS_TIMEOUT_SECONDS,
                 check=True,
             )
             process_list = observed.stdout

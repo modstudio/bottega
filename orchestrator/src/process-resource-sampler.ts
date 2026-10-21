@@ -1,6 +1,8 @@
 // concern: process-resource-sampler
 /** One process-table observation shared by every live run. */
 
+import { observeBoundedSubprocess } from '../../shared/process-identity.ts'
+
 export type ProcessSample = {
   pid: number
   ppid: number
@@ -30,6 +32,8 @@ export type RunResourceAccumulator = {
 }
 
 type ProcessSnapshot = { rows: ProcessSample[]; available: boolean }
+
+const PROCESS_SNAPSHOT_PS_TIMEOUT_MS = 10_000
 
 export const PROCESS_SNAPSHOT_FIELDS = [
   'pid',
@@ -90,13 +94,18 @@ export function parseProcessSnapshot(text: string): ProcessSample[] {
 function readProcessSnapshot(): ProcessSnapshot {
   try {
     const columns = PROCESS_SNAPSHOT_FIELDS.map((field) => `${field}=`).join(',')
-    const p = Bun.spawnSync(['ps', '-axo', columns], {
-      env: { PATH: process.env.PATH ?? '', LC_ALL: 'C', LANG: 'C' },
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
+    const { process: p } = observeBoundedSubprocess(
+      'ps',
+      ['ps', '-axo', columns],
+      {
+        env: { PATH: process.env.PATH ?? '', LC_ALL: 'C', LANG: 'C' },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+      PROCESS_SNAPSHOT_PS_TIMEOUT_MS,
+    )
     if (p.exitCode !== 0) return { rows: [], available: false }
-    return { rows: parseProcessSnapshot(p.stdout.toString()), available: true }
+    return { rows: parseProcessSnapshot(p.stdout?.toString() ?? ''), available: true }
   } catch {
     return { rows: [], available: false }
   }

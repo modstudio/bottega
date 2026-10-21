@@ -9,6 +9,7 @@ import {
   ConfinementClassSchema,
   emptyAttribution,
 } from '../../../shared/orch-contract.ts'
+import { observeBoundedSubprocess } from '../../../shared/process-identity.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 
 const UNTRUSTED_INDEX_WINDOW_MS = 1000
@@ -39,6 +40,7 @@ export type ConfinementEvent = {
   /** Optional because stored events may not include a checkout. */
   checkout?: string
   attribution: AttributionKind
+  lockHolderObservation?: 'complete' | 'unknown'
   lockHolder: ConfinementLockHolder | null
   landingSession: string | null
   landingId: string | null
@@ -183,19 +185,47 @@ export function freezeCheckouts(
   return { snapshots, failures }
 }
 
-function lockHolderPids(checkout: string): ConfinementLockHolder[] {
+const CONFINEMENT_LOCK_LSOF_TIMEOUT_MS = 10_000
+
+export function lockHolderObservationIsUnknown(result: {
+  exitCode: number | null
+  signalCode?: string | number | null
+  exitedDueToTimeout?: boolean
+}): boolean {
+  return (
+    result.exitedDueToTimeout === true ||
+    (result.signalCode !== null && result.signalCode !== undefined) ||
+    result.exitCode === null
+  )
+}
+
+function lockHolderPids(checkout: string): {
+  holders: ConfinementLockHolder[]
+  observation: 'complete' | 'unknown'
+} {
   const gitDir = git(checkout, ['rev-parse', '--path-format=absolute', '--git-dir'])
   const lock = gitDir.ok ? join(gitDir.stdout.trim(), 'index.lock') : null
-  if (!lock || !existsSync(lock)) return []
-  const owner = Bun.spawnSync(['lsof', '-nP', '-Fpc', '--', lock], {
-    stdout: 'pipe',
-    stderr: 'ignore',
-  })
-  if (owner.exitCode !== 0) return []
+  if (!lock || !existsSync(lock)) return { holders: [], observation: 'complete' }
+  let owner: ReturnType<typeof Bun.spawnSync>
+  try {
+    ;({ process: owner } = observeBoundedSubprocess(
+      'lsof',
+      ['lsof', '-nP', '-Fpc', '--', lock],
+      {
+        stdout: 'pipe',
+        stderr: 'ignore',
+      },
+      CONFINEMENT_LOCK_LSOF_TIMEOUT_MS,
+    ))
+  } catch {
+    return { holders: [], observation: 'unknown' }
+  }
+  if (lockHolderObservationIsUnknown(owner)) return { holders: [], observation: 'unknown' }
+  if (owner.exitCode !== 0) return { holders: [], observation: 'complete' }
   let pid: number | null = null
   let command: string | null = null
   const holders: ConfinementLockHolder[] = []
-  for (const line of owner.stdout.toString().split('\n')) {
+  for (const line of (owner.stdout?.toString() ?? '').split('\n')) {
     if (line.startsWith('p')) {
       if (pid !== null) holders.push({ pid, command, sessionId: null })
       pid = Number(line.slice(1))
@@ -205,7 +235,10 @@ function lockHolderPids(checkout: string): ConfinementLockHolder[] {
     }
   }
   if (pid !== null) holders.push({ pid, command, sessionId: null })
-  return holders.filter((holder) => Number.isInteger(holder.pid) && holder.pid > 0)
+  return {
+    holders: holders.filter((holder) => Number.isInteger(holder.pid) && holder.pid > 0),
+    observation: 'complete',
+  }
 }
 
 function sessionForPid(database: Database, pid: number): string | null {
@@ -235,17 +268,33 @@ function attributeDivergence(
   database: Database,
   checkout: FrozenCheckout,
   opts: { startedAt: string; headMoved: boolean },
-): Pick<ConfinementEvent, 'attribution' | 'lockHolder' | 'landingSession' | 'landingId'> {
-  const holders = lockHolderPids(checkout.path)
-  const holder = holders[0]
-    ? { ...holders[0], sessionId: sessionForPid(database, holders[0].pid) }
+): Pick<
+  ConfinementEvent,
+  'attribution' | 'lockHolderObservation' | 'lockHolder' | 'landingSession' | 'landingId'
+> {
+  const lockHolders = lockHolderPids(checkout.path)
+  const holder = lockHolders.holders[0]
+    ? {
+        ...lockHolders.holders[0],
+        sessionId: sessionForPid(database, lockHolders.holders[0].pid),
+      }
     : null
   const landing = opts.headMoved
     ? landingThatMovedHead(database, checkout.project, opts.startedAt)
     : null
+  if (lockHolders.observation === 'unknown') {
+    return {
+      attribution: 'unattributed',
+      lockHolderObservation: 'unknown',
+      lockHolder: null,
+      landingSession: landing?.sessionId ?? null,
+      landingId: landing?.landingId ?? null,
+    }
+  }
   if (holder) {
     return {
       attribution: 'lock_holder',
+      lockHolderObservation: 'complete',
       lockHolder: holder,
       landingSession: landing?.sessionId ?? null,
       landingId: landing?.landingId ?? null,
@@ -254,6 +303,7 @@ function attributeDivergence(
   if (landing) {
     return {
       attribution: 'landing',
+      lockHolderObservation: 'complete',
       lockHolder: null,
       landingSession: landing.sessionId,
       landingId: landing.landingId,
@@ -261,6 +311,7 @@ function attributeDivergence(
   }
   return {
     attribution: 'unattributed',
+    lockHolderObservation: 'complete',
     lockHolder: null,
     landingSession: null,
     landingId: null,
@@ -340,15 +391,25 @@ export function classifyDivergence(input: {
   }
 }
 
-export function overlappingError(event: ConfinementEvent): string {
-  const who =
-    event.attribution === 'lock_holder'
-      ? `lock_holder pid ${event.lockHolder?.pid ?? 'unknown'}` +
+export function divergenceAttributionLabel(
+  event: Pick<
+    ConfinementEvent,
+    'attribution' | 'lockHolderObservation' | 'lockHolder' | 'landingSession'
+  >,
+): string {
+  return event.attribution === 'lock_holder'
+    ? `lock_holder pid ${event.lockHolder?.pid ?? 'unknown'}` +
         (event.lockHolder?.sessionId ? ` session ${event.lockHolder.sessionId}` : '') +
         (event.lockHolder?.command ? ` (${event.lockHolder.command})` : '')
-      : event.attribution === 'landing'
-        ? `landing session ${event.landingSession ?? 'unknown'}`
+    : event.attribution === 'landing'
+      ? `landing session ${event.landingSession ?? 'unknown'}`
+      : event.lockHolderObservation === 'unknown'
+        ? 'unattributed (lock holder unknown)'
         : 'unattributed'
+}
+
+export function overlappingError(event: ConfinementEvent): string {
+  const who = divergenceAttributionLabel(event)
   const detail = event.after
     .map((change, index) => {
       const before = event.freeze[index]
