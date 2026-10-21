@@ -13,7 +13,7 @@ export async function refuseUnstartedRun(input: {
   db()
     .query(
       `UPDATE run SET status='failed', error=?, mcp_error=COALESCE(?,mcp_error),
-       failure_kind='mcp_unverified', latency_ms=?, host_wait_since=NULL WHERE record_id=?`,
+       failure_kind='mcp_unverified', latency_ms=? WHERE record_id=?`,
     )
     .run(input.why, input.mcpError ?? null, Date.now() - input.started, input.runId)
   await input.resetSandbox()

@@ -226,7 +226,7 @@ export async function detach(
     if (inserted && spec.resume?.kind === 'retry-root' && spec.resume.retireAsking) {
       db()
         .query(
-          `UPDATE run SET status='failed',failure_kind='stopped',host_wait_since=NULL,
+          `UPDATE run SET status='failed',failure_kind='stopped',
              error='record-only rulings recovered by retry root'
            WHERE (record_id=? OR parent_run_record_id=?) AND status='asking'`,
         )
@@ -354,9 +354,7 @@ export async function detach(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     db()
-      .query(
-        `UPDATE run SET status='failed', failure_kind='harness', error=?, host_wait_since=NULL WHERE record_id=?`,
-      )
+      .query(`UPDATE run SET status='failed', failure_kind='harness', error=? WHERE record_id=?`)
       .run(`detach handoff failed during ${handoffStep}: ${message}`, recordId)
     throw error
   } finally {

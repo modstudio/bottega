@@ -54,7 +54,7 @@ function recordStartupFailure(id: string, reason: string): void {
     // Only a row still claiming to run: never overwrite an outcome something
     // else already recorded.
     d.query(
-      `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=0, host_wait_since=NULL
+      `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=0
         WHERE record_id=? AND status='running'`,
     ).run(reason.slice(0, 2000), id)
     d.close()

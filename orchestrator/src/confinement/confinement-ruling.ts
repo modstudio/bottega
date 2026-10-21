@@ -180,7 +180,7 @@ export function clearConfinement(
       throw new Error(`run ${id}'s confinement classification changed before it could be cleared`)
     }
     const update = db().query(
-      `UPDATE run SET status=?, failure_kind=?, error=?, pre_confinement=?, host_wait_since=NULL WHERE record_id=?
+      `UPDATE run SET status=?, failure_kind=?, error=?, pre_confinement=? WHERE record_id=?
           AND failure_kind IN ('escaped','confinement_unverified')`,
     )
     for (const { row, value } of transitions) {

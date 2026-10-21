@@ -58,7 +58,7 @@ function finishProbeRun(
 ): void {
   writableDb()
     .query(
-      `UPDATE run SET status=?,latency_ms=?,exit_code=?,output_bytes=?,error=?,failure_kind=?,host_wait_since=NULL WHERE record_id=?`,
+      `UPDATE run SET status=?,latency_ms=?,exit_code=?,output_bytes=?,error=?,failure_kind=? WHERE record_id=?`,
     )
     .run(status, Date.now() - started, status === 'ok' ? 0 : 1, outputBytes, error, failureKind, id)
 }

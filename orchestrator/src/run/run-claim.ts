@@ -939,7 +939,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
            status=CASE WHEN status='stopped' THEN status ELSE 'failed' END,
            error=CASE WHEN status='stopped' THEN error ELSE ? END,
            failure_kind=CASE WHEN status='stopped' THEN failure_kind ELSE 'harness' END,
-           host_wait_since=NULL,
            latency_ms=? WHERE record_id=?`,
       )
       .run(why, Date.now() - started, claim.id)
