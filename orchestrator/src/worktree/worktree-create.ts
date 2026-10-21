@@ -409,9 +409,7 @@ function createWithToolUnlocked(
   // diff name that floor rather than the caller checkout's incidental HEAD.
   const actualBase = gitOk(['rev-parse', 'HEAD'], path) ?? base
   if (shouldCheckoutCreatedBranch(detached, existingBranch)) {
-    const dirty = gitOk(['status', '--porcelain=v1', '--untracked-files=no'], path)
-    if (baseRef && !dirty) git(['checkout', '-B', branch, base], path)
-    else gitOk(['checkout', '-B', branch], path)
+    checkoutCreatedBranch(repoRoot, path, branch, base, baseRef)
   }
   const worktree = {
     path,
@@ -430,6 +428,20 @@ function createWithToolUnlocked(
   return worktree
 }
 
+function checkoutCreatedBranch(
+  repoRoot: string,
+  path: string,
+  branch: string,
+  base: string,
+  baseRef?: string,
+): void {
+  assertBranchRefMayBeCreated(repoRoot, branch)
+  const dirty = gitOk(['status', '--porcelain=v1', '--untracked-files=no'], path)
+  // branch-ref-guard: assertBranchRefMayBeCreated
+  if (baseRef && !dirty) git(['checkout', '-B', branch, base], path)
+  else gitOk(['checkout', '-B', branch], path)
+}
+
 function runGuardedCreateTool(
   tool: WorktreeTool,
   vars: ReturnType<typeof worktreeCreateVariables>,
@@ -437,7 +449,9 @@ function runGuardedCreateTool(
   detached: boolean,
   existingBranch?: string,
 ): ReturnType<typeof runCreateTool> {
-  if (!detached && !existingBranch) assertBranchRefMayBeCreated(repoRoot, vars.branch)
+  if (shouldCheckoutCreatedBranch(detached, existingBranch)) {
+    assertBranchRefMayBeCreated(repoRoot, vars.branch)
+  }
   return runCreateTool(tool.create!, vars, repoRoot, targetGitEnvironment(repoRoot))
 }
 
@@ -460,6 +474,17 @@ function createWithoutCommand(
   requestedBranch?: string,
 ): Worktree {
   if (tool.recipePath) {
+    if (shouldCheckoutCreatedBranch(detached, existingBranch)) {
+      const { branch } = recipeWorktreeIdentity(
+        tool,
+        repoRoot,
+        runId,
+        key,
+        existingBranch,
+        requestedBranch,
+      )
+      assertBranchRefMayBeCreated(repoRoot, branch)
+    }
     return createTrackedRecipe({
       tool,
       repoRoot,
@@ -554,6 +579,7 @@ function createWorktreeUnlocked(
     throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
   }
   if (!detached) assertBranchRefMayBeCreated(repoRoot, branch)
+  // branch-ref-guard: assertBranchRefMayBeCreated
   git(['worktree', 'add', ...(detached ? ['--detach'] : ['-b', branch]), path, base], repoRoot)
   const worktree = {
     path,
@@ -641,7 +667,9 @@ function createFromRecipe(
   if (existsSync(path)) {
     throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
   }
-  if (!detached && !existingBranch) assertBranchRefMayBeCreated(repoRoot, branch)
+  if (shouldCheckoutCreatedBranch(detached, existingBranch)) {
+    assertBranchRefMayBeCreated(repoRoot, branch)
+  }
 
   // An explicit caller base wins. Without one, the base is the project's to
   // choose: two of these repos branch from origin/develop and one from local
@@ -653,6 +681,7 @@ function createFromRecipe(
       ? (gitOk(['rev-parse', recipe.baseRef], repoRoot) ?? git(['rev-parse', 'HEAD'], repoRoot))
       : git(['rev-parse', 'HEAD'], repoRoot)
 
+  // branch-ref-guard: assertBranchRefMayBeCreated
   git(
     [
       'worktree',

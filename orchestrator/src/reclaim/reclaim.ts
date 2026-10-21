@@ -2,10 +2,7 @@ import { existsSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import {
-  assertBranchRefMayBeDeleted,
-  restoreBranchWithCaseGuard as restoreBranch,
-} from '../branch/branch-ref-guard.ts'
+import { assertBranchRefMayBeDeleted, restoreBranch } from '../branch/branch-ref-guard.ts'
 import { branchRows, type ReclaimRun, settleDeletedBranch } from '../branch/branch-settlement.ts'
 import { type BranchLanding, isPruneSafeLandingState } from '../branch/branch-state.ts'
 import { classifyMintedBranch } from '../branch/branches.ts'
@@ -464,6 +461,7 @@ export function reclaimBranch(
           if (!lockedProof.result.ok) return lockedProof.result
           const tip = lockedProof.tip!
           prepareExactBranchDeletion(project.path, branch)
+          // branch-ref-guard: assertBranchRefMayBeDeleted
           const deleted = git(project.path, ['update-ref', '-d', `refs/heads/${branch}`, tip])
           if (!deleted.ok || branchTip(project.path, branch) !== null) {
             return refuse(

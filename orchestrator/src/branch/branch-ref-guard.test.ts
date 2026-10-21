@@ -49,4 +49,14 @@ describe('branch ref mutation guard', () => {
       existing: 'worktree-DEV-1444-hono',
     })
   })
+
+  test('classifies an absent exact deletion target without a case peer', () => {
+    expect(
+      decideBranchRefMutation({
+        operation: 'delete',
+        target: 'DEV-1470-missing',
+        localBranches: ['main', 'DEV-1470-other'],
+      }),
+    ).toEqual({ allowed: false, reason: 'exact-missing' })
+  })
 })

@@ -171,6 +171,7 @@ export const systemCanonMirrorPort: CanonMirrorPort = {
   createTree: ({ project, path, branch, base, record }) => {
     mkdirSync(dirname(path), { recursive: true })
     assertBranchRefMayBeCreated(project.path, branch)
+    // branch-ref-guard: assertBranchRefMayBeCreated
     const child = spawn(project.path, ['git', 'worktree', 'add', '-B', branch, path, base])
     if (existsSync(path)) record(base)
     if (child.exitCode !== 0) {
@@ -239,6 +240,7 @@ export const systemCanonMirrorPort: CanonMirrorPort = {
   },
   releaseBranch: (p, branch, expected) => {
     assertBranchRefMayBeDeleted(p.path, branch)
+    // branch-ref-guard: assertBranchRefMayBeDeleted
     command(p.path, ['git', 'update-ref', '-d', `refs/heads/${branch}`, expected])
   },
   releaseRun: (runId) => closeOutRun(runId, { intent: 'tree-remove' }),

@@ -1,7 +1,7 @@
 // concern: run-resume-claim
 /** Prepares and restores a retained conversation branch during tree creation. */
 
-import { assertBranchRefMayBeCreated } from '../branch/branch-ref-guard.ts'
+import { assertBranchRefMayBeCreated, exactBranchTip } from '../branch/branch-ref-guard.ts'
 import { git, gitContext } from '../git/git-environment.ts'
 import { removeFor } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
@@ -17,14 +17,10 @@ export function prepareResumeBranchIfNeeded(
   plan: RecreateResumeTreePlan | undefined,
 ): void {
   if (plan?.action !== 'recreate-on-branch') return
-  const current = gitContext(
-    repoRoot,
-    'rev-parse',
-    '--verify',
-    `refs/heads/${plan.branch}^{commit}`,
-  )
+  const current = exactBranchTip(repoRoot, plan.branch)
   if (!current) {
     assertBranchRefMayBeCreated(repoRoot, plan.branch)
+    // branch-ref-guard: assertBranchRefMayBeCreated
     git(['update-ref', `refs/heads/${plan.branch}`, plan.tip], repoRoot)
   }
 }

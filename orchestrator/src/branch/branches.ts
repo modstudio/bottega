@@ -592,6 +592,7 @@ function deleteAndSettleBranch(
       }
       writableDb()
       assertBranchRefMayBeDeleted(project.path, row.branch)
+      // branch-ref-guard: assertBranchRefMayBeDeleted
       command(
         project.path,
         ['git', 'update-ref', '-d', `refs/heads/${row.branch}`, row.tip],
@@ -784,6 +785,7 @@ function deleteOtherBranch(
     withWorktreeCreateLock(project.path, () => {
       if (keepLiveBaseClaim(project, row.branch, report)) return
       assertBranchRefMayBeDeleted(project.path, row.branch)
+      // branch-ref-guard: assertBranchRefMayBeDeleted
       command(
         project.path,
         ['git', 'update-ref', '-d', `refs/heads/${row.branch}`, row.tip],

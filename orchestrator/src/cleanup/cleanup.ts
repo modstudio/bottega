@@ -2,7 +2,7 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { restoreBranchWithCaseGuard as restoreBranch } from '../branch/branch-ref-guard.ts'
+import { restoreBranch } from '../branch/branch-ref-guard.ts'
 import { db, sessionId, writeTransaction } from '../database/db.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
 import { repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'

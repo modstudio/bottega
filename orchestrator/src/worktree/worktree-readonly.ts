@@ -1,7 +1,7 @@
 // concern: worktree-readonly
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { assertBranchRefMayBeCreated } from '../branch/branch-ref-guard.ts'
+import { assertBranchRefMayBeCreated, exactBranchTip } from '../branch/branch-ref-guard.ts'
 import {
   borrowedCheckoutOf,
   git,
@@ -19,7 +19,7 @@ import {
   verifyFreshWorktree,
 } from './worktree-create.ts'
 import { provisionWorktree, type WorktreeProvision } from './worktree-provision.ts'
-import { branchTip, removeReadOnlyDirectory, removeReadOnlyTree } from './worktree-remove.ts'
+import { removeReadOnlyDirectory, removeReadOnlyTree } from './worktree-remove.ts'
 import { assertCreateVarsAvailable } from './worktree-template.ts'
 import type { Worktree } from './worktree-types.ts'
 
@@ -249,10 +249,11 @@ function restoreBranchToTip(
   branch: string,
   tip: string,
 ): { ok: true } | { ok: false; error: string } {
-  const current = branchTip(repoRoot, branch)
+  const current = exactBranchTip(repoRoot, branch)
   if (current === tip) return { ok: true }
   if (current === null) assertBranchRefMayBeCreated(repoRoot, branch)
   const expected = current ?? '0000000000000000000000000000000000000000'
+  // branch-ref-guard: assertBranchRefMayBeCreated
   const p = Bun.spawnSync(['git', 'update-ref', `refs/heads/${branch}`, tip, expected], {
     cwd: repoRoot,
     env: targetGitEnvironment(repoRoot),

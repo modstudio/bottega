@@ -420,6 +420,7 @@ if (checkArguments.mode === 'static') {
     staticCheck('scripts/check-launchd-templates.ts'),
     staticCheck('scripts/check-gitleaks.ts'),
     staticCheck('scripts/check-write-transaction-site.ts'),
+    staticCheck('scripts/check-branch-ref-mutation-site.ts'),
     staticCheck('scripts/check-command-descriptions.ts'),
     staticCheck('scripts/reference.ts'),
     staticCheck('scripts/check-file-ceiling.ts', [], 'file-length', true),

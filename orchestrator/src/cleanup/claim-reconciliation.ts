@@ -4,7 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { lstatSync } from 'node:fs'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import { restoreBranchWithCaseGuard as restoreProtectedBranch } from '../branch/branch-ref-guard.ts'
+import { restoreBranch } from '../branch/branch-ref-guard.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { type GitRefObservation, observeGitRef } from '../git/git-environment.ts'
 import { withCleanupLock, withWorktreeLease } from '../project/project-lock.ts'
@@ -42,7 +42,7 @@ export type ClaimReconciliationObservers = {
   path: (path: string) => { outcome: 'present' | 'absent' | 'failed'; detail?: string }
   ref: (repository: string, ref: string) => GitRefObservation
   commit: (repository: string, tip: string) => GitRefObservation
-  restoreBranch: typeof restoreProtectedBranch
+  restoreBranch: typeof restoreBranch
   trust: GrokTrustObservation
   leaseState: typeof runLeaseState
   pidAlive: typeof pidAlive
@@ -71,7 +71,7 @@ const defaultObservers = (trust: GrokTrustObservation): ClaimReconciliationObser
   path: observePath,
   ref: observeGitRef,
   commit: (repository, tip) => observeGitRef(repository, `${tip}^{commit}`),
-  restoreBranch: restoreProtectedBranch,
+  restoreBranch,
   trust,
   leaseState: runLeaseState,
   pidAlive,

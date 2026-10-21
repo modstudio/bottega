@@ -695,6 +695,7 @@ export function trackedWorktreeAddArgv(input: {
   existingBranch: boolean
   relativePaths?: boolean
 }): string[] {
+  // branch-ref-guard: assertBranchRefMayBeCreated in createWithoutCommand
   return [
     'worktree',
     'add',
@@ -729,6 +730,7 @@ export function createTrackedRecipe(
 
   try {
     mkdirSync(dirname(path), { recursive: true })
+    // branch-ref-guard: assertBranchRefMayBeCreated in createWithoutCommand
     git(
       trackedWorktreeAddArgv({
         branch,

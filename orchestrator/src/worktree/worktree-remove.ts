@@ -4,8 +4,10 @@ import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  assertBranchRefDecisionMayBeDeleted,
   assertBranchRefMayBeDeleted,
-  branchRefMutationDecision,
+  exactBranchTip,
+  observeBranchRefMutation,
 } from '../branch/branch-ref-guard.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import {
@@ -616,12 +618,13 @@ export function removeFor(
   const owned = { ...w, branch: minted ?? '' }
   const project = projectAt(repoRoot)
   const tool = resolvedWorktreeTool(project)
+  const classification = minted ? classifyBranch(repoRoot, minted, null) : null
   const retainBranch =
-    keepBranch || !minted || (!forceUnmerged && unmergedBranch(repoRoot, minted, null) !== null)
+    keepBranch || !minted || (!forceUnmerged && Boolean(classification?.unmerged))
   const removeTree = () =>
     skipGitRemoval
       ? { removed: true, detail: `${w.path} was already gone` }
-      : removeWorktree(owned, retainBranch)
+      : removeWorktree(owned, retainBranch, classification?.tip)
   const result = removeByLifecycle({
     worktree: owned,
     tool,
@@ -650,6 +653,7 @@ export function sweepWithTool(
 export function removeWorktree(
   w: Worktree,
   keepBranch = false,
+  classifiedTip?: string,
 ): { removed: boolean; detail: string } {
   const deleteBranch = Boolean(w.branch) && !keepBranch
   // Never prune the repository; remove only this worktree's own record.
@@ -659,7 +663,7 @@ export function removeWorktree(
   if (!existsSync(w.path)) {
     gitOk(['worktree', 'remove', '--force', w.path], w.repoRoot)
     return (
-      removeOwnedWorktreeBranch(w, deleteBranch) ?? {
+      removeOwnedWorktreeBranch(w, deleteBranch, classifiedTip) ?? {
         removed: true,
         detail: `${w.path} was already gone`,
       }
@@ -674,7 +678,7 @@ export function removeWorktree(
   // worktree produced exactly the orphan the comment warned about, announced
   // as a success.
   const gone = gitOk(['worktree', 'remove', '--force', w.path], w.repoRoot) !== null
-  const branchFailure = removeOwnedWorktreeBranch(w, deleteBranch)
+  const branchFailure = removeOwnedWorktreeBranch(w, deleteBranch, classifiedTip)
   if (branchFailure) return branchFailure
   return gone || !existsSync(w.path)
     ? { removed: true, detail: w.path }
@@ -684,10 +688,11 @@ export function removeWorktree(
 function removeOwnedWorktreeBranch(
   worktree: Worktree,
   deleteBranch: boolean,
+  classifiedTip?: string,
 ): WorktreeRemovalResult | null {
   if (!deleteBranch) return null
   try {
-    removeBranch(worktree.repoRoot, worktree.branch)
+    removeBranch(worktree.repoRoot, worktree.branch, classifiedTip)
   } catch (error) {
     return { removed: false, detail: error instanceof Error ? error.message : String(error) }
   }
@@ -701,22 +706,44 @@ function removeOwnedWorktreeBranch(
 }
 
 /** Delete a local branch when it exists, reporting whether there was work to do. */
-export function removeBranch(repoRoot: string, branch: string): boolean {
-  const decision = branchRefMutationDecision(repoRoot, 'delete', branch)
+export function removeBranch(repoRoot: string, branch: string, classifiedTip?: string): boolean {
+  const observation = observeBranchRefMutation(repoRoot, 'delete', branch)
+  const { decision } = observation
   if (!decision.allowed && decision.reason === 'exact-missing') return false
-  assertBranchRefMayBeDeleted(repoRoot, branch)
-  const tip = branchTip(repoRoot, branch)
+  assertBranchRefDecisionMayBeDeleted(decision, branch)
+  const tip = observation.exactTip
   if (!tip) throw new Error(`refusing to delete branch ${branch}: its exact tip could not be read`)
+  if (classifiedTip !== undefined && tip !== classifiedTip) {
+    throw new Error(
+      `refusing to delete branch ${branch}: branch moved since it was classified (${classifiedTip} to ${tip})`,
+    )
+  }
+  // branch-ref-guard: observeBranchRefMutation
   git(['update-ref', '-d', `refs/heads/${branch}`, tip], repoRoot)
   return true
 }
 
 /** Read a local branch tip so cleanup can restore a ref another run still records. */
 export function branchTip(repoRoot: string, branch: string): string | null {
-  return gitOk(['rev-parse', '--verify', `refs/heads/${branch}`], repoRoot)
+  return exactBranchTip(repoRoot, branch)
 }
 
 export type UnmergedBranch = { count: number; tip: string }
+type BranchClassification = { tip: string; unmerged: UnmergedBranch | null }
+
+function classifyBranch(
+  repoRoot: string,
+  branch: string,
+  baseCommit: string | null,
+): BranchClassification | null {
+  const tip = branchTip(repoRoot, branch)
+  if (tip === null) return null
+  const args = ['rev-list', '--count', tip]
+  if (baseCommit) args.push(`^${baseCommit}`)
+  args.push('--not', `--exclude=${branch}`, '--branches', '--remotes', '--tags')
+  const count = Number(git(args, repoRoot))
+  return { tip, unmerged: count > 0 ? { count, tip } : null }
+}
 
 /**
  * Commits reachable only from this local branch — deleting it would lose them.
@@ -731,12 +758,5 @@ export function unmergedBranch(
   branch: string,
   baseCommit: string | null,
 ): UnmergedBranch | null {
-  const ref = `refs/heads/${branch}`
-  if (gitOk(['show-ref', '--verify', '--quiet', ref], repoRoot) === null) return null
-  const tip = git(['rev-parse', ref], repoRoot)
-  const args = ['rev-list', '--count', branch]
-  if (baseCommit) args.push(`^${baseCommit}`)
-  args.push('--not', `--exclude=${branch}`, '--branches', '--remotes', '--tags')
-  const count = Number(git(args, repoRoot))
-  return count > 0 ? { count, tip } : null
+  return classifyBranch(repoRoot, branch, baseCommit)?.unmerged ?? null
 }

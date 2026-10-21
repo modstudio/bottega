@@ -276,6 +276,7 @@ export function disposeBranch(
         `branch ${plan.branch} moved while disposal was being ruled; inspect it and retry`,
       )
     assertBranchRefMayBeDeleted(plan.project.path, plan.branch)
+    // branch-ref-guard: assertBranchRefMayBeDeleted
     git(
       plan.project.path,
       ['update-ref', '--stdin'],
@@ -293,6 +294,7 @@ export function disposeBranch(
     } catch (cause) {
       try {
         assertBranchRefMayBeCreated(plan.project.path, plan.branch)
+        // branch-ref-guard: assertBranchRefMayBeCreated
         git(
           plan.project.path,
           ['update-ref', '--stdin'],
