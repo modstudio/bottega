@@ -111,7 +111,17 @@ test('an evidence-excluded landing-tree owner refuses dispatch planning', () => 
     if (command.includes('rev-list --count merge-base..writer-tip')) return spawnResult('1\n')
     if (command.includes('cherry trunk-tip writer-tip')) return spawnResult('+ writer-tip\n')
     if (command.includes('rev-parse --verify writer-tip^{tree}')) return spawnResult('tree-tip\n')
-    if (command.includes('commit-tree tree-tip')) return spawnResult('squash-tip\n')
+    if (command.includes('commit-tree tree-tip')) {
+      expect(options).toMatchObject({
+        env: {
+          GIT_AUTHOR_NAME: 'Patch Equivalence',
+          GIT_AUTHOR_EMAIL: 'patch-equivalence@orchestrator.invalid',
+          GIT_COMMITTER_NAME: 'Patch Equivalence',
+          GIT_COMMITTER_EMAIL: 'patch-equivalence@orchestrator.invalid',
+        },
+      })
+      return spawnResult('squash-tip\n')
+    }
     if (command.includes('cherry trunk-tip squash-tip')) return spawnResult('+ squash-tip\n')
     if (command.includes('worktree list --porcelain')) {
       return spawnResult(

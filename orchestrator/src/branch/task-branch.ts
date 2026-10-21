@@ -398,9 +398,20 @@ export function taskBranchCandidacySql(runAlias = 'candidate'): string {
   )
 }
 
-function taskBranchGit(cwd: string, ...args: string[]): string {
+const PATCH_EQUIVALENCE_GIT_IDENTITY = {
+  GIT_AUTHOR_NAME: 'Patch Equivalence',
+  GIT_AUTHOR_EMAIL: 'patch-equivalence@orchestrator.invalid',
+  GIT_COMMITTER_NAME: 'Patch Equivalence',
+  GIT_COMMITTER_EMAIL: 'patch-equivalence@orchestrator.invalid',
+} as const
+
+function taskBranchGitWithEnvironment(
+  cwd: string,
+  environment: NodeJS.ProcessEnv,
+  ...args: string[]
+): string {
   const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
-    env: targetGitEnvironment(cwd),
+    env: { ...targetGitEnvironment(cwd), ...environment },
     stdout: 'pipe',
     stderr: 'pipe',
   })
@@ -411,6 +422,10 @@ function taskBranchGit(cwd: string, ...args: string[]): string {
     )
   }
   return p.stdout.toString().trim()
+}
+
+function taskBranchGit(cwd: string, ...args: string[]): string {
+  return taskBranchGitWithEnvironment(cwd, {}, ...args)
 }
 
 /** Exit zero is true, exit one is false; any other exit throws naming the command. */
@@ -498,8 +513,9 @@ export function taskBranchPatchEquivalent(input: {
   const individual = taskBranchGit(input.cwd, 'cherry', input.trunkTip, input.branchTip)
   if (!individual.split('\n').some((line) => line.startsWith('+ '))) return 'commits'
   const tree = taskBranchGit(input.cwd, 'rev-parse', '--verify', `${input.branchTip}^{tree}`)
-  const squash = taskBranchGit(
+  const squash = taskBranchGitWithEnvironment(
     input.cwd,
+    PATCH_EQUIVALENCE_GIT_IDENTITY,
     'commit-tree',
     tree,
     '-p',
